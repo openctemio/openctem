@@ -184,3 +184,85 @@ describe('select all that match', () => {
     expect(screen.getByText(/Up to 10,000 at once/)).toBeInTheDocument()
   })
 })
+
+describe('phone select mode', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+  })
+
+  const openSelect = async () => {
+    await userEvent.click(screen.getByRole('button', { name: 'More list actions' }))
+    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Select' }))
+  }
+  // The table stays mounted (hidden by CSS) beside the cards: look in the cards.
+  const cardBoxes = () =>
+    Array.from(document.querySelectorAll('[data-slot="mobile-card"] [role="checkbox"]'))
+  const cardBox = (name: string) =>
+    document.querySelector(`[data-slot="mobile-card"] [aria-label="Select ${name}"]`) as HTMLElement
+  const countMenu = () => within(bar()!).getByRole('button', { name: /selection options/i })
+
+  it('cards have no checkbox until Select in More; the bar opens with nothing selected', async () => {
+    setup({ matching: { total: 418, max: 10_000 } }, { rowCount: 418 })
+    expect(cardBoxes()).toHaveLength(0)
+    expect(bar()).not.toBeInTheDocument()
+    await openSelect()
+    expect(cardBox('a')).toBeInTheDocument()
+    expect(bar()).toBeInTheDocument()
+    expect(countMenu()).toHaveTextContent('0 selected')
+    // Nothing to act on yet: the actions wait.
+    expect(within(bar()!).getByRole('button', { name: 'Assign to' })).toBeDisabled()
+    expect(announcer()).toHaveTextContent('Selecting: check the rows to act on')
+  })
+
+  it('the count selects the page, then every row that matches, then clears', async () => {
+    const { onSelectionChange } = setup(
+      { matching: { total: 418, max: 10_000 } },
+      { rowCount: 418 }
+    )
+    await openSelect()
+    await userEvent.click(countMenu())
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Select all on this page (5)' }))
+    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'ids' })
+    expect(countMenu()).toHaveTextContent('5 selected')
+    expect(within(bar()!).getByRole('button', { name: 'Assign to' })).toBeEnabled()
+    expect(announcer()).toHaveTextContent('5 selected')
+
+    await userEvent.click(countMenu())
+    expect(
+      screen.queryByRole('menuitem', { name: /select all on this page/i })
+    ).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Select all 418 that match' }))
+    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toEqual({ kind: 'filter', total: 418 })
+    expect(countMenu()).toHaveTextContent('418 selected')
+
+    await userEvent.click(countMenu())
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Clear selection' }))
+    expect(onSelectionChange.mock.calls.at(-1)?.[0]).toBeNull()
+    // Still selecting: the cards keep their checkboxes.
+    expect(cardBox('a')).toBeInTheDocument()
+    expect(countMenu()).toHaveTextContent('0 selected')
+  })
+
+  it('selects all that match straight from the menu; above the limit the item says why', async () => {
+    setup({ matching: { total: 20_000, max: 10_000 } }, { rowCount: 20_000 })
+    await openSelect()
+    await userEvent.click(countMenu())
+    const item = screen.getByRole('menuitem', { name: /Up to 10,000 at once/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('X ends select mode: checkboxes go, the bar closes', async () => {
+    setup()
+    await openSelect()
+    await userEvent.click(cardBox('a'))
+    await userEvent.click(within(bar()!).getByRole('button', { name: 'Clear selection' }))
+    expect(bar()).not.toBeInTheDocument()
+    expect(cardBoxes()).toHaveLength(0)
+  })
+
+  it('no More and no checkboxes without bulk', () => {
+    render(<DataTable columns={columns} data={rows} getRowId={(r) => r.id} />)
+    expect(screen.queryByRole('button', { name: 'More list actions' })).not.toBeInTheDocument()
+    expect(cardBoxes()).toHaveLength(0)
+  })
+})

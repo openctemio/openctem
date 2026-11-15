@@ -35,10 +35,7 @@ const DESIGN_FIXED = new Set([
 const PENDING = new Set([
   'app/(dashboard)/(discovery)/scans/page.tsx',
   'app/(dashboard)/findings/page.tsx',
-  'features/assets/components/inventory/inventory-bulk-bar.tsx',
   'features/saved-views/components/saved-views-menu.tsx',
-  'features/shared/components/bulk-action-bar.tsx',
-  'features/shared/components/data-table/data-table.tsx',
   'features/shared/components/filter-chips-row.tsx',
   'features/shared/components/filter-select.tsx',
 ])

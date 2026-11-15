@@ -13,10 +13,24 @@ import type * as React from 'react'
  */
 export const DENSE_ATTRS = { 'data-control-density': 'dense' } as const
 
-/** Marks its children as a dense place without adding a layout box. */
-export function DensityScope({ children }: { children: React.ReactNode }) {
+/**
+ * Marks its children as a dense place without adding a layout box. `touch:
+ * 'default'` keeps the default size below 768px (a phone bar where every
+ * control is 36).
+ */
+export function DensityScope({
+  children,
+  touch = 'dense',
+}: {
+  children: React.ReactNode
+  touch?: 'dense' | 'default'
+}) {
   return (
-    <div data-control-density="dense" className="contents">
+    <div
+      data-control-density="dense"
+      data-touch-density={touch === 'default' ? 'default' : undefined}
+      className="contents"
+    >
       {children}
     </div>
   )
