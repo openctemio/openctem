@@ -33,12 +33,15 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
 
     await box.check()
     await expect(bulkBar(page)).toBeVisible()
-    // The header's sort menu: Status, ascending.
+    // One click on a sortable header sorts by it.
     await page
       .getByRole('columnheader', { name: /^status/i })
       .getByRole('button')
       .click()
-    await page.getByRole('menuitem', { name: 'Asc' }).click()
+    await expect(page.getByRole('columnheader', { name: /^status/i })).toHaveAttribute(
+      'aria-sort',
+      /ascending|descending/
+    )
     await expect(bulkBar(page)).toBeHidden({ timeout: 10_000 })
   })
 
