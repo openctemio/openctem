@@ -1,0 +1,7 @@
+### Fixed: saving an asset's tags no longer removes tags the editor did not remove
+
+- The asset edit form, the detail sheet and the row's "+ Add label" sent the whole tag list they had loaded, and the API replaced the stored list with it: a tag a sensor, an import, a rule or another person set after the page loaded was deleted on save. They now send only the tags added and removed (`tags_add`, `tags_remove` on `PUT /api/v1/assets/{id}`, additive), and the API applies the change to the stored list inside the update, so concurrent edits keep both changes. `tags` (the whole list) still replaces the list for API clients that send the list they just read.
+- The edit form shows tags as chips, so a tag containing a comma is no longer split, and a stored tag longer than 50 characters is no longer cut on save.
+- The bulk "Add tag" and "Remove tags" actions sent one full update per asset built from the list page's copy (tags, name, description, scope, exposure, owner and properties), which could drop tags and revert fields changed meanwhile. They now call `POST /api/v1/assets/bulk/tags` (new, `assets:write`, at most 100 assets per request, the console sends larger selections in batches): only the named tag changes on each asset. Bulk "Set criticality" sends only the criticality.
+- `asset.updated` audit entries now name the tags added and removed; bulk tag changes are audited as `asset.bulk_tags_changed`.
+- Docs: server/docs/architecture/asset-schema.md ("Editing tags never drops another writer's tags")

@@ -21,6 +21,7 @@ import {
   TrendingUp,
   AlertOctagon,
   Loader2,
+  Rss,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
@@ -34,16 +35,17 @@ interface SyncStatusManagerProps {
   className?: string
 }
 
-const sourceConfig: Record<
-  ThreatIntelSource,
-  {
-    /** Proper noun of the feed, not translated. */
-    name: string
-    /** i18n key of the one-line description. */
-    descriptionKey: string
-    icon: typeof TrendingUp
-  }
-> = {
+interface SourceConfig {
+  /** Proper noun of the feed, not translated. Ignored when nameKey is set. */
+  name: string
+  /** i18n key of the feed's name, for a feed whose name is a description. */
+  nameKey?: string
+  /** i18n key of the one-line description. */
+  descriptionKey: string
+  icon: typeof TrendingUp
+}
+
+const sourceConfig: Record<string, SourceConfig> = {
   epss: {
     name: 'EPSS',
     descriptionKey: 'threatIntel.sync.epssDescription',
@@ -54,6 +56,27 @@ const sourceConfig: Record<
     descriptionKey: 'threatIntel.sync.kevDescription',
     icon: AlertOctagon,
   },
+  vulnfeed: {
+    name: 'vulnfeed',
+    nameKey: 'threatIntel.sync.vulnfeedName',
+    descriptionKey: 'threatIntel.sync.vulnfeedDescription',
+    icon: Rss,
+  },
+}
+
+/**
+ * The display config of a feed. The API sends one row per feed it syncs, and a
+ * feed this console has no entry for yet (a new one, or a newer server) shows
+ * under its own id with a generic description instead of crashing the tab.
+ */
+function configFor(source: string): SourceConfig {
+  return (
+    sourceConfig[source] ?? {
+      name: source,
+      descriptionKey: 'threatIntel.sync.otherDescription',
+      icon: Rss,
+    }
+  )
 }
 
 /**
@@ -101,20 +124,21 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
   const [isSyncing, setIsSyncing] = useState(false)
   const [enableOpen, setEnableOpen] = useState(false)
 
-  const config = sourceConfig[status.source]
+  const config = configFor(status.source)
+  const feedName = config.nameKey ? t(config.nameKey) : config.name
   const Icon = config.icon
 
   const handleToggleEnabled = async () => {
     setEnableOpen(false)
     setIsToggling(true)
     try {
-      await setSyncEnabled(status.source, !status.enabled)
+      await setSyncEnabled(status.source as ThreatIntelSource, !status.enabled)
       toast.success(
         t(
           status.enabled ? 'threatIntel.sync.disabledToast' : 'threatIntel.sync.enabledToast',
           undefined,
           {
-            name: config.name,
+            name: feedName,
           }
         )
       )
@@ -126,7 +150,7 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
           t(
             status.enabled ? 'threatIntel.sync.disableFailed' : 'threatIntel.sync.enableFailed',
             undefined,
-            { name: config.name }
+            { name: feedName }
           )
         )
       )
@@ -139,15 +163,12 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
   const handleTriggerSync = async () => {
     setIsSyncing(true)
     try {
-      await triggerSync(status.source)
-      toast.success(t('threatIntel.sync.triggeredToast', undefined, { name: config.name }))
+      await triggerSync(status.source as ThreatIntelSource)
+      toast.success(t('threatIntel.sync.triggeredToast', undefined, { name: feedName }))
       onUpdate?.()
     } catch (error) {
       toast.error(
-        getErrorMessage(
-          error,
-          t('threatIntel.sync.triggerFailed', undefined, { name: config.name })
-        )
+        getErrorMessage(error, t('threatIntel.sync.triggerFailed', undefined, { name: feedName }))
       )
       console.error(error)
     } finally {
@@ -162,7 +183,7 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
       {/* Info */}
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">{config.name}</h3>
+          <h3 className="text-sm font-semibold">{feedName}</h3>
           <SyncStatusBadge status={status.last_sync_status} />
         </div>
         <p className="text-sm text-muted-foreground">{t(config.descriptionKey)}</p>
@@ -181,6 +202,18 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
                 })}
               </span>
             </div>
+          )}
+          {status.last_sync_status === 'failed' && (
+            <span>
+              {status.last_success_at
+                ? t('threatIntel.sync.lastSuccess', undefined, {
+                    time: formatDistanceToNow(new Date(status.last_success_at), {
+                      addSuffix: true,
+                      locale: dateLocale,
+                    }),
+                  })
+                : t('threatIntel.sync.neverSucceeded')}
+            </span>
           )}
           {status.records_synced > 0 && (
             <span>
@@ -231,7 +264,7 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
             {status.enabled ? t('threatIntel.sync.enabled') : t('threatIntel.sync.disabled')}
           </span>
           <Switch
-            aria-label={t('threatIntel.sync.enabledAria', undefined, { name: config.name })}
+            aria-label={t('threatIntel.sync.enabledAria', undefined, { name: feedName })}
             checked={status.enabled}
             onCheckedChange={(on) => {
               // Turning a feed on starts downloads on a schedule: ask first. Off is one click.
@@ -246,12 +279,12 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
         open={enableOpen}
         onOpenChange={setEnableOpen}
         title={t('threatIntel.sync.enableConfirmTitle', 'Turn on {name} sync?', {
-          name: config.name,
+          name: feedName,
         })}
         desc={t(
           'threatIntel.sync.enableConfirmDesc',
           'The {name} feed is downloaded on its schedule and its data is added to your threat intelligence. You can turn it off again at any time.',
-          { name: config.name }
+          { name: feedName }
         )}
         confirmText={t('threatIntel.sync.enableConfirmButton', 'Turn on sync')}
         handleConfirm={handleToggleEnabled}

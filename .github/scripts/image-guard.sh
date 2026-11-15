@@ -24,7 +24,7 @@ comp="$1" img="$2"
 # the commit message.
 root_ok=""  # set with the reason for a component that must still run as root
 case "$comp" in
-  openctem-api)     budget=150 ;;  # 131 MB
+  openctem-server)  budget=150 ;;  # 131 MB
   openctem-web)     budget=330 ;;  # 302 MB at v0.19.0 (node alone is ~145 MB; the open-source notices page added the notices data)
   openctem-console) budget=260 ;;  # node (~145 MB) + a 59 MB standalone build
   openctem)         budget=645     # 561 MB at v0.18.0 (Go 1.27 binaries, console, sensor pairing UI); 15% headroom

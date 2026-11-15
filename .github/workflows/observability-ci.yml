@@ -8,12 +8,12 @@ name: Observability CI
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - 'deploy/observability/**'
       - '.github/workflows/observability-ci.yml'
   push:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - 'deploy/observability/**'
       - '.github/workflows/observability-ci.yml'

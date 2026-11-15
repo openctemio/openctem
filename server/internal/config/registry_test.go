@@ -333,7 +333,7 @@ func TestCheckEnvironment(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			warn, err := checkEnvironment(r, tc.env)
+			warn, err := checkEnvironment(r, tc.env, nil)
 			if len(tc.wantErr) == 0 && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -349,9 +349,47 @@ func TestCheckEnvironment(t *testing.T) {
 	}
 }
 
+// A key an extension of the build declared is read (by that extension): no
+// "set but not read" warning and no typo refusal. Without the declaration
+// the same name is reported as before, and a name no extension declared is
+// still reported when other keys are declared.
+func TestCheckEnvironment_ExtensionKeys(t *testing.T) {
+	r := Registry()
+	const key = "ADMIN_AUDIT_SINK" // under an owned prefix, not a core name
+	if _, core := r.Lookup(key); core {
+		t.Fatalf("%s is a core name; pick another for this test", key)
+	}
+	declared := []string{key, "ADMIN_AUDIT_SINK_SECRET"}
+
+	warn, err := checkEnvironment(r, []string{key + "=https://siem.example.com/hook", "ADMIN_AUDIT_SINK_SECRET=x"}, declared)
+	if err != nil || len(warn) != 0 {
+		t.Fatalf("declared keys: warnings %v, err %v; want none", warn, err)
+	}
+
+	warn, err = checkEnvironment(r, []string{key + "=https://siem.example.com/hook"}, nil)
+	if err != nil || !slices.Equal(warn, []string{key + " is set but not read by the API"}) {
+		t.Fatalf("undeclared key: warnings %v, err %v; want the unread warning", warn, err)
+	}
+
+	warn, err = checkEnvironment(r, []string{key + "=x", "AI_AGENT=x"}, declared)
+	if err != nil || !slices.Equal(warn, []string{"AI_AGENT is set but not read by the API"}) {
+		t.Fatalf("unknown key next to declared ones: warnings %v, err %v; want AI_AGENT warned", warn, err)
+	}
+
+	// A declared key close to a core name is not taken for its typo, and a
+	// real typo of a core name is still refused.
+	near := "REDIS_PASWORD"
+	if _, err := checkEnvironment(r, []string{near + "=x"}, []string{near}); err != nil {
+		t.Fatalf("declared key near a core name: %v", err)
+	}
+	if _, err := checkEnvironment(r, []string{near + "=x"}, []string{key}); err == nil {
+		t.Fatal("an undeclared typo of a core name must still be refused")
+	}
+}
+
 // A refusal names the variable, never its value: values may be secrets.
 func TestCheckEnvironment_NeverPrintsValues(t *testing.T) {
-	_, err := checkEnvironment(Registry(), []string{"REDIS_PASWORD=hunter2-secret", "SERVER_PORT=s3cr3t-value"})
+	_, err := checkEnvironment(Registry(), []string{"REDIS_PASWORD=hunter2-secret", "SERVER_PORT=s3cr3t-value"}, nil)
 	if err == nil {
 		t.Fatal("want an error")
 	}

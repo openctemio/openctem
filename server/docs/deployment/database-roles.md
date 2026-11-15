@@ -19,7 +19,9 @@ Neither role is `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `REPLICATION` or
 `BYPASSRLS`. Neither belongs to `pg_read_server_files`, `pg_write_server_files`
 or `pg_execute_server_program`, so neither can `COPY` to or from a server file
 or a program. The app also cannot create objects in any schema, and it can only
-read `schema_migrations`.
+read the migration tracking tables (`schema_migrations`,
+`schema_migrations_applied`) in every schema: the core's in `public` and an
+extension's in its own schema.
 
 ## What the API needs at run time
 
@@ -73,10 +75,13 @@ It is idempotent. It:
    schemas;
 4. moves every table, view, sequence, function and type in those schemas to
    the migrator (this is what an upgrade from the superuser layout needs);
-5. grants the app the privileges in the table above;
+5. grants the app the privileges in the table above, and takes every write on
+   the migration tracking tables of every application schema back from the
+   app and `PUBLIC` (a schema added later is covered the next time it runs);
 6. sets `ALTER DEFAULT PRIVILEGES FOR ROLE openctem_migrator` so every table,
    sequence, function and type a later migration creates is granted to the app
-   automatically;
+   automatically (the migration runner takes the writes on the tracking tables
+   it creates back from every role but their owner, on every run);
 7. verifies all of the above and fails (non-zero exit) if anything is off.
 
 Run it again after restoring a dump, or after someone applied a migration as a
@@ -282,6 +287,10 @@ The live order is:
   - asserts that the app is refused `CREATE TABLE`, `COPY ... TO` a file,
     `pg_read_file`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE` on a tenant table and
     writes to `schema_migrations`;
+  - asserts that an extension schema's tracking tables are read-only for the
+    app while its other tables keep full DML, both for a schema that existed
+    when the script ran and for one an extension's first migration created
+    afterwards;
   - asserts that a table created later by the migrator is usable by the app;
   - with `admin_user`: asserts the app reads `admin_users` and nothing more of
     the console's tables, and the console role writes them but cannot alter the

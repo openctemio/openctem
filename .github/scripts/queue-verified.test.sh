@@ -35,6 +35,8 @@ run false "api error runs everything" "$ok_run" FAKE_FAIL=1
 run false "pull_request event" "$ok_run" EVENT=pull_request
 run false "merge_group event" "$ok_run" EVENT=merge_group
 run false "push to main" "$ok_run" REF=refs/heads/main
+run true "push to next (its own merge queue)" "$ok_run" REF=refs/heads/next
+run false "push to another branch" "$ok_run" REF=refs/heads/next-ci-test
 run false "malformed sha" "$ok_run" SHA='abc;rm'
 run false "workflow outside .github/workflows" "$ok_run" WORKFLOW_REF="o/r/x/api-ci.yml@refs/heads/develop"
 
