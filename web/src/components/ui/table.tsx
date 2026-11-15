@@ -89,7 +89,9 @@ function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
     <tr
       data-slot="table-row"
       className={cn(
-        'border-b border-border-subtle transition-colors hover:bg-hov focus-within:bg-hov data-[state=selected]:bg-sel',
+        // A row brought into view by focus clears the sticky header above and
+        // the bulk action bar below.
+        'scroll-mt-[var(--th-h)] scroll-mb-[var(--bulk-bar-space,0px)] border-b border-border-subtle transition-colors hover:bg-hov focus-within:bg-hov data-[state=selected]:bg-sel',
         className
       )}
       {...props}
@@ -116,7 +118,10 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
     <td
       data-slot="table-cell"
       className={cn(
-        'h-row px-1.5 py-1 align-middle first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
+        // No vertical padding: the row height (--row-h) and middle alignment
+        // place the content, so a row control as tall as the row's dense
+        // control (32, 28 compact) keeps the row at its density height.
+        'h-row px-1.5 py-0 align-middle first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
         className
       )}
       {...props}

@@ -41,13 +41,14 @@ describe('DataTable density', () => {
       <DataTable columns={columns} data={data} defaultDensity="compact" />
     )
     expect(frame(container)).toHaveAttribute('data-density', 'compact')
-    expect(within(frame(container)).getByText('edge-1').closest('td')).toHaveClass('py-0.5')
+    // No vertical padding at any density: the row height places the content.
+    expect(within(frame(container)).getByText('edge-1').closest('td')).toHaveClass('py-0')
   })
 
   it('is default (40) by default', () => {
     const { container } = render(<DataTable columns={columns} data={data} />)
     expect(frame(container)).toHaveAttribute('data-density', 'default')
-    expect(within(frame(container)).getByText('edge-1').closest('td')).not.toHaveClass('py-0.5')
+    expect(within(frame(container)).getByText('edge-1').closest('td')).toHaveClass('h-row', 'py-0')
   })
 
   it('reads the earlier stored word "comfortable" as the 40 px default, never as 52', () => {

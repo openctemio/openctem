@@ -82,6 +82,8 @@ export function FindingTitleCell({
   className,
 }: FindingTitleCellProps) {
   const full = toDisplayText((target ?? '').trim(), 2000)
+  // The whole title on pointer hover when one line cuts it (its name holds it too).
+  const tip = titleLines === 1 ? toDisplayText(title ?? '', 500) : undefined
   const shown = shownTarget(target)
   const titleClass = cn(
     'min-w-0 font-medium [unicode-bidi:isolate]',
@@ -96,6 +98,7 @@ export function FindingTitleCell({
             prefetch={false}
             dir="auto"
             data-slot="finding-title-link"
+            title={tip}
             className={cn(
               titleClass,
               'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset'
