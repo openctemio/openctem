@@ -6332,6 +6332,7 @@ tests that cover the console's most user-visible flows.
 | `52-cicd-lists.spec.ts`                     | CI/CD Pipelines and Runs at 1440/390px: no sideways scroll, axe, request budget                            |
 | `52-team-outside-members.spec.ts`           | A team with outside members turns full-data roles off up front and names them (390px too)                  |
 | `53-attack-surface-exposure-items.spec.ts`  | Exposure items list and by-asset view at 1440/390px: no sideways scroll, axe, defaults                     |
+| `60-popup-edge-gutter.spec.ts`              | /findings More menus at 375/390px open at least 16px from both screen edges                                |
 
 Each spec is designed to:
 
