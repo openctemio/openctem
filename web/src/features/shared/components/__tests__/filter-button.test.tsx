@@ -3,7 +3,12 @@ import { createRef } from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { FilterButton, FilterPanelToggle, ShowFilterPanelButton } from '../filter-button'
+import {
+  AddFilterButton,
+  FilterButton,
+  FilterPanelToggle,
+  ShowFilterPanelButton,
+} from '../filter-button'
 import { FilterSheet } from '../filter-sheet'
 
 // Radix Popover/Tooltip measure their content; jsdom has no ResizeObserver.
@@ -115,7 +120,7 @@ describe('FilterPanelToggle', () => {
 })
 
 describe('FilterPanelToggle sheetOnly (the list has Add filter)', () => {
-  it('drops the desktop panel toggle and keeps the sheet trigger below lg', () => {
+  it('drops the desktop panel toggle and keeps the sheet trigger on a phone only', () => {
     const onOpenSheet = vi.fn()
     render(
       <FilterPanelToggle
@@ -129,10 +134,19 @@ describe('FilterPanelToggle sheetOnly (the list has Add filter)', () => {
     )
     const buttons = screen.getAllByRole('button', { name: 'Filters' })
     expect(buttons).toHaveLength(1)
-    expect(buttons[0]).toHaveClass('lg:hidden')
+    // From 768 Add filter is the one entry: this trigger is a phone's.
+    expect(buttons[0]).toHaveClass('md:hidden')
     expect(buttons[0]).not.toHaveAttribute('aria-pressed')
     fireEvent.click(buttons[0])
     expect(onOpenSheet).toHaveBeenCalledOnce()
+  })
+
+  it('Add filter shows from 768 only (a phone has the joined Filters button)', () => {
+    render(<AddFilterButton />)
+    expect(screen.getByRole('button', { name: 'Add filter' })).toHaveClass(
+      'hidden',
+      'md:inline-flex'
+    )
   })
 
   it('Add filter ends with a row that opens the panel', () => {

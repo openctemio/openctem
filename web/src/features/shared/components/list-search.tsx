@@ -16,7 +16,10 @@ import { cn } from '@/lib/utils'
  * - `/` anywhere on the page (outside a text field) focuses it (`ListToolbar`
  *   routes the key to the first toolbar on the page);
  * - when the list has a filter panel, its trigger is passed as `filter` and is
- *   joined to the start of the field: one control, never split by a wrap.
+ *   joined to the start of the field: one control, never split by a wrap. The
+ *   join follows what is drawn, not what is passed: a trigger hidden at this
+ *   width (a sheet-only trigger on a desktop) leaves the field with four round
+ *   corners; a shown one squares the two inner corners only.
  *
  * - on a list that takes query text (`query`), a Basic | Query switch at the
  *   field's end (one icon toggle on a phone; Ctrl+/ toggles too). In Query
@@ -88,6 +91,8 @@ export function ListSearch({
 }: ListSearchProps) {
   const { t } = useTranslation()
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  const joined = useJoinedStart(rootRef, !!filter)
   const { onKeyDown, ...restInput } = inputProps ?? {}
   const queryActive = !!query?.active
   // Follows the end group that is on screen: Query mode draws it inside the
@@ -154,7 +159,9 @@ export function ListSearch({
 
   return (
     <div
+      ref={rootRef}
       data-slot="list-search"
+      data-joined={joined ? '' : undefined}
       className={cn(
         // Grows into the start group's free width, never below 12rem and never
         // wider than 28rem, so the field sits at the same place and size on
@@ -171,11 +178,11 @@ export function ListSearch({
       {queryActive && query ? (
         <div
           data-slot="list-search-query"
-          className={cn('min-w-0 flex-1', filter && '-ms-px')}
+          className={cn('min-w-0 flex-1', joined && '-ms-px')}
           style={fieldStyle}
         >
           {query.renderEditor({
-            inputClassName: cn('ps-9 pe-(--list-search-end)', filter && 'rounded-s-none'),
+            inputClassName: cn('ps-9 pe-(--list-search-end)', joined && 'rounded-s-none'),
             adornments: (
               <>
                 {icon(Code2)}
@@ -185,7 +192,11 @@ export function ListSearch({
           })}
         </div>
       ) : (
-        <div className={cn('relative min-w-0 flex-1', filter && '-ms-px')} style={fieldStyle}>
+        <div
+          data-slot="list-search-field"
+          className={cn('relative min-w-0 flex-1', joined && '-ms-px')}
+          style={fieldStyle}
+        >
           {icon(Search)}
           <Input
             ref={inputRef}
@@ -209,7 +220,7 @@ export function ListSearch({
             className={cn(
               // The native clear control is replaced by ours (one look in every browser).
               'ps-9 pe-(--list-search-end) focus-visible:z-20 [&::-webkit-search-cancel-button]:appearance-none',
-              filter && 'rounded-s-none'
+              joined && 'rounded-s-none'
             )}
             {...restInput}
           />
@@ -280,6 +291,39 @@ export function ListSearchModeSwitch({
       </button>
     </>
   )
+}
+
+/**
+ * Whether a control passed before the field is drawn at this width. The filter
+ * trigger hides by breakpoint (`hidden lg:inline-flex`, `lg:hidden`), which
+ * only its own classes know, so the join is read from the page: each child
+ * before the field is observed, and a size change (shown or hidden by a
+ * breakpoint) reads it again. Not joined until measured (server render, jsdom
+ * without layout): four round corners is the safe default.
+ */
+function useJoinedStart(ref: React.RefObject<HTMLElement | null>, hasStart: boolean): boolean {
+  const [joined, setJoined] = React.useState(false)
+  React.useLayoutEffect(() => {
+    const root = ref.current
+    if (!root || !hasStart) {
+      setJoined(false)
+      return
+    }
+    const starts = () =>
+      Array.from(root.children).filter(
+        (el): el is HTMLElement =>
+          el instanceof HTMLElement &&
+          el.dataset.slot !== 'list-search-field' &&
+          el.dataset.slot !== 'list-search-query'
+      )
+    const read = () => setJoined(starts().some((el) => el.getClientRects().length > 0))
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(read)
+    for (const el of starts()) ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, hasStart])
+  return joined
 }
 
 /**

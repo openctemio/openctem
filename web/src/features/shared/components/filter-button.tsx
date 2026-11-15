@@ -107,9 +107,10 @@ export interface FilterPanelToggleProps {
   controlsId: string
   label?: string
   /**
-   * The list also has "Add filter": no Filters button from `lg` up (one
-   * filter entry on the toolbar); Add filter opens the side panel there
-   * (`ShowFilterPanelButton`). Below `lg` the button still opens the sheet.
+   * The list also has "Add filter": one filter entry per width. From 768 the
+   * toolbar has no Filters button (Add filter, right after the search field,
+   * opens the panel or the sheet from its last row, `ShowFilterPanelButton`);
+   * on a phone this button, joined to the search field, opens the sheet.
    */
   sheetOnly?: boolean
 }
@@ -144,7 +145,7 @@ export function FilterPanelToggle({
         />
       )}
       <FilterButton
-        className="lg:hidden"
+        className={sheetOnly ? 'md:hidden' : 'lg:hidden'}
         onClick={onOpenSheet}
         aria-haspopup="dialog"
         activeCount={activeCount}
@@ -156,9 +157,13 @@ export function FilterPanelToggle({
 
 /**
  * The "Add filter" trigger of a list whose filters are chips: an icon-only
- * square at the toolbar's control height (32, 36 on a phone), solid outline,
- * named "Add filter" with its key `f` in the tooltip. Pass it as the trigger of
- * the list's filter picker (it forwards the trigger's props and ref).
+ * square at the toolbar's control height (32), solid outline, named "Add
+ * filter" with its key `f` in the tooltip. It is the first token, right after
+ * the search field: it never changes size, so it never moves when the value
+ * tokens after it change (the field stands alone: four round corners). Pass
+ * it as the trigger of the list's filter picker (it forwards the trigger's
+ * props and ref). From 768 only: on a phone the Filters button joined to the
+ * search field is the list's one filter entry.
  */
 export function AddFilterButton({
   className,
@@ -169,12 +174,15 @@ export function AddFilterButton({
     <Button
       variant="outline"
       size="icon"
-      data-slot="add-filter"
       aria-label={t('common.addFilter.label', 'Add filter')}
       title={t('common.addFilter.hint', 'Add filter (f)')}
       aria-keyshortcuts="f"
-      className={cn(className)}
+      // From 768 only: a phone's one filter entry is the Filters button
+      // joined to the search field (`FilterPanelToggle sheetOnly`).
+      className={cn('hidden md:inline-flex', className)}
       {...props}
+      // After the props: a popover trigger's own slot name must not replace it.
+      data-slot="add-filter"
     >
       <ListFilterPlus aria-hidden="true" />
     </Button>

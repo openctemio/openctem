@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { layoutIssues } from '../design/layout-checks'
+import { openFindingsPhoneSelect } from '../helpers/table'
 
 /**
  * Row menus and the bulk bar's More use the shared action menu, which picks
@@ -119,9 +120,8 @@ for (const locale of ['en', 'vi'] as const) {
       async ({ page, baseURL }) => {
         await openFindings(page, width, locale, baseURL)
         if (phone) {
-          // Select mode from the list's More, then the first card.
-          await page.locator('[data-slot="table-phone-more"]').click()
-          await page.getByRole('menuitemcheckbox').first().click()
+          // Select mode from the list's More (title row), then the first card.
+          await openFindingsPhoneSelect(page)
           await page.getByTestId('finding-phone-card').first().getByRole('checkbox').check()
         } else {
           await page.getByRole('row').nth(1).getByRole('checkbox').check()

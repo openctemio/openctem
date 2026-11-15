@@ -628,16 +628,16 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     />
   )
 
-  // From `lg` up the button toggles the side panel; below it opens the same
-  // facets in a sheet. Add filter stays in the filter row for the chips and the
-  // advanced attribute filters.
+  // On a phone the Filters button, joined to the search field, opens the facets
+  // in a sheet; from 768 Add filter (right after the field) is the one entry.
   const filterToggle = {
     open: filtersOpen,
     onToggle: () => setFiltersOpen((o) => !o),
     onOpenSheet: () => setFilterSheetOpen(true),
     activeCount,
     controlsId: 'asset-filters',
-    // Add filter is on the toolbar: it opens the side panel from `lg` up.
+    // One filter entry per width: Add filter from 768 (its last row opens
+    // the panel or the sheet), this button joined to the search on a phone.
     sheetOnly: true,
   }
 

@@ -145,8 +145,12 @@ function scopeOf(
 ): Map<string, string> {
   const q = typeof search === 'string' ? new URLSearchParams(search) : search
   const scope = new Map<string, string>()
+  // The practice (`PRACTICE_PARAM` in practice.ts) is the list's scope, not a
+  // filter: a quick view is the same view under every practice, so choosing
+  // Compliance keeps "Active" rather than turning the view into a custom one.
   for (const [k, v] of q.entries())
-    if (!PRESENTATION_PARAMS.has(k) && k !== INFORMATIONAL_PARAM && v !== '') scope.set(k, v)
+    if (!PRESENTATION_PARAMS.has(k) && k !== INFORMATIONAL_PARAM && k !== 'practice' && v !== '')
+      scope.set(k, v)
   // Compared by effect: an absent value means the default for the rest.
   scope.set(INFORMATIONAL_PARAM, String(!informationalHidden(q, includeInformational)))
   return scope

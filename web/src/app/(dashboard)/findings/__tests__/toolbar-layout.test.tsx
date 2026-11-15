@@ -147,8 +147,9 @@ describe('Findings toolbar layout', () => {
     expect(follows(lens, refresh)).toBe(true)
     expect(follows(refresh, exportBtn)).toBe(true)
     expect(follows(exportBtn, task)).toBe(true)
-    // The narrow fallback folds the same actions into one named menu.
-    expect(within(primary).getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+    // One named More per width (CSS shows one): narrow it folds the same
+    // actions in; wide it keeps Copy link beside the buttons.
+    expect(within(primary).getAllByRole('button', { name: 'More actions' })).toHaveLength(2)
   })
 
   it('joins the filter button and the search field into one control in row 2', () => {
@@ -169,6 +170,13 @@ describe('Findings toolbar layout', () => {
     // Group and View come after the search, in the same row.
     const groupBy = within(toolbar).getByRole('combobox', { name: 'Group findings' })
     expect(follows(search, groupBy)).toBe(true)
+    // From 768 Add filter is the first token, right after the field (outside
+    // its group: the field stands alone), before the base chips.
+    const add = within(toolbar).getByRole('button', { name: 'Add filter' })
+    expect(group.contains(add)).toBe(false)
+    expect(follows(search, add)).toBe(true)
+    const tokens = toolbar.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    expect(tokens.firstElementChild).toBe(add)
   })
 
   it('the table toolbar is a size container, so labels follow the list width', () => {

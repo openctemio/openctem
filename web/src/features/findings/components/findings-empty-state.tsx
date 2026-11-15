@@ -1,10 +1,11 @@
 'use client'
 
-import { FileUp, Inbox, Lock, SearchX } from 'lucide-react'
+import { ClipboardCheck, FileUp, Inbox, Lock, SearchX } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import type { FindingsEmptyKind } from '../lib/empty-kind'
+import { PRACTICE_VIEW_TEXT, practiceLabelKey, type PracticeView } from '../lib/practice'
 
 interface FindingsEmptyStateProps {
   kind: FindingsEmptyKind
@@ -26,6 +27,8 @@ interface FindingsEmptyStateProps {
   onSearchAllStates?: () => void
   /** What the refusal says is missing, when the server named it. */
   denial?: string
+  /** The chosen practice, for its first run (`practice_nothing`). */
+  practice?: PracticeView
 }
 
 /**
@@ -45,8 +48,47 @@ export function FindingsEmptyState({
   onClearFilters,
   onSearchAllStates,
   denial,
+  practice,
 }: FindingsEmptyStateProps) {
   const { t } = useTranslation()
+
+  // A practice with nothing yet: what it covers and the one action that brings
+  // it in (the sentence stays without the permission to import).
+  if (kind === 'practice_nothing' && practice) {
+    const compliance = practice === 'compliance'
+    const name = t(practiceLabelKey(practice), PRACTICE_VIEW_TEXT[practice].label)
+    const Icon = compliance ? ClipboardCheck : Inbox
+    return (
+      <Body kind={kind} icon={<Icon className="h-10 w-10 text-muted-foreground/50" aria-hidden />}>
+        <p className="text-sm font-medium">
+          {compliance
+            ? t('findings.empty.practiceNothing.complianceTitle', 'No benchmark checks yet')
+            : t('findings.empty.practiceNothing.title', 'No {practice} findings yet', {
+                practice: name,
+              })}
+        </p>
+        <p className="max-w-md text-xs text-muted-foreground">
+          {compliance
+            ? t(
+                'findings.empty.practiceNothing.complianceHint',
+                'Import a scan that runs a compliance audit, and each control appears here with its result.'
+              )
+            : t(
+                'findings.empty.practiceNothing.hint',
+                'They appear when a scan or an import brings in findings of this kind.'
+              )}
+        </p>
+        {canImport && (
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" onClick={onImport}>
+              <FileUp className="me-2 h-4 w-4" aria-hidden />
+              {t('findings.empty.importResults', 'Import results')}
+            </Button>
+          </div>
+        )}
+      </Body>
+    )
+  }
 
   if (kind === 'no_access') {
     return (
@@ -145,10 +187,19 @@ export function FindingsEmptyState({
   )
 }
 
-function Body({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function Body({
+  icon,
+  children,
+  kind,
+}: {
+  icon: React.ReactNode
+  children: React.ReactNode
+  kind?: FindingsEmptyKind
+}) {
   return (
     <div
       data-testid="findings-empty-state"
+      data-kind={kind}
       className="flex flex-col items-center justify-center gap-2 py-12 text-center"
     >
       {icon}

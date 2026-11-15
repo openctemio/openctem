@@ -128,72 +128,136 @@ for (const width of [1440, 390] as const) {
 }
 
 /**
- * Add filter on a phone (owner report, iPhone Safari): an anchored popover
- * with a search field broke when the keyboard opened. Below `md` it is a
- * bottom sheet: full width, the field inside the screen but not focused on
- * open (no keyboard until it is tapped; the option list has focus), the list
- * scrolling inside the sheet, and still so once the field is tapped and the
- * keyboard takes half the screen (simulated by shrinking the viewport).
- * Escape returns focus to Add filter.
+ * Search field corners (owner report 2026-11-15: square left corners on a
+ * desktop list whose filter trigger is not drawn at that width). Alone, the
+ * field has four equal round corners; joined to a drawn trigger, the outer
+ * corners stay round and the two inner ones are square.
  */
-test.describe('Add filter on a phone', { tag: ['@shell'] }, () => {
-  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
-
-  test('opens as a bottom sheet that the keyboard never covers', async ({ page }) => {
-    await page.goto('/findings')
-    const add = page.getByRole('button', { name: /^Add filter/ })
-    const shown = await add
-      .waitFor({ state: 'visible', timeout: 45_000 })
-      .then(() => true)
-      .catch(() => false)
-    test.skip(!shown, 'no Add filter on /findings here')
-    await add.click()
-    const sheet = page.locator('[data-slot="responsive-popover-sheet"]')
-    await expect(sheet).toBeVisible()
-    // Let the slide-in finish before measuring.
-    await expect(sheet).toHaveAttribute('data-state', 'open')
-    await page.waitForTimeout(700)
-    const field = sheet.locator('[data-slot="command-input"]')
-    await expect(field).not.toBeFocused()
-    await expect(sheet.locator('[data-slot="command-list"]')).toBeFocused()
-    expect(await field.getAttribute('inputmode')).toBe('search')
-    expect(await field.evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
-
-    const inView = async (vh: number) => {
-      const s = (await sheet.boundingBox())!
-      const f = (await field.boundingBox())!
-      expect(Math.round(s.x)).toBe(0)
-      expect(Math.round(s.width)).toBe(390)
-      expect(s.y + s.height).toBeLessThanOrEqual(vh + 1)
-      expect(f.y).toBeGreaterThanOrEqual(s.y)
-      expect(f.y + f.height).toBeLessThanOrEqual(vh)
+const CORNER_ROUTES = ['/findings', '/assets', '/vulnerabilities', '/scans'] as const
+for (const route of CORNER_ROUTES) {
+  test(
+    `search field corners on ${route} follow the drawn trigger`,
+    { tag: ['@shell'] },
+    async ({ page }) => {
+      for (const width of [1440, 1280, 1024, 768, 390]) {
+        await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+        if (width === 1440)
+          test.skip(!(await openToolbar(page, route)), `${route} shows no list toolbar here`)
+        await page.waitForTimeout(200)
+        const c = await page.evaluate(() => {
+          const ls = document.querySelector('main [data-slot="list-search"]')
+          const field = ls?.querySelector<HTMLElement>(
+            '[data-slot="list-search-input"], [data-slot="list-search-query"] input'
+          )
+          if (!ls || !field) return null
+          const radii = (el: Element) => {
+            const s = getComputedStyle(el)
+            return [
+              s.borderStartStartRadius,
+              s.borderStartEndRadius,
+              s.borderEndEndRadius,
+              s.borderEndStartRadius,
+            ].map((v) => parseFloat(v))
+          }
+          const trigger = Array.from(ls.querySelectorAll('[data-slot="filter-button"]')).find(
+            (el) => el.getClientRects().length > 0
+          )
+          return { field: radii(field), trigger: trigger ? radii(trigger) : null }
+        })
+        expect(c, `${route} @${width}: search field`).not.toBeNull()
+        const [ss, se, ee, es] = c!.field
+        if (!c!.trigger) {
+          expect([ss, se, ee, es], `${route} @${width}: four equal round corners`).toEqual([
+            se,
+            se,
+            se,
+            se,
+          ])
+          expect(se).toBeGreaterThan(0)
+        } else {
+          expect([ss, es], `${route} @${width}: inner corners square`).toEqual([0, 0])
+          expect(Math.min(se, ee), `${route} @${width}: outer corners round`).toBeGreaterThan(0)
+          const [ts, te, tee, tes] = c!.trigger
+          expect([te, tee], `${route} @${width}: trigger inner corners square`).toEqual([0, 0])
+          expect(Math.min(ts, tes)).toBeGreaterThan(0)
+        }
+      }
     }
-    await inView(844)
-    await field.tap()
-    await expect(field).toBeFocused()
-    // The keyboard takes the lower half: the visual viewport shrinks.
-    await page.setViewportSize({ width: 390, height: 450 })
-    await page.waitForTimeout(400)
-    // The sheet takes its new height over a few frames (dvh follows the
-    // resize): measure the field once it has stopped moving.
-    let last = Number.NaN
-    await expect
-      .poll(async () => {
-        const y = (await field.boundingBox())!.y
-        const still = y === last
-        last = y
-        await page.waitForTimeout(100)
-        return still
-      })
-      .toBe(true)
-    await inView(450)
-    // The list scrolls inside the sheet, the field stays put.
-    const before = (await field.boundingBox())!.y
-    await sheet.locator('[data-slot="sheet-body"]').evaluate((el) => el.scrollBy(0, 400))
-    expect(Math.abs((await field.boundingBox())!.y - before)).toBeLessThanOrEqual(1)
+  )
+}
 
-    await page.keyboard.press('Escape')
-    await expect(sheet).toBeHidden()
-    await expect(add).toBeFocused()
-  })
-})
+/**
+ * One filter entry per width on a list with Add filter (owner decision
+ * 2026-11-15): from 768 Add filter is a separate square immediately right of
+ * the search field (the field alone, four round corners), the first token
+ * before Practice and State, and its picker opens under it; on a phone the
+ * Filters button joined to the field is the entry and no Add filter shows.
+ */
+for (const route of ['/findings', '/assets'] as const) {
+  test(
+    `${route}: Add filter sits right after the search field`,
+    { tag: ['@shell'] },
+    async ({ page }) => {
+      for (const width of [1440, 1280, 1024, 768, 390]) {
+        await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+        if (width === 1440)
+          test.skip(!(await openToolbar(page, route)), `${route} shows no list toolbar here`)
+        await page.waitForTimeout(200)
+        const m = await page.evaluate(() => {
+          const shown = (el: Element | null) => !!el && el.getClientRects().length > 0
+          const ls = document.querySelector('main [data-slot="list-search"]')!
+          const add = Array.from(document.querySelectorAll('main [data-slot="add-filter"]')).find(
+            shown
+          )
+          const joined = Array.from(ls.querySelectorAll('[data-slot="filter-button"]')).some(shown)
+          const s = ls.getBoundingClientRect()
+          const a = add?.getBoundingClientRect()
+          const tokens = Array.from(
+            document.querySelectorAll('main [data-slot="list-toolbar-tokens"] > *')
+          ).filter(shown)
+          return {
+            add: !!add,
+            joined,
+            gap: a ? Math.round(a.left - s.right) : null,
+            sameLine: a ? Math.abs(a.top + a.height / 2 - (s.top + s.height / 2)) <= 1 : null,
+            firstToken: tokens.length === 0 || tokens[0] === add,
+          }
+        })
+        if (width >= 768) {
+          expect(m, `${route} @${width}`).toMatchObject({
+            add: true,
+            joined: false,
+            gap: 8,
+            sameLine: true,
+            firstToken: true,
+          })
+          // Its picker opens under it.
+          const add = page.locator('main [data-slot="add-filter"]').filter({ visible: true })
+          await add.click()
+          const pop = page
+            .locator('[data-slot="popover-content"]')
+            .filter({ visible: true })
+            .first()
+          await expect(pop).toBeVisible()
+          // Measured at rest: the opening animation slides and scales it in
+          // (reduced motion does not stop the popover's), so wait for it.
+          await pop.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+          const pb = (await pop.boundingBox())!
+          const ab = (await add.boundingBox())!
+          // Directly under its button (within the offset), overlapping the
+          // button's x-range (start- or end-aligned), inside the viewport.
+          const at = `${route} @${width}: picker`
+          expect(pb.y, `${at} under its button`).toBeGreaterThanOrEqual(ab.y + ab.height - 0.5)
+          expect(pb.y, `${at} next to its button`).toBeLessThanOrEqual(ab.y + ab.height + 8)
+          expect(pb.x, `${at} reaches its button`).toBeLessThan(ab.x + ab.width)
+          expect(pb.x + pb.width, `${at} reaches its button`).toBeGreaterThan(ab.x)
+          expect(pb.x, `${at} inside the viewport`).toBeGreaterThanOrEqual(0)
+          expect(pb.x + pb.width, `${at} inside the viewport`).toBeLessThanOrEqual(width)
+          await page.keyboard.press('Escape')
+        } else {
+          expect(m, `${route} @${width}`).toMatchObject({ add: false, joined: true })
+        }
+      }
+    }
+  )
+}
