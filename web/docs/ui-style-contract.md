@@ -45,7 +45,11 @@ disagree. Change both together.
   smaller than the default only in a dense place (a table row, the bulk bar,
   `DensityScope`), where every control of the row is small. The page-rhythm
   probe (`probeRowMix` in `e2e/helpers/page-anatomy.ts`) measures each row of
-  buttons, fields and selects on every page at 1440 and 390.
+  buttons, fields and selects on every page at 1440 and 390. The bulk bar is
+  dense on a desktop only (`DensityScope touch="default"`): below 768 px it is
+  a full-width bottom row of two lines with every control 36 (the count is a
+  menu: select the page, select all that match, clear), and the page keeps
+  room for it under the last row (`--bulk-bar-space`).
 - Pages do not restyle kit controls: add a variant to the kit instead. Page
   and feature code (`src/app`, `src/features`, `console/src`) composes
   `Button`, `Input`, `SelectTrigger`, `ListSearch`, `TabsTrigger` and `Badge`

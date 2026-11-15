@@ -39,6 +39,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -59,6 +60,7 @@ import {
   ChevronsRight,
   SlidersHorizontal,
   Inbox,
+  MoreHorizontal,
   RefreshCw,
 } from 'lucide-react'
 import {
@@ -444,13 +446,16 @@ function AutoMobileCard<TData>({
   row,
   labels,
   onRowClick,
+  showSelect = true,
 }: {
   row: Row<TData>
   labels: Map<string, string>
   onRowClick?: (row: TData) => void
+  /** False outside select mode: the card has no checkbox then. */
+  showSelect?: boolean
 }) {
   const cells = row.getVisibleCells()
-  const select = cells.find((c) => c.column.id === 'select')
+  const select = showSelect ? cells.find((c) => c.column.id === 'select') : undefined
   const actions = cells.find((c) => c.column.id === 'actions')
   const [title, ...rest] = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
   const fields = rest.slice(0, MOBILE_CARD_FIELDS)
@@ -941,6 +946,24 @@ export function DataTable<TData, TValue>({
     if (matchingSelected && !allPageSelected) setMatchingSelected(false)
   }, [matchingSelected, allPageSelected])
   const filterSelected = matchingSelected && canOfferMatching
+  // Phone select mode: cards have no header checkbox, so with `bulk` the
+  // toolbar's More turns selection on ("Select"): the cards show their
+  // checkboxes and the bulk bar stays open, its count a menu that selects the
+  // page or every row that matches. Clearing the bar (X, Esc) ends it.
+  const phoneSelect = phoneCards && hasBulk
+  const [selectMode, setSelectMode] = React.useState(false)
+  const selecting = phoneSelect && (selectMode || selectedCount > 0)
+  React.useEffect(() => {
+    if (!phoneSelect && selectMode) setSelectMode(false)
+  }, [phoneSelect, selectMode])
+  const cardsSelectable = canSelectGroups && (!phoneSelect || selecting)
+  // X and Esc: nothing selected and, on a phone, select mode over.
+  const clearSelection = React.useCallback(() => {
+    setMatchingSelected(false)
+    table.resetRowSelection()
+    setSelectMode(false)
+  }, [table])
+  const selectableOnPage = pageRows.filter((r) => r.getCanSelect()).length
   const onBulkSelectionChangeRef = React.useRef(bulk?.onSelectionChange)
   onBulkSelectionChangeRef.current = bulk?.onSelectionChange
   React.useEffect(() => {
@@ -1023,17 +1046,19 @@ export function DataTable<TData, TValue>({
             page: pageIndex + 1,
             pages: Math.max(1, table.getPageCount()),
           }),
-    selectionKey: filterSelected ? `all:${matchingTotal}` : String(selectedCount),
+    selectionKey: `${selecting ? 'on' : 'off'}|${filterSelected ? `all:${matchingTotal}` : selectedCount}`,
     selectionMessage: () =>
-      filterSelected
-        ? t('common.table.allMatchingSelected', 'All {count} that match are selected', {
-            count: matchingTotal.toLocaleString(),
-          })
-        : selectedCount > 0
-          ? t('common.table.selectedCount', '{count} selected', {
-              count: selectedCount.toLocaleString(),
+      selecting && selectedCount === 0 && !filterSelected
+        ? t('common.table.selectModeOn', 'Selecting: check the rows to act on')
+        : filterSelected
+          ? t('common.table.allMatchingSelected', 'All {count} that match are selected', {
+              count: matchingTotal.toLocaleString(),
             })
-          : t('common.table.selectionCleared', 'Selection cleared'),
+          : selectedCount > 0
+            ? t('common.table.selectedCount', '{count} selected', {
+                count: selectedCount.toLocaleString(),
+              })
+            : t('common.table.selectionCleared', 'Selection cleared'),
     refreshing: isRefreshing,
     refreshedMessage: () =>
       t('common.table.resultsCount', '{count} {noun}', {
@@ -1115,6 +1140,32 @@ export function DataTable<TData, TValue>({
               </span>
             )}
 
+            {/* Phone: cards have no header checkbox; More turns select mode on. */}
+            {phoneSelect && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    data-slot="table-phone-more"
+                    aria-label={t('common.table.phoneMore', 'More list actions')}
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuCheckboxItem
+                    checked={selecting}
+                    onCheckedChange={(on) => {
+                      if (on) setSelectMode(true)
+                      else clearSelection()
+                    }}
+                  >
+                    {t('common.table.selectMode', 'Select')}
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {/* Display menu: row density (every table, D14) and, when the
               table allows it, which columns show. Named "Display" so it is
               never confused with saved "Views". */}
@@ -1133,7 +1184,7 @@ export function DataTable<TData, TValue>({
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[200px]">
+              <DropdownMenuContent className="w-[200px]">
                 <DropdownMenuLabel className="text-xs text-muted-foreground">
                   {t('common.table.density', 'Density')}
                 </DropdownMenuLabel>
@@ -1215,7 +1266,7 @@ export function DataTable<TData, TValue>({
                         groupRows={wholeGroups.get(group.key)}
                         expanded={expanded}
                         onToggle={() => groupExpansion.toggle(group.key)}
-                        canSelect={canSelectGroups && !mobileRow}
+                        canSelect={cardsSelectable && !mobileRow}
                         controlsId={ids.rows}
                         headerId={ids.header}
                       />
@@ -1227,7 +1278,7 @@ export function DataTable<TData, TValue>({
                         mobileRow ? (
                           <div key={row.id}>
                             {mobileRow(row.original, {
-                              selectable: canSelectGroups,
+                              selectable: cardsSelectable,
                               selected: row.getIsSelected(),
                               onSelectedChange: (v) => row.toggleSelected(v),
                             })}
@@ -1238,6 +1289,7 @@ export function DataTable<TData, TValue>({
                             row={row}
                             labels={mobileLabels}
                             onRowClick={onRowClick}
+                            showSelect={cardsSelectable}
                           />
                         )
                       )}
@@ -1499,10 +1551,62 @@ export function DataTable<TData, TValue>({
         <BulkActionBar
           count={filterSelected ? matchingTotal : selectedCount}
           noun={bulk.noun}
-          onClear={() => {
-            setMatchingSelected(false)
-            table.resetRowSelection()
-          }}
+          onClear={clearSelection}
+          open={selecting}
+          selectMenu={
+            phoneSelect ? (
+              <>
+                {!allPageSelected && selectableOnPage > 0 && (
+                  <DropdownMenuItem onSelect={() => table.toggleAllPageRowsSelected(true)}>
+                    {t('common.table.selectPage', 'Select all on this page ({count})', {
+                      count: selectableOnPage.toLocaleString(),
+                    })}
+                  </DropdownMenuItem>
+                )}
+                {bulk.matching &&
+                  !filterSelected &&
+                  matchingTotal > pageRows.length &&
+                  (matchingMax != null && matchingTotal > matchingMax ? (
+                    // Above the server's limit for one change: the reason is the item's text.
+                    <DropdownMenuItem disabled>
+                      {t(
+                        'common.table.matchingTooMany',
+                        'Up to {max} at once: narrow the filters',
+                        {
+                          max: matchingMax.toLocaleString(),
+                        }
+                      )}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        table.toggleAllPageRowsSelected(true)
+                        setMatchingSelected(true)
+                      }}
+                    >
+                      {t('common.table.selectAllMatching', 'Select all {count} that match', {
+                        count: matchingTotal.toLocaleString(),
+                      })}
+                    </DropdownMenuItem>
+                  ))}
+                {(selectedCount > 0 || filterSelected) && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        // Still selecting: the cards keep their checkboxes.
+                        setSelectMode(true)
+                        setMatchingSelected(false)
+                        table.resetRowSelection()
+                      }}
+                    >
+                      {t('common.table.clearSelection', 'Clear selection')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </>
+            ) : undefined
+          }
           more={bulk.more}
           status={
             filterSelected ? (
