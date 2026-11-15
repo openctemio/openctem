@@ -629,7 +629,7 @@ export function InventoryTable({
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem asChild>
                   <Link href={assetDetailHref(asset.id)}>
                     <ExternalLink className="me-2 h-4 w-4" />

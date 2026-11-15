@@ -379,7 +379,7 @@ export default function NotificationOutboxPage() {
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent>
               {safeHref(entry.url) && (
                 <DropdownMenuItem asChild>
                   <SafeExternalLink href={entry.url}>

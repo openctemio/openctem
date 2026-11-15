@@ -418,7 +418,7 @@ export default function ScanWorkflowsPage() {
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={() => handleOpenWorkflowDetail(workflow)}>
                 <Eye className="me-2 h-4 w-4" />
                 {t('scans.workflows.viewDetails')}

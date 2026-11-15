@@ -5,10 +5,26 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { FLOATING_COLLISION_PADDING } from '@/components/ui/floating'
+import {
+  FLOATING_COLLISION_PADDING,
+  FLOATING_SURFACE_CLASSES,
+  FloatingAnchorProvider,
+  useFloatingContent,
+  useFloatingRoot,
+  useFloatingAnchorSetter,
+} from '@/components/ui/floating'
 
-function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+function DropdownMenu(props: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  const { state, onOpenChange } = useFloatingRoot(props)
+  return (
+    <FloatingAnchorProvider state={state}>
+      <DropdownMenuPrimitive.Root
+        data-slot="dropdown-menu"
+        {...props}
+        onOpenChange={onOpenChange}
+      />
+    </FloatingAnchorProvider>
+  )
 }
 
 function DropdownMenuPortal({
@@ -18,25 +34,45 @@ function DropdownMenuPortal({
 }
 
 function DropdownMenuTrigger({
+  ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
-  return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
+  const record = useFloatingAnchorSetter()
+  const triggerRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+      record(node)
+    },
+    [ref, record]
+  )
+  return (
+    <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" ref={triggerRef} {...props} />
+  )
 }
 
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  align,
+  side,
   collisionPadding = FLOATING_COLLISION_PADDING,
+  style,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const floating = useFloatingContent({ align, side, collisionPadding, fallbackAlign: 'start' })
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
-        collisionPadding={collisionPadding}
+        side={side}
+        align={floating.align}
+        collisionPadding={floating.collisionPadding}
+        style={{ ...floating.style, ...style }}
         className={cn(
-          'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-md',
+          FLOATING_SURFACE_CLASSES,
+          'scroll-cue bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[max(10rem,var(--radix-dropdown-menu-trigger-width))] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-md',
           className
         )}
         {...props}
@@ -128,17 +164,61 @@ function DropdownMenuRadioItem({
   )
 }
 
+const MENU_ITEM = '[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"]'
+
+/**
+ * Number of menu items a label heads: the items of its `DropdownMenuGroup`,
+ * or else the items after it up to the next separator or label.
+ */
+export function countLabelledItems(label: HTMLElement): number {
+  const parent = label.parentElement
+  if (parent?.getAttribute('role') === 'group') return parent.querySelectorAll(MENU_ITEM).length
+  let n = 0
+  for (let el = label.nextElementSibling; el; el = el.nextElementSibling) {
+    const slot = el.getAttribute('data-slot')
+    if (el.getAttribute('role') === 'separator' || slot === 'dropdown-menu-label') break
+    n += el.matches(MENU_ITEM) ? 1 : el.querySelectorAll(MENU_ITEM).length
+  }
+  return n
+}
+
+/**
+ * A group heading. A heading over a single item says nothing the item does
+ * not, so it hides itself when its group has exactly one item (a label over
+ * no items, such as the signed-in account at the top of a menu, stays).
+ */
 function DropdownMenuLabel({
   className,
   inset,
+  ref,
+  hidden,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Label> & {
   inset?: boolean
 }) {
+  const own = React.useRef<HTMLDivElement | null>(null)
+  const [single, setSingle] = React.useState(false)
+  // Every render: the items under it can change with permissions or data.
+  // setSingle bails out when the answer is unchanged, so this settles.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useLayoutEffect(() => {
+    const el = own.current
+    if (el) setSingle(countLabelledItems(el) === 1)
+  })
+  const setRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      own.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref]
+  )
   return (
     <DropdownMenuPrimitive.Label
+      ref={setRef}
       data-slot="dropdown-menu-label"
       data-inset={inset}
+      hidden={hidden || single}
       className={cn('px-2 py-1.5 text-sm font-medium data-[inset]:ps-8', className)}
       {...props}
     />
@@ -162,7 +242,12 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'spa
   return (
     <span
       data-slot="dropdown-menu-shortcut"
-      className={cn('text-muted-foreground ms-auto text-xs tracking-widest', className)}
+      // A shortcut hint means nothing without a keyboard: hidden under a
+      // coarse pointer (phones, touch tablets).
+      className={cn(
+        'text-muted-foreground ms-auto text-cap tracking-widest pointer-coarse:hidden',
+        className
+      )}
       {...props}
     />
   )
@@ -199,14 +284,18 @@ function DropdownMenuSubTrigger({
 function DropdownMenuSubContent({
   className,
   collisionPadding = FLOATING_COLLISION_PADDING,
+  style,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const floating = useFloatingContent({ side: 'right', collisionPadding, fallbackAlign: 'start' })
   return (
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
-      collisionPadding={collisionPadding}
+      collisionPadding={floating.collisionPadding}
+      style={{ ...floating.style, ...style }}
       className={cn(
-        'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-lg',
+        FLOATING_SURFACE_CLASSES,
+        'scroll-cue bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[10rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-lg',
         className
       )}
       {...props}

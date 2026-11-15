@@ -691,7 +691,7 @@ export function SensorsSection({
             <SelectValue />
           </span>
         </SelectTrigger>
-        <SelectContent align="end">
+        <SelectContent>
           <SelectItem value="none">{t('sensors.list.groupBy.none')}</SelectItem>
           {zones.length > 0 && <SelectItem value="zone">{t(GROUP_LABELS.zone)}</SelectItem>}
           <SelectItem value="role">{t(GROUP_LABELS.role)}</SelectItem>

@@ -236,7 +236,7 @@ function OwnerCard({
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent>
             {canEdit && (
               <DropdownMenuItem onClick={() => onEdit(owner)}>
                 <Pencil className="me-2 h-4 w-4" />
@@ -737,7 +737,6 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   </PopoverTrigger>
                   <PopoverContent
                     className="w-[var(--radix-popover-trigger-width)] p-0"
-                    align="start"
                     // Same nested-dialog guards: prevent the parent dialog from
                     // interpreting clicks inside the popover as outside-clicks.
                     onPointerDownOutside={(e) => {

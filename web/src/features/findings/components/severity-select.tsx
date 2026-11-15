@@ -89,7 +89,7 @@ export function SeveritySelect({
           {!disabled && <ChevronDown className="ms-1 h-3 w-3" />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent className="w-52">
         {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((severity) => {
           const config = SEVERITY_CONFIG[severity]
           return (

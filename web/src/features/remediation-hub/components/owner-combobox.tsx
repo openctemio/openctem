@@ -218,7 +218,7 @@ export function OwnerCombobox({
             <ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] min-w-72 p-0" align="start">
+        <PopoverContent className="w-[--radix-popover-trigger-width] min-w-72 p-0">
           <Command>
             <CommandInput placeholder={t('remediationHub.ownerPicker.search')} />
             <CommandList>
