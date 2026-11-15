@@ -425,7 +425,6 @@ function FittedFacts({ asset, atoms, max }: { asset: Asset; atoms: FactAtom[]; m
             </button>
           </PopoverTrigger>
           <PopoverContent
-            align="start"
             className="w-[min(380px,calc(100vw-32px))] p-3"
             aria-labelledby={titleId}
             onClick={(e) => e.stopPropagation()}

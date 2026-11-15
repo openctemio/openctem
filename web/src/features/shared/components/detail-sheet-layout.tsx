@@ -473,7 +473,7 @@ export function DetailHeader({
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent className="w-48">
                 {fullPageHref && (
                   <DropdownMenuItem asChild>
                     <Link href={fullPageHref}>
@@ -592,7 +592,7 @@ export function DetailTabs<T extends string>({
                 <ChevronDown aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent>
               {overflow.map((tab) => (
                 <DropdownMenuItem key={tab.value} onSelect={() => onValueChange(tab.value)}>
                   {tab.label}

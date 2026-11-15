@@ -470,7 +470,7 @@ export default function ExposuresPage() {
             <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent>
           <DropdownMenuLabel>{t('exposures.filter.severity', 'Severity')}</DropdownMenuLabel>
           {SEVERITIES.map((severity) => (
             <DropdownMenuCheckboxItem
@@ -504,7 +504,7 @@ export default function ExposuresPage() {
             <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent>
           <DropdownMenuLabel>{t('exposures.category.filter', 'Category')}</DropdownMenuLabel>
           {categoryOptions.map((c) => (
             <DropdownMenuCheckboxItem
@@ -539,7 +539,7 @@ export default function ExposuresPage() {
             <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent>
           <DropdownMenuLabel>{t('exposures.filter.state', 'State')}</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={activeView} onValueChange={(v) => setView(v as StateTab)}>
             {STATE_VIEWS.map((v) => (

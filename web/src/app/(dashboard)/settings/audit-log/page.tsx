@@ -400,7 +400,7 @@ export default function AuditLogPage() {
               {t('auditLog.export.button', 'Export')}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent>
             <DropdownMenuLabel className="max-w-56 text-xs font-normal text-muted-foreground">
               {t(
                 'auditLog.export.hint',

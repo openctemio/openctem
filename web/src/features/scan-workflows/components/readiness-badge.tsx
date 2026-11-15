@@ -54,11 +54,7 @@ export function WorkflowReadinessBadge({
           </Badge>
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        className="w-80 space-y-3 text-xs"
-        align="start"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <PopoverContent className="w-80 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
         {problems.length > 0 && (
           <StepList title={t('scans.readiness.problemsTitle')} steps={problems} />
         )}

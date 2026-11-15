@@ -99,7 +99,7 @@ export function DashboardSwitcher({
           <ChevronDown className="ms-auto h-4 w-4 shrink-0" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuContent className="w-64">
         {total > SWITCHER_SEARCH_FROM && (
           <div className="p-1" onKeyDown={(e) => e.stopPropagation()}>
             <Input

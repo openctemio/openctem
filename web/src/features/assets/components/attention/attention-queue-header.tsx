@@ -82,7 +82,7 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
               </button>
             </DropdownMenuTrigger>
           </h2>
-          <DropdownMenuContent align="start" className="min-w-64">
+          <DropdownMenuContent className="min-w-64">
             <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
               {t('assets.attention.switch', 'Switch reason')}
             </DropdownMenuLabel>

@@ -48,7 +48,7 @@ export function VulnActionsMenu({
           <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent>
         {abilities.exception && (
           <DropdownMenuItem disabled={!!blocker} onSelect={onException} title={blocker}>
             <ShieldOff className="me-2 h-4 w-4" aria-hidden />

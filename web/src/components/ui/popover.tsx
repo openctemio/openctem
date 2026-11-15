@@ -4,32 +4,65 @@ import * as React from 'react'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 
 import { cn } from '@/lib/utils'
-import { FLOATING_COLLISION_PADDING } from '@/components/ui/floating'
+import {
+  FLOATING_COLLISION_PADDING,
+  FLOATING_SURFACE_CLASSES,
+  FloatingAnchorProvider,
+  useFloatingContent,
+  useFloatingRoot,
+  useFloatingAnchorSetter,
+} from '@/components/ui/floating'
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+  const { state, onOpenChange } = useFloatingRoot(props)
+  return (
+    <FloatingAnchorProvider state={state}>
+      <PopoverPrimitive.Root data-slot="popover" {...props} onOpenChange={onOpenChange} />
+    </FloatingAnchorProvider>
+  )
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+function PopoverTrigger({ ref, ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+  const record = useFloatingAnchorSetter()
+  const triggerRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+      record(node)
+    },
+    [ref, record]
+  )
+  return <PopoverPrimitive.Trigger data-slot="popover-trigger" ref={triggerRef} {...props} />
 }
 
+/**
+ * Anchored panel. Lines up with the start or end edge of its trigger by the
+ * half of the screen the trigger is in (unless `align` says), is never taller
+ * than the room on its side (it scrolls inside, with a cue) and never
+ * narrower than its trigger.
+ */
 function PopoverContent({
   className,
-  align = 'center',
+  align,
+  side,
   sideOffset = 4,
   collisionPadding = FLOATING_COLLISION_PADDING,
+  style,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+  const floating = useFloatingContent({ align, side, collisionPadding, fallbackAlign: 'start' })
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         data-slot="popover-content"
-        align={align}
+        side={side}
+        align={floating.align}
         sideOffset={sideOffset}
-        collisionPadding={collisionPadding}
+        collisionPadding={floating.collisionPadding}
+        style={{ ...floating.style, ...style }}
         className={cn(
-          'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border p-4 shadow-md outline-hidden',
+          FLOATING_SURFACE_CLASSES,
+          'scroll-cue bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 max-h-(--radix-popover-content-available-height) w-72 min-w-(--radix-popover-trigger-width) origin-(--radix-popover-content-transform-origin) overflow-y-auto rounded-md border p-4 shadow-md outline-hidden',
           className
         )}
         {...props}
@@ -38,8 +71,17 @@ function PopoverContent({
   )
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
+function PopoverAnchor({ ref, ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+  const record = useFloatingAnchorSetter('anchor')
+  const anchorRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+      record(node)
+    },
+    [ref, record]
+  )
+  return <PopoverPrimitive.Anchor data-slot="popover-anchor" ref={anchorRef} {...props} />
 }
 
 export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor }

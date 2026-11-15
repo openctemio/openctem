@@ -746,7 +746,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent>
                 <DropdownMenuItem onClick={handleCopyLink}>
                   <Link className="me-2 h-4 w-4" />
                   {t('assetGroups.detail.copyLink', 'Copy link')}
