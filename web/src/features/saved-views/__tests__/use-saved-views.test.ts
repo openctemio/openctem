@@ -19,4 +19,10 @@ describe('saved views helpers', () => {
     const id = '0193e000-0000-7000-8000-000000000001'
     expect(viewQueryFromSearch(`?view=${id}&severity=low`)).toBe(`view=${id}&severity=low`)
   })
+  it('does not save where the person came from (a group drill-down or a task) as a condition', () => {
+    expect(viewQueryFromSearch('?rule_id=github-pat&from=group:rule_id&severity=high')).toBe(
+      'rule_id=github-pat&severity=high'
+    )
+    expect(viewQueryFromSearch('?from=task:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b&q=x')).toBe('q=x')
+  })
 })
