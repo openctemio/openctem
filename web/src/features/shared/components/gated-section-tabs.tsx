@@ -10,8 +10,8 @@ interface GatedSectionTabsProps {
   label?: string
   /** A count after a tab's label, keyed by href (see `SectionTabs`). */
   counts?: Readonly<Record<string, number | undefined>>
-  /** Accessible names of tabs whose count shows, keyed by href (see `SectionTabs`). */
-  countLabels?: Readonly<Record<string, string | undefined>>
+  /** Screen-reader words after a tab's count, keyed by href (see `SectionTabs`). */
+  countUnits?: Readonly<Record<string, string | undefined>>
 }
 
 /**
@@ -25,7 +25,7 @@ export function GatedSectionTabs({
   className,
   label,
   counts,
-  countLabels,
+  countUnits,
 }: GatedSectionTabsProps) {
   const visible = useVisibleSectionTabs(tabs)
   if (visible.length < 2) return null
@@ -35,7 +35,7 @@ export function GatedSectionTabs({
       className={className}
       label={label}
       counts={counts}
-      countLabels={countLabels}
+      countUnits={countUnits}
     />
   )
 }

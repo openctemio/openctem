@@ -1,7 +1,8 @@
 /**
  * Assets tabs: Needs attention carries how many assets wait for a scoping
  * decision (the kit's tab count, hidden at zero and while loading), named for
- * screen readers as "Needs attention, N assets waiting". The count is asked
+ * screen readers as "Needs attention N assets waiting" (the visible text
+ * first, the unit as screen-reader-only words, never an aria-label). The count is asked
  * only when the tab is visible, and sent only by the pages that send that
  * request anyway (inventory, Needs attention landing); the rest read the cache.
  */
@@ -49,7 +50,8 @@ describe('AssetsSectionTabs', () => {
   it('shows the assets waiting for a decision beside Needs attention', () => {
     state.count = 462
     render(<AssetsSectionTabs />)
-    const tab = screen.getByRole('link', { name: 'Needs attention, 462 assets waiting' })
+    const tab = screen.getByRole('link', { name: /^Needs attention\s*462\s*assets waiting$/ })
+    expect(tab).not.toHaveAttribute('aria-label')
     expect(tab).toHaveAttribute('href', '/assets/attention')
     expect(tab.querySelector('[data-slot=tabs-count]')).toHaveTextContent('462')
     expect(state.calls.every(([id]) => id === 'decide_monitoring')).toBe(true)
@@ -63,7 +65,9 @@ describe('AssetsSectionTabs', () => {
   it('says "asset" for one', () => {
     state.count = 1
     render(<AssetsSectionTabs />)
-    expect(screen.getByRole('link', { name: 'Needs attention, 1 asset waiting' })).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: /^Needs attention\s*1\s*asset waiting$/ })
+    ).toBeVisible()
   })
 
   it.each([

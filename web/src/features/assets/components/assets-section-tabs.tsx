@@ -56,10 +56,10 @@ export function AssetsSectionTabs() {
       tabs={tabs}
       label={t('assets.tabs.aria', 'Assets sections')}
       counts={{ [ATTENTION_HREF]: waiting }}
-      countLabels={{
+      countUnits={{
         [ATTENTION_HREF]: t(
-          'assets.tabs.attentionWaiting',
-          'Needs attention, {count, plural, one {# asset} other {# assets}} waiting',
+          'assets.tabs.attentionCountUnit',
+          '{count, plural, one {asset waiting} other {assets waiting}}',
           { count: waiting ?? 0 }
         ),
       }}

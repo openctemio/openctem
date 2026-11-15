@@ -55,17 +55,20 @@ describe('SectionTabs', () => {
     expect(screen.getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('aria-current')
   })
 
-  it('names a tab by its count label while the count shows, by its label at zero', () => {
-    const labels = { '/account/security': 'Security, 3 sessions open' }
+  it('reads the count unit after the visible label and number, with no aria-label', () => {
+    const units = { '/account/security': 'sessions open' }
     const { rerender } = render(
-      <SectionTabs tabs={tabs} counts={{ '/account/security': 3 }} countLabels={labels} />
+      <SectionTabs tabs={tabs} counts={{ '/account/security': 3 }} countUnits={units} />
     )
-    const link = screen.getByRole('link', { name: 'Security, 3 sessions open' })
+    // Label in name: the visible text ("Security 3") is the start of the name.
+    const link = screen.getByRole('link', { name: /^Security\s*3\s*sessions open$/ })
+    expect(link).not.toHaveAttribute('aria-label')
     expect(link.querySelector('[data-slot=tabs-count]')).toHaveTextContent('3')
-    rerender(<SectionTabs tabs={tabs} counts={{ '/account/security': 0 }} countLabels={labels} />)
+    expect(link.querySelector('.sr-only')).toHaveTextContent('sessions open')
+    rerender(<SectionTabs tabs={tabs} counts={{ '/account/security': 0 }} countUnits={units} />)
     const plain = screen.getByRole('link', { name: 'Security' })
-    expect(plain).not.toHaveAttribute('aria-label')
     expect(plain.querySelector('[data-slot=tabs-count]')).toBeNull()
+    expect(plain.querySelector('.sr-only')).toBeNull()
   })
 
   it('draws icons only when every tab has its own', () => {

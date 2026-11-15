@@ -55,11 +55,12 @@ interface SectionTabsProps {
    */
   counts?: Readonly<Record<string, number | undefined>>
   /**
-   * The accessible name of a tab while its count shows, keyed by href
-   * ("Needs attention, 462 assets waiting"): it starts with the visible label
-   * and says what the number counts. Without one the name is label + number.
+   * Words after a tab's count for screen readers only, keyed by href
+   * ("assets waiting"): the tab is then read "Needs attention 462 assets
+   * waiting". The visible label and number stay the start of the name
+   * (WCAG 2.5.3 label in name), so this is never an `aria-label`.
    */
-  countLabels?: Readonly<Record<string, string | undefined>>
+  countUnits?: Readonly<Record<string, string | undefined>>
 }
 
 /** Space between two tabs (`gap-6`), in px. */
@@ -145,7 +146,7 @@ export function SectionTabs({
   className,
   label = 'Sections',
   counts,
-  countLabels,
+  countUnits,
 }: SectionTabsProps) {
   const pathname = usePathname()
   const { t } = useTranslation()
@@ -209,9 +210,16 @@ export function SectionTabs({
   }, [tabKey, countKey, activeIndex, iconsAllowed, t])
 
   const text = (tab: SectionTab) => (tab.labelKey ? t(tab.labelKey, tab.label) : tab.label)
-  const count = (tab: SectionTab) =>
-    counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null
-  const countLabel = (tab: SectionTab) => (counts?.[tab.href] ? countLabels?.[tab.href] : undefined)
+  const count = (tab: SectionTab) => {
+    if (!counts?.[tab.href]) return null
+    const unit = countUnits?.[tab.href]
+    return (
+      <>
+        <TabsCount value={counts[tab.href]} />
+        {unit && <span className="sr-only"> {unit}</span>}
+      </>
+    )
+  }
   const moreLabel = t('common.tabs.more', 'More')
   const overflowActive = fit.overflow.some((i) => i === activeIndex)
 
@@ -236,7 +244,6 @@ export function SectionTabs({
             key={tab.href}
             href={tab.href}
             aria-current={tab.href === active ? 'page' : undefined}
-            aria-label={countLabel(tab)}
             className={TAB_CLASS}
           >
             {Icon && <Icon aria-hidden data-slot="tab-icon" />}
@@ -263,7 +270,6 @@ export function SectionTabs({
                   <Link
                     href={tab.href}
                     aria-current={tab.href === active ? 'page' : undefined}
-                    aria-label={countLabel(tab)}
                     className="flex items-center justify-between gap-3"
                   >
                     <span>{text(tab)}</span>

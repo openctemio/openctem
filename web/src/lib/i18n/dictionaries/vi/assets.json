@@ -1189,7 +1189,7 @@
   "assets.suggestions.search.placeholder": "Tìm theo tên tài sản…",
   "assets.tabs.aria": "Các mục tài sản",
   "assets.tabs.attention": "Cần xử lý",
-  "assets.tabs.attentionWaiting": "Cần xử lý, {count} tài sản đang chờ",
+  "assets.tabs.attentionCountUnit": "tài sản đang chờ",
   "assets.tabs.changes": "Hoạt động",
   "assets.tabs.groups": "Nhóm",
   "assets.tabs.inventory": "Kho tài sản",
