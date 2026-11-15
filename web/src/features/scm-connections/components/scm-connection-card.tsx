@@ -142,7 +142,7 @@ export function SCMConnectionCard({
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem onClick={handleValidate} disabled={isValidating}>
                   {isValidating ? (
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />

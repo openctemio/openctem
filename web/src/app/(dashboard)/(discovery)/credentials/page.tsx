@@ -544,7 +544,7 @@ export default function CredentialsPage() {
           <SelectValue />
         </span>
       </SelectTrigger>
-      <SelectContent align="end">
+      <SelectContent>
         <SelectItem value="none">{t('credentials.group.none', 'No grouping')}</SelectItem>
         <SelectItem value="identity">{t('credentials.group.identity', 'Identity')}</SelectItem>
       </SelectContent>

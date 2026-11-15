@@ -2373,7 +2373,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                     )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent>
                   <DropdownMenuItem
                     onClick={async () => {
                       const url = repository.repository?.webUrl || window.location.href

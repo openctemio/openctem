@@ -508,7 +508,7 @@ function RelatedRow({
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent>
             {onEdit && (
               <DropdownMenuItem onClick={() => onEdit(item)}>
                 {t('assets.related.edit', 'Edit relationship')}

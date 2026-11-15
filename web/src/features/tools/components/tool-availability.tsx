@@ -168,7 +168,7 @@ export function ToolSensorsCell({ item }: { item: ToolAvailabilityItem }) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-3" onClick={(e) => e.stopPropagation()}>
+      <PopoverContent className="w-80 p-3" onClick={(e) => e.stopPropagation()}>
         <p className="mb-1 text-xs font-medium text-muted-foreground">Sensors with {item.name}</p>
         <ToolSensorList item={item} />
       </PopoverContent>

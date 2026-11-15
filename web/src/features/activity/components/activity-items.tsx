@@ -439,7 +439,6 @@ export function CommentCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              align="end"
               className="w-44"
               onCloseAutoFocus={(e) => {
                 if (!pickerFromMenu.current) return

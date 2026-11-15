@@ -240,7 +240,7 @@ export function AssigneeSelect({
           {!disabled && <ChevronDown className="h-3 w-3" />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
+      <PopoverContent className="w-56 p-0">
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={t('findings.assigneeSelect.search', 'Search members...')}

@@ -60,7 +60,7 @@ interface DataTableRowActionsProps {
  */
 export function DataTableRowActions({
   actions,
-  align = 'end',
+  align,
   label = 'Open row actions',
 }: DataTableRowActionsProps) {
   if (actions.length === 0) return null

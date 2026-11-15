@@ -92,7 +92,7 @@ export function MultiSelect({
             <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[--radix-popover-trigger-width] min-w-56 p-0" align="start">
+        <PopoverContent className="w-[--radix-popover-trigger-width] min-w-56 p-0">
           <Command
             filter={(itemValue, search) =>
               itemValue.toLowerCase().includes(search.toLowerCase()) ? 1 : 0

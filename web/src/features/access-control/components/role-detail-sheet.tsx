@@ -714,7 +714,7 @@ export function RoleDetailSheet({
                               )}
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent>
                             <DropdownMenuItem
                               variant="destructive"
                               onSelect={() => setPendingRemove(member)}

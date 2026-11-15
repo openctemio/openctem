@@ -41,7 +41,7 @@ export interface ResponsivePopoverProps {
   /** Accessible name; also the sheet title on a phone. */
   title: string
   children: React.ReactNode
-  /** Popover alignment from `md` up. */
+  /** Popover alignment from `md` up; by default the kit's (by the trigger's half of the screen). */
   align?: 'start' | 'center' | 'end'
   /** Classes of the desktop popover (its width). */
   className?: string
@@ -53,7 +53,7 @@ export function ResponsivePopover({
   trigger,
   title,
   children,
-  align = 'start',
+  align,
   className,
 }: ResponsivePopoverProps) {
   const isMobile = useIsMobile()
