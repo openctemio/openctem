@@ -62,6 +62,22 @@ describe('normalizeActionItems', () => {
     ).toBe(false)
   })
 
+  it('splits a section off with a divider and never heads it', () => {
+    const menu = normalizeActionItems([
+      { id: 'view', label: 'View' },
+      { id: 'copy', label: 'Copy ID', section: 'copy' },
+      { id: 'link', label: 'Copy link', section: 'copy' },
+      { id: 'csv', label: 'CSV', group: 'Export' },
+      { id: 'json', label: 'JSON', group: 'Export' },
+    ])
+    expect(menu.groups.map((g) => g.items.map((i) => i.id))).toEqual([
+      ['view'],
+      ['copy', 'link'],
+      ['csv', 'json'],
+    ])
+    expect(menu.groups.map((g) => g.label)).toEqual([undefined, undefined, 'Export'])
+  })
+
   it('drops an empty submenu and has no groups for no items', () => {
     expect(
       normalizeActionItems([{ id: 's', kind: 'sub', label: 'Move to', items: [] }]).groups
@@ -134,6 +150,21 @@ describe('ActionMenu from 768 px up', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('keeps clicks on the trigger and in the menu from reaching a clickable row', async () => {
+    const onRow = vi.fn()
+    const onImport = vi.fn()
+    render(
+      <div onClick={onRow}>
+        <Harness onImport={onImport} />
+      </div>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const menu = await screen.findByRole('menu')
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Import results' }))
+    expect(onImport).toHaveBeenCalledOnce()
+    expect(onRow).not.toHaveBeenCalled()
+  })
+
   it('renders nothing when no item is left', () => {
     const { container } = render(<Harness items={[]} />)
     expect(container).toBeEmptyDOMElement()
@@ -185,6 +216,21 @@ describe('ActionMenu below 768 px', () => {
     expect(onImport).toHaveBeenCalledOnce()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('keeps clicks on the trigger and in the sheet from reaching a clickable card', async () => {
+    const onCard = vi.fn()
+    const onImport = vi.fn()
+    render(
+      <div onClick={onCard}>
+        <Harness onImport={onImport} />
+      </div>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Findings' })
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Import results' }))
+    expect(onImport).toHaveBeenCalledOnce()
+    expect(onCard).not.toHaveBeenCalled()
   })
 
   it('drills into a submenu with a Back row; Escape goes back one level, then closes', async () => {

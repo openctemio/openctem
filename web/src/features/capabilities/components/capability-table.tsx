@@ -241,7 +241,7 @@ export function CapabilityTable({
                 ]
               : []),
           ]
-          return <DataTableRowActions actions={actions} />
+          return <DataTableRowActions title={c.display_name} actions={actions} />
         },
       })
     }

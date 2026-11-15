@@ -261,6 +261,9 @@ export function EmergingThreatsList() {
           icon: CheckCheck,
           onClick: () => void move(row, 'acknowledged'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: true,
         })
@@ -271,6 +274,9 @@ export function EmergingThreatsList() {
           icon: Wrench,
           onClick: () => void move(row, 'remediating'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: row.state !== 'new',
         })
@@ -281,6 +287,9 @@ export function EmergingThreatsList() {
           icon: RotateCcw,
           onClick: () => void move(row, 'new'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: !open,
         })
@@ -353,6 +362,7 @@ export function EmergingThreatsList() {
         cell: ({ row }) => (
           <div onClick={(e) => e.stopPropagation()}>
             <DataTableRowActions
+              title={row.original.vuln_id}
               actions={rowActions(row.original)}
               label={t('emergingThreats.actions.menu', undefined, { vulnId: row.original.vuln_id })}
             />

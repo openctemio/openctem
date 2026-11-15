@@ -460,6 +460,10 @@ export default function CompliancePage() {
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.title}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: row.original.title,
+          })}
           actions={[
             { label: 'View details', icon: Eye, onClick: () => setViewRequirement(row.original) },
             { label: 'Update status', icon: Pencil, onClick: () => openEdit(row.original) },

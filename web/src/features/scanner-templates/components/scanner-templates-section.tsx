@@ -357,6 +357,10 @@ export function ScannerTemplatesSection() {
           const template = row.original
           return (
             <DataTableRowActions
+              title={template.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: template.name,
+              })}
               actions={[
                 {
                   label: t('scans.templates.row.download'),

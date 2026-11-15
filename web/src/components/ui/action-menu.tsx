@@ -10,7 +10,8 @@
  * phone needs it). Call sites never choose.
  *
  * Both renderers take the same items, so an item is never enabled on one and
- * disabled on the other. Permission gating stays with the caller: pass only
+ * disabled on the other. A click inside the menu or the sheet stays in it:
+ * it never reaches a clickable row or card the trigger sits in. Permission gating stays with the caller: pass only
  * the items the user may see (hidden without permission), and give an item
  * that does not apply a `disabledReason`. A destructive item opens a
  * confirmation from its `onSelect`; it never acts directly.
@@ -48,6 +49,8 @@ type ActionBase = {
   icon?: LucideIcon
   /** Heading of the group the item belongs to; items without one share a group. */
   group?: string
+  /** A group without a heading (a divider only), for items set apart from their neighbours. */
+  section?: string
 }
 
 export type ActionMenuAction = ActionBase & {
@@ -85,6 +88,13 @@ export type NormalizedActionMenu = {
 
 const DESTRUCTIVE_GROUP = '\u0000destructive'
 
+/** Group key of an entry: a heading (`group`), an unnamed `section`, or the default group. */
+function groupKey(entry: ActionMenuEntry): string {
+  if (entry.group) return `g:${entry.group}`
+  if (entry.section) return `s:${entry.section}`
+  return ''
+}
+
 function isDestructive(entry: ActionMenuEntry): boolean {
   return entry.kind !== 'sub' && !!entry.destructive
 }
@@ -109,9 +119,9 @@ export function normalizeActionItems(entries: ActionMenuEntry[]): NormalizedActi
     if (entry.kind === 'sub') {
       const items = entry.items.filter(Boolean)
       if (items.length === 0) continue
-      add(entry.group ?? '', { ...entry, items })
+      add(groupKey(entry), { ...entry, items })
     } else {
-      add(isDestructive(entry) ? DESTRUCTIVE_GROUP : (entry.group ?? ''), entry)
+      add(isDestructive(entry) ? DESTRUCTIVE_GROUP : groupKey(entry), entry)
     }
   }
   const keys = order.filter((k) => k !== DESTRUCTIVE_GROUP)
@@ -119,8 +129,8 @@ export function normalizeActionItems(entries: ActionMenuEntry[]): NormalizedActi
   const many = keys.length >= 2
   const groups = keys.map((key) => {
     const items = byKey.get(key)!
-    const named = key !== '' && key !== DESTRUCTIVE_GROUP
-    return { key, label: named && many && items.length >= 2 ? key : undefined, items }
+    const heading = key.startsWith('g:') ? key.slice(2) : undefined
+    return { key, label: heading && many && items.length >= 2 ? heading : undefined, items }
   })
   const all = groups.flatMap((g) => g.items)
   return { groups, icons: all.length > 0 && all.every((e) => !!e.icon) }
@@ -173,11 +183,11 @@ function AnchoredActionMenu({
 }) {
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild {...triggerHandlers}>
+      <DropdownMenuTrigger asChild onClick={stopClick} {...triggerHandlers}>
         {trigger}
       </DropdownMenuTrigger>
       {/* Named by its trigger (APG menu button). */}
-      <DropdownMenuContent>
+      <DropdownMenuContent onClick={stopClick}>
         {menu.groups.map((group, i) => (
           <React.Fragment key={group.key}>
             {i > 0 && <DropdownMenuSeparator />}
@@ -275,6 +285,11 @@ export function phoneMenuModel(menu: NormalizedActionMenu): PhoneMenuModel {
   }
 }
 
+/** Keeps a click in the menu from reaching a clickable row or card around the trigger. */
+function stopClick(e: React.MouseEvent) {
+  e.stopPropagation()
+}
+
 const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown'])
 
 function PhoneActionMenu({
@@ -359,7 +374,8 @@ function PhoneActionMenu({
         e.preventDefault()
         openSheet(true)
       },
-      onClick: () => {
+      onClick: (e) => {
+        e.stopPropagation()
         if (!sheetOnClick.current) return
         sheetOnClick.current = false
         openSheet(false)
@@ -392,6 +408,7 @@ function PhoneActionMenu({
     },
     onClick: (e: React.MouseEvent<HTMLElement>) => {
       triggerProps.onClick?.(e)
+      e.stopPropagation()
       if (e.defaultPrevented) return
       // A click with no pointer position came from Enter or Space.
       openSheet(e.detail === 0)

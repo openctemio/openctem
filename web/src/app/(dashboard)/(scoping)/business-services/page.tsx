@@ -351,6 +351,10 @@ export default function BusinessServicesPage() {
         cell: ({ row }) => (
           <Can permission={[Permission.BusinessServicesRead, Permission.BusinessServicesWrite]}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
                   label: t('businessContext.services.action.linked', 'Linked assets'),

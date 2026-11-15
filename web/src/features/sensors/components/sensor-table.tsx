@@ -390,7 +390,13 @@ export function SensorTable({
               destructive: true,
               separatorBefore: true,
             })
-          return <DataTableRowActions actions={actions} />
+          return (
+            <DataTableRowActions
+              title={sensor.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: sensor.name })}
+              actions={actions}
+            />
+          )
         },
       },
     ],

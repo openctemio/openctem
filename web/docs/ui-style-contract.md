@@ -761,10 +761,19 @@ object's name (`title`) and the sheet's purpose (`label`).
 - Content rules (`normalizeActionItems`): groups in the order given,
   destructive items last on their own, a group heading only for two items or
   more in a menu of two groups or more, icons for every item or none, empty
-  submenus dropped, no menu at all when no item is left.
+  submenus dropped, no menu at all when no item is left. A `section` sets
+  items apart with a divider and no heading.
+- A click on the trigger or inside the menu or sheet never reaches a clickable
+  row or card around it.
 
-The Findings page-header More is the reference; the other "⋯" menus move to
-`ActionMenu` next (planned).
+`ActionMenu` users: the page-header More (Findings), every table row menu
+(`DataTableRowActions`: items gated by `permission` or `route` are hidden from
+a user who may not use them, `separatorBefore` starts a section, a disabled
+item without its own reason says "Not available right now", `title` is the
+row's name), the finding row and card menu (`FindingRowMenu`, titled with the
+finding) and the bulk bar's More (`BulkActionBar` `more` and the data table's
+`bulk.more` take `ActionMenuEntry[]`, titled with the selection count). The
+other "⋯" menus move to it next (planned).
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 

@@ -1,18 +1,14 @@
 'use client'
 
-import { Fragment } from 'react'
+import { useMemo } from 'react'
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cn } from '@/lib/utils'
-import { Can, type ApiRouteKey } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
+import { usePermissions } from '@/lib/permissions'
+import { passesRouteGate, routeGate, type ApiRouteKey } from '@/lib/permissions/can-mutate'
 
 /**
  * One item in a row-actions menu.
@@ -21,18 +17,18 @@ export interface RowAction {
   label: string
   icon?: LucideIcon
   onClick: () => void
-  /** Renders in destructive (red) styling — for Delete/Remove. */
+  /** Renders in destructive (red) styling, last in the menu: for Delete/Remove. */
   destructive?: boolean
   disabled?: boolean
   /**
-   * Why a disabled item is unavailable (e.g. "Only the owner can…"). Shown as
-   * a tooltip and to screen readers, so the action is visible but explained
-   * instead of failing with a 403.
+   * Why a disabled item is unavailable (e.g. "Only the owner can…"). Shown on
+   * hover or focus, and as visible text on a phone or touch screen, so the
+   * action is visible but explained instead of failing with a 403.
    */
   disabledReason?: string
-  /** Insert a separator above this item (e.g. before a destructive action). */
+  /** Sets this item and the ones after it apart with a divider (e.g. before a destructive action). */
   separatorBefore?: boolean
-  /** Gate this item behind a permission (wrapped in <Can>). Omit = always shown. */
+  /** Gate this item behind a permission. Omit = always shown. */
   permission?: string | string[]
   /**
    * Gate this item behind the API route it calls (permissions and role as the
@@ -44,66 +40,78 @@ export interface RowAction {
 
 interface DataTableRowActionsProps {
   actions: RowAction[]
-  align?: 'end' | 'start' | 'center'
-  /** Accessible label for the trigger button. */
+  /** Accessible label for the trigger button, e.g. "Actions for {name}". */
   label?: string
+  /** The row's name: the title of the bottom sheet on a phone. */
+  title?: string
 }
 
 /**
- * The canonical row "⋯" actions menu. Replaces the copy-pasted
- * MoreHorizontal → DropdownMenu (View / Edit / Delete) triad that was
- * re-implemented in ~57 tables, each drifting slightly (icon vs no-icon,
- * "Remove" vs "Delete", `text-destructive` vs `text-red-600`, align omitted).
+ * The canonical row "⋯" actions menu: the shared `ActionMenu` (an anchored
+ * menu, or a bottom sheet on a phone when the menu is long or does not fit).
  *
- * Permission gating stays with the caller — wrap this in <Can> as before, or
- * pass only the actions the user may perform.
+ * An item gated by `permission` or `route` is hidden from a user who may not
+ * use it (as the server would refuse it); an item that does not apply here is
+ * disabled with its reason.
  */
-export function DataTableRowActions({
-  actions,
-  align,
-  label = 'Open row actions',
-}: DataTableRowActionsProps) {
-  if (actions.length === 0) return null
+export function DataTableRowActions(props: DataTableRowActionsProps) {
+  // Only a menu with gated items reads the permissions (and needs their provider).
+  return props.actions.some((a) => a.permission || a.route) ? (
+    <GatedRowActions {...props} />
+  ) : (
+    <RowActionsMenu {...props} />
+  )
+}
+
+function GatedRowActions({ actions, ...rest }: DataTableRowActionsProps) {
+  const { permissions = [], can, isLoading, tenantRole } = usePermissions()
+  const ownerOrAdmin = tenantRole === 'owner' || tenantRole === 'admin'
+  const allowed = actions.filter((a) => {
+    if (!a.permission && !a.route) return true
+    // Hidden while permissions load, as before (owners and admins excepted).
+    if (isLoading && !ownerOrAdmin) return false
+    // One of the listed permissions is enough.
+    const perms = a.permission === undefined ? [] : [a.permission].flat()
+    if (perms.length > 0 && !perms.some((p) => can(p))) return false
+    const routes = a.route === undefined ? [] : [a.route].flat()
+    return routes.every((r) => passesRouteGate(routeGate(r), permissions, tenantRole))
+  })
+  return <RowActionsMenu actions={allowed} {...rest} />
+}
+
+function RowActionsMenu({ actions, label, title }: DataTableRowActionsProps) {
+  const { t } = useTranslation()
+  const items = useMemo<ActionMenuEntry[]>(() => {
+    const out: ActionMenuEntry[] = []
+    let section = 0
+    for (const [i, a] of actions.entries()) {
+      if (a.separatorBefore) section += 1
+      out.push({
+        id: `${i}:${a.label}`,
+        label: a.label,
+        icon: a.icon,
+        onSelect: a.onClick,
+        destructive: a.destructive,
+        section: section > 0 ? String(section) : undefined,
+        disabledReason: a.disabled
+          ? (a.disabledReason ?? t('common.rowActions.unavailable', 'Not available right now'))
+          : undefined,
+      })
+    }
+    return out
+  }, [actions, t])
+  const triggerLabel = label ?? t('common.rowActions.open', 'Open row actions')
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={label}>
-          <MoreHorizontal className="h-4 w-4" />
+    <ActionMenu
+      items={items}
+      title={title ?? triggerLabel}
+      label={triggerLabel}
+      trigger={
+        <Button variant="ghost" size="icon" aria-label={triggerLabel}>
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align={align}>
-        {actions.map((action, i) => {
-          const item = (
-            <>
-              {action.separatorBefore && <DropdownMenuSeparator />}
-              {action.disabled && action.disabledReason ? (
-                <DisabledMenuItem
-                  label={action.label}
-                  icon={action.icon}
-                  reason={action.disabledReason}
-                />
-              ) : (
-                <DropdownMenuItem
-                  onClick={action.onClick}
-                  disabled={action.disabled}
-                  className={cn(action.destructive && 'text-destructive focus:text-destructive')}
-                >
-                  {action.icon && <action.icon className="me-2 h-4 w-4" />}
-                  {action.label}
-                </DropdownMenuItem>
-              )}
-            </>
-          )
-          return action.permission || action.route ? (
-            <Can key={`${action.label}-${i}`} permission={action.permission} route={action.route}>
-              {item}
-            </Can>
-          ) : (
-            <Fragment key={`${action.label}-${i}`}>{item}</Fragment>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+    />
   )
 }
 

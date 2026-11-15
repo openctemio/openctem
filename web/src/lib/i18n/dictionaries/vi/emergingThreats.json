@@ -3,6 +3,7 @@
   "emergingThreats.action.patch_now": "Vá ngay: lỗ hổng này đã bị khai thác và tài sản của bạn được xác nhận bị ảnh hưởng.",
   "emergingThreats.action.patch_within_sla": "Vá trong thời hạn SLA: hiện chưa có dấu hiệu bị khai thác.",
   "emergingThreats.actions.acknowledge": "Ghi nhận",
+  "emergingThreats.actions.busy": "Đang cập nhật",
   "emergingThreats.actions.cancel": "Hủy",
   "emergingThreats.actions.close": "Đóng",
   "emergingThreats.actions.menu": "Thao tác cho {vulnId}",

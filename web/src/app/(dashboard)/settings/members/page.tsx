@@ -1379,6 +1379,10 @@ export default function UsersPage() {
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.email}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: row.original.email,
+          })}
           actions={[
             ...(new Date(row.original.expires_at).getTime() <= Date.now()
               ? [

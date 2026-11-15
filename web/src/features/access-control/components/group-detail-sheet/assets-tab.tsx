@@ -148,6 +148,7 @@ export function AssetsTab({
               <div className="flex items-center gap-2">
                 {onRemoveAsset && (
                   <DataTableRowActions
+                    title={item.asset?.name || undefined}
                     actions={[
                       {
                         label: t('org.teamAssets.remove', 'Remove'),

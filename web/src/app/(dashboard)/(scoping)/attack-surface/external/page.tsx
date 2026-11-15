@@ -570,6 +570,10 @@ export default function ExternalSurfacePage() {
         cell: ({ row }) => (
           <span onClick={(e) => e.stopPropagation()}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
                   label: t('attackSurface.external.action.open', 'Open'),

@@ -223,6 +223,10 @@ export function getExposureColumns(
         return (
           <div onClick={(e) => e.stopPropagation()}>
             <DataTableRowActions
+              title={exposure.title}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: exposure.title,
+              })}
               actions={[
                 {
                   label: t('exposures.table.viewDetails', 'View details'),

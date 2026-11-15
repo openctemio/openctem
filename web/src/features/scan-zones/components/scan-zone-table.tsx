@@ -208,6 +208,7 @@ export function ScanZoneTable({
           }
           return (
             <DataTableRowActions
+              title={z.name}
               actions={actions}
               label={t('scans.zones.row.actionsFor', undefined, { name: z.name })}
             />

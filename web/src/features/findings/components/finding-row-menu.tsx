@@ -12,14 +12,8 @@ import {
   Wrench,
   CheckCircle,
 } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 
@@ -63,72 +57,103 @@ export function FindingRowMenu({
   canDelete,
 }: FindingRowMenuProps) {
   const { t } = useTranslation()
+  const act = (action: FindingRowAction) => () => onAction(action)
+  const items: ActionMenuEntry[] = [
+    {
+      id: 'view',
+      label: t('findings.row.viewDetails', 'View details'),
+      icon: ExternalLink,
+      onSelect: act('view'),
+    },
+    ...(canAssign
+      ? [
+          {
+            id: 'assign',
+            label: t('findings.row.openToAssign', 'Open to assign…'),
+            icon: UserPlus,
+            onSelect: act('assign'),
+          },
+        ]
+      : []),
+    ...(canChangeStatus
+      ? [
+          {
+            id: 'status',
+            label: t('findings.row.openToChangeStatus', 'Open to change status…'),
+            icon: CheckCircle,
+            onSelect: act('status'),
+          },
+        ]
+      : []),
+    ...(canCreateTicket
+      ? [
+          {
+            id: 'create_ticket',
+            label: t('findings.header.createTicket', 'Create ticket'),
+            icon: Ticket,
+            onSelect: act('create_ticket'),
+          },
+        ]
+      : []),
+    ...(canRemediate
+      ? [
+          {
+            id: 'remediate',
+            label: t('remediationClaim.menu.addToRemediation'),
+            icon: Wrench,
+            onSelect: act('remediate'),
+          },
+        ]
+      : []),
+    {
+      id: 'copy_id',
+      section: 'copy',
+      label: t('findings.row.copyId', 'Copy ID'),
+      icon: Copy,
+      onSelect: act('copy_id'),
+    },
+    {
+      id: 'copy_link',
+      section: 'copy',
+      label: t('findings.row.copyLink', 'Copy link'),
+      icon: Link2,
+      onSelect: act('copy_link'),
+    },
+    ...(canChangeStatus
+      ? [
+          {
+            id: 'false_positive',
+            section: 'dismiss',
+            label: t('findings.row.openToMarkFalsePositive', 'Open to mark as false positive…'),
+            icon: Flag,
+            onSelect: act('false_positive'),
+          },
+        ]
+      : []),
+    ...(canDelete
+      ? [
+          {
+            id: 'delete',
+            label: t('findings.row.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            onSelect: act('delete'),
+          },
+        ]
+      : []),
+  ]
+  const name = toDisplayText(title, 80)
+  const label = t('findings.row.actionsFor', 'Actions for {title}', { title: name })
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="p-0"
-          aria-label={t('findings.row.actionsFor', 'Actions for {title}', {
-            title: toDisplayText(title, 80),
-          })}
-        >
+    <ActionMenu
+      items={items}
+      title={name}
+      label={label}
+      trigger={
+        <Button size="icon" variant="ghost" className="p-0" aria-label={label}>
           <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuItem onClick={() => onAction('view')}>
-          <ExternalLink className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.viewDetails', 'View details')}
-        </DropdownMenuItem>
-        {canAssign && (
-          <DropdownMenuItem onClick={() => onAction('assign')}>
-            <UserPlus className="me-2 h-4 w-4" aria-hidden />
-            {t('findings.row.openToAssign', 'Open to assign…')}
-          </DropdownMenuItem>
-        )}
-        {canChangeStatus && (
-          <DropdownMenuItem onClick={() => onAction('status')}>
-            <CheckCircle className="me-2 h-4 w-4" aria-hidden />
-            {t('findings.row.openToChangeStatus', 'Open to change status…')}
-          </DropdownMenuItem>
-        )}
-        {canCreateTicket && (
-          <DropdownMenuItem onClick={() => onAction('create_ticket')}>
-            <Ticket className="me-2 h-4 w-4" aria-hidden />
-            {t('findings.header.createTicket', 'Create ticket')}
-          </DropdownMenuItem>
-        )}
-        {canRemediate && (
-          <DropdownMenuItem onClick={() => onAction('remediate')}>
-            <Wrench className="me-2 h-4 w-4" aria-hidden />
-            {t('remediationClaim.menu.addToRemediation')}
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => onAction('copy_id')}>
-          <Copy className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.copyId', 'Copy ID')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onAction('copy_link')}>
-          <Link2 className="me-2 h-4 w-4" aria-hidden />
-          {t('findings.row.copyLink', 'Copy link')}
-        </DropdownMenuItem>
-        {(canChangeStatus || canDelete) && <DropdownMenuSeparator />}
-        {canChangeStatus && (
-          <DropdownMenuItem className="text-warning" onClick={() => onAction('false_positive')}>
-            <Flag className="me-2 h-4 w-4" aria-hidden />
-            {t('findings.row.openToMarkFalsePositive', 'Open to mark as false positive…')}
-          </DropdownMenuItem>
-        )}
-        {canDelete && (
-          <DropdownMenuItem className="text-destructive" onClick={() => onAction('delete')}>
-            <Trash2 className="me-2 h-4 w-4" aria-hidden />
-            {t('findings.row.delete', 'Delete')}
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+    />
   )
 }
