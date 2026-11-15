@@ -91,6 +91,14 @@ export function slaCountdown(deadline?: string | null, now = Date.now()): SlaCou
   return { overdue, unit: 'days', count: Math.floor(hours / 24) }
 }
 
+/** The largest count an SLA countdown shows; more reads "999+". */
+export const SLA_COUNT_MAX = 999
+
+/** The count an SLA countdown shows: the number, or "999+" above the cap. */
+export function slaCountLabel(count: number): string {
+  return count > SLA_COUNT_MAX ? `${SLA_COUNT_MAX}+` : String(count)
+}
+
 export interface AgingBucket {
   label: string
   /** inclusive lower bound of days-overdue */

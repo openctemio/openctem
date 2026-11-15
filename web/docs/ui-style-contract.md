@@ -166,6 +166,11 @@ column without a fixed width keeps its floor and is capped at 420 px. The header
 body cells. A soft edge shows after the frozen group only while content is hidden under it. The row
 actions column scrolls with the table as its last column (`pinActions` freezes it, off by default).
 
+Before a table scrolls sideways its columns give way: a column with a range (`minWidth` below its
+`width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
+name column with a floor is sized by the floor and the room left, never by its text (a long title ends in
+its ellipsis). Widths hold the cell padding, so the visible columns' widths add up to the table.
+
 ### Radii
 
 | Role                      | Token             | px  |
@@ -363,8 +368,12 @@ tab icons, strip rules, chips, empty pagination, name column width).
   `meta: { hideBelow: <table frame width in px> }`; `DataTable` hides it below
   that width instead of scrolling the table sideways. Set it from measured
   widths, as a running sum in the order columns should join (the asset list's
-  `COLUMN_ROOM`). A column the viewer turns on or off under Columns keeps
-  that choice.
+  `COLUMN_ROOM`), the checkbox and row actions columns included: with the
+  default columns the row menu is whole inside the frame at scroll 0. A
+  column the viewer turns on or off under Columns keeps that choice.
+- **A chip is never cut by an ellipsis**: a column holding a chip is as wide
+  as the chip's longest standard text in English and Vietnamese, or the chip
+  has a defined short form (the Due / SLA chip counts to "999+").
 - **One-line chip rows fold, never cut**: chips in a row that must stay on
   one line are whole or folded into a "+N" popover that lists them all.
   Fold by measured width with `useFitCount` (`foldToFit` is the shared rule,

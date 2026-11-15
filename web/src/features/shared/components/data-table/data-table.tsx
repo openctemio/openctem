@@ -73,6 +73,7 @@ import {
 } from './data-table-groups'
 import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
 import { pinStartColumns, PIN_SELECT_WIDTH, type StartPin } from './pin-columns'
+import { fitColumnWidths } from './fit-columns'
 import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } from './column-meta'
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
@@ -396,6 +397,13 @@ const SCROLL_FRAME_STYLE: React.CSSProperties = {
 
 /** The narrowest a row's name column may get: other columns scroll instead. */
 const NAME_COLUMN_FLOOR = 'min-w-[min(12rem,36vw)]'
+/**
+ * A name column with a floor (`meta.minWidth`) is sized by the floor and the
+ * room left, never by its text: a long title is cut by its ellipsis instead of
+ * widening the table past its frame (a one-line, truncating cell still asks
+ * for its whole text as its narrowest width).
+ */
+const NAME_SIZED_BY_FLOOR = '[&>*]:[contain:inline-size]'
 
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
 const SELECT_COL_WIDTH = PIN_SELECT_WIDTH
@@ -903,6 +911,14 @@ export function DataTable<TData, TValue>({
         frameWidth
       )
     : new Map()
+  // Columns with a range give way before the table scrolls sideways (fit-columns.ts).
+  const fitted = fitColumnWidths(
+    visibleColumns.map((c) => {
+      const style = columnLayout(c.id, c.columnDef.meta as DataTableColumnMeta | undefined).style
+      return { id: c.id, width: style?.width, minWidth: style?.minWidth }
+    }),
+    frameWidth
+  )
   const actionsPinned = pinActions && visibleColumns[visibleColumns.length - 1]?.id === 'actions'
   const pinnedPropsBase = (columnId: string) => {
     const isSelect = columnId === 'select'
@@ -954,6 +970,10 @@ export function DataTable<TData, TValue>({
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measureEdges)
     ro.observe(el)
+    // The table too: its width changes without the frame's (late cell
+    // content, the frame-based column widths), and Mode B must follow.
+    const tableEl = el.querySelector('table')
+    if (tableEl) ro.observe(tableEl)
     return () => ro.disconnect()
   }, [measureEdges, data, effectiveVisibility])
 
@@ -1079,10 +1099,16 @@ export function DataTable<TData, TValue>({
   const cellProps = (columnId: string, head: boolean) => {
     const pin = pinnedProps(columnId)
     const layout = layoutOf(columnId)
+    const narrowed = fitted.get(columnId)
+    const style =
+      narrowed !== undefined
+        ? { ...layout.style, width: narrowed, maxWidth: narrowed }
+        : layout.style
     return {
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
+        layout.kind === 'name' && layout.style?.minWidth !== undefined && NAME_SIZED_BY_FLOOR,
         // A date is one line: it never breaks between day, month and year.
         (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
         head && stickyHeader && STICKY_HEAD_CLASS,
@@ -1091,7 +1117,7 @@ export function DataTable<TData, TValue>({
         // header there (Mode A) or at the frame's top (Mode B, the frame scrolls).
         head && stickyHeader && 'top-0'
       ),
-      style: layout.style || pin.style ? { ...layout.style, ...pin.style } : undefined,
+      style: style || pin.style ? { ...style, ...pin.style } : undefined,
     }
   }
 
