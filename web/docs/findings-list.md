@@ -74,8 +74,22 @@ the dashboard owns the KPI tiles.
 
 ## Filters
 
-Every active filter is a chip, then **Add filter** (shortcut `f`): an icon-only square at the toolbar's control
-height (the shared `AddFilterButton`). Code: `src/features/findings/filters/`.
+The toolbar row reads: the search field, the two fixed scopes **Practice** and **State**, then **Add filter**
+(shortcut `f`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
+active filter is a chip in the row under it. Code: `src/features/findings/filters/`.
+
+- **Practice** ("Practice: Vulnerabilities", the default: every practice but compliance; Compliance, each
+  other practice that holds findings, All) and **State** ("State: Open", the default; Fixed, Dispositioned,
+  Closed, All) are base chips (`FindingsBaseChips`, the shared `FilterSelect` with `clearable={false}`): first
+  after the search, never removed, no counts (the count shows once, beside the view name). They write the
+  `practice` and `state` params. While an open saved view sets a scope itself, the chip reads "Set by the
+  view" until one is picked. On a narrow toolbar the key ("Practice:") folds away and stays in the accessible
+  name. On a phone they move to the top of the Filters sheet. In Query mode they step aside with Add filter.
+- There is no Filters button from 1024px up: Add filter is the one filter entry, and its last row, **Show the
+  filter panel**, opens the facet panel beside the list (closed from its own header). Below 1024px the Filters
+  button opens the same facets in a sheet.
+- Chips read as label and value ("Severity: Critical, High"); other operators keep their word ("Severity is
+  not Low", "EPSS score ≥ 0.5").
 
 - The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
   filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
@@ -98,10 +112,12 @@ height (the shared `AddFilterButton`). Code: `src/features/findings/filters/`.
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
 - The row is the shared `FilterChipsRow`: the quiet locked chip for what the list leaves out (informational
   findings, drawn with the shared `LockedChip`) first, the chips (the ones that do not fit fold into "+N
-  more"), Add filter and Clear. The count is said once, beside the view name in the first row, never on the
-  chips row. Nothing in the row shrinks under its content. When the locked chip, Add filter and "+N more" do
-  not fit on one line (a phone), the locked chip takes a line of its own above the rest. On a phone the search box takes the toolbar's first line and the saved views and
-  group buttons sit under it.
+  more"), then Clear. The count is said once, beside the view name in the first row, never on the
+  chips row. Nothing in the row shrinks under its content. The row shows only when it holds something.
+- On a phone every list toolbar (the shared `ListToolbar`) is two lines, never more: the search field alone on
+  the first; on the second the filter tokens and the chips (the locked chip first) in a strip that scrolls
+  sideways, with a fade on an edge that has more past it, and the icon actions (saved views, group, refresh)
+  pinned at the end, all 36 tall on one centre line. Nothing folds into "+N more" and nothing wraps.
 
 ## Query mode
 

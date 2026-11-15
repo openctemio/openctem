@@ -233,7 +233,7 @@
   "assets.chip.between": "{field} between {from} and {to}",
   "assets.chip.expires": "Expires",
   "assets.chip.firstSeen": "First seen",
-  "assets.chip.is": "{field} is {values}",
+  "assets.chip.is": "{field}: {values}",
   "assets.chip.isNot": "{field} is not {values}",
   "assets.chip.lastSeen": "Last seen",
   "assets.chip.lessThan": "{field} less than {value}",

@@ -75,7 +75,7 @@ test.describe('Findings filters', { tag: ['@findings'] }, () => {
 
   test('a facet filter shows as a chip and removes from the URL', async ({ page }) => {
     await page.goto('/findings?severity=critical')
-    const chip = page.getByTestId('filter-chip').filter({ hasText: 'Severity is Critical' })
+    const chip = page.getByTestId('filter-chip').filter({ hasText: 'Severity: Critical' })
     await expect(chip).toBeVisible({ timeout: 20_000 })
     await chip.getByRole('button', { name: /remove filter/i }).click()
     await expect(page).not.toHaveURL(/severity=/)

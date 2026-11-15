@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ListFilter, ListFilterPlus } from 'lucide-react'
+import { ListFilter, ListFilterPlus, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -106,6 +106,12 @@ export interface FilterPanelToggleProps {
   /** `id` of the inline panel this button controls. */
   controlsId: string
   label?: string
+  /**
+   * The list also has "Add filter": no Filters button from `lg` up (one
+   * filter entry on the toolbar); Add filter opens the side panel there
+   * (`ShowFilterPanelButton`). Below `lg` the button still opens the sheet.
+   */
+  sheetOnly?: boolean
 }
 
 /**
@@ -121,19 +127,22 @@ export function FilterPanelToggle({
   activeCount,
   controlsId,
   label,
+  sheetOnly = false,
 }: FilterPanelToggleProps) {
   return (
     <>
-      <FilterButton
-        className="hidden lg:inline-flex"
-        panelOpen={open}
-        onClick={onToggle}
-        // Only while the panel is in the page: an id that points at nothing is
-        // an invalid ARIA reference.
-        aria-controls={open ? controlsId : undefined}
-        activeCount={activeCount}
-        label={label}
-      />
+      {!sheetOnly && (
+        <FilterButton
+          className="hidden lg:inline-flex"
+          panelOpen={open}
+          onClick={onToggle}
+          // Only while the panel is in the page: an id that points at nothing is
+          // an invalid ARIA reference.
+          aria-controls={open ? controlsId : undefined}
+          activeCount={activeCount}
+          label={label}
+        />
+      )}
       <FilterButton
         className="lg:hidden"
         onClick={onOpenSheet}
@@ -169,5 +178,28 @@ export function AddFilterButton({
     >
       <ListFilterPlus aria-hidden="true" />
     </Button>
+  )
+}
+
+/**
+ * The last row of an "Add filter" picker on a list that also has a facet
+ * panel: opens that panel (beside the list from `lg` up, a sheet below), so
+ * the list keeps one filter button on its toolbar and loses no filter.
+ */
+export function ShowFilterPanelButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="border-t p-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        data-slot="show-filter-panel"
+        className="w-full justify-start"
+        onClick={onClick}
+      >
+        <PanelLeft aria-hidden="true" />
+        {t('common.addFilter.showPanel', 'Show the filter panel')}
+      </Button>
+    </div>
   )
 }

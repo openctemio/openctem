@@ -20,6 +20,11 @@ import { cn } from '@/lib/utils'
  * of every value with its count, keeps its value in the URL (the page passes
  * `useUrlFilter`), and can be cleared back to all rows.
  *
+ * A list's fixed scopes (Findings: Practice, State) are base chips: this
+ * control with `clearable={false}` and `foldLabel`, first after the search.
+ * They are never removed; on a narrow toolbar the key ("Practice:") folds away
+ * and stays in the accessible name.
+ *
  * A segmented control is only for the view mode of the same rows (table,
  * board, analytics) at the end of the toolbar.
  */
@@ -48,6 +53,11 @@ export interface FilterSelectProps<V extends string> {
    * "Show: Origins"); no "All" entry and no clear button. Default true.
    */
   clearable?: boolean
+  /**
+   * Hide the key ("Practice:") when the toolbar is narrow (under 56rem), so a
+   * base chip reads just its value there. The key stays in the accessible name.
+   */
+  foldLabel?: boolean
   className?: string
 }
 
@@ -60,6 +70,7 @@ export function FilterSelect<V extends string>({
   allCount,
   allLabel,
   clearable = true,
+  foldLabel = false,
   className,
 }: FilterSelectProps<V>) {
   const { t, locale } = useTranslation()
@@ -87,7 +98,14 @@ export function FilterSelect<V extends string>({
           className="inline-flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`${label}: ${current?.label ?? all}`}
         >
-          <span className="text-muted-foreground">{label}:</span>
+          <span
+            className={cn(
+              'text-muted-foreground',
+              foldLabel && '@max-4xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
+            )}
+          >
+            {label}:
+          </span>
           <span className="truncate font-medium">{current?.label ?? all}</span>
           <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>

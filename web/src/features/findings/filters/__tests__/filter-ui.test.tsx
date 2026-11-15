@@ -53,12 +53,10 @@ function chip(over: Partial<ActiveFilter>, field = f('severity')) {
 }
 
 describe('FilterChip', () => {
-  it('reads "Field op value" and removes itself', () => {
+  it('reads "Field: values" and removes itself', () => {
     const { onRemove, filter } = chip({})
-    expect(screen.getByText('Severity is Critical, High')).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Remove filter Severity is Critical, High' })
-    )
+    expect(screen.getByText('Severity: Critical, High')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter Severity: Critical, High' }))
     expect(onRemove).toHaveBeenCalledWith(filter)
   })
 
@@ -123,7 +121,7 @@ describe('FilterChip', () => {
       [
         { param: 'brand_new_field', field: 'brand_new_field', op: 'in', values: ['x'] },
         f('brand_new_field'),
-        'Brand new field is x',
+        'Brand new field: x',
       ],
     ]
     for (const [over, field, text] of cases) {
@@ -141,7 +139,7 @@ describe('FilterChip', () => {
 
   it('a long value list is cut with a count', () => {
     chip({ values: ['critical', 'high', 'low', 'medium', 'info'] })
-    expect(screen.getByText('Severity is Critical, High, Low +2')).toBeInTheDocument()
+    expect(screen.getByText('Severity: Critical, High, Low +2')).toBeInTheDocument()
   })
 
   it('a locked chip has no remove button and says where it comes from', () => {
@@ -187,6 +185,37 @@ async function open() {
 }
 
 describe('AddFilterPopover', () => {
+  it('does not let a filter override a field the open view already sets', async () => {
+    picker({ lockedFields: new Set(['severity']) })
+    await open()
+    const option = screen.getByRole('option', { name: /^Severity/ })
+    expect(option).toHaveAttribute('aria-disabled', 'true')
+    expect(option).toHaveTextContent('Set by the saved view')
+    expect(screen.getByRole('option', { name: 'EPSS score' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  })
+
+  it('adding a filter hands the page its field, operator and value', async () => {
+    const { onApply } = picker()
+    await open()
+    await userEvent.click(screen.getByRole('option', { name: 'EPSS score' }))
+    await userEvent.type(screen.getByLabelText('Value'), '0.7')
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ name: 'epss_score' }), 'gte', [
+      '0.7',
+    ])
+  })
+
+  it('ends with a row that opens the facet panel, where the list has one', async () => {
+    const onOpenPanel = vi.fn()
+    picker({ onOpenPanel })
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: 'Show the filter panel' }))
+    expect(onOpenPanel).toHaveBeenCalledOnce()
+  })
+
   it('lists the fields grouped by entity, and asks the page to load the contract when opened', async () => {
     const { onOpenChange } = picker()
     await open()
@@ -367,12 +396,7 @@ describe('FilterBar', () => {
       <FilterBar
         search={new URLSearchParams(search)}
         contract={withOwnedFields(contract)}
-        pickerContract={contract}
-        contractLoading={false}
-        contractFailed={false}
         skip={new Set(['asset_id'])}
-        canReadAssets
-        onPickerOpenChange={() => {}}
         onSearchChange={onSearchChange}
         {...over}
       />
@@ -410,20 +434,6 @@ describe('FilterBar', () => {
     for (const c of locked) expect(within(c).queryByRole('button')).toBeNull()
   })
 
-  it('does not let a filter override a field the open view already sets', async () => {
-    bar('', {
-      viewFilter: { v: 1, filter: { all: [{ field: 'severity', op: 'in', value: ['low'] }] } },
-    })
-    await userEvent.click(screen.getByRole('button', { name: /add filter/i }))
-    const option = screen.getByRole('option', { name: /^Severity/ })
-    expect(option).toHaveAttribute('aria-disabled', 'true')
-    expect(option).toHaveTextContent('Set by the saved view')
-    expect(screen.getByRole('option', { name: 'EPSS score' })).not.toHaveAttribute(
-      'aria-disabled',
-      'true'
-    )
-  })
-
   it('names a view whose conditions are a tree', () => {
     bar('', {
       viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
@@ -442,15 +452,6 @@ describe('FilterBar', () => {
     bar('asset_id=abc', { leading: <span>asset chip</span> })
     expect(screen.queryByTestId('filter-chip')).toBeNull()
     expect(screen.getByText('asset chip')).toBeInTheDocument()
-  })
-
-  it('adding a filter writes its param', async () => {
-    const { onSearchChange } = bar('q=x&page=2')
-    await userEvent.click(screen.getByRole('button', { name: /add filter/i }))
-    await userEvent.click(screen.getByRole('option', { name: 'EPSS score' }))
-    await userEvent.type(screen.getByLabelText('Value'), '0.7')
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(onSearchChange.mock.calls[0][0].toString()).toBe('q=x&epss_score_gte=0.7')
   })
 
   it('has no accessibility violations with chips', async () => {

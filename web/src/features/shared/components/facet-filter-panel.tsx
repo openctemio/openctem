@@ -1,12 +1,13 @@
 'use client'
 
 import { useId, useState, type ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { useFilterPanelClose } from './filter-panel-layout'
 
 /**
  * Faceted filters for list pages (the left panel on Findings). Filters apply as
@@ -29,19 +30,34 @@ export function FacetPanel({
   className?: string
 }) {
   const { t } = useTranslation()
+  const onClose = useFilterPanelClose()
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
       <div className="flex h-9 shrink-0 items-center justify-between">
         <p className="text-sm font-semibold">{t('common.filters', 'Filters')}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={onClearAll}
-          disabled={activeCount === 0}
-        >
-          {t('common.clearAll', 'Clear all')}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={onClearAll}
+            disabled={activeCount === 0}
+          >
+            {t('common.clearAll', 'Clear all')}
+          </Button>
+          {onClose ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              data-slot="filter-panel-close"
+              aria-label={t('common.filterPanel.close', 'Hide the filter panel')}
+              title={t('common.filterPanel.close', 'Hide the filter panel')}
+              onClick={onClose}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
       </div>
       {/* The sections scroll on their own, so the panel can be given a fixed
           height (e.g. the viewport) whatever the number of filters. */}
