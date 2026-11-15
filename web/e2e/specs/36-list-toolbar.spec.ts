@@ -130,10 +130,11 @@ for (const width of [1440, 390] as const) {
 /**
  * Add filter on a phone (owner report, iPhone Safari): an anchored popover
  * with a search field broke when the keyboard opened. Below `md` it is a
- * bottom sheet: full width, the field focused and inside the screen, the list
- * scrolling inside the sheet, and still so once the keyboard takes half the
- * screen (simulated by shrinking the viewport). Escape returns focus to Add
- * filter.
+ * bottom sheet: full width, the field inside the screen but not focused on
+ * open (no keyboard until it is tapped; the option list has focus), the list
+ * scrolling inside the sheet, and still so once the field is tapped and the
+ * keyboard takes half the screen (simulated by shrinking the viewport).
+ * Escape returns focus to Add filter.
  */
 test.describe('Add filter on a phone', { tag: ['@shell'] }, () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
@@ -153,7 +154,8 @@ test.describe('Add filter on a phone', { tag: ['@shell'] }, () => {
     await expect(sheet).toHaveAttribute('data-state', 'open')
     await page.waitForTimeout(700)
     const field = sheet.locator('[data-slot="command-input"]')
-    await expect(field).toBeFocused()
+    await expect(field).not.toBeFocused()
+    await expect(sheet.locator('[data-slot="command-list"]')).toBeFocused()
     expect(await field.getAttribute('inputmode')).toBe('search')
     expect(await field.evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
 
@@ -167,6 +169,8 @@ test.describe('Add filter on a phone', { tag: ['@shell'] }, () => {
       expect(f.y + f.height).toBeLessThanOrEqual(vh)
     }
     await inView(844)
+    await field.tap()
+    await expect(field).toBeFocused()
     // The keyboard takes the lower half: the visual viewport shrinks.
     await page.setViewportSize({ width: 390, height: 450 })
     await page.waitForTimeout(400)
