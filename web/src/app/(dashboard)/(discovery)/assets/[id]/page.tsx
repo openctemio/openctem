@@ -24,34 +24,62 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DetailSections, EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { DetailSections } from '@/features/shared/components/detail-sheet'
+import { EmptyState } from '@/features/shared/components/empty-state'
+import { ErrorState } from '@/features/shared/components/error-state'
+import { PageHeader } from '@/features/shared/components/page-header'
+import { PageStack } from '@/features/shared/components/page-stack'
 import { RiskScoreBadge, riskScoreState } from '@/features/shared/components/risk-score-badge'
-import {
-  AssetAttributeSourcesSection,
-  AssetFreshnessSection,
-  AssetCoverageSection,
-  AssetAttributionSection,
-  AssetIdentitySections,
-  AssetLineageSection,
-  AssetTimeline,
-  useAssetPage,
-} from '@/features/assets'
+import { AssetAttributeSourcesSection } from '@/features/assets/components/asset-attribute-sources-section'
+import { AssetFreshnessSection } from '@/features/assets/components/asset-freshness-section'
+import { AssetCoverageSection } from '@/features/assets/components/asset-coverage-section'
+import { AssetAttributionSection } from '@/features/assets/components/asset-attribution-section'
+import { AssetIdentitySections } from '@/features/assets/components/asset-identity-sections'
+import { AssetLineageSection } from '@/features/assets/components/asset-lineage-section'
+import { AssetTimeline } from '@/features/assets/components/asset-timeline'
+import { useAssetPage } from '@/features/assets/hooks/use-assets'
 import {
   ResolvedPortsSection,
   hasResolvedPorts,
 } from '@/features/assets/components/resolved-ports-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
-import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
-import { AssetScanWindowCard } from '@/features/scan-windows'
-import { AssetWebEvidenceCard } from '@/features/attack-surface'
-import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
+import { AssetLivenessBadge } from '@/features/asset-lifecycle/components/asset-liveness-badge'
+import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
+import { AssetScanWindowCard } from '@/features/scan-windows/components/asset-scan-window-card'
+import { AssetWebEvidenceCard } from '@/features/attack-surface/components/asset-web-evidence-card'
+import {
+  OriginWebSection,
+  isWebOriginType,
+} from '@/features/web-surface/components/origin-web-section'
 import { useTranslation } from '@/context/i18n-provider'
 import { AssetNextSteps } from '@/features/exploration/components/asset-next-steps'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { SettleGroup } from '@/features/shared/components/settle-group'
-import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
+import dynamic from 'next/dynamic'
+
+// Only a repository opens its workspace here (branches, scan settings, drag
+// and drop ordering); every other asset type would download it for nothing.
+// The asset is fetched on the client first, so the page already shows its
+// loading state while the workspace code arrives.
+const RepositoryWorkspace = dynamic(
+  () =>
+    import('@/features/repositories/components/repository-workspace').then(
+      (m) => m.RepositoryWorkspace
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <Main>
+        <PageStack>
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-64 w-full" />
+        </PageStack>
+      </Main>
+    ),
+  }
+)
 
 export default function AssetDetailPage() {
   const router = useRouter()

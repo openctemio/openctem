@@ -25,21 +25,33 @@ vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({ can: () => state.canRead }),
 }))
-vi.mock('@/features/assets', () => ({
+vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAssetPage: () => ({
     asset: state.asset,
     isLoading: state.assetLoading,
     error: state.error,
     mutate: state.mutate,
   }),
-  AssetAttributeSourcesSection: () => null,
-  AssetFreshnessSection: () => null,
-  AssetCoverageSection: () => null,
-  AssetAttributionSection: () => null,
-  AssetLineageSection: () => null,
-  AssetIdentitySections: () => null,
-  AssetTimeline: () => null,
 }))
+vi.mock('@/features/assets/components/asset-attribute-sources-section', () => ({
+  AssetAttributeSourcesSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-freshness-section', () => ({
+  AssetFreshnessSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-coverage-section', () => ({
+  AssetCoverageSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-attribution-section', () => ({
+  AssetAttributionSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-lineage-section', () => ({
+  AssetLineageSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-identity-sections', () => ({
+  AssetIdentitySections: () => null,
+}))
+vi.mock('@/features/assets/components/asset-timeline', () => ({ AssetTimeline: () => null }))
 vi.mock('@/features/exploration/components/asset-next-steps', () => ({
   AssetNextSteps: () => null,
 }))
@@ -50,12 +62,18 @@ vi.mock('@/features/assets/components/resolved-ports-section', () => ({
   hasResolvedPorts: (type: string) => type === 'domain' || type === 'subdomain',
   ResolvedPortsSection: () => <section>resolved-ports</section>,
 }))
-vi.mock('@/features/asset-lifecycle', () => ({
+vi.mock('@/features/asset-lifecycle/components/asset-status-badge', () => ({
   AssetStatusBadge: () => null,
+}))
+vi.mock('@/features/asset-lifecycle/components/asset-liveness-badge', () => ({
   AssetLivenessBadge: () => null,
 }))
-vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
-vi.mock('@/features/attack-surface', () => ({ AssetWebEvidenceCard: () => null }))
+vi.mock('@/features/scan-windows/components/asset-scan-window-card', () => ({
+  AssetScanWindowCard: () => null,
+}))
+vi.mock('@/features/attack-surface/components/asset-web-evidence-card', () => ({
+  AssetWebEvidenceCard: () => null,
+}))
 vi.mock('@/features/repositories/components/repository-workspace', () => ({
   RepositoryWorkspace: () => null,
 }))
