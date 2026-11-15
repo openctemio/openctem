@@ -159,7 +159,13 @@ import {
 } from '@/features/findings/filters/contract'
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
 import { applyTextFilter, filterParams } from '@/features/findings/filters/filter-query-mode'
-import { useListQueryMode } from '@/features/query/components/query-mode'
+import {
+  modePageParams,
+  queryModeIn,
+  useListQueryMode,
+  viewOpensInQueryMode,
+  withQueryMode,
+} from '@/features/query/components/query-mode'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import {
   columnsToSave,
@@ -731,7 +737,8 @@ function FindingsContent() {
     }
     const q = new URLSearchParams({ view: view.id })
     if (view.group_by) q.set('group', view.group_by)
-    replaceUrlSearch(q)
+    // The view opens in the search mode it was saved in.
+    replaceUrlSearch(withQueryMode(q, viewOpensInQueryMode(view)))
   }, [])
   const { views: savedViewList } = useSavedViews('findings', !!savedId)
   const openView = savedViewList.find((v) => v.id === savedId)
@@ -2295,9 +2302,13 @@ function FindingsContent() {
   )
   const queryMode = useListQueryMode({
     entity: 'findings',
+    active: queryModeIn(searchParams),
+    onActiveChange: (on) =>
+      replaceUrlSearch(withQueryMode(new URLSearchParams(window.location.search), on)),
     fq: fqParam,
     params: filterParams(searchParams, FILTER_BAR_SKIP_PARAMS, textScope),
-    onApply: (r) => replaceUrlSearch(applyTextFilter(searchParams, FILTER_BAR_SKIP_PARAMS, r)),
+    onApply: (r, on) =>
+      replaceUrlSearch(withQueryMode(applyTextFilter(searchParams, FILTER_BAR_SKIP_PARAMS, r), on)),
     resultCount: findingsLoading ? null : total,
     recentScope: 'findings',
     testId: 'findings-query-editor',
@@ -2576,6 +2587,7 @@ function FindingsContent() {
         groupBy={groupParam}
         columns={columnsToSave(shownColumns)}
         density={urlDensity ?? viewDensity}
+        pageParams={modePageParams(queryMode.active)}
         onDiscard={() => openSavedView(openView ?? null)}
         onSelect={openSavedView}
       />
