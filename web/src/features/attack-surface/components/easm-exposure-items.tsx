@@ -730,6 +730,14 @@ export function EASMExposureItems() {
       <FilterChipsRow
         label={t('attackSurface.exposures.activeFilters', 'Active filters')}
         chips={chips}
+        onClearAll={
+          chips.length > 1
+            ? () => {
+                for (const name of ['severity', 'category', 'primary', 'asset'] as const)
+                  setFilter(name, '')
+              }
+            : undefined
+        }
         end={
           view === 'list'
             ? t('attackSurface.exposures.count', '{count} exposures', { count: list.total })

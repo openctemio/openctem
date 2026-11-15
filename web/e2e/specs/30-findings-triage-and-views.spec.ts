@@ -92,13 +92,8 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
       const heights = await page
         .locator('main tbody tr')
         .evaluateAll((rows) => rows.map((tr) => Math.round(tr.getBoundingClientRect().height)))
-      if (density === 'compact') {
-        // The row menu's trigger still draws 32 in a compact row (its dense
-        // size comes with the row menu change); every other cell fits 32.
-        for (const h of heights) expect(h, `rows at ${density}`).toBeLessThanOrEqual(height + 1)
-      } else {
-        expect(new Set(heights), `rows at ${density}`).toEqual(new Set([height]))
-      }
+      // Every density exact, compact included (the row menu trigger is dense).
+      expect(new Set(heights), `rows at ${density}`).toEqual(new Set([height]))
       const cut = await page
         .getByRole('columnheader', { name: 'Priority' })
         .locator('[data-slot="sort-button"] span')
@@ -168,5 +163,37 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
       )
       expect(overflow, `${width}px`).toBe(false)
     }
+  })
+
+  test('a practice with nothing yet says so in the table; nothing above the list; the view keeps its name', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const top = async () => {
+      const row = page.getByTestId('findings-toolbar-primary')
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      return Math.round((await row.boundingBox())!.y)
+    }
+    await page.goto('/findings')
+    await page.waitForLoadState('networkidle')
+    const defaultTop = await top()
+    const defaultTitle = await page.getByTestId('findings-view-title').textContent()
+
+    await page.goto('/findings?practice=compliance')
+    await page.waitForLoadState('networkidle')
+    const empty = page.getByTestId('findings-empty-state')
+    await expect(empty).toBeVisible({ timeout: 30_000 })
+    // The seed has no compliance checks: the practice's first run, in the table.
+    test.skip(
+      (await empty.getAttribute('data-kind')) !== 'practice_nothing',
+      'this stack has compliance findings'
+    )
+    await expect(empty).toContainText('No benchmark checks yet')
+    await expect(page.getByTestId('compliance-benchmarks-panel')).toHaveCount(0)
+    await expect(page.getByText('No findings match')).toHaveCount(0)
+    // Choosing a practice is not a custom view.
+    await expect(page.getByTestId('findings-view-title')).toHaveText(defaultTitle ?? '')
+    // Nothing above the title row: the list starts where it does without a practice.
+    expect(await top()).toBe(defaultTop)
   })
 })

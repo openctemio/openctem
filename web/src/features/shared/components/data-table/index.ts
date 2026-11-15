@@ -4,8 +4,10 @@ export {
   type DataTableEmptyStates,
   type DataTableRowGroups,
   type DataTableSearch,
+  type DataTableSelectMode,
   type MobileRowSelection,
 } from './data-table'
+export { usePhoneSelectMode } from './phone-select-mode'
 export { DataTableColumnHeader } from './data-table-column-header'
 export { type DataTableBulk, type DataTableSelection } from './data-table-selection'
 export { TableRefreshBar } from './table-refresh-bar'

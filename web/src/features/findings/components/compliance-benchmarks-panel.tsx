@@ -106,14 +106,9 @@ export function ComplianceBenchmarksPanel() {
   } else if (isLoading && !data) {
     body = <Skeleton className="h-24 w-full" />
   } else if (rows.length === 0) {
-    body = (
-      <p className="text-sm text-muted-foreground" data-testid="compliance-benchmarks-empty">
-        {t(
-          'findings.complianceView.empty',
-          'No benchmark checks yet. Import a scan that runs a compliance audit, and each control appears here with its result.'
-        )}
-      </p>
-    )
+    // Nothing to show: no block at all. The list's empty body says what to do
+    // (the practice's first run), in the table, where empty content belongs.
+    return null
   } else {
     body = (
       <div className="overflow-x-auto">
@@ -156,6 +151,27 @@ export function ComplianceBenchmarksPanel() {
         <div data-testid="compliance-benchmarks-panel">{body}</div>
       </DetailSection>
       <ComplianceBenchmarkSheet benchmark={open} onClose={() => setOpen(null)} />
+    </>
+  )
+}
+
+/**
+ * The benchmarks block, then what follows it on the page (the list), given
+ * whether the benchmarks are still loading: the page shows the list's
+ * skeleton until then, so the block (drawn only when there are benchmarks)
+ * never pushes the list down after the first paint.
+ */
+export function ComplianceBenchmarksGate({
+  children,
+}: {
+  children: (pending: boolean) => React.ReactNode
+}) {
+  const { data, isLoading } = useComplianceBenchmarks()
+  const pending = !!isLoading && !data
+  return (
+    <>
+      {!pending && <ComplianceBenchmarksPanel />}
+      {children(pending)}
     </>
   )
 }
