@@ -100,6 +100,68 @@ for (const width of [1440, 900]) {
   }
 }
 
+// Sidebar rows ("Sidebar navigation" in docs/ui-style-contract.md): 36 rows
+// with 20 px icons, one text style for links and section headers (only the
+// current row is 500), 16 px muted chevrons, a divider before the last
+// cluster; on the rail (900) 32 px squares on the same 36 px rhythm.
+for (const width of [1440, 900]) {
+  test(`sidebar rows read alike at ${width}`, { tag: ['@shell'] }, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/findings')
+    await expect(page.locator('header [data-slot=header-actions]')).toBeVisible()
+    await page.mouse.move(width - 10, 990)
+    const m = await page.evaluate(() => {
+      const content = document.querySelector(
+        '[data-slot=sidebar][data-state] [data-sidebar=content]'
+      )!
+      const rows = [...content.querySelectorAll<HTMLElement>('[data-sidebar=menu-button]')].filter(
+        (r) => r.getBoundingClientRect().height > 0
+      )
+      const rest = rows.filter((r) => r.dataset.active !== 'true' && r.dataset.current !== 'true')
+      const style = (r: HTMLElement) => {
+        const s = getComputedStyle(r)
+        return `${s.fontSize}/${s.lineHeight} ${s.fontWeight} ${s.color}`
+      }
+      const tops = rows.map((r) => Math.round(r.getBoundingClientRect().top))
+      return {
+        heights: [...new Set(rows.map((r) => Math.round(r.getBoundingClientRect().height)))],
+        icons: [
+          ...new Set(
+            rows.map((r) => Math.round(r.querySelector('svg')!.getBoundingClientRect().width))
+          ),
+        ],
+        headers: rows.filter((r) => r.hasAttribute('aria-expanded')).length,
+        restStyles: [...new Set(rest.map(style))],
+        chevrons: [
+          ...new Set(
+            rows
+              .filter((r) => r.hasAttribute('aria-expanded'))
+              .map((r) => {
+                const c = r.querySelector('svg:last-child')!
+                return `${Math.round(c.getBoundingClientRect().width)} ${getComputedStyle(c).color}`
+              })
+          ),
+        ],
+        pitch: Math.min(...tops.slice(1).map((t, i) => t - tops[i])),
+        dividers: content.querySelectorAll('[data-slot=nav-cluster-divider]').length,
+      }
+    })
+    const rail = width < 1024
+    expect(m.heights).toEqual([rail ? 32 : 36])
+    expect(m.icons).toEqual([20])
+    expect(m.pitch).toBe(36)
+    expect(m.dividers).toBe(1)
+    if (!rail) {
+      expect(m.headers).toBeGreaterThan(3)
+      expect(m.restStyles, 'links and section headers share one text style').toHaveLength(1)
+      expect(m.restStyles[0]).toMatch(/^14px\/20px 400 /)
+      expect(m.chevrons).toHaveLength(1)
+      expect(m.chevrons[0]).toMatch(/^16 /)
+    }
+  })
+}
+
 test(
   'Create menu is 232 wide with one-line rows; "n a" opens Add asset once',
   { tag: ['@shell'] },

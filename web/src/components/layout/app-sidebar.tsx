@@ -5,7 +5,7 @@ import { Sidebar, SidebarContent, SidebarHeader, SidebarRail } from '@/component
 // Use centralized sidebar data from features
 import { sidebarData } from '@/config/sidebar-data'
 import { useFilteredSidebarData } from '@/lib/permissions'
-import { NAV_COLUMN_CLASS, NavClusterLabel, NavGroup } from './nav-group'
+import { NAV_COLUMN_CLASS, NavClusterDivider, NavClusterLabel, NavGroup } from './nav-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { TeamSwitcher } from './team-switcher'
 import { SidebarBrand } from './sidebar-brand'
@@ -24,7 +24,7 @@ export function AppSidebar() {
 
   // Quick links (untitled group) first, then the person's pins, then the CTEM
   // stages in cycle order under their own label, then everything else
-  // (Insights). Settings and Help are pinned in the footer, below the
+  // (Insights) after a divider. Settings and Help are pinned in the footer, below the
   // scrolling nav.
   const groups = filteredSidebarData.navGroups
   const quickLinks = groups.filter((g) => !g.title)
@@ -59,6 +59,7 @@ export function AppSidebar() {
       {cycle.map((group) => (
         <NavGroup key={group.title} {...group} />
       ))}
+      {cycle.length > 0 && rest.length > 0 && <NavClusterDivider />}
       {rest.map((group) => (
         <NavGroup key={group.title} {...group} />
       ))}

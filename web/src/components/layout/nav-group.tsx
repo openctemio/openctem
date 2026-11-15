@@ -42,7 +42,7 @@ import { cn } from '@/lib/utils'
 import { NavCount } from './nav-count'
 import {
   NAV_BUTTON_CLASS,
-  NAV_SECTION_HEADER_CLASS,
+  NAV_CHEVRON_CLASS,
   SUB_BUTTON_CLASS,
   SUB_LABEL_CLASS,
   SUB_MENU_CLASS,
@@ -110,17 +110,32 @@ function AnimatedCollapse({
 
 /**
  * A section label between clusters of nav rows ("Pinned", "CTEM cycle"):
- * 12/16 500 dim, 16px above and 4px below. On the icon rail it folds to
+ * 12/16 500 muted, 16px above and 8px below. On the icon rail it folds to
  * nothing, so the icons stand in one even column.
  */
 export function NavClusterLabel({ label }: { label: string }) {
   return (
     <div
       data-slot="nav-cluster-label"
-      className="flex h-9 shrink-0 items-end overflow-hidden px-2 pb-1 transition-[height,opacity] duration-250 ease-sidebar motion-reduce:transition-none group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:pb-0 group-data-[collapsible=icon]:opacity-0"
+      className="flex h-10 shrink-0 items-end overflow-hidden px-1.5 pb-2 transition-[height,opacity] duration-250 ease-sidebar motion-reduce:transition-none group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:pb-0 group-data-[collapsible=icon]:opacity-0"
     >
-      <span className="truncate text-cap-m text-fg-dim">{label}</span>
+      <span className="truncate text-cap-m text-muted-foreground">{label}</span>
     </div>
+  )
+}
+
+/**
+ * A hairline between clusters that have no label (before Insights): 36px
+ * with the line in the middle, the same in both sidebar states, so nothing
+ * below it moves when the sidebar collapses.
+ */
+export function NavClusterDivider() {
+  return (
+    <div
+      role="separator"
+      data-slot="nav-cluster-divider"
+      className="relative h-9 shrink-0 before:absolute before:inset-x-1.5 before:top-1/2 before:h-px before:bg-border"
+    />
   )
 }
 
@@ -382,22 +397,20 @@ const NavSection = memo(function NavSection({
         // Every section header only folds and unfolds; it never navigates, even
         // when the section has an overview (`url`). The overview is the
         // section's own "Overview" row, one click away.
+        // The header reads like any other row (same weight and colour); only a
+        // folded section that holds the current page marks it (`data-current`,
+        // ink 500), since its filled child row is hidden then.
         <SidebarMenuButton
           tooltip={label}
           aria-expanded={open}
           aria-controls={contentId}
-          data-current={sectionActive}
+          data-current={sectionActive && !open}
           onClick={() => setOpen((o) => !o)}
-          className={NAV_SECTION_HEADER_CLASS}
+          className={NAV_BUTTON_CLASS}
         >
           {SectionIcon && <SectionIcon />}
           <span>{label}</span>
-          <ChevronRight
-            className={cn(
-              'ms-auto size-3.5! transition-transform duration-200 motion-reduce:transition-none rtl:rotate-180',
-              open && 'rotate-90 rtl:rotate-90'
-            )}
-          />
+          <ChevronRight className={cn(NAV_CHEVRON_CLASS, open && 'rotate-90 rtl:rotate-90')} />
         </SidebarMenuButton>
       )}
       {/* Same element in both states, so collapsing the rail animates the open
@@ -547,12 +560,7 @@ const NavSubCollapsible = memo(function NavSubCollapsible({
           {releaseStatusBadge && (
             <NavBadge variant={releaseStatusBadge.variant}>{releaseStatusBadge.text}</NavBadge>
           )}
-          <ChevronRight
-            className={cn(
-              'ms-auto size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none rtl:rotate-180',
-              open && 'rotate-90 rtl:rotate-90'
-            )}
-          />
+          <ChevronRight className={cn(NAV_CHEVRON_CLASS, open && 'rotate-90 rtl:rotate-90')} />
         </button>
       </SidebarMenuSubButton>
       <AnimatedCollapse id={contentId} open={open}>
