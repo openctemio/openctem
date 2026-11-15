@@ -32,6 +32,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/liveness"
 	"github.com/openctemio/openctem/server/pkg/domain/savedview"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tagdom "github.com/openctemio/openctem/server/pkg/domain/tag"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/validator"
@@ -458,14 +459,24 @@ type CreateAssetRequest struct {
 
 // UpdateAssetRequest represents the request to update an asset.
 type UpdateAssetRequest struct {
-	Name        *string        `json:"name" validate:"omitempty,min=1,max=255"`
-	Criticality *string        `json:"criticality" validate:"omitempty,criticality"`
-	Scope       *string        `json:"scope" validate:"omitempty,scope"`
-	Exposure    *string        `json:"exposure" validate:"omitempty,exposure"`
-	Description *string        `json:"description" validate:"omitempty,max=1000"`
-	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
-	Tags        []string       `json:"tags" validate:"omitempty,max=50,dive,max=50"`
-	Properties  map[string]any `json:"properties,omitempty"`
+	Name        *string `json:"name" validate:"omitempty,min=1,max=255"`
+	Criticality *string `json:"criticality" validate:"omitempty,criticality"`
+	Scope       *string `json:"scope" validate:"omitempty,scope"`
+	Exposure    *string `json:"exposure" validate:"omitempty,exposure"`
+	Description *string `json:"description" validate:"omitempty,max=1000"`
+	OwnerRef    *string `json:"owner_ref" validate:"omitempty,max=500"`
+	// Tags replaces the whole list: every stored tag it leaves out is
+	// removed, including tags set after the caller read the asset. Send it
+	// only with the list you just read; to edit, use tags_add/tags_remove.
+	Tags []string `json:"tags" validate:"omitempty,max=50,dive,max=50"`
+	// TagsAdd adds these tags. Every tag the asset carries that tags_remove
+	// does not name stays, whoever set it and whenever. Not with tags.
+	TagsAdd []string `json:"tags_add,omitempty" validate:"omitempty,max=50,dive,max=50"`
+	// TagsRemove removes these tags (one the asset does not carry is
+	// ignored). Not with tags; a tag cannot be in both tags_add and
+	// tags_remove.
+	TagsRemove []string       `json:"tags_remove,omitempty" validate:"omitempty,max=50,dive,max=255"`
+	Properties map[string]any `json:"properties,omitempty"`
 	// SubType changes the kind within the asset's type (closed list from
 	// GET /asset-types); "" clears it. The type itself cannot change.
 	SubType *string `json:"sub_type,omitempty" validate:"omitempty,max=50"`
@@ -1376,6 +1387,8 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:           req.Description,
 		OwnerRef:              req.OwnerRef,
 		Tags:                  req.Tags,
+		TagsAdd:               req.TagsAdd,
+		TagsRemove:            req.TagsRemove,
 		SubType:               req.SubType,
 		Properties:            req.Properties,
 		ImpactConfidentiality: req.ImpactConfidentiality,
@@ -1392,9 +1405,13 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var governed []taggov.Change
-	if req.Tags != nil {
+	if req.Tags != nil || len(req.TagsAdd)+len(req.TagsRemove) > 0 {
+		next := req.Tags
+		if next == nil {
+			next = tagdom.Apply(before.Tags(), tagdom.Change{Add: req.TagsAdd, Remove: req.TagsRemove})
+		}
 		var refusal *tagRefusal
-		if governed, refusal = checkTagChange(r.Context(), h.tagGovernor, tenantID, before.Tags(), req.Tags); refusal != nil {
+		if governed, refusal = checkTagChange(r.Context(), h.tagGovernor, tenantID, before.Tags(), next); refusal != nil {
 			h.refuseTagChange(w, r, before.ID().String(), before.Name(), refusal)
 			return
 		}
@@ -1406,7 +1423,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
-		map[string]any{"changed_fields": assetChangedFields(before, a)})
+		assetUpdateAuditMetadata(before, a))
 	h.auditGovernedTags(r, a.ID().String(), a.Name(), governed)
 	if held != nil {
 		h.writeAssetHeld(w, a, held)
@@ -2061,6 +2078,82 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// AssetBulkTagsRequest adds and removes tags on many assets.
+type AssetBulkTagsRequest struct {
+	AssetIDs []string `json:"asset_ids" validate:"required,min=1,max=100,dive,uuid"`
+	// Add: tags added to every asset that lacks them.
+	Add []string `json:"add" validate:"omitempty,max=50,dive,max=50"`
+	// Remove: tags removed from every asset that carries them.
+	Remove []string `json:"remove" validate:"omitempty,max=50,dive,max=255"`
+}
+
+// AssetBulkTagsResponse counts what a bulk tag change did.
+type AssetBulkTagsResponse struct {
+	// Updated: assets whose tags changed.
+	Updated int `json:"updated"`
+	// Unchanged: assets that already had the added tags and none of the
+	// removed ones (nothing written).
+	Unchanged int `json:"unchanged"`
+	// Failed: ids that are malformed, missing, of another organization or
+	// outside the caller's data scope, or an asset that cannot take the
+	// change (the tag cap).
+	Failed int `json:"failed"`
+}
+
+// BulkChangeTags handles POST /api/v1/assets/bulk/tags
+// @Summary      Add or remove tags on many assets
+// @Description  Adds the tags of "add" and removes the tags of "remove" on each named asset (at most 100). Every other tag of every asset stays, whoever set it and whenever: the change is applied to the stored tags, never to a copy the client holds. A tag cannot be in both lists. Assets outside the caller's data scope are not changed and count as failed.
+// @Tags         Assets
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      AssetBulkTagsRequest  true  "Assets and the tag change"
+// @Success      200  {object}  AssetBulkTagsResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Failure      403  {object}  map[string]string
+// @Router       /assets/bulk/tags [post]
+func (h *AssetHandler) BulkChangeTags(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req AssetBulkTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid JSON body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	if len(req.Add)+len(req.Remove) == 0 {
+		apierror.BadRequest("add or remove at least one tag").WriteJSON(w)
+		return
+	}
+	// Tags that rules read: the whole change is checked once (the tags of
+	// add and of remove), before any asset is written.
+	if _, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, req.Remove, req.Add); refusal != nil {
+		h.refuseTagChange(w, r, "", "", refusal)
+		return
+	}
+
+	result, err := h.service.BulkChangeAssetTags(r.Context(), tenantID, assetapp.BulkTagChangeInput{
+		AssetIDs: req.AssetIDs, Add: req.Add, Remove: req.Remove, ActorID: middleware.GetUserID(r.Context()),
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if result.Updated > 0 {
+		h.auditAsset(r, auditdom.ActionAssetBulkTagsChanged, "", "", "Bulk asset tag change",
+			map[string]any{"tags_added": req.Add, "tags_removed": req.Remove, "asset_ids": result.Changed,
+				"updated": result.Updated, "unchanged": result.Unchanged, "failed": result.Failed})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(AssetBulkTagsResponse{Updated: result.Updated, Unchanged: result.Unchanged, Failed: result.Failed})
 }
 
 // AssetStatsResponse represents asset statistics in API responses.

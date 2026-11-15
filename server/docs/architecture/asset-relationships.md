@@ -160,7 +160,14 @@ relationship as the detail), hidden lineage hops as dashed "Hidden asset"
 nodes, a legend by asset type, and a breadcrumb of the lineage above the
 canvas. Selecting a node (click, or arrow keys then Enter) opens a panel to
 open the asset, show its related assets (a depth-1 neighborhood merged into
-the graph) or draw a cluster's members 50 at a time.
+the graph) or draw a cluster's members 50 at a time. A selected cluster's
+panel names its first five members at once (name and type, each opening the
+asset), read from the related groups endpoint for that group, with "and N
+more" and "Show all" (the primary action) to draw the rest. The names are
+only those the endpoint returns, so a member outside the caller's data scope
+is never named; when none can be listed the panel says so. The view fits the
+graph with padding that keeps every node clear of the zoom controls (bottom
+left) and the full-screen button (top right).
 
 **Full screen** (the shared `FlowFullscreen`, also on the attack-path
 canvas): the canvas's "Full screen" button or `f` opens the same view in a

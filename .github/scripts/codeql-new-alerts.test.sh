@@ -10,7 +10,9 @@ cat >"$tmp/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
   *"ref=refs/pull/7/merge"*) cat "$PR_FILE" ;;
+  *"analyses?ref=refs/heads/next"*) [[ "${NEXT_ANALYSES:-}" == fail ]] && exit 1; echo "${NEXT_ANALYSES:-1}" ;;
   *"ref=refs/heads/develop"*) cat "$BASE_FILE" ;;
+  *"ref=refs/heads/next"*) cat "${NEXT_FILE:-$BASE_FILE}" ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
 STUB
@@ -65,5 +67,19 @@ rel() { # rel <name> <rc> <head ref> <head repo>
 rel "release PR is compared with develop (new alert still fails)" 1 release/v1.2.3 o/r
 rel "a fork's release/ branch is compared with main" 2 release/v1.2.3 fork/r
 rel "a non-release branch into main is compared with main" 2 feature/x o/r
+# A pull request into next: compared with next once next has an analysis; with
+# develop (where next came from) while next has none; with next when the lookup fails.
+nxt() { # nxt <name> <rc> <next analyses: count|fail>
+  local out rc=0
+  echo "$(arr "$(alert 1 high)" "$(alert 2 high go/new)")" >"$tmp/pr.json"
+  echo "$(arr "$(alert 1 high)" "$(alert 2 high go/new)")" >"$tmp/base.json" # develop has both
+  echo "[]" >"$tmp/next.json"
+  out="$(PATH="$tmp:$PATH" PR_FILE="$tmp/pr.json" BASE_FILE="$tmp/base.json" NEXT_FILE="$tmp/next.json" NEXT_ANALYSES="$3" \
+    REPO=o/r PR_NUMBER=7 BASE_REF=next GITHUB_STEP_SUMMARY="$tmp/sum" bash "$script" 2>&1)" || rc=$?
+  if [[ "$rc" -ne "$2" ]]; then echo "FAIL: $1 (exit $rc, want $2)"; echo "$out"; failed=$((failed + 1)); else echo "ok:   $1"; pass=$((pass + 1)); fi
+}
+nxt "into next without an analysis of next: compared with develop" 0 0
+nxt "into next with an analysis of next: compared with next" 1 1
+nxt "into next, lookup failed: compared with next (strict)" 1 fail
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]

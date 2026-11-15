@@ -45,6 +45,7 @@ func registerAssetRoutes(
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
 		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
 		r.POST("/bulk/status", h.BulkUpdateStatus, middleware.Require(permission.AssetsWrite))
+		r.POST("/bulk/tags", h.BulkChangeTags, middleware.Require(permission.AssetsWrite))
 
 		// Import operations are registered separately via registerAssetImportRoutes
 

@@ -612,7 +612,7 @@ the SSO `state`. Generate one with `openssl rand -hex 32`.
 ```yaml
 services:
   api:
-    image: ghcr.io/openctemio/openctem-api:vX.Y.Z   # v0.8.0 and earlier: ghcr.io/openctemio/api
+    image: ghcr.io/openctemio/openctem-server:vX.Y.Z   # v0.9.0 to v0.22.x: ghcr.io/openctemio/openctem-api
     environment:
       APP_ENV: production
       # Required — encrypts per-tenant client secrets + PKCE verifier
@@ -754,5 +754,3 @@ its key, import again and save (an owner approves); the expiry alerts warn 30,
   `internal/app/auth/domainverify/service.go`, `internal/config/config.go`,
   `internal/infra/http/routes/auth.go`,
   per-request enforce-SSO: `internal/infra/http/middleware/sso_enforcement.go`
-</content>
-</invoke>

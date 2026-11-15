@@ -9,6 +9,7 @@ vi.mock('../use-notification-api', () => ({
   markNotificationAsRead: vi.fn(),
   markAllNotificationsAsRead: vi.fn(),
   invalidateNotificationsCache: vi.fn(),
+  setUnreadCountZero: vi.fn(),
 }))
 
 beforeEach(() => vi.clearAllMocks())
@@ -23,6 +24,17 @@ describe('useMarkNotifications', () => {
     expect(toast.error).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes the list and the unread count after marking one read', async () => {
+    vi.mocked(api.markNotificationAsRead).mockResolvedValue(undefined)
+    const { result } = renderHook(() => useMarkNotifications())
+    await act(async () => {
+      result.current.markRead('n2')
+    })
+    expect(api.markNotificationAsRead).toHaveBeenCalledWith('n2')
+    expect(api.invalidateNotificationsCache).toHaveBeenCalledTimes(1)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
   it('tells the user when mark all fails, and refreshes on success', async () => {
     vi.mocked(api.markAllNotificationsAsRead).mockRejectedValueOnce(new Error('500'))
     const { result } = renderHook(() => useMarkNotifications())
@@ -34,6 +46,7 @@ describe('useMarkNotifications', () => {
     await act(async () => {
       await result.current.markAllRead()
     })
+    expect(api.setUnreadCountZero).toHaveBeenCalledTimes(1)
     expect(api.invalidateNotificationsCache).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledTimes(1)
   })

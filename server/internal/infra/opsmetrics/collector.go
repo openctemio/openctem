@@ -78,6 +78,10 @@ var (
 		"Open scan runs more than 10 minutes past their deadline (the timeout controller should have ended them)", nil, nil)
 	descOutbox = prometheus.NewDesc("openctem_outbox_entries",
 		"Notification outbox entries by status (pending, failed, dead)", []string{"status"}, nil)
+	descFeedLastSuccess = prometheus.NewDesc("openctem_feed_last_success_timestamp_seconds",
+		"Unix time of the last successful import of an enabled intelligence feed (epss, kev, vulnfeed); absent until the first success", []string{"source"}, nil)
+	descFeedFailing = prometheus.NewDesc("openctem_feed_failing",
+		"1 when the last run of an enabled intelligence feed failed", []string{"source"}, nil)
 	descOutboxOldest = prometheus.NewDesc("openctem_outbox_oldest_pending_seconds",
 		"How long the oldest due pending notification has waited", nil, nil)
 )
@@ -111,7 +115,7 @@ func New(source Source, cfg Config, log *logger.Logger) *Collector {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		descUp, descBuild, descSchema, descSchemaDirty, descSensors, descSensorConfig, descSensorUnhardened, descSensorSDK,
-		descCommands, descCommandOldest, descQueueDepth, descQueueTenants, descQueueTopTenant, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest,
+		descCommands, descCommandOldest, descQueueDepth, descQueueTenants, descQueueTopTenant, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest, descFeedLastSuccess, descFeedFailing,
 	} {
 		ch <- d
 	}
@@ -156,6 +160,24 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(descOutbox, prometheus.GaugeValue, float64(snap.OutboxFailed), "failed")
 	ch <- prometheus.MustNewConstMetric(descOutbox, prometheus.GaugeValue, float64(snap.OutboxDead), "dead")
 	ch <- prometheus.MustNewConstMetric(descOutboxOldest, prometheus.GaugeValue, snap.OutboxOldestPendingSec)
+	collectFeeds(ch, snap.Feeds)
+}
+
+// collectFeeds emits the feeds' progress. Closed-set source labels only
+// (anything else is dropped); a feed that never succeeded has no timestamp
+// series, only its failing flag.
+func collectFeeds(ch chan<- prometheus.Metric, feeds []postgres.OpsFeed) {
+	for _, f := range feeds {
+		switch f.Source {
+		case "epss", "kev", "vulnfeed":
+		default:
+			continue
+		}
+		if !f.LastSuccess.IsZero() {
+			ch <- prometheus.MustNewConstMetric(descFeedLastSuccess, prometheus.GaugeValue, float64(f.LastSuccess.Unix()), f.Source)
+		}
+		ch <- prometheus.MustNewConstMetric(descFeedFailing, prometheus.GaugeValue, boolValue(f.Failing), f.Source)
+	}
 }
 
 // sensor health values the gauge always reports (0 when none), so an alert

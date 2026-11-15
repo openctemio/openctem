@@ -9,13 +9,17 @@
 #       as a Nexus Docker proxy, or a staging project to promote from)
 #   mirror-images.sh bundle <bundle-dir> <dest-prefix> [options]
 #       from the release's offline bundle (no internet access needed)
+#   mirror-images.sh server-image <version>
+#       print the name the server image of that release is published under
+#       (openctem-server from v0.23.0, openctem-api up to v0.22.x)
 #
 # <dest-prefix> is the registry and namespace the images go under, e.g.
 # harbor.example.internal/openctem-staging. Each image lands at
 # <dest-prefix>/<name>:<version> with the SAME digest as the release.
 #
 # Options:
-#   --images "a b"       only these images (default: every image of the release)
+#   --images "a b"       only these images (default: every image of the release,
+#                        with the server image under the name of that release)
 #   --source-prefix P    online mode: read the images from P/<name> instead of
 #                        ghcr.io/openctemio/<name> (signatures are checked the
 #                        same way: they travel with the images)
@@ -39,19 +43,47 @@
 # ~/.docker/config.json).
 set -euo pipefail
 
-ALL_IMAGES="openctem-api openctem-web openctem-console openctem-gateway migrations seed openctem"
+# server_image <version>: the name the server image of a release is published
+# under. The one place that knows the rename: openctem-server from v0.23.0,
+# the earlier name for v0.22.x and before. Pre-release and build suffixes
+# count as their release (v0.23.0-rc.1 is a v0.23.0).
+server_image() {
+	[[ "$1" =~ ^v([0-9]+)\.([0-9]+)\.[0-9]+ ]] || die "version '$1' is not vX.Y.Z"
+	if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 23 ]; then
+		echo openctem-api # v0.22.x and earlier
+	else
+		echo openctem-server
+	fi
+}
+
+# all_images <version>: every image of that release.
+all_images() {
+	echo "$(server_image "$1") openctem-web openctem-console openctem-gateway migrations seed openctem"
+}
 SRC_REGISTRY="ghcr.io/openctemio"
 REPO_URL="https://github.com/openctemio/openctem"
 OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
-usage() { sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
+usage() { sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 64; }
 die() { echo "mirror-images: $*" >&2; exit 1; }
 log() { echo "mirror-images: $*" >&2; }
+
+version_ok() {
+	case "$1" in v[0-9]*.[0-9]*.[0-9]*) ;; *) die "version '$1' is not vX.Y.Z" ;; esac
+	case "$1" in *[!0-9A-Za-z.+-]*) die "version '$1' has unexpected characters" ;; esac
+}
+
+if [ "${1:-}" = server-image ]; then
+	[ $# -eq 2 ] || usage
+	version_ok "$2"
+	server_image "$2"
+	exit 0
+fi
 
 [ $# -ge 3 ] || usage
 mode="$1" src="$2" dest="${3%/}"
 shift 3
-images="$ALL_IMAGES" trusted_root="" plain_http="" manifest_out="" env_out="" src_plain_http=""
+images="" trusted_root="" plain_http="" manifest_out="" env_out="" src_plain_http=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--images) images="$2"; shift 2 ;;
@@ -110,11 +142,6 @@ verify_blob() {
 	}
 }
 
-version_ok() {
-	case "$1" in v[0-9]*.[0-9]*.[0-9]*) ;; *) die "version '$1' is not vX.Y.Z" ;; esac
-	case "$1" in *[!0-9A-Za-z.+-]*) die "version '$1' has unexpected characters" ;; esac
-}
-
 manifest_lines=()
 
 copy_and_check() { # copy_and_check <name> <version> <digest> <source args...>
@@ -136,6 +163,7 @@ case "$mode" in
 online)
 	version="$src"
 	version_ok "$version"
+	[ -n "$images" ] || images="$(all_images "$version")"
 	src_flags=() cosign_src_flags=()
 	if [ -n "$src_plain_http" ]; then
 		src_flags=(--from-plain-http)
@@ -156,6 +184,7 @@ bundle)
 	version="$(basename "$list" .txt)"
 	version="${version#openctem-images-}"
 	version_ok "$version"
+	[ -n "$images" ] || images="$(all_images "$version")"
 	[ -r "$list.sigstore.json" ] || die "$list.sigstore.json (its signature) is missing"
 	verify_blob "$list" "$list.sigstore.json" docker-publish.yml "$version"
 	log "image list $list: signature verified"
@@ -187,7 +216,7 @@ if [ -n "$env_out" ]; then
 		echo "OPENCTEM_VERSION=${version}"
 		for l in "${manifest_lines[@]}"; do
 			case "${l%% *}" in
-			openctem-api) echo "API_IMAGE=${dest}/openctem-api" ;;
+			openctem-server | openctem-api) echo "API_IMAGE=${dest}/${l%% *}" ;;
 			openctem-web) echo "UI_IMAGE=${dest}/openctem-web" ;;
 			openctem-console) echo "CONSOLE_IMAGE=${dest}/openctem-console" ;;
 			openctem-gateway) echo "GATEWAY_IMAGE=${dest}/openctem-gateway" ;;

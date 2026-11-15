@@ -10,8 +10,10 @@ differences are the AI label and the provenance on everything it does.
 
 ## Flow: analyze a finding
 
-Checked against the code of v0.19.1 and develop on 2026-11-05. Only the
-built-in executor and on-demand runs exist: `POST
+Checked against the code of v0.19.1 and develop on 2026-11-05. On-demand
+runs only; the built-in path is drawn below (an AI agent that runs on AI
+workers takes the same checks, then queues an analysis job: "Runs on an AI
+worker"). `POST
 /api/v1/findings/{id}/ai/analyze` is the one caller of
 `BuiltinExecutor.Analyze` (no console button, no event or schedule trigger
 yet, though `aidom.Trigger` names them).
@@ -197,12 +199,70 @@ finding is read again: if someone else changed it since the AI agent last saw it
 written as a comment instead, and every command carries the expected row version. AI agent comments
 are internal (never sent to tickets or integrations).
 
+## Runs on an AI worker
+
+An AI agent runs **built in** (the default: the platform calls the model) or **on the
+organization's AI workers** (`executor = tenant_worker`): sensors on the `ai-worker` grant profile
+([sensor-pairing.md](sensor-pairing.md), "The AI worker profile") that hold their own model keys.
+`PUT /api/v1/ai/agents/{id}/executor` with `{"executor":"builtin"|"tenant_worker"}` sets it
+(`service_accounts:manage` and a recent sign-in; audited `ai_agent.executor_changed` with the
+executor before and after). `platform_worker` and `external` are refused (400).
+
+`BuiltinExecutor.Analyze` resolves the principal and checks `findings:read` and the data scope as
+for a built-in run, then hands a worker agent to `WorkerExecutor`
+(`internal/app/aianalysis/worker.go`):
+
+1. `StartRun` records the run as `queued` (no sensor yet), executor `tenant_worker`, deadline the job
+   deadline plus one minute.
+2. `prepare` runs the same steps as a built-in run (AI off for the organization refuses with
+   `not_configured`, use case off, data class ceiling, masked bundle with the mapping saved on the
+   platform, fields sent and withheld, budget pre-check). `tenant_only` data is allowed here, since it
+   stays on a worker the organization runs. The bundle is fitted to the job's size limit by its
+   **encoded** size (`aibundle.Bundle.Fit`): knowledge excerpts go first, then the longest field
+   values are shortened (ending in `[shortened by the platform]`) or withheld; every change is stated
+   in the bundle text and the shortened fields are in the audit row. A job is never sent over the
+   limit (`bundle_too_large` when even the smallest bundle does not fit).
+3. The job is an `openctem.analyze/v1` document validated by `analyze.MarshalJob`: `job_id` = the run
+   id, the subject, the masked `bundle.text`, the prompt template id and digest, `budgets` (tokens:
+   40,000 or what is left of the AI agent's monthly tokens; seconds: 900), `model_policy` (the
+   provider and model the organization chose for its own key, nothing otherwise; never the key) and
+   `deadline` (now + 15 minutes). The command payload is `{"job": <the job>,
+   "required_capabilities": ["analyze.<kind>"]}`: the job schema is closed, so the routing key sits
+   next to it.
+4. The run is updated with what it sends (including `injection_suspected`, so a result applied later
+   is held to the same comment-only rule), bound to the command id (`ai_runs.command_id`), and the
+   `analyze` command is created with that id, priority `high` when a person asked, expiring at the
+   job deadline. Audit `ai_agent.analysis_job_queued` names the run, job, finding, kind, data class,
+   fields and bundle digest, never the text. The answer is `202` with the queued run.
+
+Only the platform creates `analyze` commands: the commands API does not accept the type. The claim
+hands one only to a sensor of the same organization whose grant is an explicit AI worker grant (job
+types exactly `[analyze]`, `Grant.ServesAnalysis`) and that advertises `analyze.<kind>`; a legacy-broad
+grant, a scanning profile, a poll without a sensor identity or a claim that reads no grant gets
+nothing (fail closed). Shared sensors never see one (it is not a shared job). Signing at claim is the
+same as for every command type.
+
+**Every worker run ends.** `Service.EndStaleWorkerRuns`, run every minute by the `ai-worker-run-sweep`
+controller (index `idx_ai_runs_worker_live`; a job of the core `findings` module, so it runs whether `ai_triage` is on or off), ends live worker runs that can no longer get a result:
+
+| Cause | Run |
+|---|---|
+| past its deadline | `failed`, `deadline_exceeded`; its job, if still open, is canceled |
+| its job expired (command expiry) | `failed`, `deadline_exceeded` |
+| its job failed | `failed`, `worker_error` |
+| its job was canceled | `canceled`, `job_canceled` |
+| its job is gone | `failed`, `worker_unavailable` |
+
+A worker run moves past `queued` only together with its sensor (`chk_ai_runs_worker`). Applying a
+worker's result (completion of the job) is designed, not built: until then a worker run ends by the
+sweep.
+
 ## API
 
 | Route | Gate |
 |---|---|
 | `GET /api/v1/ai/agents`, `GET /api/v1/ai/agents/{id}` | `ai_triage:read` |
-| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `POST /{id}/reactivate` | `service_accounts:manage` + recent sign-in |
+| `POST /api/v1/ai/agents`, `DELETE /{id}`, `PUT /{id}/owners`, `PUT /{id}/preset`, `PUT /{id}/executor`, `POST /{id}/reactivate` | `service_accounts:manage` + recent sign-in |
 | `POST /api/v1/ai/agents/{id}/disable` | `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/suspend` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/attest` | `ai_triage:read` + recent sign-in; an accountable person or an administrator |
@@ -222,6 +282,12 @@ false-positive request but changes nothing; a triage AI agent confirms and raise
 downgrade becomes a request; unsafe output only comments; scope, cross-tenant and owner-left refusals
 record no run; a concurrent change is never overwritten. `internal/app/retest/agent_scope_db_test.go`:
 an AI agent's retest of an out-of-scope target is refused before any job exists.
+`internal/infra/http/routes/ai_worker_executor_db_test.go`: a worker agent queues exactly one
+schema-valid `analyze` job with the masked text only (no host, address or secret), bound to a queued
+run, audited without the text; scope, cross-tenant, AI off and kill switch queue nothing; an oversize
+bundle is fitted under the document limit; overdue, expired and failed jobs end their runs and a new
+run can start. `sensor_analyze_claim_db_test.go`: a legacy-broad sensor advertising the kind, a
+scanner, another organization and a claim without a grant read get no analysis job.
 `TestAIAssist_CannotWrite_DB`: in an assistance context comment, status, severity and approval
 request are refused and nothing is written; no principal is resolved.
 `pkg/domain/aianalysis/agent_test.go`: deny list, ceiling, presets, health, provenance stamping,

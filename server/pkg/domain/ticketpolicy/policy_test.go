@@ -31,6 +31,9 @@ func TestEvaluate(t *testing.T) {
 		{"strict holds high P1", strict, Signals{Severity: "high", PriorityClass: "P1", Open: true}, false, ReasonBelowThreshold},
 		{"strict passes P0", strict, Signals{Severity: "low", PriorityClass: "P0", Open: true}, true, "priority_class"},
 		{"no class floor ignores class", Policy{MinSeverity: "high"}, Signals{Severity: "low", PriorityClass: "P0", Open: true}, false, ReasonBelowThreshold},
+		// A held finding waits until it is checked, whatever it would pass on.
+		{"held critical waits", def, Signals{Severity: "critical", InKEV: true, Open: true, Held: true}, false, VerdictHeld},
+		{"held and closed is not ticketed", def, Signals{Severity: "critical", Open: false, Held: true}, false, "not_open"},
 	}
 	for _, c := range cases {
 		v := c.p.Evaluate(c.s)

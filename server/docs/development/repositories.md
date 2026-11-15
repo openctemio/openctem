@@ -17,7 +17,7 @@ them, shows how they talk to each other, and points you at the right place to wo
 
 | Directory | Stack | What it is | Image |
 |-----------|-------|------------|-------|
-| [`server/`](../../) | Go 1.27 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/server`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`) |
+| [`server/`](../../) | Go 1.27 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/server`. | `ghcr.io/openctemio/openctem-server` (`openctem-api` up to v0.22.x; + `migrations`, `seed`) |
 | [`web/`](../../../web/) | Next.js 16 · React 19 · TypeScript · Tailwind v4 · shadcn/ui | The **web console** users work in. Talks only to the API. Its navigation is the CTEM loop (see the [User Guide](../user-guide/README.md)). | `ghcr.io/openctemio/openctem-web` |
 | [`deploy/allinone/`](../../../deploy/allinone/) | Dockerfile + supervisor | **All-in-one image**: API + web + the `server/deploy/gateway` Caddy gateway in one container (Postgres/Redis external). | `ghcr.io/openctemio/openctem` |
 | [`.github/`](../../../.github/) | GitHub Actions | One set of workflows for both components, path-gated per component. See [CI/CD](ci-cd.md). | — |
@@ -136,7 +136,7 @@ and the web's in `web/`. See [Getting Started](../getting-started.md) and
 | `openctemio/api` (Go, repo root) | `openctemio/openctem`, `server/` (same repository, renamed; issues, PRs, releases v0.1.x–v0.8.0 and tags kept) |
 | `openctemio/ui` (Next.js) | `openctemio/openctem`, `web/` (history imported); the old repo is archived |
 | ui tags `vX.Y.Z` | imported as `ui/vX.Y.Z`: history only, they release nothing |
-| images `ghcr.io/openctemio/api`, `…/ui` | `ghcr.io/openctemio/openctem-api`, `…/openctem-web` (the old names receive identical copies for a transition window) |
+| images `ghcr.io/openctemio/api`, `…/ui` | `ghcr.io/openctemio/openctem-api`, `…/openctem-web` at v0.9.0; the server image is `ghcr.io/openctemio/openctem-server` from v0.23.0 (old names keep their tags, no new ones; `ui` still receives copies of `openctem-web`) |
 | `openctemio/agent` | `openctemio/sensor` (renamed earlier, RFC-023) |
 
 In commit messages imported from the ui repository, `#NNN` was rewritten to

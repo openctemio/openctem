@@ -46,6 +46,7 @@ type Asset struct {
 	findingSeverityCounts *FindingSeverityCounts
 	description           string
 	tags                  []string
+	tagChange             *tag.Change    // ChangeTags since load: written against the stored list
 	properties            map[string]any // All asset properties (merged metadata + properties)
 
 	// External provider info
@@ -795,6 +796,45 @@ func (a *Asset) RemoveTag(tag string) {
 			return
 		}
 	}
+}
+
+// ChangeTags removes and adds tags (a tag the shared validator refuses is
+// not added, like AddTag) and remembers what it did, so the repository
+// writes the change against the stored list instead of overwriting it: a
+// tag another writer stored after this copy was loaded stays.
+func (a *Asset) ChangeTags(add, remove []string) {
+	before := a.Tags()
+	for _, t := range remove {
+		a.RemoveTag(t)
+	}
+	for _, t := range add {
+		a.AddTag(t)
+	}
+	added, removed := tag.Diff(before, a.tags)
+	if len(added)+len(removed) == 0 {
+		return
+	}
+	if a.tagChange == nil {
+		a.tagChange = &tag.Change{}
+	}
+	a.tagChange.Add = append(a.tagChange.Add, added...)
+	a.tagChange.Remove = append(a.tagChange.Remove, removed...)
+}
+
+// PendingTagChange is the tag change made with ChangeTags since the asset
+// was loaded or last stored.
+func (a *Asset) PendingTagChange() (tag.Change, bool) {
+	if a.tagChange == nil {
+		return tag.Change{}, false
+	}
+	return *a.tagChange, true
+}
+
+// SetStoredTags takes the tag list the database holds after a write (the
+// change applied to the stored list) and clears the pending change.
+func (a *Asset) SetStoredTags(tags []string) {
+	a.tags = append([]string(nil), tags...)
+	a.tagChange = nil
 }
 
 // SetMetadata sets a metadata key-value pair.

@@ -10,7 +10,7 @@ on:
       - .github/workflows/cla-test.yml
       - .github/scripts/cla-scope.test.sh
   push:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - .github/workflows/cla.yml
       - .github/workflows/cla-test.yml

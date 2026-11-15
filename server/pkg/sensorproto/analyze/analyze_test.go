@@ -3,6 +3,7 @@ package analyze
 import (
 	"errors"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -135,4 +136,50 @@ func FuzzParseOutput(f *testing.F) {
 			}
 		}
 	})
+}
+
+// bundle.text carries the masked bundle inline for a worker: optional,
+// additive within v1, at most 196608 characters, and the whole job still
+// within MaxDocumentBytes once encoded.
+func TestJobBundleText(t *testing.T) {
+	golden := read(t, "job.text.valid.json")
+	if err := Validate(SchemaJob, golden); err != nil {
+		t.Fatalf("golden job with bundle.text refused: %v", err)
+	}
+	j := &Job{
+		JobID: "01a18087-4972-7af5-8ce4-36833fe53fc4", TenantID: "01a18087-4972-7af5-8ce4-36833fe53fc5",
+		Kind: "triage.v1", UseCase: "triage",
+		Subject: Subject{Type: "finding", ID: "01a18087-4972-7af5-8ce4-36833fe53fc6"},
+		Bundle: Bundle{Digest: "sha256:" + strings.Repeat("a", 64), DataClass: "internal",
+			Fields: []string{"finding.title"}, Masked: true},
+		OutputSchema:   OutputTriageV1,
+		PromptTemplate: PromptTemplate{ID: "triage.v1", Digest: "sha256:" + strings.Repeat("b", 64)},
+		Deadline:       time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC),
+	}
+	b, err := MarshalJob(j)
+	if err != nil {
+		t.Fatalf("job without bundle.text refused: %v", err)
+	}
+	if strings.Contains(string(b), `"text"`) {
+		t.Fatal("an empty bundle.text is sent")
+	}
+	const maxText = 196608
+	j.Bundle.Text = "finding.title: HOST_1 " + strings.Repeat("x", maxText-len("finding.title: HOST_1 "))
+	if _, err := MarshalJob(j); err != nil {
+		t.Fatalf("bundle.text at the limit refused: %v", err)
+	}
+	j.Bundle.Text += "x"
+	if _, err := MarshalJob(j); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bundle.text over the limit accepted: %v", err)
+	}
+	// Within maxLength in characters, over the document cap once encoded
+	// ("<" is written as a six-byte escape).
+	j.Bundle.Text = strings.Repeat("<", maxText)
+	if _, err := MarshalJob(j); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a job over %d encoded bytes accepted: %v", MaxDocumentBytes, err)
+	}
+	notString := regexp.MustCompile(`"text":"[^"]*"`).ReplaceAll(golden, []byte(`"text":7`))
+	if err := Validate(SchemaJob, notString); err == nil {
+		t.Fatal("a bundle.text that is not a string was accepted")
+	}
 }

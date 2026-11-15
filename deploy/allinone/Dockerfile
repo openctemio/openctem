@@ -15,12 +15,12 @@
 # them for both.
 #
 # It is ASSEMBLED from the two per-component images of the same release instead
-# of rebuilding them, so the bytes inside are exactly what openctem-api and
+# of rebuilding them, so the bytes inside are exactly what openctem-server and
 # openctem-web ship (one build, one SBOM per component, no drift):
 #
 #   docker buildx build deploy/allinone \
 #     --build-context gateway=server/deploy/gateway \
-#     --build-arg API_IMAGE=ghcr.io/openctemio/openctem-api:vX.Y.Z \
+#     --build-arg API_IMAGE=ghcr.io/openctemio/openctem-server:vX.Y.Z \
 #     --build-arg WEB_IMAGE=ghcr.io/openctemio/openctem-web:vX.Y.Z
 #
 # With a multi-arch API_IMAGE/WEB_IMAGE, BuildKit picks the variant matching

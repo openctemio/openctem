@@ -16,7 +16,7 @@ name: No AI attribution
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     types: [opened, synchronize, reopened, edited, ready_for_review]
   merge_group:
     types: [checks_requested]

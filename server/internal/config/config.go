@@ -1545,12 +1545,109 @@ func defaultLogFormat(appEnv string) string {
 	return "json"
 }
 
+// sensorConfigFromEnv reads the sensor settings (SENSOR_*, SIGNER_*,
+// CI_RUNNER_*) for Load.
+func sensorConfigFromEnv() SensorConfigConfig {
+	return SensorConfigConfig{
+		TransportV3: SensorTransportV3Config{
+			Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
+			PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
+			MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":9443"),
+			CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
+			CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
+			CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
+			CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
+
+			MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
+		},
+		TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
+		ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
+		PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
+		ProxyTestEchoURL:  getEnv("PROXY_TEST_ECHO_URL", ""),
+		ProxyTestAltPort:  getEnvInt("PROXY_TEST_ALT_PORT", 80),
+		KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
+		KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
+		KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
+		KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
+
+		KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
+		SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+		LivenessStore:         getEnv("SENSOR_LIVENESS_STORE", "shadow"),
+		SignerSocket:          getEnv("SIGNER_SOCKET", ""),
+		AllowUnsignedJobs:     getEnvBool("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", false),
+		SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
+		HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
+		HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
+		HeartbeatMinInterval:  getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
+		HeartbeatMaxInterval:  getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
+		HeartbeatSlowQuery:    getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+		CommandLease:          getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
+		HealthSlowHeartbeat:   getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
+		HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
+		Image:                 getEnv("SENSOR_IMAGE", versions.SensorImage()),
+		CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
+		CACertFile:            platformCACertFile(),
+		CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
+		CIRunnerLatestPinned:  strings.TrimSpace(os.Getenv("CI_RUNNER_LATEST_VERSION")) != "",
+		CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
+	}
+}
+
+// workerConfigFromEnv reads the background workers' settings for Load.
+func workerConfigFromEnv() SensorConfig {
+	return SensorConfig{
+		HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+		SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
+		VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
+		VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
+		VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
+		VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+		VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
+		VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
+		CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
+		CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+		CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+		AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+		AssetEnrichmentDailyBudget:        getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+		AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
+		AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+		AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+		PathDiscoveryRequestsPerOrigin:    min(max(getEnvInt("PATH_DISCOVERY_REQUESTS_PER_ORIGIN", 300), 50), 100000),
+		PathDiscoveryDailyRequests:        max(getEnvInt("PATH_DISCOVERY_DAILY_REQUESTS", 50000), 0),
+		EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
+		EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
+		EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
+		EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+		EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
+		AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
+		InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+		AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+		QuarantinePurgeInterval:           getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+		QuarantineRetention:               getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
+		LoadBalancing: LoadBalancingConfig{
+			JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
+			CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
+			MemoryWeight:             getEnvFloat("SENSOR_LB_MEMORY_WEIGHT", sensordom.DefaultMemoryWeight),
+			DiskIOWeight:             getEnvFloat("SENSOR_LB_DISK_IO_WEIGHT", sensordom.DefaultDiskIOWeight),
+			NetworkWeight:            getEnvFloat("SENSOR_LB_NETWORK_WEIGHT", sensordom.DefaultNetworkWeight),
+			MaxDiskThroughputMBPS:    getEnvFloat("SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", sensordom.DefaultMaxDiskThroughputMBPS),
+			MaxNetworkThroughputMBPS: getEnvFloat("SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", sensordom.DefaultMaxNetworkThroughputMBPS),
+		},
+	}
+}
+
 // Load loads configuration from environment variables and validates it.
-func Load() (*Config, error) {
+func Load() (*Config, error) { return LoadWithExtensionKeys(nil) }
+
+// LoadWithExtensionKeys is Load for a build with extensions: extensionKeys
+// are the config keys its extensions declared, which the environment check
+// counts as read (see checkEnvironment). The server passes the keys of the
+// build's checked extension set.
+func LoadWithExtensionKeys(extensionKeys []string) (*Config, error) {
 	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
 	}
-	envWarnings, err := checkEnvironment(Registry(), os.Environ())
+	envWarnings, err := checkEnvironment(Registry(), os.Environ(), extensionKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,49 +1669,7 @@ func Load() (*Config, error) {
 			ManagedService:    getEnvBool("MANAGED_SERVICE", false),
 			OrgEmailRelayMode: getEnv("ORG_EMAIL_RELAY_MODE", ""),
 		},
-		SensorConfig: SensorConfigConfig{
-			TransportV3: SensorTransportV3Config{
-				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
-				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
-				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":9443"),
-				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
-				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
-				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
-				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
-
-				MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
-			},
-			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
-			ProductsFile:      getEnv("SENSOR_PRODUCTS_FILE", ""),
-			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
-			ProxyTestEchoURL:  getEnv("PROXY_TEST_ECHO_URL", ""),
-			ProxyTestAltPort:  getEnvInt("PROXY_TEST_ALT_PORT", 80),
-			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
-			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
-			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
-			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
-
-			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
-			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
-			LivenessStore:         getEnv("SENSOR_LIVENESS_STORE", "shadow"),
-			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
-			AllowUnsignedJobs:     getEnvBool("SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS", false),
-			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
-			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
-			HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
-			HeartbeatMinInterval:  getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
-			HeartbeatMaxInterval:  getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
-			HeartbeatSlowQuery:    getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
-			CommandLease:          getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
-			HealthSlowHeartbeat:   getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
-			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
-			Image:                 getEnv("SENSOR_IMAGE", versions.SensorImage()),
-			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
-			CACertFile:            platformCACertFile(),
-			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
-			CIRunnerLatestPinned:  strings.TrimSpace(os.Getenv("CI_RUNNER_LATEST_VERSION")) != "",
-			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
-		},
+		SensorConfig: sensorConfigFromEnv(),
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
 			LocalPath: getEnv("STORAGE_LOCAL_PATH", "./data/attachments"),
@@ -1790,45 +1845,7 @@ func Load() (*Config, error) {
 				Scopes:       getEnvSlice("OAUTH_MICROSOFT_SCOPES", []string{"openid", "email", "profile", "User.Read"}),
 			},
 		},
-		Worker: SensorConfig{
-			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
-			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
-			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
-			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
-			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
-			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
-			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
-			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
-			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
-			AssetEnrichmentDailyBudget:        getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
-			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
-			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
-			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
-			PathDiscoveryRequestsPerOrigin:    min(max(getEnvInt("PATH_DISCOVERY_REQUESTS_PER_ORIGIN", 300), 50), 100000),
-			PathDiscoveryDailyRequests:        max(getEnvInt("PATH_DISCOVERY_DAILY_REQUESTS", 50000), 0),
-			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
-			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
-			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
-			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
-			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
-			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
-			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
-			QuarantinePurgeInterval:           getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
-			QuarantineRetention:               getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
-			LoadBalancing: LoadBalancingConfig{
-				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
-				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
-				MemoryWeight:             getEnvFloat("SENSOR_LB_MEMORY_WEIGHT", sensordom.DefaultMemoryWeight),
-				DiskIOWeight:             getEnvFloat("SENSOR_LB_DISK_IO_WEIGHT", sensordom.DefaultDiskIOWeight),
-				NetworkWeight:            getEnvFloat("SENSOR_LB_NETWORK_WEIGHT", sensordom.DefaultNetworkWeight),
-				MaxDiskThroughputMBPS:    getEnvFloat("SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", sensordom.DefaultMaxDiskThroughputMBPS),
-				MaxNetworkThroughputMBPS: getEnvFloat("SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", sensordom.DefaultMaxNetworkThroughputMBPS),
-			},
-		},
+		Worker: workerConfigFromEnv(),
 		Encryption: EncryptionConfig{
 			Key:          getEnv("APP_ENCRYPTION_KEY", ""),
 			KeyFormat:    getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),

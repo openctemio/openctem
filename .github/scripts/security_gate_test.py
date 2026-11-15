@@ -1228,5 +1228,172 @@ class OnlyBaseMergesTest(unittest.TestCase):
         self.assertFalse(sg.only_base_merges(self.d, "f" * 40, self.base, self.acked))
 
 
+class SyncCountedTest(unittest.TestCase):
+    """sync_counted on a real repository: a pull request that merges develop
+    into next is judged only on what differs from git's clean merge of the two."""
+
+    git = LargePullRequestTest.git
+    write = CoveredByMergesTest.write
+    commit = CoveredByMergesTest.commit
+    S = "server/pkg/httpsec/ssrf.go"
+    W = ".github/workflows/api-ci.yml"
+    N = "server/pkg/authz/new.go"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = self.d = self.tmp.name
+        self.git(d, "init", "-q", "-b", "develop")
+        self.lines = [f"line {i}" for i in range(40)]
+        self.write(d, self.S, "\n".join(self.lines) + "\n")
+        self.write(d, self.W, "name: API CI\n")
+        self.write(d, "web/a.tsx", "a\n")
+        self.commit(d, "base")
+        self.git(d, "branch", "next")
+        # develop moves on: a sensitive line, a workflow, a new sensitive file (all acked on develop).
+        lines = list(self.lines); lines[30] = "line 30 on develop"
+        self.write(d, self.S, "\n".join(lines) + "\n")
+        self.write(d, self.W, "name: API CI\non: push\n")
+        self.write(d, self.N, "package authz\n")
+        self.develop = self.commit(d, "develop moves")
+        # next moves on: another line of the same sensitive file (acked on next).
+        self.git(d, "checkout", "-q", "next")
+        lines = list(self.lines); lines[5] = "line 5 on next"
+        self.write(d, self.S, "\n".join(lines) + "\n")
+        self.write(d, "web/a.tsx", "a redesigned\n")
+        self.next = self.commit(d, "next moves")
+        self.git(d, "checkout", "-q", "-b", "sync/develop-into-next-20261113")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def files(self, head):
+        names = self.git(self.d, "diff", "--name-only", f"{self.next}...{head}").splitlines()
+        return [F(n) for n in names]
+
+    def judged(self, head, integration=None):
+        got = sg.sync_counted(self.d, self.next, head, integration or self.develop, self.files(head))
+        return None if got is None else (sorted(f.filename for f in got[0]), got[1])
+
+    def merge(self, *extra):
+        self.git(self.d, "merge", "-q", "--no-edit", *extra, "develop")
+
+    def test_clean_sync_judges_nothing(self):
+        self.merge()
+        self.assertEqual(self.judged(self.git(self.d, "rev-parse", "HEAD")), ([], 3))
+
+    def test_edit_hidden_in_the_merge_is_judged(self):
+        self.merge("--no-commit")
+        self.write(self.d, self.W, "name: API CI\non: push\npermissions: write-all\n")
+        head = self.commit(self.d, "evil merge")
+        self.assertEqual(self.judged(head), ([self.W], 2))
+
+    def test_commit_after_the_merge_is_judged(self):
+        self.merge()
+        self.write(self.d, self.N, "package authz // later\n")
+        head = self.commit(self.d, "later")
+        self.assertEqual(self.judged(head), ([self.N], 2))
+
+    def test_next_change_dropped_by_taking_develop_whole_is_judged(self):
+        self.merge("--no-commit")
+        self.git(self.d, "checkout", "develop", "--", self.S)
+        head = self.commit(self.d, "took develop's file")
+        self.assertEqual(self.judged(head)[0], [self.S])
+
+    def test_conflict_resolved_by_hand_is_judged(self):
+        self.git(self.d, "checkout", "-q", "develop")
+        lines = list(self.lines); lines[5] = "line 5 on develop too"; lines[30] = "line 30 on develop"
+        self.write(self.d, self.S, "\n".join(lines) + "\n")
+        self.develop = self.commit(self.d, "develop edits the same line")
+        self.git(self.d, "checkout", "-q", "sync/develop-into-next-20261113")
+        # The merge stops on the conflict (exit 1); it needs an identity to start at all.
+        ident = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        merged = subprocess.run(["git", "-C", self.d, "merge", "-q", "--no-edit", "develop"], capture_output=True,
+                                env={**os.environ, **ident})
+        self.assertEqual(merged.returncode, 1, merged.stderr)
+        self.assertTrue(pathlib.Path(self.d, ".git/MERGE_HEAD").exists())
+        lines[5] = "line 5 resolved"
+        self.write(self.d, self.S, "\n".join(lines) + "\n")
+        head = self.commit(self.d, "resolved")
+        self.assertEqual(self.judged(head), ([self.S], 2))
+
+    def test_branch_not_on_develop_is_judged(self):
+        self.git(self.d, "checkout", "-q", "-b", "feature", "develop")
+        self.write(self.d, self.N, "package authz // unmerged feature\n")
+        self.commit(self.d, "feature not on develop")
+        self.git(self.d, "checkout", "-q", "sync/develop-into-next-20261113")
+        self.git(self.d, "merge", "-q", "--no-edit", "feature")
+        head = self.git(self.d, "rev-parse", "HEAD")
+        self.assertEqual(self.judged(head), ([self.N], 2))
+
+    def test_pull_request_that_merges_nothing_from_develop_is_judged_whole(self):
+        self.write(self.d, self.S, "changed on next\n")
+        self.assertIsNone(self.judged(self.commit(self.d, "own change")))
+
+    def test_unknown_commit_judges_everything(self):
+        self.merge()
+        self.assertIsNone(self.judged(self.git(self.d, "rev-parse", "HEAD"), integration="f" * 40))
+
+
+class SyncGateTest(unittest.TestCase):
+    """cmd_gate applies the sync rule only to a same-repository pull request
+    into a branch named in SYNC_BRANCHES, and judges every file on any error."""
+
+    run_gate, pr, routes, at_label = GateTest.run_gate, GateTest.pr, GateTest.routes, GateTest.at_label
+    push, ACTIVITY, SENSITIVE = GateTest.push, GateTest.ACTIVITY, GateTest.SENSITIVE
+
+    def sync_routes(self, base="next", head_repo="o/r"):
+        pr = self.pr(base=base, head_repo=head_repo, head_ref="sync/develop-into-next-20261113")
+        pr["base"]["sha"] = "b" * 40
+        routes = self.routes(pr, self.SENSITIVE)
+        routes["git/ref/heads/develop"] = {"object": {"sha": "e" * 40}}
+        routes[f"rules/branches/{base}"] = []
+        return routes
+
+    def run_sync(self, routes, counted, sync_branches="next"):
+        calls = []
+
+        def fake_counted(gitdir, base_sha, head_sha, integration_sha, files, env=None):
+            calls.append((base_sha, head_sha, integration_sha))
+            return counted(files) if callable(counted) else counted
+        with mock.patch.dict(os.environ, {"SYNC_BRANCHES": sync_branches}), \
+                mock.patch.object(sg, "fetch_pr_commits", lambda *a: None), \
+                mock.patch.object(sg, "sync_counted", fake_counted):
+            code, fake = self.run_gate("pull_request", {"pull_request": {"number": 7}}, routes)
+        return code, fake, calls
+
+    def test_mechanical_sync_passes_without_ack(self):
+        code, fake, calls = self.run_sync(self.sync_routes(), lambda files: ([], len(files)))
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [("b" * 40, "d" * 40, "e" * 40)])
+        self.assertNotIn(("POST", "issues/7/labels", {"labels": ["security-sensitive"]}), fake.writes)
+
+    def test_hand_edit_in_a_sync_still_needs_the_ack(self):
+        code, _, calls = self.run_sync(self.sync_routes(), lambda files: (files, 0))
+        self.assertEqual((code, len(calls)), (1, 1))
+
+    def test_git_error_judges_every_file(self):
+        code, _, _ = self.run_sync(self.sync_routes(), None)
+        self.assertEqual(code, 1)
+
+    def test_into_develop_the_rule_does_not_apply(self):
+        code, _, calls = self.run_sync(self.sync_routes(base="develop"), lambda files: ([], len(files)))
+        self.assertEqual((code, calls), (1, []))
+
+    def test_without_sync_branches_the_rule_does_not_apply(self):
+        code, _, calls = self.run_sync(self.sync_routes(), lambda files: ([], len(files)), sync_branches="")
+        self.assertEqual((code, calls), (1, []))
+
+    def test_fork_pull_request_gets_no_sync_rule(self):
+        code, _, calls = self.run_sync(self.sync_routes(head_repo="fork/r"), lambda files: ([], len(files)))
+        self.assertEqual((code, calls), (1, []))
+
+    def test_missing_integration_ref_judges_every_file(self):
+        routes = self.sync_routes()
+        del routes["git/ref/heads/develop"]
+        code, _, calls = self.run_sync(routes, lambda files: ([], len(files)))
+        self.assertEqual((code, calls), (1, []))
+
+
 if __name__ == "__main__":
     unittest.main()

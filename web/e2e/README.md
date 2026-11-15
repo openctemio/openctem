@@ -177,6 +177,7 @@ tests that cover the console's most user-visible flows.
 | `52-team-outside-members.spec.ts`           | A team with outside members turns full-data roles off up front and names them (390px too)                  |
 | `72-attack-surface-page-changes.spec.ts`    | Page changes: change list, diff sheet with hostile text, watches; desktop and phone                        |
 | `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
+| `57-invitation-accept.spec.ts`              | Accept lands in the joined organization (own one, none, 390px); accepted link offers Open                  |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |
@@ -6542,7 +6543,7 @@ task) and runs `npm run e2e` with `CI=true`. On failure it uploads
 The same stack runs locally (move the ports if 3000/8080 are taken):
 
 ```bash
-docker build -t local/openctem-api:e2e --target production server
+docker build -t local/openctem-server:e2e --target production server
 docker build -t local/openctem-web:e2e web
 bash web/e2e/ci/make-env.sh        # web/e2e/ci/.env: random secrets (git-ignored)
 docker compose -f web/e2e/ci/compose.yml up -d --wait

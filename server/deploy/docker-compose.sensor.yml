@@ -84,7 +84,7 @@
 # and start this overlay (its sensor-data volume is a fresh identity).
 services:
   sensor-enrollment:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-server}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     entrypoint: ["/app/bootstrap-admin"]
     command:
       - "sensor-token"
@@ -124,7 +124,7 @@ services:
         max-file: "5"
 
   sensor:
-    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.41.0}
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.41.1}
     environment:
       # The gateway, over https, like every other client. The gateway's
       # network alias on sensor-net is OPENCTEM_HOSTNAME.

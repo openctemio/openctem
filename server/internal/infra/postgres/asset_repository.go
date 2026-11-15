@@ -532,10 +532,20 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'medium' AND ` + exploitSignalClause + `) as finding_medium_x,
 				COUNT(*) FILTER (WHERE f.severity = 'low' AND ` + exploitSignalClause + `) as finding_low_x
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND NOT f.branch_only
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + ` AND NOT f.branch_only
 		) fc ON true
 	`
 }
+
+// assetTagChangeSQL is the stored tags with $41 removed and $40 appended
+// (first position wins, no duplicates). In an UPDATE, "tags" is the row's
+// current value: under concurrent writers it is re-read after the row lock.
+// $13 (the copy's list) stands in only for a NULL column.
+const assetTagChangeSQL = `(SELECT COALESCE(array_agg(x.t ORDER BY x.o), '{}'::text[])
+		FROM (SELECT u.t, min(u.o) AS o
+		      FROM unnest(COALESCE(tags, $13::text[]) || COALESCE($40::text[], '{}'::text[])) WITH ORDINALITY AS u(t, o)
+		      WHERE NOT (u.t = ANY(COALESCE($41::text[], '{}'::text[])))
+		      GROUP BY u.t) x)`
 
 // Update updates an existing asset.
 func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
@@ -544,11 +554,19 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		return fmt.Errorf("failed to marshal properties: %w", err)
 	}
 
+	// A tag change made with ChangeTags is applied to the stored list in
+	// the statement (the row lock makes concurrent changes queue), so a tag
+	// stored by another writer after this copy was loaded stays.
+	change, hasChange := a.PendingTagChange()
+	tagsSQL := "$13"
+	if hasChange {
+		tagsSQL = assetTagChangeSQL
+	}
 	query := `
 		UPDATE assets
 		SET parent_id = $2, owner_ref = $3, name = $4, asset_type = $5, sub_type = $6, criticality = $7, status = $8,
 		    scope = $9, exposure = $10, risk_score = $11,
-		    description = $12, tags = $13, properties = $14,
+		    description = $12, tags = ` + tagsSQL + `, properties = $14,
 		    provider = $15, external_id = $16, classification = $17, sync_status = $18, last_synced_at = $19, sync_error = $20,
 		    discovery_source = $21, discovery_tool = $22, discovered_at = $23,
 		    compliance_scope = $24, data_classification = $25, pii_data_exposed = $26, phi_data_exposed = $27, regulatory_owner_id = $28,
@@ -560,7 +578,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
-	result, err := r.db.ExecContext(ctx, query,
+	args := []any{
 		a.ID().String(),
 		nullIDPtr(a.ParentID()),
 		updateOwnerRef,
@@ -600,8 +618,23 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		nullString(string(a.ImpactConfidentiality())),
 		nullString(string(a.ImpactIntegrity())),
 		nullString(string(a.ImpactAvailability())),
-	)
+	}
 
+	if hasChange {
+		args = append(args, pq.Array(change.Add), pq.Array(change.Remove))
+		var stored []string
+		err := r.db.QueryRowContext(ctx, query+" RETURNING tags", args...).Scan(pq.Array(&stored))
+		if errors.Is(err, sql.ErrNoRows) {
+			return asset.NotFoundError(a.ID())
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update asset: %w", err)
+		}
+		a.SetStoredTags(stored)
+		return nil
+	}
+
+	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update asset: %w", err)
 	}
@@ -1183,6 +1216,31 @@ func (r *AssetRepository) reconstructAsset(
 	return result, nil
 }
 
+// appendInCIDRs adds the range condition of buildWhereClause for a filter
+// that has a tenant, bound as $1 (its first condition): each range is bound
+// as an inet, one address is the range of itself (as in the ip filter), and
+// values that do not parse are skipped; none left matches nothing.
+func appendInCIDRs(conditions []string, args []any, argIndex int, cidrs []string) ([]string, []any, int) {
+	ranges := make([]string, 0, len(cidrs))
+	for _, c := range cidrs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
+			addr, aerr := netip.ParseAddr(strings.TrimSpace(c))
+			if aerr != nil {
+				continue
+			}
+			p = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		ranges = append(ranges, fmt.Sprintf("$%d::inet", argIndex))
+		args = append(args, p.Masked().String())
+		argIndex++
+	}
+	if len(ranges) == 0 {
+		return append(conditions, "FALSE"), args, argIndex
+	}
+	return append(conditions, asset.AssetInRangesSQL("a.id", "$1::uuid", ranges...)), args, argIndex
+}
+
 func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) {
 	// A soft-deleted asset is invisible to every list, count and facet.
 	conditions := []string{liveAssetSQL("a")}
@@ -1492,23 +1550,18 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
-	// Address assets inside these ranges. The address is the asset's name
-	// (text); a name that is not an address is never cast.
+	// Assets with their name or a recorded address inside these ranges: the
+	// same condition as the assets ip filter and the findings asset_ip
+	// filter (asset.AssetIDsInRangesSQL), so a smart group rule and the
+	// list agree. A range that does not parse matches nothing, and so does a
+	// filter without a tenant: the address lookup is per tenant ($1), and a
+	// caller that names no tenant gets no assets by range (fail closed)
+	// instead of a lookup correlated to every row of every tenant.
 	if len(filter.InCIDRs) > 0 {
-		cidrs := make([]string, 0, len(filter.InCIDRs))
-		for _, c := range filter.InCIDRs {
-			if p, err := netip.ParsePrefix(strings.TrimSpace(c)); err == nil {
-				cidrs = append(cidrs, p.Masked().String())
-			}
-		}
-		if len(cidrs) == 0 {
+		if filter.TenantID == nil || *filter.TenantID == "" {
 			conditions = append(conditions, "FALSE")
 		} else {
-			conditions = append(conditions, fmt.Sprintf(
-				`(a.asset_type IN ('ip_address', 'host') AND position('/' IN a.name) = 0
-				  AND pg_input_is_valid(a.name, 'inet') AND a.name::inet <<= ANY($%d::inet[]))`, argIndex))
-			args = append(args, pq.Array(cidrs))
-			argIndex++
+			conditions, args, argIndex = appendInCIDRs(conditions, args, argIndex, filter.InCIDRs)
 		}
 	}
 
@@ -2635,7 +2688,7 @@ finding_counts AS (
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
-    AND `+vulnerability.OpenStatusSQL("f.status")+`
+    AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (
@@ -3111,7 +3164,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			SELECT f.asset_id, COUNT(*) AS finding_count
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.asset_id IS NOT NULL AND NOT f.branch_only
-				AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			GROUP BY f.asset_id
 		) fc ON fc.asset_id = a.id
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1

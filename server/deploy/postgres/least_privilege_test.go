@@ -9,13 +9,16 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/internal/migrate"
 	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
@@ -91,6 +94,18 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 	exec1(ctx, t, mig, `INSERT INTO schema_migrations_applied (version, name) VALUES (1, 'first')`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_logs (id bigserial PRIMARY KEY, action text)`)
 	exec1(ctx, t, mig, `CREATE TABLE admin_audit_chain_anchors (id bigserial PRIMARY KEY)`)
+	// An extension's schema, migrated before this run of the script: its own
+	// tracking tables (same names as the core's) and an application table.
+	for _, q := range []string{
+		`CREATE SCHEMA ext_acme`,
+		`CREATE TABLE ext_acme.schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)`,
+		`CREATE TABLE ext_acme.schema_migrations_applied (version bigint NOT NULL PRIMARY KEY, name text NOT NULL)`,
+		`INSERT INTO ext_acme.schema_migrations VALUES (1, false)`,
+		`INSERT INTO ext_acme.schema_migrations_applied VALUES (1, 'first')`,
+		`CREATE TABLE ext_acme.widgets (id bigserial PRIMARY KEY, name text)`,
+	} {
+		exec1(ctx, t, mig, q)
+	}
 	// Idempotent, and it grants the special cases (TRUNCATE on the feeds).
 	bootstrap()
 
@@ -140,6 +155,29 @@ func TestLeastPrivilegeRoles(t *testing.T) {
 		t.Fatalf("temp table (EPSS import): %v", err)
 	}
 	_ = tx.Rollback()
+
+	// An extension's schema: its tables are the app's, its tracking tables
+	// are read only.
+	exec1(ctx, t, app, `INSERT INTO ext_acme.widgets (name) VALUES ('w')`)
+	exec1(ctx, t, app, `UPDATE ext_acme.widgets SET name = 'v'`)
+	exec1(ctx, t, app, `DELETE FROM ext_acme.widgets`)
+	exec1(ctx, t, app, `SELECT count(*) FROM ext_acme.schema_migrations`)
+	exec1(ctx, t, app, `SELECT count(*) FROM ext_acme.schema_migrations_applied`)
+	for _, q := range []string{
+		`INSERT INTO ext_acme.schema_migrations VALUES (2, false)`,
+		`UPDATE ext_acme.schema_migrations SET dirty = true`,
+		`DELETE FROM ext_acme.schema_migrations`,
+		`TRUNCATE ext_acme.schema_migrations`,
+		`INSERT INTO ext_acme.schema_migrations_applied VALUES (2, 'forged')`,
+		`UPDATE ext_acme.schema_migrations_applied SET name = 'forged'`,
+		`DELETE FROM ext_acme.schema_migrations_applied`,
+		`TRUNCATE ext_acme.schema_migrations_applied`,
+	} {
+		if _, err := app.ExecContext(ctx, q); err == nil {
+			t.Errorf("app role was allowed: %s", q)
+		}
+	}
+	extensionMigratedLater(ctx, t, withUser(t, scratchAdmin, migRole, migPass), mig, appRole)
 
 	// And nothing more.
 	for _, q := range []string{
@@ -395,4 +433,59 @@ func withUser(t *testing.T, dsn, user, pass string) string {
 	}
 	u.User = url.UserPassword(user, pass)
 	return u.String()
+}
+
+// extensionMigratedLater: an extension's first migration runs (as the
+// migrator, in the extension's schema) after the roles script. The
+// migrator's default privileges hand the app DML on every table it creates,
+// the runner's tracking tables included; the runner must take every write on
+// those back in the same run, and leave the extension's own table alone.
+func extensionMigratedLater(ctx context.Context, t *testing.T, migratorURL string, mig *sql.DB, appRole string) {
+	t.Helper()
+	exec1(ctx, t, mig, `CREATE SCHEMA ext_late`)
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"20990101000000_widgets.up.sql":   `CREATE TABLE gadgets (id bigserial PRIMARY KEY, name text);`,
+		"20990101000000_widgets.down.sql": `DROP TABLE gadgets;`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms, err := migrate.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(migratorURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("options", "-csearch_path=ext_late")
+	u.RawQuery = q.Encode()
+	db := open(t, u.String())
+	defer func() { _ = db.Close() }()
+	if _, err := (&migrate.Runner{DB: db, Migrations: ms, LockTimeout: 30 * time.Second}).Up(ctx); err != nil {
+		t.Fatalf("extension migration as the migrator: %v", err)
+	}
+	for _, table := range []string{"ext_late.schema_migrations", "ext_late.schema_migrations_applied"} {
+		var write, read bool
+		if err := mig.QueryRowContext(ctx, `SELECT has_table_privilege($1, $2, 'INSERT, UPDATE, DELETE, TRUNCATE'),
+			has_table_privilege($1, $2, 'SELECT')`, appRole, table).Scan(&write, &read); err != nil {
+			t.Fatal(err)
+		}
+		if write || !read {
+			t.Errorf("app role on %s: write %v, read %v; want read only", table, write, read)
+		}
+	}
+	var dml bool
+	if err := mig.QueryRowContext(ctx, `SELECT has_table_privilege($1, 'ext_late.gadgets', 'SELECT')
+		AND has_table_privilege($1, 'ext_late.gadgets', 'INSERT')
+		AND has_table_privilege($1, 'ext_late.gadgets', 'UPDATE')
+		AND has_table_privilege($1, 'ext_late.gadgets', 'DELETE')`, appRole).Scan(&dml); err != nil {
+		t.Fatal(err)
+	}
+	if !dml {
+		t.Error("the extension's own table lost the app's DML (default privileges)")
+	}
 }

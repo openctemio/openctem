@@ -2412,8 +2412,8 @@ vars:
     component: compose
     group: "Docker Compose stack"
     type: string
-    default: "ghcr.io/openctemio/openctem-api"
-    description: "Image repository of the API."
+    default: "ghcr.io/openctemio/openctem-server"
+    description: "Image repository of the server (API). Releases up to v0.22.x are published as `ghcr.io/openctemio/openctem-api`."
   - name: UI_IMAGE
     component: compose
     group: "Docker Compose stack"
