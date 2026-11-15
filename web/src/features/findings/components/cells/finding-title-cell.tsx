@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
+import Link from '@/components/link'
 
 /**
  * How a finding reads wherever findings are listed: the stored title is the
@@ -39,6 +40,12 @@ export interface FindingTitleCellProps {
   onOpen?: () => void
   /** The open button's accessible name; it must contain the visible title. */
   openLabel?: string
+  /**
+   * With `onOpen`: the title is a real link to the finding's page. A plain
+   * click calls `onOpen` (the drawer); Ctrl/Cmd/Shift-click, a middle click
+   * and "Open in new tab" are the browser's, so the page opens in a new tab.
+   */
+  href?: string
   className?: string
 }
 
@@ -68,6 +75,7 @@ export function FindingTitleCell({
   titleLines = 1,
   onOpen,
   openLabel,
+  href,
   className,
 }: FindingTitleCellProps) {
   const full = toDisplayText((target ?? '').trim(), 2000)
@@ -79,7 +87,28 @@ export function FindingTitleCell({
   return (
     <div data-slot="finding-title-cell" className={cn('flex min-w-0 flex-col', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
-        {onOpen ? (
+        {onOpen && href ? (
+          <Link
+            href={href}
+            prefetch={false}
+            dir="auto"
+            data-slot="finding-title-link"
+            className={cn(
+              titleClass,
+              'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset'
+            )}
+            aria-label={openLabel}
+            onClick={(e) => {
+              // The row must not open the drawer as well.
+              e.stopPropagation()
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+              e.preventDefault()
+              onOpen()
+            }}
+          >
+            {toDisplayText(title ?? '', 500)}
+          </Link>
+        ) : onOpen ? (
           <button
             type="button"
             dir="auto"

@@ -41,7 +41,6 @@
   "src/app/(dashboard)/(validation)/controls/page.tsx": 6,
   "src/app/(dashboard)/(validation)/pentest/campaigns/page.tsx": 8,
   "src/app/(dashboard)/findings/approvals/page.tsx": 9,
-  "src/app/(dashboard)/findings/page.tsx": 6,
   "src/app/(dashboard)/insights/executive/page.tsx": 6,
   "src/app/(dashboard)/settings/api-keys/page.tsx": 6,
   "src/app/(dashboard)/settings/audit-log/page.tsx": 6,
