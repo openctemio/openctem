@@ -312,6 +312,10 @@ describe('QueryInput', () => {
     expect(copy.querySelector('span')?.textContent).toBe('severity')
     const box = screen.getByRole('combobox')
     fireEvent.keyDown(box, { key: 'Escape' })
+    // It folds back after its short height animation.
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
     const big = screen.getByRole('combobox')
@@ -347,7 +351,7 @@ describe('QueryInput', () => {
     big.setSelectionRange(20, 20)
     fireEvent.click(screen.getByRole('button', { name: /collapse the editor/i }))
     act(() => {
-      vi.advanceTimersByTime(50)
+      vi.advanceTimersByTime(300)
     })
     expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
     const again = screen.getByRole('combobox') as HTMLInputElement
@@ -431,6 +435,23 @@ describe('QueryInput', () => {
       'md:flex'
     )
     expect(more.parentElement).toHaveClass('md:hidden')
+  })
+
+  it('the expanded editor grows in place from the field height, within 4 to 16 lines, and keeps a dragged height', () => {
+    window.localStorage.setItem('query-editor-height', '9999')
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const big = container.querySelector<HTMLTextAreaElement>(
+      '[data-slot="query-editor-expanded"] textarea'
+    )!
+    // In the flow: no overlay box, no stand-in field keeping the row one line high.
+    expect(container.querySelector('input[aria-hidden]')).toBeNull()
+    expect(big.closest('.absolute')).toBeNull()
+    // A stored height is held to the largest the editor may take (16 lines of 20 px).
+    const max = parseFloat(big.style.maxHeight)
+    expect(parseFloat(big.style.height)).toBeLessThanOrEqual(max)
+    expect(max).toBeLessThanOrEqual(12 + 16 * 20 + 1000)
+    expect(big.className).toContain('resize-y')
   })
 
   it("the help lists the syntax and the person's own fields with their operators", async () => {
