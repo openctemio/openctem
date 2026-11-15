@@ -9,10 +9,20 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - Priority, the title (a real link to `/findings/{id}`: a plain click opens the drawer, Ctrl/Cmd/Shift or a
   middle click opens the page in a new tab), Location (the asset), Severity, Signals and EPSS, Status and
   Due / SLA show by default in every view; Source and Created are under Display. Columns and their widths:
-  select 40, Priority 60, title at least 280 (it takes the rest), Location 112 to 160, Severity 88, Signals
-  and EPSS 140, Status 120, Due / SLA 112, Source 130, Created 104, actions 48.
-- Column priority keeps the title at 280 or more: the table drops Severity below a 1,154 px frame (a 1480
-  screen with the sidebar open), Signals and EPSS below 994 (1320) and Due / SLA below 834 (1160). Turning
+  select 40, Priority 76 (its header word and sort arrow in English and Vietnamese), title at least 280 (it
+  takes the rest), Location 112 to 160, Severity 88, Signals and EPSS 140, Status 120, Due / SLA 112, Source
+  130, Created 120, actions 48.
+- Every row is one line, so rows are the table's density heights: 40, 32 compact, 52 comfortable. The
+  title cell is the title then its id (the CVE, linked to its vulnerability page, else the rule id); the
+  title gives way first and its whole text is the link's tooltip and name. Location is the asset name with
+  its markers; the path or URL on the asset is in the name's tooltip and accessible name (the place itself
+  when there is no asset name). Status is one line (a sub-status beside it gives way first). Due / SLA is
+  the time left ("In 5 d") as plain text while on track and as a pill in the SLA colour when at risk or late
+  ("3 d overdue"); the SLA state is in its name and tooltip, the state word shows when there is no
+  deadline, and a shield marks a deadline the known-exploited cap shortened. The scanner is in the drawer.
+  The drawer, opened by a click or tap on the row, shows everything a cell cuts.
+- Column priority keeps the title at 280 or more: the table drops Severity below a 1,170 px frame (a 1496
+  screen with the sidebar open), Signals and EPSS below 1,010 (1336) and Due / SLA below 850 (1176). Turning
   a dropped column on under Display shows it again while the list is open; the saved columns are not
   changed by the width.
 - With no `sort` in the URL the list is in the server's order (priority first), and the Priority header

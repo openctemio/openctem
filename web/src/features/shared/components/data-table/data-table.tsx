@@ -72,6 +72,7 @@ import {
   type DataTableRowGroups,
 } from './data-table-groups'
 import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
+import { pinStartColumns, PIN_SELECT_WIDTH, type StartPin } from './pin-columns'
 import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } from './column-meta'
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
@@ -232,12 +233,18 @@ interface DataTableProps<TData, TValue> {
    */
   toolbarBelow?: React.ReactNode
   /**
-   * Keep the selection checkbox and the first data column (the row's name) —
-   * and the trailing `actions` column — in view while the table scrolls
-   * sideways, so a row can be identified and acted on at any scroll position.
-   * On by default.
+   * Keep the selection checkbox and the row's identifying columns
+   * (`meta.pin: 'start'`, else the first data column) in view while the
+   * table scrolls sideways, so a row can be identified at any scroll
+   * position. On by default.
    */
   stickyFirstColumn?: boolean
+  /**
+   * Also freeze the trailing `actions` column at the end. Off by default: the
+   * row menu scrolls with the table as its last column, so it never covers
+   * the column before it (a focused menu button scrolls into view).
+   */
+  pinActions?: boolean
   /**
    * Change this value to clear the table's row selection (the table owns the
    * checkbox state; clearing only a parent's copy left rows ticked, and the
@@ -360,9 +367,6 @@ const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
 /** Skeleton rows shown in an empty body while `isLoading`. */
 const LOADING_ROWS = 5
 
-/** Cell padding of compact rows (the row height itself is --row-h). */
-const COMPACT_CELL_CLASS = 'py-0.5'
-
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
   default: ['common.table.densityDefault', 'Default'],
@@ -382,7 +386,7 @@ const SCROLL_FRAME_STYLE: React.CSSProperties = {
 const NAME_COLUMN_FLOOR = 'min-w-[min(12rem,36vw)]'
 
 /** Fixed width of the selection column, so the pinned column after it knows its offset. */
-const SELECT_COL_WIDTH = 40
+const SELECT_COL_WIDTH = PIN_SELECT_WIDTH
 
 /**
  * Pinned cells must be opaque (content scrolls underneath), so they repeat the
@@ -591,6 +595,7 @@ export function DataTable<TData, TValue>({
   toolbarEnd,
   toolbarBelow,
   stickyFirstColumn = true,
+  pinActions = false,
   resetSelectionKey,
   showSelectionCount = true,
   mobileRow,
@@ -656,7 +661,6 @@ export function DataTable<TData, TValue>({
   const [storedDensity, setStoredDensity] = useTableDensity(defaultDensity)
   const density = densityProp ?? storedDensity
   const setDensity = onDensityChange ?? setStoredDensity
-  const compact = density === 'compact'
   // Cards replace the table on phones. Decided in JS rather than by hiding one
   // with CSS, so only one of the two is ever rendered.
   const isPhone = useIsMobile()
@@ -872,17 +876,21 @@ export function DataTable<TData, TValue>({
     }
   }
 
-  // Pinned columns: the selection checkbox (if first) + the first data column.
+  // Frozen columns: the checkbox (if first) and the row's identifying
+  // columns (`meta.pin`, else the first data column), within a share of the
+  // frame (pin-columns.ts); the row actions column at the end.
   const visibleColumns = table.getVisibleLeafColumns()
-  const selectColumn = visibleColumns[0]?.id === 'select' ? visibleColumns[0] : undefined
-  const firstDataColumn = visibleColumns.find((c) => c.id !== 'select' && c.id !== 'actions')
-  const pinned = new Map<string, { start: number; last: boolean }>()
-  const actionsPinned =
-    stickyFirstColumn && visibleColumns[visibleColumns.length - 1]?.id === 'actions'
-  if (stickyFirstColumn && firstDataColumn) {
-    if (selectColumn) pinned.set(selectColumn.id, { start: 0, last: false })
-    pinned.set(firstDataColumn.id, { start: selectColumn ? SELECT_COL_WIDTH : 0, last: true })
-  }
+  const pinned: Map<string, StartPin> = stickyFirstColumn
+    ? pinStartColumns(
+        visibleColumns.map((c) => {
+          const meta = c.columnDef.meta as DataTableColumnMeta | undefined
+          const style = columnLayout(c.id, meta).style
+          return { id: c.id, pin: meta?.pin, width: style?.width, minWidth: style?.minWidth }
+        }),
+        frameWidth
+      )
+    : new Map()
+  const actionsPinned = pinActions && visibleColumns[visibleColumns.length - 1]?.id === 'actions'
   const pinnedPropsBase = (columnId: string) => {
     const isSelect = columnId === 'select'
     const width = isSelect
@@ -900,14 +908,19 @@ export function DataTable<TData, TValue>({
       className: cn(
         PINNED_CELL_CLASS,
         pin.last && PINNED_START_EDGE_CLASS,
-        // The pinned name column must leave room for the columns that scroll:
-        // cap it and let long names wrap instead of widening the pin. It also
-        // keeps a floor: in an automatic table layout a truncating name has no
-        // minimum width, so ten other columns squeezed it to a few letters
-        // ("e2..."); with the floor the other columns scroll instead.
-        pin.last && cn(NAME_COLUMN_FLOOR, 'max-w-[min(26rem,38vw)] whitespace-normal')
+        // The first data column frozen by default (the row's name) must leave
+        // room for the columns that scroll: cap it and let long names wrap
+        // instead of widening the pin. It also keeps a floor: in an automatic
+        // table layout a truncating name has no minimum width, so ten other
+        // columns squeezed it to a few letters ("e2..."); with the floor the
+        // other columns scroll instead.
+        pin.fallback && cn(NAME_COLUMN_FLOOR, 'max-w-[min(26rem,38vw)] whitespace-normal')
       ),
-      style: { ...width, insetInlineStart: pin.start },
+      style: {
+        ...width,
+        insetInlineStart: pin.start,
+        ...(pin.maxWidth !== undefined ? { maxWidth: pin.maxWidth } : {}),
+      },
     }
   }
 
@@ -1051,15 +1064,13 @@ export function DataTable<TData, TValue>({
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
+        // A date is one line: it never breaks between day, month and year.
+        (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
         head && stickyHeader && STICKY_HEAD_CLASS,
-        head &&
-          stickyHeader &&
-          (pin.className || columnId === 'actions') &&
-          STICKY_HEAD_PINNED_CLASS,
+        head && stickyHeader && pin.className && STICKY_HEAD_PINNED_CLASS,
         // The page's scroller is <main>, under the app header: top 0 sticks the
         // header there (Mode A) or at the frame's top (Mode B, the frame scrolls).
-        head && stickyHeader && 'top-0',
-        !head && compact && COMPACT_CELL_CLASS
+        head && stickyHeader && 'top-0'
       ),
       style: layout.style || pin.style ? { ...layout.style, ...pin.style } : undefined,
     }
