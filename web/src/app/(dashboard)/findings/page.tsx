@@ -5,9 +5,23 @@ import { MetaLine } from '@/features/shared/components/text-layout'
 import {
   decodeDensity,
   encodeDensity,
+  type DataTableBulk,
+  type DataTableSelection,
   type TableDensity,
 } from '@/features/shared/components/data-table'
-import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
+import { DisabledMenuItem } from '@/features/shared/components/data-table-row-actions'
+import {
+  BULK_BY_FILTER_MAX,
+  operationAsBulkResult,
+  runFindingsBulkByFilter,
+  selectionFilter,
+} from '@/features/findings/lib/bulk-by-filter'
+import { BulkChangePreview } from '@/features/findings/components/bulk-change-preview'
+import { buildFindingsQuery } from '@/features/findings/api/findings-query'
+import {
+  evaluateFindingTransitions,
+  type EvaluatedTransition,
+} from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { useListParams } from '@/hooks/use-list-params'
@@ -76,7 +90,6 @@ import {
   FacetOption,
   FacetToggle,
   FacetGroupLabel,
-  BulkActionBar,
   FilterSheet,
   DrillDownBreadcrumb,
   ErrorState,
@@ -90,7 +103,6 @@ import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { DecorativeText } from '@/components/ui/decorative-text'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -534,12 +546,22 @@ function FindingsContent() {
   // Selected finding IDs, lifted from the DataTable via onSelectionChange. The
   // table owns its checkbox state internally; previously nothing synced it out
   // so selectedCount was always 0 and the bulk-action bar never appeared.
-  const [selectedFindings, setSelectedFindings] = useState<Finding[]>([])
+  // The table's selection: checked rows of this page, or every finding the
+  // list's filter selects ("Select all N that match", applied by the server).
+  const [bulkSelection, setBulkSelection] = useState<DataTableSelection<Finding> | null>(null)
+  const selectedFindings = useMemo(
+    () => (bulkSelection?.kind === 'ids' ? bulkSelection.rows : []),
+    [bulkSelection]
+  )
   const selectedFindingIds = useMemo(() => selectedFindings.map((f) => f.id), [selectedFindings])
+  const byFilter = bulkSelection?.kind === 'filter'
+  // How many findings a bulk change asks for: the rows, or the filter's total.
+  const selectedTotal =
+    bulkSelection?.kind === 'filter' ? bulkSelection.total : selectedFindingIds.length
   // Bumped to clear the table's own checkbox state along with ours.
   const [selectionEpoch, setSelectionEpoch] = useState(0)
   const clearSelection = useCallback(() => {
-    setSelectedFindings([])
+    setBulkSelection(null)
     setSelectionEpoch((e) => e + 1)
   }, [])
   // Filters live in the URL so a view can be linked to. "The criticals from our
@@ -552,6 +574,11 @@ function FindingsContent() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
   const [bulkResolveNote, setBulkResolveNote] = useState('')
+  // The dry run the confirm dialog ran for the checked rows (one per status).
+  const [bulkPreview, setBulkPreview] = useState<{
+    status: string
+    results: EvaluatedTransition[]
+  } | null>(null)
   // A bulk status move or assignment waits here until the user confirms it.
   const [bulkPending, setBulkPending] = useState<
     | { kind: 'status'; status: 'confirmed' | 'in_progress' }
@@ -959,7 +986,7 @@ function FindingsContent() {
   // nothing selected, so a bulk action only ever reaches rows on screen.
   const selectionScope = `${pagination.pageIndex}|${pagination.pageSize}|${filterKey}`
   useEffect(() => {
-    setSelectedFindings((prev) => (prev.length > 0 ? [] : prev))
+    setBulkSelection((prev) => (prev ? null : prev))
   }, [selectionScope])
 
   // The filter the current page number belongs to. While a new filter waits
@@ -1068,6 +1095,13 @@ function FindingsContent() {
     practiceView,
     rawPractice,
   ])
+  // The list's filter as a selection ("Select all N that match"), or null when
+  // the list cannot be selected by filter (a saved view, a query only the list
+  // resolves).
+  const matchingFilter = useMemo(
+    () => selectionFilter(buildFindingsQuery(apiFilters)),
+    [apiFilters]
+  )
 
   // The practice switch's counts come with the list (include=practice_counts):
   // the list's filters with the practice condition left out, in the caller's
@@ -1155,9 +1189,8 @@ function FindingsContent() {
     return findingsResponse.data.map(transformApiToUiFinding)
   }, [findingsResponse])
 
-  const selectedCount = selectedFindingIds.length
   const bulkPendingText = (() => {
-    const count = selectedFindingIds.length
+    const count = selectedTotal
     if (!bulkPending) return { title: '', desc: '', button: '' }
     if (bulkPending.kind === 'assign') {
       const name = bulkPending.user.name
@@ -1298,12 +1331,59 @@ function FindingsContent() {
     else toast.error(summary.message, opts)
   }
 
+  /**
+   * A change to every finding the filter selects: the server applies it in the
+   * caller's scope and reports what it skipped. A list that changed since the
+   * count (409 SELECTION_CHANGED) is not applied: the user checks it again.
+   */
+  const runByFilter = async (
+    verb: 'status' | 'assignee',
+    body: Record<string, unknown>,
+    action: 'assigned' | 'updated'
+  ): Promise<boolean> => {
+    if (!matchingFilter || bulkSelection?.kind !== 'filter') return false
+    const op = await runFindingsBulkByFilter(verb, {
+      filter: matchingFilter,
+      expectedCount: bulkSelection.total,
+      body,
+    })
+    if (op.status === 'running') {
+      toast.info(
+        t('findings.bulk.stillRunning', 'The change is still running; reload the list later')
+      )
+    } else if (op.status === 'failed' || op.status === 'interrupted') {
+      toast.error(op.error || t('findings.bulk.statusFailed', 'Failed to update findings'))
+    } else {
+      showBulkResult(summarizeBulkResult(operationAsBulkResult(op), op.total, action, t))
+    }
+    clearSelection()
+    mutateFindings()
+    mutateStats()
+    return true
+  }
+
+  const bulkErrorMessage = (error: unknown, fallback: string) => {
+    const e = error as { code?: string; details?: { count?: number } } | undefined
+    if (e?.code === 'SELECTION_CHANGED') {
+      return t(
+        'findings.bulk.selectionChanged',
+        'The list changed: {count} findings match now. Check the list and try again.',
+        { count: (e.details?.count ?? 0).toLocaleString() }
+      )
+    }
+    return getErrorMessage(error, fallback)
+  }
+
   const handleBulkAssign = async (userId: string) => {
     const findingIds = selectedFindingIds
-    if (findingIds.length === 0 || !userId.trim() || bulkBusy) return
+    if ((!byFilter && findingIds.length === 0) || !userId.trim() || bulkBusy) return
 
     setBulkBusy(true)
     try {
+      if (byFilter) {
+        await runByFilter('assignee', { user_id: userId.trim() }, 'assigned')
+        return
+      }
       // post() answers STEP_UP_REQUIRED with the shared re-authentication
       // dialog and retries once, and turns an error body into a message.
       const result = await post<BulkFindingResult>('/api/v1/findings/bulk/assign', {
@@ -1314,8 +1394,9 @@ function FindingsContent() {
       clearSelection()
       mutateFindings()
     } catch (error) {
+      if ((error as { code?: string })?.code === 'SELECTION_CHANGED') mutateFindings()
       toast.error(
-        getErrorMessage(error, t('findings.bulk.assignFailed', 'Failed to assign findings'))
+        bulkErrorMessage(error, t('findings.bulk.assignFailed', 'Failed to assign findings'))
       )
     } finally {
       setBulkBusy(false)
@@ -1324,15 +1405,22 @@ function FindingsContent() {
 
   /** Returns whether the write went through (a failed bulk resolve keeps its note). */
   const handleBulkStatusChange = async (status: string, resolution?: string): Promise<boolean> => {
-    if (selectedFindingIds.length === 0 || bulkBusy) return false
+    if ((!byFilter && selectedFindingIds.length === 0) || bulkBusy) return false
 
     setBulkBusy(true)
     try {
+      if (byFilter) {
+        // The server checks every finding's move as it applies the change.
+        return await runByFilter('status', { status, resolution }, 'updated')
+      }
       // Dry run first (the API's transition engine): only the findings that
-      // may move are sent; the others are reported with the reason.
+      // may move are sent; the others are reported with the reason. The
+      // confirm dialog already ran it for this status and note.
       const dryRun = summarizeDryRun(
         t,
-        await evaluateFindingTransitions(selectedFindingIds, status),
+        bulkPreview?.status === status
+          ? bulkPreview.results
+          : await evaluateFindingTransitions(selectedFindingIds, status),
         { note: resolution }
       )
       const refusedText = dryRun.refused.map((r) => `${r.reason} (${r.count})`).join('; ')
@@ -1364,8 +1452,9 @@ function FindingsContent() {
       mutateStats()
       return true
     } catch (error) {
+      if ((error as { code?: string })?.code === 'SELECTION_CHANGED') mutateFindings()
       toast.error(
-        getErrorMessage(error, t('findings.bulk.statusFailed', 'Failed to update findings'))
+        bulkErrorMessage(error, t('findings.bulk.statusFailed', 'Failed to update findings'))
       )
       return false
     } finally {
@@ -1491,31 +1580,6 @@ function FindingsContent() {
   // list without its priority cannot be triaged); the rest follow the view.
   const columns: ColumnDef<Finding>[] = useMemo(() => {
     const cols: ColumnDef<Finding>[] = [
-      {
-        id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label={t('findings.list.selectAll', 'Select all rows on this page')}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={t('findings.list.selectRow', 'Select finding {title}', {
-              title: toDisplayText(row.original.title, 80),
-            })}
-            onClick={(e) => e.stopPropagation()}
-          />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
       {
         accessorKey: 'priorityClass',
         meta: { label: t('findings.columns.priority', 'Priority') },
@@ -1716,14 +1780,11 @@ function FindingsContent() {
         },
       },
     ]
-    // No bulk action for this user: no selection checkboxes either.
-    const shown = canSelect ? cols : cols.filter((c) => c.id !== 'select')
-    return shown
+    return cols
   }, [
     handleRowAction,
     handleRowClick,
     hasPermission,
-    canSelect,
     remediationEnabled,
     canCreateTicket,
     canAssignOne,
@@ -1929,6 +1990,94 @@ function FindingsContent() {
 
   // The grouped views do not load the flat page; the tab count is the same number.
   const total = findingsResponse?.total ?? 0
+
+  // The bulk bar: two direct actions (Assign to, Set status), the rest under
+  // More. Each is shown only with its permission (the API checks again).
+  const bulkActions = (
+    <>
+      {canBulkAssign && (
+        <AssigneeSelect
+          variant="ghost"
+          placeholder={t('findings.bulk.assignTo', 'Assign to…')}
+          disabled={bulkBusy}
+          onChange={(user) => {
+            if (user) setBulkPending({ kind: 'assign', user })
+          }}
+        />
+      )}
+      {canBulkStatus && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button iconOnlyBelow="sm" variant="ghost" size="sm" disabled={bulkBusy}>
+              {bulkBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin sm:me-2" />
+              ) : (
+                <Flag className="h-4 w-4 sm:me-2" />
+              )}
+              {/* Icon only on a phone, so the bar keeps More and X on screen. */}
+              <span className="sr-only sm:not-sr-only">
+                {t('findings.bulk.setStatus', 'Set status')}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="center">
+            <DropdownMenuItem
+              onClick={() => setBulkPending({ kind: 'status', status: 'confirmed' })}
+            >
+              {t('findings.status.confirmed', 'Confirmed')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setBulkPending({ kind: 'status', status: 'in_progress' })}
+            >
+              {t('findings.status.in_progress', 'In progress')}
+            </DropdownMenuItem>
+            {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+            {hasPermission(Permission.FindingsVerify) && (
+              <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
+                {t('findings.status.resolved', 'Resolved')}
+              </DropdownMenuItem>
+            )}
+            {/* false_positive requires the per-finding approval flow, so it is
+                intentionally not offered as a bulk action. */}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </>
+  )
+  // Adding to remediation works on rows: by filter it is not offered (disabled
+  // with the reason).
+  const bulkMore = canBulkRemediate ? (
+    byFilter ? (
+      <DisabledMenuItem
+        label={t('remediationClaim.menu.bulk')}
+        icon={Wrench}
+        reason={t(
+          'findings.bulk.remediationRowsOnly',
+          'Works on checked rows: pick the findings on this page'
+        )}
+      />
+    ) : (
+      <DropdownMenuItem onSelect={() => openRemediationFor(selectedFindings)}>
+        <Wrench className="me-2 h-4 w-4" />
+        {t('remediationClaim.menu.bulk')}
+      </DropdownMenuItem>
+    )
+  ) : undefined
+  // No bulk action for this user: no checkbox column either (`bulk` omitted).
+  const findingsBulk: DataTableBulk<Finding> | undefined = canSelect
+    ? {
+        rowLabel: (f) => toDisplayText(f.title, 80),
+        checkboxLabel: (f) =>
+          t('findings.list.selectRow', 'Select finding {title}', {
+            title: toDisplayText(f.title, 80),
+          }),
+        noun: t('findings.bulk.selectedNoun', 'findings selected'),
+        onSelectionChange: setBulkSelection,
+        matching: matchingFilter && total > 0 ? { total, max: BULK_BY_FILTER_MAX } : undefined,
+        actions: bulkActions,
+        more: bulkMore,
+      }
+    : undefined
   // The view this list is: a built-in quick view when the URL is exactly one,
   // a saved view, or a custom combination of filters.
   const activeQuickView = knownQuickViews(quickViewData?.views).find((v) =>
@@ -2405,7 +2554,8 @@ function FindingsContent() {
     onPaginationChange: setPagination,
     pageSizeOptions: PAGE_SIZES,
     onRowClick: handleRowClick,
-    onSelectionChange: setSelectedFindings,
+    // Groups select their rows; "Select all that match" is for the flat list.
+    bulk: findingsBulk ? { ...findingsBulk, matching: undefined } : undefined,
     // A new grouping or view starts with nothing selected.
     resetSelectionKey: `${selectionEpoch}|${selectionScope}`,
     mobileRow,
@@ -2645,7 +2795,8 @@ function FindingsContent() {
                     pageSizeOptions={PAGE_SIZES}
                     sorting={sorting}
                     onSortingChange={handleSortingChange}
-                    onSelectionChange={setSelectedFindings}
+                    // No bulk action for this user: no checkbox column either.
+                    bulk={findingsBulk}
                     resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
                     onRowClick={handleRowClick}
                     rowTone={findingRowTone}
@@ -2696,72 +2847,6 @@ function FindingsContent() {
                 )}
               </div>
             </div>
-
-            {canSelect && (
-              <BulkActionBar count={selectedCount} onClear={clearSelection}>
-                {canBulkAssign && (
-                  <AssigneeSelect
-                    placeholder={t('findings.bulk.assignTo', 'Assign to…')}
-                    disabled={bulkBusy}
-
-                    onChange={(user) => {
-                      if (user) setBulkPending({ kind: 'assign', user })
-                    }}
-                  />
-                )}
-
-                {canBulkRemediate && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openRemediationFor(selectedFindings)}
-                  >
-                    <Wrench className="me-2 h-4 w-4" />
-                    {t('remediationClaim.menu.bulk')}
-                  </Button>
-                )}
-
-                {canBulkStatus && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" disabled={bulkBusy}>
-                        {bulkBusy ? (
-                          <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Flag className="me-2 h-4 w-4" />
-                        )}
-                        {t('findings.bulk.status', 'Status')}
-                      </Button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent side="top" align="center">
-                      <DropdownMenuItem
-                        onClick={() => setBulkPending({ kind: 'status', status: 'confirmed' })}
-                      >
-                        {t('findings.status.confirmed', 'Confirmed')}
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem
-                        onClick={() => setBulkPending({ kind: 'status', status: 'in_progress' })}
-                      >
-                        {t('findings.status.in_progress', 'In progress')}
-                      </DropdownMenuItem>
-
-                      {/* Resolving needs findings:verify; the API refuses it otherwise. */}
-                      {hasPermission(Permission.FindingsVerify) && (
-                        <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
-                          {t('findings.status.resolved', 'Resolved')}
-                        </DropdownMenuItem>
-                      )}
-
-                      {/* false_positive requires the per-finding approval flow, so it is
-
-                    intentionally not offered as a bulk action. */}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </BulkActionBar>
-            )}
 
             <FilterSheet
               open={filterSheetOpen}
@@ -2890,10 +2975,23 @@ function FindingsContent() {
           setBulkPending(null)
         }}
       >
-        <ConfirmSample
-          names={selectedFindings.map((f) => f.title)}
-          total={selectedFindingIds.length}
-        />
+        {!byFilter && (
+          <ConfirmSample
+            names={selectedFindings.map((f) => f.title)}
+            total={selectedFindingIds.length}
+          />
+        )}
+        {bulkPending && (
+          <BulkChangePreview
+            selection={
+              bulkSelection?.kind === 'filter'
+                ? { kind: 'filter', total: bulkSelection.total }
+                : { kind: 'ids', ids: selectedFindingIds }
+            }
+            status={bulkPending.kind === 'status' ? bulkPending.status : undefined}
+            onResults={(status, results) => setBulkPreview({ status, results })}
+          />
+        )}
       </ConfirmDialog>
 
       {/* Bulk resolve: closes every selected finding at once. */}
@@ -2901,10 +2999,10 @@ function FindingsContent() {
         open={bulkResolveOpen}
         onOpenChange={setBulkResolveOpen}
         title={
-          selectedFindingIds.length === 1
+          selectedTotal === 1
             ? t('confirm.finding.bulkResolveTitleOne', 'Resolve 1 finding?')
             : t('confirm.finding.bulkResolveTitle', 'Resolve {count} findings?', {
-                count: selectedFindingIds.length,
+                count: selectedTotal,
               })
         }
         desc={t(
@@ -2912,10 +3010,10 @@ function FindingsContent() {
           'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
         )}
         confirmText={
-          selectedFindingIds.length === 1
+          selectedTotal === 1
             ? t('confirm.finding.resolveOne', 'Resolve 1 finding')
             : t('confirm.finding.resolveMany', 'Resolve {count} findings', {
-                count: selectedFindingIds.length,
+                count: selectedTotal,
               })
         }
         destructive
@@ -2927,10 +3025,24 @@ function FindingsContent() {
           }
         }}
       >
-        <ConfirmSample
-          names={selectedFindings.map((f) => f.title)}
-          total={selectedFindingIds.length}
-        />
+        {!byFilter && (
+          <ConfirmSample
+            names={selectedFindings.map((f) => f.title)}
+            total={selectedFindingIds.length}
+          />
+        )}
+        {bulkResolveOpen && (
+          <BulkChangePreview
+            selection={
+              bulkSelection?.kind === 'filter'
+                ? { kind: 'filter', total: bulkSelection.total }
+                : { kind: 'ids', ids: selectedFindingIds }
+            }
+            status="resolved"
+            note={bulkResolveNote}
+            onResults={(status, results) => setBulkPreview({ status, results })}
+          />
+        )}
         {/* A bulk resolve reads no verification checklist: it is attested and needs a note. */}
         <div className="space-y-2">
           <Label htmlFor="bulk-resolve-note">

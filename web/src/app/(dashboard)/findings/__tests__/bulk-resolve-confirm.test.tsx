@@ -8,6 +8,8 @@ import userEvent from '@testing-library/user-event'
 
 const csrfFetch = vi.hoisted(() => vi.fn())
 const post = vi.hoisted(() => vi.fn())
+// The list's total: above the page's rows, "Select all N that match" is offered.
+const mockTotal = vi.hoisted(() => ({ value: 2 }))
 const del = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/api/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/api/client')>()),
@@ -58,7 +60,7 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
           updated_at: '2026-10-01T00:00:00Z',
         },
       ],
-      total: 2,
+      total: mockTotal.value,
       page: 1,
       per_page: 20,
     },
@@ -195,7 +197,7 @@ describe('Findings bulk resolve', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
     const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
-    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
 
     const bulkCalls = () =>
@@ -225,7 +227,7 @@ describe('Findings bulk resolve', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
     const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
-    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'In progress' }))
     const bulkCalls = () =>
       post.mock.calls.filter(([url]) => String(url).includes('/findings/bulk/status'))
@@ -238,7 +240,7 @@ describe('Findings bulk resolve', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(bulkCalls()).toHaveLength(0)
 
-    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'In progress' }))
     await userEvent.click(
       within(await screen.findByRole('alertdialog')).getByRole('button', {
@@ -274,7 +276,7 @@ describe('Findings bulk resolve', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
     const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
-    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
     const dialog = await screen.findByRole('alertdialog')
     fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
@@ -295,7 +297,7 @@ describe('Findings bulk resolve', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
     const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
-    await userEvent.click(within(bar).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Resolved' }))
     const dialog = await screen.findByRole('alertdialog')
     fireEvent.change(within(dialog).getByLabelText('Note (required)'), {
@@ -343,7 +345,50 @@ describe('Findings bulk resolve', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
     const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
-    expect(within(bar).queryByRole('button', { name: 'Status' })).toBeNull()
+    expect(within(bar).queryByRole('button', { name: 'Set status' })).toBeNull()
     denied = new Set()
+  })
+
+  it('applies a status to every finding that matches through the server, with the count', async () => {
+    mockTotal.value = 418
+    allowAll = true
+    post.mockClear()
+    post.mockResolvedValue({
+      operation: {
+        id: 'op1',
+        status: 'succeeded',
+        total: 418,
+        succeeded: 418,
+        skipped: 0,
+        failed: 0,
+      },
+    })
+    window.history.replaceState(null, '', '/findings?severity=critical')
+    try {
+      render(<FindingsPage />)
+      await userEvent.click(screen.getAllByRole('checkbox', { name: /select all/i })[0])
+      const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+      await userEvent.click(within(bar).getByRole('button', { name: 'Select all 418 that match' }))
+      expect(within(bar).getByText('All 418 that match are selected')).toBeInTheDocument()
+      await userEvent.click(within(bar).getByRole('button', { name: 'Set status' }))
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'In progress' }))
+      const dialog = await screen.findByRole('alertdialog')
+      expect(dialog).toHaveTextContent('Mark 418 findings as In progress?')
+      // The server re-checks every finding in the caller's scope; the dialog says so.
+      expect(within(dialog).getByTestId('bulk-preview')).toHaveTextContent('in your data scope')
+      await userEvent.click(within(dialog).getByRole('button', { name: /Mark 418 findings/ }))
+      const byFilter = () =>
+        post.mock.calls.filter(([url]) => String(url).includes('/bulk/by-filter/status'))
+      await waitFor(() => expect(byFilter()).toHaveLength(1))
+      const body = byFilter()[0][1]
+      expect(body).toMatchObject({ status: 'in_progress', expected_count: 418 })
+      expect(body.filter).not.toHaveProperty('page')
+      expect(body.filter).not.toHaveProperty('per_page')
+      expect(body.filter).not.toHaveProperty('sort')
+      // Ids are never sent for a filter selection.
+      expect(body).not.toHaveProperty('finding_ids')
+    } finally {
+      mockTotal.value = 2
+    }
   })
 })
