@@ -410,7 +410,6 @@ describe('FilterBar', () => {
     }
     bar('rule_id=github-pat&from=group:rule_id', {
       contract: withRule,
-      pickerContract: withRule,
       skip: new Set(),
     })
     expect(screen.getAllByTestId('filter-chip')).toHaveLength(1)
