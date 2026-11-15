@@ -1,9 +1,10 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { openFindingsPhoneSelect } from '../helpers/table'
 
 /**
  * Findings list selection. A selection belongs to the rows on screen, so a
  * page, search, sort or filter change clears it. A phone card has the row's
- * menu; "Select" in the toolbar's More turns the checkboxes on, and the bulk
+ * menu; "Select", first in the list's More (title row), turns the checkboxes on, and the bulk
  * bar's count selects the page or every finding that matches (en and vi at
  * 375). Skips when the stack has no findings.
  */
@@ -63,8 +64,10 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()
 
-    await page.getByRole('button', { name: 'More list actions' }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Select' }).click()
+    // Select is the first item of the list's More (title row); the toolbar
+    // has no More of its own.
+    await expect(page.locator('[data-slot="table-phone-more"]')).toHaveCount(0)
+    await openFindingsPhoneSelect(page)
     await expect(bulkBar(page)).toBeVisible()
     await card.getByRole('checkbox').check()
     await expect(bulkBar(page).getByRole('button', { name: /selection options/i })).toHaveText(
@@ -95,9 +98,7 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
         'No findings on this stack'
       )
 
-      const more = page.locator('[data-slot="table-phone-more"]')
-      await more.click()
-      await page.getByRole('menuitemcheckbox').click()
+      await openFindingsPhoneSelect(page)
       const bar = page.locator('[data-slot="bulk-action-bar"]')
       await expect(bar).toBeVisible()
       const count = bar.locator('[data-slot="bulk-bar-select-menu"]')

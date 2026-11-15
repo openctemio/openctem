@@ -10,6 +10,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
+import { usePhoneSelectMode } from '../phone-select-mode'
 import type { DataTableBulk, DataTableSelection } from '../data-table-selection'
 
 type Row = { id: string; name: string }
@@ -270,6 +271,38 @@ describe('phone select mode', () => {
     await userEvent.click(within(bar()!).getByRole('button', { name: 'Clear selection' }))
     expect(bar()).not.toBeInTheDocument()
     expect(cardBoxes()).toHaveLength(0)
+  })
+
+  it('a page that holds the mode offers Select in its own More: the toolbar draws none', async () => {
+    function Page() {
+      const { selectMode, item } = usePhoneSelectMode(true)
+      return (
+        <>
+          {item && (
+            <button type="button" data-testid="page-select" onClick={item.onSelect}>
+              {item.label}
+            </button>
+          )}
+          <DataTable
+            columns={columns}
+            data={rows}
+            getRowId={(r) => r.id}
+            bulk={{ rowLabel: (r) => r.name, actions: <button type="button">Assign to</button> }}
+            selectMode={selectMode}
+          />
+        </>
+      )
+    }
+    render(<Page />)
+    expect(screen.queryByRole('button', { name: 'More list actions' })).not.toBeInTheDocument()
+    expect(cardBoxes()).toHaveLength(0)
+    await userEvent.click(screen.getByTestId('page-select'))
+    expect(cardBox('a')).toBeInTheDocument()
+    expect(screen.getByTestId('page-select')).toHaveTextContent('Stop selecting')
+    // X on the bar ends the page's mode too.
+    await userEvent.click(within(bar()!).getByRole('button', { name: 'Clear selection' }))
+    expect(cardBoxes()).toHaveLength(0)
+    expect(screen.getByTestId('page-select')).toHaveTextContent('Select')
   })
 
   it('no More and no checkboxes without bulk', () => {

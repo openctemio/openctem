@@ -17,6 +17,7 @@ import {
   SeverityBadge,
   type DataTableBulk,
   type DataTableRowGroups,
+  type DataTableSelectMode,
   type MobileRowSelection,
 } from '@/features/shared'
 import { formatEpssScore } from '@/lib/epss'
@@ -296,6 +297,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   onSelectionChange?: (rows: TRow[]) => void
   /** Several rows at once: the table's checkbox column and bulk bar. */
   bulk?: DataTableBulk<TRow>
+  /** Phone select mode held by the page (its More offers "Select"). */
+  selectMode?: DataTableSelectMode
   resetSelectionKey?: string | number
   mobileRow?: (row: TRow, selection: MobileRowSelection) => React.ReactNode
   filterToggle?: FilterPanelToggleProps
@@ -328,6 +331,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   onRowClick,
   onSelectionChange,
   bulk,
+  selectMode,
   resetSelectionKey,
   mobileRow,
   filterToggle,
@@ -631,6 +635,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       onRowClick={onRowClick}
       onSelectionChange={onSelectionChange}
       bulk={bulk}
+      selectMode={selectMode}
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       mobileRow={mobileRow}

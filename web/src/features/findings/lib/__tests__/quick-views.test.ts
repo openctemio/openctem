@@ -79,6 +79,9 @@ describe('quickViewIsActive', () => {
     ],
     ['closed', 'state=closed', CLOSED, true],
     ['closed is not Active', 'state=closed', ACTIVE, false],
+    // The practice is the list's scope, not a filter of the view.
+    ['a practice keeps the view: Active', 'practice=compliance', ACTIVE, true],
+    ['a practice keeps the view: Needs triage', 'practice=aspm&status=new&state=all', TRIAGE, true],
   ]
   for (const [name, search, v, want] of cases) {
     it(name, () => expect(quickViewIsActive(search, v)).toBe(want))

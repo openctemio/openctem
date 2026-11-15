@@ -126,6 +126,22 @@ async function toolbarDefects(page: Page): Promise<string[]> {
       }
     }
     for (const st of strips) {
+      // At rest a strip starts at its first item, fully inside its start edge
+      // (owner report 2026-11-15: "nformational hidden" cut at the start, no
+      // fade); only the end may fade. No box around it is shifted sideways.
+      const name = st.dataset.slot ?? 'chips'
+      if (Math.abs(st.scrollLeft) > 0.5)
+        out.push(`strip ${name}: scrolled ${st.scrollLeft}px at rest`)
+      if (st.dataset.fadeStart === 'true') out.push(`strip ${name}: fades at its start at rest`)
+      const first = Array.from(st.querySelectorAll<HTMLElement>(':scope > *, :scope > * > *'))
+        .filter(visible)
+        .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0]
+      const edge = st.getBoundingClientRect().left
+      if (first && first.getBoundingClientRect().left < edge - 0.5)
+        out.push(`strip ${name}: first item cut at the start`)
+      for (let p = st.parentElement; p && p.tagName !== 'MAIN'; p = p.parentElement) {
+        if (p.scrollLeft !== 0) out.push(`strip ${name}: ${p.dataset.slot ?? p.tagName} scrolled`)
+      }
       const overflows = st.scrollWidth > st.clientWidth + 1
       if (overflows !== (st.dataset.fadeEnd === 'true')) {
         out.push(
@@ -159,6 +175,14 @@ for (const locale of ['en', 'vi'] as const) {
           await page.waitForTimeout(300)
           const before = await endBoxes(page)
           expect(before.length).toBeGreaterThan(0)
+          // One filter entry on a phone (the Filters button joined to the
+          // field): no Add filter and no list "..." on the second line, whose
+          // pinned group is Views and Group (Select is in the list's More).
+          await expect(
+            page.locator('main [data-slot="add-filter"]').filter({ visible: true })
+          ).toHaveCount(0)
+          await expect(page.locator('main [data-slot="table-phone-more"]')).toHaveCount(0)
+          expect(before).toHaveLength(2)
           // A deep-link chip (Rule ...) and n filter chips.
           await page.goto(`/findings?${[DEEP_LINK, ...FILTERS.slice(0, n)].join('&')}`)
           const row = page.getByTestId('findings-filter-bar')
@@ -172,6 +196,25 @@ for (const locale of ['en', 'vi'] as const) {
             contentType: 'image/png',
           })
           expect(defects).toEqual([])
+          // The row clips instead of scrolling: focus or scrollIntoView on a
+          // chip past the edge cannot shift the row and cut its start.
+          const shifted = await page.evaluate(() => {
+            const r = document.querySelector<HTMLElement>(
+              'main [data-testid="findings-filter-bar"]'
+            )
+            if (!r) return -1
+            r.scrollLeft = 40
+            return r.scrollLeft
+          })
+          expect(shifted).toBe(0)
+          // A leading chip wider than the strip shortens: it ends inside the strip.
+          const lead = await page.evaluate(() => {
+            const strip = document.querySelector('main [data-slot="filter-chips-strip"]')
+            const chip = document.querySelector('main [data-testid="informational-chip"]')
+            if (!strip || !chip) return null
+            return chip.getBoundingClientRect().width - strip.getBoundingClientRect().width
+          })
+          expect(lead ?? 0).toBeLessThanOrEqual(0.5)
           // Same row, same place and height as without filters.
           const after = await endBoxes(page)
           expect(after.map((b) => b.name)).toEqual(before.map((b) => b.name))
@@ -213,4 +256,48 @@ for (const locale of ['en', 'vi'] as const) {
       }
     )
   }
+}
+
+/**
+ * The phone's one filter entry (the Filters button joined to the search field)
+ * opens the Filters sheet. Kit policy on touch: nothing focuses a text field
+ * on open (no keyboard until the user taps one), and a search field in the
+ * sheet stays on screen once the keyboard is up (emulated by shrinking the
+ * viewport to the part the keyboard leaves).
+ */
+for (const width of [390, 375] as const) {
+  test.describe(`Filters sheet on a phone at ${width}px`, { tag: ['@findings'] }, () => {
+    test.use({ hasTouch: true, isMobile: true })
+
+    test('opens without focusing a text field; its search stays visible with the keyboard up', async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto('/findings')
+      const button = page
+        .locator('main [data-slot="list-search"] [data-slot="filter-button"]')
+        .filter({ visible: true })
+      await expect(button).toBeVisible({ timeout: 45_000 })
+      await button.click()
+      const sheet = page.getByRole('dialog').filter({ visible: true }).last()
+      await expect(sheet).toBeVisible()
+      await page.waitForTimeout(500)
+      const focusedTextField = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        return !!el && el.matches('input:not([type=checkbox]):not([type=radio]), textarea')
+      })
+      expect(focusedTextField, 'a text field has focus on open').toBe(false)
+      const search = sheet
+        .locator('input[type="search"], [role="searchbox"], [data-slot="command-input"]')
+        .first()
+      if ((await search.count()) > 0 && (await search.isVisible())) {
+        await search.tap()
+        await page.setViewportSize({ width, height: 420 })
+        await page.waitForTimeout(500)
+        const b = (await search.boundingBox())!
+        expect(b.y).toBeGreaterThanOrEqual(0)
+        expect(b.y + b.height).toBeLessThanOrEqual(420)
+      }
+    })
+  })
 }
