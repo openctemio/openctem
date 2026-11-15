@@ -105,7 +105,8 @@ function RowActionsMenu({ actions, label, title }: DataTableRowActionsProps) {
       title={title ?? triggerLabel}
       label={triggerLabel}
       trigger={
-        <Button variant="ghost" size="icon" aria-label={triggerLabel}>
+        // Dense, as the table row it sits in (28, so compact rows stay 32).
+        <Button variant="ghost" size="icon-sm" aria-label={triggerLabel}>
           <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
       }

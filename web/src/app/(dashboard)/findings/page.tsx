@@ -2529,6 +2529,7 @@ function FindingsContent() {
       onOpen={handleRowClick}
       menu={
         <FindingRowMenu
+          size="icon"
           title={f.title}
           onAction={(action) => handleRowAction(action, f)}
           canAssign={canAssignOne}

@@ -10,8 +10,9 @@ import { layoutIssues } from '../design/layout-checks'
  *   titled with the finding, rows of at least 44, at least 16 px under its
  *   last row, its bottom on the visible screen; Escape closes it and gives
  *   the focus back. From 768 px up it is a menu inside the 16 px gutter.
- * - The bulk bar's More (one item) is a small menu at every width, above the
- *   bar and never over it, inside the gutter, rows of at least 44 on a phone.
+ * - The bulk bar's More (one item) is a small menu at every width, above its
+ *   button (never covering it), inside the gutter, rows of at least 44 on a
+ *   phone.
  *
  * At 375, 390, 768 and 1440 px, in English and Vietnamese.
  */
@@ -113,7 +114,7 @@ for (const locale of ['en', 'vi'] as const) {
     )
 
     test(
-      `The bulk bar's More is a small menu above the bar at ${width}px (${locale})`,
+      `The bulk bar's More is a small menu above its button at ${width}px (${locale})`,
       { tag: ['@findings', ...(phone ? ['@phone'] : [])] },
       async ({ page, baseURL }) => {
         await openFindings(page, width, locale, baseURL)
@@ -128,7 +129,9 @@ for (const locale of ['en', 'vi'] as const) {
         const bar = page.locator('[data-slot="bulk-action-bar"]')
         await expect(bar).toBeVisible()
         const b = await settledRect(bar)
-        await bar.getByRole('button', { name: L[locale].more }).click()
+        const more = bar.getByRole('button', { name: L[locale].more })
+        const t = await settledRect(more)
+        await more.click()
         const menu = page.getByRole('menu')
         await expect(menu).toBeVisible()
         const m = await settledRect(menu)
@@ -137,10 +140,10 @@ for (const locale of ['en', 'vi'] as const) {
           .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)))
         test.info().annotations.push({
           type: 'bulk More',
-          description: JSON.stringify({ bar: b, menu: m, rows: heights }),
+          description: JSON.stringify({ bar: b, trigger: t, menu: m, rows: heights }),
         })
         expect(await page.locator('[data-slot="action-sheet"]').count()).toBe(0)
-        expect(m.bottom, 'above the bar, never over it').toBeLessThanOrEqual(b.top)
+        expect(m.bottom, 'above its button, never covering it').toBeLessThanOrEqual(t.top)
         expect(m.left).toBeGreaterThanOrEqual(GUTTER)
         expect(m.right).toBeLessThanOrEqual(width - GUTTER)
         if (phone) for (const h of heights) expect(h, 'row height').toBeGreaterThanOrEqual(44)

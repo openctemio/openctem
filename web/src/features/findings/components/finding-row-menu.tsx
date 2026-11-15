@@ -30,6 +30,8 @@ export type FindingRowAction =
 
 interface FindingRowMenuProps {
   title: string
+  /** Trigger size: dense (28) in a table row, the default; `icon` on a phone card. */
+  size?: 'icon-sm' | 'icon'
   onAction: (action: FindingRowAction) => void
   /** May assign this finding (the drawer's assignee picker); hides "Open to assign…" otherwise. */
   canAssign: boolean
@@ -49,6 +51,7 @@ interface FindingRowMenuProps {
  */
 export function FindingRowMenu({
   title,
+  size = 'icon-sm',
   onAction,
   canAssign,
   canChangeStatus,
@@ -150,7 +153,7 @@ export function FindingRowMenu({
       title={name}
       label={label}
       trigger={
-        <Button size="icon" variant="ghost" className="p-0" aria-label={label}>
+        <Button size={size} variant="ghost" className="p-0" aria-label={label}>
           <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
       }
