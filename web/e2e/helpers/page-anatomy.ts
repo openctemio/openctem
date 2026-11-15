@@ -76,8 +76,12 @@ type Probe = {
   middotChips: string[]
   emptyPagination: boolean
   nameColumns: { header: string; width: number }[]
-  /** Header rows of the shared tables: height and whether the header is tinted. */
-  tableHeads: { height: number; tinted: boolean }[]
+  /**
+   * Header rows of every table: height, whether the header cells are filled
+   * with anything but the surface the table sits on (a tint), and whether the
+   * header's bottom rule is drawn and stronger than the rules between rows.
+   */
+  tableHeads: { height: number; tinted: boolean; rule: boolean; ruleStronger: boolean }[]
   /** Raw `{{placeholder}}` text anywhere in main. */
   rawTemplates: boolean
   pageOverflowX: boolean
@@ -85,8 +89,8 @@ type Probe = {
   handDenied: boolean
 }
 
-export async function probe(page: Page): Promise<Probe> {
-  return page.evaluate(() => {
+export async function probe(page: Page, allTables = false): Promise<Probe> {
+  return page.evaluate((allTables: boolean) => {
     const main = document.querySelector('main') ?? document.body
     const tokenPx = (name: string) => {
       const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -213,16 +217,61 @@ export async function probe(page: Page): Promise<Probe> {
         width: Math.round(th.getBoundingClientRect().width),
       }))
 
-    // Shared tables: header row 36 (32 compact), never tinted.
-    const pageBg = getComputedStyle(document.body).backgroundColor
-    const tableHeads = Array.from(main.querySelectorAll('[data-scroll-mode] table thead tr'))
-      .filter((tr) => shown(tr))
+    // Tables: header row 36 (32 compact), no fill of its own, one bottom rule
+    // stronger than the rules between rows. The fill is compared with the
+    // surface the table sits on (the page, or a card), not with the body.
+    const rgb = (c: string): number[] | null => {
+      const ctx = document.createElement('canvas').getContext('2d')
+      if (!ctx || !c) return null
+      ctx.fillStyle = '#000'
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, bl, al] = ctx.getImageData(0, 0, 1, 1).data
+      return al === 0 ? null : [r, g, bl]
+    }
+    const lum = (c: number[]) => {
+      const f = (v: number) => {
+        const x = v / 255
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2])
+    }
+    const contrast = (a: number[], b: number[]) => {
+      const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m)
+      return (x + 0.05) / (y + 0.05)
+    }
+    const surfaceOf = (el: Element) => {
+      for (let e = el.parentElement; e; e = e.parentElement) {
+        const c = getComputedStyle(e).backgroundColor
+        if (c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)') return c
+      }
+      return getComputedStyle(document.body).backgroundColor
+    }
+    const ruleOf = (tr: Element | null) => {
+      if (!tr) return null
+      const cs = getComputedStyle(tr)
+      return parseFloat(cs.borderBottomWidth) > 0 ? rgb(cs.borderBottomColor) : null
+    }
+    // Every table, or (tenant app, until its raw tables move to the kit) the
+    // shared DataTable's.
+    const tableHeads = Array.from(
+      main.querySelectorAll(allTables ? 'table thead tr' : '[data-scroll-mode] table thead tr')
+    )
+      .filter((tr) => shown(tr) && tr.querySelector('th'))
       .map((tr) => {
-        const th = tr.querySelector('th') as HTMLElement | null
-        const bg = th ? getComputedStyle(th).backgroundColor : ''
+        const table = tr.closest('table') as HTMLTableElement
+        const th = tr.querySelector('th') as HTMLElement
+        const surface = rgb(surfaceOf(table)) ?? [255, 255, 255]
+        const fill = rgb(getComputedStyle(th).backgroundColor)
+        const headRule = ruleOf(tr)
+        const rowRule = ruleOf(table.querySelector('tbody tr:not(:last-child)'))
         return {
           height: Math.round(tr.getBoundingClientRect().height),
-          tinted: bg !== '' && bg !== 'rgba(0, 0, 0, 0)' && bg !== pageBg,
+          tinted: fill !== null && contrast(fill, surface) > 1.01,
+          rule: headRule !== null,
+          ruleStronger:
+            headRule !== null &&
+            (rowRule === null || contrast(headRule, surface) > contrast(rowRule, surface)),
         }
       })
     const rawTemplates = /\{\{[^}]*\}\}/.test(main.textContent ?? '')
@@ -274,7 +323,7 @@ export async function probe(page: Page): Promise<Probe> {
         .filter((label) => /^(Save( changes| policy| settings)?|Lưu( thay đổi)?)$/i.test(label)),
       handDenied: /Insufficient permissions|Access Denied/.test(main.textContent ?? ''),
     }
-  })
+  }, allTables)
 }
 
 /** One control of a row: its accessible name (or tag) and its drawn box. */
@@ -455,12 +504,12 @@ export async function checkAt(
   route: string,
   width: number,
   ownLayoutRoutes: RegExp[] = [],
-  opts: { rowMix?: boolean } = {}
+  opts: { rowMix?: boolean; allTables?: boolean } = {}
 ) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   // Let a resize settle (the tab strip re-measures what fits).
   await page.waitForTimeout(300)
-  const r = await probe(page)
+  const r = await probe(page, opts.allTables)
   const at = `${route} at ${width}px`
 
   const ownLayout = ownLayoutRoutes.some((re) => re.test(route.split('?')[0]))
@@ -522,6 +571,10 @@ export async function checkAt(
       .soft([32, 33, 36, 37], `${at}: a table header row is 36 (32 compact) + 1`)
       .toContain(h.height)
     expect.soft(h.tinted, `${at}: a table header row has no background tint`).toBe(false)
+    expect.soft(h.rule, `${at}: a table header row has a bottom rule`).toBe(true)
+    expect
+      .soft(h.ruleStronger, `${at}: the header rule is stronger than the rules between rows`)
+      .toBe(true)
   }
   expect.soft(r.rawTemplates, `${at}: no raw {{placeholder}} text`).toBe(false)
   const path = route.split('?')[0]

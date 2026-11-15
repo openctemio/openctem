@@ -10,6 +10,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -187,48 +195,36 @@ export default function ContentPacksPage() {
                   )}
                 </p>
               ) : (
-                <div>
-                  <table className="w-full text-sm">
-                    <thead className="text-muted-foreground">
-                      <tr>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.col.pack', 'Pack')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.channel', 'Channel')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.version', 'Version')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.digest', 'Digest')}
-                        </th>
-                        <th className="py-2 text-start font-medium">
-                          {t('admin.cp.updated', 'Updated')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {channelRows.map((c) => (
-                        <tr key={`${c.name}-${c.channel}`}>
-                          <td className="py-2 pe-3 font-medium">{c.name}</td>
-                          <td className="py-2 pe-3">
-                            <Badge variant={c.channel === 'stable' ? 'secondary' : 'outline'}>
-                              {c.channel}
-                            </Badge>
-                          </td>
-                          <td className="py-2 pe-3 tabular-nums">{c.version}</td>
-                          <td className="py-2 pe-3 font-mono text-xs" title={c.digest}>
-                            {shortDigest(c.digest)}
-                          </td>
-                          <td className="py-2">
-                            <RelativeTime date={c.updated_at} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('admin.cp.col.pack', 'Pack')}</TableHead>
+                      <TableHead>{t('admin.cp.channel', 'Channel')}</TableHead>
+                      <TableHead>{t('admin.cp.version', 'Version')}</TableHead>
+                      <TableHead>{t('admin.cp.digest', 'Digest')}</TableHead>
+                      <TableHead>{t('admin.cp.updated', 'Updated')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {channelRows.map((c) => (
+                      <TableRow key={`${c.name}-${c.channel}`}>
+                        <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell>
+                          <Badge variant={c.channel === 'stable' ? 'secondary' : 'outline'}>
+                            {c.channel}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="tabular-nums">{c.version}</TableCell>
+                        <TableCell className="font-mono text-xs" title={c.digest}>
+                          {shortDigest(c.digest)}
+                        </TableCell>
+                        <TableCell>
+                          <RelativeTime date={c.updated_at} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
