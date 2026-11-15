@@ -65,7 +65,8 @@ const HANDLERS: Record<string, [string, RegExp]> = {
   ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
-    /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,
+    // Escape inside an open menu or dialog closes that, not the selection.
+    /e\.key !== 'Escape' \|\| e\.defaultPrevented\) return[\s\S]*?closest\(POPUP_SELECTOR\)\) return\s*onClear\(\)/,
   ],
 }
 

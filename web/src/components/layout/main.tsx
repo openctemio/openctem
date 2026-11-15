@@ -54,7 +54,10 @@ export const Main = forwardRef<HTMLElement, MainProps>(
           // overflow-x: clip, not hidden — hidden forces overflow-y to auto,
           // which made <Main> a (never-scrolling) scroll container and broke
           // position: sticky for everything inside a page.
-          'px-4 py-6 overflow-x-clip sm:px-6',
+          // The bottom padding grows by the room a bulk-action bar takes
+          // while it shows (BulkActionBar sets --bulk-bar-space), so the last
+          // row and the pager scroll clear of it.
+          'px-4 pt-6 pb-[calc(1.5rem+var(--bulk-bar-space,0px))] overflow-x-clip sm:px-6',
           fixed && 'flex flex-col flex-grow overflow-hidden',
           !fluid && 'w-full mx-auto',
           className
