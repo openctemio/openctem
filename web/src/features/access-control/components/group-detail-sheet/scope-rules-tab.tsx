@@ -306,6 +306,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <DataTableRowActions
+                  title={rule.name}
                   label={t('org.scopeRules.actionsFor', 'Actions for {name}', { name: rule.name })}
                   actions={[
                     {

@@ -576,6 +576,8 @@ export default function BusinessUnitsPage() {
         return (
           <Can permission={Permission.AssetsWrite}>
             <DataTableRowActions
+              title={unit.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: unit.name })}
               actions={[
                 {
                   label: t('businessContext.units.action.view', 'View details'),

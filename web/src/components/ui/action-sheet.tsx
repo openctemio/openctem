@@ -29,7 +29,7 @@ import type {
   ActionMenuGroup,
   ActionMenuSubmenu,
   NormalizedActionMenu,
-} from '@/components/ui/action-menu'
+} from '@/components/ui/action-menu-model'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
@@ -91,6 +91,9 @@ export default function ActionSheet({
       <DrawerContent
         ref={contentRef}
         data-slot="action-sheet"
+        // A click in the sheet stays in it (the sheet is portalled, but React
+        // events still bubble to the row or card around the trigger).
+        onClick={(e) => e.stopPropagation()}
         className="max-h-[calc(85dvh-var(--sheet-lift,0px))] bg-popover pb-[max(1rem,env(safe-area-inset-bottom))] outline-none"
         style={
           lift > 0

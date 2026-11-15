@@ -347,6 +347,7 @@ export function ScopeExclusionsTable({
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.pattern ?? ''}
           label={t('scope.col.actionsFor', 'Actions for {pattern}', {
             pattern: row.original.pattern ?? '',
           })}

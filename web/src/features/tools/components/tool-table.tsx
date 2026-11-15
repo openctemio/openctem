@@ -251,7 +251,7 @@ export function ToolTable({
               separatorBefore: true,
             })
           }
-          return <DataTableRowActions actions={actions} />
+          return <DataTableRowActions title={tool?.name} actions={actions} />
         },
       },
     ],

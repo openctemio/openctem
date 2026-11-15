@@ -47,7 +47,7 @@ test.describe('Sensors list', { tag: ['@sensors'] }, () => {
     // A sensor still at trust level New (e2e-sensor-b) says what that means.
     await expect(rowFor(page, 'e2e-sensor-b').getByText('Passive only')).toBeVisible()
 
-    await row.getByRole('button', { name: 'Open row actions' }).click()
+    await row.getByRole('button', { name: /Actions for e2e-sensor/ }).click()
     await expect(page.getByRole('menuitem', { name: 'Revoke', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
     // The menu fades out for a moment: axe reads the colours of a half

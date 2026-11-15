@@ -55,6 +55,7 @@ export const CapabilityCard = memo(function CapabilityCard({
           </div>
           {(showActions || onViewDetails) && (
             <DataTableRowActions
+              title={capability.display_name}
               actions={[
                 ...(onViewDetails
                   ? [

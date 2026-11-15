@@ -1379,6 +1379,7 @@ function BranchesTab({
                   </TableCell>
                   <TableCell>
                     <DataTableRowActions
+                      title={branch.name}
                       actions={[
                         {
                           label: 'View Findings',

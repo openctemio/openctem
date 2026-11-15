@@ -11,7 +11,6 @@ import userEvent from '@testing-library/user-event'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
 import type { DataTableBulk, DataTableSelection } from '../data-table-selection'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 
 type Row = { id: string; name: string }
 const columns: ColumnDef<Row>[] = [
@@ -42,7 +41,7 @@ function setup(bulk: Partial<DataTableBulk<Row>> = {}, extra: { rowCount?: numbe
   const full: DataTableBulk<Row> = {
     rowLabel: (r) => r.name,
     actions: <button type="button">Assign to</button>,
-    more: <DropdownMenuItem>Add to remediation</DropdownMenuItem>,
+    more: [{ id: 'remediate', label: 'Add to remediation' }],
     onSelectionChange,
     ...bulk,
   }

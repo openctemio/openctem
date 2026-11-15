@@ -148,6 +148,8 @@ export function TeamsSection({ header }: SectionProps) {
 
         return (
           <DataTableRowActions
+            title={group.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: group.name })}
             actions={[
               {
                 label: t('org.teams.viewDetails', 'View details'),

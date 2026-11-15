@@ -99,6 +99,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   return (
     <div className="flex justify-end gap-1">
       <DataTableRowActions
+        title={k.name}
         label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name: k.name })}
         actions={[
           ...(isActive(k)

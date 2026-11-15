@@ -496,6 +496,8 @@ export default function AssetGroupsPage() {
         const group = row.original
         return (
           <DataTableRowActions
+            title={group.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: group.name })}
             actions={[
               {
                 label: t('assetGroups.action.quickView', 'Quick view'),

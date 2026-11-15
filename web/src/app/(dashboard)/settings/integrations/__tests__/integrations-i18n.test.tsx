@@ -18,6 +18,7 @@ vi.mock('@/components/link', () => ({
 }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
+  usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
   Permission: { IntegrationsRead: 'integrations:read' },
 }))
 vi.mock('@/features/repositories/hooks/use-repositories', () => ({
