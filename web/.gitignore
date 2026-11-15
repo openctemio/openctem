@@ -25,6 +25,9 @@ e2e/ci/.env
 /console/.next/
 /out/
 
+# eslint cache (a local run artefact, never committed)
+.eslintcache
+
 # production
 /build
 
