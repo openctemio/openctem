@@ -47,7 +47,7 @@ import { FindingsBaseChips } from '@/features/findings/components/base-chips'
 import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
 import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
-import { mapDataFlow } from '@/features/findings/lib/finding-detail'
+import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
   useDrawerKeyboardNav,
@@ -105,7 +105,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { DecorativeText } from '@/components/ui/decorative-text'
-import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
 import {
   Select,
   SelectContent,
@@ -1794,9 +1794,8 @@ function FindingsContent() {
           <DataTableColumnHeader column={column} title={t('findings.columns.source', 'Source')} />
         ),
         cell: ({ row }) => (
-          <Badge variant="outline" className="text-xs uppercase">
-            {row.getValue('source')}
-          </Badge>
+          // How the finding was found: a classification, named in words.
+          <Tag label={findingSourceText(t, row.original.source)} />
         ),
       },
       {
