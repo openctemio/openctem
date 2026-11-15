@@ -75,6 +75,18 @@ function expectTokenNeverInAUrl(fetchFn: ReturnType<typeof vi.fn>) {
   }
 }
 
+/**
+ * Clicks "Open Acme" once it can be used. The card shows as soon as the
+ * accept (or the first open attempt) reports back, but that attempt's
+ * transition is still pending for a moment and the button is disabled until
+ * it settles; a click before then is, rightly, ignored.
+ */
+async function clickOpenAcme() {
+  const open = screen.getByRole('button', { name: 'Open Acme' })
+  await waitFor(() => expect(open).toBeEnabled())
+  fireEvent.click(open)
+}
+
 describe('InvitationView', () => {
   let fetchFn: ReturnType<typeof vi.fn>
 
@@ -406,7 +418,7 @@ describe('InvitationView', () => {
 
       expect(await screen.findByText(/Could not open Acme/)).toBeInTheDocument()
       expect(navigate).not.toHaveBeenCalled()
-      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await clickOpenAcme()
       await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
       expect(selectTenantAction).toHaveBeenCalledTimes(2)
     })
@@ -443,7 +455,7 @@ describe('InvitationView', () => {
 
       expect(await screen.findByText('Invitation already accepted')).toBeInTheDocument()
       expect(screen.queryByText(/cannot accept/i)).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await clickOpenAcme()
       await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
     })
   })
