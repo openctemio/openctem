@@ -44,7 +44,8 @@ import {
   parsePracticeView,
   practiceViewParams,
 } from '@/features/findings/lib/practice'
-import { PracticeSwitch } from '@/features/findings/components/practice-switch'
+import { FindingsBaseChips } from '@/features/findings/components/base-chips'
+import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
 import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
@@ -85,6 +86,7 @@ import {
   DataTableColumnHeader,
   FacetPanel,
   FilterPanelSlot,
+  openFilterPanel,
   useFilterPanelOpen,
   FacetSection,
   FacetOption,
@@ -172,7 +174,7 @@ import {
   visibleFrom,
 } from '@/features/findings/lib/list-columns'
 import { viewChanges } from '@/features/saved-views/lib/view-changes'
-import { viewFilters } from '@/features/findings/filters/model'
+import { viewFields, viewFilters, withFilter } from '@/features/findings/filters/model'
 import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
 import { downloadFindingsExport, exportTruncated } from '@/features/findings/api/export-findings'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
@@ -2179,6 +2181,8 @@ function FindingsContent() {
     onOpenSheet: () => setFilterSheetOpen(true),
     activeCount,
     controlsId: 'finding-filters',
+    // Add filter is on the toolbar: it opens the side panel from `lg` up.
+    sheetOnly: true,
   }
 
   // Query mode of the search field: the whole filter as query text, the
@@ -2218,12 +2222,12 @@ function FindingsContent() {
       }}
     >
       <SelectTrigger
-        iconOnlyBelow="@2xl/toolbar"
-        className="w-auto gap-2 @2xl/toolbar:min-w-36"
+        iconOnlyBelow="@5xl/toolbar"
+        className="w-auto gap-2 @5xl/toolbar:min-w-36 group-data-[fold=true]/toolbar:min-w-0"
         aria-label={t('findings.toolbar.groupLabel', 'Group findings')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="sr-only @2xl/toolbar:not-sr-only">
+        <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>
@@ -2355,16 +2359,46 @@ function FindingsContent() {
     [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
   )
 
+  // The toolbar row after the search: the two fixed scopes (Practice, State),
+  // then Add filter. In Query mode the text owns them, so they step aside.
+  const baseChipProps = {
+    practice: practiceView,
+    practiceCounts,
+    practiceFromView: !!savedId && !rawPractice,
+    onPracticeChange: setPracticeParam,
+    lens,
+    lensFromView: !!savedId && !rawLens,
+    onLensChange: setLensParam,
+  }
+  const toolbarStart = queryMode.active ? null : (
+    <>
+      {urlSettled && <FindingsBaseChips {...baseChipProps} />}
+      <AddFilterPopover
+        contract={loadedContract}
+        contractLoading={contractLoading}
+        contractFailed={!!contractError}
+        canReadAssets={hasPermission(Permission.AssetsRead)}
+        lockedFields={viewFields(openView?.filter)}
+        onOpenChange={setPickerOpen}
+        onApply={(field, op, values) =>
+          replaceUrlSearch(withFilter(searchParams, field, op, values))
+        }
+        onOpenPanel={() =>
+          openFilterPanel(
+            () => setFiltersOpen(true),
+            () => setFilterSheetOpen(true)
+          )
+        }
+      />
+    </>
+  )
+
   const filterBar = (
     <FilterBar
       search={searchParams}
       contract={filterContract}
-      pickerContract={loadedContract}
-      contractLoading={contractLoading}
-      contractFailed={!!contractError}
       skip={FILTER_BAR_SKIP_PARAMS}
       viewFilter={openView?.filter}
-      canReadAssets={hasPermission(Permission.AssetsRead)}
       leading={
         <>
           {contextChips}
@@ -2385,7 +2419,6 @@ function FindingsContent() {
           />
         </>
       }
-      onPickerOpenChange={setPickerOpen}
       onSearchChange={replaceUrlSearch}
       viewChanged={!!openView && (changeList?.length ?? 0) > 0}
       onResetToView={() => openSavedView(openView ?? null)}
@@ -2679,6 +2712,7 @@ function FindingsContent() {
             <div className="flex items-start">
               <FilterPanelSlot
                 open={filtersOpen}
+                onClose={() => setFiltersOpen(false)}
                 id="finding-filters"
                 label={t('findings.filters.title', 'Finding filters')}
               >
@@ -2686,13 +2720,6 @@ function FindingsContent() {
               </FilterPanelSlot>
 
               <div className="min-w-0 flex-1 space-y-3">
-                {urlSettled && !verifyView && (
-                  <PracticeSwitch
-                    value={practiceView}
-                    counts={practiceCounts}
-                    onChange={setPracticeParam}
-                  />
-                )}
                 {/* Under Compliance: the pass rate per benchmark, its controls
                     failed first and the assets of each control. */}
                 {urlSettled && !verifyView && practiceView === 'compliance' && (
@@ -2768,6 +2795,7 @@ function FindingsContent() {
                     }
                     search={search}
                     filterToggle={filterToggle}
+                    toolbarStart={toolbarStart}
                     toolbarBelow={filterBar}
                     toolbarEnd={toolbarEnd}
                     emptyDescription={
@@ -2790,6 +2818,7 @@ function FindingsContent() {
                     showSearch={false}
                     search={search}
                     filterToggle={filterToggle}
+                    toolbarStart={toolbarStart}
                     toolbarEnd={toolbarEnd}
                     toolbarBelow={filterBar}
                     getRowId={(f) => f.id}
@@ -2863,6 +2892,9 @@ function FindingsContent() {
                 { count: total }
               )}
             >
+              {/* On a phone the toolbar has no room for the fixed scopes: they
+                  open this sheet. */}
+              {urlSettled && !verifyView && <FindingsBaseChips {...baseChipProps} inSheet />}
               {facetPanel}
             </FilterSheet>
           </>

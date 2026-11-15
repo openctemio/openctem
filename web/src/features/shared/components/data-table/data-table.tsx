@@ -1121,13 +1121,14 @@ export function DataTable<TData, TValue>({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  iconOnlyBelow="@5xl/toolbar"
                   variant="outline"
                   size="sm"
                   className={cn(phoneCards && 'hidden')}
                   aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                 >
-                  <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
-                  <span className="sr-only @xl/toolbar:not-sr-only">
+                  <SlidersHorizontal className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
+                  <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
                     {t('common.table.display', 'Display')}
                   </span>
                 </Button>

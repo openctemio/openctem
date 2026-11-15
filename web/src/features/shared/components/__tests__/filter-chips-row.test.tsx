@@ -141,4 +141,39 @@ describe('FilterChipsRow measuring', () => {
       widths.chip = 130
     }
   })
+
+  it('on a phone keeps every chip in a strip that scrolls sideways, never "+N more"', () => {
+    const width = window.innerWidth
+    widths.chip = 70
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      render(row(['a', 'b', 'c']))
+      for (const c of ['a', 'b', 'c']) expect(screen.getByText(c)).toBeInTheDocument()
+      expect(screen.queryByText(/more/)).toBeNull()
+      const strip = document.querySelector('[data-slot="filter-chips-strip"]') as HTMLElement
+      expect(strip).toHaveAttribute('data-scroll')
+      expect(strip).toHaveClass('overflow-x-auto')
+      // The locked chip scrolls with the chips: one line, never stacked.
+      expect(strip).toContainElement(screen.getByText('Informational hidden (12)'))
+      expect(screen.getByTestId('row')).not.toHaveAttribute('data-stacked')
+      // The edge fade reads the attributes the scroll hook sets.
+      expect(strip.className).toContain('data-[fade-end=true]')
+      expect(strip).toHaveAttribute('data-fade-end')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+      widths.chip = 130
+    }
+  })
+})
+
+describe('FilterChipsRow with nothing to show', () => {
+  it('renders nothing without chips, actions, count or leading chip', () => {
+    const { container } = render(<FilterChipsRow chips={[]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('marks a row that holds only its leading chip, so the toolbar can hide it', () => {
+    render(<FilterChipsRow data-testid="row" chips={[]} leading={<span />} />)
+    expect(screen.getByTestId('row')).toHaveAttribute('data-bare')
+  })
 })

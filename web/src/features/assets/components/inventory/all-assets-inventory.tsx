@@ -49,6 +49,7 @@ import {
   EmptyState,
   ErrorState,
   FilterPanelSlot,
+  openFilterPanel,
   FilterSheet,
   useFilterPanelOpen,
 } from '@/features/shared'
@@ -106,7 +107,7 @@ import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryHiddenChip } from './inventory-hidden-chip'
-import { InventoryFilterBar } from './inventory-filter-bar'
+import { InventoryAddFilter, InventoryFilterBar } from './inventory-filter-bar'
 import { inventoryChips } from '../../lib/inventory-chips'
 import { propertyLabel as attributeLabel } from '@/features/asset-types/lib/property-schema'
 import { inventoryLenses, lensCounts } from '../../lib/inventory-lenses'
@@ -622,6 +623,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     onOpenSheet: () => setFilterSheetOpen(true),
     activeCount,
     controlsId: 'asset-filters',
+    // Add filter is on the toolbar: it opens the side panel from `lg` up.
+    sheetOnly: true,
   }
 
   const chips = inventoryChips(filters, {
@@ -782,6 +785,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         <div className="flex items-start">
           <FilterPanelSlot
             open={filtersOpen}
+            onClose={() => setFiltersOpen(false)}
             id="asset-filters"
             label={t('assets.inventoryPage.filters', 'Asset filters')}
           >
@@ -837,6 +841,25 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 onToggleTagFilter={toggleTagFilter}
                 search={search}
                 filterToggle={filterToggle}
+                toolbarStart={
+                  queryMode.active ? undefined : (
+                    <InventoryAddFilter
+                      groups={facetGroups}
+                      attributeFacets={attributeFacets}
+                      tagTypes={typeView ? [typeView.type] : undefined}
+                      filters={filters}
+                      stats={scopeLabel ? typeStats : stats}
+                      onChange={setFilters}
+                      onOpenChange={(open) => open && setFacetsWanted(true)}
+                      onOpenPanel={() =>
+                        openFilterPanel(
+                          () => setFiltersOpen(true),
+                          () => setFilterSheetOpen(true)
+                        )
+                      }
+                    />
+                  )
+                }
                 toolbarEnd={
                   <>
                     {typeView?.type === 'ip_address' && !typeView.subType && (
@@ -890,14 +913,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                       ) : undefined
                     }
                     chips={chips}
-                    groups={facetGroups}
-                    attributeFacets={attributeFacets}
-                    tagTypes={typeView ? [typeView.type] : undefined}
                     filters={filters}
-                    stats={scopeLabel ? typeStats : stats}
                     onChange={setFilters}
                     onClearAll={clearAll}
-                    onPickerOpenChange={(open) => open && setFacetsWanted(true)}
                     // The table (and this bar) only renders after the first load,
                     // so the count is always known here.
                     resultLabel={
