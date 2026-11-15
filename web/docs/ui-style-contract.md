@@ -83,6 +83,35 @@ scripts/kit-restyle.mjs --files`); the count may only go down.
   against its background at rest in both themes
   (`e2e/specs/57-header-right-group.spec.ts`, `e2e/specs/58-phone-bar.spec.ts`).
 
+### Sidebar navigation
+
+| Context                                                        | Token               | px  |
+| -------------------------------------------------------------- | ------------------- | --- |
+| Row: link, section header, pin, footer, settings rail, console | `--nav-row-h`       | 36  |
+| A group's child row (section items, quick views)               | `--nav-sub-row-h`   | 32  |
+| Phone drawer: every row, child rows included                   | `--nav-row-h-touch` | 44  |
+| Row icon (expanded, icon rail, phone drawer)                   | `--nav-icon`        | 20  |
+| Child row icon                                                 | `--nav-sub-icon`    | 16  |
+
+- Navigation is not a dense place: the 32 / 16 control scale is for controls
+  and tables, not for the sidebar (owner, 2026-11-15).
+- One text style for every row, link or section header: 14/20 400 in
+  `text-nav-fg` (ink 80% over the ground, as a colour), 16/24 in the phone
+  drawer. Icons are muted (`text-muted-foreground`) at rest and ink on hover
+  and on the current row. Only the current page differs: the filled row and
+  weight 500. A folded section that holds the current page shows ink 500 on
+  its header, since its filled child row is hidden. Chevrons are 16 px and
+  muted.
+- Rows touch (36 px is their own spacing). On the icon rail each row is a
+  32 px square with 2 px above and below, so the rail keeps the 36 px rhythm
+  and the icon stays at the same x (8 px column + 6 px row padding).
+- Section label ("CTEM cycle"): 12/16 500 muted (`text-cap-m
+text-muted-foreground`), 16 px above, 8 px below; folds away on the rail.
+  Clusters without a label (before Insights) are split by a 36 px block with
+  a hairline (`NavClusterDivider`), drawn in both states.
+- Classes come from `components/layout/nav-classes.ts` and
+  `components/ui/sidebar.tsx`; no page sets a nav row's size or colour.
+
 ### Type roles
 
 | Role                              | Class              | Size/line | Weight | Below 768 px |

@@ -597,7 +597,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      // Rows touch: each row's 32 px is its own spacing.
+      // Rows touch: each row's 36 px is its own spacing.
       className={cn('flex w-full min-w-0 flex-col', className)}
       {...props}
     />
@@ -624,14 +624,15 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
  */
 const sidebarMenuButtonVariants = cva(
   [
-    'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md px-2 text-start text-body text-sidebar-foreground/80 outline-hidden ring-sidebar-ring transition-[width,height,padding] duration-250 ease-sidebar motion-reduce:transition-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50',
+    'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 text-start text-body text-nav-fg outline-hidden ring-sidebar-ring transition-[width,height,padding,margin] duration-250 ease-sidebar motion-reduce:transition-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50',
     // Hover and an open menu: the 4 % ink wash; the current page: the raised fill.
     'hover:bg-hov hover:text-sidebar-foreground active:bg-hov active:text-sidebar-foreground data-[state=open]:bg-hov data-[state=open]:text-sidebar-foreground',
     'data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[current=true]:font-medium data-[current=true]:text-sidebar-foreground group-has-[[data-sidebar=menu-sub-button][data-active=true]]/menu-item:data-[active=true]:bg-transparent',
-    // Icon 16, stroke 1.75, muted; ink on hover and on the current row.
-    '[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.75] [&>svg:first-child]:text-muted-foreground hover:[&>svg:first-child]:text-sidebar-foreground data-[active=true]:[&>svg:first-child]:text-sidebar-foreground data-[current=true]:[&>svg:first-child]:text-sidebar-foreground',
-    // Icon rail: a 32 x 32 box, the icon at the same x as in the expanded row.
-    'group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate',
+    // Icon 20, stroke 1.75, muted; ink on hover and on the current row.
+    '[&>svg]:size-nav-icon [&>svg]:shrink-0 [&>svg]:stroke-[1.75] [&>svg:first-child]:text-muted-foreground hover:[&>svg:first-child]:text-sidebar-foreground data-[active=true]:[&>svg:first-child]:text-sidebar-foreground data-[current=true]:[&>svg:first-child]:text-sidebar-foreground',
+    // Icon rail: a 32 x 32 box, the icon at the same x as in the expanded row
+    // (8 px column + 6 px padding).
+    'group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-1.5! [&>span:last-child]:truncate',
   ],
   {
     variants: {
@@ -641,7 +642,7 @@ const sidebarMenuButtonVariants = cva(
           'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
       },
       size: {
-        default: 'h-8',
+        default: 'h-nav-row',
         sm: 'h-7 text-cap',
         lg: 'h-12 group-data-[collapsible=icon]:p-0!',
       },
@@ -723,7 +724,7 @@ function SidebarMenuAction({
         // Increases the hit area of the button on mobile.
         'after:absolute after:-inset-2 md:after:hidden',
         'peer-data-[size=sm]/menu-button:top-1',
-        'peer-data-[size=default]/menu-button:top-1.5',
+        'peer-data-[size=default]/menu-button:top-2',
         'peer-data-[size=lg]/menu-button:top-2.5',
         'group-data-[collapsible=icon]:hidden',
         showOnHover &&
@@ -744,7 +745,7 @@ function SidebarMenuBadge({ className, ...props }: React.ComponentProps<'div'>) 
         'text-sidebar-foreground pointer-events-none absolute end-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums select-none',
         'peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground',
         'peer-data-[size=sm]/menu-button:top-1',
-        'peer-data-[size=default]/menu-button:top-1.5',
+        'peer-data-[size=default]/menu-button:top-2',
         'peer-data-[size=lg]/menu-button:top-2.5',
         'group-data-[collapsible=icon]:hidden',
         className
@@ -782,10 +783,12 @@ function SidebarMenuSkeleton({
     <div
       data-slot="sidebar-menu-skeleton"
       data-sidebar="menu-skeleton"
-      className={cn('flex h-8 items-center gap-2 rounded-md px-2', className)}
+      className={cn('flex h-nav-row items-center gap-2 rounded-md px-1.5', className)}
       {...props}
     >
-      {showIcon && <Skeleton className="size-4 rounded-md" data-sidebar="menu-skeleton-icon" />}
+      {showIcon && (
+        <Skeleton className="size-nav-icon rounded-md" data-sidebar="menu-skeleton-icon" />
+      )}
       <Skeleton
         className="h-4 max-w-(--skeleton-width) flex-1"
         data-sidebar="menu-skeleton-text"
@@ -805,8 +808,8 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<'ul'>) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        // The indent guide: a 1 px line under the parent icon's centre (8 px
-        // row padding + 8 px half icon - 1), 4 px before the child rows.
+        // The indent guide: a 1 px line under the parent icon's centre (6 px
+        // row padding + 10 px half icon - 1), 4 px before the child rows.
         'border-sidebar-border ms-[15px] flex min-w-0 flex-col border-s ps-1 py-0.5',
         'group-data-[collapsible=icon]:hidden',
         className
@@ -847,10 +850,10 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        // A group's child row: 28 px, the same text and colours as a top-level
-        // row, 12 px in from the indent guide.
-        'text-sidebar-foreground/80 ring-sidebar-ring hover:bg-hov hover:text-sidebar-foreground active:bg-hov active:text-sidebar-foreground flex h-7 min-w-0 items-center gap-2 overflow-hidden rounded-md ps-3 pe-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate',
-        '[&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.75] [&>svg:first-child]:text-muted-foreground hover:[&>svg:first-child]:text-sidebar-foreground',
+        // A group's child row: 32 px with a 16 px icon, the same text and
+        // colours as a top-level row, 12 px in from the indent guide.
+        'text-nav-fg ring-sidebar-ring hover:bg-hov hover:text-sidebar-foreground active:bg-hov active:text-sidebar-foreground flex h-nav-sub min-w-0 items-center gap-2 overflow-hidden rounded-md ps-3 pe-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate',
+        '[&>svg]:size-nav-sub-icon [&>svg]:shrink-0 [&>svg]:stroke-[1.75] [&>svg:first-child]:text-muted-foreground hover:[&>svg:first-child]:text-sidebar-foreground',
         'data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[active=true]:[&>svg:first-child]:text-sidebar-foreground',
         size === 'sm' && 'text-cap',
         size === 'md' && 'text-body',

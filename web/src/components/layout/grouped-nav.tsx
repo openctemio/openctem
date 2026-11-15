@@ -59,7 +59,7 @@ export function GroupedNav({ sections, activeUrl }: GroupedNavProps) {
     <>
       {sections.map((section) =>
         section.items.length === 0 ? null : (
-          <div key={section.key} className="flex flex-col gap-1">
+          <div key={section.key} className="flex flex-col">
             {section.label &&
               (section.sub ? (
                 <div className="flex h-6 items-end px-1.5 pb-0.5 group-data-[collapsible=icon]:hidden">
