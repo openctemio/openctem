@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListToolbar } from '../list-toolbar'
@@ -186,6 +186,44 @@ describe('ListSearch', () => {
     await user.type(screen.getByRole('searchbox'), 'edge')
     await user.keyboard('{Escape}')
     expect(screen.getByRole('searchbox')).toHaveValue('')
+  })
+
+  it('measures the end controls the Query editor draws once it has loaded', () => {
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const width = this.dataset.slot === 'list-search-end' ? 120 : 0
+      return { width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0 } as DOMRect
+    }
+    try {
+      // A lazy editor: nothing on the first render, the field with the end controls after.
+      function Editor({ adornments }: { adornments: ReactNode }) {
+        const [loaded, setLoaded] = useState(false)
+        return loaded ? (
+          <div>{adornments}</div>
+        ) : (
+          <button type="button" onClick={() => setLoaded(true)}>
+            load
+          </button>
+        )
+      }
+      const { container } = render(
+        <ListSearch
+          value=""
+          onChange={() => {}}
+          placeholder="Search findings…"
+          query={{
+            active: true,
+            onActiveChange: () => {},
+            renderEditor: ({ adornments }) => <Editor adornments={adornments} />,
+          }}
+        />
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'load' }))
+      const field = container.querySelector<HTMLElement>('[data-slot="list-search-query"]')!
+      expect(field.style.getPropertyValue('--list-search-end')).toBe('128px')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = rect
+    }
   })
 
   it('uses the label as the placeholder fallback for its name', () => {

@@ -30,7 +30,12 @@ import { cn } from '@/lib/utils'
  */
 /** What the query editor needs to sit in the field (`ListSearchQuery.renderEditor`). */
 export interface ListSearchFieldSlots {
-  /** Classes for the editor's input: room for the icon and the switch. */
+  /**
+   * Classes for the editor's input: room for the icon and the switch. The
+   * switch's measured width (plus a gap) is the CSS variable
+   * `--list-search-end` on the editor's container, for controls the editor
+   * draws before it.
+   */
   inputClassName: string
   /** The icon and the mode switch, drawn over the input. */
   adornments: React.ReactNode
@@ -77,11 +82,11 @@ export function ListSearch({
 }: ListSearchProps) {
   const { t } = useTranslation()
   const inputRef = React.useRef<HTMLInputElement>(null)
-  const endRef = React.useRef<HTMLDivElement>(null)
   const { onKeyDown, ...restInput } = inputProps ?? {}
   const queryActive = !!query?.active
-  // Remeasured when the end group is drawn again (mode, clear button).
-  const end = useWidth(endRef, `${queryActive}|${!!value}`)
+  // Follows the end group that is on screen: Query mode draws it inside the
+  // (lazy) editor, so the element changes while the field stays.
+  const [end, endRef] = useWidth()
   const setQueryActive = query?.onActiveChange
   const hasQuery = !!query
 
@@ -243,18 +248,26 @@ export function ListSearch({
   )
 }
 
-/** An element's width, kept current (0 until measured, or in jsdom). */
-function useWidth(ref: React.RefObject<HTMLElement | null>, key: string): number {
+/**
+ * An element's width, kept current (0 until measured, or in jsdom). A
+ * callback ref: it follows whichever element holds it, so an element that is
+ * drawn again elsewhere (in the lazy query editor, after its placeholder) is
+ * measured again, and a detached one never reports its width as 0.
+ */
+function useWidth(): [number, (el: HTMLElement | null) => void] {
   const [width, setWidth] = React.useState(0)
-  React.useLayoutEffect(() => {
-    const el = ref.current
+  const observer = React.useRef<ResizeObserver | null>(null)
+  const ref = React.useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect()
+    observer.current = null
     if (!el) return
-    const read = () => setWidth(Math.ceil(el.getBoundingClientRect().width))
+    const read = () => {
+      if (el.isConnected) setWidth(Math.ceil(el.getBoundingClientRect().width))
+    }
     read()
     if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(read)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [ref, key])
-  return width
+    observer.current = new ResizeObserver(read)
+    observer.current.observe(el)
+  }, [])
+  return [width, ref]
 }
