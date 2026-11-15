@@ -168,7 +168,11 @@ function AddLabelButton({
           {t('assets.labels.add', 'Add label')}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" onClick={(e) => e.stopPropagation()}>
+      <PopoverContent
+        className="w-64 p-3"
+        typingSurface="single-field"
+        onClick={(e) => e.stopPropagation()}
+      >
         <form onSubmit={submit} className="space-y-2">
           <label htmlFor={inputId} className="text-sm font-medium">
             {t('assets.labels.add', 'Add label')}
