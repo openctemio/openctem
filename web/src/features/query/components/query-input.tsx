@@ -18,7 +18,17 @@
  * key cancels the request in flight.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -148,6 +158,32 @@ export function QueryInput({
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const bigRef = useRef<HTMLDivElement>(null)
+  // The field's own controls sit just before the host's end controls (the
+  // list search field's mode switch), measured, so they never overlap.
+  const fieldRef = useRef<HTMLDivElement>(null)
+  const hostEndEl = useRef<HTMLElement | null>(null)
+  const hostEndObserver = useRef<ResizeObserver | null>(null)
+  const [hostEnd, setHostEnd] = useState(0)
+  // After every render: the host may swap its end controls (a lazy editor
+  // replacing its placeholder); one observer follows the current element.
+  useLayoutEffect(() => {
+    const host =
+      fieldRef.current?.querySelector<HTMLElement>('[data-slot="list-search-end"]') ?? null
+    if (host === hostEndEl.current) return
+    hostEndEl.current = host
+    hostEndObserver.current?.disconnect()
+    hostEndObserver.current = null
+    if (!host) {
+      setHostEnd(0)
+      return
+    }
+    const read = () => setHostEnd(Math.ceil(host.getBoundingClientRect().width))
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    hostEndObserver.current = new ResizeObserver(read)
+    hostEndObserver.current.observe(host)
+  }, [adornments])
+  useEffect(() => () => hostEndObserver.current?.disconnect(), [])
   const listAnchor = useMemo(
     () => ({
       current: {
@@ -473,7 +509,11 @@ export function QueryInput({
           the expanded editor while it is open. */}
       <PopoverAnchor virtualRef={listAnchor} />
       <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-        <div className="relative">
+        <div
+          ref={fieldRef}
+          className="relative"
+          style={{ '--query-controls-end': `${hostEnd + 6}px` } as CSSProperties}
+        >
           {multiline ? (
             <HighlightedTextarea
               textareaRef={ref}
@@ -512,9 +552,8 @@ export function QueryInput({
               className={cn(
                 'font-mono',
                 inputClassName,
-                // Room for the field's own controls before the host's (the
-                // list search field's mode switch sets --list-search-end).
-                inline && 'pe-[calc(var(--list-search-end,0.25rem)+5rem)]'
+                // Room for the field's own controls and the host's.
+                inline && 'pe-[calc(var(--query-controls-end)+5rem)]'
               )}
               {...shared}
             />
@@ -525,9 +564,7 @@ export function QueryInput({
               data-slot="query-field-controls"
               className={cn(
                 'absolute z-50 flex items-center gap-0.5',
-                big
-                  ? 'end-2 top-1.5'
-                  : 'end-[var(--list-search-end,0.25rem)] top-1/2 -translate-y-1/2'
+                big ? 'end-2 top-1.5' : 'end-(--query-controls-end) top-1/2 -translate-y-1/2'
               )}
             >
               <QuerySyntaxHelp entity={entity} />

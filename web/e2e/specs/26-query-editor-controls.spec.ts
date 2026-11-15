@@ -52,8 +52,8 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     await expect(help).toContainText('severity')
     await page.keyboard.press('Escape')
 
-    // Expand: over the list, the toolbar does not move.
-    const addFilter = page.getByRole('button', { name: /add filter/i })
+    // Expand: over the list, the toolbar (Views) does not move.
+    const addFilter = page.getByRole('button', { name: /^views$/i })
     const before = (await addFilter.boundingBox())!
     await page.getByRole('button', { name: /expand the editor/i }).click()
     const big = page.locator('[data-slot="query-editor-expanded"] textarea')
