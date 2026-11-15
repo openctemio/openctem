@@ -23,7 +23,6 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 import { useFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import { quickViewHref } from '@/features/findings/lib/quick-views'
 import { startSession, triageHref } from '@/features/findings/lib/triage-session'
@@ -227,21 +226,18 @@ export function MyWorkPage() {
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {lockedChip(which)}
             {which === 'assigned' && dueSoonCount !== undefined && (
-              <button
-                type="button"
+              // A toggle at the row's control height (the kit button, pressed
+              // while the queue shows only what falls due).
+              <Button
+                size="sm"
+                variant={dueSoon ? 'secondary' : 'outline'}
                 aria-pressed={dueSoon}
                 onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-                className={cn(
-                  'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                  dueSoon
-                    ? 'border-warning bg-accent text-foreground'
-                    : 'border-warning/60 text-foreground hover:bg-accent'
-                )}
               >
-                <Timer className="size-3.5" aria-hidden="true" />
+                <Timer className="me-2 size-4" aria-hidden="true" />
                 {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                <span className="tabular-nums">{dueSoonCount}</span>
-              </button>
+                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
+              </Button>
             )}
             <span className="text-meta text-muted-foreground tabular-nums" aria-live="polite">
               {total > rows.length

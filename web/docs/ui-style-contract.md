@@ -310,6 +310,19 @@ tab icons, strip rules, chips, empty pagination, name column width).
     results" footer). No other left-side sheet.
   - Popover / sheet / dialog of filters: put `<FilterButton activeCount={n} />`
     inside `<PopoverTrigger asChild>` (it forwards its ref and props).
+  - Joined to the search field (`ListSearch` `filter`): the join follows what is
+    drawn at that width. A trigger hidden by a breakpoint leaves the field with
+    four round corners; a drawn one squares only the two inner corners.
+  - One filter entry per width on a list with Add filter (findings, assets):
+    from 768 `AddFilterButton` is a separate square right after the search
+    field, before the value tokens (Practice, State): it never changes size,
+    so they never move it; its picker opens under it. Below 768 the Filters
+    button joined to the field (`FilterPanelToggle sheetOnly`) is the entry and
+    Add filter does not show. `f` opens Add filter.
+  - Active filters show in `FilterChipsRow`; pass `onClearAll` while two or more
+    can be removed and the row draws "Clear filters" after its chips, the same
+    on every list. On a phone the chips strip starts at its first chip (only
+    its end fades) and a leading chip wider than the strip shortens its text.
   - The filter icons (`ListFilter`, `Filter`, `Funnel`, …) are imported only by
     `filter-button.tsx`. Dropdown filters and their select triggers carry no
     filter icon; label them with `aria-label="Filter by …"`.
@@ -779,7 +792,9 @@ object's name (`title`) and the sheet's purpose (`label`).
   after the page shows (the trigger is marked busy until then), and a press
   made before it is in opens the menu or the sheet when it arrives.
 
-`ActionMenu` users: the page-header More (Findings), every table row menu
+`ActionMenu` users: the page-header More and the list's More beside Refresh (Findings: on a
+phone "Select" first in a section of its own, from `usePhoneSelectMode`, then the page actions and
+"Copy link"), every table row menu
 (`DataTableRowActions`: items gated by `permission` or `route` are hidden from
 a user who may not use them, `separatorBefore` starts a section, a disabled
 item without its own reason says "Not available right now", `title` is the

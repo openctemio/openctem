@@ -439,6 +439,17 @@ export function EmergingThreatsList() {
                   <FilterChipsRow
                     label={t('emergingThreats.filter.active')}
                     chips={chips}
+                    onClearAll={
+                      chips.length > 1
+                        ? () =>
+                            update({
+                              level: undefined,
+                              tier: undefined,
+                              kevOnly: false,
+                              internetOnly: false,
+                            })
+                        : undefined
+                    }
                     end={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
                   />
                 ) : undefined

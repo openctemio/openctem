@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Lock, type LucideIcon } from 'lucide-react'
 import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -23,13 +24,21 @@ import { safeInternalHref } from '@/lib/safe-href'
  * - `chips`: the removable filter chips, one element each (keyed). The ones
  *   that do not fit fold into "+N more", a popover listing them, each still
  *   removable there.
- * - `trailing`: Add filter, then Clear filters; right after the visible chips.
+ * - `trailing`: actions of the list's own (Reset to view), right after the
+ *   visible chips; then Clear filters (`onClearAll`), drawn by the row so it
+ *   sits in the same place, with the same look, on every list.
  * - `end`: the result count, pinned to the far end so it never moves when a
  *   chip comes or goes.
  *
  * On a phone (under 768px) nothing folds: the chips scroll sideways in their
  * own strip, with a fade on an edge that has more chips past it, so a chip is
- * never cut without a cue and never hidden behind "+N more".
+ * never cut without a cue and never hidden behind "+N more". At rest the strip
+ * starts at its first chip (scrolled back to the start whenever the chips
+ * change), so only its end can fade; a leading chip wider than the strip
+ * shortens its text (ellipsis, full text in its title) and keeps its icon and
+ * actions. The row clips (`overflow: clip`) rather than hides: a hidden box is
+ * still a scroll container that focus or `scrollIntoView` can shift sideways,
+ * which cut the first chip at the start with no fade.
  *
  * Nothing in the row shrinks under its content, so no element is ever drawn
  * over its neighbour. When the leading chip, the trailing actions, the count
@@ -46,6 +55,12 @@ export interface FilterChipsRowProps {
   chips: React.ReactElement[]
   leading?: React.ReactNode
   trailing?: React.ReactNode
+  /**
+   * Remove every filter the viewer set. Pass it while two or more can be
+   * removed (one chip has its own X); the row draws "Clear filters" after
+   * `trailing`.
+   */
+  onClearAll?: () => void
   end?: React.ReactNode
   /** Accessible name of the chip list, e.g. "Active filters". */
   label?: string
@@ -109,7 +124,8 @@ function keyOf(el: React.ReactElement, i: number): string {
 export function FilterChipsRow({
   chips,
   leading,
-  trailing,
+  trailing: trailingProp,
+  onClearAll,
   end,
   label,
   className,
@@ -122,6 +138,17 @@ export function FilterChipsRow({
   const trailRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
   const widths = React.useRef(new Map<string, number>())
+  const trailing =
+    trailingProp || onClearAll ? (
+      <>
+        {trailingProp}
+        {onClearAll ? (
+          <Button variant="ghost" size="sm" data-slot="filter-chips-clear" onClick={onClearAll}>
+            {t('common.filterChips.clear', 'Clear filters')}
+          </Button>
+        ) : null}
+      </>
+    ) : null
   const [layout, setLayout] = React.useState<ChipsRowFit>({ fit: chips.length, stacked: false })
   const [tick, setTick] = React.useState(0)
   const keys = chips.map(keyOf)
@@ -132,6 +159,14 @@ export function FilterChipsRow({
   const scroll = useIsMobile()
   const stripRef = React.useRef<HTMLDivElement>(null)
   useTabStripScroll(stripRef, scroll)
+
+  // At rest a phone strip starts at its first chip: a new chip set (a filter
+  // added or removed, the leading chip arriving) scrolls it back to the start.
+  const chipSet = JSON.stringify([hasLead, keys])
+  React.useLayoutEffect(() => {
+    const strip = stripRef.current
+    if (scroll && strip && strip.scrollLeft !== 0) strip.scrollLeft = 0
+  }, [scroll, chipSet])
 
   // Re-measure when the row or a fixed block changes size (the leading chip's
   // count arrives after its own request, without re-rendering this row).
@@ -196,7 +231,7 @@ export function FilterChipsRow({
       data-stacked={stacked ? '' : undefined}
       data-bare={bare ? '' : undefined}
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 overflow-hidden',
+        'flex w-full min-w-0 items-center gap-2 overflow-clip',
         stacked ? 'flex-wrap' : 'flex-nowrap',
         className
       )}
@@ -223,14 +258,17 @@ export function FilterChipsRow({
             data-slot="filter-chips-leading"
             className={cn(
               'flex',
-              // In the phone strip it keeps its whole width and scrolls.
-              scroll ? 'shrink-0' : cn('min-w-0 max-w-full', stacked ? 'basis-full' : 'shrink-0')
+              // In the phone strip it keeps its width up to the strip's, then
+              // its text shortens (never cut at either edge).
+              scroll
+                ? 'max-w-full shrink-0'
+                : cn('min-w-0 max-w-full', stacked ? 'basis-full' : 'shrink-0')
             )}
           >
             <div
               ref={leadRef}
               data-slot="filter-chips-lead"
-              className={cn('flex w-max items-center gap-2', !scroll && 'max-w-full min-w-0')}
+              className="flex w-max max-w-full min-w-0 items-center gap-2"
             >
               {leading}
             </div>
@@ -326,7 +364,9 @@ export function LockedChip({
   const body = (
     <span className="inline-flex min-w-0 items-center gap-1.5" tabIndex={hint ? 0 : undefined}>
       {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-      <span className="truncate">{children}</span>
+      <span className="truncate" title={typeof children === 'string' ? children : undefined}>
+        {children}
+      </span>
     </span>
   )
   return (
