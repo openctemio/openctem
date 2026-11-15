@@ -268,7 +268,7 @@ describe('QueryInput', () => {
       )
     }
     render(<Applied />)
-    const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement
+    const apply = screen.getByRole('button', { name: /run the query/i }) as HTMLButtonElement
     expect(apply.disabled).toBe(true)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
     expect(apply.disabled).toBe(false)
@@ -280,5 +280,61 @@ describe('QueryInput', () => {
     })
     expect(api.parse).toHaveBeenCalledTimes(1)
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true }))
+  })
+
+  function ListField({ onSubmit }: { onSubmit: (r: ParseResult) => void }) {
+    const [v, setV] = useState('severity>=high')
+    return (
+      <QueryInput
+        entity="findings"
+        value={v}
+        onChange={setV}
+        applied="severity>=high"
+        onSubmit={onSubmit}
+        ariaLabel="search"
+        quietStatus
+      />
+    )
+  }
+
+  it('expands in place into a coloured multi-line editor: Shift+Enter is a new line, Enter runs, Escape folds back unchanged', async () => {
+    api.parse.mockResolvedValue(ok())
+    const onSubmit = vi.fn()
+    const { container } = render(<ListField onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const editor = container.querySelector('[data-slot="query-editor-expanded"] textarea')
+    expect(editor).toBeTruthy()
+    expect(screen.getByRole('combobox')).toBe(editor)
+    // The coloured copy holds the same text, hidden from assistive technology.
+    const copy = container.querySelector('[data-slot="query-highlight"]')!
+    expect(copy.getAttribute('aria-hidden')).toBe('true')
+    expect(copy.textContent).toBe('severity>=high\n')
+    expect(copy.querySelector('span')?.textContent).toBe('severity')
+    const box = screen.getByRole('combobox')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const big = screen.getByRole('combobox')
+    fireEvent.change(big, { target: { value: 'kev=true' } })
+    fireEvent.keyDown(big, { key: 'Enter', shiftKey: true })
+    expect(api.parse).not.toHaveBeenCalled()
+    fireEvent.keyDown(big, { key: 'Escape' })
+    // Changed: Escape does not fold it (the host decides, e.g. puts the applied text back).
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeTruthy()
+    fireEvent.keyDown(big, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it("the help lists the syntax and the person's own fields with their operators", async () => {
+    render(<ListField onSubmit={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /query syntax/i }))
+    const help = document.querySelector('[data-slot="query-help"]')!
+    expect(help.textContent).toContain('severity')
+    expect(help.textContent).toContain('tool_name')
+    expect(help.textContent).toMatch(/Enter runs the query/)
   })
 })

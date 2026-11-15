@@ -23,7 +23,9 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { CircleHelp, CornerDownLeft, Maximize2, Minimize2 } from 'lucide-react'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { TOKEN_CLASSES } from '@/lib/code-tokens'
 import { cn } from '@/lib/utils'
 import {
   queryApi,
@@ -41,10 +43,12 @@ import {
   localProblem,
   localValues,
   quoteValue,
+  shortOperators,
   type CaretContext,
   type Completion,
   type LocalProblem,
 } from '../lib/complete'
+import { queryTokens } from '../lib/highlight'
 import { pushRecent, readRecent } from '../lib/recent'
 
 /** Value lookup delay after the last key. */
@@ -143,6 +147,16 @@ export function QueryInput({
   const statusId = `${ownId}-status`
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
+  const bigRef = useRef<HTMLDivElement>(null)
+  const listAnchor = useMemo(
+    () => ({
+      current: {
+        getBoundingClientRect: () =>
+          (bigRef.current ?? anchorRef.current)?.getBoundingClientRect() ?? new DOMRect(),
+      },
+    }),
+    []
+  )
   const { data: schema } = useQuerySchema(entity, !disabled)
   const fields = useMemo(() => {
     const all = schema?.fields ?? []
@@ -157,6 +171,21 @@ export function QueryInput({
   const [active, setActive] = useState(0)
   // Ctrl+Space: values are asked for at once, whatever was typed.
   const [explicit, setExplicit] = useState(false)
+  // The list field's expanded editor (several lines, over the content below)
+  // and the text it opened with (Escape folds it back when unchanged).
+  const [big, setBigState] = useState(false)
+  const [bigFrom, setBigFrom] = useState('')
+  const setBig = (on: boolean) => {
+    setBigState(on)
+    setBigFrom(value)
+    setOpen(false)
+    requestAnimationFrame(() => {
+      const el = ref.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
   // The server's answer to the text it was asked about on Apply.
   const [answer, setAnswer] = useState<{ text: string; result: ParseResult } | null>(null)
   // Apply refused before asking (quotes or parentheses do not pair up).
@@ -337,6 +366,14 @@ export function QueryInput({
       if (listOpen) {
         e.stopPropagation()
         setOpen(false)
+      } else if (
+        big &&
+        (value === bigFrom || (applied !== undefined && value.trim() === applied.trim()))
+      ) {
+        // The expanded editor folds back first when nothing is left unapplied.
+        e.preventDefault()
+        e.stopPropagation()
+        setBig(false)
       } else if (onEscape) {
         e.preventDefault()
         e.stopPropagation()
@@ -355,7 +392,9 @@ export function QueryInput({
   const local = problem ? null : localProblem(value)
   const localShown = !!local && refused === value
   const dirty = applied !== undefined && value.trim() !== applied.trim()
-  const showApply = !!onSubmit && applied !== undefined
+  // A list field (one line, with an applied filter) carries its controls in
+  // the field: syntax help, expand, run.
+  const inline = !multiline && !!onSubmit && applied !== undefined
   const expanded = options.length > 0
   const shared = {
     id: inputId,
@@ -389,6 +428,40 @@ export function QueryInput({
   }
 
   const drawn = !!problem || localShown || failed === value
+  const statusLine = (
+    <div
+      id={statusId}
+      aria-live="polite"
+      className={cn(
+        'text-muted-foreground min-h-5 text-xs',
+        // A list field adds no space under itself until there is a problem.
+        big ? 'px-3 pb-2' : quietStatus && (drawn ? 'mt-1' : 'sr-only')
+      )}
+    >
+      {problem ? (
+        <ProblemLine
+          problem={problem}
+          onFix={(fix) =>
+            setText(applyFix(value, problem.start, problem.end, fix), problem.start + fix.length)
+          }
+        />
+      ) : local ? (
+        <LocalProblemLine problem={local} text={value} strong={localShown} />
+      ) : checking ? (
+        <span>{t('queryInput.checking')}</span>
+      ) : failed === value ? (
+        <span>{t('queryInput.unavailable')}</span>
+      ) : dirty ? (
+        <span>{t('queryInput.pending')}</span>
+      ) : typeof resultCount === 'number' && value.trim() !== '' ? (
+        <span>
+          {t('queryInput.results', undefined, { count: formatCount(resultCount, locale) })}
+        </span>
+      ) : (
+        <span>{t('queryInput.hint')}</span>
+      )}
+    </div>
+  )
   return (
     <Popover
       open={expanded}
@@ -396,74 +469,93 @@ export function QueryInput({
         if (!next) setOpen(false)
       }}
     >
-      <PopoverAnchor asChild>
-        <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-          <div className="flex items-start gap-2">
-            <div className="relative min-w-0 flex-1">
-              {multiline ? (
-                <Textarea
-                  ref={ref}
-                  rows={3}
-                  className={cn('font-mono text-sm', inputClassName)}
+      {/* The list is placed against the field and its status line, or against
+          the expanded editor while it is open. */}
+      <PopoverAnchor virtualRef={listAnchor} />
+      <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
+        <div className="relative">
+          {multiline ? (
+            <HighlightedTextarea
+              textareaRef={ref}
+              rows={3}
+              className={cn('font-mono text-sm', inputClassName)}
+              {...shared}
+            />
+          ) : big ? (
+            <>
+              {/* Keeps the toolbar row one line high: the editor opens over
+                    the content below, so no other control moves. */}
+              <Input
+                aria-hidden
+                tabIndex={-1}
+                readOnly
+                value=""
+                className={cn('invisible', inputClassName)}
+              />
+              <div
+                ref={bigRef}
+                data-slot="query-editor-expanded"
+                className="bg-popover absolute inset-x-0 top-0 z-40 rounded-md shadow-md"
+              >
+                <HighlightedTextarea
+                  textareaRef={ref}
+                  rows={10}
+                  className="max-h-[60vh] min-h-60 resize-y pe-24 font-mono text-sm"
                   {...shared}
                 />
-              ) : (
-                <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
+                {statusLine}
+              </div>
+            </>
+          ) : (
+            <Input
+              ref={ref}
+              className={cn(
+                'font-mono',
+                inputClassName,
+                // Room for the field's own controls before the host's (the
+                // list search field's mode switch sets --list-search-end).
+                inline && 'pe-[calc(var(--list-search-end,0.25rem)+5rem)]'
               )}
-              {adornments}
-            </div>
-            {showApply && (
-              <Button
-                type="button"
-                data-slot="query-apply"
-                variant={dirty ? 'default' : 'outline'}
+              {...shared}
+            />
+          )}
+          {!big && adornments}
+          {inline && (
+            <div
+              data-slot="query-field-controls"
+              className={cn(
+                'absolute z-50 flex items-center gap-0.5',
+                big
+                  ? 'end-2 top-1.5'
+                  : 'end-[var(--list-search-end,0.25rem)] top-1/2 -translate-y-1/2'
+              )}
+            >
+              <QuerySyntaxHelp entity={entity} />
+              <FieldIconButton
+                label={t(big ? 'queryInput.collapse' : 'queryInput.expand')}
+                pressed={big}
+                onClick={() => setBig(!big)}
+              >
+                {big ? (
+                  <Minimize2 className="size-3.5" aria-hidden />
+                ) : (
+                  <Maximize2 className="size-3.5" aria-hidden />
+                )}
+              </FieldIconButton>
+              <FieldIconButton
+                label={t('queryInput.run')}
+                slot="query-apply"
                 disabled={disabled || !dirty || checking}
-                aria-describedby={statusId}
-                // The caret stays in the box.
-                onMouseDown={(e) => e.preventDefault()}
+                emphasis={dirty}
                 onClick={submit}
               >
-                {t('queryInput.apply')}
-              </Button>
-            )}
-          </div>
-          <div
-            id={statusId}
-            aria-live="polite"
-            className={cn(
-              'text-muted-foreground min-h-5 text-xs',
-              // A list field adds no space under itself until there is a problem.
-              quietStatus && (drawn ? 'mt-1' : 'sr-only')
-            )}
-          >
-            {problem ? (
-              <ProblemLine
-                problem={problem}
-                onFix={(fix) =>
-                  setText(
-                    applyFix(value, problem.start, problem.end, fix),
-                    problem.start + fix.length
-                  )
-                }
-              />
-            ) : local ? (
-              <LocalProblemLine problem={local} text={value} strong={localShown} />
-            ) : checking ? (
-              <span>{t('queryInput.checking')}</span>
-            ) : failed === value ? (
-              <span>{t('queryInput.unavailable')}</span>
-            ) : dirty ? (
-              <span>{t('queryInput.pending')}</span>
-            ) : typeof resultCount === 'number' && value.trim() !== '' ? (
-              <span>
-                {t('queryInput.results', undefined, { count: formatCount(resultCount, locale) })}
-              </span>
-            ) : (
-              <span>{t('queryInput.hint')}</span>
-            )}
-          </div>
+                <CornerDownLeft className="size-3.5" aria-hidden />
+              </FieldIconButton>
+            </div>
+          )}
         </div>
-      </PopoverAnchor>
+        {!big && statusLine}
+      </div>
       <PopoverContent
         asChild
         side="bottom"
@@ -502,6 +594,157 @@ export function QueryInput({
             </li>
           ))}
         </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * A text area whose text is coloured by kind (fields, operators, keywords,
+ * values): the coloured copy sits behind a text area with transparent text
+ * and the same box, so the caret, selection and editing stay native. The
+ * copy is React text, never markup, and is hidden from assistive technology.
+ */
+function HighlightedTextarea({
+  textareaRef,
+  className,
+  value,
+  ...props
+}: React.ComponentProps<'textarea'> & {
+  textareaRef: React.Ref<HTMLTextAreaElement>
+  value: string
+}) {
+  const back = useRef<HTMLDivElement>(null)
+  const tokens = useMemo(() => queryTokens(value), [value])
+  const box = 'rounded-md border px-3 py-2 text-base md:text-sm [scrollbar-gutter:stable]'
+  return (
+    <div className="relative">
+      <div
+        ref={back}
+        aria-hidden
+        data-slot="query-highlight"
+        className={cn(
+          box,
+          className,
+          'dark:bg-input/30 pointer-events-none absolute inset-0 max-h-none min-h-0 resize-none overflow-hidden border-transparent break-words whitespace-pre-wrap'
+        )}
+      >
+        {tokens.map((tok, i) => (
+          <span key={i} className={TOKEN_CLASSES[tok.type]}>
+            {tok.value}
+          </span>
+        ))}
+        {/* A trailing newline keeps the last empty line's height. */}
+        {'\n'}
+      </div>
+      <Textarea
+        ref={textareaRef}
+        value={value}
+        className={cn(
+          box,
+          className,
+          'caret-foreground relative bg-transparent text-transparent dark:bg-transparent'
+        )}
+        onScroll={(e) => {
+          if (back.current) back.current.scrollTop = e.currentTarget.scrollTop
+        }}
+        {...props}
+      />
+    </div>
+  )
+}
+
+/** An icon button inside the field (help, expand, run): 24 px, labelled. */
+function FieldIconButton({
+  label,
+  onClick,
+  disabled,
+  pressed,
+  emphasis,
+  slot,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  pressed?: boolean
+  emphasis?: boolean
+  slot?: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      data-slot={slot}
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      // The caret stays in the field.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className={cn(
+        'text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring flex size-6 items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+        emphasis &&
+          'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * The query syntax at hand: how a condition is written, the operators, the
+ * words that join conditions, examples, and the caller's own fields with
+ * their operators, from the schema already read for completion.
+ */
+function QuerySyntaxHelp({ entity }: { entity: QueryEntity }) {
+  const { t } = useTranslation()
+  const { data: schema } = useQuerySchema(entity)
+  const fields = schema?.fields ?? []
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('queryInput.help.open')}
+          title={t('queryInput.help.open')}
+          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring flex size-6 items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+        >
+          <CircleHelp className="size-3.5" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-96 space-y-3 text-xs" data-slot="query-help">
+        <p className="text-card-title">{t('queryInput.help.title')}</p>
+        <ul className="text-muted-foreground list-disc space-y-1 ps-4">
+          <li>{t('queryInput.help.condition')}</li>
+          <li>{t('queryInput.help.operators')}</li>
+          <li>{t('queryInput.help.join')}</li>
+          <li>{t('queryInput.help.quote')}</li>
+          <li>{t('queryInput.help.keys')}</li>
+        </ul>
+        <div className="space-y-1">
+          <p className="font-medium">{t('queryInput.help.examples')}</p>
+          <p className="font-mono break-all" dir="ltr">
+            {t(`queryInput.help.example.${entity}`)}
+          </p>
+        </div>
+        {fields.length > 0 && (
+          <div className="space-y-1">
+            <p className="font-medium">{t('queryInput.help.fields')}</p>
+            <ul className="space-y-0.5" dir="ltr">
+              {fields.map((f) => (
+                <li key={f.path} className="flex gap-3">
+                  <span className="font-mono">{f.path}</span>
+                  <span className="text-muted-foreground font-mono">
+                    {shortOperators(f).join(' ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   )
