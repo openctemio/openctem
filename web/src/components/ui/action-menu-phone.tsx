@@ -8,11 +8,12 @@
  */
 import * as React from 'react'
 
+import { AnchoredActionMenu, type TriggerHandlers } from '@/components/ui/action-menu'
 import {
-  AnchoredActionMenu,
+  normalizeActionItems,
+  type ActionMenuEntry,
   type NormalizedActionMenu,
-  type TriggerHandlers,
-} from '@/components/ui/action-menu'
+} from '@/components/ui/action-menu-model'
 import {
   mayBeAnchoredOnPhone,
   measurePhoneFit,
@@ -46,16 +47,17 @@ export function phoneMenuModel(menu: NormalizedActionMenu): PhoneMenuModel {
 const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown'])
 
 export default function PhoneActionMenu({
-  menu,
+  items,
   trigger,
   title,
   label,
 }: {
-  menu: NormalizedActionMenu
+  items: ActionMenuEntry[]
   trigger: React.ReactElement
   title: string
   label: string
 }) {
+  const menu = React.useMemo(() => normalizeActionItems(items), [items])
   const model = React.useMemo(() => phoneMenuModel(menu), [menu])
   // Ruled out by the item model alone (too many items, a submenu): always the sheet.
   const mayBeMenu = mayBeAnchoredOnPhone({
@@ -137,7 +139,7 @@ export default function PhoneActionMenu({
     return (
       <>
         <AnchoredActionMenu
-          menu={menu}
+          items={items}
           trigger={trigger}
           triggerHandlers={handlers}
           onOpenChange={setMenuOpen}

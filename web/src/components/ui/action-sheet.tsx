@@ -29,7 +29,7 @@ import type {
   ActionMenuGroup,
   ActionMenuSubmenu,
   NormalizedActionMenu,
-} from '@/components/ui/action-menu'
+} from '@/components/ui/action-menu-model'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 

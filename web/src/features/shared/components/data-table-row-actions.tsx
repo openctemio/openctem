@@ -4,8 +4,6 @@ import { useMemo } from 'react'
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/lib/permissions'
 import { passesRouteGate, routeGate, type ApiRouteKey } from '@/lib/permissions/can-mutate'
@@ -112,33 +110,5 @@ function RowActionsMenu({ actions, label, title }: DataTableRowActionsProps) {
         </Button>
       }
     />
-  )
-}
-
-/**
- * A menu item the user cannot use, explaining why on hover or focus. Shared by
- * DataTableRowActions and hand-built menus (e.g. the members page).
- */
-export function DisabledMenuItem({
-  label,
-  icon: Icon,
-  reason,
-}: {
-  label: string
-  icon?: LucideIcon
-  reason: string
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div tabIndex={0} aria-label={`${label}: ${reason}`}>
-          <DropdownMenuItem disabled>
-            {Icon && <Icon className="me-2 h-4 w-4" />}
-            {label}
-          </DropdownMenuItem>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="left">{reason}</TooltipContent>
-    </Tooltip>
   )
 }

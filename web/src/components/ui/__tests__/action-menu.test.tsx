@@ -9,7 +9,8 @@ import userEvent from '@testing-library/user-event'
 import { ClipboardList, FileUp, Trash2 } from 'lucide-react'
 import * as React from 'react'
 
-import { ActionMenu, normalizeActionItems, type ActionMenuEntry } from '../action-menu'
+import { ActionMenu, type ActionMenuEntry } from '../action-menu'
+import { normalizeActionItems } from '../action-menu-model'
 
 describe('normalizeActionItems', () => {
   it('keeps groups in first-seen order and moves destructive items last, on their own', () => {
