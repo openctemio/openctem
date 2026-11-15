@@ -78,6 +78,9 @@ type SavedViewRequest struct {
 	GroupBy      string   `json:"group_by,omitempty"`
 	Columns      []string `json:"columns,omitempty"`
 	Density      string   `json:"density,omitempty"`
+	// PageParams are the page's own params beside the filter (the findings
+	// and asset lists' search mode: mode=basic|query), validated by the page.
+	PageParams map[string]string `json:"page_params,omitempty"`
 }
 
 func savedViewCaller(r *http.Request) savedviewapp.Caller {
@@ -161,7 +164,8 @@ func (h *SavedViewHandler) decodeRequest(w http.ResponseWriter, r *http.Request)
 
 func (h *SavedViewHandler) toInput(w http.ResponseWriter, req SavedViewRequest) (savedviewapp.Input, bool) {
 	in := savedviewapp.Input{Page: req.Page, Name: req.Name, Description: req.Description, Filter: req.Filter,
-		Query: req.Query, ShareWithOrg: req.ShareWithOrg, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density}
+		Query: req.Query, ShareWithOrg: req.ShareWithOrg, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density,
+		PageParams: req.PageParams}
 	if string(req.Filter) == "null" {
 		in.Filter = nil
 	}

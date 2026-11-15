@@ -162,7 +162,7 @@ export function FilterChipsRow({
 
   // At rest a phone strip starts at its first chip: a new chip set (a filter
   // added or removed, the leading chip arriving) scrolls it back to the start.
-  const chipSet = `${hasLead}|${keys.join('|')}`
+  const chipSet = JSON.stringify([hasLead, keys])
   React.useLayoutEffect(() => {
     const strip = stripRef.current
     if (scroll && strip && strip.scrollLeft !== 0) strip.scrollLeft = 0

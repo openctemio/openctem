@@ -198,8 +198,6 @@ for (const route of ['/findings', '/assets'] as const) {
     `${route}: Add filter sits right after the search field`,
     { tag: ['@shell'] },
     async ({ page }) => {
-      // Measured at rest: the popover's opening animation moves it.
-      await page.emulateMedia({ reducedMotion: 'reduce' })
       for (const width of [1440, 1280, 1024, 768, 390]) {
         await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
         if (width === 1440)
@@ -241,14 +239,20 @@ for (const route of ['/findings', '/assets'] as const) {
             .filter({ visible: true })
             .first()
           await expect(pop).toBeVisible()
+          // Measured at rest: the opening animation slides and scales it in
+          // (reduced motion does not stop the popover's), so wait for it.
+          await pop.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
           const pb = (await pop.boundingBox())!
           const ab = (await add.boundingBox())!
-          expect(pb.y, `${route} @${width}: picker under its button`).toBeGreaterThanOrEqual(
-            ab.y + ab.height
-          )
-          expect(Math.abs(pb.x - ab.x), `${route} @${width}: picker at its button`).toBeLessThan(
-            pb.width
-          )
+          // Directly under its button (within the offset), overlapping the
+          // button's x-range (start- or end-aligned), inside the viewport.
+          const at = `${route} @${width}: picker`
+          expect(pb.y, `${at} under its button`).toBeGreaterThanOrEqual(ab.y + ab.height - 0.5)
+          expect(pb.y, `${at} next to its button`).toBeLessThanOrEqual(ab.y + ab.height + 8)
+          expect(pb.x, `${at} reaches its button`).toBeLessThan(ab.x + ab.width)
+          expect(pb.x + pb.width, `${at} reaches its button`).toBeGreaterThan(ab.x)
+          expect(pb.x, `${at} inside the viewport`).toBeGreaterThanOrEqual(0)
+          expect(pb.x + pb.width, `${at} inside the viewport`).toBeLessThanOrEqual(width)
           await page.keyboard.press('Escape')
         } else {
           expect(m, `${route} @${width}`).toMatchObject({ add: false, joined: true })

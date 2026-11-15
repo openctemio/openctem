@@ -25,4 +25,7 @@ describe('saved views helpers', () => {
     )
     expect(viewQueryFromSearch('?from=task:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b&q=x')).toBe('q=x')
   })
+  it('keeps the search mode out of the filter (it is saved as a page param)', () => {
+    expect(viewQueryFromSearch('?severity=high&mode=query')).toBe('severity=high')
+  })
 })

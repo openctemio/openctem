@@ -1,3 +1,6 @@
+import type { PracticeCounts } from '../api/use-practice-counts'
+import type { PracticeView } from './practice'
+
 /**
  * Which kind of empty the findings list is in. The three differ in what the
  * person should do next, so they never share one message:
@@ -40,4 +43,22 @@ export function findingsEmptyKind(input: FindingsEmptyInput): FindingsEmptyKind 
   if (unnarrowed && input.orgTotal === 0) return 'nothing'
   if (unnarrowed && input.practiceTotal === 0) return 'practice_nothing'
   return 'no_match'
+}
+
+/**
+ * Whether data already on the page shows that `practice` holds findings in the
+ * page's scope: a list answer of that practice with rows, or a positive count
+ * for it in the practice switch's counts (which come with every list answer).
+ * Then an empty list of that practice is a no-match and its total in every
+ * state need not be asked for.
+ */
+export function practiceKnownToHoldFindings(
+  practice: PracticeView,
+  input: { listTotal: number | undefined; counts: PracticeCounts | undefined }
+): boolean {
+  if ((input.listTotal ?? 0) > 0) return true
+  const c = input.counts
+  if (!c || practice === 'all') return false
+  const n = practice === 'vulnerabilities' ? c.vulnerabilities : c.byPractice[practice]
+  return (n ?? 0) > 0
 }

@@ -128,24 +128,102 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     await expect(page.locator('[data-slot="query-editor-expanded"]')).toHaveCount(0)
   })
 
-  test('a query chips cannot show travels in the link and a reload brings it back', async ({
+  test('the mode is part of the link: a reload opens in Query mode with the text', async ({
     page,
   }) => {
     const box = await openQueryMode(page)
+    await expect(page).toHaveURL(/[?&]mode=query/)
     await box.fill('is_in_kev=true OR severity=critical')
     await box.press('Enter')
     await expect(page).toHaveURL(/[?&]fq=/)
-    const url = page.url()
-    const fq = new URL(url).searchParams.get('fq') ?? ''
-    expect(fq).toContain('OR')
-    await page.goto(url)
-    // The link shows the query as one Advanced chip; it opens Query mode with the text.
-    const chip = page.getByTestId('filter-chip-advanced')
-    await expect(chip).toContainText('OR', { timeout: 20_000 })
-    await chip.getByRole('button').first().click()
+    const url = new URL(page.url())
+    expect(url.searchParams.get('fq')).toContain('OR')
+    expect(url.searchParams.get('mode')).toBe('query')
+    // Never a filter: no request carries it.
+    const listed: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.startsWith('/api/v1/findings')) listed.push(u.search)
+    })
+    await page.goto(url.toString())
     const again = page.getByRole('combobox', { name: /filter as query text/i })
     await expect(again).toBeEnabled({ timeout: 20_000 })
     await expect(again).toHaveValue(/is_in_kev=true OR severity=critical/)
+    await expect(again).not.toBeFocused()
+    await expect(page.getByRole('button', { name: /^query$/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    await expect(page.getByTestId('filter-chip-advanced')).toHaveCount(0)
+    await expect(page.getByTestId('filter-chip-unknown')).toHaveCount(0)
+    expect(listed.length).toBeGreaterThan(0)
+    expect(listed.filter((q) => /[?&]mode=/.test(q))).toEqual([])
+
+    // Basic: the param goes; the same query shows as one Advanced chip.
+    await page.getByRole('button', { name: /^basic$/i }).click()
+    await expect(page).not.toHaveURL(/[?&]mode=/)
+    const chip = page.getByTestId('filter-chip-advanced')
+    await expect(chip).toContainText('OR', { timeout: 20_000 })
+    // A Basic link with fq keeps the chip; the chip opens Query mode.
+    await page.goto(page.url())
+    await expect(chip).toContainText('OR', { timeout: 20_000 })
+    await chip.getByRole('button').first().click()
+    await expect(page).toHaveURL(/[?&]mode=query/)
+    await expect(again).toHaveValue(/is_in_kev=true OR severity=critical/, { timeout: 20_000 })
+  })
+
+  test('a Query-mode link whose text the server refuses opens in Query mode with the problem', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings?mode=query&fq=' + encodeURIComponent('severity=bogus OR kev=true'))
+    const box = page.getByRole('combobox', { name: /filter as query text/i })
+    await expect(box).toBeEnabled({ timeout: 20_000 })
+    await expect(box).toHaveValue(/severity=bogus OR kev=true/)
+    await expect(box).toHaveAttribute('aria-invalid', 'true', { timeout: 20_000 })
+    await expect(page.getByText(/Column \d+\./)).toBeVisible()
+  })
+
+  test('a saved view opens in the mode it was saved in', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings')
+    const name = `e2e query view ${Date.now()}`
+    const id = await page.evaluate(async (viewName) => {
+      const res = await fetch('/api/v1/views', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 'findings',
+          name: viewName,
+          query: 'severity=critical',
+          page_params: { mode: 'query' },
+        }),
+      })
+      const body = (await res.json()) as { id: string; page_params?: Record<string, string> }
+      return { status: res.status, id: body.id, params: body.page_params }
+    }, name)
+    expect(id.status).toBe(201)
+    expect(id.params).toEqual({ mode: 'query' })
+    try {
+      await page.getByRole('button', { name: /^views$/i }).click()
+      await page.getByRole('menuitem', { name }).click()
+      await expect(page).toHaveURL(new RegExp(`view=${id.id}`))
+      await expect(page).toHaveURL(/[?&]mode=query/)
+      const box = page.getByRole('combobox', { name: /filter as query text/i })
+      await expect(box).toBeEnabled({ timeout: 20_000 })
+      await expect(page.getByRole('button', { name: /^query$/i })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      // The view's own conditions stay the view's (applied by the server);
+      // the field holds the filter laid on top of it, none here.
+      await expect(box).toHaveValue('')
+    } finally {
+      await page.evaluate(async (viewId) => {
+        await fetch(`/api/v1/views/${viewId}`, { method: 'DELETE', credentials: 'same-origin' })
+      }, id.id)
+    }
   })
 })
 
@@ -210,3 +288,31 @@ test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => 
     })
   }
 })
+
+test.describe(
+  'The search mode in the link on every list',
+  { tag: ['@findings', '@assets', '@scans'] },
+  () => {
+    for (const [path, name] of [
+      ['/assets', /filter as query text/i],
+      ['/scans', /filter scans as query text/i],
+    ] as const) {
+      test(`${path}?mode=query opens in Query mode; without it, Basic`, async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 })
+        await page.goto(`${path}?mode=query`)
+        const box = page.getByRole('combobox', { name })
+        await expect(box).toBeVisible({ timeout: 20_000 })
+        await expect(page.getByTestId('filter-chip-unknown')).toHaveCount(0)
+        await page.getByRole('button', { name: /^basic$/i }).click()
+        await expect(page).not.toHaveURL(/[?&]mode=/)
+        await page.reload()
+        await expect(page.getByRole('button', { name: /^basic$/i })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+          { timeout: 20_000 }
+        )
+        await expect(box).toHaveCount(0)
+      })
+    }
+  }
+)

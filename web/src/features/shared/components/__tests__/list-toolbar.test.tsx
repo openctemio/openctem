@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListToolbar } from '../list-toolbar'
-import { ListSearch } from '../list-search'
+import { ListSearch, ListSearchModeSwitch } from '../list-search'
 import { FilterButton, FilterPanelToggle } from '../filter-button'
 import { FilterChipsRow, LockedChip } from '../filter-chips-row'
 import { useSearchQuery, SEARCH_DEBOUNCE_MS } from '@/hooks/use-search-query'
@@ -244,6 +244,32 @@ describe('ListSearch', () => {
     } finally {
       HTMLElement.prototype.getBoundingClientRect = rect
     }
+  })
+
+  it('the Basic | Query switch can be drawn outside the field, on the same mode', async () => {
+    const onActiveChange = vi.fn()
+    const { container } = render(
+      <ListSearch
+        value=""
+        onChange={() => {}}
+        placeholder="Search findings…"
+        query={{
+          active: true,
+          onActiveChange,
+          switchOutside: true,
+          renderEditor: ({ adornments }) => <div data-testid="editor">{adornments}</div>,
+        }}
+      />
+    )
+    expect(container.querySelector('[data-slot="list-search-mode"]')).toBeNull()
+    const onModeChange = vi.fn()
+    render(<ListSearchModeSwitch mode="query" onModeChange={onModeChange} />)
+    expect(screen.getByRole('button', { name: 'Query' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Basic' }))
+    expect(onModeChange).toHaveBeenCalledWith('basic')
+    // Ctrl+/ still belongs to the field.
+    fireEvent.keyDown(window, { key: '/', ctrlKey: true })
+    expect(onActiveChange).toHaveBeenCalledWith(false)
   })
 
   it('uses the label as the placeholder fallback for its name', () => {

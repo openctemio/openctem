@@ -67,6 +67,8 @@ interface SavedViewsMenuProps {
    * holds a filter as text) resolves its own here.
    */
   resolveFilter?: () => Promise<{ query?: string; filter?: Record<string, unknown> }>
+  /** The page's own params saved beside the filter (the search mode, `modePageParams`). */
+  pageParams?: Record<string, string>
   /** Views the page ships with, listed first under `builtInLabel`. */
   builtIn?: BuiltInView[]
   builtInLabel?: string
@@ -130,6 +132,7 @@ export function summarizeChanges(
 export function SavedViewsMenu({
   page,
   resolveFilter,
+  pageParams,
   builtIn,
   builtInLabel,
   activeId,
@@ -190,6 +193,7 @@ export function SavedViewsMenu({
         group_by: groupBy || undefined,
         columns,
         density,
+        page_params: pageParams,
       })
       await mutate()
       setSaveOpen(false)
@@ -225,6 +229,7 @@ export function SavedViewsMenu({
         group_by: groupBy || undefined,
         columns,
         density,
+        page_params: pageParams,
       })
       await mutate()
       toast.success(t('confirm.savedView.updated', 'Updated view "{name}"', { name: view.name }))

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { findingsEmptyKind, type FindingsEmptyInput } from '../empty-kind'
+import {
+  findingsEmptyKind,
+  practiceKnownToHoldFindings,
+  type FindingsEmptyInput,
+} from '../empty-kind'
 
 const base: FindingsEmptyInput = {
   orgTotal: 0,
@@ -58,5 +62,28 @@ describe('findingsEmptyKind', () => {
 
   it('an empty organization stays "nothing yet" whatever the practice', () => {
     expect(findingsEmptyKind({ ...base, orgTotal: 0, practiceTotal: 0 })).toBe('nothing')
+  })
+})
+
+describe('practiceKnownToHoldFindings', () => {
+  const counts = { byPractice: { compliance: 3, aspm: 0 }, vulnerabilities: 7, total: 10 }
+
+  it('a list answer with rows shows the practice holds findings', () => {
+    expect(practiceKnownToHoldFindings('compliance', { listTotal: 4, counts: undefined })).toBe(
+      true
+    )
+  })
+
+  it("the practice switch's counts show it on an empty list (another state lens)", () => {
+    expect(practiceKnownToHoldFindings('vulnerabilities', { listTotal: 0, counts })).toBe(true)
+    expect(practiceKnownToHoldFindings('compliance', { listTotal: 0, counts })).toBe(true)
+  })
+
+  it('a zero or missing count, or no data, proves nothing', () => {
+    expect(practiceKnownToHoldFindings('aspm', { listTotal: 0, counts })).toBe(false)
+    expect(practiceKnownToHoldFindings('cloud', { listTotal: 0, counts })).toBe(false)
+    expect(
+      practiceKnownToHoldFindings('compliance', { listTotal: undefined, counts: undefined })
+    ).toBe(false)
   })
 })
