@@ -44,7 +44,7 @@ const ROW_MIX_DEBT: Record<string, number> = {
   // DataTable's Display menu trigger (h-9 in data-table.tsx, 36 beside 32) and the
   // chip-shaped Add filter (28) beside Query (32): the list family's table and
   // toolbar PRs.
-  '/assets@1440': 2,
+  '/assets@1440': 1,
   '/assets/changes@1440': 1,
   '/assets/groups@1440': 1,
   '/attack-surface/certificates@1440': 1,
@@ -59,7 +59,7 @@ const ROW_MIX_DEBT: Record<string, number> = {
   '/crown-jewels@1440': 1,
   '/exceptions@1440': 1,
   '/exposures@1440': 1,
-  '/findings@1440': 2,
+  '/findings@1440': 1,
   '/findings/approvals@1440': 1,
   '/my-work@1440': 1,
   '/pentest/campaigns@1440': 1,

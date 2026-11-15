@@ -355,7 +355,7 @@ export function QueryInput({
   }
 
   return (
-    <div className={cn('min-w-0 space-y-1', className)}>
+    <div className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
       <div className="relative">
         {multiline ? (
           <Textarea
@@ -407,7 +407,8 @@ export function QueryInput({
         aria-live="polite"
         className={cn(
           'text-muted-foreground min-h-5 text-xs',
-          quietStatus && !problem && !failed && 'sr-only'
+          // A list field adds no space under itself until there is a problem.
+          quietStatus && (problem || failed ? 'mt-1' : 'sr-only')
         )}
       >
         {problem ? (

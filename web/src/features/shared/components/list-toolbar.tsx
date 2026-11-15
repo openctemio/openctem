@@ -128,13 +128,17 @@ export function ListToolbar({
   useListShortcuts(ref)
 
   const lead = search ? <ListSearch {...search} filter={filter} /> : filter
+  // In Query mode a problem line may sit under the field: the row aligns on
+  // the controls' top edge (all one height), so nothing moves when it shows.
+  const top = !!search?.query?.active
   const toolbar = (
     <div
       ref={ref}
       data-testid="data-table-toolbar"
       data-slot="list-toolbar"
       className={cn(
-        'flex flex-wrap items-center gap-2',
+        'flex flex-wrap gap-2',
+        top ? 'items-start' : 'items-center',
         // The size container: the toolbar itself, or with a chips row the
         // region around it (same width). Below 28rem (a phone) that toolbar
         // lends its controls to the region: the search keeps the first line
@@ -148,7 +152,10 @@ export function ListToolbar({
         // button spills over the search box beside it. It wraps instead.
         <div
           data-slot="list-toolbar-start"
-          className="flex flex-[1_1_12rem] flex-wrap items-center gap-2 @max-md/toolbar:basis-full"
+          className={cn(
+            'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:basis-full',
+            top ? 'items-start' : 'items-center'
+          )}
         >
           {lead}
           {start}
@@ -160,7 +167,8 @@ export function ListToolbar({
         <div
           data-slot="list-toolbar-end"
           className={cn(
-            'ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2',
+            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2',
+            top ? 'items-start' : 'items-center',
             below && '@max-md/toolbar:order-last'
           )}
         >

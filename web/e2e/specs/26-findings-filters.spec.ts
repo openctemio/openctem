@@ -47,7 +47,10 @@ test.describe('Findings filters', { tag: ['@findings'] }, () => {
     await expect(box).toHaveAttribute('aria-invalid', 'true')
     await expect(page.getByText(/at column \d+/)).toBeVisible()
     await expect(page).toHaveURL(/severity=critical/)
-    // Escape puts the applied text back; Enter on a valid text applies it.
+    // Escape closes the open suggestions, then puts the applied text back;
+    // Enter on a valid text applies it.
+    await box.press('Escape')
+    await expect(box).toHaveAttribute('aria-expanded', 'false')
     await box.press('Escape')
     await expect(box).toHaveValue(/severity=critical/)
     await box.fill('kev=true')

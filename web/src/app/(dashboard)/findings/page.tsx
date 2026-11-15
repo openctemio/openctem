@@ -2218,6 +2218,7 @@ function FindingsContent() {
       }}
     >
       <SelectTrigger
+        iconOnlyBelow="@2xl/toolbar"
         className="w-auto gap-2 @2xl/toolbar:min-w-36"
         aria-label={t('findings.toolbar.groupLabel', 'Group findings')}
       >
