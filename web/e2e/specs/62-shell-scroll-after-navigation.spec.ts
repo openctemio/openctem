@@ -113,17 +113,22 @@ function expectShellStill(s: Awaited<ReturnType<typeof readPhoneShell>>, what: s
   expect(s.headerTop, `app header at the top after ${what}`).toBe(0)
 }
 
-/** A finger swipe up on the page (a real touch scroll gesture). */
+/** A finger swipe up on the page: touch start, moves and end, as a phone sends them. */
 async function swipeUp(page: Page, distance: number) {
   const cdp = await page.context().newCDPSession(page)
-  await cdp.send('Input.synthesizeScrollGesture', {
-    x: 195,
-    y: 600,
-    yDistance: -distance,
-    gestureSourceType: 'touch',
-    speed: 2000,
-  })
+  const x = 195
+  const y = 600
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+  for (let i = 1; i <= 10; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x, y: y - (distance * i) / 10 }],
+    })
+    await page.waitForTimeout(16)
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await cdp.detach()
+  await page.waitForTimeout(300)
 }
 
 test.describe('on a phone with touch', () => {
