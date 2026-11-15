@@ -64,7 +64,7 @@ func (h *gsHarness) doAs(user shared.ID, tenant string, perms []string, method, 
 func (h *gsHarness) viewRowDigest(id string) string {
 	h.t.Helper()
 	var d string
-	if err := h.db.QueryRow(`SELECT md5(sv::text) FROM saved_views sv WHERE id = $1`, id).Scan(&d); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT md5(sv::text) FROM saved_views sv WHERE id = $1`, id).Scan(&d); err != nil {
 		h.t.Fatalf("view row %s: %v", id, err)
 	}
 	return d
