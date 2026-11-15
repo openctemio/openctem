@@ -150,6 +150,19 @@ describe('bulk bar', () => {
     expect(announcer()).toHaveTextContent('Selection cleared')
   })
 
+  it('Escape in the bar’s More menu closes the menu and keeps the selection', async () => {
+    setup()
+    await userEvent.click(box('a'))
+    await userEvent.click(within(bar()!).getByRole('button', { name: 'More actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Add to remediation' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(bar()).toBeInTheDocument()
+    // With no menu open, Escape clears.
+    await userEvent.keyboard('{Escape}')
+    expect(bar()).not.toBeInTheDocument()
+  })
+
   it('row menus wait while rows are selected', async () => {
     setup()
     const cell = screen.getByRole('button', { name: 'Menu a' }).closest('td')!
