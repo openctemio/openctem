@@ -317,8 +317,9 @@ interface DataTableProps<TData, TValue> {
   /**
    * Sticky column header with the two scroll modes (the table fits: the page
    * scrolls and the header sticks; wider than its frame: the frame scrolls on
-   * both axes). Off by default until it is proven on every page; off, the
-   * frame scrolls sideways as before.
+   * both axes). On for every table; `false` only where the table sits in a
+   * container that cannot scroll the header away (the frame then scrolls
+   * sideways only).
    */
   stickyHeader?: boolean
   /**
@@ -383,14 +384,19 @@ const SELECT_COL_WIDTH = 40
 
 /**
  * Pinned cells must be opaque (content scrolls underneath), so they repeat the
- * row's state colours as solid equivalents over the page background: hover
+ * row's state colours as solid equivalents over the surface the table sits on
+ * (`--dt-surface`, the page by default): hover
  * (and a focused control in the row) 4% ink, selected 7% ink.
  */
 const PINNED_CELL_CLASS =
-  'sticky z-[1] bg-background group-hover/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--background))] group-focus-within/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--background))] group-data-[state=selected]/row:bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))]'
+  'sticky z-[1] bg-[var(--dt-surface,var(--background))] group-hover/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--dt-surface,var(--background)))] group-focus-within/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--dt-surface,var(--background)))] group-data-[state=selected]/row:bg-[color-mix(in_srgb,var(--foreground)_7%,var(--dt-surface,var(--background)))]'
 
-/** The header row sticks: at the top of the page's scroller (under the app header) or of the frame (Mode B). */
-const STICKY_HEAD_CLASS = 'sticky z-[2] bg-background'
+/**
+ * The header row sticks: at the top of the page's scroller (under the app
+ * header) or of the frame (Mode B). Its fill is the surface the table sits
+ * on (`--dt-surface`: the page, or a card's white), so it never shows a tint.
+ */
+const STICKY_HEAD_CLASS = 'sticky z-[2] bg-[var(--dt-surface,var(--background))]'
 const STICKY_HEAD_PINNED_CLASS = 'z-[3]'
 
 /** Soft edge after the start-pinned columns, shown while content is hidden under them. */
@@ -589,7 +595,7 @@ export function DataTable<TData, TValue>({
   paginationNoun,
   pageSizeLabel,
   defaultDensity = 'default',
-  stickyHeader = false,
+  stickyHeader = true,
   bulk,
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
@@ -1117,7 +1123,7 @@ export function DataTable<TData, TValue>({
                 <Button
                   variant="outline"
                   size="sm"
-                  className={cn('h-9', phoneCards && 'hidden')}
+                  className={cn(phoneCards && 'hidden')}
                   aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                 >
                   <SlidersHorizontal className="h-4 w-4 @xl/toolbar:me-2" />
