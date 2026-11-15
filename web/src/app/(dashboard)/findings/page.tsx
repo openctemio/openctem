@@ -2634,7 +2634,7 @@ function FindingsContent() {
     />
   ) : undefined
 
-  // The page's other actions, under More: a menu on a desktop, a sheet on a phone.
+  // The page's other actions, under More (ActionMenu shows them as a menu or a sheet by fit).
   const headerMoreItems: ActionMenuEntry[] = [
     ...(canImport
       ? [

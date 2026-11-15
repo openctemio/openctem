@@ -3,9 +3,11 @@
 /**
  * The one "⋯" actions menu (web/docs/ui-style-contract.md, "Floating
  * surfaces"): one item model, two renderers. From 768 px up it is the kit's
- * anchored menu; below it opens as a bottom sheet titled with the object's
- * name (`action-sheet.tsx`, loaded only when a phone opens it, so desktop
- * routes never download it).
+ * anchored menu. Below it, the menu decides by fit (`action-menu-fit.ts`): a
+ * short menu that fits beside its trigger stays anchored with 44 px rows; a
+ * long one, one with a submenu, or one that would not fit opens as a bottom
+ * sheet titled with the object's name (`action-sheet.tsx`, loaded only when a
+ * phone needs it). Call sites never choose.
  *
  * Both renderers take the same items, so an item is never enabled on one and
  * disabled on the other. Permission gating stays with the caller: pass only
@@ -32,6 +34,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  mayBeAnchoredOnPhone,
+  measurePhoneFit,
+  type PhoneMenuModel,
+} from '@/components/ui/action-menu-fit'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
@@ -148,16 +155,27 @@ export function ActionMenu({ items, trigger, title, label }: ActionMenuProps) {
   )
 }
 
+type TriggerHandlers = Pick<
+  React.ComponentProps<typeof DropdownMenuTrigger>,
+  'ref' | 'onPointerDown' | 'onKeyDown' | 'onClick'
+>
+
 function AnchoredActionMenu({
   menu,
   trigger,
+  triggerHandlers,
+  onOpenChange,
 }: {
   menu: NormalizedActionMenu
   trigger: React.ReactElement
+  triggerHandlers?: TriggerHandlers
+  onOpenChange?: (open: boolean) => void
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+    <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild {...triggerHandlers}>
+        {trigger}
+      </DropdownMenuTrigger>
       {/* Named by its trigger (APG menu button). */}
       <DropdownMenuContent>
         {menu.groups.map((group, i) => (
@@ -190,16 +208,16 @@ function AnchoredActionMenu({
   )
 }
 
-/** 32 px rows; 44 under a coarse pointer (touch tablets). */
-const ROW = 'pointer-coarse:min-h-11'
+/** 32 px rows; 44 on a phone and under a coarse pointer (touch tablets). */
+const ROW = 'pointer-coarse:min-h-11 max-md:min-h-11'
 
 function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean }) {
   const icon = icons && item.icon ? <item.icon aria-hidden /> : null
   const variant = item.destructive ? 'destructive' : 'default'
   if (item.disabledReason) {
     // A disabled item gets no pointer or focus events: the reason sits on a
-    // focusable wrapper (hover, keyboard) and, under a coarse pointer, as a
-    // visible line under the label (no hover on touch).
+    // focusable wrapper (hover, keyboard) and, on a phone or under a coarse
+    // pointer, as a visible line under the label (no hover on touch).
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -208,7 +226,7 @@ function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean 
               {icon}
               <span className="flex min-w-0 flex-col">
                 <span>{item.label}</span>
-                <span className="hidden text-cap text-muted-foreground pointer-coarse:block">
+                <span className="hidden text-cap text-muted-foreground max-md:block pointer-coarse:block">
                   {item.disabledReason}
                 </span>
               </span>
@@ -240,6 +258,25 @@ function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean 
   )
 }
 
+/** What the phone fit decision needs from a menu. */
+export function phoneMenuModel(menu: NormalizedActionMenu): PhoneMenuModel {
+  const entries = menu.groups.flatMap((g) => g.items)
+  return {
+    rows: entries.map((e) => ({
+      label: e.label,
+      reason: e.kind === 'sub' ? undefined : e.disabledReason,
+    })),
+    headings: menu.groups.flatMap((g) => (g.label ? [g.label] : [])),
+    separators: Math.max(0, menu.groups.length - 1),
+    hasSubmenu: entries.some((e) => e.kind === 'sub'),
+    // The item model has no text fields; a menu that needs one is a picker.
+    hasInput: false,
+    icons: menu.icons,
+  }
+}
+
+const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown'])
+
 function PhoneActionMenu({
   menu,
   trigger,
@@ -251,18 +288,95 @@ function PhoneActionMenu({
   title: string
   label: string
 }) {
+  const model = React.useMemo(() => phoneMenuModel(menu), [menu])
+  // Ruled out by the item model alone (too many items, a submenu): always the sheet.
+  const mayBeMenu = mayBeAnchoredOnPhone({
+    rows: model.rows,
+    headings: model.headings.length,
+    hasSubmenu: model.hasSubmenu,
+    hasInput: model.hasInput,
+  })
   const [open, setOpen] = React.useState(false)
   // Mounted after the first open and kept, so the sheet can animate closed.
   const [mounted, setMounted] = React.useState(false)
   const [byKeyboard, setByKeyboard] = React.useState(false)
+  const [menuOpen, setMenuOpen] = React.useState(false)
   const triggerRef = React.useRef<HTMLElement | null>(null)
-  // On a phone, fetch the sheet while the page is idle, so the first tap
-  // opens it at once (desktop never loads it).
+  // A pointer press measured the menu as not fitting: the click opens the sheet.
+  const sheetOnClick = React.useRef(false)
+
+  // When the sheet is certain, fetch it while the page is idle, so the first
+  // tap opens it at once. A menu that may stay anchored loads it only when a
+  // press finds it does not fit.
   React.useEffect(() => {
-    if (typeof window.requestIdleCallback !== 'function') return
+    if (mayBeMenu || typeof window.requestIdleCallback !== 'function') return
     const id = window.requestIdleCallback(preloadSheet, { timeout: 4000 })
     return () => window.cancelIdleCallback(id)
-  }, [])
+  }, [mayBeMenu])
+
+  const openSheet = (keyboard: boolean) => {
+    setByKeyboard(keyboard)
+    setMounted(true)
+    setOpen(true)
+  }
+
+  const sheet = mounted && (
+    <React.Suspense fallback={null}>
+      <ActionSheet
+        open={open}
+        onOpenChange={setOpen}
+        menu={menu}
+        title={title}
+        label={label}
+        focusFirstRow={byKeyboard}
+        returnFocusTo={triggerRef}
+      />
+    </React.Suspense>
+  )
+
+  if (mayBeMenu) {
+    // Measured at the moment it opens: the screen, where the trigger is and
+    // how wide the labels are in this language.
+    const fitsAsMenu = () => {
+      const el = triggerRef.current
+      return !!el && measurePhoneFit(el, model) === 'menu'
+    }
+    const handlers: TriggerHandlers = {
+      ref: (el: HTMLButtonElement | null) => {
+        triggerRef.current = el
+      },
+      onPointerDown: (e) => {
+        sheetOnClick.current = false
+        if (menuOpen || e.button !== 0 || e.ctrlKey || fitsAsMenu()) return
+        // Keeps the menu from opening; the sheet opens on the click, so the
+        // rest of this tap does not land on its scrim.
+        e.preventDefault()
+        sheetOnClick.current = true
+        preloadSheet()
+      },
+      onKeyDown: (e) => {
+        if (menuOpen || !OPEN_KEYS.has(e.key) || fitsAsMenu()) return
+        e.preventDefault()
+        openSheet(true)
+      },
+      onClick: () => {
+        if (!sheetOnClick.current) return
+        sheetOnClick.current = false
+        openSheet(false)
+      },
+    }
+    return (
+      <>
+        <AnchoredActionMenu
+          menu={menu}
+          trigger={trigger}
+          triggerHandlers={handlers}
+          onOpenChange={setMenuOpen}
+        />
+        {sheet}
+      </>
+    )
+  }
 
   const triggerProps = trigger.props as {
     onClick?: (e: React.MouseEvent<HTMLElement>) => void
@@ -280,28 +394,14 @@ function PhoneActionMenu({
       triggerProps.onClick?.(e)
       if (e.defaultPrevented) return
       // A click with no pointer position came from Enter or Space.
-      setByKeyboard(e.detail === 0)
-      setMounted(true)
-      setOpen(true)
+      openSheet(e.detail === 0)
     },
   })
 
   return (
     <>
       {opener}
-      {mounted && (
-        <React.Suspense fallback={null}>
-          <ActionSheet
-            open={open}
-            onOpenChange={setOpen}
-            menu={menu}
-            title={title}
-            label={label}
-            focusFirstRow={byKeyboard}
-            returnFocusTo={triggerRef}
-          />
-        </React.Suspense>
-      )}
+      {sheet}
     </>
   )
 }
