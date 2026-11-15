@@ -10,14 +10,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -153,6 +145,51 @@ export default function ContentPacksPage() {
   )
 
   const channelRows: ContentChannelResponse[] = channels.data?.data ?? []
+  // Which pack each channel points at: a short list in the shared table, so
+  // it gets the same header, states and phone cards as every list.
+  const channelColumns = useMemo<ColumnDef<ContentChannelResponse>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('admin.cp.col.pack', 'Pack'),
+        meta: { kind: 'name' },
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: 'channel',
+        header: t('admin.cp.channel', 'Channel'),
+        meta: { kind: 'status' },
+        cell: ({ row }) => (
+          <Badge variant={row.original.channel === 'stable' ? 'secondary' : 'outline'}>
+            {row.original.channel}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: 'version',
+        header: t('admin.cp.version', 'Version'),
+        meta: { kind: 'text' },
+        cell: ({ row }) => <span className="tabular-nums">{row.original.version}</span>,
+      },
+      {
+        accessorKey: 'digest',
+        header: t('admin.cp.digest', 'Digest'),
+        meta: { kind: 'id' },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs" title={row.original.digest}>
+            {shortDigest(row.original.digest)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'updated_at',
+        header: t('admin.cp.updated', 'Updated'),
+        meta: { kind: 'datetime-recent' },
+        cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
+      },
+    ],
+    [t]
+  )
 
   return (
     <Main>
@@ -187,45 +224,22 @@ export default function ContentPacksPage() {
               <CardTitle className="text-base">{t('admin.cp.channels', 'Channels')}</CardTitle>
             </CardHeader>
             <CardContent>
-              {channelRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.cp.noChannels',
-                    'No channel points at a pack yet. Open a pack and promote it.'
-                  )}
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('admin.cp.col.pack', 'Pack')}</TableHead>
-                      <TableHead>{t('admin.cp.channel', 'Channel')}</TableHead>
-                      <TableHead>{t('admin.cp.version', 'Version')}</TableHead>
-                      <TableHead>{t('admin.cp.digest', 'Digest')}</TableHead>
-                      <TableHead>{t('admin.cp.updated', 'Updated')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {channelRows.map((c) => (
-                      <TableRow key={`${c.name}-${c.channel}`}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
-                        <TableCell>
-                          <Badge variant={c.channel === 'stable' ? 'secondary' : 'outline'}>
-                            {c.channel}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="tabular-nums">{c.version}</TableCell>
-                        <TableCell className="font-mono text-xs" title={c.digest}>
-                          {shortDigest(c.digest)}
-                        </TableCell>
-                        <TableCell>
-                          <RelativeTime date={c.updated_at} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              <DataTable
+                columns={channelColumns}
+                data={channelRows}
+                getRowId={(c) => `${c.name}-${c.channel}`}
+                caption={t('admin.cp.channels', 'Channels')}
+                isLoading={channels.isLoading}
+                showSearch={false}
+                showColumnToggle={false}
+                showSelectionCount={false}
+                showPagination={false}
+                mobileCards
+                emptyMessage={t(
+                  'admin.cp.noChannels',
+                  'No channel points at a pack yet. Open a pack and promote it.'
+                )}
+              />
             </CardContent>
           </Card>
           <Card>
