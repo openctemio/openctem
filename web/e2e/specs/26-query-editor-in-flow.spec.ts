@@ -10,8 +10,29 @@ import { test, expect } from '../fixtures/authenticated-page'
  * no particular data.
  */
 
-const list = (page: Page) =>
-  page.locator('[data-slot="table-container"]:visible, [data-slot="mobile-card"]:visible').first()
+// What follows the toolbar in the page (the chips row or the list: table or
+// phone cards): the first visible next sibling of the toolbar (with its chips
+// row) or of one of its ancestors.
+async function listBox(page: Page) {
+  const b = await page.evaluate(() => {
+    const search = document.querySelector('[data-slot="list-search"]')
+    let el: Element | null =
+      search?.closest('[data-slot="list-toolbar-region"]') ??
+      search?.closest('[data-slot="list-toolbar"]') ??
+      null
+    while (el) {
+      for (let n = el.nextElementSibling; n; n = n.nextElementSibling) {
+        const r = n.getBoundingClientRect()
+        if (r.height > 0 && getComputedStyle(n).display !== 'none')
+          return { x: r.x, y: r.y, width: r.width, height: r.height }
+      }
+      el = el.parentElement
+    }
+    return null
+  })
+  expect(b).not.toBeNull()
+  return b!
+}
 
 async function box(l: Locator) {
   const b = await l.boundingBox()
@@ -41,10 +62,10 @@ for (const [width, height, touch] of [
         await page.locator('[data-slot="list-search-mode"]:visible').click()
         const field = page.locator('[data-slot="list-search-query"] [role="combobox"]')
         await expect(field).toBeEnabled({ timeout: 20_000 })
-        await expect(list(page)).toBeVisible({ timeout: 20_000 })
+        await page.waitForLoadState('networkidle')
         await field.blur()
         const before = await box(field)
-        const listBefore = await box(list(page))
+        const listBefore = await listBox(page)
         const mode = page.locator('[data-slot="list-search-mode"]:visible')
         const modeBefore = await box(mode)
 
@@ -63,7 +84,7 @@ for (const [width, height, touch] of [
         await expect(editor).toBeVisible()
         await settled(page)
         const open = await box(editor)
-        const listOpen = await box(list(page))
+        const listOpen = await listBox(page)
 
         // Same slot: left edge and width; taller.
         expect(Math.abs(open.x - before.x)).toBeLessThanOrEqual(1)
@@ -87,7 +108,7 @@ for (const [width, height, touch] of [
           .click()
         await settled(page)
         await expect(page.locator('[data-slot="query-editor-expanded"]')).toHaveCount(0)
-        expect((await box(list(page))).y).toBe(listBefore.y)
+        expect((await listBox(page)).y).toBe(listBefore.y)
         expect(await box(field)).toEqual(before)
       })
     }
