@@ -425,7 +425,6 @@ export function QueryInput({
       </PopoverAnchor>
       <PopoverContent
         asChild
-        align="start"
         side="bottom"
         hideWhenDetached
         className={SUGGESTION_LIST_CLASSES}
