@@ -160,11 +160,12 @@ export function FilterBar({
           <Button variant="ghost" size="sm" onClick={onResetToView}>
             {t('findings.filter.resetToView', 'Reset to view')}
           </Button>
-        ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
-          <Button variant="ghost" size="sm" onClick={clearAll}>
-            {t('findings.filter.clearAll', 'Clear filters')}
-          </Button>
         ) : undefined
+      }
+      onClearAll={
+        !(viewChanged && onResetToView) && filters.length + unknown.length + (fq ? 1 : 0) > 1
+          ? clearAll
+          : undefined
       }
     />
   )

@@ -54,6 +54,13 @@ interface SectionTabsProps {
    * Suggestions shows the pending suggestions). Zero and absent show nothing.
    */
   counts?: Readonly<Record<string, number | undefined>>
+  /**
+   * Words after a tab's count for screen readers only, keyed by href
+   * ("assets waiting"): the tab is then read "Needs attention 462 assets
+   * waiting". The visible label and number stay the start of the name
+   * (WCAG 2.5.3 label in name), so this is never an `aria-label`.
+   */
+  countUnits?: Readonly<Record<string, string | undefined>>
 }
 
 /** Space between two tabs (`gap-6`), in px. */
@@ -134,7 +141,13 @@ export function fitTabs(
  * drops its icons, then moves the last tabs into a More menu, keeping the
  * current tab in view. Labels are always whole.
  */
-export function SectionTabs({ tabs, className, label = 'Sections', counts }: SectionTabsProps) {
+export function SectionTabs({
+  tabs,
+  className,
+  label = 'Sections',
+  counts,
+  countUnits,
+}: SectionTabsProps) {
   const pathname = usePathname()
   const { t } = useTranslation()
   const navRef = React.useRef<HTMLElement>(null)
@@ -197,8 +210,16 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
   }, [tabKey, countKey, activeIndex, iconsAllowed, t])
 
   const text = (tab: SectionTab) => (tab.labelKey ? t(tab.labelKey, tab.label) : tab.label)
-  const count = (tab: SectionTab) =>
-    counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null
+  const count = (tab: SectionTab) => {
+    if (!counts?.[tab.href]) return null
+    const unit = countUnits?.[tab.href]
+    return (
+      <>
+        <TabsCount value={counts[tab.href]} />
+        {unit && <span className="sr-only"> {unit}</span>}
+      </>
+    )
+  }
   const moreLabel = t('common.tabs.more', 'More')
   const overflowActive = fit.overflow.some((i) => i === activeIndex)
 

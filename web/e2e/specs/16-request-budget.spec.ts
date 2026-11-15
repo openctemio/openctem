@@ -232,6 +232,34 @@ test(
   }
 )
 
+test(
+  'findings, an empty practice: one more stats response for its first run, none on a view switch',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    // The seed has no runtime findings: the empty list asks once for the
+    // practice's total in every state (its first run or "No findings match").
+    const requests = await apiRequestsOfLoad(page, '/findings?practice=runtime')
+    const stats = requests.filter((r) => r.includes('/api/v1/findings/stats'))
+    expect(stats, requests.join('\n')).toHaveLength(2)
+    expect(
+      stats.filter((r) => r.includes('practice=runtime')),
+      requests.join('\n')
+    ).toHaveLength(1)
+    expect(requests.filter((r) => r.includes('/api/v1/findings/quick-views'))).toHaveLength(1)
+
+    const afterSwitch: string[] = []
+    const listen = (req: Request) => {
+      if (req.url().includes('/api/v1/findings/stats')) afterSwitch.push(req.url())
+    }
+    page.on('request', listen)
+    await page.getByRole('link', { name: /^Closed/ }).click()
+    await expect(page).toHaveURL(/state=closed/)
+    await page.waitForTimeout(QUIET_MS)
+    page.off('request', listen)
+    expect(afterSwitch).toEqual([])
+  }
+)
+
 test('findings: Refresh sends each request once', { tag: ['@budget'] }, async ({ page }) => {
   await apiRequestsOfLoad(page, '/findings')
   const seen: string[] = []

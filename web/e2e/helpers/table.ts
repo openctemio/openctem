@@ -18,3 +18,21 @@ export async function firstDataRow(page: Page): Promise<Locator | null> {
   const row = dataRows(page).first()
   return (await row.isVisible().catch(() => false)) ? row : null
 }
+
+/**
+ * Phone, on the findings list: select mode is the first item of the list's
+ * More in the title row (a small menu or a bottom sheet, by fit); the toolbar
+ * has no More of its own.
+ */
+export async function openFindingsPhoneSelect(page: Page): Promise<void> {
+  await page
+    .getByTestId('findings-toolbar-primary')
+    .getByRole('button', { name: /more actions|thao tác khác/i })
+    .filter({ visible: true })
+    .click()
+  await page
+    .locator('[role="menuitem"], [role="menuitemcheckbox"], [data-slot="action-sheet-row"]')
+    .filter({ visible: true })
+    .first()
+    .click()
+}
