@@ -17,6 +17,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import {
   queryApi,
@@ -43,6 +44,17 @@ export const CHECK_DELAY_MS = 250
 /** Value lookup delay. */
 const VALUES_DELAY_MS = 250
 const MAX_OPTIONS = 10
+
+/**
+ * The suggestion list is a kit popover in a portal, so a dialog body or any
+ * other scroll container never clips it. It lines up with the start of the
+ * field and its status line (the hint or the problem stays readable), opens
+ * below them, or above the field when there is no room below, is never wider
+ * than the field (28rem at most) and never taller than the room on its side
+ * (16rem at most, about ten rows), scrolling inside.
+ */
+export const SUGGESTION_LIST_CLASSES =
+  'w-[min(28rem,var(--radix-popover-trigger-width))] min-w-0 max-h-[min(16rem,var(--radix-popover-content-available-height))] overflow-y-auto p-1'
 
 export interface QueryInputProps {
   entity: QueryEntity
@@ -107,6 +119,7 @@ export function QueryInput({
   const listId = `${ownId}-list`
   const statusId = `${ownId}-status`
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  const anchorRef = useRef<HTMLDivElement>(null)
   const { data: schema } = useQuerySchema(entity, !disabled)
   const fields = useMemo(() => {
     const all = schema?.fields ?? []
@@ -338,7 +351,7 @@ export function QueryInput({
     'aria-label': ariaLabel,
     'aria-autocomplete': 'list' as const,
     'aria-expanded': expanded,
-    'aria-controls': listId,
+    'aria-controls': expanded ? listId : undefined,
     'aria-activedescendant': expanded ? `${listId}-${active}` : undefined,
     'aria-describedby': statusId,
     'aria-invalid': !!problem,
@@ -356,28 +369,75 @@ export function QueryInput({
   }
 
   return (
-    <div className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-      <div className="relative">
-        {multiline ? (
-          <Textarea
-            ref={ref}
-            rows={3}
-            className={cn('font-mono text-sm', inputClassName)}
-            {...shared}
-          />
-        ) : (
-          <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
-        )}
-        {adornments}
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label={t('queryInput.suggestions')}
-          className={cn(
-            'bg-popover absolute top-full left-0 z-50 mt-1 max-h-64 w-full max-w-md overflow-auto rounded-md border p-1 shadow-md',
-            !expanded && 'hidden'
-          )}
-        >
+    <Popover
+      open={expanded}
+      onOpenChange={(next) => {
+        if (!next) setOpen(false)
+      }}
+    >
+      <PopoverAnchor asChild>
+        <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
+          <div className="relative">
+            {multiline ? (
+              <Textarea
+                ref={ref}
+                rows={3}
+                className={cn('font-mono text-sm', inputClassName)}
+                {...shared}
+              />
+            ) : (
+              <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
+            )}
+            {adornments}
+          </div>
+          <div
+            id={statusId}
+            aria-live="polite"
+            className={cn(
+              'text-muted-foreground min-h-5 text-xs',
+              // A list field adds no space under itself until there is a problem.
+              quietStatus && (problem || failed ? 'mt-1' : 'sr-only')
+            )}
+          >
+            {problem ? (
+              <ProblemLine
+                problem={problem}
+                onFix={(fix) =>
+                  setText(
+                    applyFix(value, problem.start, problem.end, fix),
+                    problem.start + fix.length
+                  )
+                }
+              />
+            ) : checking ? (
+              <span>{t('queryInput.checking')}</span>
+            ) : failed ? (
+              <span>{t('queryInput.unavailable')}</span>
+            ) : typeof resultCount === 'number' && value.trim() !== '' ? (
+              <span>
+                {t('queryInput.results', undefined, { count: formatCount(resultCount, locale) })}
+              </span>
+            ) : (
+              <span>{t('queryInput.hint')}</span>
+            )}
+          </div>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        asChild
+        align="start"
+        side="bottom"
+        hideWhenDetached
+        className={SUGGESTION_LIST_CLASSES}
+        // The caret stays in the field: the list never takes focus.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        // Clicking in the field moves the caret; it does not close the list.
+        onInteractOutside={(e) => {
+          if (e.target instanceof Node && anchorRef.current?.contains(e.target)) e.preventDefault()
+        }}
+      >
+        <ul id={listId} role="listbox" aria-label={t('queryInput.suggestions')}>
           {options.map((o, i) => (
             <li
               key={`${o.kind}-${o.label}`}
@@ -402,36 +462,8 @@ export function QueryInput({
             </li>
           ))}
         </ul>
-      </div>
-      <div
-        id={statusId}
-        aria-live="polite"
-        className={cn(
-          'text-muted-foreground min-h-5 text-xs',
-          // A list field adds no space under itself until there is a problem.
-          quietStatus && (problem || failed ? 'mt-1' : 'sr-only')
-        )}
-      >
-        {problem ? (
-          <ProblemLine
-            problem={problem}
-            onFix={(fix) =>
-              setText(applyFix(value, problem.start, problem.end, fix), problem.start + fix.length)
-            }
-          />
-        ) : checking ? (
-          <span>{t('queryInput.checking')}</span>
-        ) : failed ? (
-          <span>{t('queryInput.unavailable')}</span>
-        ) : typeof resultCount === 'number' && value.trim() !== '' ? (
-          <span>
-            {t('queryInput.results', undefined, { count: formatCount(resultCount, locale) })}
-          </span>
-        ) : (
-          <span>{t('queryInput.hint')}</span>
-        )}
-      </div>
-    </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
