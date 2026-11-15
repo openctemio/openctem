@@ -134,7 +134,7 @@ export function CIPipelinesPanel() {
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
   const hasOverrides = overridesParam === '1'
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
-  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams()
 
   useEffect(() => {
     if (debouncedSearch !== q) {

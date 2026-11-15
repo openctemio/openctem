@@ -202,7 +202,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
   const searchTerm = useSearchQuery(q).term
-  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams()
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,

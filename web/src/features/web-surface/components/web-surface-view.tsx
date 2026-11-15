@@ -50,8 +50,10 @@ import { CatalogBadge, PathText } from './web-surface-badges'
 import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
 import { EndpointSheet } from './endpoint-sheet'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '@/lib/page-size-options'
 
-const PAGE_SIZES = [20, 50, 100]
+// The shared sizes, and 20 for links from before they were one set.
+const PAGE_SIZES = [...TABLE_PAGE_SIZES, 20]
 
 const TAB_LABEL: Record<WebSurfaceTab, string> = {
   origins: 'Origins',
@@ -65,11 +67,16 @@ const KINDS = ['page', 'api', 'form', 'script', 'graphql', 'websocket', 'other']
 
 function usePaging(prefix: string) {
   const [pageParam, setPageParam] = useUrlFilter(`${prefix}page`, '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter(`${prefix}per_page`, '20')
+  const [perPageParam, setPerPageParam] = useUrlFilter(
+    `${prefix}per_page`,
+    String(DEFAULT_TABLE_PAGE_SIZE)
+  )
   const pagination = useMemo(
     () => ({
       pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
+      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10))
+        ? parseInt(perPageParam, 10)
+        : DEFAULT_TABLE_PAGE_SIZE,
     }),
     [pageParam, perPageParam]
   )

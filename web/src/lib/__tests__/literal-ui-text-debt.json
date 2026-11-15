@@ -190,7 +190,6 @@
   "features/sensors/components/sensor-install-snippets.tsx": 8,
   "features/sensors/components/sensor-pairing-steps.tsx": 1,
   "features/shared/components/actor-chip.tsx": 1,
-  "features/shared/components/data-table-pagination.tsx": 4,
   "features/shared/components/data-table/data-table-groups.tsx": 1,
   "features/shared/components/detail-checklist.tsx": 4,
   "features/shared/components/detail-sheet-layout.tsx": 3,

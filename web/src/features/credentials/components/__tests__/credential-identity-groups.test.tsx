@@ -57,11 +57,12 @@ describe('CredentialIdentityGroups', () => {
   })
 
   it('pages through identities', () => {
-    const ids = Array.from({ length: 25 }, (_, i) => identity(`u${i}@x.io`))
+    // 25 rows per page: the 26th identity is on page 2.
+    const ids = Array.from({ length: 30 }, (_, i) => identity(`u${i}@x.io`))
     render(<CredentialIdentityGroups identities={ids} columns={columns} resetKey="" />)
     expect(screen.getByText('u0@x.io')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    expect(screen.getByText('u20@x.io')).toBeInTheDocument()
+    expect(screen.getByText('u25@x.io')).toBeInTheDocument()
     expect(screen.queryByText('u0@x.io')).toBeNull()
   })
 })
