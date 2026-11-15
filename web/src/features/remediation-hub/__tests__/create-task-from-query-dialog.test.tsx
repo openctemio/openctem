@@ -44,7 +44,17 @@ vi.mock('../api/use-task-query', async (orig) => {
 })
 vi.mock('@/features/query/api/query-api', () => ({
   queryApi: {
-    parse: vi.fn(() => new Promise(() => {})),
+    // Preview checks the text once before previewing it.
+    parse: vi.fn(async ({ text }: { text: string }) => ({
+      entity: 'findings',
+      valid: true,
+      form: 'long',
+      text,
+      query: text,
+      chips: [],
+      advanced: false,
+      problems: [],
+    })),
     values: vi.fn(() => new Promise(() => {})),
   },
   useQuerySchema: () => ({ data: { fields: [] } }),

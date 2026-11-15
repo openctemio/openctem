@@ -108,3 +108,18 @@ describe('completions', () => {
     expect(formatCount(10001, 'en')).toBe('10,000+')
   })
 })
+
+describe('localProblem (checked while typing, no request)', () => {
+  it('passes balanced text, quoted parentheses and escaped quotes', async () => {
+    const { localProblem } = await import('../lib/complete')
+    expect(localProblem('severity>=high (kev=true OR epss>0.5)')).toBeNull()
+    expect(localProblem('title~"a (b" tool="x\\"y"')).toBeNull()
+    expect(localProblem('practice!=compliance state=fixed')).toBeNull()
+  })
+  it('names an unclosed quote, an unclosed or an extra parenthesis with its place', async () => {
+    const { localProblem } = await import('../lib/complete')
+    expect(localProblem('tool="nuclei')).toEqual({ code: 'unclosed_quote', start: 5, end: 6 })
+    expect(localProblem('(a=1 OR (b=2)')).toEqual({ code: 'unclosed_paren', start: 0, end: 1 })
+    expect(localProblem('a=1)')).toEqual({ code: 'extra_paren', start: 3, end: 4 })
+  })
+})
