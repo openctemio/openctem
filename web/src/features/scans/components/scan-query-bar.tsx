@@ -5,11 +5,17 @@
  * findings and assets lists, editing the same state as the facet panel and
  * the search. A filter the controls can show is written back as the page's
  * params; one they cannot goes to `fq` and shows as one Advanced chip under
- * the toolbar in Basic mode (see lib/scan-query.ts).
+ * the toolbar in Basic mode (see lib/scan-query.ts). The mode is in the URL
+ * (`mode=query`), so a link or a reload opens in it.
  */
 
 import { useTranslation } from '@/context/i18n-provider'
-import { AdvancedChip, useListQueryMode } from '@/features/query/components/query-mode'
+import {
+  AdvancedChip,
+  queryModeIn,
+  useListQueryMode,
+  withQueryMode,
+} from '@/features/query/components/query-mode'
 import { applyScanTextFilter, SCAN_FQ_PARAM, scanFilterParams } from '../lib/scan-query'
 
 /** The search field's Query mode on the scans list. */
@@ -21,9 +27,11 @@ export function useScanQueryMode(
   const { t } = useTranslation()
   return useListQueryMode({
     entity: 'scans',
+    active: queryModeIn(search),
+    onActiveChange: (on) => onSearchChange(withQueryMode(search, on)),
     fq: search.get(SCAN_FQ_PARAM),
     params: scanFilterParams(search),
-    onApply: (r) => onSearchChange(applyScanTextFilter(search, r)),
+    onApply: (r, on) => onSearchChange(withQueryMode(applyScanTextFilter(search, r), on)),
     resultCount,
     recentScope: 'scans',
     ariaLabel: t('scans.query.label'),

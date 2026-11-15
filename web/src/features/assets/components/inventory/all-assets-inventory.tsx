@@ -73,7 +73,11 @@ import { advancedAssetsDocument } from '../../api/advanced-fetch'
 import { queryApi } from '@/features/query/api/query-api'
 import { useSavedViews, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { applyTextResult, textParams } from '../../lib/inventory-text'
-import { useListQueryMode } from '@/features/query/components/query-mode'
+import {
+  useListQueryMode,
+  viewOpensInQueryMode,
+  withQueryMode,
+} from '@/features/query/components/query-mode'
 import { formatTotal } from '../../lib/capped-count'
 import { TABS_LENS, openTab, tabCounts, withTab } from '../../lib/inventory-tabs'
 import { InventoryTypeTabs } from './inventory-type-tabs'
@@ -224,6 +228,8 @@ function filterKey(f: InventoryFilters): string {
     sort: undefined,
     group: undefined,
     view: undefined,
+    // The search mode is how the filter is shown, not a change to the view.
+    queryMode: undefined,
   })
   sp.sort()
   return sp.toString()
@@ -277,10 +283,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   const setFilters = useCallback(
     (next: InventoryFilters) => {
-      const qs = serializeInventoryFilters(next).toString()
+      // The search mode stays unless the change sets it (a tab, a lens or
+      // clearing the filters keeps Query mode).
+      const qs = serializeInventoryFilters({ queryMode: filters.queryMode, ...next }).toString()
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     },
-    [router, pathname]
+    [router, pathname, filters.queryMode]
   )
   // A tag chip in a row or the detail sheet adds that tag to the filter, or
   // removes it when it is already there.
@@ -479,6 +487,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         setFilters({
           ...applyTextResult({ sort: filters.sort, pageSize: filters.pageSize }, r),
           view: view.id,
+          // The view opens in the search mode it was saved in.
+          queryMode: viewOpensInQueryMode(view) || undefined,
         })
       } catch {
         toast.error(t('assets.views.openFailed', 'This view could not be opened'))
@@ -534,7 +544,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     setSelectionEpoch((n) => n + 1)
     setSelectedAssets([])
   }, [])
-  const queryKey = searchParams.toString()
+  // Switching the search mode changes no rows.
+  const queryKey = withQueryMode(searchParams, false).toString()
   useEffect(() => {
     clearSelection()
   }, [queryKey, clearSelection])
@@ -573,9 +584,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   // text (chips and text are two views of one state, lib/inventory-text).
   const queryMode = useListQueryMode({
     entity: 'assets',
+    active: !!filters.queryMode,
+    onActiveChange: (on) => setFilters({ ...filters, queryMode: on || undefined }),
     fq: filters.advanced ?? null,
     params: textParams(filters),
-    onApply: (r) => setFilters({ ...applyTextResult(filters, r), page: 1 }),
+    onApply: (r, on) =>
+      setFilters({ ...applyTextResult(filters, r), page: 1, queryMode: on || undefined }),
     resultCount: isLoading ? null : total,
     preferFields: tab?.fields,
     recentScope: filters.tab ? `assets:${filters.tab}` : 'assets',
