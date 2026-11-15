@@ -18,12 +18,22 @@
  * key cancels the request in flight.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { CircleHelp, CornerDownLeft, Maximize2, Minimize2 } from 'lucide-react'
+import { CircleHelp, Maximize2, Minimize2, MoreHorizontal, Play } from 'lucide-react'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TOKEN_CLASSES } from '@/lib/code-tokens'
 import { cn } from '@/lib/utils'
@@ -152,6 +162,9 @@ export function QueryInput({
   // (a list's editor is disabled while its text is printed); swapping the
   // one-line field and the expanded editor moves the focus by hand (setBig).
   const focusedOnce = useRef(false)
+  // The syntax help, opened from its button or from a phone's overflow.
+  const [helpOpen, setHelpOpen] = useState(false)
+  const controlsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!autoFocus || disabled || focusedOnce.current) return
     focusedOnce.current = true
@@ -551,45 +564,104 @@ export function QueryInput({
                 'font-mono',
                 inputClassName,
                 // Room for the field's own controls and the host's.
-                inline && 'pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
+                // (phone: overflow and run, 2 x 28 px; from 768: help, expand, run, 3 x 24 px)
+                inline &&
+                  'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
               )}
               {...shared}
             />
           )}
           {!big && adornments}
           {inline && (
-            <div
-              data-slot="query-field-controls"
-              className={cn(
-                'absolute z-50 flex items-center gap-0.5',
-                big
-                  ? 'end-2 top-1.5'
-                  : // Just before the host's end controls (a list search field's switch).
-                    'end-[calc(var(--list-search-end,0.5rem)-0.125rem)] top-1/2 -translate-y-1/2'
-              )}
-            >
-              <QuerySyntaxHelp entity={entity} />
-              <FieldIconButton
-                label={t(big ? 'queryInput.collapse' : 'queryInput.expand')}
-                pressed={big}
-                onClick={() => setBig(!big)}
+            <Popover open={helpOpen} onOpenChange={setHelpOpen}>
+              <PopoverAnchor asChild>
+                <div
+                  ref={controlsRef}
+                  data-slot="query-field-controls"
+                  className={cn(
+                    'absolute z-50 flex items-center gap-0.5',
+                    big
+                      ? 'end-2 top-1.5'
+                      : // Just before the host's end controls (a list search field's switch).
+                        'end-[calc(var(--list-search-end,0.5rem)-0.125rem)] top-1/2 -translate-y-1/2'
+                  )}
+                >
+                  {/* Help and expand: in the field from 768 px, and in the
+                      expanded editor's header; on a phone's one-line field
+                      they sit behind one overflow, so the text keeps its room. */}
+                  <PopoverTrigger asChild>
+                    <FieldIconButton
+                      label={t('queryInput.help.open')}
+                      className={big ? undefined : 'hidden md:flex'}
+                    >
+                      <CircleHelp className="size-4 md:size-3.5" aria-hidden />
+                    </FieldIconButton>
+                  </PopoverTrigger>
+                  <FieldIconButton
+                    label={t(big ? 'queryInput.collapse' : 'queryInput.expand')}
+                    pressed={big}
+                    className={big ? undefined : 'hidden md:flex'}
+                    onClick={() => setBig(!big)}
+                  >
+                    {big ? (
+                      <Minimize2 className="size-4 md:size-3.5" aria-hidden />
+                    ) : (
+                      <Maximize2 className="size-4 md:size-3.5" aria-hidden />
+                    )}
+                  </FieldIconButton>
+                  {!big && (
+                    <span className="contents md:hidden">
+                      <ActionMenu
+                        title={t('queryInput.mode.label')}
+                        label={t('queryInput.more')}
+                        items={[
+                          {
+                            id: 'help',
+                            label: t('queryInput.help.open'),
+                            icon: CircleHelp,
+                            // After the menu has given the focus back.
+                            onSelect: () => setTimeout(() => setHelpOpen(true), 0),
+                          },
+                          {
+                            id: 'expand',
+                            label: t('queryInput.expand'),
+                            icon: Maximize2,
+                            onSelect: () => setBig(true),
+                          },
+                        ]}
+                        trigger={
+                          <FieldIconButton label={t('queryInput.more')} keepFocus={false}>
+                            <MoreHorizontal className="size-4" aria-hidden />
+                          </FieldIconButton>
+                        }
+                      />
+                    </span>
+                  )}
+                  <FieldIconButton
+                    label={t('queryInput.run')}
+                    slot="query-apply"
+                    disabled={disabled || !dirty || checking}
+                    emphasis={dirty}
+                    shortcut="Enter"
+                    onClick={submit}
+                  >
+                    <Play className="size-4 md:size-3.5" aria-hidden />
+                  </FieldIconButton>
+                </div>
+              </PopoverAnchor>
+              <PopoverContent
+                className="w-[min(24rem,calc(100vw-2rem))] space-y-3 text-xs"
+                data-slot="query-help"
+                // Opened from the phone's overflow: the focus coming back to
+                // the field's controls does not close it.
+                onInteractOutside={(e) => {
+                  if (e.target instanceof Node && controlsRef.current?.contains(e.target))
+                    e.preventDefault()
+                }}
               >
-                {big ? (
-                  <Minimize2 className="size-3.5" aria-hidden />
-                ) : (
-                  <Maximize2 className="size-3.5" aria-hidden />
-                )}
-              </FieldIconButton>
-              <FieldIconButton
-                label={t('queryInput.run')}
-                slot="query-apply"
-                disabled={disabled || !dirty || checking}
-                emphasis={dirty}
-                onClick={submit}
-              >
-                <CornerDownLeft className="size-3.5" aria-hidden />
-              </FieldIconButton>
-            </div>
+                <QuerySyntaxHelp entity={entity} />
+              </PopoverContent>
+            </Popover>
           )}
         </div>
         {!big && statusLine}
@@ -697,45 +769,53 @@ function coarsePointer(): boolean {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
 }
 
-/** An icon button inside the field (help, expand, run): 24 px, labelled. */
-function FieldIconButton({
-  label,
-  onClick,
-  disabled,
-  pressed,
-  emphasis,
-  slot,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  pressed?: boolean
-  emphasis?: boolean
-  slot?: string
-  children: ReactNode
-}) {
+/**
+ * An icon button inside the field (help, expand, run, more): 28 px on a phone
+ * (in a 36 px field), 24 px from 768 px; labelled, with a tooltip for a
+ * pointer (`title`). It passes the props of a trigger (`asChild`) through.
+ */
+const FieldIconButton = forwardRef<
+  HTMLButtonElement,
+  Omit<React.ComponentProps<'button'>, 'children'> & {
+    label: string
+    pressed?: boolean
+    emphasis?: boolean
+    slot?: string
+    shortcut?: string
+    /** Keeps the caret in the field on a click (not for a menu trigger). */
+    keepFocus?: boolean
+    children: ReactNode
+  }
+>(function FieldIconButton(
+  { label, pressed, emphasis, slot, shortcut, keepFocus = true, className, children, ...props },
+  ref
+) {
   return (
     <button
+      ref={ref}
       type="button"
       data-slot={slot}
       aria-label={label}
       title={label}
       aria-pressed={pressed}
-      disabled={disabled}
-      // The caret stays in the field.
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
+      aria-keyshortcuts={shortcut}
+      {...props}
+      onMouseDown={(e) => {
+        // The caret stays in the field.
+        if (keepFocus) e.preventDefault()
+        props.onMouseDown?.(e)
+      }}
       className={cn(
-        'text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring flex size-6 items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+        'text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring flex size-7 items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 md:size-6',
         emphasis &&
-          'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+          'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+        className
       )}
     >
       {children}
     </button>
   )
-}
+})
 
 /**
  * The query syntax at hand: how a condition is written, the operators, the
@@ -747,49 +827,37 @@ function QuerySyntaxHelp({ entity }: { entity: QueryEntity }) {
   const { data: schema } = useQuerySchema(entity)
   const fields = schema?.fields ?? []
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={t('queryInput.help.open')}
-          title={t('queryInput.help.open')}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring flex size-6 items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:outline-none"
-        >
-          <CircleHelp className="size-3.5" aria-hidden />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 space-y-3 text-xs" data-slot="query-help">
-        <p className="text-card-title">{t('queryInput.help.title')}</p>
-        <ul className="text-muted-foreground list-disc space-y-1 ps-4">
-          <li>{t('queryInput.help.condition')}</li>
-          <li>{t('queryInput.help.operators')}</li>
-          <li>{t('queryInput.help.join')}</li>
-          <li>{t('queryInput.help.quote')}</li>
-          <li>{t('queryInput.help.keys')}</li>
-        </ul>
+    <>
+      <p className="text-card-title">{t('queryInput.help.title')}</p>
+      <ul className="text-muted-foreground list-disc space-y-1 ps-4">
+        <li>{t('queryInput.help.condition')}</li>
+        <li>{t('queryInput.help.operators')}</li>
+        <li>{t('queryInput.help.join')}</li>
+        <li>{t('queryInput.help.quote')}</li>
+        <li>{t('queryInput.help.keys')}</li>
+      </ul>
+      <div className="space-y-1">
+        <p className="font-medium">{t('queryInput.help.examples')}</p>
+        <p className="font-mono break-all" dir="ltr">
+          {t(`queryInput.help.example.${entity}`)}
+        </p>
+      </div>
+      {fields.length > 0 && (
         <div className="space-y-1">
-          <p className="font-medium">{t('queryInput.help.examples')}</p>
-          <p className="font-mono break-all" dir="ltr">
-            {t(`queryInput.help.example.${entity}`)}
-          </p>
+          <p className="font-medium">{t('queryInput.help.fields')}</p>
+          <ul className="max-h-48 space-y-0.5 overflow-y-auto" dir="ltr">
+            {fields.map((f) => (
+              <li key={f.path} className="flex gap-3">
+                <span className="font-mono">{f.path}</span>
+                <span className="text-muted-foreground font-mono">
+                  {shortOperators(f).join(' ')}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-        {fields.length > 0 && (
-          <div className="space-y-1">
-            <p className="font-medium">{t('queryInput.help.fields')}</p>
-            <ul className="space-y-0.5" dir="ltr">
-              {fields.map((f) => (
-                <li key={f.path} className="flex gap-3">
-                  <span className="font-mono">{f.path}</span>
-                  <span className="text-muted-foreground font-mono">
-                    {shortOperators(f).join(' ')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+      )}
+    </>
   )
 }
 

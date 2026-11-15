@@ -29,7 +29,8 @@
   "queryInput.mode.advanced": "Advanced:",
   "queryInput.mode.label": "Filter as query text",
   "queryInput.mode.removeAdvanced": "Remove the advanced filter",
-  "queryInput.pending": "Edited, not applied yet: press Enter or run the query.",
+  "queryInput.more": "More query options",
+  "queryInput.pending": "Edited, not applied yet: press Enter or apply the query.",
   "queryInput.placeholder.assets": "Search, or e.g. ip=10.0.0.0/16 type=ip_address last_seen<7d",
   "queryInput.placeholder.findings": "Search, or e.g. severity>=high kev=true -status:accepted",
   "queryInput.problem.bad_value": "This value does not fit the field.",
@@ -44,7 +45,7 @@
   "queryInput.problem.unknown_value": "Not a value of this field.",
   "queryInput.problem.wrong_entity": "This box searches another list.",
   "queryInput.results": "{count} results",
-  "queryInput.run": "Run the query (Enter)",
+  "queryInput.run": "Apply query",
   "queryInput.suggestions": "Search suggestions",
   "queryInput.unavailable": "The filter could not be checked right now."
 }

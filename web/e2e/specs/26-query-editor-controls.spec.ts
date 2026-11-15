@@ -167,9 +167,27 @@ test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => 
       const sw = (await page.locator('[data-slot="list-search-mode"]:visible').boundingBox())!
       expect(cb.x).toBeGreaterThanOrEqual(field.x)
       expect(cb.x + cb.width).toBeLessThanOrEqual(sw.x)
+      // Only the overflow and Apply sit in the one-line field (with the mode toggle).
+      await expect(controls.getByRole('button', { name: /query syntax|cú pháp/i })).toBeHidden()
+      const apply = controls.locator('[data-slot="query-apply"]')
+      expect((await apply.boundingBox())!.width).toBe(28)
+      // The text keeps at least 55 % of the field at 375 px.
+      await page.setViewportSize({ width: 375, height: 812 })
+      const share = await box.evaluate((el: HTMLInputElement) => {
+        const cs = getComputedStyle(el)
+        const text = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+        return text / el.getBoundingClientRect().width
+      })
+      expect(share).toBeGreaterThanOrEqual(0.55)
+      await page.setViewportSize({ width: 390, height: 844 })
       await box.fill('severity>=high AND is_in_kev=true AND status!=accepted AND tool="nuclei"')
+      // Edited: the Apply icon is filled.
+      await expect(apply).toHaveClass(/bg-primary/)
       await box.blur()
-      await controls.getByRole('button').nth(1).tap()
+      await controls
+        .getByRole('button', { name: /more query options|thêm tùy chọn truy vấn/i })
+        .tap()
+      await page.getByRole('menuitem', { name: /expand the editor|mở rộng trình soạn/i }).tap()
       const big = page.locator('[data-slot="query-editor-expanded"] textarea')
       await expect(big).toBeVisible()
       await expect(big).not.toBeFocused()

@@ -268,7 +268,7 @@ describe('QueryInput', () => {
       )
     }
     render(<Applied />)
-    const apply = screen.getByRole('button', { name: /run the query/i }) as HTMLButtonElement
+    const apply = screen.getByRole('button', { name: /apply query/i }) as HTMLButtonElement
     expect(apply.disabled).toBe(true)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
     expect(apply.disabled).toBe(false)
@@ -405,6 +405,32 @@ describe('QueryInput', () => {
     } finally {
       window.matchMedia = before
     }
+  })
+
+  it('applies through one icon in the field: no text button, the edit state on the icon', () => {
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    const apply = screen.getByRole('button', { name: 'Apply query' })
+    expect(apply.textContent).toBe('')
+    expect(apply).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(apply.closest('[data-slot="query-field-controls"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^apply$/i })).toBeNull()
+    expect(apply.className).not.toContain('bg-primary')
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
+    expect(apply.className).toContain('bg-primary')
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toMatch(/not applied yet/i)
+  })
+
+  it('on a phone help and expand sit behind one overflow in the one-line field', () => {
+    render(<ListField onSubmit={vi.fn()} />)
+    const more = screen.getByRole('button', { name: 'More query options' })
+    expect(more.closest('[data-slot="query-field-controls"]')).toBeTruthy()
+    // From 768 px the two are their own buttons; below, hidden (CSS).
+    expect(screen.getByRole('button', { name: /query syntax/i })).toHaveClass('hidden', 'md:flex')
+    expect(screen.getByRole('button', { name: /expand the editor/i })).toHaveClass(
+      'hidden',
+      'md:flex'
+    )
+    expect(more.parentElement).toHaveClass('md:hidden')
   })
 
   it("the help lists the syntax and the person's own fields with their operators", async () => {
