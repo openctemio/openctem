@@ -9,7 +9,8 @@ import userEvent from '@testing-library/user-event'
 import { ClipboardList, FileUp, Trash2 } from 'lucide-react'
 import * as React from 'react'
 
-import { ActionMenu, normalizeActionItems, type ActionMenuEntry } from '../action-menu'
+import { ActionMenu, type ActionMenuEntry } from '../action-menu'
+import { normalizeActionItems } from '../action-menu-model'
 
 describe('normalizeActionItems', () => {
   it('keeps groups in first-seen order and moves destructive items last, on their own', () => {
@@ -62,6 +63,22 @@ describe('normalizeActionItems', () => {
     ).toBe(false)
   })
 
+  it('splits a section off with a divider and never heads it', () => {
+    const menu = normalizeActionItems([
+      { id: 'view', label: 'View' },
+      { id: 'copy', label: 'Copy ID', section: 'copy' },
+      { id: 'link', label: 'Copy link', section: 'copy' },
+      { id: 'csv', label: 'CSV', group: 'Export' },
+      { id: 'json', label: 'JSON', group: 'Export' },
+    ])
+    expect(menu.groups.map((g) => g.items.map((i) => i.id))).toEqual([
+      ['view'],
+      ['copy', 'link'],
+      ['csv', 'json'],
+    ])
+    expect(menu.groups.map((g) => g.label)).toEqual([undefined, undefined, 'Export'])
+  })
+
   it('drops an empty submenu and has no groups for no items', () => {
     expect(
       normalizeActionItems([{ id: 's', kind: 'sub', label: 'Move to', items: [] }]).groups
@@ -74,6 +91,11 @@ const desktopWidth = window.innerWidth
 
 function setWidth(w: number) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+}
+
+/** The menu code loads lazily: wait until the trigger is the real one. */
+async function menuReady() {
+  await waitFor(() => expect(document.querySelector('[data-action-menu-pending]')).toBeNull())
 }
 
 function Harness({ items, onImport }: { items?: ActionMenuEntry[]; onImport?: () => void }) {
@@ -120,6 +142,7 @@ describe('ActionMenu from 768 px up', () => {
 
   it('is an anchored menu (APG menu button) with no heading over a single item', async () => {
     render(<Harness />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(trigger)
@@ -134,6 +157,45 @@ describe('ActionMenu from 768 px up', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('opens for a press made while its code was still loading', async () => {
+    // A fresh module: React.lazy keeps what it loaded once, per module instance.
+    vi.resetModules()
+    const { ActionMenu: FreshMenu } = await import('../action-menu')
+    const onRow = vi.fn()
+    render(
+      <div onClick={onRow}>
+        <FreshMenu
+          title="Findings"
+          label="Actions for Findings"
+          trigger={<button aria-label="More actions">More</button>}
+          items={[{ id: 'import', label: 'Import results' }]}
+        />
+      </div>
+    )
+    const pending = screen.getByRole('button', { name: 'More actions' })
+    expect(pending).toHaveAttribute('data-action-menu-pending')
+    expect(pending).toHaveAttribute('aria-busy', 'true')
+    await userEvent.click(pending)
+    const menu = await screen.findByRole('menu', { name: 'More actions' })
+    expect(within(menu).getByRole('menuitem', { name: 'Import results' })).toBeVisible()
+    expect(onRow).not.toHaveBeenCalled()
+  })
+
+  it('keeps clicks on the trigger and in the menu from reaching a clickable row', async () => {
+    const onRow = vi.fn()
+    const onImport = vi.fn()
+    render(
+      <div onClick={onRow}>
+        <Harness onImport={onImport} />
+      </div>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const menu = await screen.findByRole('menu')
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Import results' }))
+    expect(onImport).toHaveBeenCalledOnce()
+    expect(onRow).not.toHaveBeenCalled()
+  })
+
   it('renders nothing when no item is left', () => {
     const { container } = render(<Harness items={[]} />)
     expect(container).toBeEmptyDOMElement()
@@ -146,6 +208,7 @@ describe('ActionMenu below 768 px', () => {
 
   async function openSheet(onImport?: () => void) {
     render(<Harness onImport={onImport} />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -168,6 +231,25 @@ describe('ActionMenu below 768 px', () => {
     expect(rows.at(-1)).toContain('Delete view')
   })
 
+  it('opens the sheet for a press made while its code was still loading', async () => {
+    // A fresh module: React.lazy keeps what it loaded once, per module instance.
+    vi.resetModules()
+    const { ActionMenu: FreshMenu } = await import('../action-menu')
+    render(
+      <FreshMenu
+        title="Findings"
+        label="Actions for Findings"
+        trigger={<button aria-label="More actions">More</button>}
+        items={Array.from({ length: 7 }, (_, i) => ({ id: `a${i}`, label: `Action ${i + 1}` }))}
+      />
+    )
+    const pending = screen.getByRole('button', { name: 'More actions' })
+    expect(pending).toHaveAttribute('data-action-menu-pending')
+    await userEvent.click(pending)
+    const sheet = await screen.findByRole('dialog', { name: 'Findings' })
+    expect(within(sheet).getByRole('button', { name: 'Action 7' })).toBeVisible()
+  })
+
   it('shows the reason of an unavailable item as text and does not act on it', async () => {
     const { sheet } = await openSheet()
     const row = within(sheet).getByRole('button', { name: /Delete view/ })
@@ -187,6 +269,22 @@ describe('ActionMenu below 768 px', () => {
     await waitFor(() => expect(trigger).toHaveFocus())
   })
 
+  it('keeps clicks on the trigger and in the sheet from reaching a clickable card', async () => {
+    const onCard = vi.fn()
+    const onImport = vi.fn()
+    render(
+      <div onClick={onCard}>
+        <Harness onImport={onImport} />
+      </div>
+    )
+    await menuReady()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Findings' })
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Import results' }))
+    expect(onImport).toHaveBeenCalledOnce()
+    expect(onCard).not.toHaveBeenCalled()
+  })
+
   it('drills into a submenu with a Back row; Escape goes back one level, then closes', async () => {
     const { sheet } = await openSheet()
     await userEvent.click(within(sheet).getByRole('button', { name: 'Move to' }))
@@ -201,6 +299,7 @@ describe('ActionMenu below 768 px', () => {
 
   it('focuses the first row only when opened from the keyboard', async () => {
     render(<Harness />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     trigger.focus()
     await userEvent.keyboard('{Enter}')
@@ -231,6 +330,7 @@ describe('ActionMenu below 768 px, by fit', () => {
 
   it('a short menu that fits is an anchored menu with visible reasons', async () => {
     render(<Harness items={short} />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(trigger)
@@ -249,6 +349,7 @@ describe('ActionMenu below 768 px, by fit', () => {
       label: `Action ${i}`,
     }))
     render(<Harness items={many} />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -259,6 +360,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('a short menu without room beside its trigger opens the sheet', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     await userEvent.click(trigger)
     expect(await screen.findByRole('dialog', { name: 'Findings' })).toBeInTheDocument()
@@ -268,6 +370,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('from the keyboard, a menu without room opens the sheet on its first row', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
+    await menuReady()
     screen.getByRole('button', { name: 'More actions' }).focus()
     await userEvent.keyboard('{Enter}')
     const sheet = await screen.findByRole('dialog', { name: 'Findings' })

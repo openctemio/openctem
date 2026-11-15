@@ -551,6 +551,8 @@ export default function CrownJewelsPage() {
         const jewel = row.original
         return (
           <DataTableRowActions
+            title={jewel.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: jewel.name })}
             actions={[
               {
                 label: t('crownJewels.viewDetails', 'View details'),

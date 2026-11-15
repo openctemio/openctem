@@ -384,6 +384,10 @@ export default function CredentialsPage() {
         const credential = row.original
         return (
           <DataTableRowActions
+            title={credential.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+              name: credential.name,
+            })}
             actions={[
               {
                 label: t('credentials.action.view', 'View details'),

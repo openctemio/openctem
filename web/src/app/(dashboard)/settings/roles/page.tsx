@@ -248,7 +248,13 @@ export default function RolesPage() {
             : []),
         ]
 
-        return <DataTableRowActions actions={actions} />
+        return (
+          <DataTableRowActions
+            title={role.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: role.name })}
+            actions={actions}
+          />
+        )
       },
     },
   ]

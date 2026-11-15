@@ -193,6 +193,10 @@ export function SecretStoreSection() {
         cell: ({ row }) => (
           <Can permission={[Permission.SecretStoreWrite, Permission.SecretStoreDelete]}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
                   label: 'Edit',
@@ -214,7 +218,7 @@ export function SecretStoreSection() {
         ),
       },
     ],
-    [handleEditCredential, handleDeleteClick]
+    [handleEditCredential, handleDeleteClick, t]
   )
 
   let body: React.ReactNode

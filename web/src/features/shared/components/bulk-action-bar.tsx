@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { ChevronDown, MoreHorizontal, X } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { DensityScope } from '@/components/ui/density'
 import { useFloatingObstruction } from '@/components/ui/floating'
@@ -55,8 +56,8 @@ export function BulkActionBar({
   noun?: string
   /** Beside the count: the select-all-matching offer or its state. */
   status?: ReactNode
-  /** The other actions, as `DropdownMenuItem`s under More. */
-  more?: ReactNode
+  /** The other actions, under More (the shared `ActionMenu`). */
+  more?: ActionMenuEntry[]
   /**
    * Keep the bar while nothing is selected (a phone list in select mode); the
    * actions are disabled until a row is selected.
@@ -169,20 +170,22 @@ export function BulkActionBar({
             className="contents max-md:flex max-md:min-w-0 max-md:basis-full max-md:items-center max-md:gap-2"
           >
             {children}
-            {more && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            {more && more.length > 0 && (
+              <ActionMenu
+                items={more}
+                title={`${count.toLocaleString()} ${noun ?? t('common.bulkBar.selected', 'selected')}`}
+                label={t('common.bulkBar.label', 'Actions for selected rows')}
+                trigger={
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     className="shrink-0 max-md:ms-auto"
                     aria-label={t('common.bulkBar.more', 'More actions')}
                   >
-                    <MoreHorizontal className="h-4 w-4" />
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top">{more}</DropdownMenuContent>
-              </DropdownMenu>
+                }
+              />
             )}
           </fieldset>
         </DensityScope>

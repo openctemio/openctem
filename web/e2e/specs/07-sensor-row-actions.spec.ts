@@ -39,7 +39,9 @@ async function activeSensorNames(page: Page, n: number): Promise<string[]> {
 }
 
 async function rowAction(page: Page, name: string, action: string) {
-  await rowFor(page, name).getByRole('button', { name: 'Open row actions' }).click()
+  await rowFor(page, name)
+    .getByRole('button', { name: `Actions for ${name}` })
+    .click()
   await page.getByRole('menuitem', { name: action, exact: true }).click()
 }
 
