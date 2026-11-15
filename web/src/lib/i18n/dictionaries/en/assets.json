@@ -1189,6 +1189,7 @@
   "assets.suggestions.search.placeholder": "Search by asset name…",
   "assets.tabs.aria": "Assets sections",
   "assets.tabs.attention": "Needs attention",
+  "assets.tabs.attentionCountUnit": "{count, plural, one {asset waiting} other {assets waiting}}",
   "assets.tabs.changes": "Activity",
   "assets.tabs.groups": "Groups",
   "assets.tabs.inventory": "Inventory",

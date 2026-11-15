@@ -275,9 +275,12 @@ exclusion (Scoping > Boundaries), not a menu choice.
 
 ### Scoping decisions
 
-Assets > Needs attention opens with a "Scoping decisions" group, and the same
-cards show above the inventory while something waits (nothing is drawn when
-both are empty):
+Assets > Needs attention opens with a "Scoping decisions" group. The
+inventory itself draws no queue entry point: the Needs attention tab shows how
+many assets wait for a decision (the Decide monitoring total, which includes
+the primary assets to validate; nothing at zero), from the same one-row
+request the landing's row sends, and Assets pages that do not send that
+request show the figure from the cache only:
 
 - **Validate primary assets** (`/assets/attention/validate-primary`): primary
   assets whose state is `pending_decision` or `unvalidated`.
