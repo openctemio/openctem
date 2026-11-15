@@ -42,7 +42,7 @@ import {
 } from '@/features/findings/lib/practice'
 import { FindingsBaseChips } from '@/features/findings/components/base-chips'
 import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
-import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
+import { ComplianceBenchmarksGate } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
@@ -93,7 +93,9 @@ import {
   ErrorState,
   type MobileRowSelection,
   PageStack,
+  usePhoneSelectMode,
 } from '@/features/shared'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
@@ -114,7 +116,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -2157,6 +2158,9 @@ function FindingsContent() {
       total: findingsResponse.total ?? findingsResponse.data.length,
     })
   }, [findingsResponse, apiFilters, contextLabel, pagination.pageSize])
+  // Phone cards have no header checkbox: "Select" starts the list's More.
+  const isPhone = useIsMobile()
+  const phoneSelect = usePhoneSelectMode(isPhone && !!findingsBulk)
 
   // Triage: the findings still to be decided (status new), in triage mode
   // (/findings/triage, research/234 §5.2). The session remembers this list,
@@ -2204,10 +2208,32 @@ function FindingsContent() {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [])
+  // A practice with nothing at all is its own first run, not a view filtered
+  // to zero: its total in every state (the scope-only stats with the practice
+  // condition) is asked for only when the list came back empty with nothing
+  // else narrowing it, so typing or filtering sends no request for it.
+  const listUnnarrowed = activeCount === 0 && searchQuery.trim() === '' && !hasContextScope
+  const practiceStatsFilters = useMemo(
+    (): FindingStatsFilters => ({ ...overviewStatsFilters, ...practiceViewParams(practiceView) }),
+    [overviewStatsFilters, practiceView]
+  )
+  const { data: practiceStats } = useFindingStatsApi(practiceStatsFilters, {
+    enabled:
+      urlSettled &&
+      !fqParam &&
+      practiceView !== 'all' &&
+      listUnnarrowed &&
+      !!findingsResponse &&
+      (findingsResponse.total ?? 0) === 0,
+  })
+  // Compliance shows its benchmarks above the list (ComplianceBenchmarksGate).
+  const showBenchmarks = !verifyView && practiceView === 'compliance'
   // Which kind of empty this is: from the organization's total (scope-only
-  // stats), the filters the person set, the search, and a refused read.
+  // stats), the practice's total, the filters the person set, the search, and
+  // a refused read.
   const emptyKind = findingsEmptyKind({
     orgTotal: statsFailed ? undefined : findingStats?.by_state?.all,
+    practiceTotal: practiceView === 'all' ? undefined : practiceStats?.by_state?.all,
     filterCount: activeCount,
     hasSearch: searchQuery.trim() !== '',
     hasContextScope,
@@ -2224,7 +2250,8 @@ function FindingsContent() {
     onOpenSheet: () => setFilterSheetOpen(true),
     activeCount,
     controlsId: 'finding-filters',
-    // Add filter is on the toolbar: it opens the side panel from `lg` up.
+    // One filter entry per width: Add filter from 768 (its last row opens
+    // the panel or the sheet), this button joined to the search on a phone.
     sheetOnly: true,
   }
 
@@ -2305,16 +2332,6 @@ function FindingsContent() {
     </Tooltip>
   )
 
-  const exportItems = (
-    <>
-      <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('csv')}>
-        {t('findings.toolbar.exportCsv', 'Export as CSV')}
-      </DropdownMenuItem>
-      <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('ndjson')}>
-        {t('findings.toolbar.exportJson', 'Export as JSON')}
-      </DropdownMenuItem>
-    </>
-  )
   const exportMenu = canExport ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -2327,7 +2344,14 @@ function FindingsContent() {
           {t('findings.toolbar.export', 'Export')}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">{exportItems}</DropdownMenuContent>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('csv')}>
+          {t('findings.toolbar.exportCsv', 'Export as CSV')}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('ndjson')}>
+          {t('findings.toolbar.exportJson', 'Export as JSON')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
     </DropdownMenu>
   ) : null
 
@@ -2343,37 +2367,76 @@ function FindingsContent() {
     </Tooltip>
   ) : null
 
-  // Narrow list: the page actions fold into one menu, so the state lens and
-  // refresh keep their row instead of pushing a control onto a new line.
-  const moreActionsMenu = (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-
-              aria-label={t('findings.toolbar.moreActions', 'More actions')}
-            >
-              <MoreHorizontal className="h-4 w-4" aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{t('findings.toolbar.moreActions', 'More actions')}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        {canQueryTask && (
-          <DropdownMenuItem onClick={() => void openTaskFromFilters()}>
-            <SquareCode className="me-2 h-4 w-4" aria-hidden />
-            {t('remediationQuery.findings.fromFiltersShort')}
-          </DropdownMenuItem>
-        )}
-        {canQueryTask && canExport && <DropdownMenuSeparator />}
-        {canExport && exportItems}
-      </DropdownMenuContent>
-    </DropdownMenu>
+  // The list's More, beside Refresh. On a phone it starts with "Select" (the
+  // cards have no header checkbox), in a group of its own. Narrow, the page
+  // actions fold into it so the row keeps one line; wide, they are buttons
+  // beside it. "Copy link" copies this list as it is shown (filters, sort,
+  // view, mode: all in the address) with the organization, at every width.
+  const exportingReason = t('findings.toolbar.exporting', 'An export is running')
+  const copyListLink = () =>
+    void copyToClipboard(
+      shareableLink(`${window.location.pathname}${window.location.search}`)
+    ).then((ok) =>
+      ok
+        ? toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
+        : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))
+    )
+  const listActionItems: ActionMenuEntry[] = [
+    ...(canQueryTask
+      ? [
+          {
+            id: 'task-from-filters',
+            label: t('remediationQuery.findings.fromFiltersShort'),
+            onSelect: () => void openTaskFromFilters(),
+          },
+        ]
+      : []),
+    ...(canExport
+      ? [
+          {
+            id: 'export-csv',
+            label: t('findings.toolbar.exportCsv', 'Export as CSV'),
+            onSelect: () => void handleExport('csv'),
+            disabledReason: exporting ? exportingReason : undefined,
+          },
+          {
+            id: 'export-json',
+            label: t('findings.toolbar.exportJson', 'Export as JSON'),
+            onSelect: () => void handleExport('ndjson'),
+            disabledReason: exporting ? exportingReason : undefined,
+          },
+        ]
+      : []),
+  ]
+  const copyLinkItem: ActionMenuEntry = {
+    id: 'copy-link',
+    label: t('findings.toolbar.copyLink', 'Copy link'),
+    onSelect: copyListLink,
+  }
+  const listMoreMenu = (items: ActionMenuEntry[]) => (
+    <ActionMenu
+      title={viewTitle}
+      label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+      items={items}
+      trigger={
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t('findings.toolbar.moreActions', 'More actions')}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      }
+    />
   )
+  // Narrow (and a phone): Select, the page actions, Copy link.
+  const narrowMoreMenu = listMoreMenu([
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    ...(groupBy ? [] : listActionItems),
+    copyLinkItem,
+  ])
+  // Wide: the page actions are buttons; More keeps Copy link.
+  const wideMoreMenu = listMoreMenu([copyLinkItem])
 
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
   // group) are context, not facets: always shown, in their own row under the
@@ -2413,9 +2476,11 @@ function FindingsContent() {
     lensFromView: !!savedId && !rawLens,
     onLensChange: setLensParam,
   }
+  // Add filter first, right after the search field: it never changes size, so
+  // the value chips after it never move it (from 768; a phone's one filter
+  // entry is the Filters button joined to the field).
   const toolbarStart = queryMode.active ? null : (
     <>
-      {urlSettled && <FindingsBaseChips {...baseChipProps} />}
       <AddFilterPopover
         contract={loadedContract}
         contractLoading={contractLoading}
@@ -2433,6 +2498,7 @@ function FindingsContent() {
           )
         }
       />
+      {urlSettled && <FindingsBaseChips {...baseChipProps} />}
     </>
   )
 
@@ -2552,16 +2618,13 @@ function FindingsContent() {
         )}
         {refreshButton}
         {!groupBy && (
-          <>
-            <div className="hidden items-center gap-2 @2xl/actions:flex">
-              {exportMenu}
-              {taskFromFiltersButton}
-            </div>
-            {(canQueryTask || canExport) && (
-              <div className="@2xl/actions:hidden">{moreActionsMenu}</div>
-            )}
-          </>
+          <div className="hidden items-center gap-2 @2xl/actions:flex">
+            {exportMenu}
+            {taskFromFiltersButton}
+          </div>
         )}
+        <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
+        <div className="hidden @2xl/actions:block">{wideMoreMenu}</div>
       </div>
     </div>
   )
@@ -2651,6 +2714,7 @@ function FindingsContent() {
     onRowClick: handleRowClick,
     // Groups select their rows; "Select all that match" is for the flat list.
     bulk: findingsBulk ? { ...findingsBulk, matching: undefined } : undefined,
+    selectMode: phoneSelect.selectMode,
     // A new grouping or view starts with nothing selected.
     resetSelectionKey: `${selectionEpoch}|${selectionScope}`,
     mobileRow,
@@ -2699,6 +2763,162 @@ function FindingsContent() {
       href: '/findings/approvals',
     },
   ]
+
+  // The title row and the list; held as skeletons while the Compliance
+  // benchmarks above them load (`ComplianceBenchmarksGate`).
+  const listRegion = (benchmarksPending: boolean) => (
+    <>
+      {!urlSettled || benchmarksPending ? (
+        <Skeleton className="h-9 w-80 max-w-full" />
+      ) : !verifyView ? (
+        primaryRow
+      ) : null}
+      {!urlSettled || benchmarksPending ? (
+        // The render before the address bar holds this page's URL:
+        // nothing here is real yet, and nothing is fetched.
+        <FindingsTableSkeleton />
+      ) : verifyView ? (
+        <div className="space-y-3">
+          <FindingGroupsTable
+            {...groupedProps}
+            dimension="cve_id"
+            query={verifyQueueQuery(apiFilters)}
+            statuses="fix_applied"
+            renderGroupActions={verifyActions}
+            toolbarStart={
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
+                  <ArrowLeft className="me-2 h-4 w-4" />
+                  {t('findings.verify.all', 'All findings')}
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {t('findings.verify.title', 'Fixes awaiting verification')}
+                </span>
+              </>
+            }
+            toolbarEnd={refreshButton}
+            emptyMessage={
+              verifyNoCveTotal > 0
+                ? t('findings.verify.noCveGroups', 'No fixes awaiting verification by CVE')
+                : t('findings.verify.empty', 'No fixes awaiting verification')
+            }
+            emptyDescription={
+              verifyNoCveTotal > 0
+                ? t(
+                    'findings.verify.noCveGroupsHint',
+                    'The fixes below have no CVE: verify them one by one.'
+                  )
+                : t(
+                    'findings.verify.emptyHint',
+                    'Fixes that owners mark as applied wait here for a verifier.'
+                  )
+            }
+          />
+          <VerifyNoCveList
+            query={verifyQueueNoCveQuery(apiFilters)}
+            canVerify={canVerify}
+            onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
+            onDone={refreshAfterDrawerChange}
+            onTotal={setVerifyNoCveTotal}
+            reloadKey={groupsReloadKey}
+          />
+        </div>
+      ) : groupBy ? (
+        <FindingGroupsTable
+          {...groupedProps}
+          dimension={groupBy}
+          query={apiFilters}
+          renderGroupActions={groupActions}
+          onViewGroup={viewableGroup ? viewGroup : undefined}
+          onGroupsLoaded={(groups) =>
+            setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
+          }
+          search={search}
+          filterToggle={filterToggle}
+          toolbarStart={toolbarStart}
+          toolbarBelow={filterBar}
+          toolbarEnd={toolbarEnd}
+          emptyDescription={
+            activeCount > 0
+              ? t('findings.empty.tryRemoving', 'Try removing a filter or clearing them all.')
+              : undefined
+          }
+        />
+      ) : !findingsResponse && findingsLoading ? (
+        <FindingsTableSkeleton contextChips={filterBar} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={findings}
+          isRefreshing={findingsValidating}
+          refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
+          showSearch={false}
+          search={search}
+          filterToggle={filterToggle}
+          toolbarStart={toolbarStart}
+          toolbarEnd={toolbarEnd}
+          toolbarBelow={filterBar}
+          getRowId={(f) => f.id}
+          manualPagination
+          rowCount={total}
+          pagination={pagination}
+          onPaginationChange={setPagination}
+          pageSizeOptions={PAGE_SIZES}
+          paginationNoun={t('findings.list.paginationNoun', 'findings')}
+          sorting={sorting}
+          onSortingChange={handleSortingChange}
+          // No bulk action for this user: no checkbox column either.
+          bulk={findingsBulk}
+          selectMode={phoneSelect.selectMode}
+          resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
+          onRowClick={handleRowClick}
+          rowTone={findingRowTone}
+          mobileRow={mobileRow}
+          columnVisibility={columnVisibility}
+          onColumnVisibilityChange={onColumnVisibilityChange}
+          density={savedId ? decodeDensity(urlDensity ?? viewDensity) : undefined}
+          onDensityChange={savedId ? onDensityChange : undefined}
+          showSelectionCount={false}
+          emptyState={
+            <FindingsEmptyState
+              kind={emptyKind}
+              hiddenCount={typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined}
+              stateLabel={t(lensLabelKey(lens), lens)}
+              filterCount={activeCount}
+              hasSearch={searchQuery.trim() !== ''}
+              canImport={canImport}
+              canSetUpScan={hasPermission(Permission.ScansRead)}
+              canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
+              onImport={() => setImportDialogOpen(true)}
+              onClearFilters={clearAllFilters}
+              onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
+              denial={denialText}
+              practice={practiceView}
+            />
+          }
+          errorState={
+            error && invalidFilterParams(error) ? (
+              <InvalidFilterNotice
+                params={invalidFilterParams(error) ?? []}
+                onRemove={(names) => {
+                  const next = new URLSearchParams(window.location.search)
+                  for (const n of names) next.delete(n)
+                  next.delete('page')
+                  replaceUrlSearch(next)
+                }}
+              />
+            ) : error && accessStateOf(error) !== 'no_access' ? (
+              <ErrorState
+                title={t('findings.list.errorTitle', 'findings')}
+                error={error}
+                onRetry={() => void mutateFindings()}
+              />
+            ) : undefined
+          }
+        />
+      )}
+    </>
+  )
 
   return (
     <>
@@ -2773,164 +2993,13 @@ function FindingsContent() {
 
               <div className="min-w-0 flex-1 space-y-3">
                 {/* Under Compliance: the pass rate per benchmark, its controls
-                    failed first and the assets of each control. */}
-                {urlSettled && !verifyView && practiceView === 'compliance' && (
-                  <ComplianceBenchmarksPanel />
-                )}
-                {!urlSettled ? (
-                  <Skeleton className="h-9 w-80 max-w-full" />
-                ) : !verifyView ? (
-                  primaryRow
-                ) : null}
-                {!urlSettled ? (
-                  // The render before the address bar holds this page's URL:
-                  // nothing here is real yet, and nothing is fetched.
-                  <FindingsTableSkeleton />
-                ) : verifyView ? (
-                  <div className="space-y-3">
-                    <FindingGroupsTable
-                      {...groupedProps}
-                      dimension="cve_id"
-                      query={verifyQueueQuery(apiFilters)}
-                      statuses="fix_applied"
-                      renderGroupActions={verifyActions}
-                      toolbarStart={
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
-                            <ArrowLeft className="me-2 h-4 w-4" />
-                            {t('findings.verify.all', 'All findings')}
-                          </Button>
-                          <span className="text-sm text-muted-foreground">
-                            {t('findings.verify.title', 'Fixes awaiting verification')}
-                          </span>
-                        </>
-                      }
-                      toolbarEnd={refreshButton}
-                      emptyMessage={
-                        verifyNoCveTotal > 0
-                          ? t(
-                              'findings.verify.noCveGroups',
-                              'No fixes awaiting verification by CVE'
-                            )
-                          : t('findings.verify.empty', 'No fixes awaiting verification')
-                      }
-                      emptyDescription={
-                        verifyNoCveTotal > 0
-                          ? t(
-                              'findings.verify.noCveGroupsHint',
-                              'The fixes below have no CVE: verify them one by one.'
-                            )
-                          : t(
-                              'findings.verify.emptyHint',
-                              'Fixes that owners mark as applied wait here for a verifier.'
-                            )
-                      }
-                    />
-                    <VerifyNoCveList
-                      query={verifyQueueNoCveQuery(apiFilters)}
-                      canVerify={canVerify}
-                      onOpen={(f) => handleRowClick(transformApiToUiFinding(f))}
-                      onDone={refreshAfterDrawerChange}
-                      onTotal={setVerifyNoCveTotal}
-                      reloadKey={groupsReloadKey}
-                    />
-                  </div>
-                ) : groupBy ? (
-                  <FindingGroupsTable
-                    {...groupedProps}
-                    dimension={groupBy}
-                    query={apiFilters}
-                    renderGroupActions={groupActions}
-                    onViewGroup={viewableGroup ? viewGroup : undefined}
-                    onGroupsLoaded={(groups) =>
-                      setHasUnassignedGroup(groups.some((g) => g.group_key === 'unassigned'))
-                    }
-                    search={search}
-                    filterToggle={filterToggle}
-                    toolbarStart={toolbarStart}
-                    toolbarBelow={filterBar}
-                    toolbarEnd={toolbarEnd}
-                    emptyDescription={
-                      activeCount > 0
-                        ? t(
-                            'findings.empty.tryRemoving',
-                            'Try removing a filter or clearing them all.'
-                          )
-                        : undefined
-                    }
-                  />
-                ) : !findingsResponse && findingsLoading ? (
-                  <FindingsTableSkeleton contextChips={filterBar} />
+                    failed first and the assets of each control (nothing when
+                    there are none). The list waits for it, so it never pushes
+                    the list down after the first paint. */}
+                {urlSettled && showBenchmarks ? (
+                  <ComplianceBenchmarksGate>{listRegion}</ComplianceBenchmarksGate>
                 ) : (
-                  <DataTable
-                    columns={columns}
-                    data={findings}
-                    isRefreshing={findingsValidating}
-                    refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
-                    showSearch={false}
-                    search={search}
-                    filterToggle={filterToggle}
-                    toolbarStart={toolbarStart}
-                    toolbarEnd={toolbarEnd}
-                    toolbarBelow={filterBar}
-                    getRowId={(f) => f.id}
-                    manualPagination
-                    rowCount={total}
-                    pagination={pagination}
-                    onPaginationChange={setPagination}
-                    pageSizeOptions={PAGE_SIZES}
-                    paginationNoun={t('findings.list.paginationNoun', 'findings')}
-                    sorting={sorting}
-                    onSortingChange={handleSortingChange}
-                    // No bulk action for this user: no checkbox column either.
-                    bulk={findingsBulk}
-                    resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
-                    onRowClick={handleRowClick}
-                    rowTone={findingRowTone}
-                    mobileRow={mobileRow}
-                    columnVisibility={columnVisibility}
-                    onColumnVisibilityChange={onColumnVisibilityChange}
-                    density={savedId ? decodeDensity(urlDensity ?? viewDensity) : undefined}
-                    onDensityChange={savedId ? onDensityChange : undefined}
-                    showSelectionCount={false}
-                    emptyState={
-                      <FindingsEmptyState
-                        kind={emptyKind}
-                        hiddenCount={
-                          typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
-                        }
-                        stateLabel={t(lensLabelKey(lens), lens)}
-                        filterCount={activeCount}
-                        hasSearch={searchQuery.trim() !== ''}
-                        canImport={canImport}
-                        canSetUpScan={hasPermission(Permission.ScansRead)}
-                        canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
-                        onImport={() => setImportDialogOpen(true)}
-                        onClearFilters={clearAllFilters}
-                        onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
-                        denial={denialText}
-                      />
-                    }
-                    errorState={
-                      error && invalidFilterParams(error) ? (
-                        <InvalidFilterNotice
-                          params={invalidFilterParams(error) ?? []}
-                          onRemove={(names) => {
-                            const next = new URLSearchParams(window.location.search)
-                            for (const n of names) next.delete(n)
-                            next.delete('page')
-                            replaceUrlSearch(next)
-                          }}
-                        />
-                      ) : error && accessStateOf(error) !== 'no_access' ? (
-                        <ErrorState
-                          title={t('findings.list.errorTitle', 'findings')}
-                          error={error}
-                          onRetry={() => void mutateFindings()}
-                        />
-                      ) : undefined
-                    }
-                  />
+                  listRegion(false)
                 )}
               </div>
             </div>

@@ -59,10 +59,11 @@ describe('ComplianceBenchmarksPanel', () => {
     expect(within(row).getByText('3 of 4')).toBeInTheDocument()
   })
 
-  it('says how to get checks when there are none', () => {
+  it('draws nothing when there are no checks (the list body says what to do)', () => {
     api.benchmarks.mockReturnValue({ data: { data: [] }, isLoading: false })
-    render(<ComplianceBenchmarksPanel />)
-    expect(screen.getByTestId('compliance-benchmarks-empty')).toBeInTheDocument()
+    const { container } = render(<ComplianceBenchmarksPanel />)
+    expect(container).toBeEmptyDOMElement()
+    expect(screen.queryByTestId('compliance-benchmarks-panel')).toBeNull()
   })
 
   it('opens a benchmark on its failing controls, then a control on its assets', async () => {

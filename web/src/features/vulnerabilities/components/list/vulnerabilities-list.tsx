@@ -376,18 +376,7 @@ function VulnerabilitiesListBody() {
             })}
           />
         ))}
-        trailing={
-          chips.length > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={clearAll}
-            >
-              {t('vulnPage.list.clearFilters', 'Clear filters')}
-            </Button>
-          ) : undefined
-        }
+        onClearAll={chips.length > 1 ? clearAll : undefined}
         end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
       />
     ) : undefined

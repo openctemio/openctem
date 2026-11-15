@@ -37,4 +37,26 @@ describe('findingsEmptyKind', () => {
       'no_access'
     )
   })
+
+  it('a practice with no findings in any state, nothing narrowing it, is its first run', () => {
+    expect(findingsEmptyKind({ ...base, orgTotal: 40, practiceTotal: 0 })).toBe('practice_nothing')
+  })
+
+  it('a practice that has findings, filtered or hidden by the state to zero, is a no-match', () => {
+    expect(findingsEmptyKind({ ...base, orgTotal: 40, practiceTotal: 7 })).toBe('no_match')
+    expect(findingsEmptyKind({ ...base, orgTotal: 40, practiceTotal: 0, filterCount: 1 })).toBe(
+      'no_match'
+    )
+    expect(findingsEmptyKind({ ...base, orgTotal: 40, practiceTotal: 0, hasSearch: true })).toBe(
+      'no_match'
+    )
+  })
+
+  it('an unknown practice total never claims the practice is empty', () => {
+    expect(findingsEmptyKind({ ...base, orgTotal: 40, practiceTotal: undefined })).toBe('no_match')
+  })
+
+  it('an empty organization stays "nothing yet" whatever the practice', () => {
+    expect(findingsEmptyKind({ ...base, orgTotal: 0, practiceTotal: 0 })).toBe('nothing')
+  })
 })

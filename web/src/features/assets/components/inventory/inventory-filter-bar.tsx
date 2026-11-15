@@ -190,7 +190,7 @@ export function InventoryAddFilter({
       onOpenChange={setOpen}
       title={t('assets.filters.add', 'Add filter')}
       className="w-80"
-      trigger={<AddFilterButton className="hidden lg:inline-flex" />}
+      trigger={<AddFilterButton />}
     >
       {picked ? (
         <div className="flex max-h-[min(28rem,70svh)] flex-col">
@@ -290,7 +290,6 @@ export function InventoryFilterBar({
   /** Open the search field's Query mode (the Advanced chip's text). */
   onOpenQuery?: () => void
 } & Pick<EditorProps, 'filters' | 'onChange'>) {
-  const { t } = useTranslation()
   const advancedChip = filters.advanced ? (
     <AdvancedChip
       key="advanced"
@@ -314,13 +313,7 @@ export function InventoryFilterBar({
           <InventoryFilterChip key={c.key} chip={c} onRemove={() => onChange(c.clear(filters))} />
         )),
       ]}
-      trailing={
-        chips.length + (advancedChip ? 1 : 0) > 1 ? (
-          <Button variant="ghost" size="sm" onClick={onClearAll}>
-            {t('assets.filters.clearAll', 'Clear filters')}
-          </Button>
-        ) : undefined
-      }
+      onClearAll={chips.length + (advancedChip ? 1 : 0) > 1 ? onClearAll : undefined}
       end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />
   )

@@ -339,6 +339,18 @@ interface DataTableProps<TData, TValue> {
    * `select` column is replaced by the table's.
    */
   bulk?: DataTableBulk<TData>
+  /**
+   * Phone select mode held by the page, whose own More offers "Select"
+   * (`usePhoneSelectMode`): the toolbar then draws no More of its own. Without
+   * it, a list with `bulk` and phone cards puts "Select" in a toolbar More.
+   */
+  selectMode?: DataTableSelectMode
+}
+
+/** Phone select mode, held by the page (`DataTable`'s `selectMode`). */
+export interface DataTableSelectMode {
+  on: boolean
+  onChange: (on: boolean) => void
 }
 
 /** The two kinds of empty list (`emptyState`). */
@@ -614,6 +626,7 @@ export function DataTable<TData, TValue>({
   defaultDensity = 'default',
   stickyHeader = true,
   bulk,
+  selectMode: selectModeProp,
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
   // With `bulk`, the table owns the checkbox column (the page's own `select`
@@ -1008,18 +1021,24 @@ export function DataTable<TData, TValue>({
   // checkboxes and the bulk bar stays open, its count a menu that selects the
   // page or every row that matches. Clearing the bar (X, Esc) ends it.
   const phoneSelect = phoneCards && hasBulk
-  const [selectMode, setSelectMode] = React.useState(false)
+  const [ownSelectMode, setOwnSelectMode] = React.useState(false)
+  const selectMode = selectModeProp ? selectModeProp.on : ownSelectMode
+  const onSelectModeChange = selectModeProp?.onChange
+  const setSelectMode = React.useCallback(
+    (on: boolean) => (onSelectModeChange ? onSelectModeChange(on) : setOwnSelectMode(on)),
+    [onSelectModeChange]
+  )
   const selecting = phoneSelect && (selectMode || selectedCount > 0)
   React.useEffect(() => {
     if (!phoneSelect && selectMode) setSelectMode(false)
-  }, [phoneSelect, selectMode])
+  }, [phoneSelect, selectMode, setSelectMode])
   const cardsSelectable = canSelectGroups && (!phoneSelect || selecting)
   // X and Esc: nothing selected and, on a phone, select mode over.
   const clearSelection = React.useCallback(() => {
     setMatchingSelected(false)
     table.resetRowSelection()
     setSelectMode(false)
-  }, [table])
+  }, [table, setSelectMode])
   const selectableOnPage = pageRows.filter((r) => r.getCanSelect()).length
   const onBulkSelectionChangeRef = React.useRef(bulk?.onSelectionChange)
   onBulkSelectionChangeRef.current = bulk?.onSelectionChange
@@ -1195,8 +1214,9 @@ export function DataTable<TData, TValue>({
               </span>
             )}
 
-            {/* Phone: cards have no header checkbox; More turns select mode on. */}
-            {phoneSelect && (
+            {/* Phone: cards have no header checkbox; More turns select mode on
+                (the page's own More when it holds the mode). */}
+            {phoneSelect && !selectModeProp && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

@@ -91,7 +91,10 @@ test.describe('touch', () => {
 
   for (const locale of ['en', 'vi'] as const) {
     for (const width of [375, 390] as const) {
-      test(
+      // A phone has no Add filter (its one filter entry is the Filters button
+      // joined to the search field): these cases move to the next picker that
+      // opens as a sheet on a phone (the assignee picker).
+      test.fixme(
         `Add filter opens without the keyboard and follows it once tapped at ${width}px (${locale})`,
         { tag: ['@findings', '@phone'] },
         async ({ page, baseURL }) => {

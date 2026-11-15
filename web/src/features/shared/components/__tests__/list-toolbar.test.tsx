@@ -58,8 +58,28 @@ describe('ListToolbar slots', () => {
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
-  it('joins the filter trigger to the start of the search field (one control, no gap)', () => {
+  it('keeps four round corners while the passed trigger is not drawn at this width', () => {
+    // jsdom draws nothing (no client rects): a trigger hidden by a breakpoint.
     render(<Search filter={<FilterButton />} />)
+    const group = document.querySelector('[data-slot="list-search"]') as HTMLElement
+    expect(group).not.toHaveAttribute('data-joined')
+    expect(screen.getByRole('searchbox', { name: 'Search sensors' })).not.toHaveClass(
+      'rounded-s-none'
+    )
+    expect(screen.getByRole('searchbox').parentElement).not.toHaveClass('-ms-px')
+  })
+
+  it('joins the filter trigger to the start of the search field (one control, no gap)', () => {
+    // The trigger is drawn: it has a box.
+    const rects = vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const drawn = this.dataset.slot === 'filter-button'
+      return (drawn ? [{ width: 32, height: 32 }] : []) as unknown as DOMRectList
+    })
+    render(<Search filter={<FilterButton />} />)
+    rects.mockRestore()
+    expect(document.querySelector('[data-slot="list-search"]')).toHaveAttribute('data-joined')
     const group = document.querySelector('[data-slot="list-search"]') as HTMLElement
     const trigger = screen.getByRole('button', { name: 'Filters' })
     expect(group.contains(trigger)).toBe(true)
@@ -346,10 +366,35 @@ describe('FilterChipsRow', () => {
       />
     )
     const row = document.querySelector('[data-slot="filter-chips-row"]') as HTMLElement
-    expect(row).toHaveClass('flex-nowrap', 'overflow-hidden')
+    // Clipped, not hidden: an overflow-hidden box can still be scrolled sideways.
+    expect(row).toHaveClass('flex-nowrap', 'overflow-clip')
+    expect(row).not.toHaveClass('overflow-hidden')
     expect(row.textContent).toBe('Hiding names not ourschip 1chip 2Add filter361 assets')
     expect(screen.getByText('361 assets').parentElement).toHaveClass('ms-auto', 'shrink-0')
     expect(screen.getByRole('list', { name: 'Active filters' }).children).toHaveLength(2)
+  })
+
+  it('draws Clear filters after the trailing actions when the list can clear', async () => {
+    const onClearAll = vi.fn()
+    render(
+      <FilterChipsRow
+        chips={chips(2)}
+        trailing={<button type="button">Reset to view</button>}
+        onClearAll={onClearAll}
+      />
+    )
+    const trail = document.querySelector('[data-slot="filter-chips-trailing"]') as HTMLElement
+    expect([...trail.querySelectorAll('button')].map((b) => b.textContent)).toEqual([
+      'Reset to view',
+      'Clear filters',
+    ])
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(onClearAll).toHaveBeenCalledOnce()
+  })
+
+  it('draws no Clear filters without onClearAll', () => {
+    render(<FilterChipsRow chips={chips(2)} />)
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull()
   })
 
   it('shows every chip when they fit (or nothing can be measured)', () => {

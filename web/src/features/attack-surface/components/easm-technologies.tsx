@@ -431,6 +431,14 @@ export function EASMTechnologies() {
             <FilterChipsRow
               label={t('attackSurface.technologies.activeFilters', 'Active filters')}
               chips={chips}
+              onClearAll={
+                chips.length > 1
+                  ? () => {
+                      for (const name of ['category', 'version', 'cves', 'kev'] as const)
+                        setFilter(name, '')
+                    }
+                  : undefined
+              }
               end={t('attackSurface.technologies.count', '{count} technology versions', {
                 count: list.total,
               })}

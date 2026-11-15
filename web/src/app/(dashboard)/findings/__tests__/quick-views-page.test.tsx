@@ -153,9 +153,15 @@ describe('Findings list with quick views', () => {
     openAt('?severity=critical&q=login')
     render(<FindingsPage />)
     expect(statsCalls.every((f) => f?.state === 'all')).toBe(true)
-    const keys = new Set(statsCalls.map((f) => JSON.stringify(f)))
+    // The overview numbers: one key. The practice's own total (asked only when
+    // the list comes back empty with nothing narrowing it) adds the practice
+    // condition and nothing else.
+    const practiceKey = (f: Record<string, unknown> | undefined) =>
+      !!f && ('practice' in f || 'practice_not' in f)
+    const overview = statsCalls.filter((f) => !practiceKey(f))
+    const keys = new Set(overview.map((f) => JSON.stringify(f)))
     expect(keys.size).toBe(1)
-    expect(JSON.stringify(statsCalls[0])).not.toContain('critical')
+    for (const f of statsCalls) expect(JSON.stringify(f)).not.toMatch(/critical|login/)
   })
 
   it('names the view in the header: the quick view the URL is', () => {
