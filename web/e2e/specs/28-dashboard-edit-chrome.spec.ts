@@ -20,7 +20,8 @@ async function openEditor(page: Page) {
     }, choice)
   await page.goto('/')
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-  const button = page.getByRole('button', { name: 'Customize' })
+  // A freshly seeded layout also shows a "Customize" link in its notice: the first is the header's.
+  const button = page.getByRole('button', { name: 'Customize' }).first()
   if (await button.isVisible()) {
     await button.click()
   } else {
