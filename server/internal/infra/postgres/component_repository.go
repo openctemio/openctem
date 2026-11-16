@@ -240,20 +240,40 @@ func packageOrder(sortKey string) string {
 	}
 }
 
-// ListPackages returns one page of packages.
+// ListPackages returns one page of packages. The count and the page run
+// in one read-only transaction with the interactive read timeout.
 func (r *ComponentRepository) ListPackages(ctx context.Context, f component.Filter, page pagination.Pagination) (pagination.Result[component.Package], error) {
+	empty := pagination.NewResult([]component.Package{}, 0, page)
+	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
+	if err != nil {
+		return empty, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := listPackages(ctx, tx, f, page)
+	if err != nil {
+		return empty, componentTimeout(ctx, err)
+	}
+	return res, tx.Commit()
+}
+
+// componentTimeout maps a statement timeout to component.ErrQueryTimeout.
+func componentTimeout(ctx context.Context, err error) error {
+	return readTimeout(ctx, readComponents, component.ErrQueryTimeout, err)
+}
+
+func listPackages(ctx context.Context, q groupQuerier, f component.Filter, page pagination.Pagination) (pagination.Result[component.Package], error) {
 	empty := pagination.NewResult([]component.Package{}, 0, page)
 	args := &sqlArgs{}
 	cte := packagesCTE(f, args)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, cte+` SELECT count(*) FROM pkgs`, args.vals...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, cte+` SELECT count(*) FROM pkgs`, args.vals...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("count packages: %w", err)
 	}
 	if total == 0 {
 		return empty, nil
 	}
 	limit, offset := args.add(page.Limit()), args.add(page.Offset())
-	rows, err := r.db.QueryContext(ctx, cte+`
+	rows, err := q.QueryContext(ctx, cte+`
 		SELECT id, name, namespace, purl_type, purl_name, versions, assets, direct_links, transitive_links,
 		       critical, high, medium, low, kev, fix, licenses, risk, first_seen_at, last_seen_at
 		FROM pkgs ORDER BY `+packageOrder(f.Sort)+` LIMIT `+limit+` OFFSET `+offset, args.vals...)
@@ -295,58 +315,74 @@ func scanPackage(row rowScanner) (component.Package, error) {
 }
 
 // PackageFacets returns the facet values of the filtered package set.
+// facetEcosystem is the ecosystem facet's key (its values are mapped from
+// the package URL type).
+const facetEcosystem = "ecosystem"
+
 func (r *ComponentRepository) PackageFacets(ctx context.Context, f component.Filter) (component.Facets, error) {
-	out := component.Facets{}
-	// Each query runs after packagesCTE (pkgs, links): fragments, not statements.
-	queries := map[string]string{
-		"ecosystem": `/* over the packagesCTE relations */ SELECT purl_type, count(*) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
-		"license":   `/* over the packagesCTE relations */ SELECT lic, count(*) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
-		"severity": `/* over the packagesCTE relations */ SELECT s, n FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n FROM pkgs
-			UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0) FROM pkgs
-			UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0) FROM pkgs
-			UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0) FROM pkgs) x WHERE n > 0`,
-		"kev":          `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
-		"has_fix":      `/* over the packagesCTE relations */ SELECT 'true', count(*) FROM pkgs WHERE fix HAVING count(*) > 0`,
-		"relationship": `/* over the packagesCTE relations */ SELECT l.relationship, count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
-		"scope":        `/* over the packagesCTE relations */ SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1 ORDER BY 2 DESC`,
+	// One statement: the package set (packagesCTE) is computed once and
+	// every facet reads it, instead of one statement per facet each
+	// recomputing it. Each part returns (value, count, position in its
+	// facet); the parts run after packagesCTE (pkgs, links): fragments, not
+	// statements.
+	parts := map[string]string{
+		facetEcosystem: `SELECT purl_type, count(*), row_number() OVER (ORDER BY count(*) DESC, purl_type) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
+		"license":      `SELECT lic, count(*), row_number() OVER (ORDER BY count(*) DESC, lic) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
+		auditKeySeverity: `SELECT s, n, o FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n, 1 AS o FROM pkgs
+			UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0), 2 FROM pkgs
+			UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0), 3 FROM pkgs
+			UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0), 4 FROM pkgs) x WHERE n > 0`,
+		"kev":          `SELECT 'true', count(*), 1 FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
+		"has_fix":      `SELECT 'true', count(*), 1 FROM pkgs WHERE fix HAVING count(*) > 0`,
+		"relationship": `SELECT l.relationship, count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, l.relationship) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1`,
+		"scope":        `SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, COALESCE(l.dep_scope, 'runtime')) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1`,
 	}
-	keys := make([]string, 0, len(queries))
-	for k := range queries {
+	keys := make([]string, 0, len(parts))
+	for k := range parts {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	union := make([]string, 0, len(keys))
 	for _, k := range keys {
-		vals, err := r.facet(ctx, f, queries[k])
-		if err != nil {
-			return nil, fmt.Errorf("facet %s: %w", k, err)
-		}
-		if k == "ecosystem" {
-			for i := range vals {
-				vals[i].Value = software.EcosystemForType(vals[i].Value)
-			}
-		}
-		out[k] = vals
+		// k is one of the constant keys above, never request text.
+		union = append(union, "SELECT '"+k+"'::text, x.v::text, x.n::bigint, x.o::bigint FROM ("+parts[k]+") AS x(v, n, o) WHERE x.v IS NOT NULL")
 	}
-	return out, nil
-}
-
-func (r *ComponentRepository) facet(ctx context.Context, f component.Filter, query string) ([]component.FacetValue, error) {
 	args := &sqlArgs{}
-	cte := packagesCTE(f, args)
-	rows, err := r.db.QueryContext(ctx, cte+" "+query, args.vals...)
+	//nolint:gosec // G202: the CTE and the facet parts are constants; every value is bound in args
+	query := packagesCTE(f, args) + " SELECT * FROM (" + strings.Join(union, " UNION ALL ") + ") facets ORDER BY 1, 4"
+
+	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	vals := []component.FacetValue{}
-	for rows.Next() {
-		var v component.FacetValue
-		if err := rows.Scan(&v.Value, &v.Count); err != nil {
-			return nil, err
-		}
-		vals = append(vals, v)
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, query, args.vals...)
+	if err != nil {
+		return nil, componentTimeout(ctx, fmt.Errorf("component facets: %w", err))
 	}
-	return vals, rows.Err()
+	defer rows.Close()
+	out := component.Facets{}
+	for _, k := range keys {
+		out[k] = []component.FacetValue{}
+	}
+	for rows.Next() {
+		var (
+			key string
+			v   component.FacetValue
+			pos int64
+		)
+		if err := rows.Scan(&key, &v.Value, &v.Count, &pos); err != nil {
+			return nil, fmt.Errorf("scan component facet: %w", err)
+		}
+		if key == facetEcosystem {
+			v.Value = software.EcosystemForType(v.Value)
+		}
+		out[key] = append(out[key], v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, componentTimeout(ctx, fmt.Errorf("component facets: %w", err))
+	}
+	return out, nil
 }
 
 // queryIDs runs a query returning one text column.
@@ -372,7 +408,12 @@ func (r *ComponentRepository) Summary(ctx context.Context, f component.Filter) (
 	var s component.Summary
 	args := &sqlArgs{}
 	cte := packagesCTE(f, args)
-	err := r.db.QueryRowContext(ctx, cte+`
+	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
+	if err != nil {
+		return s, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	err = tx.QueryRowContext(ctx, cte+`
 		SELECT count(*),
 		       (SELECT count(DISTINCT l.version_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id),
 		       (SELECT count(DISTINCT l.asset_id) FROM links l JOIN pkgs ON pkgs.id = l.product_id),
@@ -381,9 +422,9 @@ func (r *ComponentRepository) Summary(ctx context.Context, f component.Filter) (
 		       count(*) FILTER (WHERE fix)
 		FROM pkgs`, args.vals...).Scan(&s.Packages, &s.Versions, &s.Assets, &s.VulnerablePackages, &s.KEVPackages, &s.FixablePackages)
 	if err != nil {
-		return s, fmt.Errorf("component summary: %w", err)
+		return s, componentTimeout(ctx, fmt.Errorf("component summary: %w", err))
 	}
-	return s, nil
+	return s, tx.Commit()
 }
 
 // GetPackage returns a package visible through an in-scope link.
