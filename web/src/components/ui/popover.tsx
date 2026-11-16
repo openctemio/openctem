@@ -41,8 +41,9 @@ function PopoverTrigger({ ref, ...props }: React.ComponentProps<typeof PopoverPr
 }
 
 /**
- * Anchored panel. Lines up with the start or end edge of its trigger by the
- * half of the screen the trigger is in (unless `align` says), is never taller
+ * Anchored panel. Lines up with its trigger's start edge, or the end edge
+ * when the start would cross the screen gutter or the drawer it was opened
+ * from (`chooseAlign`; unless `align` says), is never taller
  * than the room on its side (it scrolls inside, with a cue) and never
  * narrower than its trigger. On a touch screen it opens without focusing a
  * text field (`touch-focus.ts`), unless it is a `typingSurface`.
@@ -54,6 +55,7 @@ function PopoverContent({
   sideOffset = 4,
   collisionPadding = FLOATING_COLLISION_PADDING,
   style,
+  ref,
   onOpenAutoFocus,
   typingSurface,
   children,
@@ -62,7 +64,21 @@ function PopoverContent({
   /** Its one purpose is typing: the field gets focus on open on a touch screen too. */
   typingSurface?: TouchTypingSurface
 }) {
-  const floating = useFloatingContent({ align, side, collisionPadding, fallbackAlign: 'start' })
+  const floating = useFloatingContent({
+    align,
+    side,
+    collisionPadding,
+    fallbackAlign: 'start',
+  })
+  const { attach } = floating
+  const contentRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      attach(node)
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref, attach]
+  )
   const handleOpenAutoFocus = React.useCallback(
     (event: Event) => {
       onOpenAutoFocus?.(event)
@@ -73,6 +89,7 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
+        ref={contentRef}
         data-slot="popover-content"
         side={side}
         align={floating.align}

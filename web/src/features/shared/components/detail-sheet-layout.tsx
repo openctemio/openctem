@@ -462,7 +462,7 @@ export function DetailHeader({
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-48">
+              <DropdownMenuContent>
                 {fullPageHref && (
                   <DropdownMenuItem asChild>
                     <Link href={fullPageHref}>

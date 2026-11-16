@@ -262,7 +262,7 @@ export function SectionTabs({
             {moreLabel}
             <ChevronDown aria-hidden />
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="min-w-44">
+          <DropdownMenuContent>
             {fit.overflow.map((i) => {
               const tab = tabs[i]
               return (
