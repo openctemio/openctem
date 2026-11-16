@@ -8,6 +8,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ClipboardList, FileUp, Trash2 } from 'lucide-react'
 import * as React from 'react'
+import { renderToString } from 'react-dom/server'
 
 import { ActionMenu, type ActionMenuEntry } from '../action-menu'
 import { normalizeActionItems } from '../action-menu-model'
@@ -155,6 +156,25 @@ describe('ActionMenu from 768 px up', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     expect(trigger).toHaveFocus()
+  })
+
+  it('renders the real trigger at once when its code is already in', async () => {
+    // A fresh module whose code was loaded before the first render: as a second
+    // menu on a page finds it. A first pass that suspends would show the busy
+    // placeholder, which the real button then replaces under a press in flight.
+    vi.resetModules()
+    const fresh = await import('../action-menu')
+    await fresh.preloadActionMenu()
+    const html = renderToString(
+      <fresh.ActionMenu
+        title="Findings"
+        label="Actions for Findings"
+        trigger={<button aria-label="More actions">More</button>}
+        items={[{ id: 'import', label: 'Import results' }]}
+      />
+    )
+    expect(html).toContain('aria-label="More actions"')
+    expect(html).not.toContain('data-action-menu-pending')
   })
 
   it('opens for a press made while its code was still loading', async () => {
