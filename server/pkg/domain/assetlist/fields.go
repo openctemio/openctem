@@ -97,13 +97,16 @@ var tagAllSQL = `(` + tagSQL + ` AND NOT EXISTS (SELECT 1 FROM unnest({arg}) AS 
 	VisibleProgramLinkSQL("a.id", "a.tenant_id", "{user}", "AND t = want.tag") + `)))))`
 
 // openFindingsSQL is "the asset has an open finding that counts" (the
-// asset's tenant pinned on the finding as well).
+// asset's tenant pinned on the finding as well). A member counts only the
+// findings their findings list shows: a pentest finding only when they are on
+// its campaign (vulnerability.FindingCountVisibilitySQL), so neither the
+// filter, the sort nor the number tells them that one exists.
 var openFindingsSQL = "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND " +
-	vulnerability.OpenStatusSQL("f.status") + " AND NOT f.branch_only)"
+	vulnerability.OpenStatusSQL("f.status") + " AND NOT f.branch_only AND " + vulnerability.FindingCountVisibilitySQL("f") + ")"
 
 // openFindingCountSQL counts the same findings.
 var openFindingCountSQL = "(SELECT count(*) FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND " +
-	vulnerability.OpenStatusSQL("f.status") + " AND NOT f.branch_only)"
+	vulnerability.OpenStatusSQL("f.status") + " AND NOT f.branch_only AND " + vulnerability.FindingCountVisibilitySQL("f") + ")"
 
 // coverageSince is the start of the coverage window, as SQL.
 var coverageSince = fmt.Sprintf("(now() - interval '%d seconds')", int64(asset.CoverageWindow.Seconds()))
