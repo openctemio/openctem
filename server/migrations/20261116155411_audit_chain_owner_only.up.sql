@@ -39,9 +39,13 @@
 -- not go through the functions. The API logs a warning at start-up in that
 -- case (docs/deployment/database-roles.md).
 --
--- Locks: CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock on each audit table
--- for the moment it runs (appends wait, reads do not); no row is read or
--- rewritten. GRANT and REVOKE change the catalog only.
+-- Locks: every trigger is created with CREATE OR REPLACE TRIGGER (never DROP
+-- TRIGGER, which takes ACCESS EXCLUSIVE and would queue reads behind it). That
+-- takes a SHARE ROW EXCLUSIVE lock on each of the five tables for the moment
+-- it runs: appends (and other writes) wait, reads do not. No row is read or
+-- rewritten, so the time does not grow with the table. lock_timeout bounds the
+-- wait behind a long writer. GRANT, REVOKE and CREATE FUNCTION change the
+-- catalog only. Requires PostgreSQL 14 or later (CREATE OR REPLACE TRIGGER).
 
 SET LOCAL lock_timeout = '10s';
 
@@ -79,69 +83,55 @@ END
 $$;
 
 -- 2. The UPDATE and TRUNCATE triggers of audit_log_db_chain move to the new
---    guard (same names); the old guard, the one the setting opened, goes.
-DROP TRIGGER IF EXISTS audit_log_refuse_update ON audit_logs;
-CREATE TRIGGER audit_log_refuse_update
+--    guard (same names, replaced in place); the old guard, the one the setting
+--    opened, goes.
+CREATE OR REPLACE TRIGGER audit_log_refuse_update
     BEFORE UPDATE ON audit_logs
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_refuse_truncate ON audit_logs;
-CREATE TRIGGER audit_log_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_log_refuse_truncate
     BEFORE TRUNCATE ON audit_logs
     FOR EACH STATEMENT EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_chain_refuse_update ON audit_log_chain;
-CREATE TRIGGER audit_log_chain_refuse_update
+CREATE OR REPLACE TRIGGER audit_log_chain_refuse_update
     BEFORE UPDATE ON audit_log_chain
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_chain_refuse_truncate ON audit_log_chain;
-CREATE TRIGGER audit_log_chain_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_log_chain_refuse_truncate
     BEFORE TRUNCATE ON audit_log_chain
     FOR EACH STATEMENT EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_anchors_refuse_update ON audit_chain_anchors;
-CREATE TRIGGER audit_chain_anchors_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_anchors_refuse_update
     BEFORE UPDATE ON audit_chain_anchors
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaselines_refuse_update ON audit_chain_rebaselines;
-CREATE TRIGGER audit_chain_rebaselines_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_rebaselines_refuse_update
     BEFORE UPDATE ON audit_chain_rebaselines
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaseline_entries_refuse_update ON audit_chain_rebaseline_entries;
-CREATE TRIGGER audit_chain_rebaseline_entries_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_rebaseline_entries_refuse_update
     BEFORE UPDATE ON audit_chain_rebaseline_entries
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
 DROP FUNCTION IF EXISTS audit_log_refuse_change();
 
 -- 3. DELETE is refused on all five tables (it had no trigger), TRUNCATE on the
 --    three evidence tables too.
-DROP TRIGGER IF EXISTS audit_log_refuse_delete ON audit_logs;
-CREATE TRIGGER audit_log_refuse_delete
+CREATE OR REPLACE TRIGGER audit_log_refuse_delete
     BEFORE DELETE ON audit_logs
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_chain_refuse_delete ON audit_log_chain;
-CREATE TRIGGER audit_log_chain_refuse_delete
+CREATE OR REPLACE TRIGGER audit_log_chain_refuse_delete
     BEFORE DELETE ON audit_log_chain
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_anchors_refuse_delete ON audit_chain_anchors;
-CREATE TRIGGER audit_chain_anchors_refuse_delete
+CREATE OR REPLACE TRIGGER audit_chain_anchors_refuse_delete
     BEFORE DELETE ON audit_chain_anchors
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_anchors_refuse_truncate ON audit_chain_anchors;
-CREATE TRIGGER audit_chain_anchors_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_chain_anchors_refuse_truncate
     BEFORE TRUNCATE ON audit_chain_anchors
     FOR EACH STATEMENT EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaselines_refuse_delete ON audit_chain_rebaselines;
-CREATE TRIGGER audit_chain_rebaselines_refuse_delete
+CREATE OR REPLACE TRIGGER audit_chain_rebaselines_refuse_delete
     BEFORE DELETE ON audit_chain_rebaselines
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaselines_refuse_truncate ON audit_chain_rebaselines;
-CREATE TRIGGER audit_chain_rebaselines_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_chain_rebaselines_refuse_truncate
     BEFORE TRUNCATE ON audit_chain_rebaselines
     FOR EACH STATEMENT EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaseline_entries_refuse_delete ON audit_chain_rebaseline_entries;
-CREATE TRIGGER audit_chain_rebaseline_entries_refuse_delete
+CREATE OR REPLACE TRIGGER audit_chain_rebaseline_entries_refuse_delete
     BEFORE DELETE ON audit_chain_rebaseline_entries
     FOR EACH ROW EXECUTE FUNCTION audit_chain_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaseline_entries_refuse_truncate ON audit_chain_rebaseline_entries;
-CREATE TRIGGER audit_chain_rebaseline_entries_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_chain_rebaseline_entries_refuse_truncate
     BEFORE TRUNCATE ON audit_chain_rebaseline_entries
     FOR EACH STATEMENT EXECUTE FUNCTION audit_chain_refuse_change();
 

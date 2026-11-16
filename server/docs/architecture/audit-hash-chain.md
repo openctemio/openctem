@@ -98,12 +98,16 @@ a rebaseline re-signs each row in its own version.
   earlier releases no longer opens anything.
 - `UNIQUE (tenant_id, prev_hash)`, checked at commit, refuses a fork: two rows
   of one chain linking to the same predecessor.
-- `audit_logs` has no foreign key to `users` or `tenants`: deleting an account
-  or an organization leaves the audit rows (and their ids) as recorded, in
-  their organization's chain. Retention removes them. No path erases audit
-  rows today; the hash leaves out the actor's e-mail, IP address and user
-  agent so that a future erasure function can clear them without breaking the
-  chain.
+- None of the five tables has a foreign key to `users` or `tenants`: deleting
+  an account or an organization (`TenantRepository.Delete`, the organization
+  deletion worker, the console purge) does not touch them and is not blocked
+  by the guard. The organization's audit rows, chain and evidence stay as
+  recorded, keep verifying, and age out through retention like any other
+  chain (retention prunes the chains of organizations that no longer exist).
+  No path erases audit rows today, so no function can erase or shorten the
+  chain of an organization that still exists; the hash leaves out the actor's
+  e-mail, IP address and user agent so that a future erasure function can
+  clear them without breaking the chain.
 - The chain row's foreign key (`ON DELETE RESTRICT`) means an audit row cannot
   go without its chain row going first, which verification reports.
 
@@ -113,6 +117,7 @@ a rebaseline re-signs each row in its own version.
 |---|---|
 | The API and anything using its credentials (an injection, a stolen `DB_PASSWORD`), with the least-privilege roles | No. Retention removes only rows over 365 days old, as the oldest prefix, with an anchor; a rebaseline is archived and checked. |
 | The same, when the API connects as the schema owner (one role for migrations and the API) | Yes: an owner may change its own tables and drop triggers. The triggers still refuse a change that does not go through the functions, and the API logs `audit log preflight: the API connects as the owner of the audit tables` at start-up. Use the least-privilege roles (`docs/deployment/database-roles.md`). |
+| The same, within the two functions | Only what retention and rebaseline may do, and always with evidence: prune the oldest prefix of any chain whose rows are all over 365 days old, earlier than a longer `AUDIT_RETENTION_DAYS` would (an anchor row records it, with the archive path the caller gave); re-sign a chain whose entries already hash and link correctly (a rebaseline record archives every overwritten hash). It can also append new rows, with any `logged_at`, as the API does; appends never remove or reorder history. |
 | The schema owner or a superuser | Yes. Verification finds a removed or changed row (a broken link or hash), but no off-database copy of an organization chain's head is exported today (the head export and the forwarding sink exist for the administrators' log only, below), so a complete re-hash by the owner is not detected. |
 
 ## Retention
