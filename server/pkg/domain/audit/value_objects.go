@@ -492,7 +492,11 @@ const (
 	ActionSensorPairingSuperseded Action = "sensor.pairing_superseded"
 	// LookupLocked: a user hit the failed pairing-code lookup limit (high).
 	ActionSensorPairingLookupLocked Action = "sensor.pairing_lookup_locked"
-	ActionSensorRepaired            Action = "sensor.repaired"
+	// CodeRefused: a sensor started pairing with a code of the organization
+	// that no longer pairs (expired, used, canceled, or held by another
+	// sensor); the code was not used.
+	ActionSensorPairingCodeRefused Action = "sensor.pairing_code_refused"
+	ActionSensorRepaired           Action = "sensor.repaired"
 	// Organization enrollment tokens (docs/architecture/sensor-pairing.md).
 	ActionSensorEnrollmentTokenCreated Action = "sensor.enrollment_token_created"
 	ActionSensorEnrollmentTokenRevoked Action = "sensor.enrollment_token_revoked"
@@ -981,7 +985,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
 		ActionSensorResultContractMismatch,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked, ActionSensorPairingCodeRefused,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
@@ -1134,7 +1138,7 @@ func (a Action) Category() string {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked, ActionSensorPairingCodeRefused,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
