@@ -98,6 +98,7 @@ import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
+import en_queryFields from './en/queryFields.json'
 import en_queryInput from './en/queryInput.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
@@ -203,6 +204,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationHub: en_remediationHub,
   remediationClaim: en_remediationClaim,
   remediationCampaigns: en_remediationCampaigns,
+  queryFields: en_queryFields,
   queryInput: en_queryInput,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,

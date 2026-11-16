@@ -98,6 +98,7 @@ import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationHub from './vi/remediationHub.json'
 import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
+import vi_queryFields from './vi/queryFields.json'
 import vi_queryInput from './vi/queryInput.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
@@ -203,6 +204,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationHub: vi_remediationHub,
   remediationClaim: vi_remediationClaim,
   remediationCampaigns: vi_remediationCampaigns,
+  queryFields: vi_queryFields,
   queryInput: vi_queryInput,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
