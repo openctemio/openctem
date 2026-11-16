@@ -14,13 +14,7 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/features/shared/components/data-table/data-table-column-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
   Dialog,
   DialogContent,
@@ -37,7 +31,7 @@ import { confirmName } from '@/lib/confirm-name'
 import { cn } from '@/lib/utils'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 
 import {
   useSuppressions,
@@ -58,9 +52,6 @@ import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
 import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
-
-// Approve action accent in the row menu.
-const MENU_APPROVE_ICON = 'text-success'
 
 function relative(iso: string | null | undefined, locale: string): string {
   return formatRelative(iso, '—', locale)
@@ -85,6 +76,7 @@ const STATUS_VALUES: TabValue[] = ['all', 'pending', 'approved', 'rejected', 'ex
 
 export default function ExceptionsPage() {
   const { t, locale } = useTranslation()
+  const { can } = usePermissions()
   // The status filter lives in the URL so a filtered view survives reload and
   // can be shared (e.g. a link straight to the pending-approval queue).
   const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
@@ -382,52 +374,64 @@ export default function ExceptionsPage() {
         enableHiding: false,
         cell: ({ row }) => {
           const rule = row.original
+          const label = t('common.actionMenu.label', 'Actions for {name}', { name: rule.name })
+          const items: ActionMenuEntry[] = [
+            ...(rule.status === 'pending' && can(Permission.SuppressionsApprove)
+              ? [
+                  {
+                    id: 'approve',
+                    section: 'review',
+                    label: t('exceptions.page.approve', 'Approve'),
+                    icon: Check,
+                    onSelect: () => openApprove(rule),
+                  },
+                  {
+                    id: 'reject',
+                    section: 'review',
+                    label: t('exceptions.page.reject', 'Reject'),
+                    icon: X,
+                    onSelect: () => openReject(rule),
+                  },
+                ]
+              : []),
+            ...(can(Permission.SuppressionsWrite)
+              ? [
+                  {
+                    id: 'edit',
+                    label: t('exceptions.page.edit', 'Edit'),
+                    icon: Pencil,
+                    onSelect: () => openEdit(rule),
+                  },
+                ]
+              : []),
+            ...(can(Permission.SuppressionsDelete)
+              ? [
+                  {
+                    id: 'delete',
+                    label: t('exceptions.page.delete', 'Delete'),
+                    icon: Trash2,
+                    destructive: true,
+                    onSelect: () => openDelete(rule),
+                  },
+                ]
+              : []),
+          ]
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="p-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
+            <ActionMenu
+              title={rule.name}
+              label={label}
+              items={items}
+              trigger={
+                <Button size="icon" variant="ghost" className="p-0" aria-label={label}>
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-                {rule.status === 'pending' && (
-                  <Can permission={Permission.SuppressionsApprove}>
-                    <DropdownMenuItem onClick={() => openApprove(rule)}>
-                      <Check className={cn('me-2 h-4 w-4', MENU_APPROVE_ICON)} />
-                      {t('exceptions.page.approve', 'Approve')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openReject(rule)}>
-                      <X className="me-2 h-4 w-4 text-destructive" />
-                      {t('exceptions.page.reject', 'Reject')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </Can>
-                )}
-                <Can permission={Permission.SuppressionsWrite}>
-                  <DropdownMenuItem onClick={() => openEdit(rule)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    {t('exceptions.page.edit', 'Edit')}
-                  </DropdownMenuItem>
-                </Can>
-                <Can permission={Permission.SuppressionsDelete}>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-destructive" onClick={() => openDelete(rule)}>
-                    <Trash2 className="me-2 h-4 w-4" />
-                    {t('exceptions.page.delete', 'Delete')}
-                  </DropdownMenuItem>
-                </Can>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           )
         },
       },
     ],
-    [openApprove, openReject, openEdit, openDelete, t]
+    [openApprove, openReject, openEdit, openDelete, can, t]
   )
 
   const metrics: MetricStripItem[] = [

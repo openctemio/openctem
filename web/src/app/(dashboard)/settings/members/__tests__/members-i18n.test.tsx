@@ -25,6 +25,11 @@ vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
   Permission: { MembersInvite: 'members:invite', MembersManage: 'members:manage' },
   usePermissions: () => ({
+    // The row menu hides route-gated items by these (an owner passes).
+    permissions: ['team:roles:assign', 'team:members:write'],
+    can: () => true,
+    isLoading: false,
+    tenantRole: 'owner',
     isOwner: () => true,
     isAtLeast: () => true,
     canAny: () => permState.canInvite,

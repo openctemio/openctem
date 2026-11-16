@@ -521,6 +521,7 @@
   "org.ownership.error.void": "Người đề nghị không còn là chủ sở hữu nên đề nghị này không còn hiệu lực.",
   "org.ownership.outsider.confirm": "Tôi xác nhận {name} trở thành thành viên nội bộ",
   "org.ownership.outsider.notice": "{name} ở ngoài tổ chức và không tổ chức nào quản lý địa chỉ của họ. Khi chấp nhận, họ trở thành thành viên nội bộ và thời hạn truy cập của họ được gỡ bỏ.",
+  "org.ownership.pendingReason": "Một yêu cầu chuyển quyền sở hữu đang chờ trả lời: hãy hủy nó trước.",
   "org.ownership.previousRole.hint": "Các vai trò tùy chỉnh và nhóm của bạn được giữ nguyên. Chỉ chủ sở hữu mới có thể xóa tổ chức, chỉ định quản trị viên và thay đổi cài đặt bảo mật.",
   "org.ownership.previousRole.label": "Sau khi chuyển, bạn trở thành",
   "org.ownership.theOwner": "Chủ sở hữu",

@@ -8,7 +8,7 @@
  * where allowed, move with a reason (server/docs/rfcs/RFC-098-remediation-tasks.md).
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { toast } from 'sonner'
@@ -105,7 +105,9 @@ export function AddFindingsToTaskDialog({
   const [reason, setReason] = useState('')
 
   const n = findings.length
-  useEffect(() => {
+  // Before the first paint: the dialog is visible with its defaults already set,
+  // so a title typed right away is not overwritten by them.
+  useLayoutEffect(() => {
     if (!open) return
     setMode('new')
     setTitle(

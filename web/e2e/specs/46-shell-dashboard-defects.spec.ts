@@ -50,12 +50,12 @@ for (const vp of VIEWPORTS) {
           await page.reload()
           const card = page.locator('[data-slot=card]', { hasText: name })
           await expect(card).toBeVisible({ timeout: 30_000 })
-          const more = card.getByRole('button', { name: `More actions for ${name}` })
+          const more = card.getByRole('button', { name: `Actions for ${name}` })
           await expect(more).toBeVisible()
           const c = (await card.boundingBox())!
           // One row of actions: Open, Customize and the menu, all inside the card.
           let top: number | undefined
-          for (const label of ['Open', 'Customize', `More actions for ${name}`]) {
+          for (const label of ['Open', 'Customize', `Actions for ${name}`]) {
             const b = (await card.getByRole('button', { name: label, exact: true }).boundingBox())!
             top ??= b.y + b.height / 2
             expect(Math.abs(b.y + b.height / 2 - top), `${label} on the first row`).toBeLessThan(2)
