@@ -115,7 +115,7 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 			listArgs = append(listArgs, q.After.LastSeen, q.After.ID.String())
 		}
 	}
-	query := buildAssetPageQuery(r.selectQuery(), listWhere, order, perPage, offset)
+	query := buildAssetPageQuery(r.selectQuery(ctx), listWhere, order, perPage, offset)
 	rows, err := tx.QueryContext(ctx, query, listArgs...)
 	if err != nil {
 		return asset.WhereResult{}, assetTimeout(fmt.Errorf("list assets: %w", err))
