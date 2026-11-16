@@ -940,6 +940,8 @@
   "scans.configs.searchLabel": "Search scan configurations",
   "scans.configs.searchPlaceholder": "Search configurations…",
   "scans.configs.statsErrorTitle": "scan counts",
+  "scans.configs.total": "{count, plural, one {# scan configuration} other {# scan configurations}}",
+  "scans.configs.viewAll": "All scan configurations",
   "scans.controls.enable": "Enable",
   "scans.controls.enabled": "Scan \"{name}\" enabled",
   "scans.controls.runNow": "Run now",

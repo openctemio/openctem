@@ -106,13 +106,9 @@ import { Button } from '@/components/ui/button'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { DecorativeText } from '@/components/ui/decorative-text'
 import { Tag } from '@/components/ui/tag'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
+import { ListCount } from '@/features/shared/components/list-title-row'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1702,10 +1698,12 @@ function FindingsContent() {
         id: 'asset',
         meta: {
           kind: 'asset',
-          // 160 when there is room; the title takes the rest. A table frame
-          // gives spare width to columns without a width, so the cap is the width.
+          // 160, down to 112 on a narrow frame; with spare width it grows to
+          // 280 before the title (floor 280) takes the rest, so a location is
+          // not cut beside an empty title column (fit-columns.ts).
           width: 160,
           minWidth: 112,
+          maxWidth: 280,
           label: t('findings.list.location'),
         },
         enableSorting: false,
@@ -2326,6 +2324,13 @@ function FindingsContent() {
     query: queryMode.query,
   }
 
+  const groupByLabels = [
+    t('findings.toolbar.groupNone', 'Group'),
+    ...GROUP_BY_DIMENSIONS.map((d) => t(GROUP_BY_LABEL_KEYS[d], GROUP_BY_LABELS[d])),
+  ]
+  const groupByText = groupBy
+    ? t(GROUP_BY_LABEL_KEYS[groupBy], GROUP_BY_LABELS[groupBy])
+    : groupByLabels[0]
   const groupBySelect = (
     <Select
       value={groupBy ?? 'none'}
@@ -2336,12 +2341,17 @@ function FindingsContent() {
     >
       <SelectTrigger
         iconOnlyBelow="@5xl/toolbar"
-        className="w-auto gap-2 @5xl/toolbar:min-w-36 group-data-[fold=true]/toolbar:min-w-0"
+        className="w-auto gap-2"
         aria-label={t('findings.toolbar.groupLabel', 'Group findings')}
+        // The value, in full, as the tooltip and the accessible description.
+        title={groupByText}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
+        {/* One width whatever the grouping: sized by every label. */}
         <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
-          <SelectValue />
+          <ToolbarSlot options={groupByLabels} className="max-w-40">
+            {groupByText}
+          </ToolbarSlot>
         </span>
       </SelectTrigger>
       <SelectContent align="end">
@@ -2475,7 +2485,7 @@ function FindingsContent() {
   // Narrow (and a phone): Select, the page actions, Copy link.
   const narrowMoreMenu = listMoreMenu([
     ...(phoneSelect.item ? [phoneSelect.item] : []),
-    ...(groupBy ? [] : listActionItems),
+    ...listActionItems,
     copyLinkItem,
   ])
   // Wide: the page actions are buttons; More keeps Copy link.
@@ -2522,7 +2532,9 @@ function FindingsContent() {
   // Add filter first, right after the search field: it never changes size, so
   // the value chips after it never move it (from 768; a phone's one filter
   // entry is the Filters button joined to the field).
-  const toolbarStart = queryMode.active ? null : (
+  // Kept in Query mode (dimmed and inert in the toolbar), so the switch
+  // moves nothing.
+  const toolbarStart = (
     <>
       <AddFilterPopover
         contract={loadedContract}
@@ -2617,18 +2629,13 @@ function FindingsContent() {
           {viewTitle}
         </h2>
         {!groupBy && (
-          <span
-            className="shrink-0 text-sm tabular-nums text-muted-foreground"
-            aria-label={t(
-              'findings.view.total',
-              '{count, plural, one {# finding} other {# findings}}',
-              {
-                count: total,
-              }
-            )}
-          >
-            {total.toLocaleString()}
-          </span>
+          <ListCount
+            total={total}
+            loading={findingsLoading && !findingsResponse}
+            label={t('findings.view.total', '{count, plural, one {# finding} other {# findings}}', {
+              count: total,
+            })}
+          />
         )}
         {awaitingVerification > 0 && hasPermission(Permission.FindingsVerify) && (
           <Button
@@ -2661,12 +2668,11 @@ function FindingsContent() {
           </Button>
         )}
         {refreshButton}
-        {!groupBy && (
-          <div className="hidden items-center gap-2 @2xl/actions:flex">
-            {exportMenu}
-            {taskFromFiltersButton}
-          </div>
-        )}
+        {/* Export and the task act on the filter, grouped or not: they stay. */}
+        <div className="hidden items-center gap-2 @2xl/actions:flex">
+          {exportMenu}
+          {taskFromFiltersButton}
+        </div>
         <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
         <div className="hidden @2xl/actions:block">{wideMoreMenu}</div>
       </div>

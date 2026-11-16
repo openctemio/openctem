@@ -166,7 +166,7 @@ describe('Findings toolbar layout', () => {
     // One control: the group does not wrap, so the field cannot drop under the
     // button, and the field keeps a usable minimum width.
     expect(group.className).not.toMatch(/flex-wrap/)
-    expect(group.className).toMatch(/min-w-\[/)
+    expect(group.className).toMatch(/min-w-(\[|44|48)/)
     // Group and View come after the search, in the same row.
     const groupBy = within(toolbar).getByRole('combobox', { name: 'Group findings' })
     expect(follows(search, groupBy)).toBe(true)
@@ -192,7 +192,9 @@ describe('Findings toolbar layout', () => {
     renderAt('?group=severity')
     const primary = screen.getByTestId('findings-toolbar-primary')
     expect(within(primary).getByTestId('findings-view-title')).toBeInTheDocument()
-    expect(within(primary).queryByRole('button', { name: 'Export' })).toBeNull()
+    // The page actions act on the filter, grouped or not: they stay (nothing
+    // in the title row disappears when a grouping is chosen).
+    expect(within(primary).getByRole('button', { name: 'Export' })).toBeEnabled()
     const toolbar = screen.getByTestId('data-table-toolbar')
     expect(within(toolbar).getByRole('searchbox', { name: 'Search findings' })).toBeInTheDocument()
   })
