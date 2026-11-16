@@ -25,13 +25,7 @@ import { Main } from '@/components/layout'
 import { ErrorState, DataTable, PageHeader, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
@@ -43,7 +37,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can } from '@/lib/permissions'
+import { useCanMutate } from '@/lib/permissions'
 import { HEALTH_ICON_CLASS } from '@/lib/health-colors'
 import { cn } from '@/lib/utils'
 
@@ -60,7 +54,6 @@ import {
   type OutboxStatus,
 } from '@/features/notifications/types/notification-outbox.types'
 import { safeHref } from '@/lib/safe-href'
-import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 
@@ -174,6 +167,8 @@ export default function NotificationOutboxPage() {
   })
 
   // Mutations
+  const mayRetryRoute = useCanMutate('POST /api/v1/notification-outbox/{id}/retry')
+  const mayDeleteRoute = useCanMutate('DELETE /api/v1/notification-outbox/{id}')
   const { trigger: retryEntry, isMutating: isRetrying } = useRetryOutboxEntryApi()
   const { trigger: deleteEntry, isMutating: isDeleting } = useDeleteOutboxEntryApi(
     selectedEntry?.id || ''
@@ -360,55 +355,78 @@ export default function NotificationOutboxPage() {
       cell: ({ row }) => {
         const entry = row.original
         const canRetry = entry.status === 'failed' || entry.status === 'dead'
+        const sourceUrl = safeHref(entry.url)
+        const busy = actionInProgress === entry.id
+        const label = t('common.actionMenu.label', 'Actions for {name}', { name: entry.title })
+        const items: ActionMenuEntry[] = [
+          ...(sourceUrl
+            ? [
+                {
+                  id: 'view-source',
+                  label: t('notificationChannels.outbox.viewSource', 'View source'),
+                  icon: ExternalLink,
+                  onSelect: () => {
+                    const u = safeHref(entry.url)
+                    if (u) window.open(u, '_blank', 'noopener,noreferrer')
+                  },
+                },
+              ]
+            : []),
+          ...(mayRetryRoute && canRetry
+            ? [
+                {
+                  id: 'retry',
+                  label: t('notificationChannels.outbox.retry', 'Retry'),
+                  icon: RotateCcw,
+                  disabledReason: isRetrying
+                    ? t(
+                        'notificationChannels.outbox.retryingReason',
+                        'A retry is already in progress.'
+                      )
+                    : undefined,
+                  onSelect: () => handleRetry(entry),
+                },
+              ]
+            : []),
+          ...(mayDeleteRoute
+            ? [
+                {
+                  id: 'delete',
+                  label: t('notificationChannels.outbox.delete', 'Delete'),
+                  icon: Trash2,
+                  destructive: true,
+                  disabledReason: isDeleting
+                    ? t(
+                        'notificationChannels.outbox.deletingReason',
+                        'A delete is already in progress.'
+                      )
+                    : undefined,
+                  onSelect: () => handleDeleteClick(entry),
+                },
+              ]
+            : []),
+        ]
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            title={entry.title}
+            label={label}
+            items={items}
+            trigger={
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="p-0"
-                aria-label={t('notificationChannels.outbox.actionsFor', 'Actions for {title}', {
-                  title: entry.title,
-                })}
-                disabled={actionInProgress === entry.id}
+                aria-label={label}
+                disabled={busy}
               >
-                {actionInProgress === entry.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 ) : (
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 )}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {safeHref(entry.url) && (
-                <DropdownMenuItem asChild>
-                  <SafeExternalLink href={entry.url}>
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    {t('notificationChannels.outbox.viewSource', 'View source')}
-                  </SafeExternalLink>
-                </DropdownMenuItem>
-              )}
-              <Can route="POST /api/v1/notification-outbox/{id}/retry">
-                {canRetry && (
-                  <DropdownMenuItem onClick={() => handleRetry(entry)} disabled={isRetrying}>
-                    <RotateCcw className="me-2 h-4 w-4" />
-                    {t('notificationChannels.outbox.retry', 'Retry')}
-                  </DropdownMenuItem>
-                )}
-              </Can>
-              <Can route="DELETE /api/v1/notification-outbox/{id}">
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => handleDeleteClick(entry)}
-                  disabled={isDeleting}
-                >
-                  <Trash2 className="me-2 h-4 w-4" />
-                  {t('notificationChannels.outbox.delete', 'Delete')}
-                </DropdownMenuItem>
-              </Can>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         )
       },
     },

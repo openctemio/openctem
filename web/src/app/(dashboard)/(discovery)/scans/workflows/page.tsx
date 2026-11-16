@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Link from '@/components/link'
 
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -65,13 +64,7 @@ import {
   GitBranch,
   Settings,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { toast } from 'sonner'
 
 import {
@@ -405,64 +398,67 @@ export default function ScanWorkflowsPage() {
       enableHiding: false,
       cell: ({ row }) => {
         const workflow = row.original
+        const label = t('common.actionMenu.label', 'Actions for {name}', { name: workflow.name })
+        const items: ActionMenuEntry[] = [
+          {
+            id: 'view',
+            label: t('scans.workflows.viewDetails'),
+            icon: Eye,
+            onSelect: () => handleOpenWorkflowDetail(workflow),
+          },
+          ...(canWriteWorkflows && workflow.is_system_template
+            ? [
+                {
+                  id: 'use-template',
+                  label: t('scans.workflows.useTemplate'),
+                  icon: Copy,
+                  disabledReason: workflow.is_retired
+                    ? t('scans.workflows.useTemplateRetired', 'This template is retired.')
+                    : !workflow.is_active
+                      ? t('scans.workflows.useTemplateInactive', 'This template is not active.')
+                      : undefined,
+                  onSelect: () => handleOpenCloneDialog(workflow),
+                },
+              ]
+            : []),
+          ...(canWriteWorkflows && !workflow.is_system_template
+            ? [
+                {
+                  id: 'edit',
+                  label: t('scans.workflows.editWorkflow'),
+                  icon: loadingEdit ? RefreshCw : Pencil,
+                  disabledReason: loadingEdit
+                    ? t('scans.workflows.editLoadingReason', 'A workflow is already loading.')
+                    : undefined,
+                  onSelect: () => handleOpenEditForm(workflow),
+                },
+                {
+                  id: 'open-editor',
+                  label: t('scans.workflows.openEditor'),
+                  icon: GitBranch,
+                  href: `/scans/workflows/${workflow.id}`,
+                },
+                {
+                  id: 'clone',
+                  section: 'clone',
+                  label: t('scans.workflows.clone'),
+                  icon: Copy,
+                  onSelect: () => handleOpenCloneDialog(workflow),
+                },
+              ]
+            : []),
+        ]
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="p-0"
-                aria-label={t('scans.workflows.actionsFor', undefined, { name: workflow.name })}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-4 w-4" />
+          <ActionMenu
+            title={workflow.name}
+            label={label}
+            items={items}
+            trigger={
+              <Button variant="ghost" size="icon-sm" className="p-0" aria-label={label}>
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => handleOpenWorkflowDetail(workflow)}>
-                <Eye className="me-2 h-4 w-4" />
-                {t('scans.workflows.viewDetails')}
-              </DropdownMenuItem>
-              {!canWriteWorkflows ? null : workflow.is_system_template ? (
-                <DropdownMenuItem
-                  onClick={() => handleOpenCloneDialog(workflow)}
-                  disabled={!workflow.is_active || workflow.is_retired}
-                >
-                  <Copy className="me-2 h-4 w-4" />
-                  {t('scans.workflows.useTemplate')}
-                </DropdownMenuItem>
-              ) : (
-                <>
-                  <DropdownMenuItem
-                    onClick={() => handleOpenEditForm(workflow)}
-                    disabled={loadingEdit}
-                  >
-                    {loadingEdit ? (
-                      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Pencil className="me-2 h-4 w-4" />
-                    )}
-                    {t('scans.workflows.editWorkflow')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href={`/scans/workflows/${workflow.id}`}>
-                      <GitBranch className="me-2 h-4 w-4" />
-                      {t('scans.workflows.openEditor')}
-                    </Link>
-                  </DropdownMenuItem>
-                </>
-              )}
-              {canWriteWorkflows && !workflow.is_system_template && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleOpenCloneDialog(workflow)}>
-                    <Copy className="me-2 h-4 w-4" />
-                    {t('scans.workflows.clone')}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         )
       },
     },

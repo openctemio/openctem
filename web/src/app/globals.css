@@ -24,7 +24,13 @@
   }
   html {
     @apply overflow-x-hidden;
-    scrollbar-gutter: stable;
+    /* Room for the page scrollbar is kept from 768 px up, so content does not
+       shift when a page starts to scroll. Below that, screens use overlay
+       scrollbars; a reserved gutter there only made fixed overlays (sheets,
+       menus) stop 10 px short of the right edge in a narrow desktop window. */
+    @media (width >= 48rem) {
+      scrollbar-gutter: stable;
+    }
     /* Kill the document-level rubber-band bounce. On iOS Safari that bounce
        lets the body "scroll" and intermittently steal touch-scroll from the
        app-shell's inner scrollers (the sidebar nav). Additive + safe: pages

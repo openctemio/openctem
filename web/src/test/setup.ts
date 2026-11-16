@@ -7,7 +7,7 @@
 
 import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { registerDictionary } from '@/lib/i18n'
 import { en as enCatalog, vi as viCatalog } from '@/lib/i18n/dictionaries'
 
@@ -15,6 +15,19 @@ import { en as enCatalog, vi as viCatalog } from '@/lib/i18n/dictionaries'
 // up front so components render their text synchronously.
 registerDictionary('en', enCatalog)
 registerDictionary('vi', viCatalog)
+
+// An action menu's code is loaded on first use. Have it in before each test,
+// so a menu renders its real trigger at once and a click is never aimed at the
+// busy placeholder that the loaded menu replaces (a lost click under load).
+// Imported here, not at the top, so a test's own mocks are in place first.
+beforeEach(async () => {
+  try {
+    const m = await import('@/components/ui/action-menu')
+    await m.preloadActionMenu?.()
+  } catch {
+    // A test that mocks the menu or its parts has no real one to load.
+  }
+})
 
 // ============================================
 // CLEANUP

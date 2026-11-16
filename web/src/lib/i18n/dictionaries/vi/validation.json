@@ -143,7 +143,6 @@
   "validation.controls.link.description": "Liên kết tài sản là điều giúp {name} giảm mức ưu tiên cho các phát hiện của tài sản đó.",
   "validation.controls.link.thisControl": "biện pháp này",
   "validation.controls.linkAssets": "Liên kết tài sản",
-  "validation.controls.moreAria": "Thao tác khác cho {name}",
   "validation.controls.nameRequired": "Nhập tên biện pháp kiểm soát.",
   "validation.controls.never": "Chưa bao giờ",
   "validation.controls.new": "Biện pháp mới",
