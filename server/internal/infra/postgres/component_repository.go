@@ -80,16 +80,23 @@ func (a *sqlArgs) scope(assetExpr string, s *shared.DataScope) string {
 	return " AND " + cond
 }
 
+const (
+	pkgSevCritical = "critical"
+	pkgSevHigh     = "high"
+	pkgSevMedium   = "medium"
+	pkgSevLow      = "low"
+)
+
+var packageSeverityCond = map[string]string{
+	pkgSevCritical: "COALESCE(pf.critical, 0) > 0",
+	pkgSevHigh:     "COALESCE(pf.high, 0) > 0",
+	pkgSevMedium:   "COALESCE(pf.medium, 0) > 0",
+	pkgSevLow:      "COALESCE(pf.low, 0) > 0",
+}
+
 // packagesCTE builds the CTEs every list, facet and summary query reads:
 // links (filtered package links), vf (open findings on those links) and
 // pkgs (one row per package with its aggregates and product filters).
-var packageSeverityCond = map[string]string{
-	"critical": "COALESCE(pf.critical, 0) > 0",
-	"high":     "COALESCE(pf.high, 0) > 0",
-	"medium":   "COALESCE(pf.medium, 0) > 0",
-	"low":      "COALESCE(pf.low, 0) > 0",
-}
-
 func packagesCTE(f component.Filter, args *sqlArgs) string {
 	tenant := args.add(f.TenantID.String())
 	var link strings.Builder
