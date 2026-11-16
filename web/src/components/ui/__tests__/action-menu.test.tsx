@@ -251,6 +251,26 @@ describe('ActionMenu from 768 px up', () => {
     error.mockRestore()
   })
 
+  it('keeps a lone destructive item behind the trigger, without the one-item error', async () => {
+    const onSelect = vi.fn()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(
+      <ActionMenu
+        title="WAF"
+        label="Actions for WAF"
+        trigger={<button aria-label="Actions for WAF">More</button>}
+        items={[{ id: 'delete', label: 'Delete WAF', icon: Trash2, destructive: true, onSelect }]}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Delete WAF' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for WAF' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete WAF' }))
+    expect(onSelect).toHaveBeenCalledOnce()
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+    expect(soleAction([{ id: 'd', label: 'Delete', destructive: true, icon: Trash2 }])).toBeNull()
+  })
+
   it('counts a submenu by its items: one item in one submenu is still one item', () => {
     expect(
       soleAction([{ id: 'x', kind: 'sub', label: 'Export', items: [{ id: 'csv', label: 'CSV' }] }])
