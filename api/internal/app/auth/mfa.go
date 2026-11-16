@@ -411,7 +411,8 @@ func (s *AuthService) BeginMFAEnrollmentFromChallenge(ctx context.Context, token
 }
 
 // CompleteMFAEnrollmentFromChallenge confirms the enrollment with a code,
-// turns 2FA on and signs the user in. The recovery codes are returned once.
+// turns 2FA on, signs out every earlier session of the user and signs the
+// user in. The recovery codes are returned once.
 func (s *AuthService) CompleteMFAEnrollmentFromChallenge(ctx context.Context, input CompleteMFAEnrollmentInput) (*LoginResult, []string, error) {
 	c, u, err := s.openChallenge(ctx, input.Token, mfa.PurposeEnroll)
 	if err != nil {
@@ -427,7 +428,11 @@ func (s *AuthService) CompleteMFAEnrollmentFromChallenge(ctx context.Context, in
 	if _, err := s.mfaRepo.ConsumeChallenge(ctx, c.ID); err != nil {
 		return nil, nil, err
 	}
-	s.auditMFAEnabled(ctx, auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent}, u, "organization_policy")
+	// Every session the user had predates the factor, including one that
+	// asked for this challenge in place (invitation): none went through the
+	// second step, so none may carry on. The login below opens the one that
+	// did.
+	s.secondFactorTurnedOn(ctx, auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent}, u, shared.ID{}, "organization_policy")
 
 	s.recordLoginSuccess(ctx, u)
 	res, err := s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
@@ -538,8 +543,7 @@ func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext,
 		return nil, err
 	}
 	except, _ := shared.IDFromString(actx.SessionID)
-	s.revokeUserSessions(ctx, u.ID(), except)
-	s.auditMFAEnabled(ctx, actx, u, "self_service")
+	s.secondFactorTurnedOn(ctx, actx, u, except, "self_service")
 	return codes, nil
 }
 
@@ -815,8 +819,10 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 //     if the IdP proved a second factor in the signed id_token (amr=mfa) or
 //     assertion (a multi-factor AuthnContext).
 //   - A password session passes only when the user has 2FA on. The password
-//     login verified the code (loginMFAChallenge), so an enabled factor means
-//     this session went through the second step.
+//     login verified the code (loginMFAChallenge), and every path that turns
+//     a factor on signs out the sessions opened before it
+//     (secondFactorTurnedOn), so an enabled factor means this session went
+//     through the second step.
 //   - Any other federated session (social OAuth, another organization's IdP)
 //     never went through our second step, and its IdP is not one this tenant
 //     chose, so it is refused whether or not the user has enrolled. The user
@@ -1108,11 +1114,19 @@ func isDigits(s string) bool {
 	return s != ""
 }
 
-func (s *AuthService) auditMFAEnabled(ctx context.Context, actx auditapp.AuditContext, u *userdom.User, via string) {
+// secondFactorTurnedOn is what every path that turns a second factor on does
+// next: it signs out every session of the user except `except` (zero ID = all
+// of them) and audits the change. A password session opened before the factor
+// existed never went through the second step, yet the organization 2FA rule
+// (mfaSatisfied) accepts any password session of a user whose factor is on,
+// so such a session must not outlive the change.
+func (s *AuthService) secondFactorTurnedOn(ctx context.Context, actx auditapp.AuditContext, u *userdom.User, except shared.ID, via string) {
+	s.revokeUserSessions(ctx, u.ID(), except)
 	s.audit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionAuthMFAEnabled, auditdom.ResourceTypeUser, u.ID().String()).
 		WithResourceName(u.Email()).
-		WithMessage("Two-factor authentication enabled").
-		WithMetadata("via", via))
+		WithMessage("Two-factor authentication enabled; other sessions signed out").
+		WithMetadata("via", via).
+		WithMetadata("other_sessions_ended", true))
 }
 
 func (s *AuthService) audit(ctx context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) {
