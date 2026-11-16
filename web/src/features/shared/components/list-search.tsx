@@ -152,11 +152,12 @@ export function ListSearch({
         // wider than 28rem, so the field sits at the same place and size on
         // every list and the end group keeps its room.
         'flex min-w-48 flex-[1_1_16rem] items-start sm:max-w-md',
-        // Room for the query editor's own controls (min 260: with the mode
-        // switch beside it, the 300 the field and its in-field switch took
-        // before, so the filter tokens keep the same line); a phone's field
-        // takes what its line leaves after the mode toggle.
-        query && 'min-w-[min(100%,16.25rem)] @max-md/toolbar:min-w-0',
+        // With the mode switch beside it the field asks for 11rem before it
+        // grows (a line breaks on that ask, never below the floor), so the
+        // switch, the field and the filter tokens (each of a fixed width)
+        // keep one line on a 720 px toolbar. A phone's field takes what its
+        // line leaves after the toggle.
+        query && 'min-w-44 flex-[1_1_11rem] @max-md/toolbar:min-w-0',
         filter && '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
         className
       )}

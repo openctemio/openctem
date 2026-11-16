@@ -10,6 +10,7 @@
  * titles, summaries and asset names are scan output, shown as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -738,11 +739,6 @@ export function EASMExposureItems() {
               }
             : undefined
         }
-        end={
-          view === 'list'
-            ? t('attackSurface.exposures.count', '{count} exposures', { count: list.total })
-            : t('attackSurface.exposures.assetCount', '{count} assets', { count: groups.total })
-        }
       />
     ) : undefined
   const errorState =
@@ -784,6 +780,26 @@ export function EASMExposureItems() {
         selected={categories}
         loading={stats.isLoading && !s}
         onToggle={(c) => setList('category', toggleValue(categories, c))}
+      />
+      <ListTitleRow
+        title={
+          view === 'list'
+            ? t('attackSurface.exposures.viewAll', 'All exposures')
+            : t('attackSurface.exposures.viewAssets', 'Assets with exposures')
+        }
+        count={
+          <ListCount
+            total={view === 'list' ? list.total : groups.total}
+            loading={active.isLoading}
+            label={
+              view === 'list'
+                ? t('attackSurface.exposures.count', '{count} exposures', { count: list.total })
+                : t('attackSurface.exposures.assetCount', '{count} assets', {
+                    count: groups.total,
+                  })
+            }
+          />
+        }
       />
       {view === 'list' ? (
         <DataTable

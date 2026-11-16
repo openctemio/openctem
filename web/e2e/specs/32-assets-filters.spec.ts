@@ -10,7 +10,9 @@ test.describe('Asset filters', { tag: ['@assets'] }, () => {
   test('Add filter applies a facet as a chip, and the chip removes it', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/assets')
-    await expect(page.getByTestId('inventory-filter-bar')).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('main [data-slot="list-count"]')).toHaveText(/\d/, {
+      timeout: 20_000,
+    })
     await page.getByRole('button', { name: /add filter/i }).click()
     await page.getByRole('option', { name: 'Criticality' }).click()
     await page.getByRole('checkbox', { name: 'Critical' }).click()
@@ -32,7 +34,9 @@ test.describe('Asset filters', { tag: ['@assets'] }, () => {
         asked.push(u.pathname + u.search)
     })
     await page.goto('/assets')
-    await expect(page.getByTestId('inventory-filter-bar')).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('main [data-slot="list-count"]')).toHaveText(/\d/, {
+      timeout: 20_000,
+    })
     await page.waitForLoadState('networkidle')
     expect(asked).toEqual([])
   })

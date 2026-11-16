@@ -8,6 +8,7 @@
  * shown as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -310,6 +311,18 @@ export function EASMCertificates() {
   return (
     <>
       <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <ListTitleRow
+        title={t('attackSurface.certificates.viewAll', 'All certificates')}
+        count={
+          <ListCount
+            total={list.total}
+            loading={list.isLoading && list.rows.length === 0}
+            label={t('attackSurface.certificates.count', '{count} certificates', {
+              count: list.total,
+            })}
+          />
+        }
+      />
       <DataTable
         columns={columns}
         data={list.rows}
@@ -343,9 +356,6 @@ export function EASMCertificates() {
             <FilterChipsRow
               label={t('attackSurface.certificates.activeFilters', 'Active filters')}
               chips={chips}
-              end={t('attackSurface.certificates.count', '{count} certificates', {
-                count: list.total,
-              })}
             />
           ) : undefined
         }

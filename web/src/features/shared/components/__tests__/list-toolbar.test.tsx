@@ -436,25 +436,29 @@ describe('FilterChipsRow', () => {
   }
   afterEach(() => vi.restoreAllMocks())
 
-  it('keeps one line with fixed places: locked chip, chips, trailing, count at the end', () => {
+  it('keeps one line with fixed places: locked chip, chips, actions at the end, no count', () => {
     render(
       <FilterChipsRow
         leading={<LockedChip>Hiding names not ours</LockedChip>}
         chips={chips(2)}
         trailing={<button type="button">Add filter</button>}
-        end={<span>361 assets</span>}
       />
     )
     const row = document.querySelector('[data-slot="filter-chips-row"]') as HTMLElement
     // Clipped, not hidden: an overflow-hidden box can still be scrolled sideways.
     expect(row).toHaveClass('flex-nowrap', 'overflow-clip')
     expect(row).not.toHaveClass('overflow-hidden')
-    expect(row.textContent).toBe('Hiding names not ourschip 1chip 2Add filter361 assets')
-    expect(screen.getByText('361 assets').parentElement).toHaveClass('ms-auto', 'shrink-0')
+    expect(row.textContent).toBe('Hiding names not ourschip 1chip 2Add filter')
+    // The count is said once, in the list's title row, never here.
+    expect(row.querySelector('[data-slot="list-count"]')).toBeNull()
+    expect(screen.getByText('Add filter').closest('[data-slot="filter-chips-end"]')).toHaveClass(
+      'ms-auto',
+      'shrink-0'
+    )
     expect(screen.getByRole('list', { name: 'Active filters' }).children).toHaveLength(2)
   })
 
-  it('draws Clear filters after the trailing actions when the list can clear', async () => {
+  it('draws Clear filters last, after the trailing actions, when the list can clear', async () => {
     const onClearAll = vi.fn()
     render(
       <FilterChipsRow

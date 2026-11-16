@@ -58,7 +58,6 @@ function setup(qs: string) {
         filters={filters}
         onChange={onChange}
         onClearAll={vi.fn()}
-        resultLabel="361 assets"
       />
     </>
   )
@@ -75,7 +74,8 @@ describe('InventoryFilterBar', () => {
     expect(next.types).toBeUndefined()
     expect(next.criticalities).toEqual(['high'])
     expect(next.lens).toBe('data')
-    expect(screen.getByRole('status')).toHaveTextContent('361 assets')
+    // The count is said once, in the title row, never in the chips row.
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('Add filter lists the registry, searches it, and a picked facet applies as you tick', async () => {
