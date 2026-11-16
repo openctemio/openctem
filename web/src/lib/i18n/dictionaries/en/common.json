@@ -122,6 +122,8 @@
   "common.goBack": "Go back",
   "common.language": "Language",
   "common.link.opensInNewTab": "(opens in a new tab)",
+  "common.listCount.capped": "{count}+",
+  "common.listCount.cappedHint": "Counted up to this number",
   "common.listSearch.basic": "Basic",
   "common.listSearch.clear": "Clear search",
   "common.listSearch.mode": "Search mode",

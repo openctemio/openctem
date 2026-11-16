@@ -35,7 +35,9 @@ interface FindingsBaseChipsProps {
  * removed, only changed, and carry no counts (the count shows once, beside the
  * view name). The practice menu lists Vulnerabilities, Compliance, each other
  * practice that holds findings, and All. While a saved view sets a scope
- * itself, the chip reads "Set by the view" until one is picked.
+ * itself, the chip reads "Set by the view" until one is picked. Each chip
+ * keeps one width per language whatever its value (`FilterSelect`
+ * `sizeLabels`); "Set by the view" is cut to that width, in full in its title.
  */
 export function FindingsBaseChips({
   practice,
@@ -62,6 +64,11 @@ export function FindingsBaseChips({
           value: v,
           label: t(practiceLabelKey(v), PRACTICE_VIEW_TEXT[v].label),
         }))}
+        // Sized by every practice, not the ones holding findings now: a
+        // practice appearing never widens the chip.
+        sizeLabels={(Object.keys(PRACTICE_VIEW_TEXT) as PracticeView[]).map((v) =>
+          t(practiceLabelKey(v), PRACTICE_VIEW_TEXT[v].label)
+        )}
         onChange={(v) => v && onPracticeChange(v)}
         className={inSheet ? undefined : 'max-md:hidden'}
       />

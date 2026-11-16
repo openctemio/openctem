@@ -8,6 +8,7 @@
  * vulnerability page. Producer and feed text renders as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
@@ -377,7 +378,6 @@ function VulnerabilitiesListBody() {
           />
         ))}
         onClearAll={chips.length > 1 ? clearAll : undefined}
-        end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
       />
     ) : undefined
 
@@ -819,6 +819,10 @@ function VulnerabilitiesListBody() {
           )}
         </PageHeader>
         <MetricStrip items={strip} loading={!data && !error} />
+        <ListTitleRow
+          title={t('vulnPage.list.viewAll', 'All vulnerabilities')}
+          count={<ListCount total={total} loading={!data} label={resultLabel} />}
+        />
         <FilterLayout
           panelId={PANEL_ID}
           label={t('vulnPage.list.filtersTitle', 'Vulnerability filters')}

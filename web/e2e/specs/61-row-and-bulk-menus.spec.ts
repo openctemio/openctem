@@ -130,6 +130,17 @@ for (const locale of ['en', 'vi'] as const) {
         await expect(bar).toBeVisible()
         const b = await settledRect(bar)
         const more = bar.getByRole('button', { name: L[locale].more })
+        // A More of one item is never drawn: that item is the bar's own
+        // button, in the More's place, inside the screen.
+        if (!(await more.isVisible())) {
+          const direct = bar.getByRole('button', { name: L[locale].remediation, exact: true })
+          await expect(direct).toBeVisible()
+          const d = await settledRect(direct)
+          test.info().annotations.push({ type: 'bulk sole action', description: JSON.stringify(d) })
+          expect(d.left).toBeGreaterThanOrEqual(GUTTER)
+          expect(d.right).toBeLessThanOrEqual(width - GUTTER)
+          return
+        }
         const t = await settledRect(more)
         await more.click()
         const menu = page.getByRole('menu')

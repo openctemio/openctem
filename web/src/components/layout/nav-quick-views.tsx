@@ -61,7 +61,18 @@ export function NavQuickViewList({
             >
               <span className={SUB_LABEL_CLASS}>{v.label}</span>
               {v.count > 0 && (
-                <NavCount tone={v.danger ? 'danger' : 'muted'}>{v.count.toLocaleString()}</NavCount>
+                <NavCount
+                  tone={v.danger ? 'danger' : 'muted'}
+                  // The pin shows over the row's end on hover or focus: the
+                  // count gives it the place (whole, never cut under it).
+                  className={
+                    v.pin
+                      ? 'group-focus-within/menu-sub-item:invisible group-hover/menu-sub-item:invisible'
+                      : undefined
+                  }
+                >
+                  {v.count.toLocaleString()}
+                </NavCount>
               )}
             </SidebarLink>
           </SidebarMenuSubButton>

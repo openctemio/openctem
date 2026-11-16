@@ -123,6 +123,8 @@ function useShortcut(onOpen: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      // In Query mode the filter tokens are inert: the text owns the filter.
+      if (document.querySelector('[data-slot="list-toolbar-tokens"][inert]')) return
       const el = e.target as HTMLElement | null
       if (
         el?.closest?.(
@@ -272,7 +274,6 @@ export function InventoryFilterBar({
   filters,
   onChange,
   onClearAll,
-  resultLabel,
   queryActive,
   onOpenQuery,
 }: {
@@ -280,8 +281,6 @@ export function InventoryFilterBar({
   /** What the default list hides (a `LockedChip`), first in the row. */
   locked?: ReactNode
   onClearAll: () => void
-  /** "361 assets", at the end of the row. */
-  resultLabel?: string
   /**
    * The search field is in Query mode (lib/inventory-text): the text owns the
    * filter, so the chips, Add filter and Clear step aside.
@@ -314,7 +313,6 @@ export function InventoryFilterBar({
         )),
       ]}
       onClearAll={chips.length + (advancedChip ? 1 : 0) > 1 ? onClearAll : undefined}
-      end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />
   )
 }

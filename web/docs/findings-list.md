@@ -78,6 +78,18 @@ Export runs on the server only (`GET /api/v1/findings/export`, `src/features/fin
   asks to narrow the filters. The `/api/v1` proxy passes the export headers through.
 - A 403 names the missing permission. A 429 says an export of yours is still running.
 
+## More menu
+
+The page has one overflow ("More") menu at a time.
+
+- Wide, the view's title row ends with Refresh, Export and Task from filters and has no More. Copy link is in the page
+  header's More under "This view", after Import results and Approvals.
+- Narrow and on a phone, Export and Task from filters fold into the title row's More together with Copy link, and the
+  page header's More does not repeat it. A header menu left with a single item merges into the title row's More.
+- No menu opens with a single item: when one action is left and it has an icon, the More button becomes that action in
+  the same place and size (the bulk bar's "Remediation task" is one). This is a rule of the shared action menu, so it
+  holds on every list page.
+
 ## Translation
 
 Every string on the list, and in the shared table, facet panel, bulk bar, filter button, filter sheet and
@@ -113,8 +125,10 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
   Closed, All) are base chips (`FindingsBaseChips`, the shared `FilterSelect` with `clearable={false}`): first
   after the search, never removed, no counts (the count shows once, beside the view name). They write the
   `practice` and `state` params. While an open saved view sets a scope itself, the chip reads "Set by the
-  view" until one is picked. On a narrow toolbar the key ("Practice:") folds away and stays in the accessible
-  name. On a phone they move to the top of the Filters sheet. In Query mode they step aside with Add filter.
+  view" until one is picked. Each keeps one width per language whatever its value (sized by every value it can
+  show, Practice by every practice; "Set by the view" is cut to that width with its full text in the
+  tooltip), so picking a value moves nothing. On a narrow toolbar the key ("Practice:") folds away and stays
+  in the accessible name. On a phone they move to the top of the Filters sheet. In Query mode they stay in place with Add filter, dimmed and inactive (the text owns the filter), so the switch moves nothing.
 - There is no Filters button from 1024px up: Add filter is the one filter entry, and its last row, **Show the
   filter panel**, opens the facet panel beside the list (closed from its own header). Below 1024px the Filters
   button opens the same facets in a sheet.
@@ -140,10 +154,18 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
   the API refuses one (a 400 `INVALID_FILTER` naming the param) the list says "This link has a filter we do not
   know" and offers to remove it, instead of a failed load.
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
-- The row is the shared `FilterChipsRow`: the quiet locked chip for what the list leaves out (informational
-  findings, drawn with the shared `LockedChip`) first, the chips (the ones that do not fit fold into "+N
-  more"), then Clear. The count is said once, beside the view name in the first row, never on the
-  chips row. Nothing in the row shrinks under its content. The row shows only when it holds something.
+- The row is the shared `FilterChipsRow`, exactly one line of one height (32): the quiet locked chip for what
+  the list leaves out (informational findings, drawn with the shared `LockedChip`, at most half the row) first,
+  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Reset to
+  view or Clear filters pinned at the row's end. The count is said once, beside the view name in the first row,
+  never on the chips row. The row shows only when it holds something: the list moves down once when it
+  appears, and never again while filters change.
+- Nothing in the list's header moves while it is used: Practice, State, Group and Views keep one width per
+  language (a value or a view's own name is cut, in full in the tooltip and the accessible name; the
+  unsaved-changes dot has its room kept), so the search field beside them takes one width per toolbar width
+  (and holds it in Query mode), and Export and Task from filters stay in the title row while grouped. `e2e/specs/62-list-toolbar-stability`
+  checks every toolbar and title-row box (0 px) through filters, grouping, views, the mode switch and typing on
+  Findings, Assets and Scans at 1440, 1024, 768 and 390 px in both languages.
 - On a phone every list toolbar (the shared `ListToolbar`) is two lines, never more: the search field alone on
   the first; on the second the filter tokens and the chips (the locked chip first) in a strip that scrolls
   sideways, with a fade on an edge that has more past it, and the icon actions (saved views, group, refresh)
@@ -171,7 +193,7 @@ practice!=compliance`). The client never builds query text itself.
   the parser refuses keeps Query mode.
 - A refused text shows one line under the field with the problem and its column, and the field selects the
   problem (it scrolls there). The list keeps the last valid result.
-- In Query mode the chips, Add filter and Clear step aside (the context chips stay); in Basic mode an `fq`
+- In Query mode the chips and Clear step aside (the context chips stay; Add filter and the base chips stay dimmed and inactive); in Basic mode an `fq`
   filter is one Advanced chip whose text opens Query mode.
 
 ## Request budget

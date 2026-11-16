@@ -9,6 +9,7 @@
  * every value is scan output and is shown as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState, type ReactElement } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -390,6 +391,18 @@ export function EASMTechnologies() {
   return (
     <>
       <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <ListTitleRow
+        title={t('attackSurface.technologies.viewAll', 'All technology versions')}
+        count={
+          <ListCount
+            total={list.total}
+            loading={list.isLoading && list.rows.length === 0}
+            label={t('attackSurface.technologies.count', '{count} technology versions', {
+              count: list.total,
+            })}
+          />
+        }
+      />
       <DataTable
         columns={columns}
         data={list.rows}
@@ -439,9 +452,6 @@ export function EASMTechnologies() {
                     }
                   : undefined
               }
-              end={t('attackSurface.technologies.count', '{count} technology versions', {
-                count: list.total,
-              })}
             />
           ) : undefined
         }
