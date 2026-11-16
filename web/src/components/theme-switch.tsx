@@ -70,7 +70,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent className={cn(HEADER_MENU, 'w-40')}>
+      <DropdownMenuContent className={HEADER_MENU}>
         <ThemeMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>

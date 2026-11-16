@@ -140,7 +140,7 @@ export function StatusSelect({
               <p className="text-xs">{describe(value)}</p>
             </TooltipContent>
           </Tooltip>
-          <DropdownMenuContent className="w-64">
+          <DropdownMenuContent>
             {isLoading && (
               <DropdownMenuItem disabled className="flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" />

@@ -674,7 +674,7 @@ function EditorCard({
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
+            <DropdownMenuContent>
               <DropdownMenuItem className={item} disabled={index === 0} onSelect={() => onMove(-1)}>
                 <ArrowLeft className="me-2 h-4 w-4" aria-hidden />
                 {t('dashboards.editor.moveEarlier', 'Move earlier')}

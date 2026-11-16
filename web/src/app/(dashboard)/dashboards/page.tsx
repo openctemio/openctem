@@ -328,7 +328,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                             <MoreHorizontal className="h-4 w-4" aria-hidden />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-56">
+                        <DropdownMenuContent>
                           <DropdownMenuItem className={ITEM} onSelect={() => onEdit(d.id)}>
                             <Pencil className="me-2 h-4 w-4" aria-hidden />
                             {t('dashboards.actions.edit', 'Edit details')}
