@@ -78,6 +78,18 @@ Export runs on the server only (`GET /api/v1/findings/export`, `src/features/fin
   asks to narrow the filters. The `/api/v1` proxy passes the export headers through.
 - A 403 names the missing permission. A 429 says an export of yours is still running.
 
+## More menu
+
+The page has one overflow ("More") menu at a time.
+
+- Wide, the view's title row ends with Refresh, Export and Task from filters and has no More. Copy link is in the page
+  header's More under "This view", after Import results and Approvals.
+- Narrow and on a phone, Export and Task from filters fold into the title row's More together with Copy link, and the
+  page header's More does not repeat it. A header menu left with a single item merges into the title row's More.
+- No menu opens with a single item: when one action is left and it has an icon, the More button becomes that action in
+  the same place and size (the bulk bar's "Remediation task" is one). This is a rule of the shared action menu, so it
+  holds on every list page.
+
 ## Translation
 
 Every string on the list, and in the shared table, facet panel, bulk bar, filter button, filter sheet and

@@ -7,4 +7,4 @@
   the page header's More under "This view", after Import results and Approvals. Narrow (and on a phone), Export and
   Task fold into the title row's More with Copy link, and the header's More does not repeat it; a header with a single
   item at that width merges into the title row's More.
-- Docs: none beyond this entry (in-app behaviour of the redesign branch).
+- Docs: web/docs/findings-list.md (More menu).
