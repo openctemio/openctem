@@ -21,10 +21,12 @@ import { cn } from '@/lib/utils'
  *   width (a sheet-only trigger on a desktop) leaves the field with four round
  *   corners; a shown one squares the two inner corners only.
  *
- * - on a list that takes query text (`query`), a Basic | Query switch at the
- *   field's end (one icon toggle on a phone; Ctrl+/ toggles too). In Query
- *   mode the field is the page's query editor, in the same place and size:
- *   one field, two ways to write the same filter.
+ * - on a list that takes query text (`query`), a Basic | Query switch drawn
+ *   as its own control right before the field (and before a joined filter
+ *   trigger): a two-segment switch on a wide toolbar, one icon toggle below;
+ *   Ctrl+/ toggles too. Its width is fixed per language, so switching modes
+ *   moves nothing. In Query mode the field is the page's query editor, in the
+ *   same place and size: one field, two ways to write the same filter.
  *
  * The component only reports what was typed. A server-side search passes the
  * value through `useSearchQuery` / `useListParams` before it reaches a request
@@ -34,13 +36,13 @@ import { cn } from '@/lib/utils'
 /** What the query editor needs to sit in the field (`ListSearchQuery.renderEditor`). */
 export interface ListSearchFieldSlots {
   /**
-   * Classes for the editor's input: room for the icon and the switch. The
-   * switch's measured width (plus a gap) is the CSS variable
+   * Classes for the editor's input: room for the icon and the field's end.
+   * The room the host keeps at the end is the CSS variable
    * `--list-search-end` on the editor's container, for controls the editor
-   * draws before it.
+   * draws there.
    */
   inputClassName: string
-  /** The icon and the mode switch, drawn over the input. */
+  /** The icon (and any host end controls), drawn over the input. */
   adornments: React.ReactNode
 }
 
@@ -52,12 +54,6 @@ export interface ListSearchQuery {
   onActiveChange: (active: boolean) => void
   /** The query editor, drawn in place of the input in Query mode. */
   renderEditor: (slots: ListSearchFieldSlots) => React.ReactNode
-  /**
-   * The page draws the Basic | Query switch itself (`ListSearchModeSwitch`),
-   * outside the field; the field's end then holds only its own controls.
-   * Ctrl+/ still switches modes.
-   */
-  switchOutside?: boolean
 }
 
 export interface ListSearchProps {
@@ -95,9 +91,7 @@ export function ListSearch({
   const joined = useJoinedStart(rootRef, !!filter)
   const { onKeyDown, ...restInput } = inputProps ?? {}
   const queryActive = !!query?.active
-  // Follows the end group that is on screen: Query mode draws it inside the
-  // (lazy) editor, so the element changes while the field stays.
-  const [end, endRef] = useWidth()
+  const modeWidth = useModeWidth(rootRef, queryActive)
   const setQueryActive = query?.onActiveChange
   const hasQuery = !!query
 
@@ -114,22 +108,10 @@ export function ListSearch({
     return () => window.removeEventListener('keydown', onKey)
   }, [hasQuery, setQueryActive, queryActive])
 
-  const modeSwitch =
-    query && !query.switchOutside ? (
-      <ListSearchModeSwitch
-        mode={queryActive ? 'query' : 'basic'}
-        onModeChange={(m) => query.onActiveChange(m === 'query')}
-      />
-    ) : null
-
   const endGroup = (
     <div
-      ref={endRef}
       data-slot="list-search-end"
-      className={cn(
-        'absolute inset-y-0 z-30 flex items-center gap-1',
-        query ? 'end-1 md:end-[3px]' : 'end-1.5'
-      )}
+      className="absolute inset-y-0 end-1.5 z-30 flex items-center gap-1"
     >
       {value && !queryActive ? (
         <button
@@ -145,11 +127,14 @@ export function ListSearch({
           <X className="size-3.5" aria-hidden="true" />
         </button>
       ) : null}
-      {modeSwitch}
     </div>
   )
-  // The text stops before the end controls (measured: the labels differ by language).
-  const fieldStyle = { '--list-search-end': `${Math.max(end + 8, 36)}px` } as React.CSSProperties
+  // The text stops before the end controls. Basic: the clear button's room,
+  // kept while the field is empty so the first character moves nothing.
+  // Query: the editor draws its own controls (help, expand, run) at the end.
+  const fieldStyle = {
+    '--list-search-end': queryActive ? '0.5rem' : '2.25rem',
+  } as React.CSSProperties
   const icon = (Icon: typeof Search) => (
     <Icon
       aria-hidden="true"
@@ -157,7 +142,7 @@ export function ListSearch({
     />
   )
 
-  return (
+  const field = (
     <div
       ref={rootRef}
       data-slot="list-search"
@@ -167,12 +152,15 @@ export function ListSearch({
         // wider than 28rem, so the field sits at the same place and size on
         // every list and the end group keeps its room.
         'flex min-w-48 flex-[1_1_16rem] items-start sm:max-w-md',
-        // Room for the switch (min 300 with it, as the field's own content).
-        query && 'min-w-[min(100%,18.75rem)]',
-        queryActive && 'sm:max-w-xl',
+        // Room for the query editor's own controls (min 260: with the mode
+        // switch beside it, the 300 the field and its in-field switch took
+        // before, so the filter tokens keep the same line); a phone's field
+        // takes what its line leaves after the mode toggle.
+        query && 'min-w-[min(100%,16.25rem)] @max-md/toolbar:min-w-0',
         filter && '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
         className
       )}
+      style={modeWidth ? { flex: 'none', width: modeWidth } : undefined}
     >
       {filter}
       {queryActive && query ? (
@@ -183,12 +171,7 @@ export function ListSearch({
         >
           {query.renderEditor({
             inputClassName: cn('ps-9 pe-(--list-search-end)', joined && 'rounded-s-none'),
-            adornments: (
-              <>
-                {icon(Code2)}
-                {endGroup}
-              </>
-            ),
+            adornments: icon(Code2),
           })}
         </div>
       ) : (
@@ -229,16 +212,30 @@ export function ListSearch({
       )}
     </div>
   )
+  if (!query) return field
+  return (
+    <>
+      <ListSearchModeSwitch
+        mode={queryActive ? 'query' : 'basic'}
+        onModeChange={(m) => query.onActiveChange(m === 'query')}
+      />
+      {field}
+    </>
+  )
 }
 
 /** The search mode of a list field. */
 export type ListSearchMode = 'basic' | 'query'
 
 /**
- * The Basic | Query switch (a two-segment switch from 768 px, one icon toggle
- * on a phone). `ListSearch` draws it at the field's end; a page that places it
- * elsewhere passes `query.switchOutside` and draws this with the same mode
- * (`useListQueryMode().mode` / `onModeChange`).
+ * The Basic | Query switch, its own control right before the search field.
+ * On a toolbar of 64rem and more (1440 px with the sidebar) a two-segment
+ * switch: both segments as wide as the longer label (one grid track each), so
+ * its width is fixed per language and never follows the mode. On a narrower
+ * toolbar one icon toggle (32 px, 36 on a phone), pressed in Query mode, so
+ * the field and the filter tokens keep their room on one line. Which one
+ * shows follows the toolbar's width only, never what it holds. `ListSearch`
+ * draws it for a list with `query`.
  */
 export function ListSearchModeSwitch({
   mode,
@@ -250,14 +247,14 @@ export function ListSearchModeSwitch({
   const { t } = useTranslation()
   const active = mode === 'query'
   const onActiveChange = (on: boolean) => onModeChange(on ? 'query' : 'basic')
+  const hint = t('common.listSearch.modeHint', 'Switch between search and query text (Ctrl+/)')
   return (
     <>
-      {/* From 768: a two-segment switch, the current mode filled. */}
       <div
         role="group"
         data-slot="list-search-mode"
         aria-label={t('common.listSearch.mode', 'Search mode')}
-        className="hidden h-control-seg items-center gap-0.5 rounded-sm bg-muted p-0.5 md:flex"
+        className="hidden h-control shrink-0 auto-cols-fr grid-flow-col items-center gap-0.5 rounded-md border p-0.5 @5xl/toolbar:inline-grid"
       >
         {(
           [
@@ -268,29 +265,85 @@ export function ListSearchModeSwitch({
           <button
             key={String(on)}
             type="button"
+            data-slot={on ? 'list-search-mode-query' : 'list-search-mode-basic'}
             aria-pressed={active === on}
-            title={t('common.listSearch.modeHint', 'Switch between search and query text (Ctrl+/)')}
+            aria-keyshortcuts="Control+/"
+            title={hint}
             onClick={() => active !== on && onActiveChange(on)}
-            className="h-full rounded-xs px-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+            className="h-control-seg rounded-sm px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           >
             {text}
           </button>
         ))}
       </div>
-      {/* On a phone: one icon toggle, pressed in Query mode. */}
       <button
         type="button"
         data-slot="list-search-mode"
         aria-pressed={active}
+        aria-keyshortcuts="Control+/"
         aria-label={t('common.listSearch.queryMode', 'Query mode')}
         title={t('common.listSearch.queryMode', 'Query mode')}
         onClick={() => onActiveChange(!active)}
-        className="relative flex size-7 items-center justify-center rounded-sm text-muted-foreground outline-none before:absolute before:inset-[-8px] hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground md:hidden"
+        className="flex size-control shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground max-md:size-control-touch @5xl/toolbar:hidden"
       >
-        <Code2 className="size-4" aria-hidden="true" />
+        <Code2 className="size-4 max-md:size-5" aria-hidden="true" />
       </button>
     </>
   )
+}
+
+/**
+ * The field's width to hold in Query mode: the width it had in Basic mode
+ * just before the switch. Query mode takes the filter tokens beside the field
+ * away, and a growing field would move everything after it; held, switching
+ * modes moves and resizes nothing. A change of the toolbar's own width (a
+ * resized window, a panel opened) lets go, so the field fits again. Nothing
+ * is held for a list opened in Query mode (no switch happened).
+ */
+function useModeWidth(
+  ref: React.RefObject<HTMLElement | null>,
+  queryActive: boolean
+): number | null {
+  const basicWidth = React.useRef<number | null>(null)
+  const [held, setHeld] = React.useState<number | null>(null)
+  // Basic mode: remember the width, kept current.
+  React.useLayoutEffect(() => {
+    const el = ref.current
+    if (queryActive || !el) return
+    setHeld(null)
+    const read = () => {
+      const w = el.getBoundingClientRect().width
+      if (w > 0) basicWidth.current = w
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, queryActive])
+  // Query mode: hold it until the toolbar itself changes width.
+  React.useLayoutEffect(() => {
+    const el = ref.current
+    if (!queryActive || !el || basicWidth.current === null) return
+    setHeld(basicWidth.current)
+    const bar =
+      el.closest<HTMLElement>('[data-slot="list-toolbar-region"]') ??
+      el.closest<HTMLElement>('[data-slot="list-toolbar"]') ??
+      el.parentElement
+    if (!bar || typeof ResizeObserver === 'undefined') return
+    let start: number | null = null
+    const ro = new ResizeObserver(() => {
+      const w = bar.getBoundingClientRect().width
+      if (start === null) start = w
+      else if (Math.abs(w - start) > 0.5) {
+        basicWidth.current = null
+        setHeld(null)
+      }
+    })
+    ro.observe(bar)
+    return () => ro.disconnect()
+  }, [ref, queryActive])
+  return queryActive ? held : null
 }
 
 /**
@@ -324,28 +377,4 @@ function useJoinedStart(ref: React.RefObject<HTMLElement | null>, hasStart: bool
     return () => ro.disconnect()
   }, [ref, hasStart])
   return joined
-}
-
-/**
- * An element's width, kept current (0 until measured, or in jsdom). A
- * callback ref: it follows whichever element holds it, so an element that is
- * drawn again elsewhere (in the lazy query editor, after its placeholder) is
- * measured again, and a detached one never reports its width as 0.
- */
-function useWidth(): [number, (el: HTMLElement | null) => void] {
-  const [width, setWidth] = React.useState(0)
-  const observer = React.useRef<ResizeObserver | null>(null)
-  const ref = React.useCallback((el: HTMLElement | null) => {
-    observer.current?.disconnect()
-    observer.current = null
-    if (!el) return
-    const read = () => {
-      if (el.isConnected) setWidth(Math.ceil(el.getBoundingClientRect().width))
-    }
-    read()
-    if (typeof ResizeObserver === 'undefined') return
-    observer.current = new ResizeObserver(read)
-    observer.current.observe(el)
-  }, [])
-  return [width, ref]
 }

@@ -222,7 +222,8 @@ for (const locale of ['en', 'vi'] as const) {
             expect(Math.abs(b.top - before[i].top), `${b.name} moved down`).toBeLessThanOrEqual(1)
             expect(b.height, `${b.name} height`).toBe(before[i].height)
           })
-          // The search field fills the first line.
+          // The search field fills the first line (after the Basic | Query
+          // toggle, on a list with Query mode).
           const box = (await page
             .locator('main [data-slot="list-toolbar-region"], main [data-slot="list-toolbar"]')
             .first()
@@ -231,7 +232,12 @@ for (const locale of ['en', 'vi'] as const) {
             .locator('main [data-slot="list-search"]')
             .first()
             .boundingBox())!
-          expect(search.width).toBeGreaterThanOrEqual(box.width - 1)
+          const mode = await page
+            .locator('main [data-slot="list-search-mode"]:visible')
+            .boundingBox()
+          const start = mode ? mode.x + mode.width + 8 : box.x
+          expect(Math.abs(search.x - start)).toBeLessThanOrEqual(1)
+          expect(search.x + search.width).toBeGreaterThanOrEqual(box.x + box.width - 1)
         }
       )
     }
