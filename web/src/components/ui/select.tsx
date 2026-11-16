@@ -91,8 +91,8 @@ function SelectTrigger({
 
 /**
  * The option list: below its trigger (above when there is no room), never
- * laid over it, at least as wide as it, lined up with the trigger edge on the
- * side of the screen it is in.
+ * laid over it, at least as wide as it, lined up with the trigger's start
+ * edge unless that would cross the room it has (`chooseAlign`).
  */
 function SelectContent({
   className,
@@ -102,12 +102,28 @@ function SelectContent({
   side,
   collisionPadding = FLOATING_COLLISION_PADDING,
   style,
+  ref,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
-  const floating = useFloatingContent({ align, side, collisionPadding, fallbackAlign: 'start' })
+  const floating = useFloatingContent({
+    align,
+    side,
+    collisionPadding,
+    fallbackAlign: 'start',
+  })
+  const { attach } = floating
+  const contentRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      attach(node)
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref, attach]
+  )
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
+        ref={contentRef}
         data-slot="select-content"
         style={position === 'popper' ? { ...floating.style, ...style } : style}
         className={cn(

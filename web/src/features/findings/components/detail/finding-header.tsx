@@ -243,7 +243,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-52">
+          <DropdownMenuContent>
             <DropdownMenuItem
               onClick={async () => {
                 const ok = await copyToClipboard(shareableLink(`/findings/${finding.id}`))

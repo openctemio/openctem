@@ -30,21 +30,77 @@ export type FloatingSide = 'top' | 'right' | 'bottom' | 'left'
 export type FloatingPadding = { top: number; right: number; bottom: number; left: number }
 
 /**
+ * Width of a menu: its content's, between a floor and a ceiling. The floor is
+ * the trigger's width or 128 px (160 px when its items carry icons), the
+ * ceiling 360 px or the screen less both gutters. A call site sets a width of
+ * its own only when the content needs one (`floating-width-guard.test.ts`).
+ */
+export const FLOATING_MENU_MIN_WIDTH = 128
+export const FLOATING_MENU_MIN_WIDTH_ICONS = 160
+export const FLOATING_MENU_MAX_WIDTH = 360
+
+/**
+ * How far inside a drawer, sheet or dialog a popup opened from it stays from
+ * that overlay's edges (it is placed within the overlay when it fits).
+ */
+export const FLOATING_OVERLAY_INSET = 8
+
+/** The horizontal room a popup may use, in viewport coordinates. */
+export type FloatingBounds = { left: number; right: number }
+
+// Half a pixel of rounding either way.
+const FIT_TOLERANCE = 0.5
+
+/**
  * Which edge of its trigger a popup lines up with when the call site does not
- * say: the trigger's centre in the inline-start half of the viewport lines it
- * up with the start edge (the popup grows towards the far side, where the
- * room is), otherwise with the end edge. Logical, so a right-to-left page
- * mirrors it.
+ * say. The start edge (the popup's left edge on the trigger's left edge, in a
+ * left-to-right page), unless the popup would then cross the end of the room
+ * it has (the screen less its gutter, or the drawer it was opened from): then
+ * the end edge, when that fits. When neither fits, the edge with more room;
+ * the positioning engine shifts it the rest of the way. So a trigger at the
+ * end of its row (a row's "..." button, the page header's More) ends up
+ * end-aligned because the start would collide, not because of where on the
+ * screen it is. Logical, so a right-to-left page mirrors it.
  */
 export function chooseAlign(
   trigger: { left: number; right: number },
-  viewportWidth: number,
+  width: number,
+  bounds: FloatingBounds,
   dir: 'ltr' | 'rtl' = 'ltr'
 ): FloatingAlign {
-  const centre = (trigger.left + trigger.right) / 2
-  const half = viewportWidth / 2
-  const inStartHalf = dir === 'rtl' ? centre > half : centre < half
-  return inStartHalf ? 'start' : 'end'
+  const rtl = dir === 'rtl'
+  // Room from each candidate edge of the trigger to the far side of the bounds.
+  const roomStart = rtl ? trigger.right - bounds.left : bounds.right - trigger.left
+  const roomEnd = rtl ? bounds.right - trigger.left : trigger.right - bounds.left
+  if (width <= roomStart + FIT_TOLERANCE) return 'start'
+  if (width <= roomEnd + FIT_TOLERANCE) return 'end'
+  return roomStart >= roomEnd ? 'start' : 'end'
+}
+
+/** The drawer, sheet, dialog or popover an element sits in, if any. */
+export function containingOverlay(el: Element): Element | null {
+  return el.closest('[role="dialog"],[role="alertdialog"]')
+}
+
+/**
+ * The room a popup has across the screen: the viewport less its padding, and
+ * inside the overlay its trigger sits in (less `FLOATING_OVERLAY_INSET`) when
+ * the popup fits there. `overlay` is true when the overlay bounds it.
+ */
+export function floatingBounds(
+  viewportWidth: number,
+  padding: { left: number; right: number },
+  width: number,
+  overlay: { left: number; right: number } | null
+): FloatingBounds & { overlay: boolean } {
+  const screen = { left: padding.left, right: viewportWidth - padding.right }
+  if (!overlay) return { ...screen, overlay: false }
+  const inner = {
+    left: Math.max(screen.left, overlay.left + FLOATING_OVERLAY_INSET),
+    right: Math.min(screen.right, overlay.right - FLOATING_OVERLAY_INSET),
+  }
+  if (width > inner.right - inner.left + FIT_TOLERANCE) return { ...screen, overlay: false }
+  return { ...inner, overlay: true }
 }
 
 /** What a popup must keep clear of, measured when it opens. */
@@ -160,91 +216,44 @@ export function measureFloatingEnvironment(): FloatingEnvironment {
   return { safe: measureSafeArea(), bottomObstruction: measureBottomObstruction() }
 }
 
-function sameEnvironment(a: FloatingEnvironment, b: FloatingEnvironment): boolean {
-  return (
-    a.bottomObstruction === b.bottomObstruction &&
-    a.safe.top === b.safe.top &&
-    a.safe.right === b.safe.right &&
-    a.safe.bottom === b.safe.bottom &&
-    a.safe.left === b.safe.left
-  )
-}
-
 type FloatingAnchorState = {
   /** Records the trigger; called by the kit's Trigger wrappers. */
   setTrigger: (el: HTMLElement | null) => void
   /** Records a `PopoverAnchor`, when there is one: the popup is placed against it. */
   setAnchor: (el: HTMLElement | null) => void
-  /** Edge to line up with, from where the trigger was when the popup opened. */
-  align: FloatingAlign | undefined
-  env: FloatingEnvironment
+  /** The element the popup is placed against: the anchor, else the trigger. */
+  getAnchor: () => HTMLElement | null
 }
 
 const FloatingAnchorContext = React.createContext<FloatingAnchorState | null>(null)
 
-/**
- * Root state of one floating surface: measures its trigger and the screen each
- * time it opens (and on resize while open), so the content can pick its
- * alignment and padding. Nothing is measured while it is closed.
- */
-function useFloatingAnchorState(open: boolean): FloatingAnchorState {
+/** Root state of one floating surface: where its trigger (or anchor) is. */
+function useFloatingAnchorState(): FloatingAnchorState {
   const triggerRef = React.useRef<HTMLElement | null>(null)
   const anchorRef = React.useRef<HTMLElement | null>(null)
-  const [align, setAlign] = React.useState<FloatingAlign | undefined>(undefined)
-  const [env, setEnv] = React.useState<FloatingEnvironment>(NO_FLOATING_ENVIRONMENT)
-
-  const setTrigger = React.useCallback((el: HTMLElement | null) => {
-    triggerRef.current = el
-  }, [])
-  const setAnchor = React.useCallback((el: HTMLElement | null) => {
-    anchorRef.current = el
-  }, [])
-
-  React.useLayoutEffect(() => {
-    if (!open) return
-    const measure = () => {
-      const el = anchorRef.current ?? triggerRef.current
-      if (el) {
-        const dir = getComputedStyle(el).direction === 'rtl' ? 'rtl' : 'ltr'
-        setAlign(chooseAlign(el.getBoundingClientRect(), window.innerWidth, dir))
-      }
-      const next = measureFloatingEnvironment()
-      setEnv((prev) => (sameEnvironment(prev, next) ? prev : next))
-    }
-    measure()
-    const vv = window.visualViewport
-    window.addEventListener('resize', measure)
-    vv?.addEventListener('resize', measure)
-    return () => {
-      window.removeEventListener('resize', measure)
-      vv?.removeEventListener('resize', measure)
-    }
-  }, [open])
-
   return React.useMemo(
-    () => ({ setTrigger, setAnchor, align, env }),
-    [setTrigger, setAnchor, align, env]
+    () => ({
+      setTrigger: (el: HTMLElement | null) => {
+        triggerRef.current = el
+      },
+      setAnchor: (el: HTMLElement | null) => {
+        anchorRef.current = el
+      },
+      getAnchor: () => anchorRef.current ?? triggerRef.current,
+    }),
+    []
   )
 }
 
 /**
- * Wraps a kit Root (`DropdownMenu`, `Popover`, `Select`): mirrors its open
- * state without taking control of it and provides the anchor state.
+ * Wraps a kit Root (`DropdownMenu`, `Popover`, `Select`) and provides the
+ * anchor state its Trigger records and its Content measures.
  */
 export function useFloatingRoot<P extends { open?: boolean; defaultOpen?: boolean }>(
   props: P & { onOpenChange?: (open: boolean) => void }
 ) {
-  const { open: openProp, defaultOpen, onOpenChange } = props
-  const [openMirror, setOpenMirror] = React.useState(defaultOpen ?? false)
-  const handleOpenChange = React.useCallback(
-    (next: boolean) => {
-      setOpenMirror(next)
-      onOpenChange?.(next)
-    },
-    [onOpenChange]
-  )
-  const state = useFloatingAnchorState(openProp ?? openMirror)
-  return { state, onOpenChange: handleOpenChange }
+  const state = useFloatingAnchorState()
+  return { state, onOpenChange: props.onOpenChange }
 }
 
 export function FloatingAnchorProvider({
@@ -272,13 +281,31 @@ function noop() {}
 
 const CROSS_AXIS_SIDES = new Set<string>(['left', 'right'])
 
+type Placement = { align: FloatingAlign | undefined; padding: FloatingPadding | null }
+
+function samePlacement(a: Placement, b: Placement): boolean {
+  if (a.align !== b.align) return false
+  if (a.padding === b.padding) return true
+  if (!a.padding || !b.padding) return false
+  return (
+    a.padding.top === b.padding.top &&
+    a.padding.right === b.padding.right &&
+    a.padding.bottom === b.padding.bottom &&
+    a.padding.left === b.padding.left
+  )
+}
+
 /**
- * Alignment, collision padding and the max-width variable of a kit Content
- * wrapper. A call site that passes `align` keeps it; a popup placed beside
- * its trigger (side left/right) keeps the caller's alignment too, since the
- * half-of-the-screen rule is about the horizontal axis.
+ * Alignment, collision padding, the max-width variable and the `attach`
+ * callback (pass it as the Content's ref) of a kit
+ * Content wrapper. Each time the popup opens (and when the screen or the
+ * popup's own size changes while it is open) it measures the popup, its
+ * trigger, the screen and the drawer or dialog the trigger sits in, and
+ * places the popup by `chooseAlign` within that room. A call site that passes
+ * `align` keeps it; a popup beside its trigger (side left/right) keeps the
+ * caller's alignment too, since the rule is about the horizontal axis.
  */
-export function useFloatingContent({
+export function useFloatingContent<E extends HTMLElement>({
   align,
   side,
   collisionPadding,
@@ -291,20 +318,74 @@ export function useFloatingContent({
   fallbackAlign: 'start' | 'center' | 'end'
 }) {
   const ctx = React.useContext(FloatingAnchorContext)
-  const env = ctx?.env ?? NO_FLOATING_ENVIRONMENT
-  const padding = React.useMemo<number | Partial<FloatingPadding>>(() => {
-    if (typeof collisionPadding === 'object') return collisionPadding
-    return floatingPadding(collisionPadding ?? FLOATING_COLLISION_PADDING, env)
-  }, [collisionPadding, env])
-  const resolvedAlign =
-    align ?? (side && CROSS_AXIS_SIDES.has(side) ? undefined : ctx?.align) ?? fallbackAlign
+  const [node, setNode] = React.useState<E | null>(null)
+  // Named `attach`, not a ref: the content element is kept in state.
+  const attach = React.useCallback((el: E | null) => setNode(el), [])
+  const fixedPadding = typeof collisionPadding === 'object' ? collisionPadding : null
+  const base = typeof collisionPadding === 'number' ? collisionPadding : FLOATING_COLLISION_PADDING
+  const auto = align === undefined && !(side && CROSS_AXIS_SIDES.has(side))
+  const [placement, setPlacement] = React.useState<Placement>({
+    align: undefined,
+    padding: null,
+  })
+
+  React.useLayoutEffect(() => {
+    if (!node || fixedPadding) return
+    const measure = () => {
+      const env = measureFloatingEnvironment()
+      const padding = floatingPadding(base, env)
+      let nextAlign: FloatingAlign | undefined
+      const anchor = ctx?.getAnchor()
+      if (anchor?.isConnected) {
+        const a = anchor.getBoundingClientRect()
+        // Before the first placement the popup has no min-width from its
+        // trigger yet: it is at least as wide as the trigger.
+        const width = Math.max(node.getBoundingClientRect().width, a.width)
+        const overlay = containingOverlay(anchor)
+        const bounds = floatingBounds(
+          window.innerWidth,
+          padding,
+          width,
+          overlay ? overlay.getBoundingClientRect() : null
+        )
+        if (bounds.overlay) {
+          padding.left = bounds.left
+          padding.right = window.innerWidth - bounds.right
+        }
+        if (auto) {
+          const dir = getComputedStyle(anchor).direction === 'rtl' ? 'rtl' : 'ltr'
+          nextAlign = chooseAlign(a, width, bounds, dir)
+        }
+      }
+      const next = { align: nextAlign, padding }
+      setPlacement((prev) => (samePlacement(prev, next) ? prev : next))
+    }
+    measure()
+    const vv = window.visualViewport
+    window.addEventListener('resize', measure)
+    vv?.addEventListener('resize', measure)
+    // The content can change after it opens (moves that load, a filtered list).
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(node)
+    return () => {
+      window.removeEventListener('resize', measure)
+      vv?.removeEventListener('resize', measure)
+      observer?.disconnect()
+    }
+  }, [node, fixedPadding, base, auto, ctx])
+
+  const padding = React.useMemo<number | Partial<FloatingPadding>>(
+    () => fixedPadding ?? placement.padding ?? floatingPadding(base, NO_FLOATING_ENVIRONMENT),
+    [fixedPadding, placement.padding, base]
+  )
+  const resolvedAlign = align ?? (auto ? placement.align : undefined) ?? fallbackAlign
   const gutterX =
     typeof padding === 'number' ? padding * 2 : (padding.left ?? 0) + (padding.right ?? 0)
   const style = React.useMemo(
     () => ({ '--float-gutter-x': `${gutterX}px` }) as React.CSSProperties,
     [gutterX]
   )
-  return { align: resolvedAlign, collisionPadding: padding, style }
+  return { align: resolvedAlign, collisionPadding: padding, style, attach }
 }
 
 /**
