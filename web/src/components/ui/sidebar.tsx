@@ -182,7 +182,10 @@ function SidebarProvider({
                 ...style,
               } as React.CSSProperties
             }
-            className={cn('group/sidebar-wrapper flex h-svh w-full overflow-hidden', className)}
+            // overflow-clip, not hidden: a hidden box is still a scroll
+            // container, and the router's scrollIntoView on a navigation
+            // scrolls every scrollable ancestor of the page.
+            className={cn('group/sidebar-wrapper flex h-svh w-full overflow-clip', className)}
             {...props}
           >
             {children}
@@ -442,7 +445,10 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'div'>) {
       className={cn(
         // min-w-0: as a flex-1 item its min-width would otherwise be its content's
         // min-content width; this keeps the content column bounded by the viewport.
-        'bg-background relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-hidden',
+        // overflow-clip, not hidden: the column must never scroll (the page
+        // scrolls inside it). A hidden box can be scrolled by scrollIntoView,
+        // which moved the sticky header over the page title on a navigation.
+        'bg-background relative flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-clip',
         className
       )}
       {...props}
