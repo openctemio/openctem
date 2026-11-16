@@ -160,21 +160,28 @@ test.describe('on a phone with touch', () => {
 
         // Every quick view from the sidebar sheet, from a scrolled page.
         const trigger = page.locator('[data-sidebar="trigger"]').first()
-        await trigger.tap()
         const drawer = page.locator('[data-mobile="true"]')
         const views = drawer.getByRole('list', { name: list.views })
-        await expect(views).toBeVisible({ timeout: 20_000 })
+        // The views arrive with their counts; a tap made while the page was
+        // still settling is repeated.
+        const openSheet = () =>
+          expect(async () => {
+            if (!(await drawer.isVisible())) await trigger.tap()
+            await expect(views).toBeVisible({ timeout: 5_000 })
+          }).toPass({ timeout: 45_000 })
+        await openSheet()
         expectShellStill(await readPhoneShell(page), 'opening the sidebar sheet')
         const count = await views.getByRole('link').count()
         await page.keyboard.press('Escape')
         await expect(drawer).toBeHidden()
         for (let i = 0; i < count; i++) {
           await page.evaluate(() => document.querySelector('main#content')?.scrollTo(0, 200))
-          await trigger.tap()
-          await expect(views).toBeVisible({ timeout: 20_000 })
+          await openSheet()
           const link = views.getByRole('link').nth(i)
           const name = (await link.textContent())?.trim()
+          const href = await link.getAttribute('href')
           await link.tap()
+          await page.waitForURL((u) => `${u.pathname}${u.search}` === href)
           await expect(drawer).toBeHidden()
           await page.waitForLoadState('networkidle')
           expectAtTop(await readShell(page), `${name} on a phone`)
