@@ -11,9 +11,11 @@ import { cn } from '@/lib/utils'
 export function NavCount({
   children,
   tone = 'muted',
+  className,
 }: {
   children: ReactNode
   tone?: 'muted' | 'action' | 'danger'
+  className?: string
 }) {
   return (
     <span
@@ -22,7 +24,8 @@ export function NavCount({
         'ms-auto shrink-0 text-cap tabular-nums',
         tone === 'action' && 'font-semibold text-signal-text',
         tone === 'danger' && 'font-medium text-destructive',
-        tone === 'muted' && 'text-fg-dim'
+        tone === 'muted' && 'text-fg-dim',
+        className
       )}
     >
       {children}

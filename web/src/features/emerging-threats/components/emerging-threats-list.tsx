@@ -7,6 +7,7 @@
  * why and the actions. Server text (products) is rendered as plain text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -393,6 +394,18 @@ export function EmergingThreatsList() {
   return (
     <PageStack>
       <MetricStrip items={strip} loading={isLoading && !data} />
+      {!neverAny && (
+        <ListTitleRow
+          title={t('emergingThreats.list.viewAll', 'All emerging threats')}
+          count={
+            <ListCount
+              total={data?.total ?? 0}
+              loading={!data}
+              label={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
+            />
+          }
+        />
+      )}
 
       {neverAny ? (
         <EmptyState
@@ -450,7 +463,6 @@ export function EmergingThreatsList() {
                             })
                         : undefined
                     }
-                    end={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
                   />
                 ) : undefined
               }

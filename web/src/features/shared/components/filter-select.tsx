@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { ToolbarSlot } from './toolbar-slot'
 
 /**
  * The list-state model (research/249 R21, amended): the state or status of a
@@ -58,6 +59,13 @@ export interface FilterSelectProps<V extends string> {
    * base chip reads just its value there. The key stays in the accessible name.
    */
   foldLabel?: boolean
+  /**
+   * Every value label the control can ever show (default: the options, and
+   * "All" when clearable). The value sits in a box as wide as the longest, so
+   * choosing a value, or options arriving later, never changes the control's
+   * width. Pass the whole set when `options` lists only some of it.
+   */
+  sizeLabels?: readonly string[]
   className?: string
 }
 
@@ -71,6 +79,7 @@ export function FilterSelect<V extends string>({
   allLabel,
   clearable = true,
   foldLabel = false,
+  sizeLabels,
   className,
 }: FilterSelectProps<V>) {
   const { t, locale } = useTranslation()
@@ -106,7 +115,13 @@ export function FilterSelect<V extends string>({
           >
             {label}:
           </span>
-          <span className="truncate font-medium">{current?.label ?? all}</span>
+          <ToolbarSlot
+            className="max-w-28 font-medium"
+            options={sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]}
+            title={current?.label ?? all}
+          >
+            {current?.label ?? all}
+          </ToolbarSlot>
           <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-48">

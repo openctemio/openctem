@@ -1,0 +1,49 @@
+import * as React from 'react'
+import { cn } from '@/lib/utils'
+
+/**
+ * A value shown inside a toolbar control (a select's value, a view's name)
+ * in a box of a fixed width: as wide as the longest of `options` (every value
+ * the control can show, in the current language), within the min / max the
+ * caller's classes set. The value shown never changes the width: a longer one
+ * (a saved view's own name) ends in an ellipsis, its full text in `title`.
+ *
+ * The options are laid out invisibly in the same grid cell, as generated
+ * content (`::before`), so they size the cell without being text of the page
+ * (not read out, not found by the browser's find, not matched twice by
+ * tests); the value itself takes no width of its own and fills the cell.
+ * Pure CSS: no measuring, so the width is right on the first paint.
+ */
+export function ToolbarSlot({
+  options,
+  children,
+  title,
+  className,
+}: {
+  /** Every text the slot can show; the longest sets its width. */
+  options: readonly string[]
+  /** The text shown now. */
+  children: React.ReactNode
+  /** The full text, for a value that may be cut. */
+  title?: string
+  className?: string
+}) {
+  return (
+    <span
+      data-slot="toolbar-slot"
+      className={cn('inline-grid min-w-0 grid-cols-[minmax(0,1fr)] text-start', className)}
+    >
+      {options.map((o, i) => (
+        <span
+          key={`${i}:${o}`}
+          aria-hidden="true"
+          data-label={o}
+          className="invisible col-start-1 row-start-1 truncate select-none before:content-[attr(data-label)]"
+        />
+      ))}
+      <span className="col-start-1 row-start-1 w-0 min-w-full truncate" title={title}>
+        {children}
+      </span>
+    </span>
+  )
+}

@@ -122,6 +122,8 @@
   "common.goBack": "Quay lại",
   "common.language": "Ngôn ngữ",
   "common.link.opensInNewTab": "(mở trong thẻ mới)",
+  "common.listCount.capped": "{count}+",
+  "common.listCount.cappedHint": "Đã đếm đến số này",
   "common.listSearch.basic": "Cơ bản",
   "common.listSearch.clear": "Xóa tìm kiếm",
   "common.listSearch.mode": "Chế độ tìm kiếm",
