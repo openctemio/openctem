@@ -328,27 +328,27 @@ export default function CompensatingControlsPage() {
           return (
             <Can permission={Permission.CompensatingControlsWrite}>
               <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" onClick={() => setLinkControl(control)}>
-                  <Link2 className="me-1 h-3 w-3" />
-                  {t('validation.controls.linkAssets', 'Link assets')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setTestControlId(control.id)
-                    setTestResult('pass')
-                  }}
-                >
-                  <FlaskConical className="me-1 h-3 w-3" />
-                  {t('validation.controls.test', 'Test')}
-                </Button>
                 <ActionMenu
                   title={control.name}
                   label={t('common.actionMenu.label', 'Actions for {name}', {
                     name: control.name,
                   })}
                   items={[
+                    {
+                      id: 'link-assets',
+                      label: t('validation.controls.linkAssets', 'Link assets'),
+                      icon: Link2,
+                      onSelect: () => setLinkControl(control),
+                    },
+                    {
+                      id: 'test',
+                      label: t('validation.controls.test', 'Test'),
+                      icon: FlaskConical,
+                      onSelect: () => {
+                        setTestControlId(control.id)
+                        setTestResult('pass')
+                      },
+                    },
                     {
                       id: 'delete',
                       label: t('validation.controls.deleteAria', 'Delete {name}', {

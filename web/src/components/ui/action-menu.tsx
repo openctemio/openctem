@@ -22,7 +22,10 @@
  * folding) that has an icon, the trigger itself becomes that action, in the
  * trigger's place and size, named and titled by it. Pages merge a lone item
  * into their other menu instead; outside production a console error names
- * any one-item menu so a page does not ship one by accident.
+ * any one-item menu so a page does not ship one by accident. A lone
+ * destructive action (Delete, Remove, Revoke) is the exception: it stays
+ * behind the "..." trigger, without the error, so a row never shows a bare
+ * destructive button; a row's other direct action joins that menu instead.
  *
  * Only this file is in the routes' first-load code: the menu itself
  * (`action-menu-impl.tsx`) loads right after the page shows. A press on the
@@ -81,10 +84,14 @@ function hasItems(items: ActionMenuEntry[]): boolean {
   return items.some((e) => e.kind !== 'sub' || e.items.length > 0)
 }
 
-/** The one action of a menu that would hold a single item, else null. */
+/**
+ * The one action of a menu that would hold a single item, else null. A lone
+ * destructive action is never one: it stays behind the "..." trigger, the one
+ * menu that may hold a single item, so a row never shows a bare Delete.
+ */
 export function soleAction(items: ActionMenuEntry[]): ActionMenuAction | null {
   const shown = items.flatMap((e) => (e.kind === 'sub' ? e.items : [e]))
-  return shown.length === 1 ? shown[0] : null
+  return shown.length === 1 && !shown[0].destructive ? shown[0] : null
 }
 
 /** The trigger turned into the one action: same place, size and look. */

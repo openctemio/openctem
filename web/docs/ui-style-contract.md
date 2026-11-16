@@ -765,6 +765,11 @@ items (label, `onSelect` or `href`, optional `group`, `icon`, `destructive`,
 `disabledReason`, `shortcut`, or a `kind: 'sub'` submenu), the trigger, the
 object's name (`title`) and the sheet's purpose (`label`).
 
+- A menu never holds one item: a single non-destructive action with an icon
+  renders as that button, in the trigger's place and size. A lone destructive
+  action (Delete, Remove, Revoke, Disable) is exempt: it stays behind the "⋯"
+  trigger, the one menu that may hold a single item, and a row's other direct
+  action joins that menu. See `findings-list.md`, "More menu".
 - From 768 px up it is the anchored menu: rows 32 (44 under a coarse pointer),
   an unavailable item dimmed with its reason on hover or focus (and as a second
   line under a coarse pointer), shortcuts with a fine pointer only.

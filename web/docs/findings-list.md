@@ -89,6 +89,10 @@ The page has one overflow ("More") menu at a time.
 - No menu opens with a single item: when one action is left and it has an icon, the More button becomes that action in
   the same place and size (the bulk bar's "Remediation task" is one). This is a rule of the shared action menu, so it
   holds on every list page.
+- The exception is a lone destructive action (Delete, Remove, Revoke, Disable): it never becomes a bare button, so a
+  row cannot be mis-tapped into it. It stays behind the More trigger, the one menu that may hold a single item, and
+  the one-item console error does not fire for it. Where the row already has another direct action (Test on a
+  control), that action joins the menu, so the row has one More with both.
 
 ## Translation
 
