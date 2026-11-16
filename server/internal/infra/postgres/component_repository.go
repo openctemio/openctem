@@ -13,7 +13,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/lib/pq"
@@ -129,9 +128,17 @@ func packagesCTE(f component.Filter, args *sqlArgs) string {
 	if len(f.Severities) > 0 {
 		conds := make([]string, 0, len(f.Severities))
 		for _, s := range f.Severities {
+			// Constants chosen by the switch: the request value is only
+			// compared, never copied into the statement.
 			switch s {
-			case "critical", "high", "medium", "low":
-				conds = append(conds, "COALESCE(pf."+s+", 0) > 0")
+			case "critical":
+				conds = append(conds, "COALESCE(pf.critical, 0) > 0")
+			case "high":
+				conds = append(conds, "COALESCE(pf.high, 0) > 0")
+			case "medium":
+				conds = append(conds, "COALESCE(pf.medium, 0) > 0")
+			case "low":
+				conds = append(conds, "COALESCE(pf.low, 0) > 0")
 			}
 		}
 		if len(conds) > 0 {
@@ -322,34 +329,42 @@ const facetEcosystem = "ecosystem"
 func (r *ComponentRepository) PackageFacets(ctx context.Context, f component.Filter) (component.Facets, error) {
 	// One statement: the package set (packagesCTE) is computed once and
 	// every facet reads it, instead of one statement per facet each
-	// recomputing it. Each part returns (value, count, position in its
-	// facet); the parts run after packagesCTE (pkgs, links): fragments, not
-	// statements.
-	parts := map[string]string{
-		facetEcosystem: `SELECT purl_type, count(*), row_number() OVER (ORDER BY count(*) DESC, purl_type) FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50`,
-		"license":      `SELECT lic, count(*), row_number() OVER (ORDER BY count(*) DESC, lic) FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30`,
-		auditKeySeverity: `SELECT s, n, o FROM (SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n, 1 AS o FROM pkgs
-			UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0), 2 FROM pkgs
-			UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0), 3 FROM pkgs
-			UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0), 4 FROM pkgs) x WHERE n > 0`,
-		"kev":          `SELECT 'true', count(*), 1 FROM pkgs WHERE kev > 0 HAVING count(*) > 0`,
-		"has_fix":      `SELECT 'true', count(*), 1 FROM pkgs WHERE fix HAVING count(*) > 0`,
-		"relationship": `SELECT l.relationship, count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, l.relationship) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1`,
-		"scope":        `SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, COALESCE(l.dep_scope, 'runtime')) FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1`,
-	}
-	keys := make([]string, 0, len(parts))
-	for k := range parts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	union := make([]string, 0, len(keys))
-	for _, k := range keys {
-		// k is one of the constant keys above, never request text.
-		union = append(union, "SELECT '"+k+"'::text, x.v::text, x.n::bigint, x.o::bigint FROM ("+parts[k]+") AS x(v, n, o) WHERE x.v IS NOT NULL")
-	}
+	// recomputing it. Each branch returns (facet key, value, count,
+	// position in its facet). The body is one constant literal after the
+	// CTE; no request text reaches it and every value is bound in args.
 	args := &sqlArgs{}
-	//nolint:gosec // G202: the CTE and the facet parts are constants; every value is bound in args
-	query := packagesCTE(f, args) + " SELECT * FROM (" + strings.Join(union, " UNION ALL ") + ") facets ORDER BY 1, 4"
+	query := packagesCTE(f, args) + `
+		SELECT * FROM (
+			SELECT 'ecosystem'::text AS k, x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT purl_type, count(*), row_number() OVER (ORDER BY count(*) DESC, purl_type)
+				FROM pkgs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 50) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'license', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT lic, count(*), row_number() OVER (ORDER BY count(*) DESC, lic)
+				FROM pkgs, unnest(licenses) AS lic GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 30) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'severity', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT s, n, o FROM (
+					SELECT 'critical' AS s, count(*) FILTER (WHERE critical > 0) AS n, 1 AS o FROM pkgs
+					UNION ALL SELECT 'high', count(*) FILTER (WHERE high > 0), 2 FROM pkgs
+					UNION ALL SELECT 'medium', count(*) FILTER (WHERE medium > 0), 3 FROM pkgs
+					UNION ALL SELECT 'low', count(*) FILTER (WHERE low > 0), 4 FROM pkgs) y WHERE n > 0) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'kev', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT 'true', count(*), 1 FROM pkgs WHERE kev > 0 HAVING count(*) > 0) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'has_fix', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT 'true', count(*), 1 FROM pkgs WHERE fix HAVING count(*) > 0) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'relationship', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT l.relationship, count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, l.relationship)
+				FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1) AS x(v, n, o) WHERE x.v IS NOT NULL
+			UNION ALL
+			SELECT 'scope', x.v::text, x.n::bigint, x.o::bigint FROM (
+				SELECT COALESCE(l.dep_scope, 'runtime'), count(DISTINCT l.product_id), row_number() OVER (ORDER BY count(DISTINCT l.product_id) DESC, COALESCE(l.dep_scope, 'runtime'))
+				FROM links l JOIN pkgs ON pkgs.id = l.product_id GROUP BY 1) AS x(v, n, o) WHERE x.v IS NOT NULL
+		) facets ORDER BY 1, 4`
+	keys := []string{facetEcosystem, "license", auditKeySeverity, "kev", "has_fix", "relationship", "scope"}
 
 	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
 	if err != nil {
