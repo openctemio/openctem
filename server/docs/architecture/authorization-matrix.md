@@ -287,7 +287,7 @@ Details: [api-keys.md](./api-keys.md).
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/assets` | `assets:read` |
+| `GET /api/v1/assets` | `assets:read`; the open-findings numbers of each asset (list, detail, quick view), the `has_findings` and `finding_count` filters and the sort on the count follow the findings list's pentest member rule: a member counts a pentest finding only when on its campaign (no draft or in-review one for its client role), so neither the number, a filter nor the order reveals one; an administrator counts every finding |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
