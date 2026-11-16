@@ -70,7 +70,6 @@
   "assetGroups.detail.info.id": "Group ID",
   "assetGroups.detail.info.title": "Group information",
   "assetGroups.detail.info.updated": "Updated",
-  "assetGroups.detail.moreActions": "More actions",
   "assetGroups.detail.noAssetsYet": "No assets in this group yet",
   "assetGroups.detail.noDescription": "No description",
   "assetGroups.detail.noOpenLoaded": "No open findings in the loaded rows",

@@ -521,6 +521,7 @@
   "org.ownership.error.void": "The person who asked is no longer the owner, so this transfer is void.",
   "org.ownership.outsider.confirm": "I confirm that {name} becomes an internal member",
   "org.ownership.outsider.notice": "{name} is outside the organization and no organization manages their address. When they accept, they become an internal member and their end of access is removed.",
+  "org.ownership.pendingReason": "A transfer is already waiting for an answer: cancel it first.",
   "org.ownership.previousRole.hint": "Your custom roles and teams stay. Only the owner can delete the organization, make administrators and change security settings.",
   "org.ownership.previousRole.label": "After the transfer, you become",
   "org.ownership.theOwner": "The owner",

@@ -75,7 +75,7 @@ describe('Dashboards page', () => {
 
   it('the edit form is addressed by ?edit=<id>, and Edit navigates there', async () => {
     const { unmount } = render(<DashboardsPage />)
-    await userEvent.click(screen.getAllByRole('button', { name: /^More actions for / })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for / })[0])
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit details' }))
     expect(nav.push).toHaveBeenCalledWith('/dashboards?edit=d1')
     unmount()

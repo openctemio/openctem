@@ -40,7 +40,7 @@
   "src/app/(dashboard)/settings/integrations/notifications/outbox/page.tsx": 1,
   "src/app/(dashboard)/settings/integrations/notifications/page.tsx": 4,
   "src/app/(dashboard)/settings/integrations/scm/page.tsx": 2,
-  "src/app/(dashboard)/settings/members/page.tsx": 9,
+  "src/app/(dashboard)/settings/members/page.tsx": 8,
   "src/app/(dashboard)/settings/pentest/checklists/page.tsx": 1,
   "src/app/(dashboard)/settings/pentest/page.tsx": 4,
   "src/app/(dashboard)/settings/pentest/templates/page.tsx": 1,

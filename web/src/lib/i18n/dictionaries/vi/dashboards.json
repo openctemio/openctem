@@ -222,7 +222,6 @@
   "dashboards.manage.general": "Chung",
   "dashboards.manage.layout": "Bố cục",
   "dashboards.manage.layoutHint": "Số cột của bảng điều khiển. Mỗi widget giữ tỷ lệ chiều rộng của nó.",
-  "dashboards.manage.moreFor": "Thao tác khác cho {name}",
   "dashboards.manage.name": "Tên",
   "dashboards.manage.namePlaceholder": "Ví dụ: Tổng quan điều hành",
   "dashboards.manage.nameRequired": "Cần nhập tên",

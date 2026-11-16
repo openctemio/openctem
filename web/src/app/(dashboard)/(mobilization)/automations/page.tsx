@@ -57,13 +57,7 @@ import {
   Copy,
   Clock,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
@@ -689,50 +683,60 @@ export default function WorkflowsPage() {
       enableHiding: false,
       cell: ({ row }) => {
         const workflow = row.original
+        const label = t('common.actionMenu.label', 'Actions for {name}', { name: workflow.name })
+        const items: ActionMenuEntry[] = [
+          {
+            id: 'view',
+            label: t('automations.menu.viewDetails', 'View details'),
+            icon: Eye,
+            onSelect: () => handleViewWorkflow(workflow),
+          },
+          {
+            id: 'edit-in-builder',
+            label: t('automations.menu.editInBuilder', 'Edit in builder'),
+            icon: Pencil,
+            onSelect: () => handleEditInBuilder(workflow),
+          },
+          {
+            id: 'run-now',
+            label: t('automations.menu.runNow', 'Run now'),
+            icon: Play,
+            disabledReason: !canWrite
+              ? t('automations.menu.noWriteReason', 'You need permission to run automations.')
+              : undefined,
+            onSelect: () => setPendingRun(workflow),
+          },
+          {
+            id: 'duplicate',
+            section: 'duplicate',
+            label: t('automations.menu.duplicate', 'Duplicate'),
+            icon: Copy,
+            onSelect: () => handleDuplicateWorkflow(workflow),
+          },
+          {
+            id: 'delete',
+            label: t('confirm.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            disabledReason: !canPublish
+              ? t('automations.menu.noPublishReason', 'You need permission to delete automations.')
+              : isDeleting && deleteWorkflowId === workflow.id
+                ? t('automations.menu.deletingReason', 'This automation is being deleted.')
+                : undefined,
+            onSelect: () => setPendingDelete(workflow),
+          },
+        ]
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="p-0"
-                aria-label={t('automations.menu.actionsFor', 'Actions for {name}', {
-                  name: workflow.name,
-                })}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-4 w-4" />
+          <ActionMenu
+            title={workflow.name}
+            label={label}
+            items={items}
+            trigger={
+              <Button variant="ghost" size="icon-sm" className="p-0" aria-label={label}>
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => handleViewWorkflow(workflow)}>
-                <Eye className="me-2 h-4 w-4" />
-                {t('automations.menu.viewDetails', 'View details')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleEditInBuilder(workflow)}>
-                <Pencil className="me-2 h-4 w-4" />
-                {t('automations.menu.editInBuilder', 'Edit in builder')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setPendingRun(workflow)} disabled={!canWrite}>
-                <Play className="me-2 h-4 w-4" />
-                {t('automations.menu.runNow', 'Run now')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleDuplicateWorkflow(workflow)}>
-                <Copy className="me-2 h-4 w-4" />
-                {t('automations.menu.duplicate', 'Duplicate')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setPendingDelete(workflow)}
-                disabled={!canPublish || (isDeleting && deleteWorkflowId === workflow.id)}
-              >
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('confirm.delete', 'Delete')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         )
       },
     },
