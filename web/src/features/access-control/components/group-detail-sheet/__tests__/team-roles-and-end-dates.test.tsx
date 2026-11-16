@@ -166,8 +166,9 @@ describe('membership end date', () => {
       />
     )
     expect(screen.getByText(/^Ends /)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /open menu|actions/i }))
-    await userEvent.click(await screen.findByText('Change end date'))
+    // The row's one action is a button in the menu trigger's place, not a
+    // menu of one item.
+    await userEvent.click(screen.getByRole('button', { name: 'Change end date' }))
     expect(onChangeEnd).toHaveBeenCalledWith('u1', 'Bob', '2026-12-31T23:59:59Z')
   })
 })

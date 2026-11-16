@@ -219,7 +219,9 @@ export function ListToolbar({
           data-slot="list-toolbar-start"
           className={cn(
             'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:contents',
-            'items-center'
+            // Top: every control is one height, and a taller field (the
+            // expanded query editor, a problem line) moves no token.
+            'items-start'
           )}
         >
           {search ? (
@@ -271,7 +273,9 @@ export function ListToolbar({
           data-slot="list-toolbar-end"
           className={cn(
             'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2 @max-md/toolbar:flex-nowrap',
-            'items-center',
+            // At the row's top: a start group that grows (two lines, the
+            // expanded query editor) never moves Views, Group and Display.
+            'items-center self-start',
             below && '@max-md/toolbar:order-last'
           )}
         >

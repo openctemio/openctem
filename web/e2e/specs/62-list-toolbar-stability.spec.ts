@@ -326,10 +326,20 @@ async function countPlaces(page: Page) {
     const number = text.match(/^[\d.,]+\+?/)?.[0]
     const others: string[] = []
     if (number) {
-      const esc = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const re = new RegExp(`(^|\\s)${esc}\\+?\\s+\\p{L}`, 'u')
+      // The count's own sentence ("26 findings"): said again anywhere else is
+      // the count twice. A row's "1 run" is not the list's "1 scan
+      // configuration", so the noun counts too.
+      const sentence = (counts[0]?.querySelector('.sr-only')?.textContent ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const esc = (sentence || number).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = sentence
+        ? new RegExp(`(^|\\s)${esc}(\\s|$|[.,;:])`, 'iu')
+        : new RegExp(`(^|\\s)${esc}\\+?\\s+\\p{L}`, 'u')
+      // An action's own label ("Add all 12 matching to group") names what it
+      // acts on; it is not the list's count said again.
       const skip =
-        '[data-slot="list-count"], [data-slot="data-table-pager"], [role="tablist"], [data-slot="table-container"], [data-slot="mobile-card"], nav, aside, .sr-only, [role="dialog"]'
+        '[data-slot="list-count"], [data-slot="data-table-pager"], [role="tablist"], [data-slot="table-container"], [data-slot="mobile-card"], nav, aside, .sr-only, [role="dialog"], button, a, [role="button"]'
       const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT)
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
         const el = n.parentElement
@@ -411,10 +421,54 @@ function quickViewPinNeverCoversTheCount() {
   })
 }
 
+/**
+ * One overflow menu per page, never one of a single item: wide, the view's
+ * title row ends with its buttons and Copy link sits in the page header's
+ * More; narrow, Export and Task fold into the title row's More with Copy
+ * link, and the header's More does not repeat it.
+ */
+function oneOverflowMenu() {
+  for (const width of [1440, 1024]) {
+    test(`one overflow menu holds Copy link at ${width}px`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/findings')
+      const row = page.getByTestId('findings-toolbar-primary')
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await settle(page)
+      const rowMore = row.getByRole('button', { name: 'More actions' })
+      const header = page.locator('main header, main [data-slot="page-header"]').first()
+      const headerMore = header.getByRole('button', { name: 'More actions' })
+      const items = async (trigger: typeof rowMore) => {
+        await trigger.click()
+        const menu = page.getByRole('menu')
+        await expect(menu).toBeVisible()
+        const names = await menu.getByRole('menuitem').allInnerTexts()
+        await page.keyboard.press('Escape')
+        await expect(menu).toBeHidden()
+        return names.map((n) => n.trim())
+      }
+      const rowShown = await rowMore.isVisible()
+      const rowItems = rowShown ? await items(rowMore) : []
+      const headerItems = (await headerMore.isVisible()) ? await items(headerMore) : []
+      test.info().annotations.push({
+        type: `menus at ${width}`,
+        description: JSON.stringify({ rowItems, headerItems }),
+      })
+      for (const list of [rowItems, headerItems])
+        expect(list.length === 0 || list.length >= 2).toBe(true)
+      const copyIn = [rowItems, headerItems].filter((l) => l.includes('Copy link')).length
+      expect(copyIn, 'Copy link in exactly one menu').toBe(1)
+      if (width === 1440) expect(rowShown, 'no title-row More when wide').toBe(false)
+    })
+  }
+}
+
 test.describe('Findings list header', { tag: ['@findings'] }, () => {
   headerHoldsStill('/findings')
   saysItsCountOnce('/findings')
   quickViewPinNeverCoversTheCount()
+  oneOverflowMenu()
 })
 test.describe('Assets list header', { tag: ['@assets'] }, () => {
   headerHoldsStill('/assets')

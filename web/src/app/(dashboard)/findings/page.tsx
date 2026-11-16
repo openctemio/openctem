@@ -2461,6 +2461,9 @@ function FindingsContent() {
         ]
       : []),
   ]
+  // The title row's actions are buttons from a 42rem row (the `@2xl/actions`
+  // container query): read the same width here to place Copy link.
+  const [actionsWide, actionsRowRef] = useWideRow(672)
   const copyLinkItem: ActionMenuEntry = {
     id: 'copy-link',
     label: t('findings.toolbar.copyLink', 'Copy link'),
@@ -2482,14 +2485,47 @@ function FindingsContent() {
       }
     />
   )
-  // Narrow (and a phone): Select, the page actions, Copy link.
+  // One overflow menu per page, never one of a single item. Wide, the title
+  // row's actions are buttons and it has no More: Copy link goes to the page
+  // header's More, under "This view". Narrow (and a phone), Export and Task
+  // fold into the title row's More, and Copy link joins them there (never in
+  // two places). A lone page item at that width joins it too (see below).
+  const headerPageItems: ActionMenuEntry[] = [
+    ...(canImport
+      ? [
+          {
+            id: 'import',
+            group: t('findings.header.create', 'Create'),
+            label: t('findings.header.importResults', 'Import results'),
+            icon: FileUp,
+            onSelect: () => setImportDialogOpen(true),
+          },
+        ]
+      : []),
+    {
+      id: 'approvals',
+      label: t('findings.header.approvals', 'Approvals'),
+      icon: ClipboardList,
+      href: '/findings/approvals',
+    },
+  ]
+  const mergeHeader = !actionsWide && headerPageItems.length === 1
   const narrowMoreMenu = listMoreMenu([
     ...(phoneSelect.item ? [phoneSelect.item] : []),
     ...listActionItems,
     copyLinkItem,
+    ...(mergeHeader
+      ? headerPageItems.map((i) => ({ ...i, icon: undefined, group: undefined, section: 'page' }))
+      : []),
   ])
-  // Wide: the page actions are buttons; More keeps Copy link.
-  const wideMoreMenu = listMoreMenu([copyLinkItem])
+  const headerMoreItems: ActionMenuEntry[] = mergeHeader
+    ? []
+    : [
+        ...headerPageItems,
+        ...(actionsWide
+          ? [{ ...copyLinkItem, group: t('findings.header.thisView', 'This view') }]
+          : []),
+      ]
 
   // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
   // group) are context, not facets: always shown, in their own row under the
@@ -2617,6 +2653,7 @@ function FindingsContent() {
   // verification queue, refresh, export, task.
   const primaryRow = (
     <div
+      ref={actionsRowRef}
       data-testid="findings-toolbar-primary"
       className="@container/actions flex items-center gap-2"
     >
@@ -2674,7 +2711,6 @@ function FindingsContent() {
           {taskFromFiltersButton}
         </div>
         <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
-        <div className="hidden @2xl/actions:block">{wideMoreMenu}</div>
       </div>
     </div>
   )
@@ -2793,26 +2829,8 @@ function FindingsContent() {
     />
   ) : undefined
 
-  // The page's other actions, under More (ActionMenu shows them as a menu or a sheet by fit).
-  const headerMoreItems: ActionMenuEntry[] = [
-    ...(canImport
-      ? [
-          {
-            id: 'import',
-            group: t('findings.header.create', 'Create'),
-            label: t('findings.header.importResults', 'Import results'),
-            icon: FileUp,
-            onSelect: () => setImportDialogOpen(true),
-          },
-        ]
-      : []),
-    {
-      id: 'approvals',
-      label: t('findings.header.approvals', 'Approvals'),
-      icon: ClipboardList,
-      href: '/findings/approvals',
-    },
-  ]
+  // The page's other actions, under More (`headerMoreItems`, built with the
+  // title row's menu above so an item is never in both).
 
   // The title row and the list; held as skeletons while the Compliance
   // benchmarks above them load (`ComplianceBenchmarksGate`).
@@ -3322,4 +3340,24 @@ function FindingsContent() {
       </ConfirmDialog>
     </>
   )
+}
+
+/** Whether an element is at least `min` px wide, kept current (false until measured). */
+function useWideRow(min: number): [boolean, (el: HTMLElement | null) => void] {
+  const [wide, setWide] = useState(false)
+  const observer = useRef<ResizeObserver | null>(null)
+  const ref = useCallback(
+    (el: HTMLElement | null) => {
+      observer.current?.disconnect()
+      observer.current = null
+      if (!el) return
+      const read = () => setWide(el.getBoundingClientRect().width >= min)
+      read()
+      if (typeof ResizeObserver === 'undefined') return
+      observer.current = new ResizeObserver(read)
+      observer.current.observe(el)
+    },
+    [min]
+  )
+  return [wide, ref]
 }

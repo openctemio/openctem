@@ -147,9 +147,10 @@ describe('Findings toolbar layout', () => {
     expect(follows(lens, refresh)).toBe(true)
     expect(follows(refresh, exportBtn)).toBe(true)
     expect(follows(exportBtn, task)).toBe(true)
-    // One named More per width (CSS shows one): narrow it folds the same
-    // actions in; wide it keeps Copy link beside the buttons.
-    expect(within(primary).getAllByRole('button', { name: 'More actions' })).toHaveLength(2)
+    // One More in the title row, shown only narrow (CSS), where the same
+    // actions fold into it with Copy link; wide the row ends with its buttons
+    // and Copy link is in the page header's More ("This view").
+    expect(within(primary).getAllByRole('button', { name: 'More actions' })).toHaveLength(1)
   })
 
   it('joins the filter button and the search field into one control in row 2', () => {
