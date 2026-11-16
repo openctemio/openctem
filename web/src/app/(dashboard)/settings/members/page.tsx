@@ -20,7 +20,6 @@ import {
   DetailStatGrid,
   PageStack,
 } from '@/features/shared'
-import { DisabledMenuItem } from '@/features/shared/components/disabled-menu-item'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -49,13 +48,7 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import type { RowAction } from '@/features/shared/components/data-table-row-actions'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -64,7 +57,6 @@ import {
   UserPlus,
   Shield,
   CheckCircle,
-  MoreHorizontal,
   Trash2,
   Send,
   Ban,
@@ -135,42 +127,6 @@ import { useTenantSettings } from '@/features/organization/api/use-tenant-settin
 import { usePendingOwnershipTransfer } from '@/features/organization/api/use-ownership-transfer'
 import { TransferOwnershipDialog } from '@/features/organization/components/transfer-ownership-dialog'
 import { OwnershipTransferBanner } from '@/features/organization/components/ownership-transfer-banner'
-
-/**
- * The management actions of an administrator row, disabled for a caller who
- * is not the owner, each explaining why on hover or focus.
- */
-function PeerAdminLockedItems({ mfaEnabled }: { mfaEnabled: boolean }) {
-  const { t } = useTranslation()
-  const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
-  return (
-    <>
-      <DropdownMenuSeparator />
-      <DisabledMenuItem
-        label={t('org.membersPage.changeRoles', 'Change roles')}
-        icon={Pencil}
-        reason={lockReason}
-      />
-      {mfaEnabled && (
-        <DisabledMenuItem
-          label={t('org.membersPage.reset2fa', 'Reset 2FA')}
-          icon={ShieldOff}
-          reason={t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON)}
-        />
-      )}
-      <DisabledMenuItem
-        label={t('org.membersPage.disable', 'Disable')}
-        icon={Ban}
-        reason={lockReason}
-      />
-      <DisabledMenuItem
-        label={t('org.membersPage.offboard', 'Offboard')}
-        icon={UserMinus}
-        reason={lockReason}
-      />
-    </>
-  )
-}
 
 // Tab values for the status filter on the members table (RFC-050 member
 // lifecycle). "current" (the default) is active + disabled; offboarded
@@ -950,170 +906,167 @@ export default function UsersPage() {
         const locked = isPeerAdminLocked(member, caller)
         const offboarded = member.status === 'offboarded'
 
+        const name = member.name || member.email
+        const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
+        const memberRoute = 'PATCH /api/v1/tenants/{tenant}/members/{userId}' as const
+        const actions: RowAction[] = [
+          {
+            label: t('org.membersPage.viewDetails', 'View details'),
+            icon: Eye,
+            onClick: () => setSelectedMember(member),
+          },
+        ]
+        if (isOwnerRow && canManageMembers && canResetMemberMfa(member, caller)) {
+          actions.push({
+            label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+            icon: ShieldOff,
+            onClick: () => setResetMfaMember(member),
+            separatorBefore: true,
+          })
+        }
+        if (!isOwnerRow && !offboarded && caller.isOwner) {
+          actions.push({
+            label: t('org.ownership.action', 'Transfer ownership...'),
+            icon: Crown,
+            onClick: () => setTransferMember(member),
+            disabled: !!pendingTransfer,
+            disabledReason: pendingTransfer
+              ? t(
+                  'org.ownership.pendingReason',
+                  'A transfer is already waiting for an answer: cancel it first.'
+                )
+              : undefined,
+            separatorBefore: true,
+          })
+        }
+        if (!isOwnerRow && !offboarded && locked) {
+          // The management actions of an administrator row, shown disabled
+          // with the reason to a caller who is not the owner.
+          actions.push(
+            {
+              label: t('org.membersPage.changeRoles', 'Change roles'),
+              icon: Pencil,
+              onClick: () => undefined,
+              disabled: true,
+              disabledReason: lockReason,
+              separatorBefore: true,
+              route: memberRoute,
+            },
+            ...(member.mfa_status === 'enabled'
+              ? [
+                  {
+                    label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+                    icon: ShieldOff,
+                    onClick: () => undefined,
+                    disabled: true,
+                    disabledReason: t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON),
+                    route: memberRoute,
+                  },
+                ]
+              : []),
+            {
+              label: t('org.membersPage.disable', 'Disable'),
+              icon: Ban,
+              onClick: () => undefined,
+              disabled: true,
+              disabledReason: lockReason,
+              route: memberRoute,
+            },
+            {
+              label: t('org.membersPage.offboard', 'Offboard'),
+              icon: UserMinus,
+              onClick: () => undefined,
+              disabled: true,
+              disabledReason: lockReason,
+              route: memberRoute,
+            }
+          )
+        }
+        if (!isOwnerRow && !locked) {
+          actions.push({
+            label: t('org.membersPage.changeRoles', 'Change roles'),
+            icon: Pencil,
+            onClick: () => {
+              setEditRolesMember(member)
+              setEditRolesDialogOpen(true)
+            },
+            route: 'PUT /api/v1/users/{userId}/roles',
+          })
+          if (member.kind === 'external' && canChangeAccess && !offboarded) {
+            actions.push({
+              label: t('org.membersPage.changeEndOfAccess', 'Change end of access'),
+              icon: CalendarClock,
+              onClick: () => setAccessMember(member),
+              route: memberRoute,
+            })
+          }
+          if (member.pending_setup) {
+            actions.push({
+              label: t('org.membersPage.getSetupLink', 'Get setup link'),
+              icon: KeyRound,
+              onClick: () =>
+                setSetupLinkTarget({
+                  userId: member.user_id,
+                  email: member.email,
+                  name: member.name,
+                }),
+              route: memberRoute,
+            })
+          }
+          // Access changes, each asking first, set apart from the edits above.
+          const access: RowAction[] = []
+          if (canResetMemberMfa(member, caller)) {
+            access.push({
+              label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+              icon: ShieldOff,
+              onClick: () => setResetMfaMember(member),
+              route: memberRoute,
+            })
+          }
+          access.push(
+            member.status === 'suspended'
+              ? {
+                  label:
+                    member.suspended_reason === 'awaiting_approval'
+                      ? t('org.membersPage.approve', 'Approve')
+                      : t('org.membersPage.reenable', 'Re-enable'),
+                  icon: CheckCircle,
+                  onClick: () => setReactivateMember(member),
+                  route: memberRoute,
+                }
+              : {
+                  label: t('org.membersPage.disable', 'Disable'),
+                  icon: Ban,
+                  onClick: () => setSuspendConfirmMember(member),
+                  route: memberRoute,
+                },
+            {
+              label: t('org.membersPage.offboardEllipsis', 'Offboard...'),
+              icon: UserMinus,
+              onClick: () => setOffboardMember(member),
+              destructive: true,
+              route: memberRoute,
+            }
+          )
+          access[0].separatorBefore = true
+          actions.push(...access)
+        }
+        if (!isOwnerRow && offboarded && caller.isOwner) {
+          actions.push({
+            label: t('org.membersPage.erasePersonalData', 'Erase personal data...'),
+            icon: Eraser,
+            onClick: () => setEraseConfirmMember(member),
+            destructive: true,
+            route: 'POST /api/v1/organization/members/{member_id}/erase',
+          })
+        }
+
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="p-0"
-                aria-label={`Actions for ${member.name || member.email}`}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => setSelectedMember(member)}>
-                <Eye className="me-2 h-4 w-4" />
-                {t('org.membersPage.viewDetails', 'View details')}
-              </DropdownMenuItem>
-              {isOwnerRow && canManageMembers && canResetMemberMfa(member, caller) && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault()
-                      setResetMfaMember(member)
-                    }}
-                  >
-                    <ShieldOff className="me-2 h-4 w-4" />
-                    {t('org.membersPage.reset2fa', 'Reset 2FA')}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {!isOwnerRow && !offboarded && caller.isOwner && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={!!pendingTransfer}
-                    onSelect={(e) => {
-                      e.preventDefault()
-                      setTransferMember(member)
-                    }}
-                  >
-                    <Crown className="me-2 h-4 w-4" />
-                    {t('org.ownership.action', 'Transfer ownership...')}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {!isOwnerRow && !offboarded && locked && (
-                <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
-                  <PeerAdminLockedItems mfaEnabled={member.mfa_status === 'enabled'} />
-                </Can>
-              )}
-              {!isOwnerRow && !locked && (
-                <>
-                  <Can route="PUT /api/v1/users/{userId}/roles">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setEditRolesMember(member)
-                        setEditRolesDialogOpen(true)
-                      }}
-                    >
-                      <Pencil className="me-2 h-4 w-4" />
-                      {t('org.membersPage.changeRoles', 'Change roles')}
-                    </DropdownMenuItem>
-                  </Can>
-                  <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
-                    {member.kind === 'external' && canChangeAccess && !offboarded && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          setAccessMember(member)
-                        }}
-                      >
-                        <CalendarClock className="me-2 h-4 w-4" />
-                        {t('org.membersPage.changeEndOfAccess', 'Change end of access')}
-                      </DropdownMenuItem>
-                    )}
-                    {member.pending_setup && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          setSetupLinkTarget({
-                            userId: member.user_id,
-                            email: member.email,
-                            name: member.name,
-                          })
-                        }}
-                      >
-                        <KeyRound className="me-2 h-4 w-4" />
-                        {t('org.membersPage.getSetupLink', 'Get setup link')}
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    {canResetMemberMfa(member, caller) && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Confirm first; onSelect lets the menu close cleanly.
-                          e.preventDefault()
-                          setResetMfaMember(member)
-                        }}
-                      >
-                        <ShieldOff className="me-2 h-4 w-4" />
-                        {t('org.membersPage.reset2fa', 'Reset 2FA')}
-                      </DropdownMenuItem>
-                    )}
-                    {member.status === 'suspended' ? (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Restoring access asks first; onSelect lets the menu close.
-                          e.preventDefault()
-                          setReactivateMember(member)
-                        }}
-                      >
-                        <CheckCircle className="me-2 h-4 w-4" />
-                        {member.suspended_reason === 'awaiting_approval'
-                          ? t('org.membersPage.approve', 'Approve')
-                          : t('org.membersPage.reenable', 'Re-enable')}
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Open confirmation dialog instead of firing
-                          // immediately. onSelect lets the dropdown close
-                          // cleanly before the AlertDialog opens.
-                          e.preventDefault()
-                          setSuspendConfirmMember(member)
-                        }}
-                      >
-                        <Ban className="me-2 h-4 w-4" />
-                        {t('org.membersPage.disable', 'Disable')}
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={(e) => {
-                        // Open the offboarding wizard. onSelect lets the
-                        // dropdown close cleanly first.
-                        e.preventDefault()
-                        setOffboardMember(member)
-                      }}
-                    >
-                      <UserMinus className="me-2 h-4 w-4" />
-                      {t('org.membersPage.offboardEllipsis', 'Offboard...')}
-                    </DropdownMenuItem>
-                  </Can>
-                </>
-              )}
-              {!isOwnerRow && offboarded && caller.isOwner && (
-                <Can route="POST /api/v1/organization/members/{member_id}/erase">
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={(e) => {
-                      // Confirm first; onSelect lets the menu close cleanly.
-                      e.preventDefault()
-                      setEraseConfirmMember(member)
-                    }}
-                  >
-                    <Eraser className="me-2 h-4 w-4" />
-                    {t('org.membersPage.erasePersonalData', 'Erase personal data...')}
-                  </DropdownMenuItem>
-                </Can>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <DataTableRowActions
+            actions={actions}
+            title={name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+          />
         )
       },
     },

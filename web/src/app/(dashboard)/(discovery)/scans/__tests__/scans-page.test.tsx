@@ -62,6 +62,7 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
     ...actual,
     Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useHasPermission: () => true,
+    usePermissions: () => ({ can: () => true }),
   }
 })
 // The real URL is the list state (useListParams reads and writes it).
@@ -198,7 +199,7 @@ describe('Scans › Configurations', () => {
 
   it('a single scan delete from the row menu asks for the scan name', async () => {
     render(<ScansPage />)
-    await userEvent.click(screen.getAllByRole('button', { name: 'Row actions' })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for / })[0])
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete scan "Scan 26"?')

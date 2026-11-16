@@ -56,7 +56,25 @@ export type ActionMenuProps = {
 /** A press on the trigger that came before the menu's code: by pointer or by Enter/Space. */
 export type PendingOpen = 'pointer' | 'keyboard'
 
-const ActionMenuImpl = React.lazy(() => import('./action-menu-impl'))
+type ImplModule = typeof import('./action-menu-impl')
+
+let loaded: ImplModule | undefined
+
+/** Loads the menu's code (also the way to have it in before the first render). */
+export function preloadActionMenu(): Promise<ImplModule> {
+  return import('./action-menu-impl').then((m) => (loaded = m))
+}
+
+// Once the code is in, a menu that mounts later renders at once: React reads a
+// thenable that calls back synchronously without suspending. So only the first
+// menu on a page shows its trigger busy, and the button is never swapped
+// under a press that is still in flight.
+const ActionMenuImpl = React.lazy(
+  () =>
+    (loaded
+      ? { then: (resolve: (m: ImplModule) => void) => resolve(loaded as ImplModule) }
+      : preloadActionMenu()) as Promise<ImplModule>
+)
 
 /** False when no item would show (an empty list, or only empty submenus). */
 function hasItems(items: ActionMenuEntry[]): boolean {

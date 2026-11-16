@@ -15,19 +15,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent, TabsCount } from '@/component
 import { FilterSelect } from '@/features/shared/components/filter-select'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
@@ -149,6 +143,7 @@ function RequesterCell({
 
 export default function ApprovalsPage() {
   const { t, locale } = useTranslation()
+  const { can } = usePermissions()
   // Tab (status) and page live in the URL, like every list.
   const list = useListParams({ filters: { status: '', view: '', batch: '' } })
   // Finding requests, or group exceptions (one decision over a task's findings).
@@ -333,6 +328,40 @@ export default function ApprovalsPage() {
       // The four-eyes rule: someone else decides your own request.
       const own = isOwnApproval(approval, currentUserId)
       const mineSelf = selfApprovalAvailable && approval.requested_by === currentUserId
+      const findingTitle = toDisplayText(
+        approval.finding_title || t('findings.approvalLink.untitled', 'Untitled finding'),
+        80
+      )
+      const menuLabel = t('common.actionMenu.label', 'Actions for {name}', { name: findingTitle })
+      const menuItems: ActionMenuEntry[] = [
+        ...(mineSelf && can(Permission.FindingsApprove)
+          ? [
+              {
+                id: 'self-approve',
+                label: t('findingApprovals.selfApprove.action', 'Approve myself (sole member)'),
+                icon: ShieldCheck,
+                onSelect: () => setSelfApproveTarget(approval),
+              },
+            ]
+          : []),
+        ...(mayCancel && can(Permission.FindingsWrite)
+          ? [
+              {
+                id: 'remind',
+                label: t('findings.approvals.action.remind', 'Remind approvers'),
+                icon: BellRing,
+                onSelect: () => setRemindTarget(approval),
+              },
+              {
+                id: 'cancel',
+                label: t('findings.approvals.action.cancel', 'Cancel request'),
+                icon: Ban,
+                destructive: true,
+                onSelect: () => handleCancelClick(approval),
+              },
+            ]
+          : []),
+      ]
       const busy = actionInProgress === approval.id || decision.busyId === approval.id
       return (
         <div className="flex items-center justify-end gap-1.5">
@@ -366,56 +395,27 @@ export default function ApprovalsPage() {
               </>
             )}
           </Can>
-          {(mayCancel || mineSelf) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+          {menuItems.length > 0 && (
+            <ActionMenu
+              title={findingTitle}
+              label={menuLabel}
+              items={menuItems}
+              trigger={
                 <Button
                   size="icon"
                   variant="ghost"
                   className="p-0"
                   disabled={busy}
-                  aria-label={t('findings.approvals.actionsFor', 'More actions for {title}', {
-                    title: toDisplayText(
-                      approval.finding_title ||
-                        t('findings.approvalLink.untitled', 'Untitled finding'),
-                      80
-                    ),
-                  })}
+                  aria-label={menuLabel}
                 >
                   {busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   ) : (
-                    <MoreHorizontal className="h-4 w-4" />
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
                   )}
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {mineSelf && (
-                  <Can permission={Permission.FindingsApprove}>
-                    <DropdownMenuItem onClick={() => setSelfApproveTarget(approval)}>
-                      <ShieldCheck className="me-2 h-4 w-4" />
-                      {t('findingApprovals.selfApprove.action', 'Approve myself (sole member)')}
-                    </DropdownMenuItem>
-                  </Can>
-                )}
-                {mayCancel && (
-                  <Can permission={Permission.FindingsWrite}>
-                    <DropdownMenuItem onClick={() => setRemindTarget(approval)}>
-                      <BellRing className="me-2 h-4 w-4" />
-                      {t('findings.approvals.action.remind', 'Remind approvers')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => handleCancelClick(approval)}
-                    >
-                      <Ban className="me-2 h-4 w-4" />
-                      {t('findings.approvals.action.cancel', 'Cancel request')}
-                    </DropdownMenuItem>
-                  </Can>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           )}
         </div>
       )
@@ -428,6 +428,7 @@ export default function ApprovalsPage() {
       handleCancelClick,
       currentUserId,
       selfApprovalAvailable,
+      can,
       t,
     ]
   )

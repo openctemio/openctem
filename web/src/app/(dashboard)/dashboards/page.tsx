@@ -21,13 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { uniqueDashboardName } from '@/features/dashboards/lib/unique-name'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -89,9 +83,6 @@ export default function DashboardsPage() {
 // ── Column-layout picker options ─────────────────────────────────────────────
 
 const LAYOUT_OPTIONS = [1, 2, 3, 4]
-
-/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
-const ITEM = 'min-h-11 sm:min-h-8'
 
 function rememberChoice(id: string, kind: DashboardKind = 'personal') {
   try {
@@ -314,41 +305,49 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />
                         {t('dashboards.manage.customize', 'Customize')}
                       </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      <ActionMenu
+                        title={d.name}
+                        label={t('common.actionMenu.label', 'Actions for {name}', {
+                          name: d.name,
+                        })}
+                        items={[
+                          {
+                            id: 'edit',
+                            label: t('dashboards.actions.edit', 'Edit details'),
+                            icon: Pencil,
+                            onSelect: () => onEdit(d.id),
+                          },
+                          ...(!d.is_default
+                            ? [
+                                {
+                                  id: 'set-default',
+                                  label: t('dashboards.actions.setDefault', 'Set as my default'),
+                                  icon: Star,
+                                  onSelect: () => makeDefault(d.id),
+                                },
+                              ]
+                            : []),
+                          {
+                            id: 'delete',
+                            label: t('dashboards.actions.delete', 'Delete'),
+                            icon: Trash2,
+                            destructive: true,
+                            onSelect: () => setPendingDelete({ id: d.id, name: d.name }),
+                          },
+                        ]}
+                        trigger={
                           <Button
                             type="button"
                             size="icon"
                             variant="ghost"
-
-                            aria-label={t('dashboards.manage.moreFor', 'More actions for {name}', {
+                            aria-label={t('common.actionMenu.label', 'Actions for {name}', {
                               name: d.name,
                             })}
                           >
                             <MoreHorizontal className="h-4 w-4" aria-hidden />
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          <DropdownMenuItem className={ITEM} onSelect={() => onEdit(d.id)}>
-                            <Pencil className="me-2 h-4 w-4" aria-hidden />
-                            {t('dashboards.actions.edit', 'Edit details')}
-                          </DropdownMenuItem>
-                          {!d.is_default && (
-                            <DropdownMenuItem className={ITEM} onSelect={() => makeDefault(d.id)}>
-                              <Star className="me-2 h-4 w-4" aria-hidden />
-                              {t('dashboards.actions.setDefault', 'Set as my default')}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className={cn(ITEM, 'text-destructive focus:text-destructive')}
-                            onSelect={() => setPendingDelete({ id: d.id, name: d.name })}
-                          >
-                            <Trash2 className="me-2 h-4 w-4" aria-hidden />
-                            {t('dashboards.actions.delete', 'Delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                        }
+                      />
                     </div>
                   </CardContent>
                 </Card>

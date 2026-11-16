@@ -143,7 +143,6 @@
   "validation.controls.link.description": "Linking an asset is what makes {name} reduce the priority of that asset's findings.",
   "validation.controls.link.thisControl": "this control",
   "validation.controls.linkAssets": "Link assets",
-  "validation.controls.moreAria": "More actions for {name}",
   "validation.controls.nameRequired": "Enter a control name.",
   "validation.controls.never": "Never",
   "validation.controls.new": "New control",
