@@ -468,6 +468,7 @@
   "confirm.savedView.saveCurrent": "Lưu bộ lọc hiện tại thành chế độ xem",
   "confirm.savedView.saveDesc": "Lưu bộ lọc, thứ tự sắp xếp, cách nhóm, các cột và mật độ hiện tại. Chế độ xem được chia sẻ chỉ chia sẻ bộ lọc, không chia sẻ kết quả: mỗi người chỉ thấy các phát hiện mà họ được phép xem.",
   "confirm.savedView.saveFailed": "Không thể lưu chế độ xem",
+  "confirm.savedView.saveFailedWhy": "Không thể lưu chế độ xem: {reason}",
   "confirm.savedView.saveTitle": "Lưu chế độ xem",
   "confirm.savedView.saved": "Đã lưu chế độ xem \"{name}\"",
   "confirm.savedView.sharedWith": "Chia sẻ với {group}",
