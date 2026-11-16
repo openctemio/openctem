@@ -37,7 +37,6 @@
   "notificationChannels.history.title": "Sự kiện thông báo",
   "notificationChannels.metrics.connected": "Đã kết nối",
   "notificationChannels.metrics.errors": "Lỗi",
-  "notificationChannels.outbox.actionsFor": "Thao tác cho {title}",
   "notificationChannels.outbox.allStatuses": "Mọi trạng thái",
   "notificationChannels.outbox.back": "Quay lại danh sách kênh",
   "notificationChannels.outbox.col.event": "Sự kiện",

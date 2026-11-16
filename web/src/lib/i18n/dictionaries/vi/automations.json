@@ -146,7 +146,6 @@
   "automations.inspector.tags": "Thẻ (phân tách bằng dấu phẩy)",
   "automations.inspector.trigger": "Điều kiện kích hoạt",
   "automations.lastRun.never": "Chưa bao giờ",
-  "automations.menu.actionsFor": "Thao tác cho {name}",
   "automations.menu.deletingReason": "Tự động hóa này đang được xóa.",
   "automations.menu.duplicate": "Nhân bản",
   "automations.menu.editInBuilder": "Sửa trong trình dựng",

@@ -222,7 +222,6 @@
   "dashboards.manage.general": "General",
   "dashboards.manage.layout": "Layout",
   "dashboards.manage.layoutHint": "How many columns the dashboard is arranged in. Each widget keeps its share of the row.",
-  "dashboards.manage.moreFor": "More actions for {name}",
   "dashboards.manage.name": "Name",
   "dashboards.manage.namePlaceholder": "For example: Executive overview",
   "dashboards.manage.nameRequired": "Name is required",

@@ -146,7 +146,6 @@
   "automations.inspector.tags": "Tags (comma separated)",
   "automations.inspector.trigger": "Trigger",
   "automations.lastRun.never": "Never",
-  "automations.menu.actionsFor": "Actions for {name}",
   "automations.menu.deletingReason": "This automation is being deleted.",
   "automations.menu.duplicate": "Duplicate",
   "automations.menu.editInBuilder": "Edit in builder",
