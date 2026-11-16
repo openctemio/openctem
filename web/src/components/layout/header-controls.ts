@@ -36,9 +36,10 @@ export const HEADER_MENU =
 
 /**
  * A menu opened from the phone bar is a sheet 8 px from both screen edges
- * (aligned to its trigger's end, which sits 8 px from the right edge).
+ * (aligned to its trigger's end, which sits 8 px from the right edge). Its
+ * max-width matches, above the kit's 360 px ceiling for menus.
  */
-export const PHONE_BAR_MENU = 'max-md:w-[calc(100vw-1rem)]'
+export const PHONE_BAR_MENU = 'max-md:w-[calc(100vw-1rem)] max-md:max-w-[calc(100vw-1rem)]'
 
 /**
  * The top bar's right group (app and platform console): 4 between controls,
