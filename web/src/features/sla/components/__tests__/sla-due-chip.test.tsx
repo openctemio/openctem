@@ -89,6 +89,23 @@ describe('SlaDueChip', () => {
     expect(pill.className).toContain('text-destructive')
   })
 
+  it('never ends in an ellipsis: the whole text shows and a count above 999 reads 999+', () => {
+    const late = new Date(Date.now() - 109 * 86_400_000 - 60_000).toISOString()
+    const { container, unmount } = wrap(<SlaDueChip status="overdue" deadline={late} kevCapped />)
+    const pill = container.querySelector('[data-slot="sla-countdown"]') as HTMLElement
+    expect(pill.textContent).toContain('109 d overdue')
+    expect(pill.className).not.toMatch(/truncate|min-w-0|text-ellipsis/)
+    expect(pill.className).toContain('shrink-0')
+    const chip = container.querySelector('[data-slot="sla-due-chip"]') as HTMLElement
+    expect(chip.className).not.toMatch(/min-w-0|max-w-full/)
+    unmount()
+    const ancient = new Date(Date.now() - 1500 * 86_400_000).toISOString()
+    const old = wrap(<SlaDueChip status="exceeded" deadline={ancient} />)
+    expect(
+      (old.container.querySelector('[data-slot="sla-countdown"]') as HTMLElement).textContent
+    ).toContain('999+ d overdue')
+  })
+
   it('shows the state word when there is no deadline', () => {
     wrap(<SlaDueChip status="exceeded" />)
     expect(screen.getByText(/findings\.sla\.exceeded\|Exceeded/)).toBeInTheDocument()
