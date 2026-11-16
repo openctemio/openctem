@@ -5,6 +5,8 @@ import { Bookmark, Building2, Copy, Pin, PinOff, Trash2, Users } from 'lucide-re
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
+import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -177,6 +179,13 @@ export function SavedViewsMenu({
       : builtInOn.length > 1
         ? t('confirm.savedView.builtInCount', '{count} views', { count: builtInOn.length })
         : t('confirm.savedView.trigger', 'Views')
+  // The trigger's label box: as wide as the longest built-in name, at least
+  // 8rem, at most 10rem. A view's own name is cut there (full name in the
+  // tooltip and the accessible name), so opening a view moves nothing.
+  const slotLabels = [
+    t('confirm.savedView.trigger', 'Views'),
+    ...(builtIn ?? []).map((b) => b.label),
+  ]
 
   const currentFilter = async () =>
     resolveFilter ? resolveFilter() : { query: viewQueryFromSearch(window.location.search) }
@@ -367,7 +376,8 @@ export function SavedViewsMenu({
             iconOnlyBelow="@5xl/toolbar"
             variant="outline"
             size="sm"
-            className="max-w-[14rem]"
+            title={triggerName}
+            data-testid="saved-views-trigger"
             // The name stays readable when only the icon shows (narrow toolbar).
             aria-label={
               active
@@ -384,18 +394,25 @@ export function SavedViewsMenu({
           >
             {/* Label by the list toolbar's width (DataTable's size container). */}
             <Bookmark className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
-            <span className="hidden truncate @5xl/toolbar:inline group-data-[fold=true]/toolbar:hidden">
-              {triggerName}
+            <span className="hidden @5xl/toolbar:inline-grid group-data-[fold=true]/toolbar:hidden">
+              <ToolbarSlot options={slotLabels} className="min-w-32 max-w-40">
+                {triggerName}
+              </ToolbarSlot>
             </span>
-            {dirty && (
-              // The unsaved-changes dot: state by shape and colour, never colour alone
-              // (the button's name says it too).
-              <span
-                data-testid="saved-view-dirty-dot"
-                aria-hidden
-                className="ms-1.5 size-2 shrink-0 rounded-full bg-warning"
-              />
-            )}
+            {/* The unsaved-changes dot: state by shape and colour, never colour
+                alone (the button's name says it too). Its room is kept while
+                nothing is unsaved, so it appears without moving anything. */}
+            <span
+              data-testid={dirty ? 'saved-view-dirty-dot' : undefined}
+              aria-hidden
+              className={cn(
+                'ms-1.5 size-2 shrink-0 rounded-full',
+                dirty
+                  ? 'bg-warning'
+                  : // Icon only (a square either way): no room kept, the icon centred.
+                    'invisible @max-5xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
+              )}
+            />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">

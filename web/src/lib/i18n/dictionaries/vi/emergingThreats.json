@@ -120,6 +120,7 @@
   "emergingThreats.levelHint.digest": "Trong tuần: lên kế hoạch khắc phục trong vài ngày. Có trong bản tổng hợp hằng ngày.",
   "emergingThreats.levelHint.immediate": "Xử lý ngay: đã hoặc rất có thể bị khai thác, trên tài sản bạn đang chạy. Bạn đã được cảnh báo ngay khi phát hiện.",
   "emergingThreats.levelHint.listed": "Theo dõi: rủi ro thấp lúc này. Chỉ liệt kê ở đây, không gửi thông báo.",
+  "emergingThreats.list.viewAll": "Tất cả mối đe dọa mới nổi",
   "emergingThreats.loadError": "mối đe dọa mới nổi",
   "emergingThreats.loadOneError": "mối đe dọa mới nổi này",
   "emergingThreats.notAffected.confirm": "Đánh dấu không bị ảnh hưởng",

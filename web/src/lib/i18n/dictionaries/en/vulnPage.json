@@ -212,6 +212,7 @@
   "vulnPage.list.strip.pastSlaHint": "At least one open finding is past its SLA",
   "vulnPage.list.subject": "the vulnerabilities list",
   "vulnPage.list.title": "Vulnerabilities",
+  "vulnPage.list.viewAll": "All vulnerabilities",
   "vulnPage.signal.epssHigh": "high EPSS",
   "vulnPage.signal.functional": "working exploit",
   "vulnPage.signal.kev": "known exploited",

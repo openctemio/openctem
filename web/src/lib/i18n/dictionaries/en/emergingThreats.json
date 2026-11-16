@@ -120,6 +120,7 @@
   "emergingThreats.levelHint.digest": "This week: plan a fix within days. It is in the daily digest.",
   "emergingThreats.levelHint.immediate": "Act now: exploited or very likely to be, on assets you run. You were alerted as soon as it was found.",
   "emergingThreats.levelHint.listed": "Watch: low risk for now. Listed here only, no message is sent.",
+  "emergingThreats.list.viewAll": "All emerging threats",
   "emergingThreats.loadError": "emerging threats",
   "emergingThreats.loadOneError": "this emerging threat",
   "emergingThreats.notAffected.confirm": "Mark not affected",

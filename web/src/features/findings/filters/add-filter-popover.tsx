@@ -117,6 +117,8 @@ export function AddFilterPopover({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      // In Query mode the filter tokens are inert: the text owns the filter.
+      if (document.querySelector('[data-slot="list-toolbar-tokens"][inert]')) return
       const el = e.target as HTMLElement | null
       if (
         el?.closest?.(
