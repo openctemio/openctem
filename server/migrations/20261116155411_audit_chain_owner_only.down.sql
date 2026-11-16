@@ -4,6 +4,11 @@
 -- UPDATE on audit_log_chain, INSERT on the three evidence tables). The API of
 -- the previous release prunes and rebaselines with those grants.
 
+-- Locks: the eight triggers this migration added are dropped (DROP TRIGGER
+-- takes ACCESS EXCLUSIVE on its table for the moment it runs; lock_timeout
+-- bounds the wait); the others are replaced in place (SHARE ROW EXCLUSIVE).
+-- No row is read or changed.
+
 SET LOCAL lock_timeout = '10s';
 
 DO $$
@@ -57,32 +62,25 @@ BEGIN
 END
 $$;
 
-DROP TRIGGER IF EXISTS audit_log_refuse_update ON audit_logs;
-CREATE TRIGGER audit_log_refuse_update
+CREATE OR REPLACE TRIGGER audit_log_refuse_update
     BEFORE UPDATE ON audit_logs
     FOR EACH ROW EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_refuse_truncate ON audit_logs;
-CREATE TRIGGER audit_log_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_log_refuse_truncate
     BEFORE TRUNCATE ON audit_logs
     FOR EACH STATEMENT EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_chain_refuse_update ON audit_log_chain;
-CREATE TRIGGER audit_log_chain_refuse_update
+CREATE OR REPLACE TRIGGER audit_log_chain_refuse_update
     BEFORE UPDATE ON audit_log_chain
     FOR EACH ROW EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_log_chain_refuse_truncate ON audit_log_chain;
-CREATE TRIGGER audit_log_chain_refuse_truncate
+CREATE OR REPLACE TRIGGER audit_log_chain_refuse_truncate
     BEFORE TRUNCATE ON audit_log_chain
     FOR EACH STATEMENT EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_anchors_refuse_update ON audit_chain_anchors;
-CREATE TRIGGER audit_chain_anchors_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_anchors_refuse_update
     BEFORE UPDATE ON audit_chain_anchors
     FOR EACH ROW EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaselines_refuse_update ON audit_chain_rebaselines;
-CREATE TRIGGER audit_chain_rebaselines_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_rebaselines_refuse_update
     BEFORE UPDATE ON audit_chain_rebaselines
     FOR EACH ROW EXECUTE FUNCTION audit_log_refuse_change();
-DROP TRIGGER IF EXISTS audit_chain_rebaseline_entries_refuse_update ON audit_chain_rebaseline_entries;
-CREATE TRIGGER audit_chain_rebaseline_entries_refuse_update
+CREATE OR REPLACE TRIGGER audit_chain_rebaseline_entries_refuse_update
     BEFORE UPDATE ON audit_chain_rebaseline_entries
     FOR EACH ROW EXECUTE FUNCTION audit_log_refuse_change();
 
