@@ -151,7 +151,11 @@ describe('dashboard i18n completeness', () => {
 
   it('Vietnamese text is not a copy of the English', () => {
     const copies = Object.keys(EN).filter(
-      (k) => VI[k] === EN[k] && !SAME_IN_BOTH.has(EN[k]) && /[a-z]{3,}/.test(EN[k])
+      (k) =>
+        VI[k] === EN[k] &&
+        !SAME_IN_BOTH.has(EN[k]) &&
+        // Placeholders ({stage}) are not words to translate.
+        /[a-z]{3,}/.test(EN[k].replace(/\{[^}]*\}/g, ''))
     )
     expect(copies).toEqual([])
   })

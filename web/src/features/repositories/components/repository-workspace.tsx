@@ -790,10 +790,7 @@ function OverviewTab({
               Branches
             </CardDescription>
             <CardTitle
-              className={cn(
-                'text-3xl',
-                neverScanned ? 'text-muted-foreground/50' : 'text-foreground'
-              )}
+              className={cn('text-3xl', neverScanned ? 'text-muted-foreground' : 'text-foreground')}
             >
               {neverScanned ? '—' : branches.length}
             </CardTitle>
@@ -816,9 +813,7 @@ function OverviewTab({
             <CardTitle
               className={cn(
                 'text-3xl',
-                !repository.components_summary?.total
-                  ? 'text-muted-foreground/50'
-                  : 'text-foreground'
+                !repository.components_summary?.total ? 'text-muted-foreground' : 'text-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}

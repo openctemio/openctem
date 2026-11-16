@@ -76,7 +76,9 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   owner: { align: 'start', width: 160, sortFirst: 'asc' },
   'datetime-recent': { align: 'end', width: 104, sortFirst: 'desc' },
   date: { align: 'end', width: 112, sortFirst: 'desc' },
-  due: { align: 'start', width: 112, sortFirst: 'asc' },
+  // The SLA chip's longest text whole, never cut: "999+ d overdue" (128 with
+  // the KEV mark; "Trễ 999+ ngày" 121) plus the cell padding.
+  due: { align: 'start', width: 140, sortFirst: 'asc' },
   number: { align: 'end', minWidth: 72, maxWidth: 96, sortFirst: 'desc' },
   signals: { align: 'start', width: 140, sortFirst: 'desc' },
   tags: { align: 'start', minWidth: 160, maxWidth: 240, sortFirst: 'asc' },

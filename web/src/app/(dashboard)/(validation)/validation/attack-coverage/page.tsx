@@ -185,9 +185,9 @@ function getCellColor(cell: TechniqueCell | undefined): string {
 }
 
 function getCellTextColor(cell: TechniqueCell | undefined): string {
-  if (!cell) return 'text-muted-foreground/40'
+  if (!cell) return 'text-muted-foreground'
   const total = cell.findingCount + cell.simulationCount
-  if (total === 0) return 'text-muted-foreground/40'
+  if (total === 0) return 'text-muted-foreground'
   return 'text-white'
 }
 
