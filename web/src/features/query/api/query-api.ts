@@ -66,6 +66,13 @@ export interface QuerySchemaField {
   operators: string[]
   enum?: string[]
   group_by?: boolean
+  /** Other names a query may use for the path, shortest first ("kev"). */
+  aliases?: string[]
+  /**
+   * Where the editor lists the path: "common", a relation ("asset"), "more"
+   * or "identifier". The schema lists fields in that order already.
+   */
+  group?: string
 }
 
 export const queryApi = {
