@@ -172,7 +172,12 @@ the box never hands `POST /findings/search` a filter it refuses.
 ### Web
 
 `QueryInput` (`web/src/features/query/components/query-input.tsx`) is the one
-search box component: completion of fields (from `GET /query/schema`),
+search box component: completion of fields (from `GET /query/schema`, read
+once per entity: in the schema's order, short names such as `kev` shown and
+accepted like the path, each row with the field's meaning from the web
+catalog `queryFields.<entity>.<path>` in English and Vietnamese and the kind
+of value it takes; with nothing typed under the group headings, with a prefix
+typed names starting with it first, then names containing it),
 operators and values (enum and boolean values and ages locally, others from
 `GET /query/values`), the first problem with its fixes as buttons, a status
 line with the result count (exact up to 10,000, then "10,000+"), recent
@@ -200,7 +205,20 @@ Every field comes from the entity's `filterspec` registry, the same allowlist
 the list endpoints use. Nothing builds SQL from a name the registry does not
 hold. `GET /api/v1/query/schema?entity=` lists what the caller may use (types,
 operators, enum values, and which paths can be grouped, aggregated or
-bucketed).
+bucketed). It lists the paths in the order an editor suggests them, and gives
+each its `aliases` (short names, shortest first) and its `group`:
+
+| Group | Paths | Order |
+|---|---|---|
+| `common` | the entity's `Suggested` paths: what people filter by | as declared |
+| a relation (`asset`) | other relation paths (`asset.type`) | by path |
+| `more` | the other fields | by path |
+| `identifier` | record ids: id-typed fields, and `*_id` fields without a short name | by path |
+
+The order only ranks suggestions: every path is usable whether it is listed
+first or last, and a field the caller may not use or an internal field is
+never listed. `TestSchemaFieldsHaveDescriptions` fails when a path has no
+description in the web catalogs (`web/src/lib/i18n/dictionaries/{en,vi}/queryFields.json`).
 
 | Entity | Permission | Registry | Group by | Aggregate | Bucket |
 |---|---|---|---|---|---|
