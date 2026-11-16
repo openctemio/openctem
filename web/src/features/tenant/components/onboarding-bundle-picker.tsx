@@ -113,7 +113,7 @@ export function OnboardingBundlePicker({
                 {b.description}
               </p>
               {b.target_persona && (
-                <span className="text-muted-foreground/70 truncate text-[10px]">
+                <span className="text-muted-foreground truncate text-[10px]">
                   {b.target_persona}
                 </span>
               )}

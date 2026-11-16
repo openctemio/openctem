@@ -15,3 +15,12 @@
   count above 999 reads "999+". The column is 140 px wide and the width points
   at which Severity, Signals and Due / SLA drop moved by 28 px accordingly.
 - Docs: none (layout fixes of the redesigned console; no setting or workflow changes)
+
+### Fixed: accessibility defects below the first screen of a page
+
+- The dashboard's CTEM stage figures are named by their visible words first
+  (a voice-control user can say what they see); the CI/CD GitHub App guide link
+  in running text is underlined; secondary text no longer fades below the
+  muted colour (evidence upload hint, onboarding bundle persona, group member
+  "Added by", empty repository figures, empty attack-coverage cells).
+- Docs: none (accessibility fixes, no behaviour change)
