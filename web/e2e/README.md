@@ -48,6 +48,7 @@ tests that cover the console's most user-visible flows.
 | `24-findings-states.spec.ts`                | Findings list: inline error, no access, nothing yet, no match                                              |
 | `25-findings-quick-views.spec.ts`           | Sidebar quick views under Findings, counts, links                                                          |
 | `26-findings-filters.spec.ts`               | Add filter, chips, unknown filter, pass-through filters                                                    |
+| `26-query-suggestions.spec.ts`              | Query field suggestions: common fields first, ids last, grouped, explained; phone gutter                   |
 | `27-dashboard-header-phone.spec.ts`         | Dashboard header: one toolbar row at 390px and at 1440px                                                   |
 | `28-dashboard-edit-chrome.spec.ts`          | Dashboard edit mode: widget headers fit at 1440px and 390px                                                |
 | `29-dashboard-add-widget-sheet.spec.ts`     | Add a widget sheet: nothing past its edges, one-row tabs                                                   |
