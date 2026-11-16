@@ -261,7 +261,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"GET /api/v1/scans/capabilities":                     {classConfig, "the caller's own organization: whether it may scan above passive (one flag, no scan or asset data)"},
 	"/api/v1/scan-approvals":                             {classGap, "L-06 (scan approval requests carry the scan definition and targets, as scan reads; D9)"},
 	"/api/v1/organization/settings/scan-governance/test": {classGap, "L-06 (the rule tester evaluates the organization's scans, as scan reads; owner or administrator only; D9)"},
-	"/api/v1/commands":                                   {classGap, "L-06 (command payloads)"},
+	"/api/v1/commands":                                   {classGap, "L-06 (scan and collect command targets, as scan reads; D9). A command about a finding (analyze, retest, validate) lists its payload and result, and its logs, only to a caller who may read that finding"},
 	"/api/v1/scan-workflows":                             {classGap, "L-06 (scan workflow reads)"},
 	"POST /api/v1/scan-workflows/verify":                 {classConfig, "draft graph check against the capability catalog; reads no asset or finding data"},
 	"/api/v1/scan-runs":                                  {classGap, "L-06 (run reads)"},
