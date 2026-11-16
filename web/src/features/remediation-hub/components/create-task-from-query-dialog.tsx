@@ -10,7 +10,7 @@
  * them, with a reason, out of a task they may change.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -46,10 +46,16 @@ import {
 } from '../api/use-task-query'
 import { claimConflicts } from '../lib/claim-conflicts'
 import { ClaimConflictStep } from './claim-conflict-step'
-import { QueryInput } from '@/features/query/components/query-input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { queryApi, type ParseResult } from '@/features/query/api/query-api'
 import { QueryPreviewPanel } from './query-preview-panel'
 import { apiMessage } from './suggestions-inbox'
+
+// The query editor (completion, field descriptions) loads when the dialog
+// opens, not with the pages that offer the dialog.
+const QueryInput = lazy(() =>
+  import('@/features/query/components/query-input').then((m) => ({ default: m.QueryInput }))
+)
 
 const NONE = '__none__'
 
@@ -248,18 +254,20 @@ export function CreateTaskFromQueryDialog({
         <DialogBody className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="task-query">{t('remediationQuery.create.queryLabel')}</Label>
-            <QueryInput
-              entity="findings"
-              id="task-query"
-              value={query}
-              onChange={(text) => {
-                setQuery(text)
-                setChecked(null)
-              }}
-              onSubmit={(res) => void runPreview(res)}
-              checked={checked}
-              multiline
-            />
+            <Suspense fallback={<Skeleton className="h-20 w-full" />}>
+              <QueryInput
+                entity="findings"
+                id="task-query"
+                value={query}
+                onChange={(text) => {
+                  setQuery(text)
+                  setChecked(null)
+                }}
+                onSubmit={(res) => void runPreview(res)}
+                checked={checked}
+                multiline
+              />
+            </Suspense>
             {ignoredFilters && ignoredFilters.length > 0 && (
               <p className="text-xs text-warning">
                 {t('remediationQuery.create.ignoredFilters', undefined, {

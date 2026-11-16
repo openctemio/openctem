@@ -49,6 +49,7 @@ import {
   applyCompletion,
   applyFix,
   contextAt,
+  fieldByName,
   fieldCompletions,
   formatCount,
   localProblem,
@@ -61,6 +62,7 @@ import {
 } from '../lib/complete'
 import { queryTokens } from '../lib/highlight'
 import { pushRecent, readRecent } from '../lib/recent'
+import { SuggestionList } from './suggestion-list'
 
 /** Value lookup delay after the last key. */
 export const VALUES_DELAY_MS = 300
@@ -221,14 +223,20 @@ export function QueryInput({
   const fields = useMemo(() => {
     const all = schema?.fields ?? []
     if (!preferFields?.length) return all
+    // The page's own fields (an inventory tab's) lead the common group.
     const first = new Set(preferFields)
-    return [...all.filter((f) => first.has(f.path)), ...all.filter((f) => !first.has(f.path))]
+    return [
+      ...all.filter((f) => first.has(f.path)).map((f) => ({ ...f, group: 'common' })),
+      ...all.filter((f) => !first.has(f.path)),
+    ]
   }, [schema, preferFields])
   const scope = recentScope ?? entity
 
   const [caret, setCaret] = useState(0)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
+  // A row was picked with the arrows since the last edit.
+  const arrowed = useRef(false)
   // Ctrl+Space: values are asked for at once, whatever was typed.
   const [explicit, setExplicit] = useState(false)
   // The list field's expanded editor: the field itself grows in place, in
@@ -347,7 +355,7 @@ export function QueryInput({
 
   const ctx: CaretContext = useMemo(() => contextAt(value, caret), [value, caret])
   const field = useMemo(
-    () => (ctx.kind === 'value' ? fields.find((f) => f.path === ctx.path) : undefined),
+    () => (ctx.kind === 'value' ? fieldByName(fields, ctx.path) : undefined),
     [ctx, fields]
   )
   const remoteKey = ctx.kind === 'value' ? `${ctx.path}\u0000${ctx.prefix}\u0000${ctx.rest}` : ''
@@ -392,9 +400,11 @@ export function QueryInput({
   const options: Completion[] = useMemo(() => {
     if (!open) return []
     if (value.trim() === '') {
-      return readRecent(scope)
-        .slice(0, MAX_OPTIONS)
-        .map((r) => ({ kind: 'recent' as const, label: r, insert: r }))
+      const recent = readRecent(scope).slice(0, MAX_OPTIONS)
+      // An empty field offers the recent queries, or the fields to start from.
+      if (recent.length > 0)
+        return recent.map((r) => ({ kind: 'recent' as const, label: r, insert: r }))
+      return fieldCompletions(contextAt('', 0), fields)
     }
     if (ctx.kind === 'field') return fieldCompletions(ctx, fields, MAX_OPTIONS)
     if (ctx.kind === 'value') {
@@ -490,6 +500,7 @@ export function QueryInput({
       setOpen(true)
       return
     }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && listOpen) arrowed.current = true
     if (e.key === 'ArrowDown' && listOpen) {
       e.preventDefault()
       setActive((a) => (a + 1) % options.length)
@@ -506,7 +517,11 @@ export function QueryInput({
       e.preventDefault()
       accept(options[Math.min(active, options.length - 1)])
     } else if (e.key === 'Enter' && !e.shiftKey) {
-      if (listOpen && !e.ctrlKey && !e.metaKey) {
+      // An empty field lists the fields to start from; Enter there still
+      // applies the empty query (no filter) unless a row was picked with the
+      // arrows.
+      const browsing = value.trim() === '' && options[0]?.kind === 'field' && !arrowed.current
+      if (listOpen && !browsing && !e.ctrlKey && !e.metaKey) {
         e.preventDefault()
         accept(options[Math.min(active, options.length - 1)])
       } else if (!multiline || e.ctrlKey || e.metaKey) {
@@ -567,6 +582,7 @@ export function QueryInput({
       onChange(e.target.value)
       setCaret(e.target.selectionStart ?? e.target.value.length)
       setActive(0)
+      arrowed.current = false
       setExplicit(false)
       setOpen(true)
     },
@@ -767,31 +783,13 @@ export function QueryInput({
           if (e.target instanceof Node && anchorRef.current?.contains(e.target)) e.preventDefault()
         }}
       >
-        <ul id={listId} role="listbox" aria-label={t('queryInput.suggestions')}>
-          {options.map((o, i) => (
-            <li
-              key={`${o.kind}-${o.label}`}
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === active}
-              className={cn(
-                'flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1 text-xs',
-                i === active && 'bg-accent text-accent-foreground'
-              )}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                accept(o)
-              }}
-            >
-              <span className="truncate font-mono">{o.label}</span>
-              <span className="text-muted-foreground shrink-0">
-                {o.count !== undefined
-                  ? formatCount(o.count, locale)
-                  : t(`queryInput.kind.${o.kind}`)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <SuggestionList
+          id={listId}
+          entity={entity}
+          options={options}
+          active={active}
+          onPick={accept}
+        />
       </PopoverContent>
     </Popover>
   )

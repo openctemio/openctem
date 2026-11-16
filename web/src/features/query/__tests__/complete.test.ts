@@ -3,6 +3,7 @@ import {
   applyCompletion,
   applyFix,
   contextAt,
+  fieldByName,
   fieldCompletions,
   formatCount,
   localValues,
@@ -121,5 +122,87 @@ describe('localProblem (checked while typing, no request)', () => {
     expect(localProblem('tool="nuclei')).toEqual({ code: 'unclosed_quote', start: 5, end: 6 })
     expect(localProblem('(a=1 OR (b=2)')).toEqual({ code: 'unclosed_paren', start: 0, end: 1 })
     expect(localProblem('a=1)')).toEqual({ code: 'extra_paren', start: 3, end: 4 })
+  })
+})
+
+// The schema's order and groups (common first, ids last), with short names.
+const ranked: QuerySchemaField[] = [
+  { path: 'severity', type: 'enum', operators: ['='], enum: ['high'], group: 'common' },
+  { path: 'is_in_kev', type: 'boolean', operators: ['=', '!='], aliases: ['kev'], group: 'common' },
+  { path: 'assigned_to', type: 'id', operators: ['='], aliases: ['assignee'], group: 'common' },
+  {
+    path: 'asset.domain',
+    type: 'string',
+    operators: ['='],
+    aliases: ['domain', 'asset_domain'],
+    group: 'common',
+  },
+  { path: 'asset.type', type: 'enum', operators: ['='], enum: ['host'], group: 'asset' },
+  { path: 'informational', type: 'boolean', operators: ['='], group: 'more' },
+  { path: 'asset_id', type: 'id', operators: ['='], group: 'identifier' },
+  { path: 'id', type: 'id', operators: ['='], group: 'identifier' },
+]
+
+describe('field suggestions: order, short names, groups', () => {
+  it('offers every field in the schema order under its group when nothing is typed', () => {
+    const all = fieldCompletions(contextAt('severity=high ', 14), ranked)
+    expect(all.map((c) => c.label)).toEqual([
+      'severity',
+      'kev',
+      'assignee',
+      'domain',
+      'asset.type',
+      'informational',
+      'asset_id',
+      'id',
+    ])
+    expect(all.map((c) => c.group)).toEqual([
+      'common',
+      'common',
+      'common',
+      'common',
+      'asset',
+      'more',
+      'identifier',
+      'identifier',
+    ])
+    // A row inserts the short name and carries its field (for its description).
+    expect(all[1]).toMatchObject({ kind: 'field', insert: 'kev', field: ranked[1] })
+  })
+  it('puts prefix matches before substring matches, showing the name that matched', () => {
+    expect(fieldCompletions(contextAt('a', 1), ranked).map((c) => c.label)).toEqual([
+      'AND',
+      'assignee',
+      'asset.domain',
+      'asset.type',
+      'asset_id',
+      'informational',
+    ])
+    // A former name still finds its field.
+    expect(fieldCompletions(contextAt('asset_d', 7), ranked).map((c) => c.label)).toEqual([
+      'asset_domain',
+    ])
+    // An identifier is offered when its name is typed.
+    expect(fieldCompletions(contextAt('asset_i', 7), ranked).map((c) => c.label)).toEqual([
+      'asset_id',
+    ])
+    expect(fieldCompletions(contextAt('ke', 2), ranked).map((c) => c.label)).toEqual(['kev'])
+  })
+  it('offers operators after a short name as after a path', () => {
+    expect(fieldCompletions(contextAt('kev', 3), ranked).map((c) => c.label)).toEqual([
+      'kev=',
+      'kev!=',
+    ])
+    expect(fieldCompletions(contextAt('is_in_kev', 9), ranked).map((c) => c.label)).toEqual([
+      'is_in_kev=',
+      'is_in_kev!=',
+    ])
+  })
+  it('resolves a short name to its field for values', () => {
+    expect(fieldByName(ranked, 'kev')).toBe(ranked[1])
+    expect(fieldByName(ranked, 'asset_domain')).toBe(ranked[3])
+    expect(fieldByName(ranked, 'nope')).toBeUndefined()
+    const ctx = contextAt('kev=t', 5)
+    expect(localValues(fieldByName(ranked, ctx.path), ctx)?.map((c) => c.label)).toEqual(['true'])
   })
 })

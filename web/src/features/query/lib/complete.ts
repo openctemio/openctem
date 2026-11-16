@@ -1,8 +1,9 @@
 /**
  * Completion for the search box: what the caret is in (a field name, the
- * value of a condition, nothing) and what may complete it. Field names and
- * enum values come from GET /api/v1/query/schema (only the fields the caller
- * may use); other values come from GET /api/v1/query/values. The server
+ * value of a condition, nothing) and what may complete it. Field names, their
+ * aliases, groups and order, and enum values come from GET
+ * /api/v1/query/schema (only the fields the caller may use, read once); other
+ * values come from GET /api/v1/query/values. The server
  * parser is the authority on validity: this only reads the text near the
  * caret.
  */
@@ -21,6 +22,10 @@ export interface Completion {
   label: string
   insert: string
   count?: number
+  /** The schema field a field or operator row is about (its description, type). */
+  field?: QuerySchemaField
+  /** The heading a field row sits under while nothing is typed. */
+  group?: string
 }
 
 export interface CaretContext {
@@ -91,33 +96,76 @@ export function shortOperators(f: QuerySchemaField): string[] {
 // Ordered values: "at least" reads naturally on these.
 const ORDERED = new Set(['severity', 'priority_class', 'asset.criticality'])
 
-/** Field names, operators and keywords for the field at the caret. */
+/** Every name a query may use for a field: its path, then its aliases. */
+export function fieldNames(f: QuerySchemaField): string[] {
+  return [f.path, ...(f.aliases ?? [])]
+}
+
+/** The name a person types for a field: its shortest alias when shorter than the path. */
+export function shortName(f: QuerySchemaField): string {
+  const a = f.aliases?.[0]
+  return a && a.length < f.path.length ? a : f.path
+}
+
+/** The field a path or alias names (lower case), if the caller may use it. */
+export function fieldByName(
+  fields: QuerySchemaField[],
+  name: string | undefined
+): QuerySchemaField | undefined {
+  if (!name) return undefined
+  return fields.find((f) => f.path === name) ?? fields.find((f) => f.aliases?.includes(name))
+}
+
+/**
+ * Field names, operators and keywords for the field at the caret. With
+ * nothing typed every field is offered in the schema's order (the fields
+ * people filter by first, record ids last), each under its group. With a
+ * prefix: fields with a name starting with it, then fields with a name
+ * containing it, in the schema's order, at most `limit`; a row shows the
+ * shortest name that matches.
+ */
 export function fieldCompletions(
   ctx: CaretContext,
   fields: QuerySchemaField[],
   limit = 10
 ): Completion[] {
   const p = ctx.prefix.toLowerCase()
-  const exact = fields.find((f) => f.path === p)
+  if (!p) {
+    return fields.map((f) => ({
+      kind: 'field',
+      label: shortName(f),
+      insert: shortName(f),
+      field: f,
+      group: f.group ?? 'more',
+    }))
+  }
+  const exact = fieldByName(fields, p)
   if (exact) {
     return shortOperators(exact).map((op) => ({
       kind: 'operator',
-      label: exact.path + op,
-      insert: exact.path + op,
+      label: p + op,
+      insert: p + op,
+      field: exact,
     }))
   }
   const out: Completion[] = []
-  if (p) {
-    for (const k of SHORT_KEYWORDS) {
-      if (k.toLowerCase().startsWith(p) && k.toLowerCase() !== p)
-        out.push({ kind: 'keyword', label: k, insert: k + ' ' })
-    }
+  for (const k of SHORT_KEYWORDS) {
+    if (k.toLowerCase().startsWith(p) && k.toLowerCase() !== p)
+      out.push({ kind: 'keyword', label: k, insert: k + ' ' })
   }
-  const starts = fields.filter((f) => f.path.startsWith(p))
-  const contains = p ? fields.filter((f) => !f.path.startsWith(p) && f.path.includes(p)) : []
-  for (const f of [...starts, ...contains]) {
+  const starts: Completion[] = []
+  const contains: Completion[] = []
+  for (const f of fields) {
+    const names = Array.from(new Set([shortName(f), ...fieldNames(f)]))
+    const start = names.find((n) => n.startsWith(p))
+    const within = start ? undefined : names.find((n) => n.includes(p))
+    const name = start ?? within
+    if (!name) continue
+    ;(start ? starts : contains).push({ kind: 'field', label: name, insert: name, field: f })
+  }
+  for (const c of [...starts, ...contains]) {
     if (out.length >= limit) break
-    out.push({ kind: 'field', label: f.path, insert: f.path })
+    out.push(c)
   }
   return out
 }
