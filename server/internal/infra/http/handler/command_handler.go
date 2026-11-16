@@ -704,9 +704,21 @@ func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	readable, err := h.findingContentReadable(r.Context(), result.Data)
+	if err != nil {
+		h.logger.Error("failed to read the commands' subjects", "error", err)
+		apierror.InternalServerError("failed to list commands").WriteJSON(w)
+		return
+	}
 	commands := make([]CommandResponse, len(result.Data))
 	for i, c := range result.Data {
 		commands[i] = commandResponseFor(r.Context(), c)
+		if !readable[i] {
+			// SECURITY: a command about a finding the caller may not read
+			// is listed without the finding's content (its payload and its
+			// result), the rule its logs follow (GetLogs).
+			commands[i].Payload, commands[i].Result = nil, nil
+		}
 	}
 
 	resp := ListResponse[CommandResponse]{
