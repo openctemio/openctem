@@ -151,8 +151,13 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
 
 ## Query mode
 
-The search field has a Basic | Query switch at its end (one code icon toggle on a phone; Ctrl+/ switches
-too): one field, two ways to write the same filter (`ListSearch` `query`, `useListQueryMode` in
+A Basic | Query switch is the first control of the toolbar row, its own control right before the search field
+(a two-segment switch, 32 tall, of a fixed width per language on a toolbar of 64rem and more, as at 1440 px with
+the sidebar; one code icon toggle below that, 32 px, 36 on a phone, where it sits before the joined Filters button;
+which one shows follows the toolbar's width only; Ctrl+/ switches too). The field's end holds only its own controls (clear in
+Basic; help, expand and run in Query), and the field holds its width when the mode switches (Query mode takes the
+filter tokens away; the field does not grow into their room until the toolbar itself is resized), so switching
+modes moves and resizes nothing: one field, two ways to write the same filter (`ListSearch` `query`, `useListQueryMode` in
 `features/query`). Assets and scans use the same field.
 
 - Basic to Query shows the whole filter as text printed by the server (`POST /query/parse` with the page's

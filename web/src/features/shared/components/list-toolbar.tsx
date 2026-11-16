@@ -224,7 +224,7 @@ export function ListToolbar({
             // A phone gives the search its own line.
             <div
               data-slot="list-toolbar-lead"
-              className="contents @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:basis-full"
+              className="contents @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:basis-full @max-md/toolbar:gap-2"
             >
               {lead}
             </div>
