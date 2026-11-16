@@ -125,6 +125,12 @@ var Findings = MustEntity(EntityDef{
 	},
 	Measures: []string{"cvss_score", "epss_score"},
 	Times:    []string{"first_detected_at", "last_seen_at", "resolved_at", "created_at"},
+	// What people filter findings by, in the order the editor offers it.
+	Suggested: []string{
+		"severity", "state", "status", "priority_class", "is_in_kev", "epss_score", fieldCVEID, "assigned_to",
+		"sla_status", "first_detected_at", "last_seen_at", "tool_name", pathAssetDomain, pathAssetIP, "source",
+		"finding_type", "practice", "cvss_score", "exploit_available", "asset.criticality",
+	},
 	Mandatory: []Mandatory{
 		{Leaf: &filterspec.Leaf{Field: "status", Op: filterspec.OpNotIn, Values: []any{"draft", "in_review"}},
 			Why: "pentest findings still in draft or in review are left out"},
@@ -167,6 +173,12 @@ var Assets = MustEntity(EntityDef{
 	},
 	Measures: []string{"risk_score"},
 	Times:    []string{"first_seen", "last_seen", "discovered_at", "created_at"},
+	// What people filter assets by, in the order the editor offers it.
+	Suggested: []string{
+		"name", "type", "criticality", "status", "tag", "domain", "ip", "port", "service", "technology",
+		"exposure", "environment", "internet_facing", "crown_jewel", "has_owner", "has_findings", "risk_score",
+		"last_seen", "first_seen", "liveness",
+	},
 	Mandatory: []Mandatory{
 		{Leaf: &filterspec.Leaf{Field: "deleted", Op: filterspec.OpEq, Values: []any{false}},
 			Why: "deleted assets are left out"},

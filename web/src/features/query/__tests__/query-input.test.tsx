@@ -23,8 +23,17 @@ vi.mock('../api/query-api', () => ({
           type: 'enum',
           operators: ['=', 'in'],
           enum: ['critical', 'high', 'medium', 'low', 'info'],
+          group: 'common',
         },
-        { path: 'tool_name', type: 'string', operators: ['=', 'in'] },
+        { path: 'tool_name', type: 'string', operators: ['=', 'in'], group: 'common' },
+        {
+          path: 'is_in_kev',
+          type: 'boolean',
+          operators: ['=', '!='],
+          aliases: ['kev'],
+          group: 'common',
+        },
+        { path: 'asset_id', type: 'id', operators: ['=', 'in'], group: 'identifier' },
       ],
     },
   }),
@@ -120,6 +129,47 @@ describe('QueryInput', () => {
     })
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true }))
     expect(window.localStorage.getItem('recent-queries:findings')).toContain('severity>=high')
+  })
+
+  it('offers the fields under labelled groups, each with its meaning, when the field is empty', () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.focus(box)
+    const list = screen.getByRole('listbox')
+    const groups = screen.getAllByRole('group')
+    expect(groups.map((g) => g.getAttribute('aria-labelledby'))).toHaveLength(2)
+    expect(screen.getByRole('group', { name: 'Common' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Identifiers' })).toBeTruthy()
+    const options = screen.getAllByRole('option')
+    expect(options.map((o) => o.querySelector('.font-mono')?.textContent)).toEqual([
+      'severity',
+      'tool_name',
+      'kev',
+      'asset_id',
+    ])
+    expect(options[2].textContent).toContain('Listed as known exploited')
+    expect(options[3].textContent).toContain('Identifier of the asset the finding is on')
+    // The field points at the first option; the arrows move across the groups.
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-0`)
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(box, { key: 'ArrowDown' })
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-3`)
+    expect(options[3].getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(box, { key: 'Tab' })
+    expect((box as HTMLInputElement).value).toBe('asset_id')
+  })
+
+  it('Enter in the empty field still applies no filter; an arrowed row is accepted', () => {
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} />)
+    const box = screen.getByRole('combobox')
+    fireEvent.focus(box)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0)
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true, text: '' }))
+    expect((box as HTMLInputElement).value).toBe('')
+    fireEvent.keyDown(box, { key: 'ArrowDown' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect((box as HTMLInputElement).value).toBe('tool_name')
   })
 
   it('draws the suggestions as a floating list in a portal, sized by the room and the field', () => {
