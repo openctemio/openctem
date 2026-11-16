@@ -9,6 +9,7 @@
  */
 import {
   FLOATING_COLLISION_PADDING,
+  FLOATING_MENU_MAX_WIDTH,
   floatingPadding,
   measureFloatingEnvironment,
 } from '@/components/ui/floating'
@@ -77,6 +78,11 @@ export function mayBeAnchoredOnPhone(
   return !shape.hasSubmenu && !shape.hasInput && countedItems(shape) <= PHONE_MENU_MAX_ITEMS
 }
 
+/** Widest a menu can be on this screen: 360 px, or the screen less both gutters. */
+function menuWidth(viewportWidth: number): number {
+  return Math.min(FLOATING_MENU_MAX_WIDTH, viewportWidth - 2 * FLOATING_COLLISION_PADDING)
+}
+
 function lines(width: number, room: number): number {
   return Math.max(1, Math.ceil(width / room))
 }
@@ -84,8 +90,7 @@ function lines(width: number, room: number): number {
 /** Height of the anchored menu, or null when a label or reason needs more than two lines. */
 export function phoneMenuHeight(shape: PhoneMenuShape, viewportWidth: number): number | null {
   const m = PHONE_MENU_METRICS
-  const textRoom =
-    viewportWidth - 2 * FLOATING_COLLISION_PADDING - m.chromeX - (shape.icons ? m.icon : 0)
+  const textRoom = menuWidth(viewportWidth) - m.chromeX - (shape.icons ? m.icon : 0)
   if (textRoom <= 0) return null
   let height = m.panelY + shape.headings * m.heading + shape.separators * m.separator
   for (const row of shape.rows) {
@@ -99,8 +104,8 @@ export function phoneMenuHeight(shape: PhoneMenuShape, viewportWidth: number): n
 
 /**
  * Anchored menu when the menu has at most six items, no submenu, no text
- * field, every label fits in two lines within the screen less both gutters,
- * and the whole menu fits below or above its trigger without scrolling.
+ * field, every label fits in two lines within the widest menu (360 px, or
+ * the screen less both gutters), and the whole menu fits below or above its trigger without scrolling.
  * Otherwise the bottom sheet.
  */
 export function choosePhonePresentation(
@@ -171,7 +176,7 @@ export function measurePhoneFit(trigger: HTMLElement, model: PhoneMenuModel): Ph
     icons: model.icons,
   }
   // Headings are short; one that would wrap beyond two lines rules the menu out too.
-  const room = window.innerWidth - 2 * FLOATING_COLLISION_PADDING - PHONE_MENU_METRICS.chromeX
+  const room = menuWidth(window.innerWidth) - PHONE_MENU_METRICS.chromeX
   for (const h of model.headings) {
     if (textWidth(h, strong, 14) > room * PHONE_MENU_METRICS.maxLines) return 'sheet'
   }
