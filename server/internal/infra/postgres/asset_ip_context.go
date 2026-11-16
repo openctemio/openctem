@@ -6,7 +6,6 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -100,21 +99,18 @@ func (r *AssetRepository) NetworkCounts(ctx context.Context, w *filterspec.Where
 	if w == nil || !strings.HasPrefix(w.SQL, assetlist.Fields.TenantSQL+" = $") {
 		return nil, false, errUncompiledAssetFilter
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, assetListTimeout)
 	if err != nil {
 		return nil, false, fmt.Errorf("begin network counts: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+assetListTimeout+"'"); err != nil {
-		return nil, false, fmt.Errorf("set network counts timeout: %w", err)
-	}
 	//nolint:gosec // G202: the WHERE is compiled from registry constants; every value is bound
 	q := `SELECT asset_ip_network(a.name)::text AS net, count(*) FROM assets a
 		WHERE ` + liveAssetSQL("a") + ` AND ` + w.SQL + ` AND a.asset_type = 'ip_address' AND asset_ip_network(a.name) IS NOT NULL
 		GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ` + fmt.Sprint(asset.MaxNetworks+1)
 	rows, err := tx.QueryContext(ctx, q, w.Args...)
 	if err != nil {
-		return nil, false, assetTimeout(fmt.Errorf("network counts: %w", err))
+		return nil, false, assetTimeout(ctx, fmt.Errorf("network counts: %w", err))
 	}
 	defer func() { _ = rows.Close() }()
 	out := make([]asset.NetworkCount, 0, 64)
@@ -126,7 +122,7 @@ func (r *AssetRepository) NetworkCounts(ctx context.Context, w *filterspec.Where
 		out = append(out, n)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, assetTimeout(fmt.Errorf("network counts: %w", err))
+		return nil, false, assetTimeout(ctx, fmt.Errorf("network counts: %w", err))
 	}
 	capped := len(out) > asset.MaxNetworks
 	if capped {
