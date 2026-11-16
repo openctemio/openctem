@@ -83,6 +83,13 @@ func (a *sqlArgs) scope(assetExpr string, s *shared.DataScope) string {
 // packagesCTE builds the CTEs every list, facet and summary query reads:
 // links (filtered package links), vf (open findings on those links) and
 // pkgs (one row per package with its aggregates and product filters).
+var packageSeverityCond = map[string]string{
+	"critical": "COALESCE(pf.critical, 0) > 0",
+	"high":     "COALESCE(pf.high, 0) > 0",
+	"medium":   "COALESCE(pf.medium, 0) > 0",
+	"low":      "COALESCE(pf.low, 0) > 0",
+}
+
 func packagesCTE(f component.Filter, args *sqlArgs) string {
 	tenant := args.add(f.TenantID.String())
 	var link strings.Builder
@@ -128,18 +135,12 @@ func packagesCTE(f component.Filter, args *sqlArgs) string {
 	if len(f.Severities) > 0 {
 		conds := make([]string, 0, len(f.Severities))
 		for _, s := range f.Severities {
-			// Constants chosen by the switch: the request value is only
-			// compared, never copied into the statement.
-			switch s {
-			case "critical":
-				conds = append(conds, "COALESCE(pf.critical, 0) > 0")
-			case "high":
-				conds = append(conds, "COALESCE(pf.high, 0) > 0")
-			case "medium":
-				conds = append(conds, "COALESCE(pf.medium, 0) > 0")
-			case "low":
-				conds = append(conds, "COALESCE(pf.low, 0) > 0")
+			// A fixed condition looked up by the value: the request value
+			// is only a key, never copied into the statement.
+			if c, ok := packageSeverityCond[s]; ok {
+				conds = append(conds, c)
 			}
+
 		}
 		if len(conds) > 0 {
 			prod.WriteString(" AND (" + strings.Join(conds, " OR ") + ")")
@@ -333,6 +334,7 @@ func (r *ComponentRepository) PackageFacets(ctx context.Context, f component.Fil
 	// position in its facet). The body is one constant literal after the
 	// CTE; no request text reaches it and every value is bound in args.
 	args := &sqlArgs{}
+	//nolint:gosec // G202: the package CTE and the facet body are constants; every value is bound in args
 	query := packagesCTE(f, args) + `
 		SELECT * FROM (
 			SELECT 'ecosystem'::text AS k, x.v::text, x.n::bigint, x.o::bigint FROM (
