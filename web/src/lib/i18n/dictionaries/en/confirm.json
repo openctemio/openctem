@@ -468,6 +468,7 @@
   "confirm.savedView.saveCurrent": "Save current filters as a view",
   "confirm.savedView.saveDesc": "Saves the current filters, sort, grouping, columns and density. A shared view shares the filters, not the results: everyone sees the findings they are allowed to see.",
   "confirm.savedView.saveFailed": "Could not save the view",
+  "confirm.savedView.saveFailedWhy": "Could not save the view: {reason}",
   "confirm.savedView.saveTitle": "Save view",
   "confirm.savedView.saved": "Saved view \"{name}\"",
   "confirm.savedView.sharedWith": "Shared with {group}",

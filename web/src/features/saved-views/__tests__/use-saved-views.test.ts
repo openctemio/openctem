@@ -1,6 +1,64 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { savedViewId, viewQueryFromSearch } from '../api/use-saved-views'
+const api = vi.hoisted(() => ({ post: vi.fn(), put: vi.fn() }))
+vi.mock('@/lib/api/client', async (orig) => ({
+  ...(await orig<typeof import('@/lib/api/client')>()),
+  post: api.post,
+  put: api.put,
+}))
+
+import {
+  createSavedView,
+  duplicateSavedView,
+  savedViewId,
+  updateSavedView,
+  viewQueryFromSearch,
+} from '../api/use-saved-views'
+
+describe('the save request body', () => {
+  beforeEach(() => {
+    api.post.mockReset().mockResolvedValue({})
+    api.put.mockReset().mockResolvedValue({})
+  })
+  const base = { page: 'findings' as const, name: 'V', query: 'severity=high' }
+
+  it('creates a Basic mode view with no page_params key at all', async () => {
+    await createSavedView({ ...base, page_params: { mode: 'basic' } })
+    const body = api.post.mock.calls[0][1]
+    expect(api.post.mock.calls[0][0]).toBe('/api/v1/views')
+    expect('page_params' in body).toBe(false)
+    expect(JSON.parse(JSON.stringify(body))).toEqual(base)
+  })
+
+  it('creates a Query mode view with page_params {mode: query}', async () => {
+    await createSavedView({ ...base, page_params: { mode: 'query' } })
+    expect(api.post.mock.calls[0][1].page_params).toEqual({ mode: 'query' })
+  })
+
+  it('sends no page_params for an empty object or none', async () => {
+    await createSavedView({ ...base, page_params: {} })
+    await createSavedView(base)
+    for (const call of api.post.mock.calls) expect('page_params' in call[1]).toBe(false)
+  })
+
+  it('keeps other page params and drops only the default mode', async () => {
+    await createSavedView({ ...base, page_params: { mode: 'basic', kev: 'true' } })
+    expect(api.post.mock.calls[0][1].page_params).toEqual({ kev: 'true' })
+  })
+
+  it('updates a Basic mode view with no page_params, a Query mode view with the mode', async () => {
+    await updateSavedView('abc', { ...base, page_params: { mode: 'basic' } })
+    expect(api.put.mock.calls[0][0]).toBe('/api/v1/views/abc')
+    expect('page_params' in api.put.mock.calls[0][1]).toBe(false)
+    await updateSavedView('abc', { ...base, page_params: { mode: 'query' } })
+    expect(api.put.mock.calls[1][1].page_params).toEqual({ mode: 'query' })
+  })
+
+  it('duplicates by id alone', async () => {
+    await duplicateSavedView('abc')
+    expect(api.post).toHaveBeenCalledWith('/api/v1/views', { from_view_id: 'abc' })
+  })
+})
 
 describe('saved views helpers', () => {
   it('only a UUID is a saved view id (view=verify is page state)', () => {

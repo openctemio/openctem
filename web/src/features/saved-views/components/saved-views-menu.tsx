@@ -162,6 +162,8 @@ export function SavedViewsMenu({
   const { can } = usePermissions()
   const canShareOrg = can(Permission.FindingsViewsShare)
   const [saving, setSaving] = useState(false)
+  // Why the last save in the dialog failed; shown in the dialog, which stays open.
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SavedView | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
@@ -192,6 +194,7 @@ export function SavedViewsMenu({
 
   const save = async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const view = await createSavedView({
         page,
@@ -211,10 +214,14 @@ export function SavedViewsMenu({
       toast.success(t('confirm.savedView.saved', 'Saved view "{name}"', { name: view.name }))
       onSelect(view)
     } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : t('confirm.savedView.saveFailed', 'Could not save the view')
+      // The dialog stays open with the name and the choices; the reason shows in it.
+      const failed = t('confirm.savedView.saveFailed', 'Could not save the view')
+      setSaveError(
+        e instanceof Error && e.message
+          ? t('confirm.savedView.saveFailedWhy', 'Could not save the view: {reason}', {
+              reason: e.message,
+            })
+          : failed
       )
     } finally {
       setSaving(false)
@@ -485,7 +492,13 @@ export function SavedViewsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+      <Dialog
+        open={saveOpen}
+        onOpenChange={(open) => {
+          setSaveOpen(open)
+          if (!open) setSaveError(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('confirm.savedView.saveTitle', 'Save view')}</DialogTitle>
@@ -504,7 +517,10 @@ export function SavedViewsMenu({
                   id="saved-view-name"
                   value={name}
                   maxLength={120}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    setSaveError(null)
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -532,6 +548,11 @@ export function SavedViewsMenu({
                   </SelectContent>
                 </Select>
               </div>
+              {saveError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {saveError}
+                </p>
+              )}
             </div>
           </DialogBody>
           <DialogFooter>
