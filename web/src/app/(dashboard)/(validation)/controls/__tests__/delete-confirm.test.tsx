@@ -38,15 +38,14 @@ vi.mock('@/features/controls/components/link-assets-dialog', () => ({
 }))
 
 describe('Compensating controls delete', () => {
-  it('sits in the row menu and needs the control name typed', async () => {
+  it("is the row's one action and needs the control name typed", async () => {
     del.mockResolvedValue(undefined)
     render(<CompensatingControlsPage />)
-    // No bare trash button next to Test.
-    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull()
+    // The row's menu would hold one item, so the action takes the menu's place.
+    expect(screen.queryByRole('button', { name: /^Actions for / })).toBeNull()
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Actions for WAF in front of billing' })
+      await screen.findByRole('button', { name: 'Delete WAF in front of billing' })
     )
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete WAF/ }))
     const dialog = await screen.findByRole('alertdialog')
     const confirm = within(dialog).getByRole('button', { name: 'Delete control' })
     expect(confirm).toBeDisabled()

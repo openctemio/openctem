@@ -391,8 +391,9 @@ export interface DetailHeaderProps {
   menu?: DetailMenuItem[]
   /**
    * The record's own page. Adds an "Open full page" icon button beside the
-   * header icons and the same entry at the top of the `⋯` menu. A real link,
-   * so ctrl/cmd-click and middle-click open it in a new tab.
+   * header icons and, when the `⋯` menu has items of its own, the same entry
+   * at its top (a menu never holds the one entry the icon already is). A real
+   * link, so ctrl/cmd-click and middle-click open it in a new tab.
    */
   fullPageHref?: string
   onClose: () => void
@@ -421,7 +422,7 @@ export function DetailHeader({
   // The record's own page first, then the caller's items; a divider
   // (separatorBefore) starts a new section.
   const moreItems: ActionMenuEntry[] = []
-  if (fullPageHref) {
+  if (fullPageHref && (menu?.length ?? 0) > 0) {
     moreItems.push({
       id: 'full-page',
       label: fullPageLabel,

@@ -58,10 +58,20 @@ describe('DetailHeader full page link', () => {
   })
 
   it('also lists it in the more menu', async () => {
-    renderSheet({ fullPageHref: '/assets/abc' })
+    renderSheet({
+      fullPageHref: '/assets/abc',
+      menu: [{ label: 'Rotate key', onSelect: vi.fn() }],
+    })
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     const item = await screen.findByRole('menuitem', { name: 'Open full page' })
     expect(item).toHaveAttribute('href', '/assets/abc')
+  })
+
+  it('has no menu of its own when the link is the only entry', () => {
+    renderSheet({ fullPageHref: '/assets/abc' })
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open full page' })).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'Open full page' })).toHaveLength(1)
   })
 
   it('has no link without fullPageHref', () => {
