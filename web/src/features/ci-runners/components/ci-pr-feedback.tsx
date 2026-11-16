@@ -100,10 +100,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                     'scans.ci.feedback.githubMissing',
                     'This deployment has no GitHub App yet. An operator registers it; then install it here.'
                   )}{' '}
-                  <SafeExternalLink
-                    href={docsHref(DOCS.ci.githubApp)}
-                    className="text-primary underline-offset-4 hover:underline"
-                  >
+                  <SafeExternalLink href={docsHref(DOCS.ci.githubApp)} className="link-inline">
                     {t('scans.ci.feedback.githubGuide', 'GitHub App guide')}
                   </SafeExternalLink>
                 </>

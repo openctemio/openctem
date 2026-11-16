@@ -155,7 +155,7 @@ export function MembersTab({
                     <p className="text-xs break-all text-muted-foreground">
                       {email}
                       {(member.added_by_name || member.added_by) && (
-                        <span className="ms-2 text-xs text-muted-foreground/60">
+                        <span className="ms-2 text-xs text-muted-foreground">
                           {t('org.teamMembers.addedBy', 'Added by {name}', {
                             name: member.added_by_name || member.added_by || '',
                           })}

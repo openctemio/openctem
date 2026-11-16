@@ -500,13 +500,18 @@ const FINDINGS_PRIORITY_WIDTH = 76
 
 /**
  * Column priority (the table's frame width below which a column drops), so the
- * title never gets narrower than 280: Severity below a 1496 px screen, Signals
- * and EPSS below 1336, Due / SLA below 1176, with the 256 px sidebar open
+ * title never gets narrower than 280: Severity below a 1524 px screen, Signals
+ * and EPSS below 1364, Due / SLA below 1204, with the 256 px sidebar open
  * (the frame is the screen less the sidebar, the page padding and the
  * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
- * filter panel open move the points with it.
+ * filter panel open move the points with it. A point is never below the sum
+ * of the widths shown at it (each width holds its cell padding): checkbox 40,
+ * Priority 76, Title 280, Location 160, Status 120 and the row menu 48 are
+ * always there (724); with Due / SLA (140) 864, with Signals (140) 1004, with
+ * Severity (88) 1092; the rest is the title's. Below 724 the shared table
+ * narrows Location toward its floor before it scrolls sideways.
  */
-const FINDINGS_HIDE_BELOW = { severity: 1170, signals: 1010, slaStatus: 850 } as const
+const FINDINGS_HIDE_BELOW = { severity: 1198, signals: 1038, slaStatus: 878 } as const
 
 /**
  * Table columns the API can sort by (FindingAllowedSortFields), keyed by column
@@ -1776,7 +1781,6 @@ function FindingsContent() {
         id: 'slaStatus',
         meta: {
           kind: 'due',
-          width: 112,
           hideBelow: FINDINGS_HIDE_BELOW.slaStatus,
           label: t('findings.columns.sla', 'Due / SLA'),
         },
