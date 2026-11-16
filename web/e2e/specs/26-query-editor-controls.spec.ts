@@ -44,9 +44,10 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     expect(cb.x + cb.width).toBeLessThanOrEqual(field.x + field.width)
     expect(cb.y).toBeGreaterThanOrEqual(field.y)
     expect(cb.y + cb.height).toBeLessThanOrEqual(field.y + field.height)
-    // They end before the Basic | Query switch (its width is measured by the field).
+    // The Basic | Query switch is its own control before the field, 8 px apart.
     const sw = (await page.locator('[data-slot="list-search-mode"]:visible').boundingBox())!
-    expect(cb.x + cb.width).toBeLessThanOrEqual(sw.x)
+    expect(Math.round(field.x - (sw.x + sw.width))).toBe(8)
+    expect(Math.abs(sw.y + sw.height / 2 - (field.y + field.height / 2))).toBeLessThanOrEqual(1)
 
     // Help: the syntax and the person's own fields, from the schema already read.
     await page.getByRole('button', { name: /query syntax/i }).click()
@@ -264,8 +265,10 @@ test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => 
       const cb = (await controls.boundingBox())!
       const sw = (await page.locator('[data-slot="list-search-mode"]:visible').boundingBox())!
       expect(cb.x).toBeGreaterThanOrEqual(field.x)
-      expect(cb.x + cb.width).toBeLessThanOrEqual(sw.x)
-      // Only the overflow and Apply sit in the one-line field (with the mode toggle).
+      expect(cb.x + cb.width).toBeLessThanOrEqual(field.x + field.width)
+      // The mode toggle is outside the field, before it (and before Filters).
+      expect(sw.x + sw.width).toBeLessThanOrEqual(field.x)
+      // Only the overflow and Apply sit in the one-line field.
       await expect(controls.getByRole('button', { name: /query syntax|cú pháp/i })).toBeHidden()
       const apply = controls.locator('[data-slot="query-apply"]')
       expect((await apply.boundingBox())!.width).toBe(28)

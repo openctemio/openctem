@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListToolbar } from '../list-toolbar'
@@ -208,66 +208,120 @@ describe('ListSearch', () => {
     expect(screen.getByRole('searchbox')).toHaveValue('')
   })
 
-  it('measures the end controls the Query editor draws once it has loaded', () => {
-    const rect = HTMLElement.prototype.getBoundingClientRect
-    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-      const width = this.dataset.slot === 'list-search-end' ? 120 : 0
-      return { width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0 } as DOMRect
-    }
-    try {
-      // A lazy editor: nothing on the first render, the field with the end controls after.
-      function Editor({ adornments }: { adornments: ReactNode }) {
-        const [loaded, setLoaded] = useState(false)
-        return loaded ? (
-          <div>{adornments}</div>
-        ) : (
-          <button type="button" onClick={() => setLoaded(true)}>
-            load
-          </button>
-        )
-      }
-      const { container } = render(
-        <ListSearch
-          value=""
-          onChange={() => {}}
-          placeholder="Search findings…"
-          query={{
-            active: true,
-            onActiveChange: () => {},
-            renderEditor: ({ adornments }) => <Editor adornments={adornments} />,
-          }}
-        />
-      )
-      fireEvent.click(screen.getByRole('button', { name: 'load' }))
-      const field = container.querySelector<HTMLElement>('[data-slot="list-search-query"]')!
-      expect(field.style.getPropertyValue('--list-search-end')).toBe('128px')
-    } finally {
-      HTMLElement.prototype.getBoundingClientRect = rect
-    }
-  })
-
-  it('the Basic | Query switch can be drawn outside the field, on the same mode', async () => {
+  it('draws the Basic | Query switch as its own control before the field', async () => {
     const onActiveChange = vi.fn()
     const { container } = render(
       <ListSearch
         value=""
         onChange={() => {}}
         placeholder="Search findings…"
+        filter={<button type="button">Filters</button>}
+        query={{
+          active: false,
+          onActiveChange,
+          renderEditor: () => null,
+        }}
+      />
+    )
+    const field = container.querySelector('[data-slot="list-search"]') as HTMLElement
+    const switches = container.querySelectorAll('[data-slot="list-search-mode"]')
+    // The segmented switch (from 768) and the phone toggle: both outside the
+    // field, both before it, and before the joined filter trigger.
+    expect(switches).toHaveLength(2)
+    for (const sw of switches) {
+      expect(field.contains(sw)).toBe(false)
+      expect(sw.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(field.firstElementChild).toHaveTextContent('Filters')
+    // The field's end keeps only its own controls.
+    const end = container.querySelector('[data-slot="list-search-end"]') as HTMLElement
+    expect(end.querySelector('button')).toBeNull()
+    // Keyboard operable, named, the pressed state follows the mode.
+    expect(screen.getByRole('group', { name: 'Search mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Basic' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.tab()
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Query' })).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(onActiveChange).toHaveBeenCalledWith(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Query mode' }))
+    expect(onActiveChange).toHaveBeenLastCalledWith(true)
+  })
+
+  it('keeps the same end room in Query mode whatever the editor draws', () => {
+    const { container, rerender } = render(
+      <ListSearch
+        value=""
+        onChange={() => {}}
+        placeholder="Search findings…"
+        query={{ active: false, onActiveChange: () => {}, renderEditor: () => null }}
+      />
+    )
+    const basic = container.querySelector<HTMLElement>('[data-slot="list-search-field"]')!
+    expect(basic.style.getPropertyValue('--list-search-end')).toBe('2.25rem')
+    rerender(
+      <ListSearch
+        value=""
+        onChange={() => {}}
+        placeholder="Search findings…"
         query={{
           active: true,
-          onActiveChange,
-          switchOutside: true,
+          onActiveChange: () => {},
           renderEditor: ({ adornments }) => <div data-testid="editor">{adornments}</div>,
         }}
       />
     )
-    expect(container.querySelector('[data-slot="list-search-mode"]')).toBeNull()
+    const q = container.querySelector<HTMLElement>('[data-slot="list-search-query"]')!
+    expect(q.style.getPropertyValue('--list-search-end')).toBe('0.5rem')
+    // The field's size classes do not change with the mode.
+    expect(container.querySelector('[data-slot="list-search"]')!.className).not.toMatch(/max-w-xl/)
+  })
+
+  it('holds its Basic width in Query mode, so the tokens leaving move nothing', () => {
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const width = this.dataset.slot === 'list-search' ? 333 : 0
+      return { width, height: 32, top: 0, left: 0, right: width, bottom: 32, x: 0, y: 0 } as DOMRect
+    }
+    try {
+      const props = (active: boolean) => ({
+        value: '',
+        onChange: () => {},
+        placeholder: 'Search findings…',
+        query: { active, onActiveChange: () => {}, renderEditor: () => null },
+      })
+      const { container, rerender } = render(<ListSearch {...props(false)} />)
+      const field = () => container.querySelector('[data-slot="list-search"]') as HTMLElement
+      expect(field().style.width).toBe('')
+      rerender(<ListSearch {...props(true)} />)
+      expect(field().style.width).toBe('333px')
+      expect(field().style.flex).toMatch(/none|0 0 auto/)
+      rerender(<ListSearch {...props(false)} />)
+      expect(field().style.width).toBe('')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = rect
+    }
+  })
+
+  it('the switch alone reports the mode; Ctrl+/ switches from anywhere', async () => {
     const onModeChange = vi.fn()
     render(<ListSearchModeSwitch mode="query" onModeChange={onModeChange} />)
     expect(screen.getByRole('button', { name: 'Query' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Query mode' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Basic' }))
     expect(onModeChange).toHaveBeenCalledWith('basic')
-    // Ctrl+/ still belongs to the field.
+    const onActiveChange = vi.fn()
+    render(
+      <ListSearch
+        value=""
+        onChange={() => {}}
+        placeholder="Search findings…"
+        query={{ active: true, onActiveChange, renderEditor: () => null }}
+      />
+    )
     fireEvent.keyDown(window, { key: '/', ctrlKey: true })
     expect(onActiveChange).toHaveBeenCalledWith(false)
   })
