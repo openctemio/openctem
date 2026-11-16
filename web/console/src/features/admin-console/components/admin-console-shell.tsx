@@ -11,6 +11,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Search } from '@/components/search'
 import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { SkipToMain } from '@/components/skip-to-main'
+import { usePageTopScrollPadding } from '@/hooks/use-page-top-scroll-padding'
 import { Header } from '@/components/layout/app-header'
 import { HEADER_ACTIONS_GROUP } from '@/components/layout/header-controls'
 import { SearchProvider } from '@/context/search-provider'
@@ -63,6 +64,9 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
   const router = useRouter()
   const { t } = useTranslation()
   const [elevateOpen, setElevateOpen] = useState(false)
+  // A page opened from the sidebar starts at its top (see the hook).
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  usePageTopScrollPadding(scroller)
 
   useEffect(() => {
     if (!isLoading && !error && admin === null) {
@@ -187,11 +191,12 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                   nothing interactive (a read-only list on a phone) still scrolls with the
                   arrow keys. */}
               <div
+                ref={setScroller}
                 id="content"
                 role="region"
                 aria-label={t('admin.shell.contentRegion', 'Page content')}
                 tabIndex={0}
-                className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="relative min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 {admin.is_break_glass && (
                   <div className="px-4 pt-2">

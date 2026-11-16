@@ -221,7 +221,7 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
     expect(hrefOf(/^Accepted 22$/)).toBe(flow.accepted.drill)
     expect(hrefOf(/^False positive 97$/)).toBe(flow.false_positive.drill)
     expect(hrefOf(/^nuclei Sensor 402 findings/)).toBe(intake.sources[0].drill)
-    expect(hrefOf('Mobilize: 78% within SLA, Off track')).toBe(
+    expect(hrefOf('Mobilize Off track Act here 78% within SLA')).toBe(
       '/findings?state=open&sla_status=overdue'
     )
     expect(screen.getByText('Organization')).toBeInTheDocument()
@@ -317,6 +317,19 @@ describe('stages: one icon set, state in words, act-here apart', () => {
     expect(icon.getAttribute('class')).not.toContain('signal')
     expect(within(current).getByTestId('stage-act-here')).toHaveTextContent('Act here')
     expect(within(current).getByText('Off track')).toBeInTheDocument()
+  })
+
+  it('each stage link is named by its visible words first, in order (label in name)', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const stages = screen.getByTestId('flow-stages')
+    for (const link of within(stages).getAllByRole('link')) {
+      expect(link).not.toHaveAttribute('aria-label')
+      const shown = link.cloneNode(true) as HTMLElement
+      shown.querySelectorAll('.sr-only').forEach((el) => el.remove())
+      const visible = (shown.textContent ?? '').replace(/\s+/g, ' ').trim()
+      expect(visible).not.toBe('')
+      expect((link.textContent ?? '').replace(/\s+/g, ' ')).toContain(visible)
+    }
   })
 
   it('names what each figure measures, so a count and a share never read as one unit', () => {

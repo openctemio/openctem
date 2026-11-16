@@ -113,9 +113,7 @@ export function OnboardingBundlePicker({
                 {b.description}
               </p>
               {b.target_persona && (
-                <span className="text-muted-foreground/70 truncate text-[10px]">
-                  {b.target_persona}
-                </span>
+                <span className="truncate text-cap text-muted-foreground">{b.target_persona}</span>
               )}
             </button>
           )

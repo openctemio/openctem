@@ -153,6 +153,83 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
     }
   })
 
+  test('default columns fit the frame at scroll 0 with long values: the row menu and the Due chip whole', async ({
+    page,
+    baseURL,
+  }) => {
+    // Long values the seed may not have: a long title and location, KEV marks,
+    // a 109-day and a 1500-day overdue SLA (the chip reads "999+" above 999).
+    const day = 86_400_000
+    await page.route(/\/api\/v1\/findings\?/, async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      if (Array.isArray(body.data)) {
+        body.data = body.data.map((f: Record<string, unknown>, i: number) => ({
+          ...f,
+          title: `Remote code execution in the request parser of a long component name ${i}`,
+          cve_id: 'CVE-2024-123456',
+          is_in_kev: true,
+          sla_kev_capped: true,
+          sla_status: 'overdue',
+          sla_deadline: new Date(Date.now() - (i % 2 ? 1500 : 109) * day - 3_600_000).toISOString(),
+          asset: {
+            ...((f.asset as object) ?? {}),
+            name: `very-long-host-name-${i}.internal.example.com`,
+            is_internet_accessible: true,
+            is_crown_jewel: true,
+          },
+          file_path: '/srv/applications/payments/service/handlers/checkout/deep/path.go',
+        }))
+      }
+      await route.fulfill({ response, json: body })
+    })
+    for (const locale of ['en', 'vi'] as const) {
+      await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
+      for (const sidebar of ['true', 'false']) {
+        await page.context().addCookies([{ name: 'sidebar_state', value: sidebar, url: baseURL! }])
+        for (const width of [1440, 1366, 1280, 1024]) {
+          await page.setViewportSize({ width, height: 900 })
+          await page.goto('/findings')
+          await expect(page.locator('main thead th').first()).toBeVisible({ timeout: 20_000 })
+          if (!(await page.locator('[data-slot="finding-title-link"]').first().isVisible())) return
+          const at = `${locale}, ${width}, sidebar ${sidebar === 'true' ? 'open' : 'collapsed'}`
+          const box = await page.locator('main [data-slot="table-container"]').evaluate((f) => {
+            const right = f.getBoundingClientRect().left + f.clientWidth
+            const ths = [...f.querySelectorAll('thead th')]
+            const rows = [...f.querySelectorAll('tbody tr')]
+            const menus = rows.map((tr) => tr.lastElementChild!.querySelector('button'))
+            const chips = [...f.querySelectorAll<HTMLElement>('tbody [data-slot="sla-due-chip"]')]
+            return {
+              scrollLeft: f.scrollLeft,
+              wide: f.scrollWidth > f.clientWidth + 1,
+              headerEnd: ths[ths.length - 1].getBoundingClientRect().right,
+              rowEnd: rows[0].lastElementChild!.getBoundingClientRect().right,
+              right,
+              menusOut: menus.filter((b) => !b || b.getBoundingClientRect().right > right + 0.5)
+                .length,
+              chips: chips.length,
+              chipsOut: chips.filter((c) => {
+                const pill = c.querySelector<HTMLElement>('[data-slot="sla-countdown"]')
+                const cell = c.closest('td')!.getBoundingClientRect()
+                return (
+                  c.getBoundingClientRect().right > cell.right + 0.5 ||
+                  (pill !== null && pill.scrollWidth > pill.clientWidth + 0.5)
+                )
+              }).length,
+            }
+          })
+          expect(box.scrollLeft, at).toBe(0)
+          expect(box.wide, `default columns fit the frame, ${at}`).toBe(false)
+          expect(box.menusOut, `row menus inside the frame, ${at}`).toBe(0)
+          expect(Math.abs(box.headerEnd - box.rowEnd), `header end = row end, ${at}`).toBeLessThan(
+            1
+          )
+          expect(box.chipsOut, `Due chips whole inside their cell, ${at}`).toBe(0)
+        }
+      }
+    }
+  })
+
   test('there is no page-level horizontal scroll at 1024, 1280 and 1440', async ({ page }) => {
     for (const width of [1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 900 })

@@ -4,7 +4,7 @@ import { ShieldAlert } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
-import { slaCountdown } from '../lib/sla'
+import { slaCountdown, slaCountLabel } from '../lib/sla'
 import { SlaStatusBadge } from './sla-status-badge'
 import { slaStateClass } from '@/lib/sla-colors'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
@@ -17,6 +17,10 @@ import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types
  * accessible name and the pointer tooltip. When the policy's known exploited
  * (KEV) cap set the deadline, a focusable marker says so. One component, so
  * every list shows an SLA the same way.
+ *
+ * The chip never ends in an ellipsis: a count above 999 reads "999+", so its
+ * longest text is known ("999+ d overdue", "Trễ 999+ ngày") and a list sizes
+ * its column to hold it (the `due` column kind in data-table/column-meta.ts).
  */
 export function SlaDueChip({
   status,
@@ -44,7 +48,7 @@ export function SlaDueChip({
     ? t(
         `findings.slaDue.${c.overdue ? 'overdue' : 'left'}${c.unit === 'hours' ? 'Hours' : 'Days'}`,
         c.overdue ? `{count} ${unit} overdue` : `In {count} ${unit}`,
-        { count: c.count }
+        { count: slaCountLabel(c.count) }
       )
     : null
   // Late by the clock even before the server's state catches up.
@@ -55,19 +59,16 @@ export function SlaDueChip({
   return (
     <span
       data-slot="sla-due-chip"
-      className={cn(
-        'inline-flex max-w-full min-w-0 items-center gap-1 whitespace-nowrap',
-        className
-      )}
+      className={cn('inline-flex items-center gap-1 whitespace-nowrap', className)}
     >
       {countdown === null ? (
-        <SlaStatusBadge status={status} className="min-w-0" />
+        <SlaStatusBadge status={status} className="shrink-0" />
       ) : (
         <span
           data-slot="sla-countdown"
           title={name}
           className={cn(
-            'min-w-0 truncate text-xs tabular-nums',
+            'shrink-0 text-xs tabular-nums',
             plain
               ? 'text-foreground'
               : cn('rounded-md border px-2 py-0.5 font-medium', slaStateClass(tone))
