@@ -59,7 +59,12 @@ for (const [width, height, touch] of [
       }) => {
         await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
         await page.goto('/findings')
-        await page.locator('[data-slot="list-search-mode"]:visible').click()
+        // The Query segment (from 768) or the phone's toggle.
+        await page
+          .locator(
+            '[data-slot="list-search-mode-query"]:visible, button[data-slot="list-search-mode"]:visible'
+          )
+          .click()
         const field = page.locator('[data-slot="list-search-query"] [role="combobox"]')
         await expect(field).toBeEnabled({ timeout: 20_000 })
         await page.waitForLoadState('networkidle')
