@@ -411,8 +411,10 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
       return true
     })
     // A bordered group is one control (a filter select with its clear
-    // button, a view switcher's segments): measured by its box.
-    const GROUPS = '[data-slot=filter-select],[data-slot=view-switcher]'
+    // button, a view switcher's or the Basic | Query switch's segments):
+    // measured by its box.
+    const GROUPS =
+      '[data-slot=filter-select],[data-slot=view-switcher],[data-slot=list-search-mode]'
     const seen = new Set<HTMLElement>()
     const controls = rawControls
       .map((el) => el.closest<HTMLElement>(GROUPS) ?? el)

@@ -5,9 +5,10 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * One list toolbar (research/267) on a sample of lists from different areas,
  * at 1440px and 390px:
- *   1. the search box is the toolbar's first control (after the joined filter
- *      trigger), at the field height of "Sizes" (32, 36 below 768px), with a
- *      "Search ...…" placeholder;
+ *   1. the search box is the toolbar's first control (after the Basic | Query
+ *      switch on a list with Query mode, and the joined filter trigger), at
+ *      the field height of "Sizes" (32, 36 below 768px), with a "Search ...…"
+ *      placeholder; the switch has the same height;
  *   2. where the list has a filter trigger, it touches the search box (no gap)
  *      and both share the same top and height;
  *   3. "/" focuses the search box, Escape clears it;
@@ -57,9 +58,17 @@ for (const width of [1440, 390] as const) {
         // 1. first control at the field height, placeholder pattern.
         const first = await toolbar.evaluate((el) => {
           const visible = (n: Element) => (n as HTMLElement).checkVisibility?.() ?? true
-          const ctl = [...el.querySelectorAll('button, input, [role="combobox"]')].filter(visible)
-          return ctl.slice(0, 2).map((n) => n.getAttribute('data-slot') ?? n.tagName)
+          const ctl = [...el.querySelectorAll('button, input, [role="combobox"]')]
+            .filter(visible)
+            // The mode switch (segments or the phone toggle) counts once.
+            .map((n) => (n.closest('[data-slot="list-search-mode"]') ? 'list-search-mode' : n))
+            .filter((n, i, all) => n !== 'list-search-mode' || all.indexOf(n) === i)
+          return ctl
+            .slice(0, 3)
+            .map((n) => (typeof n === 'string' ? n : (n.getAttribute('data-slot') ?? n.tagName)))
         })
+        const mode = first[0] === 'list-search-mode'
+        if (mode) first.shift()
         expect(first[0] === 'list-search-input' || first[0] === 'filter-button').toBe(true)
         if (first[0] === 'filter-button') expect(first[1]).toBe('list-search-input')
         const sb = (await search.boundingBox())!
@@ -76,6 +85,14 @@ for (const width of [1440, 390] as const) {
         })
         expect(Math.round(sb.height)).toBe(fieldHeight)
         expect(await search.getAttribute('placeholder')).toMatch(/^\S.*…$/)
+        if (mode) {
+          const mb = (await toolbar
+            .locator('[data-slot="list-search-mode"]:visible')
+            .boundingBox())!
+          expect(Math.round(mb.height)).toBe(fieldHeight)
+          expect(Math.abs(mb.y - sb.y)).toBeLessThanOrEqual(1)
+          expect(mb.x + mb.width).toBeLessThan(sb.x)
+        }
 
         // 2. the trigger touches the field.
         if (p.filter) {
