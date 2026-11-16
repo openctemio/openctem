@@ -27,7 +27,6 @@ const ALLOW: Record<string, string> = {
  * the file). Remove an entry when its menu moves; never add one for new code.
  */
 const PENDING = new Set([
-  'app/(dashboard)/findings/page.tsx',
   'features/access-control/components/role-detail-sheet.tsx',
   'features/activity/components/activity-items.tsx',
   'features/assets/components/asset-owners-tab.tsx',
