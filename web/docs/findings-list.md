@@ -199,6 +199,10 @@ practice!=compliance`). The client never builds query text itself.
   problem (it scrolls there). The list keeps the last valid result.
 - In Query mode the chips and Clear step aside (the context chips stay; Add filter and the base chips stay dimmed and inactive); in Basic mode an `fq`
   filter is one Advanced chip whose text opens Query mode.
+- A saved view stores the search mode as the page param `mode=query`. Basic is the default, so a view saved in Basic
+  mode sends no `page_params` at all (`savedViewBody` in `src/features/saved-views/api/use-saved-views.ts` is the one
+  place that decides); a view without it opens in Basic. When a save fails, the Save view dialog stays open with the
+  name kept and shows the reason.
 
 ## Request budget
 

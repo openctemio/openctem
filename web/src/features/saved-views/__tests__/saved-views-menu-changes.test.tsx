@@ -268,4 +268,23 @@ describe('sharing', () => {
     expect(body.page_params).toEqual({ mode: 'query' })
     expect(body.query ?? '').not.toContain('mode=')
   })
+
+  it('keeps the dialog open with the name and shows why when the save fails', async () => {
+    vi.mocked(createSavedView).mockRejectedValueOnce(new Error('Invalid request body'))
+    await openSave()
+    await userEvent.click(await screen.findByRole('option', { name: 'Only me' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Keep me')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Could not save the view: Invalid request body')
+    // Still open, the name is kept and Save works again.
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Name')).toHaveValue('Keep me')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    // Typing again clears the message; a second try saves.
+    await userEvent.type(screen.getByLabelText('Name'), '!')
+    expect(screen.queryByRole('alert')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
 })
