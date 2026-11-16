@@ -78,13 +78,12 @@ describe('crown jewels page', () => {
     expect(within(sheet).queryByText(/dependencies/i)).toBeNull()
   })
 
-  it('readers keep View details in the row menu', async () => {
+  it('readers keep View details: their one row action is a button, never a one-item menu', () => {
     canWrite = false
-    const user = userEvent.setup()
     render(<CrownJewelsPage />)
-    await user.click(screen.getByRole('button', { name: 'Actions for Payments DB' }))
-    expect(await screen.findByRole('menuitem', { name: 'View details' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Actions for Payments DB' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'View details' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
   })
 
   it('shows an error with retry instead of the empty state when the load fails', async () => {

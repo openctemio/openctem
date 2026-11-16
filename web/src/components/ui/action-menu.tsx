@@ -17,13 +17,22 @@
  * `disabledReason`. A destructive item opens a confirmation from its
  * `onSelect`; it never acts directly.
  *
+ * A menu of one item is not a menu (owner rule: an overflow menu never holds
+ * a single item): with exactly one action left (after permission and width
+ * folding) that has an icon, the trigger itself becomes that action, in the
+ * trigger's place and size, named and titled by it. Pages merge a lone item
+ * into their other menu instead; outside production a console error names
+ * any one-item menu so a page does not ship one by accident.
+ *
  * Only this file is in the routes' first-load code: the menu itself
  * (`action-menu-impl.tsx`) loads right after the page shows. A press on the
  * trigger before it is in is kept, and opens the menu when it arrives.
  */
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 
-import type { ActionMenuEntry } from '@/components/ui/action-menu-model'
+import type { ActionMenuAction, ActionMenuEntry } from '@/components/ui/action-menu-model'
+import { safeHref } from '@/lib/safe-href'
 
 export type {
   ActionMenuAction,
@@ -72,6 +81,38 @@ function hasItems(items: ActionMenuEntry[]): boolean {
   return items.some((e) => e.kind !== 'sub' || e.items.length > 0)
 }
 
+/** The one action of a menu that would hold a single item, else null. */
+export function soleAction(items: ActionMenuEntry[]): ActionMenuAction | null {
+  const shown = items.flatMap((e) => (e.kind === 'sub' ? e.items : [e]))
+  return shown.length === 1 ? shown[0] : null
+}
+
+/** The trigger turned into the one action: same place, size and look. */
+function SoleActionButton({
+  item,
+  trigger,
+}: {
+  item: ActionMenuAction
+  trigger: React.ReactElement
+}) {
+  const router = useRouter()
+  const Icon = item.icon
+  return React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
+    'aria-label': item.label,
+    title: item.disabledReason ?? item.label,
+    'aria-haspopup': undefined,
+    'data-sole-action': '',
+    disabled: !!item.disabledReason,
+    children: Icon ? <Icon aria-hidden="true" /> : item.label,
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (item.disabledReason) return
+      if (item.href) router.push(safeHref(item.href) ?? '/')
+      else item.onSelect?.()
+    },
+  })
+}
+
 /**
  * The trigger as it shows while the menu's code loads: marked busy, and a
  * press on it is kept (`onPress`) instead of lost.
@@ -93,7 +134,19 @@ export function pendingTrigger(
 
 export function ActionMenu(props: ActionMenuProps) {
   const [pending, setPending] = React.useState<PendingOpen | undefined>(undefined)
+  const sole = soleAction(props.items)
+  const soleLabel = sole?.label
+  React.useEffect(() => {
+    if (soleLabel !== undefined && process.env.NODE_ENV !== 'production')
+      console.error(
+        `ActionMenu: "${soleLabel}" is the only item; an overflow menu never holds one item. Put it in the page's other menu or show it as a button.`
+      )
+  }, [soleLabel])
   if (!hasItems(props.items)) return null
+  // With its icon the one action takes the trigger's square in its place.
+  // Without one it cannot (a label does not fit an icon button): the menu
+  // stays, and the console error above asks the page to place it.
+  if (sole?.icon) return <SoleActionButton item={sole} trigger={props.trigger} />
   return (
     <React.Suspense fallback={pendingTrigger(props.trigger, setPending)}>
       <ActionMenuImpl {...props} pendingOpen={pending} />

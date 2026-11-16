@@ -1,5 +1,6 @@
 'use client'
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { IntensityBadge } from '@/features/scans/components/intensity-badge'
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
@@ -913,6 +914,21 @@ function ConfigurationsTab() {
       ) : (
         <MetricStrip loading={isLoadingStats} items={metrics} />
       )}
+
+      <ListTitleRow
+        title={t('scans.configs.viewAll', 'All scan configurations')}
+        count={
+          <ListCount
+            total={configsResponse?.total ?? 0}
+            loading={!configsResponse}
+            label={t(
+              'scans.configs.total',
+              '{count, plural, one {# scan configuration} other {# scan configurations}}',
+              { count: configsResponse?.total ?? 0 }
+            )}
+          />
+        }
+      />
 
       <div className="flex items-start gap-5">
         {filtersOpen && (

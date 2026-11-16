@@ -189,8 +189,10 @@ export function ListToolbar({
   const startRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
   const fold = useToolbarFold(ref, startRef, endRef)
-  // In Query mode a problem line may sit under the field: the row aligns on
-  // the controls' top edge (all one height), so nothing moves when it shows.
+  // One alignment in both modes (centre: controls of a few px more, such as
+  // a bordered view switch, share the row's centre line), and the tokens
+  // stay in Query mode, so switching modes never re-flows the row. `top`
+  // marks Query mode (the tokens go inert).
   const top = !!search?.query?.active
   const toolbar = (
     <div
@@ -199,7 +201,7 @@ export function ListToolbar({
       data-slot="list-toolbar"
       className={cn(
         'flex flex-wrap gap-2',
-        top ? 'items-start' : 'items-center',
+        'items-center',
         // The size container: the toolbar itself, or with a chips row the
         // region around it (same width). Below 28rem (a phone) that toolbar
         // lends its controls to the region: the search keeps the first line
@@ -217,7 +219,9 @@ export function ListToolbar({
           data-slot="list-toolbar-start"
           className={cn(
             'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:contents',
-            top ? 'items-start' : 'items-center'
+            // Top: every control is one height, and a taller field (the
+            // expanded query editor, a problem line) moves no token.
+            'items-start'
           )}
         >
           {search ? (
@@ -237,10 +241,16 @@ export function ListToolbar({
             // hidden). With a chips row they follow the chips, beside the
             // icon actions (Add filter stays with them), and take at most 60%
             // of the line so the chips keep room.
+            // In Query mode the text owns the filter: the tokens stay in their
+            // place, dimmed and inert (no focus, no click, no `f`), so the
+            // switch moves nothing (the end group never re-flows up a line).
             <div
               ref={tokensRef}
               data-slot="list-toolbar-tokens"
+              data-inactive={top ? '' : undefined}
+              inert={top || undefined}
               className={cn(
+                top && '*:opacity-50',
                 'contents @max-md/toolbar:flex @max-md/toolbar:flex-nowrap @max-md/toolbar:items-center @max-md/toolbar:gap-2 @max-md/toolbar:*:max-w-none @max-md/toolbar:*:shrink-0',
                 // The padding keeps focus rings inside the scroll box.
                 'no-scrollbar @max-md/toolbar:-my-1 @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
@@ -263,7 +273,9 @@ export function ListToolbar({
           data-slot="list-toolbar-end"
           className={cn(
             'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2 @max-md/toolbar:flex-nowrap',
-            top ? 'items-start' : 'items-center',
+            // At the row's top: a start group that grows (two lines, the
+            // expanded query editor) never moves Views, Group and Display.
+            'items-center self-start',
             below && '@max-md/toolbar:order-last'
           )}
         >

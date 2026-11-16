@@ -52,6 +52,7 @@ import {
   FilterSheet,
   useFilterPanelOpen,
 } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -746,17 +747,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     <Main>
       <PageStack>
         <PageHeader title={t('assets.overview.title', 'Assets')} viewSwitcher={viewSwitcher}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void handleExport()}
-            disabled={exporting}
-          >
-            <Download className="me-2 h-4 w-4" />
-            {exporting
-              ? t('assets.inventoryPage.exporting', 'Exporting…')
-              : t('assets.inventoryPage.export', 'Export')}
-          </Button>
           {canWrite && (
             <InventoryAddButton
               registry={registry}
@@ -778,19 +768,57 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           />
         )}
 
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 data-testid="inventory-view-title" className="text-base font-semibold">
-            {scopeLabel ?? t('assets.quickView.all', 'All assets')}
-          </h2>
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {(scopeLabel ? typeStatsLoading : statsLoading) ? '' : viewTotal.toLocaleString()}
-          </span>
-          {lens?.description && (
-            <span className="text-xs text-muted-foreground">
-              {t(`assets.lensDescription.${lens.id}`, lens.description)}
+        {/* The view's title row: its name and its one count (the results the
+            list shows, filters and search applied), then the list's actions.
+            The page header keeps the page-level ones (Add, the view switch). */}
+        <ListTitleRow
+          data-testid="inventory-title-row"
+          title={
+            <span data-testid="inventory-view-title">
+              {scopeLabel ?? t('assets.quickView.all', 'All assets')}
             </span>
-          )}
-        </div>
+          }
+          count={
+            <ListCount
+              total={total}
+              capped={totalCapped}
+              loading={isFirstLoad}
+              label={
+                totalCapped
+                  ? t('assets.filters.resultsCapped', '{count}+ assets', {
+                      count: total.toLocaleString(),
+                    })
+                  : t('assets.filters.results', '{count, plural, one {# asset} other {# assets}}', {
+                      count: total,
+                    })
+              }
+            />
+          }
+          start={
+            lens?.description ? (
+              <span className="hidden truncate text-xs text-muted-foreground md:inline">
+                {t(`assets.lensDescription.${lens.id}`, lens.description)}
+              </span>
+            ) : undefined
+          }
+        >
+          {refreshButton}
+          <Button
+            variant="outline"
+            size="sm"
+            iconOnlyBelow="sm"
+            aria-label={t('assets.inventoryPage.export', 'Export')}
+            onClick={() => void handleExport()}
+            disabled={exporting}
+          >
+            <Download className="h-4 w-4 sm:me-2" />
+            <span className="sr-only sm:not-sr-only">
+              {exporting
+                ? t('assets.inventoryPage.exporting', 'Exporting…')
+                : t('assets.inventoryPage.export', 'Export')}
+            </span>
+          </Button>
+        </ListTitleRow>
 
         <div className="flex items-start">
           <FilterPanelSlot
@@ -852,23 +880,22 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 search={search}
                 filterToggle={filterToggle}
                 toolbarStart={
-                  queryMode.active ? undefined : (
-                    <InventoryAddFilter
-                      groups={facetGroups}
-                      attributeFacets={attributeFacets}
-                      tagTypes={typeView ? [typeView.type] : undefined}
-                      filters={filters}
-                      stats={scopeLabel ? typeStats : stats}
-                      onChange={setFilters}
-                      onOpenChange={(open) => open && setFacetsWanted(true)}
-                      onOpenPanel={() =>
-                        openFilterPanel(
-                          () => setFiltersOpen(true),
-                          () => setFilterSheetOpen(true)
-                        )
-                      }
-                    />
-                  )
+                  // Kept in Query mode (dimmed and inert), so the switch moves nothing.
+                  <InventoryAddFilter
+                    groups={facetGroups}
+                    attributeFacets={attributeFacets}
+                    tagTypes={typeView ? [typeView.type] : undefined}
+                    filters={filters}
+                    stats={scopeLabel ? typeStats : stats}
+                    onChange={setFilters}
+                    onOpenChange={(open) => open && setFacetsWanted(true)}
+                    onOpenPanel={() =>
+                      openFilterPanel(
+                        () => setFiltersOpen(true),
+                        () => setFilterSheetOpen(true)
+                      )
+                    }
+                  />
                 }
                 toolbarEnd={
                   <>
@@ -910,7 +937,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                     {!isInventoryFilterEmpty(filters) && !filters.advanced && (
                       <FilterGroupActions params={filterParams} total={total} />
                     )}
-                    {refreshButton}
                   </>
                 }
                 toolbarBelow={
@@ -926,21 +952,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                     filters={filters}
                     onChange={setFilters}
                     onClearAll={clearAll}
-                    // The table (and this bar) only renders after the first load,
-                    // so the count is always known here.
-                    resultLabel={
-                      totalCapped
-                        ? t('assets.filters.resultsCapped', '{count}+ assets', {
-                            count: total.toLocaleString(),
-                          })
-                        : t(
-                            'assets.filters.results',
-                            '{count, plural, one {# asset} other {# assets}}',
-                            {
-                              count: total,
-                            }
-                          )
-                    }
                     queryActive={queryMode.active}
                     onOpenQuery={() => queryMode.setActive(true)}
                   />

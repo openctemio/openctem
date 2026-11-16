@@ -10,7 +10,8 @@ import { ClipboardList, FileUp, Trash2 } from 'lucide-react'
 import * as React from 'react'
 import { renderToString } from 'react-dom/server'
 
-import { ActionMenu, type ActionMenuEntry } from '../action-menu'
+import { Link2 } from 'lucide-react'
+import { ActionMenu, soleAction, type ActionMenuEntry } from '../action-menu'
 import { normalizeActionItems } from '../action-menu-model'
 
 describe('normalizeActionItems', () => {
@@ -188,7 +189,10 @@ describe('ActionMenu from 768 px up', () => {
           title="Findings"
           label="Actions for Findings"
           trigger={<button aria-label="More actions">More</button>}
-          items={[{ id: 'import', label: 'Import results' }]}
+          items={[
+            { id: 'import', label: 'Import results' },
+            { id: 'approvals', label: 'Approvals' },
+          ]}
         />
       </div>
     )
@@ -199,6 +203,65 @@ describe('ActionMenu from 768 px up', () => {
     const menu = await screen.findByRole('menu', { name: 'More actions' })
     expect(within(menu).getByRole('menuitem', { name: 'Import results' })).toBeVisible()
     expect(onRow).not.toHaveBeenCalled()
+  })
+
+  it('is never a menu of one item: the trigger becomes that action, in its place', async () => {
+    const onSelect = vi.fn()
+    const onRow = vi.fn()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(
+      <div onClick={onRow}>
+        <ActionMenu
+          title="Findings"
+          label="Actions for Findings"
+          trigger={
+            <button aria-label="More actions" className="size-control">
+              More
+            </button>
+          }
+          items={[{ id: 'link', label: 'Copy link', icon: Link2, onSelect }]}
+        />
+      </div>
+    )
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    const action = screen.getByRole('button', { name: 'Copy link' })
+    expect(action).not.toHaveAttribute('aria-haspopup')
+    expect(action).toHaveClass('size-control')
+    await userEvent.click(action)
+    expect(onSelect).toHaveBeenCalledOnce()
+    expect(onRow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('menu')).toBeNull()
+    // Outside production it says so, naming the item.
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('"Copy link" is the only item'))
+    error.mockRestore()
+  })
+
+  it('keeps a one-item menu whose item has no icon, and says so outside production', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(
+      <ActionMenu
+        title="Findings"
+        label="Actions for Findings"
+        trigger={<button aria-label="More actions">More</button>}
+        items={[{ id: 'link', label: 'Copy link' }]}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('"Copy link" is the only item'))
+    error.mockRestore()
+  })
+
+  it('counts a submenu by its items: one item in one submenu is still one item', () => {
+    expect(
+      soleAction([{ id: 'x', kind: 'sub', label: 'Export', items: [{ id: 'csv', label: 'CSV' }] }])
+        ?.id
+    ).toBe('csv')
+    expect(
+      soleAction([
+        { id: 'a', label: 'A' },
+        { id: 'b', label: 'B' },
+      ])
+    ).toBeNull()
   })
 
   it('keeps clicks on the trigger and in the menu from reaching a clickable row', async () => {

@@ -212,6 +212,7 @@
   "vulnPage.list.strip.pastSlaHint": "Có ít nhất một phát hiện đang mở đã quá hạn SLA",
   "vulnPage.list.subject": "danh sách lỗ hổng",
   "vulnPage.list.title": "Lỗ hổng",
+  "vulnPage.list.viewAll": "Tất cả lỗ hổng",
   "vulnPage.signal.epssHigh": "EPSS cao",
   "vulnPage.signal.functional": "mã khai thác hoạt động",
   "vulnPage.signal.kev": "đã bị khai thác",

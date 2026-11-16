@@ -940,6 +940,8 @@
   "scans.configs.searchLabel": "Tìm cấu hình quét",
   "scans.configs.searchPlaceholder": "Tìm cấu hình…",
   "scans.configs.statsErrorTitle": "số liệu quét",
+  "scans.configs.total": "{count, plural, other {# cấu hình quét}}",
+  "scans.configs.viewAll": "Tất cả cấu hình quét",
   "scans.controls.enable": "Bật",
   "scans.controls.enabled": "Đã bật quét \"{name}\"",
   "scans.controls.runNow": "Chạy ngay",

@@ -72,6 +72,41 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
     }
   })
 
+  test('spare width goes to a cut Location before it sits empty in Title (1440, 1366)', async ({
+    page,
+  }) => {
+    for (const width of [1440, 1366]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/findings')
+      const title = page.getByRole('columnheader', { name: 'Title' })
+      await expect(title).toBeVisible({ timeout: 20_000 })
+      if (!(await page.locator('[data-slot="finding-title-link"]').first().isVisible())) continue
+      await page.waitForTimeout(300)
+      const m = await page.evaluate(() => {
+        const ths = Array.from(document.querySelectorAll('main thead th'))
+        const idx = ths.findIndex((th) => /^(Location|Vị trí)/.test(th.textContent?.trim() ?? ''))
+        const titleTh = ths.find((th) => /^(Title|Tiêu đề)/.test(th.textContent?.trim() ?? ''))
+        const rows = Array.from(document.querySelectorAll('main tbody tr'))
+        const cut = rows.filter((tr) => {
+          const td = tr.children[idx] as HTMLElement | undefined
+          const text = td?.querySelector<HTMLElement>('.truncate') ?? td
+          return !!text && text.scrollWidth > text.clientWidth + 1
+        }).length
+        return {
+          location: Math.round(ths[idx]?.getBoundingClientRect().width ?? 0),
+          title: Math.round(titleTh?.getBoundingClientRect().width ?? 0),
+          cut,
+        }
+      })
+      test.info().annotations.push({ type: `columns at ${width}`, description: JSON.stringify(m) })
+      expect(m.title, `title floor at ${width}`).toBeGreaterThanOrEqual(279)
+      // A cut location is allowed only at its cap (280), never while the
+      // frame has spare width it could take.
+      if (m.cut > 0)
+        expect(m.location, `location cut below its cap at ${width}`).toBeGreaterThanOrEqual(279)
+    }
+  })
+
   test('rows are one line at the kit heights (40, 32 compact, 52 comfortable); the Priority header is not cut', async ({
     page,
   }) => {

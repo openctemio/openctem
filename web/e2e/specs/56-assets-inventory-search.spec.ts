@@ -29,7 +29,10 @@ test.describe('Asset inventory search', { tag: ['@assets'] }, () => {
 
   test('other lenses keep the type facet and show no tabs', async ({ page }) => {
     await page.goto('/assets?lens=code')
-    await expect(page.getByTestId('inventory-filter-bar')).toBeVisible({ timeout: 20_000 })
+    // The list has loaded: its count shows in the title row (no chips row without a filter).
+    await expect(page.locator('main [data-slot="list-count"]')).toHaveText(/\d/, {
+      timeout: 20_000,
+    })
     await expect(page.getByRole('radiogroup', { name: /asset type/i })).toHaveCount(0)
   })
 
@@ -38,7 +41,10 @@ test.describe('Asset inventory search', { tag: ['@assets'] }, () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/assets?lens=external_surface&tab=ip_address')
-    await expect(page.getByTestId('inventory-filter-bar')).toBeVisible({ timeout: 20_000 })
+    // The list has loaded: its count shows in the title row (no chips row without a filter).
+    await expect(page.locator('main [data-slot="list-count"]')).toHaveText(/\d/, {
+      timeout: 20_000,
+    })
     await page.getByRole('button', { name: /^query$/i }).click()
     const box = page.getByRole('combobox', { name: /filter as query text/i })
     await expect(box).toBeEnabled()

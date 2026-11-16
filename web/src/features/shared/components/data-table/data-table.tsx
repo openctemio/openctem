@@ -915,7 +915,7 @@ export function DataTable<TData, TValue>({
   const fitted = fitColumnWidths(
     visibleColumns.map((c) => {
       const style = columnLayout(c.id, c.columnDef.meta as DataTableColumnMeta | undefined).style
-      return { id: c.id, width: style?.width, minWidth: style?.minWidth }
+      return { id: c.id, width: style?.width, minWidth: style?.minWidth, maxWidth: style?.maxWidth }
     }),
     frameWidth
   )
@@ -1167,8 +1167,10 @@ export function DataTable<TData, TValue>({
       }),
   })
 
-  // The empty body: one block, or the two kinds of empty list.
-  const emptyBody = isEmptyStates(emptyState)
+  // The empty body: one block, or the two kinds of empty list. It sits in
+  // the table's one frame: a page's empty state drawn as a card loses its
+  // card's frame there (one frame, as on every list), keeping its content.
+  const emptyContent = isEmptyStates(emptyState)
     ? filterActive
       ? (emptyState.noMatch ?? (
           <DefaultEmpty
@@ -1185,6 +1187,14 @@ export function DataTable<TData, TValue>({
         ))
       : emptyState.nothingYet
     : (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+  const emptyBody = (
+    <div
+      data-slot="table-empty"
+      className="[&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none"
+    >
+      {emptyContent}
+    </div>
+  )
 
   // A stale read says so in the footer, with a refresh.
   const staleNote = staleAt ? (
@@ -1745,7 +1755,10 @@ export function DataTable<TData, TValue>({
           list, or the first load): never "Showing 0 - 0 of 0" or
           "Page 1 of 0". */}
       {showPagination && !errorState && paginationTotal > 0 && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          data-slot="data-table-pager"
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           {/* Row count info - centered on mobile. Under manual pagination the
               total is the server row count, not the current page's length. */}
           {(() => {
