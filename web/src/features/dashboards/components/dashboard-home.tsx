@@ -445,7 +445,7 @@ export function DashboardHome() {
                     <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-64">
+                <DropdownMenuContent>
                   {canCustomize && (
                     <DropdownMenuItem
                       className={cn(ITEM, 'sm:hidden')}

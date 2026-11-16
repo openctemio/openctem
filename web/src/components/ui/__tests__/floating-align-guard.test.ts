@@ -1,7 +1,8 @@
 /**
  * Governance: a menu, popover or select list below or above its trigger lines
- * up with the trigger edge by the half of the screen the trigger is in (the
- * kit decides, `chooseAlign` in components/ui/floating.ts). A fixed
+ * up with the trigger's start edge, or its end edge when the start would
+ * cross the room it has (the kit decides, `chooseAlign` in
+ * components/ui/floating.ts). A fixed
  * `align="start"` or `align="end"` breaks that on a phone, where the same
  * trigger moves from the right of a row to the left when the row wraps; this
  * test fails when one comes back. Popups beside their trigger (side left or

@@ -90,7 +90,7 @@ export function InventoryAddButton({
           {t('assets.addButton.addAsset', 'Add asset')}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="max-h-[60vh] w-56 overflow-y-auto">
+      <DropdownMenuContent className="max-h-[60vh] overflow-y-auto">
         {choicesByLens(registry).map(({ lens, choices }, i) => (
           <DropdownMenuGroup key={lens || 'other'}>
             {i > 0 && <DropdownMenuSeparator />}

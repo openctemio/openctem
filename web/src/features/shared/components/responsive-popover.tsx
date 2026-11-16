@@ -49,7 +49,7 @@ export interface ResponsivePopoverProps {
   /** Accessible name; also the sheet title on a phone. */
   title: string
   children: React.ReactNode
-  /** Popover alignment from `md` up; by default the kit's (by the trigger's half of the screen). */
+  /** Popover alignment from `md` up; by default the kit's (start, end on collision). */
   align?: 'start' | 'center' | 'end'
   /** Classes of the desktop popover (its width). */
   className?: string
