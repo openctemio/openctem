@@ -51,7 +51,7 @@ export function ChoiceGroup<V extends string>({
         onValueChange={(v) => onValueChange(v as V)}
         aria-label={label}
         aria-describedby={chosen?.hint ? `${id}-hint` : undefined}
-        className="grid min-w-0 gap-1 rounded-lg bg-muted p-1 sm:auto-cols-fr sm:grid-flow-col"
+        className="grid min-w-0 gap-0.5 rounded-lg border bg-muted p-0.5 sm:auto-cols-fr sm:grid-flow-col"
       >
         {options.map((o) => (
           <RadioGroupPrimitive.Item
@@ -61,9 +61,10 @@ export function ChoiceGroup<V extends string>({
             title={o.disabled ? o.disabledReason : o.hint}
             aria-describedby={o.disabled && o.disabledReason ? `${id}-why` : undefined}
             className={cn(
-              'min-h-9 min-w-0 rounded-md px-2.5 py-1.5 text-center text-sm text-muted-foreground transition-colors outline-none max-sm:min-h-11',
+              // One line in a 32 track from `sm` (26 px segments); stacked rows of 36 on a phone.
+              'min-h-9 min-w-0 rounded-md px-3 text-center text-dense font-medium text-muted-foreground transition-colors outline-none sm:h-control-seg sm:min-h-0 sm:truncate',
               'hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              'data-[state=checked]:bg-background data-[state=checked]:font-medium data-[state=checked]:text-foreground data-[state=checked]:shadow-xs',
+              'data-[state=checked]:bg-background data-[state=checked]:text-foreground data-[state=checked]:shadow-xs',
               'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground'
             )}
           >
@@ -72,12 +73,12 @@ export function ChoiceGroup<V extends string>({
         ))}
       </RadioGroupPrimitive.Root>
       {chosen?.hint && (
-        <p id={`${id}-hint`} className="text-xs text-muted-foreground" aria-live="polite">
+        <p id={`${id}-hint`} className="text-cap text-muted-foreground" aria-live="polite">
           {chosen.hint}
         </p>
       )}
       {note && (
-        <p id={`${id}-why`} className="text-xs text-muted-foreground">
+        <p id={`${id}-why`} className="text-cap text-muted-foreground">
           {note.disabledReason}
         </p>
       )}

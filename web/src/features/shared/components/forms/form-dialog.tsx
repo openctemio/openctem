@@ -113,7 +113,7 @@ export function FormDialog({
     >
       <DialogContent size={size} data-testid={testId}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-dialog">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <DialogForm onSubmit={submit} noValidate>
