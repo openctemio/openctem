@@ -143,9 +143,7 @@ function PolicyForm({
                   value={form.refreshIntervalHours}
                   placeholder={hoursPlaceholder(defaults.refresh_interval_hours, t)}
                   disabled={readOnly}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, refreshIntervalHours: e.target.value }))
-                  }
+                  onChange={(e) => setForm((f) => ({ ...f, refreshIntervalHours: e.target.value }))}
                 />
               )}
             </SettingsField>
