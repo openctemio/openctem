@@ -61,8 +61,10 @@ vi.mock('@/lib/permissions', async (importOriginal) => ({
 import APIKeysPage from '@/app/(dashboard)/settings/api-keys/page'
 import ServiceAccountsPage from '@/app/(dashboard)/settings/service-accounts/page'
 import ScimTokensPage from '@/app/(dashboard)/settings/scim/page'
-import TrustedOrganizationsPage from '@/app/(dashboard)/settings/trusted-organizations/page'
-import SSOApprovalsPage from '@/app/(dashboard)/settings/sso-approvals/page'
+// Trusted organizations and SSO changes are sections of Settings › Sign-in
+// (Joining tab): the same components, rendered on their own here.
+import { TrustedOrganizations } from '@/features/organization/components/trusted-organizations'
+import { SSOChangeApprovals } from '@/features/sso-approvals/components/sso-change-approvals'
 
 const vi_ = (ui: React.ReactNode) => render(<I18nProvider locale="vi">{ui}</I18nProvider>)
 
@@ -92,15 +94,15 @@ describe('API keys, service accounts, SCIM and trust settings in Vietnamese', ()
     expect(screen.queryByText('No SCIM tokens yet')).toBeNull()
   })
 
-  it('trusted organizations page', () => {
-    vi_(<TrustedOrganizationsPage />)
+  it('trusted organizations (Sign-in, Joining tab)', () => {
+    vi_(<TrustedOrganizations canRead isOwner />)
     expect(screen.getByText('Tổ chức bạn tin cậy')).toBeInTheDocument()
     expect(screen.getByText('Tin cậy một tổ chức')).toBeInTheDocument()
     expect(screen.queryByText('Trust an organization')).toBeNull()
   })
 
-  it('SSO approvals page', () => {
-    vi_(<SSOApprovalsPage />)
+  it('SSO changes (Sign-in, Joining tab)', () => {
+    vi_(<SSOChangeApprovals canDecide />)
     expect(screen.getByText('Không có gì cần phê duyệt')).toBeInTheDocument()
     expect(screen.queryByText('Nothing to approve')).toBeNull()
   })

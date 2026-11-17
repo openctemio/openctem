@@ -26,11 +26,11 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // page exists for the API's CI snippet and quality-gate endpoints.
   { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
   // The SAML explainer stub: SSO is configured per organization in the
-  // platform admin console (RFC-022), and Authentication carries the same
-  // explanation as a card.
+  // platform admin console (RFC-022), and Sign-in carries the same
+  // explanation as a section.
   {
     source: '/settings/integrations/saml',
-    destination: '/settings/authentication',
+    destination: '/settings/sign-in',
     permanent: true,
   },
   // Personal notification settings moved to the user's own area.
@@ -59,10 +59,32 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
     source: '/settings/tenant',
     has: [{ type: 'query', key: 'tab', value: 'security' }],
-    destination: '/settings/authentication',
+    destination: '/settings/sign-in',
     permanent: true,
   },
   { source: '/settings/tenant', destination: '/settings/general', permanent: true },
+  // Sign-in and joining: Authentication, Domains, Trusted organizations and
+  // SSO approvals are one page with two tabs. A link's #setting keeps working
+  // (the browser carries it over a redirect without one of its own, and the
+  // page opens the tab that holds it); the other three open the Joining tab
+  // at their section. The API's stored links (notifications, the security
+  // overview's checks) still name the old paths.
+  { source: '/settings/authentication', destination: '/settings/sign-in', permanent: true },
+  {
+    source: '/settings/domains',
+    destination: '/settings/sign-in?tab=domains',
+    permanent: true,
+  },
+  {
+    source: '/settings/trusted-organizations',
+    destination: '/settings/sign-in?tab=trusted-organizations',
+    permanent: true,
+  },
+  {
+    source: '/settings/sso-approvals',
+    destination: '/settings/sign-in?tab=sso-approvals',
+    permanent: true,
+  },
   { source: '/settings/audit/:path*', destination: '/settings/audit-log/:path*', permanent: true },
   // Policies: Risk scoring says what it is; Priority rules are a CTEM working
   // object, so they leave /settings and stay in Prioritization.

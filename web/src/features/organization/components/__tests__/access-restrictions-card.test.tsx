@@ -2,18 +2,26 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 import { ApiClientError } from '@/lib/api/error-handler'
-import { AccessRestrictionsCard, isIpLockoutError, parseLines } from '../access-restrictions-card'
+import {
+  AllowedDomainsBlock,
+  NetworkRestrictionSection,
+  isIpLockoutError,
+  parseLines,
+} from '../access-restrictions-card'
 
-function renderCard(overrides: Partial<Parameters<typeof AccessRestrictionsCard>[0]> = {}) {
+function renderCard(overrides: Partial<Parameters<typeof NetworkRestrictionSection>[0]> = {}) {
   const props = {
     ipAllowlist: '',
-    allowedDomains: '',
     onIpAllowlistChange: vi.fn(),
-    onAllowedDomainsChange: vi.fn(),
     currentIp: '198.51.100.4',
     ...overrides,
   }
-  render(<AccessRestrictionsCard {...props} />)
+  render(
+    <>
+      <NetworkRestrictionSection {...props} />
+      <AllowedDomainsBlock allowedDomains="" onAllowedDomainsChange={vi.fn()} />
+    </>
+  )
   return props
 }
 
@@ -40,7 +48,7 @@ describe('isIpLockoutError', () => {
   })
 })
 
-describe('AccessRestrictionsCard', () => {
+describe('Network restriction and allowed domains', () => {
   it('explains both fields are enforced and who they apply to', () => {
     renderCard()
     expect(screen.getByLabelText('Allowed email domains')).toBeInTheDocument()
