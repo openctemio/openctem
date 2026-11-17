@@ -62,12 +62,15 @@ var safeSuffixes = map[string]bool{
 // controller name, a capability): only secrets, addresses and e-mails are
 // masked in them, dotted names stay.
 var verbatimKeys = map[string]bool{
-	"time": true, "ts": true, "timestamp": true, "level": true, "lvl": true, "caller": true,
+	keyTime: true, "ts": true, "timestamp": true, "level": true, "lvl": true, "caller": true,
 	"source": true, "logger": true, "component": true, "controller": true, "capability": true,
 	"stage": true, "method": true, "alert": true, "job": true, "reason": true, "route": true,
 	"request_id": true, "trace_id": true, "span_id": true, "go_version": true, "service": true,
 	"function": true, "func": true, "line": true, "proto": true,
 }
+
+// keyTime is the time field of the server's own log lines.
+const keyTime = "time"
 
 var (
 	composePrefixRE = regexp.MustCompile(`^([A-Za-z0-9_.-]{1,64})\s+\| `)
@@ -179,7 +182,7 @@ func isDigits(s string) bool {
 }
 
 func lineTime(obj map[string]any) time.Time {
-	for _, k := range []string{"time", "ts", "timestamp", "@timestamp"} {
+	for _, k := range []string{keyTime, "ts", "timestamp", "@timestamp"} {
 		switch v := obj[k].(type) {
 		case string:
 			if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
@@ -363,7 +366,7 @@ func (r *Redactor) logfmtLine(line string) (string, time.Time) {
 				val = raw[1 : len(raw)-1]
 			}
 		}
-		if key == "time" || key == "ts" {
+		if key == keyTime || key == "ts" {
 			if t, err := time.Parse(time.RFC3339Nano, val); err == nil {
 				at = t
 			}

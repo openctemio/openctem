@@ -305,7 +305,7 @@ func (d Deps) checkClock(ctx context.Context) Check {
 	local := before.Add(after.Sub(before) / 2)
 	skew := dbNow.Sub(local)
 	abs := time.Duration(math.Abs(float64(skew)))
-	fix := "Synchronise both hosts with NTP (chrony or systemd-timesyncd); signed sensor jobs, one-time codes and token expiry all depend on the clock."
+	fix := "Synchronize both hosts with NTP (chrony or systemd-timesyncd); signed sensor jobs, one-time codes and token expiry all depend on the clock."
 	seconds := abs.Seconds()
 	switch {
 	case abs >= clockFail:
