@@ -33,7 +33,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="shrink-0 font-medium">{humanizeAction(row.original.action)}</span>
           <span
-            className="truncate font-mono text-xs text-muted-foreground"
+            className="truncate font-mono text-code text-muted-foreground"
             title={row.original.action}
           >
             {row.original.action}
