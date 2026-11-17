@@ -718,10 +718,25 @@ export function EASMExposureItems() {
           },
         ]}
       />
-      <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting}>
-        <Download className="me-2 h-4 w-4" aria-hidden />
-        {t('attackSurface.exposures.export', 'Export CSV')}
-      </Button>
+      {/* On a phone the end actions are icons (named, with a tooltip), so
+          they never take more than about 40% of the toolbar's second line. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            iconOnlyBelow="@2xl/toolbar"
+            onClick={exportCsv}
+            disabled={exporting}
+          >
+            <Download className="h-4 w-4 @2xl/toolbar:me-2" aria-hidden />
+            <span className="sr-only @2xl/toolbar:not-sr-only">
+              {t('attackSurface.exposures.export', 'Export CSV')}
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t('attackSurface.exposures.export', 'Export CSV')}</TooltipContent>
+      </Tooltip>
     </>
   )
   const toolbarBelow =
