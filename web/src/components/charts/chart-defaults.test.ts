@@ -34,8 +34,8 @@ describe('chart defaults', () => {
     ]) {
       const text = read(file)
       expect(text, file).toContain('CHART_AXIS')
-      expect(text, file).not.toMatch(/<(XAxis|YAxis)[^>]*tick=\{\{/s)
-      expect(text, file).not.toMatch(/<CartesianGrid[^>]*stroke=/s)
+      expect(text, file).not.toMatch(/<(XAxis|YAxis)[^>]*tick=\{\{/)
+      expect(text, file).not.toMatch(/<CartesianGrid[^>]*stroke=/)
     }
   })
 })
