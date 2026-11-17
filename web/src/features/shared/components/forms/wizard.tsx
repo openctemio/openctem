@@ -225,7 +225,10 @@ export function WizardFooter({
       )}
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 sm:min-h-control">
-          {summary && (
+          {/* One line, so the footer keeps its height across steps: the
+              summary, or the note in its place when there is one (the Review
+              step shows the whole summary in its body). */}
+          {summary && !note && (
             <button
               type="button"
               className="flex min-w-0 items-center gap-1.5 rounded-sm text-start text-dense text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
@@ -404,7 +407,7 @@ export function WizardFrame<S extends string>({
         data-testid={testId}
       >
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-dialog">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <WizardSteps

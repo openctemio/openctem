@@ -13,6 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useCanMutate, Permission } from '@/lib/permissions'
 import { usePermissions } from '@/context/permission-provider'
+import { PropertyRow } from '@/features/shared/components/detail'
 import { WatchersControl } from '@/features/shared/components/watchers/watchers-control'
 import { useMembers } from '@/features/organization/api/use-members'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -44,12 +45,7 @@ export function TaskPeople({ taskId, owner }: TaskPeopleProps) {
     >
       <h2 className="text-sm font-semibold">{t('remediationHub.people.title', 'People')}</h2>
       <dl className="space-y-1">
-        <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-          <dt className="text-body text-muted-foreground">
-            {t('remediationHub.people.owner', 'Owner')}
-          </dt>
-          <dd className="min-w-0 text-body break-words">{owner}</dd>
-        </div>
+        <PropertyRow label={t('remediationHub.people.owner', 'Owner')}>{owner}</PropertyRow>
         <WatchersControl
           kind="task"
           itemId={taskId}

@@ -1,6 +1,7 @@
 import fs from 'fs'
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
+import { checkScrollEnd } from './scroll-end'
 
 /**
  * Page anatomy checks, shared by every Playwright suite that walks pages: the
@@ -30,7 +31,6 @@ const SAVE_EXCEPTIONS = new Set<string>([
   '/settings/scanning/content',
   '/settings/scanning/scan-approval',
   '/settings/scope',
-  '/settings/trusted-organizations',
 ])
 
 const NAME_MIN_1440 = 160
@@ -119,6 +119,9 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
       }
     }
     if (stack) walk(stack)
+    // In reading order on screen: a block a phone moves with `order` (a list's
+    // tiles after its rows) is paired with the blocks it now sits between.
+    blocks.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top)
     const pairs = []
     for (let i = 1; i < blocks.length; i++) {
       const a = blocks[i - 1].getBoundingClientRect()
@@ -501,7 +504,7 @@ export async function checkAt(
   route: string,
   width: number,
   ownLayoutRoutes: RegExp[] = [],
-  opts: { rowMix?: boolean; allTables?: boolean } = {}
+  opts: { rowMix?: boolean; allTables?: boolean; scrollEnd?: boolean } = {}
 ) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   // Let a resize settle (the tab strip re-measures what fits).
@@ -579,6 +582,8 @@ export async function checkAt(
     expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
   }
   expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)
+  // Last: it scrolls the page to its end and back.
+  if (opts.scrollEnd) await checkScrollEnd(page, at)
 }
 
 export async function open(page: Page, route: string): Promise<boolean> {
