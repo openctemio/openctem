@@ -95,7 +95,6 @@
   "src/features/scope/components/scope-entries-table.tsx": 6,
   "src/features/scope/components/scope-exclusions-table.tsx": 6,
   "src/features/secret-store/components/secret-store-section.tsx": 4,
-  "src/features/sensors/components/sensor-table.tsx": 14,
   "src/features/threat-intel/components/detections-panel.tsx": 4,
   "src/features/threat-intel/components/iocs-panel.tsx": 6,
   "src/features/threat-intel/components/threat-actors-panel.tsx": 6,

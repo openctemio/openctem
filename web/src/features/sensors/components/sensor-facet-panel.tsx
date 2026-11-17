@@ -15,22 +15,22 @@ import {
 import { SENSOR_STATES, stateLabel } from '../lib/sensor-state'
 import { compareSensorVersions } from '../lib/sensor-version'
 
-const ROLE_LABELS: Record<SensorRole, string> = {
+export const ROLE_LABELS: Record<SensorRole, string> = {
   scanner: 'sensors.facets.role.scanner',
   collector: 'sensors.facets.role.collector',
 }
-const VERSION_LABELS: Record<SensorVersionStatus, string> = {
+export const VERSION_LABELS: Record<SensorVersionStatus, string> = {
   latest: 'sensors.facets.version.latest',
   update_available: 'sensors.facets.version.updateAvailable',
   unsupported: 'sensors.facets.version.unsupported',
   unknown: 'sensors.facets.version.unknown',
 }
-const PROTOCOL_LABELS: Record<SensorProtocolFilter, string> = {
+export const PROTOCOL_LABELS: Record<SensorProtocolFilter, string> = {
   v2: 'sensors.facets.protocol.v2',
   v1: 'sensors.facets.protocol.v1',
   unknown: 'sensors.facets.protocol.unknown',
 }
-const POLICY_LABELS: Record<SensorPolicyFilter, string> = {
+export const POLICY_LABELS: Record<SensorPolicyFilter, string> = {
   enforced: 'sensors.facets.policy.enforced',
   absent: 'sensors.facets.policy.absent',
   paused: 'sensors.facets.policy.paused',
@@ -38,7 +38,7 @@ const POLICY_LABELS: Record<SensorPolicyFilter, string> = {
 }
 // How a sensor row runs. Not the page's Mode (daemon or runner): a one-shot
 // sensor here is a legacy CI sensor with an API key, still a sensor row.
-const MODE_LABELS: Record<SensorModeFilter, string> = {
+export const MODE_LABELS: Record<SensorModeFilter, string> = {
   daemon: 'sensors.facets.mode.daemon',
   ci: 'sensors.facets.mode.ci',
 }
