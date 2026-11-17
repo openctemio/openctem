@@ -37,7 +37,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/ci-runners/components/ci-trust-preview.tsx',
   'features/dashboard/components/data-quality-view.tsx',
   'features/emerging-threats/components/emerging-threat-detail.tsx',
-  'features/findings/components/approval-policy-form.tsx',
   'features/findings/components/detail/finding-evidence-items.tsx',
   'features/findings/components/detail/finding-fix-card.tsx',
   'features/findings/components/detail/source-data-section.tsx',
