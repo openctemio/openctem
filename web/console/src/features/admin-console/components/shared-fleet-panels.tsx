@@ -10,11 +10,13 @@
  * Results and findings are never shown here.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ListChecks, Server } from 'lucide-react'
+import { Info, ListChecks, Server } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -34,6 +36,7 @@ import {
   FilterSelect,
   RelativeTime,
 } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import {
   actOnSharedSensor,
   useSharedFleet,
@@ -63,7 +66,12 @@ const JOB_STATUSES = [
   'expired',
 ]
 
-export function SharedFleetPanel() {
+/**
+ * The fleet as the page's list: its title row (name, one count, and an info
+ * mark for `note` when there is one), the table, then the one line on what
+ * pausing and retiring do.
+ */
+export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
   const { t } = useTranslation()
   const me = useAdmin()
   const isSuper = adminHas(me, 'platform.sensors.manage')
@@ -242,32 +250,57 @@ export function SharedFleetPanel() {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.sharedFleet.fleetTitle')}</CardTitle>
-          <CardDescription>{t('admin.sharedFleet.fleetDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={sensorColumns}
-            data={fleet.data?.sensors ?? []}
-            caption={t('admin.sharedFleet.fleetTitle')}
-            getRowId={(s) => s.id}
-            error={fleet.error}
-            onRetry={() => void fleet.mutate()}
-            errorTitle={t('admin.sharedFleet.fleetTitle')}
-            // The first read: skeleton rows; a failed read shows in the table with Retry.
-            isLoading={fleet.isLoading && !fleet.data}
-            showSearch={false}
-            showSelectionCount={false}
-            showPagination={false}
-            mobileCards
-            emptyState={{
-              nothingYet: <EmptyState icon={Server} title={t('admin.sharedFleet.noSensors')} />,
-            }}
-          />
-        </CardContent>
-      </Card>
+      <div className="flex min-w-0 flex-col gap-3" data-testid="sensors-fleet">
+        <ListTitleRow
+          title={t('admin.sharedFleet.fleetTitle')}
+          count={
+            <ListCount
+              total={fleet.data?.sensors?.length ?? 0}
+              loading={!fleet.data && !fleet.error}
+              label={t('admin.sharedFleet.total', undefined, {
+                count: fleet.data?.sensors?.length ?? 0,
+              })}
+            />
+          }
+        >
+          {note ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('admin.sharedFleet.aboutShared')}
+                  data-testid="sensors-shared-scanning-closed"
+                >
+                  <Info aria-hidden />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="max-w-xs text-body text-muted-foreground">
+                {note}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </ListTitleRow>
+        <DataTable
+          columns={sensorColumns}
+          data={fleet.data?.sensors ?? []}
+          caption={t('admin.sharedFleet.fleetTitle')}
+          getRowId={(s) => s.id}
+          error={fleet.error}
+          onRetry={() => void fleet.mutate()}
+          errorTitle={t('admin.sharedFleet.fleetTitle')}
+          // The first read: skeleton rows; a failed read shows in the table with Retry.
+          isLoading={fleet.isLoading && !fleet.data}
+          showSearch={false}
+          showSelectionCount={false}
+          showPagination={false}
+          mobileCards
+          emptyState={{
+            nothingYet: <EmptyState icon={Server} title={t('admin.sharedFleet.noSensors')} />,
+          }}
+        />
+        <p className="text-body text-muted-foreground">{t('admin.sharedFleet.fleetDesc')}</p>
+      </div>
 
       {acting && (
         <TypedAdminConfirmDialog

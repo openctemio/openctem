@@ -62,12 +62,15 @@ describe('Platform sensors page', () => {
     state.relay = true
   })
 
-  it('shows enroll card, sensors and zones while shared scanning is not available', () => {
+  it('puts the fleet first, enrollment behind a title-row action, the gate note behind an info mark', () => {
     state.role = 'readonly'
     render(<PlatformSensorsPage />)
-    expect(screen.getByText('Enroll a shared sensor')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enroll a sensor' })).toBeInTheDocument()
+    // No enrollment form on the page itself: its fields open in a dialog.
+    expect(screen.queryByLabelText('Sensor name (optional)')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Fleet' })).toBeInTheDocument()
     expect(screen.getAllByText('relay-01').length).toBeGreaterThan(0)
-    expect(screen.getByTestId('sensors-shared-scanning-closed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'About shared scanning' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
     // Pause, Resume and Retire live in the row menu, which a read-only role does not get.
     expect(
@@ -75,15 +78,17 @@ describe('Platform sensors page', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('names the feed relay role only when a sensor advertises it', () => {
+  it('names the feed relay role only when a sensor advertises it', async () => {
+    const user = userEvent.setup()
     const { unmount } = render(<PlatformSensorsPage />)
-    expect(screen.getByTestId('sensors-shared-scanning-closed').textContent).toMatch(/feed relay/)
+    await user.click(screen.getByTestId('sensors-shared-scanning-closed'))
+    expect(await screen.findByText(/feed relay/)).toBeInTheDocument()
     unmount()
     state.relay = false
     render(<PlatformSensorsPage />)
-    const note = screen.getByTestId('sensors-shared-scanning-closed').textContent ?? ''
-    expect(note).toMatch(/passive discovery, AI worker/)
-    expect(note).not.toMatch(/feed relay/)
+    await user.click(screen.getByTestId('sensors-shared-scanning-closed'))
+    expect(await screen.findByText(/passive discovery, AI worker/)).toBeInTheDocument()
+    expect(screen.queryByText(/feed relay/)).not.toBeInTheDocument()
   })
 
   it('drops the gate notice once shared scanning is ready', () => {
@@ -111,7 +116,7 @@ describe('Platform sensors page', () => {
   it('shows an error state with retry when the list fails, and keeps the rest of the page', () => {
     state.fleetError = true
     render(<PlatformSensorsPage />)
-    expect(screen.getByText('Enroll a shared sensor')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enroll a sensor' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry|try again/i })).toBeInTheDocument()
   })
 })
