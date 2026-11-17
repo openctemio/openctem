@@ -87,8 +87,12 @@ function RuleRow({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      // Grip | text | actions. On a phone the actions take their own line
+      // under the text, so a long rule name never shrinks to one word a line.
       className={cn(
-        'flex flex-wrap items-start gap-3 bg-background p-3',
+        'bg-background p-3',
+        canEdit &&
+          'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]',
         isDragging && 'ring-2 ring-primary'
       )}
       data-testid={`approval-rule-${index}`}
@@ -109,7 +113,7 @@ function RuleRow({
           <GripVertical className="size-4" />
         </button>
       )}
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">{index + 1}.</span>
           <span className="font-medium">{rule.name}</span>
@@ -142,7 +146,7 @@ function RuleRow({
         </p>
       </div>
       {canEdit && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3">
           <label className="flex items-center gap-2 text-sm">
             <Switch
               checked={rule.enabled}
