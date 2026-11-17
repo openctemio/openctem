@@ -184,7 +184,7 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
           {issued && (
             <DialogBody className="space-y-2">
               <div className="flex min-w-0 items-center gap-2">
-                <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-xs break-all select-all">
+                <code className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 text-code break-all select-all">
                   {`${SHARED_SENSOR_TOKEN_ENV}=${issued.token}`}
                 </code>
                 <Button
@@ -199,7 +199,7 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
                   {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {t('admin.sharedSensorEnroll.expires', undefined, {
                   time: new Date(issued.expires_at).toLocaleString(),
                 })}
