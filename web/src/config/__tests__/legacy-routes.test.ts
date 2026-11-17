@@ -142,6 +142,10 @@ describe('legacy route redirects', () => {
     )
     expect(redirectOnce('/settings/sso-approvals')).toBe('/settings/sign-in?tab=sso-approvals')
     expect(redirectOnce('/settings/tenant/create')).toBeNull()
+    // Finding approvals became Approvals; scan approval keeps its page.
+    expect(redirectOnce('/settings/finding-approvals')).toBe('/settings/approvals')
+    expect(redirectOnce('/settings/finding-approvals?x=1')).toBe('/settings/approvals?x=1')
+    expect(redirectOnce('/settings/scanning/scan-approval')).toBeNull()
     expect(redirectOnce('/settings/audit')).toBe('/settings/audit-log')
     expect(redirectOnce('/settings/scoring')).toBe('/settings/risk-scoring')
     expect(redirectOnce('/secret-store')).toBe('/settings/scanning/credentials')

@@ -64,6 +64,15 @@ beforeEach(() => {
 })
 
 describe('FindingMainAction', () => {
+  it.each(['resolved', 'accepted', 'false_positive'] as const)(
+    'shows no main action for a %s finding',
+    (status) => {
+      const { container } = render(<FindingMainAction finding={finding()} status={status} />)
+      expect(container.querySelector('[data-main-action]')).toBeNull()
+      expect(screen.queryByRole('button')).toBeNull()
+    }
+  )
+
   it('opens the original of a duplicate', () => {
     render(<FindingMainAction finding={finding({ duplicateOf: 'f0' })} status="duplicate" />)
     expect(screen.getByRole('link', { name: 'Open the original' })).toHaveAttribute(
