@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { QueryInput } from '../components/query-input'
+import { QueryInput, SUGGESTION_LIST_PHONE_CLASSES } from '../components/query-input'
 import type { ParseResult } from '../api/query-api'
 import {
   Dialog,
@@ -189,6 +189,48 @@ describe('QueryInput', () => {
     expect(list.className).toContain('overflow-y-auto')
     // It never takes focus: the caret stays in the field.
     expect(document.activeElement).not.toBe(list)
+  })
+
+  it('below 768 px the suggestions span the screen between the popover gutters, about eight rows', () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    const classes = screen.getByRole('listbox').className.split(/\s+/)
+    // From 768 px: never wider than the field, as before.
+    expect(classes).toContain('w-[min(28rem,var(--radix-popover-trigger-width))]')
+    // Below: the screen less both gutters (the kit's own gutter variable, so
+    // a safe area counts), not the field's width.
+    expect(classes).toContain('max-md:w-[calc(100vw-var(--float-gutter-x,2rem))]')
+    expect(classes).toContain(
+      'max-md:max-h-[min(17rem,var(--radix-popover-content-available-height))]'
+    )
+    expect(SUGGESTION_LIST_PHONE_CLASSES.split(' ').every((c) => c.startsWith('max-md:'))).toBe(
+      true
+    )
+  })
+
+  it('in a dialog the suggestions keep the field width on a phone too, so they stay inside it', () => {
+    function InDialog() {
+      const [v, setV] = useState('')
+      return (
+        <Dialog open>
+          <DialogContent size="xl">
+            <DialogHeader>
+              <DialogTitle>title</DialogTitle>
+              <DialogDescription>description</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <QueryInput entity="findings" value={v} onChange={setV} multiline ariaLabel="q" />
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    render(<InDialog />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sev', selectionStart: 3 } })
+    const list = screen.getByRole('listbox')
+    expect(list.className).toContain('--radix-popover-trigger-width')
+    expect(list.className).not.toContain('100vw-var(--float-gutter-x')
   })
 
   it('Escape closes the suggestions first and keeps the dialog open', async () => {

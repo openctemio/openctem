@@ -295,10 +295,27 @@ practice!=compliance`). The client never builds query text itself.
   switch cannot show keeps the whole text as `fq`. A round trip without an edit changes nothing.
 - Escape puts back the applied text. Switching to Basic with an edit not applied yet applies it first; a text
   the parser refuses keeps Query mode.
-- A refused text shows one line under the field with the problem and its column, and the field selects the
-  problem (it scrolls there). The list keeps the last valid result.
+- A refused text shows one line with the problem, its column and its fixes, and the field selects the problem
+  (it scrolls there). The list keeps the last valid result. The line is drawn in the toolbar's status row, under
+  the toolbar (`ListToolbar`, `data-slot="list-toolbar-status"`), never inside the toolbar row: the toolbar row
+  keeps its height whatever the text's state. The row is one line of the chips row's height (32, 36 on a phone);
+  the text is cut there with the whole of it in its title, and the fix buttons keep their size. It shares the
+  line of a context chip row or a view's locked chips when one is there (the list does not move), and otherwise
+  the list moves down once by the row and its gap and back when the text is put right; on a phone it is the last
+  line of the toolbar. The line is the field's own description (`aria-describedby`) and one polite live region
+  from the moment Query mode opens, so the problem is announced as before. Assets and scans show it the same way.
+- The suggestions are as wide as the field from 768 px. Below 768 px they span the screen from the left gutter to
+  the right one (16 px each), under the field (above it when there is no room), about eight one-line rows.
+- Enter on the text that is already in force writes nothing (the run icon is off then too).
 - In Query mode the chips and Clear step aside (the context chips stay; Add filter and the base chips stay dimmed and inactive); in Basic mode an `fq`
   filter is one Advanced chip whose text opens Query mode.
+- With a saved view open, the query text holds what the URL adds on top of the view, not the view's own
+  conditions (the server applies the view under the URL's filters). So in Query mode the view's locked chips stay
+  in the chips row (one "Conditions from the saved view" chip for a view whose conditions are a tree): what else
+  applies is always on screen. A text that does not name a state or a practice leaves the view's own in force
+  (nothing is written for them unless the URL already set one on top of the view), so applying a text never
+  widens the view. Query text applied on top of a view (`fq`) counts as a filter added: the title row shows
+  Modified with Save view and Reset, and Reset opens the view again with its own text and mode.
 - A saved view stores the search mode as the page param `mode=query`. Basic is the default, so a view saved in Basic
   mode sends no `page_params` at all (`savedViewBody` in `src/features/saved-views/api/use-saved-views.ts` is the one
   place that decides); a view without it opens in Basic. When a save fails, the Save view dialog stays open with the
