@@ -180,7 +180,6 @@ tests that cover the console's most user-visible flows.
 | `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
 | `57-invitation-accept.spec.ts`              | Accept lands in the joined organization (own one, none, 390px); accepted link offers Open                  |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
-| `65-page-scroll-end.spec.ts`                | Every page at 390/1440px: scroll ends a padding after the last content, document never scrolls             |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |
 | `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview                                                 |

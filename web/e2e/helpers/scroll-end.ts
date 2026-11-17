@@ -1,49 +1,25 @@
-import fs from 'fs'
-import path from 'path'
 import type { Page } from '@playwright/test'
-import { open } from '../helpers/page-anatomy'
-import { test, expect } from '../fixtures/authenticated-page'
+import { expect } from '@playwright/test'
 
 /**
- * The scroll ends where the page ends, on EVERY page of the console, at 390px
- * and at 1440px.
+ * The scroll ends where the page ends.
  *
  * A page that can scroll stops a normal bottom padding after its last visible
- * content: the page scroller's scrollable height may exceed the bottom of the
- * last visible element by at most the page's own bottom padding plus 8px. Before,
- * a box nobody sees kept the scroll going: Program health's screen-reader table
- * (`sr-only` does not shrink a table) added a screen or more of empty background
- * below the last card, and a list's screen-reader status line, placed last in
- * its stack, left 16px under a table without a pager. Content inside a box that
- * clips it (overflow, `sr-only`) counts only as far as the clip shows it.
+ * content: the page scroller's (`main#content`) scrollable height may exceed
+ * the bottom of the last visible element by at most the page's own bottom
+ * padding plus 8px, and the document itself never scrolls (the shell's page
+ * scroller is the one scroller). Visible content is text, media, controls and
+ * painted boxes; content inside a box that clips it (overflow, `sr-only`)
+ * counts only as far as the clip shows it.
  *
- * The document itself never scrolls: the shell's page scroller is the one
- * scroller, so `document.scrollingElement` is never taller than the window.
- *
- * The routes are read from the app directory, so a new page is checked the day
- * it is added.
+ * It caught a box nobody sees keeping the scroll going: Program health's
+ * screen-reader table (`sr-only` does not shrink a table) added a screen or
+ * more of empty background below the last card, and a list's out-of-flow
+ * last part (its screen-reader status line, or on a phone the hidden desktop
+ * table) kept the list's spacing under a table without a pager.
  */
 
-const APP = path.resolve(__dirname, '../../src/app/(dashboard)')
 const SLACK_PX = 8
-
-/** Static routes of the dashboard shell, from its page files. */
-function staticRoutes(): string[] {
-  const out: string[] = []
-  const walk = (dir: string, segs: string[]) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!e.isDirectory()) {
-        if (e.name === 'page.tsx') out.push('/' + segs.filter(Boolean).join('/'))
-        continue
-      }
-      if (e.name.startsWith('_') || e.name === '__tests__' || e.name.startsWith('@')) continue
-      const seg = /^\(.*\)$/.test(e.name) ? '' : e.name
-      walk(path.join(dir, e.name), [...segs, seg])
-    }
-  }
-  walk(APP, [])
-  return [...new Set(out)].filter((r) => !r.includes('[')).sort()
-}
 
 export type ScrollEnd = {
   /** How far the page scroller's scroll goes past its last visible content, less its padding. */
@@ -133,40 +109,20 @@ export async function measureScrollEnd(page: Page): Promise<ScrollEnd> {
   })
 }
 
-/** Not pages: they only finish a flow, then leave (as in 31-page-rhythm). */
-const NOT_PAGES: Record<string, string> = {
-  '/settings/tenant/create': 'creates an organization, then leaves',
-  '/ci-cd/github-app/callback': 'finishes the GitHub App install, then leaves',
-}
-
-const VIEWPORTS = [
-  { width: 1440, height: 900 },
-  { width: 390, height: 844 },
-] as const
-
-for (const route of staticRoutes()) {
-  if (NOT_PAGES[route]) continue
-  test(`scroll ends after the last content on ${route}`, { tag: ['@shell'] }, async ({ page }) => {
-    test.skip(!(await open(page, route)), `${route} redirects`)
-    await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
-    for (const vp of VIEWPORTS) {
-      await page.setViewportSize(vp)
-      // Let charts and observers settle at the new width.
-      await page.waitForTimeout(400)
-      await page.evaluate(() => {
-        const main = document.querySelector('main#content')!
-        main.scrollTo(0, main.scrollHeight)
-      })
-      await page.waitForTimeout(200)
-      const m = await measureScrollEnd(page)
-      const at = `${route} at ${vp.width}px`
-      expect
-        .soft(
-          m.excess,
-          `${at}: scrolls ${m.excess}px past its last content (scroll height ${m.scrollHeight}, content ends at ${m.contentBottom}, padding ${m.padding}; deepest box ${m.deepest || 'content'})`
-        )
-        .toBeLessThanOrEqual(SLACK_PX)
-      expect.soft(m.documentExcess, `${at}: the document itself scrolls`).toBe(0)
-    }
+/** Scrolls the page to its end, checks where the scroll stops, and scrolls back to the top. */
+export async function checkScrollEnd(page: Page, at: string) {
+  await page.evaluate(() => {
+    const main = document.querySelector('main#content')
+    main?.scrollTo(0, main.scrollHeight)
   })
+  await page.waitForTimeout(150)
+  const m = await measureScrollEnd(page)
+  await page.evaluate(() => document.querySelector('main#content')?.scrollTo(0, 0))
+  expect
+    .soft(
+      m.excess,
+      `${at}: scrolls ${m.excess}px past its last content (scroll height ${m.scrollHeight}, content ends at ${m.contentBottom}, padding ${m.padding}; deepest box ${m.deepest || 'content'})`
+    )
+    .toBeLessThanOrEqual(SLACK_PX)
+  expect.soft(m.documentExcess, `${at}: the document itself scrolls`).toBe(0)
 }

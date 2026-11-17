@@ -118,7 +118,7 @@ log "risk trend"
 # Program health draws open findings over time from the daily risk snapshots
 # (a controller writes them once a day): 90 days of them, the page's default
 # window, so the trend chart and its screen-reader table render with a full
-# series (65-page-scroll-end).
+# series (31-page-rhythm, helpers/scroll-end.ts).
 docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v tid="$TENANT_ID" >/dev/null <<'SQL'
 INSERT INTO risk_snapshots (tenant_id, snapshot_date, risk_score_avg, risk_score_max, findings_open, p0_open, p1_open)
