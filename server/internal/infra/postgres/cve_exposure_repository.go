@@ -75,24 +75,24 @@ func (r *FindingRepository) GetCVEExposure(ctx context.Context, q vulnerability.
 		},
 	}
 	if err := r.cveExposureCounts(ctx, tx, q.Where, out); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	if err := r.cveExposureStatuses(ctx, tx, q.Where, out); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	productAssets, err := r.cveExposureComponents(ctx, tx, q.Where, out)
 	if err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	if err := r.cveExposureSources(ctx, tx, q.Where, out); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	matched, err := r.cveExposureSoftware(ctx, tx, q, out)
 	if err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	if err := r.cveExposureIntel(ctx, tx, q, out); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit cve exposure read: %w", err)
@@ -461,7 +461,7 @@ func (r *FindingRepository) ListCVEExposureAssets(ctx context.Context, q vulnera
 	defer func() { _ = tx.Rollback() }()
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return empty, findingTimeout(fmt.Errorf("list cve exposure assets: %w", err))
+		return empty, findingTimeout(ctx, fmt.Errorf("list cve exposure assets: %w", err))
 	}
 	defer rows.Close()
 	var total int64
@@ -482,7 +482,7 @@ func (r *FindingRepository) ListCVEExposureAssets(ctx context.Context, q vulnera
 		list = append(list, a)
 	}
 	if err := rows.Err(); err != nil {
-		return empty, findingTimeout(err)
+		return empty, findingTimeout(ctx, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return empty, fmt.Errorf("commit cve exposure assets: %w", err)
@@ -494,7 +494,7 @@ func (r *FindingRepository) ListCVEExposureAssets(ctx context.Context, q vulnera
 		JOIN assets a ON a.tenant_id = $` + strconv.Itoa(tenantArg) + ` AND a.id = s.asset_id
 		WHERE TRUE` + searchCond
 		if err := r.db.QueryRowContext(ctx, countQ, args[:len(args)-2]...).Scan(&total); err != nil {
-			return empty, findingTimeout(fmt.Errorf("count cve exposure assets: %w", err))
+			return empty, findingTimeout(ctx, fmt.Errorf("count cve exposure assets: %w", err))
 		}
 	}
 	return pagination.NewResult(list, total, page), nil
