@@ -16,6 +16,12 @@ import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
+import {
+  ROW_MENU_REASON_FALLBACK,
+  rowMenuBlocks,
+  type RowMenuFinding,
+  type RowMenuGatedAction,
+} from '../lib/row-menu-state'
 
 export type FindingRowAction =
   | 'view'
@@ -30,6 +36,11 @@ export type FindingRowAction =
 
 interface FindingRowMenuProps {
   title: string
+  /**
+   * The row's state (status, source, linked tickets): an item that does not
+   * apply to it is shown disabled with the reason.
+   */
+  finding: RowMenuFinding
   /** Trigger size: dense (28) in a table row, the default; `icon` on a phone card. */
   size?: 'icon-sm' | 'icon'
   onAction: (action: FindingRowAction) => void
@@ -47,10 +58,13 @@ interface FindingRowMenuProps {
  * component, so the two never offer different actions. Assign, status and
  * false positive need the full finding flow (assignee picker, status select
  * with its approval step), so their labels say they open it; each is offered
- * only to someone the API lets make that change.
+ * only to someone the API lets make that change (hidden otherwise). An item
+ * that does not apply to this finding's state stays in its place, disabled,
+ * with the reason (`rowMenuBlocks`); nothing is disabled without one.
  */
 export function FindingRowMenu({
   title,
+  finding,
   size = 'icon-sm',
   onAction,
   canAssign,
@@ -61,6 +75,11 @@ export function FindingRowMenu({
 }: FindingRowMenuProps) {
   const { t } = useTranslation()
   const act = (action: FindingRowAction) => () => onAction(action)
+  const blocks = rowMenuBlocks(finding)
+  const reason = (action: RowMenuGatedAction) => {
+    const code = blocks[action]
+    return code ? t(`findings.row.reason.${code}`, ROW_MENU_REASON_FALLBACK[code]) : undefined
+  }
   const items: ActionMenuEntry[] = [
     {
       id: 'view',
@@ -75,6 +94,7 @@ export function FindingRowMenu({
             label: t('findings.row.openToAssign', 'Open to assign…'),
             icon: UserPlus,
             onSelect: act('assign'),
+            disabledReason: reason('assign'),
           },
         ]
       : []),
@@ -85,6 +105,7 @@ export function FindingRowMenu({
             label: t('findings.row.openToChangeStatus', 'Open to change status…'),
             icon: CheckCircle,
             onSelect: act('status'),
+            disabledReason: reason('status'),
           },
         ]
       : []),
@@ -95,6 +116,7 @@ export function FindingRowMenu({
             label: t('findings.header.createTicket', 'Create ticket'),
             icon: Ticket,
             onSelect: act('create_ticket'),
+            disabledReason: reason('create_ticket'),
           },
         ]
       : []),
@@ -130,6 +152,7 @@ export function FindingRowMenu({
             label: t('findings.row.openToMarkFalsePositive', 'Open to mark as false positive…'),
             icon: Flag,
             onSelect: act('false_positive'),
+            disabledReason: reason('false_positive'),
           },
         ]
       : []),
