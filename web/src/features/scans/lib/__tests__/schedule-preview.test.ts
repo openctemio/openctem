@@ -8,6 +8,7 @@ import {
   schedulePreviewRequestFromForm,
 } from '../schedule-preview'
 import { DEFAULT_NEW_SCAN } from '../../types'
+import { viewerTimeZone } from '../zoned-time'
 
 describe('schedulePreviewRequestFromConfig', () => {
   it('has no preview for a scan that runs only on demand', () => {
@@ -107,6 +108,9 @@ describe('schedulePreviewRequestFromForm', () => {
         frequency: 'weekly' as const,
         dayOfWeek: 3,
         time: '04:00',
+        // Named, so the test does not depend on the machine's time zone
+        // (without it the form uses the viewer's zone, see below).
+        timezone: 'UTC',
       },
     }
     expect(schedulePreviewRequestFromForm(form)).toEqual({
@@ -123,6 +127,15 @@ describe('schedulePreviewRequestFromForm', () => {
         schedule: { ...form.schedule, frequency: 'monthly' },
       })
     ).toMatchObject({ schedule_type: 'monthly', schedule_day: 1 })
+  })
+
+  it('uses the viewer time zone when the form names none', () => {
+    const req = schedulePreviewRequestFromForm({
+      ...DEFAULT_NEW_SCAN,
+      name: 'x',
+      schedule: { runImmediately: false, frequency: 'weekly', dayOfWeek: 3, time: '04:00' },
+    })
+    expect(req?.timezone).toBe(viewerTimeZone())
   })
 
   it('has no preview when the scan runs now', () => {
