@@ -23,6 +23,7 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { Bug, LayoutGrid, List } from 'lucide-react'
 import { VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
 
 const TABS = ['overview', 'catalog'] as const
@@ -178,7 +179,14 @@ export default function VulnerabilitiesPage() {
             ) : undefined
           }
         >
-          <div className="flex flex-wrap items-center gap-2">
+          {/* On a phone the catalog list comes first: these links to the
+              findings stay in the Summary view. */}
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              tab === 'catalog' && 'max-md:hidden'
+            )}
+          >
             {canOpenList && (
               <Button asChild variant="outline" size="sm">
                 <Link href="/vulnerabilities">
