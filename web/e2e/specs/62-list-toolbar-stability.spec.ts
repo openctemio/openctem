@@ -628,13 +628,13 @@ function headerHoldsStill(route: Route) {
               await step('open a saved view', async () => {
                 // The menu before it may still be closing: open until the item shows.
                 const item = page.getByRole('menuitem').filter({ hasText: saved.name }).first()
+                // Open it only while the trigger says it is closed (a second
+                // click on an opening menu closes it), then choose the item.
                 await expect(async () => {
-                  if (!(await item.isVisible())) await views.click()
-                  await expect(item).toBeVisible({ timeout: 3_000 })
-                }).toPass({ timeout: 20_000 })
-                // Shown; the menu may still re-render while the views load, so
-                // the click does not wait for it to be stable.
-                await item.click({ force: true })
+                  if ((await views.getAttribute('aria-expanded')) !== 'true') await views.click()
+                  await expect(item).toBeVisible({ timeout: 5_000 })
+                  await item.click({ timeout: 5_000 })
+                }).toPass({ timeout: 30_000 })
                 await page.waitForURL((u) => u.searchParams.get('view') === saved.id)
               })
               await step('close the saved view', async () => {
