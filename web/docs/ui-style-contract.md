@@ -224,6 +224,9 @@ Every page, top to bottom:
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
+   - `titleAction`: one control on the title's own line, right after the title
+     text and outside the h1, when the title itself is a choice (a chevron that
+     switches between dashboards). Not a place for the page's actions.
 4. **One tab row per page**, right under the header, no margins on it.
    - **Section tabs** when the sub-views are routes: the shared
      `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
