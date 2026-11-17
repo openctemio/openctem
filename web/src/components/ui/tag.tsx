@@ -23,6 +23,11 @@ export interface TagProps {
   scope?: string
   /** An ordinal level 0 to 4 (criticality): four bars and the word. Level 4 is bold. */
   level?: 0 | 1 | 2 | 3 | 4
+  /**
+   * A level on the neutral pill: the bars and the word only, no fill. For a
+   * record's header, where a solid pill next to the actions reads as a button.
+   */
+  levelOutline?: boolean
   /** Shows a remove button (an editable tag). */
   onRemove?: () => void
   /** Tooltip; defaults to the full text when it is cut at 200 px. */
@@ -78,6 +83,7 @@ export function Tag({
   swatch,
   scope,
   level,
+  levelOutline = false,
   onRemove,
   title,
   className,
@@ -107,7 +113,10 @@ export function Tag({
         'inline-flex h-[22px] w-fit max-w-[200px] shrink-0 items-center whitespace-nowrap text-xs font-medium leading-none text-foreground',
         plain ? 'gap-1.5' : 'rounded-full border border-border bg-card',
         !plain && !scope && 'gap-1.5 px-2.5',
-        !plain && !scope && level !== undefined && LEVEL_CLASS[level],
+        !plain &&
+          !scope &&
+          level !== undefined &&
+          (levelOutline ? level === 0 && LEVEL_CLASS[0] : LEVEL_CLASS[level]),
         scope && 'gap-0 overflow-hidden',
         className
       )}

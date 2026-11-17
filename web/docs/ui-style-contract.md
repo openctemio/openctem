@@ -339,8 +339,10 @@ reference.
    buttons, everything else in the More menu (`ActionMenu` entries, a sheet
    on a phone). Below 768 px the first line is the way back to the parent
    list ("‹ Findings") with the position at its end, the primary action
-   leads the action row and takes the free width, and More closes it.
-   Status, owner and dates are never in the header.
+   leads the action row and takes the free width, and More closes it; a
+   More with no buttons stays at the end of the title's line. The chips
+   wrap onto lines and are never cut by the screen. Status, owner and dates
+   are never in the header.
 2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
    counts in `TabsCount`.
 3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
