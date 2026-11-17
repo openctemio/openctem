@@ -2,25 +2,13 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -40,6 +28,27 @@ import {
   DetailSheet,
 } from '@/features/shared'
 import type { MetricStripItem } from '@/features/shared'
+import { usePhoneSelectMode, type DataTableBulk } from '@/features/shared/components/data-table'
+import {
+  FacetOption,
+  FacetPanel,
+  FacetSection,
+} from '@/features/shared/components/facet-filter-panel'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { FilterSheet } from '@/features/shared/components/filter-sheet'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
+import { ExposurePhoneCard } from '@/features/exposures/components/exposure-phone-card'
+import { accessStateOf } from '@/lib/api/access-state'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -48,15 +57,14 @@ import {
   RefreshCw,
   Download,
   Shield,
-  AlertTriangle,
   ShieldCheck,
   ShieldX,
-  X,
   Clock,
   Activity,
   ArrowRightLeft,
-  ChevronDown,
   BarChart3,
+  MoreHorizontal,
+  Radar,
   ChartColumn,
   List,
 } from 'lucide-react'
@@ -82,11 +90,12 @@ import {
   ExposureSeverityBreakdown,
   ExposureStateBreakdown,
   getExposureColumns,
+  ExposureRowMenu,
   ExposureActionDialog,
   ExposureSeverityDialog,
   useCanChangeExposureSeverity,
   type ExposureActionType,
-  ExposureBulkActions,
+  useExposureBulkActions,
   ExposureSecurityContext,
   ExposuresTabs,
   APPROVE_REQUIRED_REASON,
@@ -125,8 +134,6 @@ const STATE_VIEWS: { value: StateTab; labelKey: string; fallback: string }[] = [
 
 const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
 const SEVERITY_LABELS: Record<ExposureSeverity, string> = SHARED_SEVERITY_LABELS
-
-const PAGE_SIZES = [10, 20, 30, 50, 100]
 
 // CSV columns for the Export action: every exposure matching the filters.
 type Translate = (key: string, fallback: string, params?: Record<string, string | number>) => string
@@ -171,23 +178,6 @@ function getStatesForTab(tab: StateTab): ExposureState[] | undefined {
   }
 }
 
-function ExposureTableSkeleton() {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="h-9 w-28" />
-        <Skeleton className="ms-auto h-9 w-24" />
-      </div>
-      <div className="space-y-2 rounded-md border p-3">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export default function ExposuresPage() {
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id || null
@@ -215,7 +205,7 @@ export default function ExposuresPage() {
     () => categoryParam.filter((c): c is ExposureDisplayCategory => isExposureDisplayCategory(c)),
     [categoryParam]
   )
-  const list = useListParams({ pageSizes: PAGE_SIZES })
+  const list = useListParams()
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
 
@@ -237,6 +227,7 @@ export default function ExposuresPage() {
 
   // Detail sheet state
   const [detailExposure, setDetailExposure] = useState<ExposureEvent | null>(null)
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
 
   const apiFilters: ExposureListFilters = useMemo(
     () => ({
@@ -256,7 +247,14 @@ export default function ExposuresPage() {
     isLoading: exposuresLoading,
     error: exposuresError,
     mutate: refreshExposures,
+    response: exposuresResponse,
+    canRead: canReadExposures,
   } = useExposures(tenantId, apiFilters)
+  // When the rows on screen were read: the table says so once they are old.
+  const [readAt, setReadAt] = useState<Date | undefined>(undefined)
+  useEffect(() => {
+    if (exposuresResponse) setReadAt(new Date())
+  }, [exposuresResponse])
 
   const {
     stats,
@@ -380,40 +378,44 @@ export default function ExposuresPage() {
     [handleRefresh]
   )
 
-  const clearFilters = useCallback(() => {
-    setSearchQuery('')
+  /** The chips: severity and category. */
+  const clearChipFilters = useCallback(() => {
     setSeverityParam([])
     setCategoryParam([])
-    setStateParam('needs_attention')
     resetPage()
-  }, [setSearchQuery, setSeverityParam, setCategoryParam, setStateParam, resetPage])
+  }, [setSeverityParam, setCategoryParam, resetPage])
+  /** Back to the view as it is named: no search text, no chip. */
+  const backToView = useCallback(() => {
+    setSearchQuery('')
+    clearChipFilters()
+  }, [setSearchQuery, clearChipFilters])
+  /** Everything that narrows the list, the lifecycle view included. */
+  const clearFilters = useCallback(() => {
+    backToView()
+    setStateParam('needs_attention')
+  }, [backToView, setStateParam])
 
-  const hasActiveFilters =
-    !!searchQuery ||
-    selectedSeverities.length > 0 ||
-    selectedCategories.length > 0 ||
-    activeView !== 'needs_attention'
+  const chipCount = selectedSeverities.length + selectedCategories.length
+  const viewChanged = !!searchQuery || chipCount > 0
+  const hasActiveFilters = viewChanged || activeView !== 'needs_attention'
 
   // Accept risk / false positive need findings:approve (api#675).
   const canApprove = useCanApproveExposures()
   const canChangeSeverity = useCanChangeExposureSeverity()
-  const columns = useMemo(
-    () =>
-      getExposureColumns(
-        {
-          onResolve: (e) => handleAction(e, 'resolve'),
-          onAccept: (e) => handleAction(e, 'accept'),
-          onMarkFalsePositive: (e) => handleAction(e, 'false_positive'),
-          onReactivate: (e) => handleAction(e, 'reactivate'),
-          onStartProgress: (e) => handleAction(e, 'start_progress'),
-          onChangeSeverity: canChangeSeverity ? setSeverityExposure : undefined,
-          onViewDetails: setDetailExposure,
-          canApprove,
-        },
-        t
-      ),
-    [handleAction, canApprove, canChangeSeverity, t]
+  const rowHandlers = useMemo(
+    () => ({
+      onResolve: (e: ExposureEvent) => handleAction(e, 'resolve'),
+      onAccept: (e: ExposureEvent) => handleAction(e, 'accept'),
+      onMarkFalsePositive: (e: ExposureEvent) => handleAction(e, 'false_positive'),
+      onReactivate: (e: ExposureEvent) => handleAction(e, 'reactivate'),
+      onStartProgress: (e: ExposureEvent) => handleAction(e, 'start_progress'),
+      onChangeSeverity: canChangeSeverity ? setSeverityExposure : undefined,
+      onViewDetails: setDetailExposure,
+      canApprove,
+    }),
+    [handleAction, canApprove, canChangeSeverity]
   )
+  const columns = useMemo(() => getExposureColumns(rowHandlers, t), [rowHandlers, t])
 
   // Categories the platform produces, or that have exposures; the rest stay
   // hidden until they do.
@@ -453,163 +455,285 @@ export default function ExposuresPage() {
     },
   ]
 
-  const rangeStart = total === 0 ? 0 : pagination.pageIndex * pagination.pageSize + 1
-  const rangeEnd = Math.min(total, (pagination.pageIndex + 1) * pagination.pageSize)
+  const viewLabel = (v: StateTab) => {
+    const view = STATE_VIEWS.find((x) => x.value === v)
+    return view ? t(view.labelKey, view.fallback) : v
+  }
+  const viewTitle = viewLabel(activeView)
+  const severityLabel = (sev: ExposureSeverity) => t(`severity.${sev}`, SEVERITY_LABELS[sev])
+  const categoryLabel = (key: ExposureDisplayCategory) =>
+    t(
+      `exposures.category.${key}`,
+      EXPOSURE_DISPLAY_CATEGORIES.find((c) => c.key === key)?.label ?? key
+    )
 
+  // The active filters as chips ("Field: values"), each removable on its own.
+  // The lifecycle view is the toolbar's own select, so it is not a chip.
+  const chipList: { key: string; text: string; clear: () => void }[] = [
+    ...(selectedSeverities.length > 0
+      ? [
+          {
+            key: 'severity',
+            text: t('exposures.filter.chip', '{field}: {value}', {
+              field: t('exposures.filter.severity', 'Severity'),
+              value: selectedSeverities.map(severityLabel).join(', '),
+            }),
+            clear: () => {
+              setSeverityParam([])
+              resetPage()
+            },
+          },
+        ]
+      : []),
+    ...(selectedCategories.length > 0
+      ? [
+          {
+            key: 'category',
+            text: t('exposures.filter.chip', '{field}: {value}', {
+              field: t('exposures.category.filter', 'Category'),
+              value: selectedCategories.map(categoryLabel).join(', '),
+            }),
+            clear: () => {
+              setCategoryParam([])
+              resetPage()
+            },
+          },
+        ]
+      : []),
+  ]
+  const chipsRow =
+    chipList.length > 0 ? (
+      <FilterChipsRow
+        data-testid="exposure-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chipList.map((c) => (
+          <RemovableFilterChip
+            key={c.key}
+            text={c.text}
+            onRemove={c.clear}
+            removeLabel={t('exposures.filter.remove', 'Remove filter {filter}', { filter: c.text })}
+          />
+        ))}
+        onClearAll={chipList.length > 1 ? clearChipFilters : undefined}
+      />
+    ) : undefined
+
+  // `withState`: the phone sheet also holds the lifecycle view (the toolbar's
+  // select), so every filter is in one place there.
+  const facetPanel = (withState: boolean) => (
+    <FacetPanel
+      activeCount={chipCount + (withState && activeView !== 'needs_attention' ? 1 : 0)}
+      onClearAll={withState ? clearFilters : clearChipFilters}
+    >
+      {withState && (
+        <FacetSection
+          title={t('exposures.filter.state', 'State')}
+          selectedCount={activeView !== 'needs_attention' ? 1 : 0}
+        >
+          {STATE_VIEWS.map((v) => (
+            <FacetOption
+              key={v.value}
+              label={t(v.labelKey, v.fallback)}
+              checked={activeView === v.value}
+              onCheckedChange={(on) => setView(on ? v.value : 'needs_attention')}
+            />
+          ))}
+        </FacetSection>
+      )}
+      <FacetSection
+        title={t('exposures.filter.severity', 'Severity')}
+        selectedCount={selectedSeverities.length}
+      >
+        {SEVERITIES.map((severity) => (
+          <FacetOption
+            key={severity}
+            label={severityLabel(severity)}
+            checked={selectedSeverities.includes(severity)}
+            onCheckedChange={() => toggleSeverity(severity)}
+            adornment={
+              <span className={cn('size-2 shrink-0 rounded-full', SEVERITY_DOT_COLORS[severity])} />
+            }
+          />
+        ))}
+      </FacetSection>
+      <FacetSection
+        title={t('exposures.category.filter', 'Category')}
+        selectedCount={selectedCategories.length}
+      >
+        {categoryOptions.map((c) => (
+          <FacetOption
+            key={c.key}
+            label={t('exposures.category.withCount', '{name} ({count})', {
+              name: categoryLabel(c.key),
+              count: (stats?.by_category?.[c.key] ?? 0).toLocaleString(),
+            })}
+            checked={selectedCategories.includes(c.key)}
+            onCheckedChange={() => toggleCategory(c.key)}
+          />
+        ))}
+      </FacetSection>
+    </FacetPanel>
+  )
+
+  // The toolbar row after the search: Add filter (it never changes size),
+  // then the lifecycle view in a box as wide as its longest value.
   const toolbarStart = (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            {t('exposures.filter.severity', 'Severity')}
-            {selectedSeverities.length > 0 && (
-              <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
-                {selectedSeverities.length}
-              </Badge>
-            )}
-            <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>{t('exposures.filter.severity', 'Severity')}</DropdownMenuLabel>
-          {SEVERITIES.map((severity) => (
-            <DropdownMenuCheckboxItem
-              key={severity}
-              checked={selectedSeverities.includes(severity)}
-              onCheckedChange={() => toggleSeverity(severity)}
-              onSelect={(e) => e.preventDefault()}
-            >
-              {SEVERITY_LABELS[severity]}
-            </DropdownMenuCheckboxItem>
-          ))}
-          {selectedSeverities.length > 0 && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setSeverityParam([])}>
-                {t('exposures.filter.clear', 'Clear')}
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            {t('exposures.category.filter', 'Category')}
-            {selectedCategories.length > 0 && (
-              <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
-                {selectedCategories.length}
-              </Badge>
-            )}
-            <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>{t('exposures.category.filter', 'Category')}</DropdownMenuLabel>
-          {categoryOptions.map((c) => (
-            <DropdownMenuCheckboxItem
-              key={c.key}
-              checked={selectedCategories.includes(c.key)}
-              onCheckedChange={() => toggleCategory(c.key)}
-              onSelect={(e) => e.preventDefault()}
-            >
-              <span className="flex-1">{t(`exposures.category.${c.key}`, c.label)}</span>
-              <span className="ms-4 tabular-nums text-muted-foreground">
-                {(stats?.by_category?.[c.key] ?? 0).toLocaleString()}
-              </span>
-            </DropdownMenuCheckboxItem>
-          ))}
-          {selectedCategories.length > 0 && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCategoryParam([])}>
-                {t('exposures.category.clear', 'Clear')}
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            {(() => {
-              const view = STATE_VIEWS.find((v) => v.value === activeView)
-              return view ? t(view.labelKey, view.fallback) : null
-            })()}
-            <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>{t('exposures.filter.state', 'State')}</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={activeView} onValueChange={(v) => setView(v as StateTab)}>
-            {STATE_VIEWS.map((v) => (
-              <DropdownMenuRadioItem key={v.value} value={v.value}>
-                {t(v.labelKey, v.fallback)}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {hasActiveFilters && (
-        <Button variant="ghost" size="sm" onClick={clearFilters}>
-          <X className="me-1 h-4 w-4" />
-          {t('exposures.filter.clear', 'Clear')}
-        </Button>
-      )}
+      <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
+      <FilterSelect<StateTab>
+        label={t('exposures.filter.state', 'State')}
+        value={activeView}
+        clearable={false}
+        foldLabel
+        // On a phone the state lives in the Filters sheet: the toolbar's
+        // second line holds the chips, which must not push a select along.
+        className="max-md:hidden"
+        options={STATE_VIEWS.map((v) => ({ value: v.value, label: t(v.labelKey, v.fallback) }))}
+        onChange={(v) => setView(v || 'needs_attention')}
+      />
     </>
   )
 
-  const toolbarEnd = (
-    <>
-      <span className="hidden text-sm tabular-nums text-muted-foreground xl:inline">
-        {total === 0
-          ? t('exposures.count.none', 'No results')
-          : t('exposures.count.range', '{start}–{end} of {total}', {
-              start: rangeStart,
-              end: rangeEnd,
-              total: total.toLocaleString(),
-            })}
-      </span>
+  // The bulk bar: Resolve and Accept risk, False positive under More, with
+  // the same confirmations. The table draws the bar and the checkbox column.
+  const bulkParts = useExposureBulkActions({
+    selectedIds,
+    selectedNames,
+    onClearSelection: clearSelection,
+    onBulkResolve: handleBulkResolve,
+    onBulkAccept: handleBulkAccept,
+    onBulkFalsePositive: handleBulkFalsePositive,
+  })
+  const exposuresBulk: DataTableBulk<ExposureEvent> = {
+    rowLabel: (e) => e.title,
+    checkboxLabel: (e) => t('exposures.table.selectRow', 'Select {title}', { title: e.title }),
+    actions: bulkParts.actions,
+    more: bulkParts.more,
+    noun: t('exposures.bulk.noun', 'exposures selected'),
+    onSelectionChange: (selection) => {
+      const rows = selection?.kind === 'ids' ? selection.rows : []
+      setSelectedIds(rows.map((e) => e.id))
+      setSelectedNames(rows.map((e) => e.title))
+    },
+  }
+  // Phone cards have no header checkbox: "Select" starts the title row's More.
+  const isPhone = useIsMobile()
+  const phoneSelect = usePhoneSelectMode(isPhone)
+
+  const refreshLabel = t('exposures.toolbar.refresh', 'Refresh')
+  const exportOff = isExporting || exposuresLoading || total === 0
+  const exportLabel = isExporting
+    ? t('exposures.toolbar.exporting', 'Exporting…')
+    : t('exposures.toolbar.export', 'Export')
+  // Under 42rem of row width (and on a phone) the row's actions fold into
+  // More: Select first, then Reset on a changed view, then Export.
+  const moreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    ...(viewChanged
+      ? [{ id: 'view-reset', label: t('common.listView.reset', 'Reset'), onSelect: backToView }]
+      : []),
+    {
+      id: 'export',
+      label: t('exposures.toolbar.export', 'Export'),
+      section: 'export',
+      disabledReason: isExporting
+        ? t('exposures.toolbar.exporting', 'Exporting…')
+        : total === 0
+          ? t('exposures.toolbar.exportEmpty', 'There is nothing to export.')
+          : undefined,
+      onSelect: () => void handleExport(),
+    },
+  ]
+  const titleRow = (
+    <ListTitleRow
+      data-testid="exposures-title-row"
+      className="@container/actions"
+      title={viewTitle}
+      count={
+        <ListCount
+          total={total}
+          loading={exposuresLoading && exposures.length === 0}
+          label={t(
+            'exposures.list.total',
+            '{count, plural, one {# exposure} other {# exposures}}',
+            {
+              count: total,
+            }
+          )}
+        />
+      }
+      start={
+        <ListViewChanged
+          changed={viewChanged}
+          // On a row under 42rem Reset is in the row's More.
+          actionsClassName="hidden @2xl/actions:flex"
+          onReset={backToView}
+        />
+      }
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="outline"
             size="icon"
-
             onClick={handleRefresh}
             disabled={isLoading}
-            aria-label={t('exposures.toolbar.refresh', 'Refresh')}
+            aria-label={refreshLabel}
           >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+            <RefreshCw
+              className={cn('h-4 w-4', isLoading && 'animate-spin motion-reduce:animate-none')}
+              aria-hidden
+            />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{t('exposures.toolbar.refresh', 'Refresh')}</TooltipContent>
+        <TooltipContent>{refreshLabel}</TooltipContent>
       </Tooltip>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleExport}
-        disabled={isExporting || exposuresLoading || total === 0}
-      >
-        <Download className="h-4 w-4 xl:me-2" />
-        <span className="sr-only xl:not-sr-only">
-          {isExporting
-            ? t('exposures.toolbar.exporting', 'Exporting…')
-            : t('exposures.toolbar.export', 'Export')}
-        </span>
-      </Button>
-    </>
+      <div className="hidden @2xl/actions:block">
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={exportOff}>
+          <Download aria-hidden />
+          {exportLabel}
+        </Button>
+      </div>
+      <div className="@2xl/actions:hidden">
+        <ActionMenu
+          title={viewTitle}
+          label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+          items={moreItems}
+          trigger={
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={t('common.actionMenu.more', 'More actions')}
+            >
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </Button>
+          }
+        />
+      </div>
+    </ListTitleRow>
   )
+
+  // A failed read with rows on screen keeps the rows (the table says how old
+  // they are and offers a refresh); without rows the error takes their place.
+  const noAccess = canReadExposures === false || accessStateOf(exposuresError) === 'no_access'
+  const readError = exposuresError && exposures.length === 0 ? exposuresError : undefined
+  const firstRun = !exposuresLoading && !exposuresError && total === 0 && !hasActiveFilters
 
   return (
     <Main>
       <PageStack>
         <PageHeader
           title={t('exposures.page.title', 'Exposures')}
-          description={t(
-            'exposures.page.description',
-            'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
-          )}
+          // On a phone the list comes first: the description is read out but
+          // not drawn, and the tiles follow the list.
+          description={
+            <span className="max-md:sr-only">
+              {t(
+                'exposures.page.description',
+                'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
+              )}
+            </span>
+          }
           viewSwitcher={
             // List and analytics are two views of the same events: a view
             // switch, not a second row of tabs (research/249 R21).
@@ -640,28 +764,26 @@ export default function ExposuresPage() {
                   onRetry={() => refreshStats()}
                 />
               ) : (
-                <MetricStrip loading={statsLoading} items={metrics} />
+                <MetricStrip loading={statsLoading} items={metrics} className="max-md:order-last" />
               )}
 
-              {exposuresError ? (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>
-                    {t('exposures.list.errorTitle', 'Could not load exposures')}
-                  </AlertTitle>
-                  <AlertDescription className="flex flex-wrap items-center gap-3">
-                    {t('exposures.list.errorDescription', 'The exposure list failed to load.')}
-                    <Button variant="outline" size="sm" onClick={handleRefresh}>
-                      {t('exposures.list.retry', 'Retry')}
-                    </Button>
-                  </AlertDescription>
-                </Alert>
-              ) : exposuresLoading && exposures.length === 0 ? (
-                <ExposureTableSkeleton />
+              {/* On a phone the list comes first: the tiles follow it. */}
+              {titleRow}
+              {noAccess ? (
+                <NoAccessState title={t('exposures.list.subject', 'the exposures list')} />
               ) : (
                 <DataTable
                   columns={columns}
                   data={exposures}
+                  error={readError}
+                  onRetry={handleRefresh}
+                  errorTitle={t('exposures.list.subject', 'the exposures list')}
+                  isLoading={exposuresLoading && exposures.length === 0}
+                  // A first run has nothing to search, filter or arrange.
+                  showToolbar={!firstRun}
+                  staleAt={readAt}
+                  refreshFailed={!!exposuresError && exposures.length > 0}
+                  onRefresh={handleRefresh}
                   showSearch={false}
                   search={{
                     value: searchQuery,
@@ -669,48 +791,69 @@ export default function ExposuresPage() {
                     placeholder: t('exposures.search.placeholder', 'Search exposures…'),
                     label: t('exposures.search.label', 'Search exposures'),
                   }}
+                  // One filter entry per width: Add filter from 768, this button
+                  // (joined to the search field) on a phone, where it opens the sheet.
+                  filterToggle={{
+                    open: false,
+                    onToggle: () => setFilterSheetOpen(true),
+                    onOpenSheet: () => setFilterSheetOpen(true),
+                    activeCount: chipCount + (activeView !== 'needs_attention' ? 1 : 0),
+                    controlsId: 'exposure-filters',
+                    label: t('exposures.filter.sheetTitle', 'Exposure filters'),
+                    sheetOnly: true,
+                  }}
                   toolbarStart={toolbarStart}
-                  toolbarEnd={toolbarEnd}
+                  toolbarBelow={chipsRow}
                   getRowId={(e) => e.id}
                   manualPagination
                   rowCount={total}
                   pagination={pagination}
                   onPaginationChange={setPagination}
-                  pageSizeOptions={PAGE_SIZES}
+                  paginationNoun={t('exposures.list.noun', 'exposures')}
                   onRowClick={setDetailExposure}
-                  onSelectionChange={(rows) => {
-                    setSelectedIds(rows.map((e) => e.id))
-                    setSelectedNames(rows.map((e) => e.title))
-                  }}
+                  bulk={exposuresBulk}
+                  selectMode={phoneSelect.selectMode}
                   resetSelectionKey={selectionEpoch}
                   showSelectionCount={false}
-                  emptyMessage={
-                    hasActiveFilters
-                      ? t('exposures.list.emptyFiltered', 'No exposures match these filters')
-                      : t('exposures.list.empty', 'No exposures')
-                  }
-                  emptyDescription={
-                    hasActiveFilters
-                      ? t(
-                          'exposures.list.emptyFilteredHint',
-                          'Try removing a filter or clearing them all.'
-                        )
-                      : t(
+                  mobileRow={(exposure, selection) => (
+                    <ExposurePhoneCard
+                      exposure={exposure}
+                      selection={selection}
+                      onOpen={setDetailExposure}
+                      actions={<ExposureRowMenu exposure={exposure} handlers={rowHandlers} />}
+                    />
+                  )}
+                  isFiltered={hasActiveFilters}
+                  onClearFilters={clearFilters}
+                  emptyState={{
+                    nothingYet: (
+                      <EmptyState
+                        icon={Radar}
+                        title={t('exposures.list.empty', 'No exposures')}
+                        description={t(
                           'exposures.list.emptyHint',
                           'Your attack surface has no open exposure events.'
-                        )
-                  }
+                        )}
+                      />
+                    ),
+                    noMatch: {
+                      title: t('exposures.list.emptyFiltered', 'No exposures match these filters'),
+                      hint: t(
+                        'exposures.list.emptyFilteredHint',
+                        'Try removing a filter or clearing them all.'
+                      ),
+                    },
+                  }}
                 />
               )}
-
-              <ExposureBulkActions
-                selectedIds={selectedIds}
-                selectedNames={selectedNames}
-                onClearSelection={clearSelection}
-                onBulkResolve={handleBulkResolve}
-                onBulkAccept={handleBulkAccept}
-                onBulkFalsePositive={handleBulkFalsePositive}
-              />
+              {bulkParts.dialogs}
+              <FilterSheet
+                open={filterSheetOpen}
+                onOpenChange={setFilterSheetOpen}
+                title={t('exposures.filter.sheetTitle', 'Exposure filters')}
+              >
+                {facetPanel(true)}
+              </FilterSheet>
             </PageStack>
           </TabsContent>
 
