@@ -7,7 +7,7 @@ import { useFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import {
   QUICK_VIEW_LABELS,
   knownQuickViews,
-  quickViewHref,
+  quickViewLink,
   quickViewIsActive,
   quickViewLabelKey,
   type QuickViewKey,
@@ -23,7 +23,8 @@ export function isFindingsListPath(pathname: string): boolean {
  * The built-in views under the Findings row, with live counts. They show on the
  * list page only, so the counts are requested (once, 60 s cache) only there;
  * every other page pays nothing. A view is a link to the list with the API's
- * own params, so the count and the list it opens always agree. A zero count
+ * own params, so the count and the list it opens always agree; Pending
+ * approval links to the approvals inbox, where its requests are decided. A zero count
  * shows nothing; SLA breached is in the error colour when above zero.
  */
 export function FindingsQuickViews() {
@@ -42,9 +43,10 @@ export function FindingsQuickViews() {
       views={views.map((v) => ({
         key: v.key,
         label: t(quickViewLabelKey(v.key), QUICK_VIEW_LABELS[v.key as QuickViewKey]),
-        href: quickViewHref(v.params, include),
+        href: quickViewLink(v, include),
         count: v.count,
-        active: quickViewIsActive(search, v, include),
+        // The approvals inbox is another page: its row is never the current view here.
+        active: v.key !== 'pending_approval' && quickViewIsActive(search, v, include),
         danger: v.key === 'sla_breached',
         pin: { kind: 'quick_view' as const, ref: v.key },
       }))}

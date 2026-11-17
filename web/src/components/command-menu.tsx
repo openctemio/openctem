@@ -47,7 +47,7 @@ import { useFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import {
   QUICK_VIEW_LABELS,
   knownQuickViews,
-  quickViewHref,
+  quickViewLink,
   quickViewLabelKey,
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
@@ -170,9 +170,7 @@ export function CommandMenu() {
                     key={`qv-${v.key}`}
                     value={label}
                     keywords={[t('nav.palette.group.views', 'Findings views')]}
-                    onSelect={() =>
-                      runCommand(() => router.push(quickViewHref(v.params, includeInfo)))
-                    }
+                    onSelect={() => runCommand(() => router.push(quickViewLink(v, includeInfo)))}
                   >
                     <Eye aria-hidden />
                     <span className="truncate">{label}</span>

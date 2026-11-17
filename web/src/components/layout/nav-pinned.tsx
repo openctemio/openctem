@@ -14,7 +14,7 @@ import { useUrlParams } from '@/hooks/use-url-param'
 import { safeHref } from '@/lib/safe-href'
 import {
   QUICK_VIEW_LABELS,
-  quickViewHref,
+  quickViewLink,
   quickViewLabelKey,
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
@@ -67,7 +67,7 @@ export function pinnedRows(
       if (!page || !href) continue
       rows.push({ pin: p, label: page.title, href, icon: page.icon ?? Pin })
     } else if (p.kind === 'quick_view' && p.params) {
-      const href = safeHref(quickViewHref(p.params, includeInformational))
+      const href = safeHref(quickViewLink({ key: p.ref, params: p.params }, includeInformational))
       if (!href) continue
       rows.push({ pin: p, label: quickViewLabel(p.ref), href, icon: Eye, count: p.count })
     } else if (p.kind === 'saved_view' && p.name) {
