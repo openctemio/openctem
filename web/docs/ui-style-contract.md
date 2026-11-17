@@ -1013,7 +1013,8 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   with `typingSurface`. `touch-focus-guard.test.ts` lists every opt-in, every
   raw `<input autoFocus>` and every `onOpenAutoFocus` that moves focus
   itself; a new one fails until it is reviewed.
-- A picker with a search field on a phone (`ResponsivePopover`): the field is
+- A picker with a search field on a phone (`ResponsivePopover`, used by Add
+  filter and by the assignee picker `AssigneeSelect`): the field is
   pinned at the top of the sheet, the list scrolls under it with sticky group
   headings, rows 44. When the keyboard opens the sheet sits on it and is never
   taller than the visible part of the screen (`--modal-kb`, `--modal-vvh` from

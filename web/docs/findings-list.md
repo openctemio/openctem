@@ -85,6 +85,10 @@ Nothing is discarded: the list shows the value masked, and "Show" exists only on
   goes when everything is shown. 100 is the largest page the API returns: there the button gives way to
   "These are the first 100. Narrow the filters to see the rest." A link to a later page opens on the first
   one on a phone. Growing the list clears the selection, as a page-size change does on a desktop.
+- The assignee picker (the bulk bar's "Assign to…", the finding drawer and page, triage) is the shared
+  `AssigneeSelect` on `ResponsivePopover`: a 224 px anchored popover from 768 px up with its search field focused;
+  on a phone a bottom sheet titled "Select a person", the search field pinned under the title, rows 44, no keyboard
+  until the field is tapped, and the sheet then sits on the keyboard (`e2e/specs/61-picker-touch-keyboard.spec.ts`).
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
