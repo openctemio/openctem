@@ -759,8 +759,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/emerging-threats': {
     permission: Permission.TeamUpdate,
   },
-  // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
-  '/settings/finding-approvals': {
+  // Approvals (finding approvals): settings:read to see, settings:write
+  // (+ step-up) to save. Scan approval keeps its own route and gate.
+  '/settings/approvals': {
     permission: Permission.SettingsRead,
   },
   // Finding lifecycle (RFC-110): findings:read to see, findings:lifecycles:write
