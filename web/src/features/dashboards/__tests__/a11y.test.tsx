@@ -4,7 +4,7 @@
  * checked in the browser suite (jsdom does not compute colours).
  */
 import axe from 'axe-core'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { DashboardData } from '../api/widget-data'
@@ -13,6 +13,12 @@ import { DashboardView } from '../components/dashboard-view'
 import { DashboardFreshness } from '../components/dashboard-freshness'
 import { DashboardEditor } from '../editor/dashboard-editor'
 import { DASHBOARD_TEMPLATES, templateLayout } from '../templates'
+
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
 
 vi.mock('../api/use-dashboards-api', () => ({
   updateDashboard: vi.fn(),
@@ -333,6 +339,11 @@ function overview(): { layout: ReturnType<typeof templateLayout>; data: Dashboar
 }
 
 describe('dashboard accessibility', () => {
+  // axe reads the computed style of every node for most of its rules, and jsdom
+  // answers each read by matching selectors (about 8 ms a node), so a run over
+  // the editor's 760 nodes is inherently heavy: several seconds on a busy
+  // machine. Each surface is its own test so no single test carries two runs,
+  // and the gallery run covers the dialog alone, not the editor under it.
   it('a dashboard with every result shape has no axe violations', async () => {
     const { layout, data } = overview()
     const { container } = render(
@@ -342,9 +353,9 @@ describe('dashboard accessibility', () => {
       </main>
     )
     expect(await violations(container)).toEqual([])
-  })
+  }, 15_000)
 
-  it('the editor and the gallery have no axe violations', async () => {
+  it('the editor has no axe violations', async () => {
     const { layout, data } = overview()
     render(
       <main>
@@ -357,8 +368,22 @@ describe('dashboard accessibility', () => {
       </main>
     )
     expect(await violations(document.body)).toEqual([])
-    await userEvent.click(screen.getByRole('button', { name: 'Add widget' }))
-    await screen.findByRole('dialog', { name: 'Add a widget' })
-    expect(await violations(document.body)).toEqual([])
-  }, 30_000)
+  }, 15_000)
+
+  it('the gallery has no axe violations', async () => {
+    const { layout, data } = overview()
+    render(
+      <main>
+        <DashboardEditor
+          dashboard={{ id: 'd', name: 'Overview', is_default: true, columns: 4, layout }}
+          kind="personal"
+          data={data}
+          onExit={() => {}}
+        />
+      </main>
+    )
+    await user.click(screen.getByRole('button', { name: 'Add widget' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add a widget' })
+    expect(await violations(dialog)).toEqual([])
+  }, 15_000)
 })
