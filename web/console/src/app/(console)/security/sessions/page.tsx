@@ -47,7 +47,7 @@ export default function AdminSessionsPage() {
         meta: {
           kind: 'name',
           pin: 'start',
-          minWidth: 280,
+          minWidth: 200,
           label: t('admin.sessions.col.admin', 'Administrator'),
         },
         cell: ({ row }) => {
@@ -74,7 +74,7 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'admin_role',
         header: t('admin.sessions.col.role', 'Role'),
-        meta: { kind: 'tags', width: 216, label: t('admin.sessions.col.role', 'Role') },
+        meta: { kind: 'tags', width: 176, label: t('admin.sessions.col.role', 'Role') },
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
             <Badge variant="outline">
@@ -97,8 +97,8 @@ export default function AdminSessionsPage() {
         header: t('admin.sessions.col.method', 'Signed in with'),
         meta: {
           kind: 'text',
-          width: 200,
-          hideBelow: 1040,
+          width: 184,
+          hideBelow: 1100,
           label: t('admin.sessions.col.method', 'Signed in with'),
         },
         cell: ({ row }) => (
@@ -112,7 +112,12 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'ip_address',
         header: t('admin.sessions.col.ip', 'IP address'),
-        meta: { kind: 'text', width: 144, label: t('admin.sessions.col.ip', 'IP address') },
+        meta: {
+          kind: 'text',
+          width: 144,
+          hideBelow: 760,
+          label: t('admin.sessions.col.ip', 'IP address'),
+        },
         cell: ({ row }) => (
           <span className="block truncate tabular-nums" title={row.original.user_agent}>
             {row.original.ip_address || '-'}
@@ -125,7 +130,7 @@ export default function AdminSessionsPage() {
         meta: {
           kind: 'date',
           width: 152,
-          hideBelow: 860,
+          hideBelow: 1000,
           label: t('admin.sessions.col.started', 'Started'),
         },
         cell: ({ row }) => <RelativeTime date={row.original.created_at} />,

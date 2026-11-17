@@ -146,7 +146,12 @@ export default function AdminOrganizationsPage() {
       {
         accessorKey: 'active_members',
         header: t('admin.org.col.members', 'Members'),
-        meta: { kind: 'number', width: 88, label: t('admin.org.col.members', 'Members') },
+        meta: {
+          kind: 'number',
+          width: 88,
+          hideBelow: 760,
+          label: t('admin.org.col.members', 'Members'),
+        },
         cell: ({ row }) => <span className="tabular-nums">{row.original.active_members}</span>,
       },
       {
