@@ -74,7 +74,14 @@ export default function AdminUsersPage() {
         header: t('admin.users.col.account', 'Account'),
         // The account is the row's name: it stays in view while the table
         // scrolls sideways and links to the account's page.
-        meta: { kind: 'name', pin: 'start', label: t('admin.users.col.account', 'Account') },
+        // A floor makes the column take the room the others leave (a long
+        // address ends in an ellipsis) instead of its content's width.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.users.col.account', 'Account'),
+        },
         cell: ({ row }) => {
           const href = platformUserHref(row.original.id)
           return (
@@ -93,7 +100,7 @@ export default function AdminUsersPage() {
         header: t('admin.users.col.state', 'State'),
         meta: {
           kind: 'tags',
-          width: 216,
+          width: 208,
           label: t('admin.users.col.state', 'State'),
         },
         cell: ({ row }) => <PlatformUserBadges user={row.original} oneLine />,
