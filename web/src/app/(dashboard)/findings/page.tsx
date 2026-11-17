@@ -228,6 +228,7 @@ import { AssigneeSelect, type AssigneeUser } from '@/features/findings/component
 import {
   FindingGroupsTable,
   GROUP_BY_DIMENSIONS,
+  groupDisplayLabel,
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
@@ -271,7 +272,8 @@ import { ImportResultsDialog } from '@/features/findings/components/import-resul
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
-import { findingLocation } from '@/features/findings/lib/finding-location'
+import { maskedFindingLocation } from '@/features/findings/lib/finding-location'
+import { hasSecretMask, maskSensitiveText } from '@/lib/mask-sensitive'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
 import {
   SavedViewsMenu,
@@ -310,10 +312,16 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
   }
   if (!locationName) locationName = api.asset_id || '-'
 
+  // The row's DISPLAY text is masked here, once, where the API row becomes the
+  // list row: a title or a location never shows an e-mail address, a URL
+  // credential or a secret in clear (the cells mask again; it is idempotent).
+  // Ids, the file path, the URL and everything a request or a link is built
+  // from stay as the API sent them. "Show" is on the finding page.
+
   return {
     id: api.id,
-    location: findingLocation(api),
-    title: api.title || api.rule_name || api.message,
+    location: maskedFindingLocation(api),
+    title: maskSensitiveText(api.title || api.rule_name || api.message),
     description: api.description || api.snippet || api.message,
     severity: api.severity as Severity,
     status: api.status as FindingStatus,
@@ -328,7 +336,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
       {
         id: api.asset_id,
         type: findingAssetType(api),
-        name: locationName,
+        name: maskSensitiveText(locationName),
         url: api.location,
       },
     ],
@@ -2900,7 +2908,7 @@ function FindingsContent() {
           className="h-7 px-2"
           onClick={() => viewGroup(group)}
           aria-label={t('findings.group.viewLabel', 'View the findings of {label}', {
-            label: group.label,
+            label: groupDisplayLabel(group),
           })}
         >
           {t('findings.group.view', 'View')}
@@ -3451,7 +3459,13 @@ function FindingsContent() {
           'The finding is permanently deleted with its comments, activity and evidence. This cannot be undone.'
         )}
         typeToConfirm={
-          findingToDelete ? confirmName(findingToDelete.title, findingToDelete.id) : undefined
+          // A masked title cannot be typed back: the short id is asked for instead.
+          findingToDelete
+            ? confirmName(
+                hasSecretMask(findingToDelete.title) ? '' : findingToDelete.title,
+                findingToDelete.id
+              )
+            : undefined
         }
         confirmText={
           isDeleting ? (

@@ -28,6 +28,34 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - With no `sort` in the URL the list is in the server's order (priority first), and the Priority header
   says so (`aria-sort`). The footer counts "findings".
 
+## Sensitive values in rows
+
+A row, a phone card and a group header never show an e-mail address, a URL credential or a secret in clear,
+whatever a scanner, an importer or a person wrote into a title, a location, a rule id or a group label.
+Nothing is discarded: the list shows the value masked, and "Show" exists only on the finding page
+(`findings:reveal`, with step-up for secrets). Rows and cards have no "Show".
+
+- One function does it, `maskSensitiveText` in `src/lib/mask-sensitive.ts`; its comment is the rule of record.
+  It mirrors the server's display masking (`server/pkg/safetext`): an address keeps its domain
+  (`***@example.com`), a URL keeps its host (`https://••••••••@git.example.com/a.git`), a secret keeps at
+  most its first and last 4 characters (`AKIA••••••••MPLE`). Known token formats, private key blocks, a
+  `Bearer` token, the value of `password=` / `secret=` / `token=` / `api_key=`, and any other long run that
+  mixes lower case, upper case and digits are secrets. CVE, CWE and GHSA ids, UUIDs, versions and one-case
+  hashes stay readable.
+- It runs where the API row becomes the list row (`transformApiToUiFinding`: the title, the location and
+  the asset name) and again in the cells that draw list text, so every list of findings has it: the title,
+  its tooltip and accessible name (`FindingTitleCell`), the id after it (`FindingRowId`), the Location cell
+  with its tooltip (`FindingAssetCell`), the phone card, the row menu's title and name, the selection
+  checkbox's name and the group headers of the grouped table (an owner group is a member's name and is not
+  masked). The text is masked before it is cut for display.
+- Ids, hrefs, filters and the search text are never masked: requests and links use the API's own values.
+  Copy ID and Copy link copy the id and the link, never the title. A finding whose title holds a masked
+  secret is deleted by typing its short id, since the mask cannot be typed.
+- This is a display guarantee of the list: the list response still carries the text as stored. The drawer and
+  the finding page show their own masked evidence.
+- `src/lib/__tests__/mask-sensitive.test.ts`, `finding-masked-rows.test.tsx` and
+  `e2e/specs/64-findings-masked-rows.spec.ts` check it.
+
 ## Selection
 
 - A selection belongs to the rows on screen. Changing the page, the page size, the sort, the search, a

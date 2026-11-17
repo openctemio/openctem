@@ -13,6 +13,8 @@
  * (TruncatedText), never as markup or a link.
  */
 
+import { maskSensitiveText } from '@/lib/mask-sensitive'
+
 export interface FindingLocationInput {
   asset_id?: string
   asset?: { name?: string } | null
@@ -85,4 +87,18 @@ export function findingLocation(f: FindingLocationInput): FindingLocation {
         : `${asset}, ${detail}`
       : asset || detail
   return { asset, detail, full }
+}
+
+/**
+ * The location as a list shows it: e-mail addresses, URL credentials and
+ * secrets in the asset name and the place are masked (maskSensitiveText).
+ * For display only; requests and links use the API's own values.
+ */
+export function maskedFindingLocation(f: FindingLocationInput): FindingLocation {
+  const loc = findingLocation(f)
+  return {
+    asset: maskSensitiveText(loc.asset),
+    detail: maskSensitiveText(loc.detail),
+    full: maskSensitiveText(loc.full),
+  }
 }
