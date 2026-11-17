@@ -42,14 +42,7 @@ import {
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
@@ -566,7 +559,6 @@ function EditorCard({
   const span = colSpanFor(widget.w, columns)
   // 44px targets on a phone, compact from 640px.
   const iconBtn = 'size-11 shrink-0 sm:size-8'
-  const item = 'min-h-11 sm:min-h-8'
   return (
     <div
       ref={setNodeRef}
@@ -662,8 +654,98 @@ function EditorCard({
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            title={name}
+            label={t('dashboards.editor.more', 'More actions for {name}', { name })}
+            items={[
+              {
+                id: 'earlier',
+                label: t('dashboards.editor.moveEarlier', 'Move earlier'),
+                icon: ArrowLeft,
+                shortcut: '←',
+                section: 'move',
+                disabledReason:
+                  index === 0 ? t('dashboards.editor.reason.first', 'Already first') : undefined,
+                onSelect: () => onMove(-1),
+              },
+              {
+                id: 'later',
+                label: t('dashboards.editor.moveLater', 'Move later'),
+                icon: ArrowRight,
+                shortcut: '→',
+                section: 'move',
+                disabledReason:
+                  index === total - 1
+                    ? t('dashboards.editor.reason.last', 'Already last')
+                    : undefined,
+                onSelect: () => onMove(1),
+              },
+              {
+                id: 'narrower',
+                label: t('dashboards.editor.narrower', 'Narrower'),
+                icon: Minus,
+                shortcut: '⇧←',
+                section: 'size',
+                disabledReason:
+                  span <= 1
+                    ? t('dashboards.editor.reason.narrowest', 'Already as narrow as it goes')
+                    : undefined,
+                onSelect: () => onWidth(-1),
+              },
+              {
+                id: 'wider',
+                label: t('dashboards.editor.wider', 'Wider'),
+                icon: Plus,
+                shortcut: '⇧→',
+                section: 'size',
+                disabledReason:
+                  span >= columns
+                    ? t('dashboards.editor.reason.widest', 'Already as wide as it goes')
+                    : undefined,
+                onSelect: () => onWidth(1),
+              },
+              {
+                id: 'shorter',
+                label: t('dashboards.editor.shorter', 'Shorter'),
+                icon: ArrowUpToLine,
+                shortcut: '⇧↑',
+                section: 'size',
+                disabledReason:
+                  widget.h <= ops.MIN_ROWS
+                    ? t('dashboards.editor.reason.shortest', 'Already as short as it goes')
+                    : undefined,
+                onSelect: () => onHeight(-1),
+              },
+              {
+                id: 'taller',
+                label: t('dashboards.editor.taller', 'Taller'),
+                icon: ArrowDownToLine,
+                shortcut: '⇧↓',
+                section: 'size',
+                disabledReason:
+                  widget.h >= ops.MAX_ROWS
+                    ? t('dashboards.editor.reason.tallest', 'Already as tall as it goes')
+                    : undefined,
+                onSelect: () => onHeight(1),
+              },
+              {
+                id: 'duplicate',
+                label: t('dashboards.editor.duplicateShort', 'Duplicate'),
+                icon: Copy,
+                shortcut: 'D',
+                section: 'duplicate',
+                onSelect: onDuplicate,
+              },
+              {
+                id: 'remove',
+                label: t('dashboards.editor.removeShort', 'Remove'),
+                icon: Trash2,
+                shortcut: t('dashboards.editor.keyDelete', 'Del'),
+                destructive: true,
+                onSelect: onRemove,
+              },
+            ]}
+            trigger={
               <Button
                 variant="ghost"
                 size="icon"
@@ -673,74 +755,8 @@ function EditorCard({
               >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem className={item} disabled={index === 0} onSelect={() => onMove(-1)}>
-                <ArrowLeft className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.moveEarlier', 'Move earlier')}
-                <DropdownMenuShortcut>←</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={item}
-                disabled={index === total - 1}
-                onSelect={() => onMove(1)}
-              >
-                <ArrowRight className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.moveLater', 'Move later')}
-                <DropdownMenuShortcut>→</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className={item} disabled={span <= 1} onSelect={() => onWidth(-1)}>
-                <Minus className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.narrower', 'Narrower')}
-                <DropdownMenuShortcut>⇧←</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={item}
-                disabled={span >= columns}
-                onSelect={() => onWidth(1)}
-              >
-                <Plus className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.wider', 'Wider')}
-                <DropdownMenuShortcut>⇧→</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={item}
-                disabled={widget.h <= ops.MIN_ROWS}
-                onSelect={() => onHeight(-1)}
-              >
-                <ArrowUpToLine className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.shorter', 'Shorter')}
-                <DropdownMenuShortcut>⇧↑</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={item}
-                disabled={widget.h >= ops.MAX_ROWS}
-                onSelect={() => onHeight(1)}
-              >
-                <ArrowDownToLine className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.taller', 'Taller')}
-                <DropdownMenuShortcut>⇧↓</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className={item} onSelect={onDuplicate}>
-                <Copy className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.duplicateShort', 'Duplicate')}
-                <DropdownMenuShortcut>D</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className={cn(item, 'text-destructive focus:text-destructive')}
-                onSelect={onRemove}
-              >
-                <Trash2 className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.editor.removeShort', 'Remove')}
-                <DropdownMenuShortcut>
-                  {t('dashboards.editor.keyDelete', 'Del')}
-                </DropdownMenuShortcut>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         </div>
         <div className="pointer-events-none flex min-w-0 flex-1 flex-col max-sm:hidden">
           <WidgetView

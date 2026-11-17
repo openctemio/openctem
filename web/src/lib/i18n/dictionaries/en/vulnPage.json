@@ -1,4 +1,5 @@
 {
+  "vulnPage.actions.busy": "Working...",
   "vulnPage.actions.exception.description": "One decision for the open findings of {cves} that you can see under the current filters. Findings found later are not covered.",
   "vulnPage.actions.exception.open": "Accept risk or mark false positive",
   "vulnPage.actions.exception.pending": "These findings already wait for an exception decision. Decide or cancel it first.",

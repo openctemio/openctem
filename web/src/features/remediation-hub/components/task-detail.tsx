@@ -44,12 +44,7 @@ import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageStack } from '@/features/shared/components/page-stack'
@@ -478,30 +473,37 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                 {t('remediationHub.detail.markFixed')}
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              title={task.title}
+              label={t('remediationHub.detail.more')}
+              items={[
+                task.state === 'on_hold'
+                  ? {
+                      id: 'resume',
+                      label: t('remediationHub.detail.resume'),
+                      icon: PlayCircle,
+                      onSelect: () => void setHold(false),
+                    }
+                  : {
+                      id: 'hold',
+                      label: t('remediationHub.detail.hold'),
+                      icon: PauseCircle,
+                      onSelect: () => void setHold(true),
+                    },
+                {
+                  id: 'cancel',
+                  label: t('remediationHub.detail.cancel'),
+                  icon: XCircle,
+                  destructive: true,
+                  onSelect: () => setCancelOpen(true),
+                },
+              ]}
+              trigger={
                 <Button variant="outline" size="icon" aria-label={t('remediationHub.detail.more')}>
                   <MoreHorizontal className="size-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {task.state === 'on_hold' ? (
-                  <DropdownMenuItem onSelect={() => void setHold(false)}>
-                    <PlayCircle className="size-4" aria-hidden />
-                    {t('remediationHub.detail.resume')}
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onSelect={() => void setHold(true)}>
-                    <PauseCircle className="size-4" aria-hidden />
-                    {t('remediationHub.detail.hold')}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={() => setCancelOpen(true)} className="text-destructive">
-                  <XCircle className="size-4" aria-hidden />
-                  {t('remediationHub.detail.cancel')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           </div>
         )}
       </div>

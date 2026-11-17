@@ -250,7 +250,10 @@ describe('DashboardHome', () => {
     api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     const { unmount } = renderHome()
-    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    // Duplicate is the viewer's only action: a menu never holds one item, so
+    // it is the button itself and no Edit details is offered.
+    expect(screen.queryByRole('button', { name: 'More dashboard actions' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Duplicate to mine' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Edit details' })).toBeNull()
     unmount()
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
@@ -348,19 +351,39 @@ describe('DashboardHome', () => {
   it('the actions menu carries Customize and the schedule for the phone toolbar', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)
+    const desktop = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
+    try {
+      renderHome()
+      // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
+      const toolbar = screen.getByTestId('dashboard-toolbar')
+      expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
+      expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
+      await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
+      // A submenu makes it a bottom sheet titled with the dashboard.
+      const sheet = await screen.findByRole('dialog', { name: 'Mine' })
+      expect(within(sheet).getByRole('button', { name: 'Customize' })).toBeInTheDocument()
+      await userEvent.click(within(sheet).getByRole('button', { name: /Refresh schedule/ }))
+      expect(
+        within(sheet).getByRole('button', { name: 'Organization default (current)' })
+      ).toBeInTheDocument()
+      await userEvent.click(within(sheet).getByRole('button', { name: 'Every 6 hours' }))
+      const { setDashboardSchedule } = await import('../api/use-dashboards-api')
+      await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: desktop })
+    }
+  })
+
+  it('the actions menu leaves Customize and the schedule to the toolbar from 640px', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
     renderHome()
-    // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
-    const toolbar = screen.getByTestId('dashboard-toolbar')
-    expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
-    expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
-    await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
-    const menu = screen.getByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: 'Customize' })).toBeInTheDocument()
-    const radios = within(menu).getAllByRole('menuitemradio')
-    expect(radios.map((r) => r.textContent)).toContain('Organization default')
-    await userEvent.click(within(menu).getByRole('menuitemradio', { name: 'Every 6 hours' }))
-    const { setDashboardSchedule } = await import('../api/use-dashboards-api')
-    await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).queryByRole('menuitem', { name: 'Customize' })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: /Refresh schedule/ })).toBeNull()
+    expect(within(menu).getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
   })
 
   it('the meta line names the scope, the last and the next refresh on one line', () => {

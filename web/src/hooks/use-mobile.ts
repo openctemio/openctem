@@ -69,3 +69,25 @@ export function useIsWide() {
     () => false
   )
 }
+
+const SM_BREAKPOINT = 640
+
+function subscribeBelowSm(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const mql = window.matchMedia(`(max-width: ${SM_BREAKPOINT - 1}px)`)
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+/**
+ * Whether the viewport is under `sm` (640 px), for a menu whose items move
+ * into the toolbar from there up (the page shows them as buttons instead).
+ * The server says `false`.
+ */
+export function useIsBelowSm() {
+  return React.useSyncExternalStore(
+    subscribeBelowSm,
+    () => window.innerWidth < SM_BREAKPOINT,
+    () => false
+  )
+}

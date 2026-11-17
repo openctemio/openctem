@@ -7,19 +7,15 @@
  *   stale or still being built;
  * - `RefreshButton`: Refresh now (budgeted on the server), icon-only on a
  *   phone with the same accessible name;
- * - `ScheduleSelect` (toolbar, from 640px) and `ScheduleMenuItems` (the
- *   actions menu on a phone) for those who may change the schedule.
+ * - `ScheduleSelect` (toolbar, from 640px) and `scheduleSubmenu` (a submenu of
+ *   the actions menu on a phone) for those who may change the schedule.
  */
 
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Building2, Clock, RefreshCw, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from '@/components/ui/dropdown-menu'
+import type { ActionMenuSubmenu } from '@/components/ui/action-menu'
 import {
   Select,
   SelectContent,
@@ -272,29 +268,36 @@ export function ScheduleSelect({ schedule = '', onSchedule, className }: Schedul
   )
 }
 
-/** The same choice as radio items inside the dashboard's actions menu (phone). */
-export function ScheduleMenuItems({ schedule = '', onSchedule, className }: ScheduleControlProps) {
-  const { t } = useTranslation()
-  const label = useScheduleLabel()
-  const { saving, change } = useScheduleChange(onSchedule)
-  return (
-    <div className={className}>
-      <DropdownMenuLabel className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-        <Clock className="h-3.5 w-3.5" aria-hidden />
-        {t('dashboards.schedule.label', 'Refresh schedule')}
-      </DropdownMenuLabel>
-      <DropdownMenuRadioGroup value={toValue(schedule)} onValueChange={change}>
-        {SCHEDULE_OPTIONS.map((s) => (
-          <DropdownMenuRadioItem
-            key={toValue(s)}
-            value={toValue(s)}
-            disabled={saving}
-            className="min-h-11 sm:min-h-8"
-          >
-            {label(s)}
-          </DropdownMenuRadioItem>
-        ))}
-      </DropdownMenuRadioGroup>
-    </div>
-  )
+/**
+ * The same choice inside the dashboard's actions menu (phone): a submenu with
+ * one item per schedule; the saved one says "(current)" and does nothing.
+ */
+export function scheduleSubmenu(
+  t: ReturnType<typeof useTranslation>['t'],
+  schedule: DashboardRefreshSchedule = '',
+  onSchedule: ScheduleControlProps['onSchedule']
+): ActionMenuSubmenu {
+  const label = (s: DashboardRefreshSchedule) =>
+    s === ''
+      ? t('dashboards.schedule.default', 'Organization default')
+      : t(`dashboards.schedule.${s}`, s)
+  return {
+    kind: 'sub',
+    id: 'schedule',
+    label: t('dashboards.schedule.label', 'Refresh schedule'),
+    icon: Clock,
+    items: SCHEDULE_OPTIONS.map((s) => {
+      const current = toValue(s) === toValue(schedule)
+      return {
+        id: `schedule:${toValue(s)}`,
+        label: current
+          ? t('dashboards.schedule.current', '{label} (current)', { label: label(s) })
+          : label(s),
+        onSelect: () => {
+          if (current) return
+          onSchedule(s).catch((e) => toast.error(getErrorMessage(e)))
+        },
+      }
+    }),
+  }
 }

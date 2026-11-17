@@ -99,8 +99,9 @@ beforeEach(() => {
 describe('copy link', () => {
   async function clickCopy() {
     render(<FindingHeader finding={finding()} status="new" />)
-    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /copy link/i }))
+    // Without ticket or duplicate rights Copy link is the only action: a menu
+    // never holds one item, so it is the button.
+    await userEvent.click(screen.getByRole('button', { name: 'Copy link' }))
   }
 
   it('says so when copying fails, instead of "Link copied"', async () => {

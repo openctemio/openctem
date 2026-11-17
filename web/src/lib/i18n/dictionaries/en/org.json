@@ -625,6 +625,7 @@
   "org.roleDetail.removeFailed": "Failed to remove member: {error}",
   "org.roleDetail.removeFromRole": "Remove from role",
   "org.roleDetail.removedFromRole": "{name} removed from role",
+  "org.roleDetail.removing": "Removing...",
   "org.roleDetail.sawEveryAsset": "Sees every asset",
   "org.roleDetail.searchMembersLabel": "Search members",
   "org.roleDetail.searchMembersPlaceholder": "Search members…",

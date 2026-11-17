@@ -16,7 +16,6 @@
  * the type's actions (lib/type-actions), Edit and Delete.
  */
 
-import Link from '@/components/link'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -33,13 +32,7 @@ import { formatLocalized, formatRelative } from '@/lib/format-date'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
 import { MonitoringStateControl } from './monitoring-state-control'
@@ -615,56 +608,56 @@ export function InventoryTable({
           const canEdit = canWriteAssets && !!onEditAsset
           const canDelete = canDeleteAssets && !!onDeleteAsset
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              title={asset.name}
+              label={t('assets.inv.actionsFor', 'Actions for {name}', { name: asset.name })}
+              items={[
+                {
+                  id: 'open',
+                  label: t('assets.inv.openDetails', 'Open details page'),
+                  icon: ExternalLink,
+                  href: assetDetailHref(asset.id),
+                },
+                ...actions.map((a) => ({
+                  id: a.id,
+                  label: a.label,
+                  icon: a.icon,
+                  onSelect: () => (a.id === 'scan' ? setScanTarget(asset) : void a.run(asset)),
+                })),
+                ...(canEdit
+                  ? [
+                      {
+                        id: 'edit',
+                        label: t('assets.inv.edit', 'Edit'),
+                        icon: Pencil,
+                        onSelect: () => onEditAsset?.(asset),
+                      },
+                    ]
+                  : []),
+                ...(canDelete
+                  ? [
+                      {
+                        id: 'delete',
+                        label: t('assets.inv.delete', 'Delete'),
+                        icon: Trash2,
+                        destructive: true,
+                        onSelect: () => onDeleteAsset?.(asset),
+                      },
+                    ]
+                  : []),
+              ]}
+              trigger={
                 <Button
                   variant="ghost"
                   size="icon"
-
                   aria-label={t('assets.inv.actionsFor', 'Actions for {name}', {
                     name: asset.name,
                   })}
-                  onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem asChild>
-                  <Link href={assetDetailHref(asset.id)}>
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    {t('assets.inv.openDetails', 'Open details page')}
-                  </Link>
-                </DropdownMenuItem>
-                {actions.map((a) => (
-                  <DropdownMenuItem
-                    key={a.id}
-                    onClick={() => (a.id === 'scan' ? setScanTarget(asset) : void a.run(asset))}
-                  >
-                    <a.icon className="me-2 h-4 w-4" />
-                    {a.label}
-                  </DropdownMenuItem>
-                ))}
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => onEditAsset?.(asset)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    {t('assets.inv.edit', 'Edit')}
-                  </DropdownMenuItem>
-                )}
-                {canDelete && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => onDeleteAsset?.(asset)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('assets.inv.delete', 'Delete')}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           )
         },
       },
