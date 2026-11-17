@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils'
  */
 export function QueueDecisionActions({
   name,
+  itemId,
   canDecide,
   own = false,
   ownLabel,
@@ -43,6 +44,11 @@ export function QueueDecisionActions({
 }: {
   /** The item's name, for the accessible names of its controls. */
   name: string
+  /**
+   * The item's id, so a dialog opened from these controls finds them again
+   * when it closes (the list may have drawn the row anew meanwhile).
+   */
+  itemId?: string
   canDecide: boolean
   own?: boolean
   ownLabel?: string
@@ -68,6 +74,7 @@ export function QueueDecisionActions({
   return (
     <div
       data-slot="queue-decision-actions"
+      data-queue-item={itemId}
       className={cn(
         'flex items-center gap-2',
         layout === 'row' ? 'justify-end' : 'justify-start',
