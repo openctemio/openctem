@@ -12,7 +12,12 @@
 //   - a view runs as the person using it: the caller's tenant, data scope and
 //     visibility rules apply, so sharing a view shares a query, not rows;
 //   - every read and write is tenant-bound; a view of another tenant, or one
-//     the caller may not see, is not found.
+//     the caller may not see, is not found;
+//   - the pages that have views are the registry in pkg/domain/savedview
+//     (pages.go): a key that is not there is refused, and listing, saving or
+//     opening a view needs the read permission of the page's list. A page
+//     without a filter registry keeps its list state as page params, stored
+//     as text and never read by the server (docs/architecture/saved-views.md).
 package savedview
 
 import (
@@ -40,11 +45,12 @@ type AuditLogger interface {
 	LogEvent(ctx context.Context, actx audit.AuditContext, event audit.AuditEvent) error
 }
 
-// PageConfig is what a page needs to validate its views.
+// PageConfig is what a page with a filter registry needs to validate its
+// views. A registered page without one keeps opaque page params instead.
 type PageConfig struct {
 	Registry *filterspec.Registry
-	// Permission is the page's read permission; using or saving a view
-	// needs it.
+	// Permission, when set, must be the read permission the page registry
+	// (savedview.LookupPage) names for the page: the registry decides.
 	Permission string
 	// GroupBy are the page's group-by dimensions.
 	GroupBy map[string]bool
@@ -83,6 +89,10 @@ type Input struct {
 	GroupBy      string
 	Columns      []string
 	Density      string
+	// PageParams are page params sent beside the filter (a filter document
+	// has no room for them), validated by the page's Params like the ones
+	// read from a Query, and laid over them.
+	PageParams map[string]string
 	// baseFilter is a stored FilterDocument the Query is laid over (a
 	// duplicated view with page params).
 	baseFilter []byte
@@ -97,10 +107,22 @@ type Service struct {
 	now    func() time.Time
 }
 
-// NewService creates a Service.
+// NewService creates a Service. pages holds the filter registries of the
+// pages whose views carry a filter document; every key must be a registered
+// page (savedview.LookupPage) and may not name another permission than the
+// registry does. It panics otherwise: that is a wiring mistake, not input.
 func NewService(repo savedview.Repository, pages map[string]PageConfig, log *logger.Logger) *Service {
 	if log == nil {
 		log = logger.NewNop()
+	}
+	for key, cfg := range pages {
+		p, ok := savedview.LookupPage(key)
+		if !ok {
+			panic("savedview: page config for an unregistered page key: " + key)
+		}
+		if cfg.Permission != "" && cfg.Permission != p.Permission.String() {
+			panic("savedview: page config of " + key + " names another permission than the page registry")
+		}
 	}
 	return &Service{repo: repo, pages: pages, logger: log.With("component", "savedview"), now: time.Now}
 }
@@ -113,17 +135,31 @@ var (
 	densityRE = regexp.MustCompile(`^[a-z]{1,16}$`)
 )
 
-func (s *Service) page(c Caller, page string) (PageConfig, error) {
-	cfg, ok := s.pages[page]
+// page resolves a page key for the caller: ErrUnknownPage for a key that is
+// not registered, ErrPageForbidden when the caller may not read the page's
+// list. The answer depends only on the key and the caller's permissions,
+// never on whether views exist.
+func (s *Service) page(c Caller, key string) (PageConfig, error) {
+	p, ok := savedview.LookupPage(key)
 	if !ok {
 		return PageConfig{}, savedview.ErrUnknownPage
 	}
-	if cfg.Permission != "" && (c.Has == nil || !c.Has(cfg.Permission)) {
-		// The caller cannot read the page: its views do not exist for them.
-		return PageConfig{}, savedview.ErrNotFound
+	if c.Has == nil || !c.Has(p.Permission.String()) {
+		return PageConfig{}, &PageForbiddenError{Permission: p.Permission.String()}
 	}
-	return cfg, nil
+	return s.pages[key], nil
 }
+
+// PageForbiddenError is savedview.ErrPageForbidden with the permission the
+// page's list needs, for the 403 that names it.
+type PageForbiddenError struct{ Permission string }
+
+func (e *PageForbiddenError) Error() string {
+	return savedview.ErrPageForbidden.Error() + ": " + e.Permission
+}
+
+// Is makes errors.Is(err, savedview.ErrPageForbidden) hold.
+func (e *PageForbiddenError) Is(target error) bool { return target == savedview.ErrPageForbidden }
 
 // List returns the views of a page the caller may see.
 func (s *Service) List(ctx context.Context, c Caller, page string) ([]*savedview.View, error) {
@@ -140,6 +176,8 @@ func (s *Service) Get(ctx context.Context, c Caller, id shared.ID) (*savedview.V
 		return nil, err
 	}
 	if _, err := s.page(c, v.Page); err != nil {
+		// A view of a page the caller cannot read, or of a key that is no
+		// longer registered, does not exist for them.
 		return nil, savedview.ErrNotFound
 	}
 	return v, nil
@@ -157,6 +195,10 @@ func (s *Service) Spec(ctx context.Context, c Caller, id shared.ID, page string)
 		return nil, nil, savedview.ErrNotFound
 	}
 	cfg := s.pages[page]
+	if cfg.Registry == nil {
+		// The page keeps opaque page params: nothing runs on the server.
+		return nil, nil, savedview.ErrNotFound
+	}
 	spec, err := filterspec.ParseDocument(v.Filter, cfg.Registry, filterspec.Options{Unknown: filterspec.UnknownStrict})
 	if err != nil {
 		return nil, nil, fmt.Errorf("the saved view's filter is no longer valid: %w", err)
@@ -181,12 +223,15 @@ func (s *Service) Create(ctx context.Context, c Caller, in Input) (*savedview.Vi
 	if err := s.apply(ctx, c, cfg, v, in); err != nil {
 		return nil, err
 	}
-	n, err := s.repo.CountByOwner(ctx, c.TenantID, c.UserID)
+	n, onPage, err := s.repo.CountByOwner(ctx, c.TenantID, c.UserID, in.Page)
 	if err != nil {
 		return nil, err
 	}
 	if n >= savedview.MaxPerOwner {
 		return nil, fmt.Errorf("%w: at most %d per person", savedview.ErrLimit, savedview.MaxPerOwner)
+	}
+	if onPage >= savedview.MaxPerOwnerPerPage {
+		return nil, fmt.Errorf("%w: at most %d per person on one page", savedview.ErrLimit, savedview.MaxPerOwnerPerPage)
 	}
 	v.CreatedAt = s.now().UTC()
 	v.UpdatedAt = v.CreatedAt
@@ -208,7 +253,10 @@ func (s *Service) Update(ctx context.Context, c Caller, id shared.ID, in Input) 
 		return nil, savedview.ErrNotOwner
 	}
 	in.Page = v.Page
-	cfg := s.pages[v.Page]
+	cfg, err := s.page(c, v.Page)
+	if err != nil {
+		return nil, savedview.ErrNotFound
+	}
 	if err := s.apply(ctx, c, cfg, v, in); err != nil {
 		return nil, err
 	}
@@ -251,7 +299,11 @@ func (s *Service) Duplicate(ctx context.Context, c Caller, id shared.ID, name st
 	}
 	in := Input{Page: v.Page, Name: name, Description: v.Description, Filter: v.Filter,
 		GroupBy: v.GroupBy, Columns: v.Columns, Density: v.Density}
-	if len(v.PageParams) > 0 {
+	switch {
+	case s.pages[v.Page].Registry == nil:
+		// Opaque page params are the whole view.
+		in.Filter, in.PageParams = nil, v.PageParams
+	case len(v.PageParams) > 0:
 		// The filter goes as a document; the page params ride on a query of
 		// their own, validated again.
 		in.Filter, in.Query = nil, paramValues(v.PageParams).Encode()
@@ -313,6 +365,10 @@ func (s *Service) apply(ctx context.Context, c Caller, cfg PageConfig, v *savedv
 // caller may see (view=<id>) saves that view's filter and page params with
 // the query's params on top, as the list would run it.
 func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageConfig, in Input) ([]byte, map[string]string, error) {
+	if cfg.Registry == nil {
+		params, err := stateParams(in)
+		return []byte(`{}`), params, err
+	}
 	opts := filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: append([]string{"view"}, cfg.Extra...)}
 	switch {
 	case len(in.Filter) > 0 && in.Query != "":
@@ -363,6 +419,10 @@ func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageC
 			params = MergeParams(view.PageParams, params)
 		}
 		doc, err := spec.DocumentJSON()
+		if err != nil {
+			return nil, nil, err
+		}
+		params, err = pageParams(cfg, params, in.PageParams)
 		return doc, params, err
 	default:
 		raw := in.Filter
@@ -374,7 +434,83 @@ func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageC
 			return nil, nil, err
 		}
 		doc, err := spec.DocumentJSON()
-		return doc, nil, err
+		if err != nil {
+			return nil, nil, err
+		}
+		params, err := pageParams(cfg, nil, in.PageParams)
+		return doc, params, err
+	}
+}
+
+// MaxPageParams caps the page params a request may send beside the filter.
+const MaxPageParams = 16
+
+// pageParams lays the request's page params (validated by the page) over
+// the ones read from its query. A page without params takes none.
+func pageParams(cfg PageConfig, fromQuery, sent map[string]string) (map[string]string, error) {
+	if len(sent) == 0 {
+		return fromQuery, nil
+	}
+	if cfg.Params == nil || len(sent) > MaxPageParams {
+		return nil, fmt.Errorf("%w: page_params not accepted", savedview.ErrInvalid)
+	}
+	extra, err := cfg.Params(paramValues(sent))
+	if err != nil {
+		return nil, err
+	}
+	return MergeParams(fromQuery, extra), nil
+}
+
+var stateParamKeyRE = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
+
+// stateParams reads the view of a page without a filter registry: its list
+// state as the page's own URL params (filters, sort, search). They are
+// bounded in number and size and kept as text; the server never parses,
+// compiles or runs them, and the page validates them when it opens the view.
+func stateParams(in Input) (map[string]string, error) {
+	if in.Query != "" || (len(in.Filter) > 0 && strings.TrimSpace(string(in.Filter)) != "{}") {
+		return nil, fmt.Errorf("%w: this page keeps its filters in page_params; send no filter or query", savedview.ErrInvalid)
+	}
+	if len(in.PageParams) > savedview.MaxStateParams {
+		return nil, fmt.Errorf("%w: at most %d page_params", savedview.ErrInvalid, savedview.MaxStateParams)
+	}
+	size := 0
+	for k, v := range in.PageParams {
+		if !stateParamKeyRE.MatchString(k) {
+			return nil, fmt.Errorf("%w: a page_params name is 1-64 characters of a-z, 0-9, '_', '.' and '-', starting with a letter", savedview.ErrInvalid)
+		}
+		if len(v) > savedview.MaxStateParamValueLen || !utf8.ValidString(v) || strings.ContainsFunc(v, unicode.IsControl) {
+			return nil, fmt.Errorf("%w: a page_params value is at most %d bytes of text without control characters",
+				savedview.ErrInvalid, savedview.MaxStateParamValueLen)
+		}
+		size += len(k) + len(v)
+	}
+	if size > savedview.MaxStateParamsBytes {
+		return nil, fmt.Errorf("%w: page_params hold at most %d bytes", savedview.ErrInvalid, savedview.MaxStateParamsBytes)
+	}
+	if len(in.PageParams) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(in.PageParams))
+	for k, v := range in.PageParams {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// ModeParam is the search field's mode a list view keeps (Basic or Query).
+const ModeParam = "mode"
+
+// ListModeParams reads the search field's mode, the one page param of the
+// findings and asset lists: "basic" or "query", nothing else.
+func ListModeParams(q url.Values) (map[string]string, error) {
+	switch v := q.Get(ModeParam); v {
+	case "":
+		return nil, nil
+	case "basic", "query":
+		return map[string]string{ModeParam: v}, nil
+	default:
+		return nil, fmt.Errorf("%w: mode must be basic or query", savedview.ErrInvalid)
 	}
 }
 

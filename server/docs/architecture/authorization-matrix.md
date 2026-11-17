@@ -869,7 +869,7 @@ caller); the CVE ids and the filter only narrow that set. Audited.
 | `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
 | `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
 | `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
-| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+| `GET/POST /api/v1/views`, `GET/PUT/DELETE /api/v1/views/{id}` | Route: the read permission of at least one list that has views. Then the read permission of the list the view's page key names, from the page registry ([saved views](saved-views.md)): `vulnerabilities:read` for `page=vulnerabilities`, `scans:read` for `page=scans`, and so on. An unknown key is 400; without the permission a key is 403 and a view by id is 404. `share_with_org` needs `findings:views:share` (owner and administrator by default) |
 
 #### Dashboard (`/api/v1/dashboard`)
 
