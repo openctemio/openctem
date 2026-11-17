@@ -181,6 +181,20 @@ const LISTS = {
     filters: [['status', 'expired']],
     data: /\/api\/v1\/attack-surface/,
   },
+  // Searched on the page; no query language for sensors.
+  '/sensors': {
+    filters: [
+      ['state', 'online'],
+      ['role', 'scanner'],
+      ['version', 'latest'],
+      ['policy', 'enforced'],
+      ['attention', '1'],
+      ['exec', 'daemon'],
+    ],
+    group: false,
+    query: false,
+    data: /\/api\/v1\/sensors/,
+  },
 } as const satisfies Record<string, ListSpec>
 
 type Route = keyof typeof LISTS
@@ -1227,4 +1241,8 @@ test.describe('Attack surface list headers', { tag: ['@attack-surface'] }, () =>
     pagingHoldsStill(route)
     saysItsCountOnce(route)
   }
+})
+test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
+  headerHoldsStill('/sensors')
+  saysItsCountOnce('/sensors')
 })

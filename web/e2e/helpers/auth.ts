@@ -19,24 +19,27 @@ const RATE_LIMITED_TEXT = errorsEn['errors.auth.RATE_LIMIT_EXCEEDED']
 
 /**
  * Clicks "Sign in" on the filled form and waits until the browser reaches a
- * URL `arrived` accepts. When the API refuses with 429 it waits for the
- * refusal toast to go and submits again, until the window has passed, and
- * gives the running test that much more time. Any other error toast (wrong
- * credentials, a server error) fails at once with the toast's text; no
- * navigation and no toast fails after 30 s.
+ * URL `arrived` accepts. When the API refuses with 429 it waits a moment and
+ * submits again, until the window has passed, and
+ * gives the running test that much more time. Any other refusal (wrong
+ * credentials, a server error) fails at once with the card's text; no
+ * navigation and no refusal fails after 30 s.
  */
 export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): Promise<void> {
   const deadline = Date.now() + SIGN_IN_WINDOW_MS + 10_000
-  const errorToast = page.locator('[data-sonner-toast][data-type="error"]').first()
+  // A refusal is drawn in the card above the form (the page's own notice).
+  const refusal = page.getByTestId('login-notice')
   let extended = false
   for (;;) {
     await page.getByRole('button', { name: 'Sign in' }).click()
+    // The attempt takes the previous refusal away before its own answer comes.
+    await refusal.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {})
     const outcome = await Promise.race([
       page
         .waitForURL(arrived, { timeout: 30_000 })
         .then(() => 'arrived' as const)
         .catch(() => 'timeout' as const),
-      errorToast
+      refusal
         .waitFor({ state: 'visible', timeout: 30_000 })
         .then(() => 'refused' as const)
         .catch(() => 'timeout' as const),
@@ -45,7 +48,7 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
     if (outcome === 'timeout') {
       throw new Error(`sign-in did not reach the expected page within 30s; still at ${page.url()}`)
     }
-    const said = ((await errorToast.textContent().catch(() => '')) ?? '').trim()
+    const said = ((await refusal.textContent().catch(() => '')) ?? '').trim()
     if (!said.includes(RATE_LIMITED_TEXT)) {
       throw new Error(`sign-in was refused; still at ${page.url()}; the form said: ${said}`)
     }
@@ -62,8 +65,6 @@ export async function submitSignIn(page: Page, arrived: (url: URL) => boolean): 
         // Not inside a test (a worker fixture has its own timeout).
       }
     }
-    // The toast lasts a few seconds; a fresh one is the next attempt's answer.
-    await errorToast.waitFor({ state: 'hidden', timeout: 30_000 })
     await page.waitForTimeout(5_000)
   }
 }

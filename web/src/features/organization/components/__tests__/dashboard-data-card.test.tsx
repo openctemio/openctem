@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -89,5 +89,35 @@ describe('DashboardDataCard', () => {
     get.mockRejectedValue(new Error('boom'))
     render(<DashboardDataCard />)
     expect(await screen.findByText('Could not load dashboard data status')).toBeTruthy()
+  })
+
+  it('reads its state only when the section comes near the viewport', async () => {
+    let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined
+    const observed: Element[] = []
+    class FakeObserver {
+      constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        fire = cb
+      }
+      observe(el: Element) {
+        observed.push(el)
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal('IntersectionObserver', FakeObserver)
+    try {
+      get.mockResolvedValue(built)
+      render(<DashboardDataCard />)
+      // Below the fold: the section is drawn (a link can land on it) but sends nothing.
+      expect(screen.getByRole('heading', { name: 'Dashboard data' })).toBeTruthy()
+      expect(observed.map((el) => el.id)).toEqual(['dashboard-data'])
+      expect(get).not.toHaveBeenCalled()
+      fire?.([{ isIntersecting: false }])
+      expect(get).not.toHaveBeenCalled()
+      act(() => fire?.([{ isIntersecting: true }]))
+      expect(await screen.findByText('Kept up to date automatically.')).toBeTruthy()
+      expect(get).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

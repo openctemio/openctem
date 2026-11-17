@@ -6,15 +6,17 @@ import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ShieldCheck } from 'lucide-react'
 import {
   DataTable,
   DataTableRowActions,
-  ErrorState,
+  EmptyState,
   PageHeader,
   PageStack,
   RelativeTime,
-  StackedCell,
 } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { toDisplayText } from '@/lib/untrusted-text'
 import {
   confirmBreakGlassTest,
   resetAdminCredentials,
@@ -54,7 +56,7 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
   const { t } = useTranslation()
 
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
       {a.is_break_glass && (
         <Badge variant="destructive">
           {t('admin.securityAdministratorsPage.breakGlass', 'Break-glass')}
@@ -71,7 +73,7 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
         </Badge>
       )}
       {!a.is_break_glass && !a.idp_bound && !a.password_change_required && (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground">
           {t('admin.securityAdministratorsPage.credential', 'Password')}
         </span>
       )}
@@ -83,13 +85,13 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
 function BreakGlassTested({ a }: { a: AdminUserRecord }) {
   const { t } = useTranslation()
 
-  if (!a.is_break_glass) return <span className="text-sm text-muted-foreground">-</span>
+  if (!a.is_break_glass) return <span className="text-muted-foreground">-</span>
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end md:*:shrink-0">
       {a.break_glass_tested_at ? (
-        <RelativeTime date={a.break_glass_tested_at} className="text-sm" />
+        <RelativeTime date={a.break_glass_tested_at} />
       ) : (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground">
           {t('admin.securityAdministratorsPage.never', 'Never')}
         </span>
       )}
@@ -109,6 +111,7 @@ export default function AdministratorsPage() {
   const { data, error, isLoading, mutate } = useAdminUsers(1, isSuper)
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
+  const admins = useMemo(() => data?.data ?? [], [data])
 
   const confirm = async () => {
     if (!pending) return
@@ -194,30 +197,81 @@ export default function AdministratorsPage() {
       {
         accessorKey: 'name',
         header: t('admin.securityAdministratorsPage.administrator', 'Administrator'),
-        cell: ({ row }) => (
-          <StackedCell primary={row.original.name} secondary={row.original.email} />
-        ),
+        // The administrator is the row's name (name, then the address): it
+        // stays in view while the table scrolls sideways. There is no
+        // administrator page, so it is not a link.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.securityAdministratorsPage.administrator', 'Administrator'),
+        },
+        // The table search matches the name and the address.
+        filterFn: (row, _id, value: string) =>
+          `${row.original.name} ${row.original.email}`
+            .toLowerCase()
+            .includes(String(value).toLowerCase()),
+        cell: ({ row }) => {
+          const a = row.original
+          const name = toDisplayText(a.name || a.email)
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate font-medium" title={name}>
+                {name}
+              </span>
+              {a.name && a.name !== a.email && (
+                <span className="truncate text-muted-foreground" title={toDisplayText(a.email)}>
+                  {toDisplayText(a.email)}
+                </span>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'role',
         header: t('admin.securityAdministratorsPage.role', 'Role'),
-        cell: ({ row }) => <span className="text-sm">{roleLabel(t, row.original.role)}</span>,
+        meta: {
+          kind: 'text',
+          width: 152,
+          label: t('admin.securityAdministratorsPage.role', 'Role'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate">{roleLabel(t, row.original.role)}</span>
+        ),
       },
       {
         id: 'sign_in',
         header: t('admin.securityAdministratorsPage.signIn', 'Sign-in'),
         enableSorting: false,
+        meta: {
+          kind: 'tags',
+          width: 200,
+          hideBelow: 900,
+          label: t('admin.securityAdministratorsPage.signIn', 'Sign-in'),
+        },
         cell: ({ row }) => <SignInBadges a={row.original} />,
       },
       {
         id: 'break_glass_tested',
         header: t('admin.securityAdministratorsPage.lastTested', 'Last tested'),
         enableSorting: false,
+        meta: {
+          kind: 'datetime-recent',
+          width: 176,
+          hideBelow: 1100,
+          label: t('admin.securityAdministratorsPage.lastTested', 'Last tested'),
+        },
         cell: ({ row }) => <BreakGlassTested a={row.original} />,
       },
       {
         accessorKey: 'is_active',
         header: t('admin.securityAdministratorsPage.status', 'Status'),
+        meta: {
+          kind: 'status',
+          width: 128,
+          label: t('admin.securityAdministratorsPage.status', 'Status'),
+        },
         cell: ({ row }) =>
           row.original.is_active ? (
             <Badge variant="secondary">
@@ -232,23 +286,35 @@ export default function AdministratorsPage() {
       {
         accessorKey: 'last_used_at',
         header: t('admin.securityAdministratorsPage.lastActive', 'Last active'),
+        meta: {
+          kind: 'datetime-recent',
+          width: 152,
+          label: t('admin.securityAdministratorsPage.lastActive', 'Last active'),
+        },
         cell: ({ row }) =>
           row.original.last_used_at ? (
-            <RelativeTime date={row.original.last_used_at} className="text-sm" />
+            <RelativeTime date={row.original.last_used_at} />
           ) : (
-            <span className="text-sm text-muted-foreground">
+            <span className="text-muted-foreground">
               {t('admin.securityAdministratorsPage.never', 'Never')}
             </span>
           ),
       },
       {
         id: 'actions',
+        header: '',
         enableSorting: false,
+        meta: { kind: 'actions' },
         cell: ({ row }) => {
           const a = row.original
           if (a.id === me.id) return null // not on your own account
           return (
             <DataTableRowActions
+              label={t(
+                'admin.securityAdministratorsPage.rowActions',
+                'Actions for the administrator {email}',
+                { email: toDisplayText(a.email) }
+              )}
               actions={[
                 ...ADMIN_ROLE_OPTIONS.filter((o) => o.value !== a.role).map((o) => ({
                   label: t('admin.securityAdministratorsPage.makeRole', 'Make {role}', {
@@ -433,27 +499,52 @@ export default function AdministratorsPage() {
         >
           <CreateAdminDialog onCreated={() => void mutate()} />
         </PageHeader>
-        {error ? (
-          <ErrorState
-            title={t('admin.securityAdministratorsPage.administrators2', 'administrators')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={data?.data ?? []}
-            getRowId={(a) => a.id}
-            isLoading={isLoading}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            searchPlaceholder={t(
-              'admin.securityAdministratorsPage.searchPlaceholder',
-              'Search administrators…'
-            )}
-            mobileCards
-          />
-        )}
+        <ListTitleRow
+          title={t('admin.securityAdministratorsPage.viewAll', 'All administrators')}
+          count={
+            <ListCount
+              total={admins.length}
+              loading={!data && !error}
+              label={t(
+                'admin.securityAdministratorsPage.total',
+                '{count, plural, one {# administrator} other {# administrators}}',
+                { count: admins.length }
+              )}
+            />
+          }
+        />
+        <DataTable
+          columns={columns}
+          data={admins}
+          caption={t('admin.securityAdministratorsPage.administrators', 'Administrators')}
+          getRowId={(a) => a.id}
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('admin.securityAdministratorsPage.administrators2', 'administrators')}
+          isLoading={isLoading && !data}
+          searchKey="name"
+          searchPlaceholder={t(
+            'admin.securityAdministratorsPage.searchPlaceholder',
+            'Search administrators…'
+          )}
+          showSelectionCount={false}
+          mobileCards
+          paginationNoun={t('admin.securityAdministratorsPage.noun', 'administrators')}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={ShieldCheck}
+                title={t('admin.securityAdministratorsPage.empty', 'No administrators yet')}
+              />
+            ),
+            noMatch: {
+              title: t(
+                'admin.securityAdministratorsPage.noMatch',
+                'No administrator matches this search'
+              ),
+            },
+          }}
+        />
         <ConfirmDialog
           open={pending !== null}
           onOpenChange={(open) => !open && setPending(null)}

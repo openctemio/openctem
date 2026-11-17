@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { touchTargetHeight } from '../helpers/touch'
 
@@ -25,6 +26,9 @@ for (const scheme of ['light', 'dark'] as const) {
       const toolbar = page.getByTestId('dashboard-toolbar')
       await expect(page.getByTestId('dashboard-meta')).toBeVisible({ timeout: 45_000 })
 
+      // The More trigger is a placeholder until the menu's code has loaded;
+      // measure the real one, not a node about to be replaced.
+      await expect(toolbar.locator('[data-action-menu-pending]')).toHaveCount(0)
       const switcher = toolbar.getByRole('button', { name: /Switch dashboard/ })
       const refresh = toolbar.getByRole('button', { name: 'Refresh now' })
       const more = toolbar.getByRole('button', { name: 'More dashboard actions' })
@@ -79,20 +83,64 @@ for (const scheme of ['light', 'dark'] as const) {
   )
 }
 
-test('dashboard header at 1440px is one toolbar row', { tag: ['@dashboard'] }, async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/')
-  const toolbar = page.getByTestId('dashboard-toolbar')
-  await expect(page.getByTestId('dashboard-meta')).toBeVisible({ timeout: 45_000 })
-  const controls = toolbar.locator('button:visible, [role="combobox"]:visible')
-  // Same row: every control's vertical centre on one line.
-  const centres = await Promise.all(
-    (await controls.all()).map(async (c) => {
-      const b = await c.boundingBox()
-      return b ? b.y + b.height / 2 : -1
-    })
+/**
+ * Force the figures' state on the landing dashboard: the home request carries
+ * the first snapshot and a building dashboard polls its own data route.
+ */
+async function forceFiguresState(page: Page, state: 'building' | 'stale') {
+  const patch = (d: Record<string, unknown>) =>
+    state === 'building'
+      ? { ...d, facts_built_at: null }
+      : { ...d, stale: true, last_refresh_error: 'refresh timed out' }
+  await page.route('**/api/v1/me/dashboards/home**', async (route) => {
+    const res = await route.fetch()
+    const body = await res.json()
+    if (body.data) body.data = patch(body.data)
+    await route.fulfill({ response: res, json: body })
+  })
+  await page.route(/\/api\/v1\/(me|organization)\/dashboards\/[^/]+\/data/, async (route) => {
+    const res = await route.fetch()
+    await route.fulfill({ response: res, json: patch(await res.json()) })
+  })
+}
+
+for (const state of ['current', 'building', 'stale'] as const) {
+  test(
+    `dashboard header at 1440px is one toolbar row (${state} figures)`,
+    { tag: ['@dashboard'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      if (state !== 'current') await forceFiguresState(page, state)
+      await page.goto('/')
+      const toolbar = page.getByTestId('dashboard-toolbar')
+      await expect(page.getByTestId('dashboard-meta')).toBeVisible({ timeout: 45_000 })
+      await expect(toolbar.locator('[data-action-menu-pending]')).toHaveCount(0)
+      const notice = page.getByTestId('dashboard-data-notice')
+      if (state === 'current') await expect(notice).toHaveCount(0)
+      else await expect(notice).toBeVisible()
+
+      const controls = toolbar.locator('button:visible, [role="combobox"]:visible')
+      const boxes = await Promise.all((await controls.all()).map((c) => c.boundingBox()))
+      expect(boxes.length).toBeGreaterThanOrEqual(3)
+      expect(boxes.every(Boolean), 'every toolbar control is laid out').toBe(true)
+      const centres = (boxes as NonNullable<(typeof boxes)[number]>[]).map(
+        (b) => b.y + b.height / 2
+      )
+      // Same row: every control's vertical centre on one line.
+      for (const y of centres) expect(Math.abs(y - centres[0])).toBeLessThan(2)
+      // The row stays beside the name: a notice never pushes the controls down.
+      const title = await page.getByRole('heading', { level: 1 }).boundingBox()
+      expect(title).not.toBeNull()
+      expect(centres[0]).toBeLessThan(title!.y + title!.height)
+      // The notice is under the header, not inside it.
+      if (state !== 'current') {
+        const header = await page.locator('[data-slot="page-header"]').boundingBox()
+        const n = await notice.boundingBox()
+        expect(n!.y).toBeGreaterThanOrEqual(header!.y + header!.height)
+      }
+      await expect(toolbar.getByRole('button', { name: 'Refresh now' })).toContainText(
+        'Refresh now'
+      )
+    }
   )
-  expect(centres.length).toBeGreaterThanOrEqual(3)
-  for (const y of centres) expect(Math.abs(y - centres[0])).toBeLessThan(2)
-  await expect(toolbar.getByRole('button', { name: 'Refresh now' })).toContainText('Refresh now')
-})
+}

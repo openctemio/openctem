@@ -14,6 +14,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
+        // The one primary call to action of an entry page (sign in, continue):
+        // the teal fill. Entry pages only: app pages keep `default` (ink).
+        signal: 'bg-signal text-signal-ink shadow-xs hover:bg-signal-hover',
         destructive:
           'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
