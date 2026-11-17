@@ -21,5 +21,5 @@
   `threat_alert_assets.host_key`. At start the API fills the keys of existing alerts and recomputes their
   stored counters in short batches (100 alerts per transaction, 30 s statement limit, one replica at a
   time). Nothing is sent again; until an alert is filled its rows count as before. No operator step.
-- Docs: server/docs/architecture/emerging-threat-alerts.md ("Counting hosts") and
-  https://docs.openctem.io/features/emerging-threats/
+- Docs: server/docs/architecture/emerging-threat-alerts.md ("Counting hosts"); user guide
+  user-guide/emerging-threats.md, "How an alert counts" (openctemio/docs#309)
