@@ -1,12 +1,13 @@
 'use client'
 
 /**
- * The Name cell of the inventory (research/242 D9): one line, cut in the
- * middle so both ends of a long name stay readable (`api-…example.org:443`,
- * `sha256:9f2c…b2d6e9f`), with a copy button that appears on hover or focus
- * and copies the full name. A certificate shows its subject name, with the
- * fingerprint-style asset name in mono below it, and its SANs, issuer and
- * expiry in the tooltip, so a certificate is found by the site it serves.
+ * The Name cell of the inventory: one line, cut in the middle so both ends of
+ * a long name stay readable (`api-…example.org:443`, `sha256:9f2c…b2d6e9f`),
+ * with a copy button that appears on hover or focus and copies the full name.
+ * What identifies the row further follows the name on the same line, muted:
+ * the type in a list of every type, or a certificate's fingerprint-style
+ * asset name in mono after its subject name (its SANs, issuer and expiry are
+ * in the tooltip), so a certificate is found by the site it serves.
  *
  * Every value here is discovered data: React text only, through
  * `toDisplayText`, never markup.
@@ -40,9 +41,9 @@ export function AssetNameCell({
   asset: Asset
   href: string
   /**
-   * A muted second line under the name: the type, in a list of every type
-   * (research/266), so the Type column can go and the name gets its width.
-   * A certificate's mono asset-name line takes precedence.
+   * Muted text after the name, on its line: the type, in a list of every
+   * type, so the Type column can go and the name gets its width. A
+   * certificate's mono asset name takes precedence.
    */
   subtitle?: string
   /** Plain click opens the drawer; the link still works for new tabs. */
@@ -71,33 +72,34 @@ export function AssetNameCell({
   const days = isCert ? certDaysLeft(asset) : null
 
   return (
-    <div
-      className="group/name flex min-w-[min(18rem,60vw)] items-center gap-2"
-      data-testid="asset-name-cell"
-    >
+    // The column sets the name's floor (the table's `minWidth`), not the cell.
+    <div className="group/name flex min-w-0 items-center gap-2" data-testid="asset-name-cell">
       <AssetTypeIcon type={asset.type} className="h-4 w-4 shrink-0 text-muted-foreground" />
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="grid min-w-0">
+          <div className="flex min-w-0 items-baseline gap-2">
             <Link
               href={safeHref(href) ?? '/assets'}
               onClick={onOpen}
               dir="auto"
               aria-label={name}
-              className="truncate font-medium [unicode-bidi:isolate] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-w-0 truncate font-medium [unicode-bidi:isolate] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {middleEllipsis(title, NAME_MAX)}
             </Link>
             {subLine && (
               <span
                 dir="auto"
-                className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
+                className="max-w-[45%] shrink-0 truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
               >
                 {middleEllipsis(subLine, NAME_MAX)}
               </span>
             )}
             {typeLine && (
-              <span data-slot="asset-type-line" className="truncate text-xs text-muted-foreground">
+              <span
+                data-slot="asset-type-line"
+                className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
+              >
                 {typeLine}
               </span>
             )}

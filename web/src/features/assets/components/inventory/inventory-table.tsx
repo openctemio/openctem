@@ -16,34 +16,20 @@
  * the type's actions (lib/type-actions), Edit and Delete.
  */
 
-import Link from '@/components/link'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import {
-  ChevronRight,
-  ExternalLink,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  User,
-  UserX,
-  Users,
-} from 'lucide-react'
+import { Boxes, SearchX, User, UserX, Users } from 'lucide-react'
 import { formatLocalized, formatRelative } from '@/lib/format-date'
 import { toast } from 'sonner'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
 import { MonitoringStateControl } from './monitoring-state-control'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { MetaLine } from '@/features/shared/components/text-layout'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
@@ -52,11 +38,16 @@ import { AttributeCell } from './attribute-cell'
 import {
   DataTable,
   DataTableColumnHeader,
+  EmptyState,
   RiskScoreBadge,
   riskScoreState,
+  type DataTableBulk,
+  type DataTableEmptyStates,
   type DataTableSearch,
+  type DataTableSelectMode,
   type FilterPanelToggleProps,
 } from '@/features/shared'
+import { AssetRowMenu } from './asset-row-menu'
 import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
@@ -83,28 +74,66 @@ import {
   surfaceCellsCovered,
 } from '../service-cells'
 
-const PAGE_SIZES = [10, 20, 30, 50, 100]
+/**
+ * Column widths in px (each holds its cell padding). A width fits the column's
+ * header word with its sort arrow and its longest standard value, in English
+ * and Vietnamese, so no chip is cut and no header folds.
+ */
+const WIDTH = {
+  select: 40,
+  // The name's floor: the least it gets before a column drops.
+  name: 200,
+  // The badge's longest state whole: "Not yet scored", "Chưa được chấm điểm".
+  risk: 148,
+  type: 140,
+  // "Guardrail hold", "Giữ bởi rào chắn".
+  scope: 136,
+  // The state chip with its menu arrow: "Không hoạt động".
+  monitoring: 152,
+  service: 268,
+  // The header sets these three: "Mức độ quan trọng", "Mức phơi nhiễm",
+  // "Phát hiện đang mở", each with its sort arrow.
+  criticality: 140,
+  exposure: 124,
+  findings: 150,
+  // "No owner", "Chưa có chủ sở hữu" with its icon.
+  owner: 160,
+  last_seen: 160,
+  actions: 48,
+} as const
+
+/** What always shows: the checkbox, name, risk, scope, service facts and the row menu. */
+const BASE_ROOM =
+  WIDTH.select + WIDTH.name + WIDTH.risk + WIDTH.scope + WIDTH.service + WIDTH.actions
 
 /**
- * Column priority (research/266, research/271): the table frame width each
- * lower-priority column needs before it shows, so a narrow screen drops
- * columns instead of scrolling the table sideways. Name, risk, scope and
- * service facts always show (with the checkbox and the row menu they take
- * about 860px); then open findings, monitoring, criticality, exposure, owner
- * and last seen join in that order (research/242 D9). Each value is the running sum of the columns'
- * measured widths in the every-type list, plus a few pixels of slack. A
+ * Column priority: the table frame width each lower-priority column needs
+ * before it shows, so a narrow screen drops columns instead of scrolling the
+ * table sideways. Name, risk, scope and service facts always show; then open
+ * findings, monitoring, criticality, exposure, owner and last seen join in
+ * that order. Each value is the running sum of the widths shown at it. A
  * column turned on or off under Columns keeps that choice.
  */
 const COLUMN_ROOM = {
-  findings: 1020,
-  // The monitoring cell is a chip with its menu arrow (about 30px wider than
-  // the plain chip), so the columns up to owner join 30px later. Last seen keeps
-  // its width: the wide list has room for it.
-  monitoring: 1140,
-  criticality: 1260,
-  exposure: 1375,
-  owner: 1475,
-  last_seen: 1565,
+  findings: BASE_ROOM + WIDTH.findings,
+  monitoring: BASE_ROOM + WIDTH.findings + WIDTH.monitoring,
+  criticality: BASE_ROOM + WIDTH.findings + WIDTH.monitoring + WIDTH.criticality,
+  exposure: BASE_ROOM + WIDTH.findings + WIDTH.monitoring + WIDTH.criticality + WIDTH.exposure,
+  owner:
+    BASE_ROOM +
+    WIDTH.findings +
+    WIDTH.monitoring +
+    WIDTH.criticality +
+    WIDTH.exposure +
+    WIDTH.owner,
+  last_seen:
+    BASE_ROOM +
+    WIDTH.findings +
+    WIDTH.monitoring +
+    WIDTH.criticality +
+    WIDTH.exposure +
+    WIDTH.owner +
+    WIDTH.last_seen,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -118,6 +147,17 @@ function showsServiceFacts(view: TypeView): boolean {
     )
   )
 }
+
+/**
+ * Criticality on a phone card, in plain words that name themselves (never a
+ * bare "High", which a risk band also is). An asset not rated yet says nothing.
+ */
+const CARD_CRITICALITY = {
+  critical: { key: 'assets.card.criticality.critical', text: 'Business-critical' },
+  high: { key: 'assets.card.criticality.high', text: 'High criticality' },
+  medium: { key: 'assets.card.criticality.medium', text: 'Medium criticality' },
+  low: { key: 'assets.card.criticality.low', text: 'Low criticality' },
+} as const
 
 function daysSinceISO(iso?: string | null): number | undefined {
   if (!iso) return undefined
@@ -139,10 +179,20 @@ interface InventoryTableProps {
   sort?: string
   onPageChange: (page: number, pageSize: number) => void
   onSortChange: (sort: string | undefined) => void
-  onSelectionChange: (assets: Asset[]) => void
+  /**
+   * Several assets at once: the table adds the checkbox column and the bulk
+   * bar. Absent when the viewer holds no bulk permission (no checkbox column).
+   */
+  bulk?: DataTableBulk<Asset>
+  /** Phone select mode, held by the page (its More offers "Select"). */
+  selectMode?: DataTableSelectMode
   resetSelectionKey: number
-  /** Replaces the "nothing here" block (which kind of empty, the next action). */
-  emptyState?: ReactNode
+  /** Rows already on screen are being re-read (the thin bar on the frame's top edge). */
+  isRefreshing?: boolean
+  /** What an empty list shows: one block, or the first-run and no-match pair. */
+  emptyState?: ReactNode | DataTableEmptyStates
+  /** Clears the search and the filters (the no-match action). */
+  onClearFilters?: () => void
   /** Shown in place of the rows when the read failed; the toolbar stays. */
   errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
@@ -182,9 +232,12 @@ export function InventoryTable({
   sort,
   onPageChange,
   onSortChange,
-  onSelectionChange,
+  bulk,
+  selectMode,
   resetSelectionKey,
+  isRefreshing,
   emptyState,
+  onClearFilters,
   errorState,
   search,
   filterToggle,
@@ -217,6 +270,7 @@ export function InventoryTable({
     return inList ?? selectedSnapshot
   }, [selectedSnapshot, assets, deleteRequestedId])
   const { t, locale } = useTranslation()
+  const isPhone = useIsMobile()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
   const canDeleteAssets = can(Permission.AssetsDelete)
@@ -257,37 +311,36 @@ export function InventoryTable({
     [onAssetUpdated, t]
   )
 
+  // One menu for the table row and the phone card.
+  const rowMenu = useCallback(
+    (asset: Asset, size?: 'icon') => (
+      <AssetRowMenu
+        asset={asset}
+        typeView={typeView}
+        size={size}
+        onScan={setScanTarget}
+        onEdit={canWriteAssets ? onEditAsset : undefined}
+        onDelete={canDeleteAssets ? onDeleteAsset : undefined}
+      />
+    ),
+    [typeView, canWriteAssets, canDeleteAssets, onEditAsset, onDeleteAsset]
+  )
+
   // The IP addresses list (the tab, or the type picked another way) has its own columns.
   const ipColumns = typeView?.type === 'ip_address' && !typeView.subType
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
     const all: ColumnDef<Asset>[] = [
       {
-        id: 'select',
-        enableSorting: false,
-        enableHiding: false,
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-            aria-label={t('assets.inv.selectAllRows', 'Select all rows on this page')}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(v) => row.toggleSelected(!!v)}
-            aria-label={t('assets.inv.selectRow', 'Select row')}
-            onClick={(e) => e.stopPropagation()}
-          />
-        ),
-      },
-      {
         id: 'name',
         accessorKey: 'name',
+        // The row's identifying column: frozen while the table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: WIDTH.name,
+          label: t('assets.properties.columns.name', 'Name'),
+        },
         enableHiding: false,
         enableSorting: sortable('name'),
         header: ({ column }) => (
@@ -324,6 +377,7 @@ export function InventoryTable({
       },
       ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
         id: `attr:${attribute.key}`,
+        meta: { kind: 'text', minWidth: 120, maxWidth: 240, label: propertyLabel(attribute.key) },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={propertyLabel(attribute.key)} />
@@ -335,6 +389,7 @@ export function InventoryTable({
         ? ([
             {
               id: 'ip_network',
+              meta: { kind: 'text', width: 152, label: t('assets.ip.network', 'Network /24') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader
@@ -346,6 +401,12 @@ export function InventoryTable({
             },
             {
               id: 'ip_names',
+              meta: {
+                kind: 'text',
+                minWidth: 160,
+                maxWidth: 280,
+                label: t('assets.ip.names', 'Names'),
+              },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('assets.ip.names', 'Names')} />
@@ -354,6 +415,12 @@ export function InventoryTable({
             },
             {
               id: 'ip_ports',
+              meta: {
+                kind: 'text',
+                minWidth: 140,
+                maxWidth: 240,
+                label: t('assets.ip.ports', 'Open ports'),
+              },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('assets.ip.ports', 'Open ports')} />
@@ -364,6 +431,9 @@ export function InventoryTable({
         : []),
       {
         id: 'risk',
+        // The risk badge leads the facts as a finding's priority does: the
+        // highest first on the first click.
+        meta: { kind: 'priority', width: WIDTH.risk, label: t('components.col.risk', 'Risk') },
         accessorKey: 'riskScore',
         enableSorting: sortable('risk'),
         header: ({ column }) => (
@@ -379,6 +449,11 @@ export function InventoryTable({
       },
       {
         id: 'type',
+        meta: {
+          kind: 'text',
+          width: WIDTH.type,
+          label: t('assets.properties.columns.type', 'Type'),
+        },
         accessorKey: 'type',
         enableSorting: sortable('type'),
         header: ({ column }) => (
@@ -408,6 +483,7 @@ export function InventoryTable({
         ? [
             {
               id: 'scan_scope',
+              meta: { kind: 'status', width: WIDTH.scope, label: t('scope.check.column', 'Scope') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
@@ -419,7 +495,12 @@ export function InventoryTable({
       {
         // The one derived lifecycle state (monitored, pending decision, ...).
         id: 'monitoring_state',
-        meta: { hideBelow: COLUMN_ROOM.monitoring },
+        meta: {
+          kind: 'status-edit',
+          width: WIDTH.monitoring,
+          hideBelow: COLUMN_ROOM.monitoring,
+          label: t('assets.monitoring.column', 'Monitoring'),
+        },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -443,6 +524,11 @@ export function InventoryTable({
         // types cellsForType lists; other types have none to show here.
         // Only known facts are shown; a row with none shows the muted dash.
         id: 'service',
+        meta: {
+          kind: 'text',
+          width: WIDTH.service,
+          label: t('assets.facts.title', 'Service facts'),
+        },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
@@ -462,7 +548,12 @@ export function InventoryTable({
       },
       {
         id: 'criticality',
-        meta: { hideBelow: COLUMN_ROOM.criticality },
+        meta: {
+          kind: 'severity',
+          width: WIDTH.criticality,
+          hideBelow: COLUMN_ROOM.criticality,
+          label: t('assets.badge.criticality', 'Criticality'),
+        },
         accessorKey: 'criticality',
         enableSorting: sortable('criticality'),
         header: ({ column }) => (
@@ -477,7 +568,12 @@ export function InventoryTable({
       },
       {
         id: 'exposure',
-        meta: { hideBelow: COLUMN_ROOM.exposure },
+        meta: {
+          kind: 'status',
+          width: WIDTH.exposure,
+          hideBelow: COLUMN_ROOM.exposure,
+          label: t('assets.badge.exposure', 'Exposure'),
+        },
         accessorKey: 'exposure',
         enableSorting: sortable('exposure'),
         header: ({ column }) => (
@@ -489,7 +585,12 @@ export function InventoryTable({
       },
       {
         id: 'findings',
-        meta: { hideBelow: COLUMN_ROOM.findings },
+        meta: {
+          kind: 'number',
+          width: WIDTH.findings,
+          hideBelow: COLUMN_ROOM.findings,
+          label: t('assets.col.openFindings', 'Open findings'),
+        },
         accessorKey: 'findingCount',
         enableSorting: sortable('findings'),
         header: ({ column }) => (
@@ -504,7 +605,12 @@ export function InventoryTable({
       },
       {
         id: 'owner',
-        meta: { hideBelow: COLUMN_ROOM.owner },
+        meta: {
+          kind: 'owner',
+          width: WIDTH.owner,
+          hideBelow: COLUMN_ROOM.owner,
+          label: t('assets.inv.col.owner', 'Owner'),
+        },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.inv.col.owner', 'Owner')} />
@@ -514,7 +620,7 @@ export function InventoryTable({
           if (owner) {
             const Icon = owner.type === 'group' ? Users : User
             return (
-              <div className="flex max-w-[160px] items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5">
                 <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate text-sm">{owner.name}</span>
               </div>
@@ -534,7 +640,15 @@ export function InventoryTable({
       },
       {
         id: 'last_seen',
-        meta: { hideBelow: COLUMN_ROOM.last_seen },
+        // The time, then the lifecycle state when it is not active: start
+        // aligned, since the state follows the time.
+        meta: {
+          kind: 'text',
+          width: WIDTH.last_seen,
+          sortFirst: 'desc',
+          hideBelow: COLUMN_ROOM.last_seen,
+          label: t('components.col.lastSeen', 'Last seen'),
+        },
         accessorKey: 'lastSeen',
         enableSorting: sortable('last_seen'),
         header: ({ column }) => (
@@ -567,6 +681,7 @@ export function InventoryTable({
       },
       {
         id: 'tags',
+        meta: { kind: 'tags', label: t('assets.inv.col.labels', 'Labels') },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.inv.col.labels', 'Labels')} />
@@ -589,6 +704,7 @@ export function InventoryTable({
         ? [
             {
               id: 'scope',
+              meta: { kind: 'status', width: WIDTH.scope, label: t('scope.check.column', 'Scope') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
@@ -604,69 +720,11 @@ export function InventoryTable({
         : []),
       {
         id: 'actions',
+        meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
         enableSorting: false,
         enableHiding: false,
         header: () => <span className="sr-only">{t('components.col.actions', 'Actions')}</span>,
-        cell: ({ row }) => {
-          const asset = row.original
-          const actions = rowActionsFor(asset, typeView, t).filter((a) =>
-            a.permissions.every((p) => can(p))
-          )
-          const canEdit = canWriteAssets && !!onEditAsset
-          const canDelete = canDeleteAssets && !!onDeleteAsset
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-
-                  aria-label={t('assets.inv.actionsFor', 'Actions for {name}', {
-                    name: asset.name,
-                  })}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem asChild>
-                  <Link href={assetDetailHref(asset.id)}>
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    {t('assets.inv.openDetails', 'Open details page')}
-                  </Link>
-                </DropdownMenuItem>
-                {actions.map((a) => (
-                  <DropdownMenuItem
-                    key={a.id}
-                    onClick={() => (a.id === 'scan' ? setScanTarget(asset) : void a.run(asset))}
-                  >
-                    <a.icon className="me-2 h-4 w-4" />
-                    {a.label}
-                  </DropdownMenuItem>
-                ))}
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => onEditAsset?.(asset)}>
-                    <Pencil className="me-2 h-4 w-4" />
-                    {t('assets.inv.edit', 'Edit')}
-                  </DropdownMenuItem>
-                )}
-                {canDelete && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => onDeleteAsset?.(asset)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('assets.inv.delete', 'Delete')}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )
-        },
+        cell: ({ row }) => rowMenu(row.original),
       },
     ]
     return all.filter(
@@ -682,21 +740,54 @@ export function InventoryTable({
     classAndLens,
     registry,
     canWriteAssets,
-    canDeleteAssets,
-    can,
+    rowMenu,
     saveRowLabels,
     typeView,
     scopeAvailable,
     scopeResultFor,
     scopeChecking,
-    onEditAsset,
-    onDeleteAsset,
     t,
     locale,
     filterTags,
     onToggleTagFilter,
     onAssetUpdated,
   ])
+
+  // The two kinds of empty list: nothing yet (the organization, or this type,
+  // has no asset: how to get some), and no match (the filters left no row:
+  // clear them).
+  const emptyStates: DataTableEmptyStates = {
+    nothingYet: (
+      <EmptyState
+        icon={Boxes}
+        title={emptyMessage ?? t('assets.inv.emptyNoneTitle', 'No assets in this organization yet')}
+        description={
+          emptyDescription ??
+          t(
+            'assets.inv.emptyNoneHint',
+            'Add an asset, or set up discovery to find the names, addresses and services your organization exposes.'
+          )
+        }
+      />
+    ),
+    noMatch: (
+      <EmptyState
+        icon={SearchX}
+        title={t('assets.inv.emptyFiltered', 'No assets match these filters')}
+        description={t(
+          'assets.inv.emptyFilteredHint',
+          'Try removing a filter or clearing them all.'
+        )}
+        action={
+          onClearFilters ? (
+            <Button variant="outline" size="sm" onClick={onClearFilters}>
+              {t('common.table.clearFilters', 'Clear filters')}
+            </Button>
+          ) : undefined
+        }
+      />
+    ),
+  }
 
   return (
     <>
@@ -719,7 +810,7 @@ export function InventoryTable({
         showSearch={false}
         search={search}
         filterToggle={filterToggle}
-        emptyState={emptyState}
+        emptyState={emptyState ?? emptyStates}
         errorState={errorState}
         toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
@@ -731,114 +822,146 @@ export function InventoryTable({
         pagination={{ pageIndex: Math.max(0, page - 1), pageSize }}
         onPaginationChange={(p) => onPageChange(p.pageIndex + 1, p.pageSize)}
         pageSize={pageSize}
-        pageSizeOptions={PAGE_SIZES}
+        paginationNoun={t('assets.inv.paginationNoun', 'assets')}
+        // A phone list that shows every asset has no footer: its count is
+        // already beside the view name.
+        showPagination={!(isPhone && page === 1 && total <= assets.length)}
         sorting={sorting}
         onSortingChange={(next) => onSortChange(sortingToSort(next))}
-        onSelectionChange={onSelectionChange}
+        // No bulk action for this user: no checkbox column either.
+        bulk={bulk}
+        selectMode={selectMode}
         resetSelectionKey={resetSelectionKey}
         showSelectionCount={false}
+        isRefreshing={isRefreshing}
+        refreshingLabel={t('assets.inv.refreshing', 'Refreshing assets')}
+        // A list of one type with no other filter is "nothing yet", not "no match".
+        isFiltered={hasFilters && !emptyMessage}
+        onClearFilters={onClearFilters}
         onRowClick={setSelectedAsset}
-        // Single-line rows (research/242 D9) until the viewer picks a density.
-        defaultDensity="compact"
         // Labels are a working column, not a reading one: on under Columns.
         // The type is the name's second line, so its own column is off too.
         initialColumnVisibility={{ tags: false, type: false }}
-        mobileRow={(a) => {
+        mobileRow={(a, selection) => {
           const typeKey = typeKeyOf(registry, a.type, a.subType)
           const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
           const context = a.groupName || a.description
           const riskState = riskScoreState(a)
-          // A real score sits at the card's right edge under the word "Risk",
-          // where a phone list keeps its key number; a missing score ("Not
-          // yet scored", "Calculating…") names itself in the meta line.
-          const scored = riskState === 'scored' || riskState === 'pending'
-          // The card (research/271): name, then type and context, then ONE
-          // meta line. A phone card has no column headers, so criticality
-          // names itself ("Criticality: High") and the risk number sits under
-          // "Risk"; the band word is the risk's colour and tooltip, never a
-          // second "High". The whole card opens the drawer (a stretched
-          // button); the meta line sits above it so the findings link is not
-          // nested in a button, and lets other taps through.
+          const scored = (riskState === 'scored' || riskState === 'pending') && a.riskScore > 0
+          const criticality = CARD_CRITICALITY[a.criticality as keyof typeof CARD_CRITICALITY]
+          // The card has fixed slots, so every card reads the same way: the
+          // name (two lines at most), one line saying what it is (the type,
+          // then its group or description, as separate items), one line of
+          // plain facts (criticality in words, open findings, and a standing
+          // only when it is not the usual one), and the risk slot at the end,
+          // always there: the score under the word "Risk", or a dash while
+          // there is none. The whole card opens the drawer (a stretched
+          // button); the checkbox, the facts' links and the row menu sit
+          // above it.
           return (
-            <div className="relative px-3 py-3 transition-colors hover:bg-muted/50">
-              <button
-                type="button"
-                onClick={() => setSelectedAsset(a)}
-                className="flex w-full items-start gap-3 text-start after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
-              >
-                <AssetTypeIcon
-                  type={a.type}
-                  className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
-                  <p className="mt-0.5 flex min-w-0 gap-2 text-xs text-muted-foreground">
-                    <span className="shrink-0">{typeLabel}</span>
-                    {context && <span className="min-w-0 truncate">{context}</span>}
-                  </p>
+            <div
+              data-testid="asset-phone-card"
+              data-state={selection.selected ? 'selected' : undefined}
+              className="relative flex items-start gap-1 ps-3 pe-1 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+            >
+              {selection.selectable && (
+                <div className="relative z-10 flex h-10 shrink-0 items-center pt-2">
+                  <Checkbox
+                    checked={selection.selected}
+                    onCheckedChange={(v) => selection.onSelectedChange(!!v)}
+                    aria-label={t('assets.inv.selectAsset', 'Select asset {name}', {
+                      name: toDisplayText(a.name, 80),
+                    })}
+                  />
                 </div>
-                {scored && a.riskScore > 0 && (
-                  <div data-slot="asset-card-risk" className="flex shrink-0 flex-col items-end">
+              )}
+              <div className="min-w-0 flex-1 py-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAsset(a)}
+                  className="flex w-full items-start gap-3 text-start after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                >
+                  <AssetTypeIcon
+                    type={a.type}
+                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
+                    <MetaLine
+                      className="mt-0.5 flex-nowrap"
+                      items={[
+                        <span key="type" className="shrink-0">
+                          {typeLabel}
+                        </span>,
+                        context && (
+                          <span key="context" className="min-w-0 truncate">
+                            {context}
+                          </span>
+                        ),
+                      ]}
+                    />
+                  </div>
+                  <div
+                    data-slot="asset-card-risk"
+                    className="flex w-10 shrink-0 flex-col items-end"
+                  >
                     <span className="text-xs leading-4 text-muted-foreground">
                       {t('components.col.risk', 'Risk')}
                     </span>
-                    <RiskScoreBadge
-                      score={a.riskScore}
-                      state={riskState}
-                      size="md"
-                      className="font-semibold"
+                    {scored ? (
+                      <RiskScoreBadge
+                        score={a.riskScore}
+                        state={riskState}
+                        size="md"
+                        className="font-semibold"
+                      />
+                    ) : (
+                      <span
+                        className="text-sm text-muted-foreground"
+                        title={t('riskScore.notScored', 'Not yet scored')}
+                      >
+                        <span aria-hidden>—</span>
+                        <span className="sr-only">
+                          {t('riskScore.notScored', 'Not yet scored')}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </button>
+                <div
+                  data-slot="asset-card-meta"
+                  className="pointer-events-none relative z-10 mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ps-7 text-xs text-muted-foreground [&_a]:pointer-events-auto [&_button]:pointer-events-auto"
+                >
+                  {criticality && (
+                    <span data-slot="asset-card-criticality">
+                      {t(criticality.key, criticality.text)}
+                    </span>
+                  )}
+                  <OpenFindingsLink assetId={a.id} count={a.findingCount} />
+                  {/* Scope standing only when a scan may not reach it. */}
+                  {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
+                  {/* Most assets are active; say so only when one is not. */}
+                  {a.status !== 'active' && (
+                    <AssetStatusBadge
+                      status={a.status}
+                      daysSinceLastSeen={daysSinceISO(a.lastSeen)}
+                      snoozedUntil={a.lifecyclePausedUntil}
                     />
+                  )}
+                  <AssetLivenessBadge liveness={a.liveness} />
+                </div>
+                {hasSurfaceFacts(a) && (
+                  <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                    <SurfaceFactsLine asset={a} max={2} />
                   </div>
                 )}
-                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-              <div
-                data-slot="asset-card-meta"
-                className="pointer-events-none relative z-10 mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto"
-              >
-                <CriticalityBadge
-                  criticality={a.criticality}
-                  size="sm"
-                  showTooltip={false}
-                  labelled
-                />
-                <OpenFindingsLink assetId={a.id} count={a.findingCount} />
-                {!scored && <RiskScoreBadge score={a.riskScore} state={riskState} size="sm" />}
-                {/* Scope standing only when a scan may not reach it (research/124). */}
-                {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
-                {/* Most assets are active; say so only when one is not. */}
-                {a.status !== 'active' && (
-                  <AssetStatusBadge
-                    status={a.status}
-                    daysSinceLastSeen={daysSinceISO(a.lastSeen)}
-                    snoozedUntil={a.lifecyclePausedUntil}
-                  />
-                )}
-                <AssetLivenessBadge liveness={a.liveness} />
               </div>
-              {hasSurfaceFacts(a) && (
-                <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
-                  <SurfaceFactsLine asset={a} max={2} />
-                </div>
-              )}
+              <div className="relative z-10 flex h-10 shrink-0 items-center pt-2">
+                {rowMenu(a, 'icon')}
+              </div>
             </div>
           )
         }}
-        emptyMessage={
-          emptyMessage ??
-          (hasFilters
-            ? t('assets.inv.emptyFiltered', 'No assets match these filters')
-            : t('assets.inv.emptyNoneTitle', 'No assets in this organization yet'))
-        }
-        emptyDescription={
-          emptyDescription ??
-          (hasFilters
-            ? t('assets.inv.emptyFilteredHint', 'Try removing a filter or clearing them all.')
-            : t(
-                'assets.inv.emptyNoneHint',
-                'Add an asset, or set up discovery to find the names, addresses and services your organization exposes.'
-              ))
-        }
       />
 
       <AssetDetailSheet

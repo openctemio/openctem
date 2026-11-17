@@ -7,6 +7,7 @@ vi.mock('../../../hooks/use-assets', () => ({ updateAsset: vi.fn() }))
 vi.mock('../../../hooks/use-asset-owners', () => ({ addAssetOwner: vi.fn() }))
 vi.mock('../inventory-business-context-actions', () => ({
   InventoryBusinessContextActions: () => null,
+  useBusinessContextAccess: () => ({ canUnit: false, canService: false }),
 }))
 vi.mock('swr', () => ({ default: () => ({ data: undefined, isLoading: false }) }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't1' } }) }))
