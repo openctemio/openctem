@@ -1274,7 +1274,11 @@ export function DataTable<TData, TValue>({
       : undefined
 
   return (
-    <div className="space-y-4">
+    // A flex gap, not space-y: space-y puts its margin under every child but
+    // the last, and the last child here is often one that takes no room (the
+    // live region, the frame of the other width set to display: none), which
+    // left 16px of empty scroll under a list without a pager.
+    <div className="flex flex-col gap-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
       {showToolbar && (

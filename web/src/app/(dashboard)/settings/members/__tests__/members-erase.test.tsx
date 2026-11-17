@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { I18nProvider } from '@/context/i18n-provider'
 import UsersPage from '../page'
+import { enter } from '@/test/user-input'
 
 const erase = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 
@@ -106,7 +107,7 @@ globalThis.ResizeObserver ??= class {
 
 describe('Members page erase personal data', () => {
   it('opens the typed confirmation from the row menu and erases only after the email is typed', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(
       <I18nProvider locale="en">
         <UsersPage />
@@ -122,7 +123,7 @@ describe('Members page erase personal data', () => {
     await user.click(confirm)
     expect(erase).not.toHaveBeenCalled()
 
-    await user.type(screen.getByRole('textbox'), 'lan@acme.example')
+    await enter(user, screen.getByRole('textbox'), 'lan@acme.example')
     expect(confirm).toBeEnabled()
     await user.click(confirm)
     await waitFor(() => expect(erase).toHaveBeenCalledWith('m1'))
