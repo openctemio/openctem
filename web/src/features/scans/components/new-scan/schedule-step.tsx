@@ -80,7 +80,7 @@ export function ScheduleStep({
   // user replaces it with one of the frequencies.
   if (schedule.custom) {
     return (
-      <FormStack className="p-4" data-testid="custom-schedule">
+      <FormStack className="px-4 py-4 sm:px-6" data-testid="custom-schedule">
         <FormField group label={t('scans.schedule.whenToRun')}>
           <div className="space-y-2 rounded-lg border border-primary bg-primary/5 p-4">
             <p className="font-medium">
@@ -111,14 +111,14 @@ export function ScheduleStep({
   }
 
   return (
-    <FormStack className="p-4">
+    <FormStack className="px-4 py-4 sm:px-6">
       <FormField group label={t('scans.schedule.whenToRun')}>
         <RadioGroup
           value={schedule.runImmediately ? 'now' : schedule.saveOnly ? 'save' : 'later'}
           onValueChange={(value) =>
             set({ runImmediately: value === 'now', saveOnly: value === 'save' })
           }
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]"
         >
           <label
             htmlFor="run-now"
@@ -173,7 +173,7 @@ export function ScheduleStep({
                   value={frequency}
                   onValueChange={(value: ScheduleFrequency) => set({ frequency: value })}
                 >
-                  <SelectTrigger id={control.id} className="w-full">
+                  <SelectTrigger {...control} className="w-full">
                     <SelectValue placeholder={t('scans.schedule.frequencyPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -190,7 +190,7 @@ export function ScheduleStep({
             <FormField id="schedule-timezone" label={t('scans.schedule.timezone')}>
               {(control) => (
                 <TimezoneSelect
-                  id={control.id}
+                  {...control}
                   value={timezone}
                   onChange={(zone) => set({ timezone: zone })}
                 />
@@ -202,7 +202,8 @@ export function ScheduleStep({
                 <FormField id="run-at-date" label={t('scans.schedule.date')}>
                   {(control) => (
                     <Input
-                      id={control.id}
+                      {...control}
+                      aria-describedby={problem ? 'schedule-problem' : undefined}
                       type="date"
                       min={todayIn(timezone)}
                       value={schedule.runAtDate ?? ''}
@@ -214,7 +215,8 @@ export function ScheduleStep({
                 <FormField id="run-at-time" label={t('scans.schedule.time')}>
                   {(control) => (
                     <Input
-                      id={control.id}
+                      {...control}
+                      aria-describedby={problem ? 'schedule-problem' : undefined}
                       type="time"
                       value={schedule.runAtTime ?? ''}
                       onChange={(e) => set({ runAtTime: e.target.value })}
@@ -232,7 +234,7 @@ export function ScheduleStep({
                     value={schedule.dayOfWeek?.toString()}
                     onValueChange={(v) => set({ dayOfWeek: parseInt(v, 10) })}
                   >
-                    <SelectTrigger id={control.id} className="w-full">
+                    <SelectTrigger {...control} className="w-full">
                       <SelectValue placeholder={t('scans.schedule.dayPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -258,7 +260,7 @@ export function ScheduleStep({
                     value={(schedule.dayOfMonth ?? 1).toString()}
                     onValueChange={(v) => set({ dayOfMonth: parseInt(v, 10) })}
                   >
-                    <SelectTrigger id={control.id} className="w-full">
+                    <SelectTrigger {...control} className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -287,7 +289,7 @@ export function ScheduleStep({
         )}
 
         {later && problem && (
-          <p role="alert" className="text-sm text-destructive">
+          <p id="schedule-problem" role="alert" className="text-dense font-medium text-destructive">
             {problem}
           </p>
         )}

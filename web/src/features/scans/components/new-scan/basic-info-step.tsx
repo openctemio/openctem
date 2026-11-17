@@ -245,7 +245,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         >
           {(control) => (
             <ScannerSelect
-              id={control.id}
+              {...control}
               value={data.scannerName}
               onChange={(scannerName) => onChange({ scannerName })}
               allowConnectors={TENABLE_CONNECTOR_ENABLED}
@@ -282,7 +282,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 value={data.workflowId || undefined}
                 onValueChange={(value) => onChange({ workflowId: value })}
               >
-                <SelectTrigger id={control.id} aria-label={t('scans.basic.workflow')}>
+                <SelectTrigger {...control} aria-label={t('scans.basic.workflow')}>
                   <SelectValue
                     placeholder={
                       isLoadingWorkflows
@@ -446,11 +446,11 @@ function ChoiceCard({
       />
       <span className="min-w-0 space-y-1">
         <span className="block text-body font-medium">{title}</span>
-        <span className="block text-dense text-muted-foreground line-clamp-2">{description}</span>
+        <span className="line-clamp-2 text-dense text-muted-foreground">{description}</span>
         {label && (
           <span
             id={`${id}-readiness`}
-            className={cn('block text-[11px]', off ? 'text-muted-foreground' : 'text-warning')}
+            className={cn('block text-cap', off ? 'text-muted-foreground' : 'text-warning')}
           >
             {problemReason ?? label}
             {problemFix && fixHref && (
@@ -464,7 +464,7 @@ function ChoiceCard({
           </span>
         )}
         {skipped.length > 0 && (
-          <span className="block text-xs text-muted-foreground" data-testid="skipped-note">
+          <span className="block text-cap text-muted-foreground" data-testid="skipped-note">
             {t('scans.readiness.skippedSome', undefined, {
               count: skipped.length,
               capabilities: skipped.map((x) => x.capability ?? x.name).join(', '),

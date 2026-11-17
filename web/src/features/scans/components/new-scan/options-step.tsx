@@ -68,12 +68,12 @@ export function OptionsStep({
   const chosenProfile = profiles.find((p) => p.id === data.profileId)
 
   return (
-    <FormStack className="p-4">
+    <FormStack className="px-4 py-4 sm:px-6">
       <FormField group label={t('scans.options.whereRuns')} hint={t('scans.options.zoneNote')}>
         <RadioGroup
           value={data.sensorPreference}
           onValueChange={(value: SensorPreference) => onChange({ sensorPreference: value })}
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]"
         >
           {preferences.map((p) => (
             <label
@@ -101,6 +101,7 @@ export function OptionsStep({
         <FormField
           id="scan-profile"
           label={t('scans.options.profile')}
+          required={false}
           hint={
             chosenProfile
               ? `${gateSummary(chosenProfile.quality_gate, t)}${chosenProfile.description ? `, ${chosenProfile.description}` : ''}`
@@ -112,7 +113,7 @@ export function OptionsStep({
               value={data.profileId ?? DEFAULT_PROFILE}
               onValueChange={(v) => onChange({ profileId: v === DEFAULT_PROFILE ? undefined : v })}
             >
-              <SelectTrigger id={control.id} className="w-full">
+              <SelectTrigger {...control} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -168,7 +169,7 @@ export function OptionsStep({
                 value={data.maxConcurrent.toString()}
                 onValueChange={(value) => onChange({ maxConcurrent: parseInt(value, 10) })}
               >
-                <SelectTrigger id={control.id} className="w-full">
+                <SelectTrigger {...control} className="w-full">
                   <SelectValue placeholder={t('scans.options.perJobPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -199,7 +200,7 @@ export function OptionsStep({
             >
               {(control) => (
                 <CommittedNumberInput
-                  id={control.id}
+                  {...control}
                   min={30}
                   max={86400}
                   value={data.timeoutSeconds}
@@ -217,7 +218,7 @@ export function OptionsStep({
             >
               {(control) => (
                 <CommittedNumberInput
-                  id={control.id}
+                  {...control}
                   min={0}
                   max={10}
                   value={data.maxRetries}
@@ -234,7 +235,7 @@ export function OptionsStep({
             >
               {(control) => (
                 <CommittedNumberInput
-                  id={control.id}
+                  {...control}
                   min={10}
                   max={86400}
                   value={data.retryBackoffSeconds}

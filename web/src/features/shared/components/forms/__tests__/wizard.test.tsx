@@ -133,6 +133,8 @@ describe('WizardFrame', () => {
     await user.click(screen.getByRole('button', { name: 'Third' }))
     expect(screen.getByTestId('wizard-note')).toHaveTextContent('Fill the second field')
     expect(screen.getByTestId('wizard-fix-link')).toHaveTextContent('Go to Second')
+    // The note takes the summary line's place: the footer keeps one line.
+    expect(screen.queryByTestId('summary-bar')).not.toBeInTheDocument()
     await user.click(screen.getByTestId('wizard-fix-link'))
     await vi.waitFor(() => expect(screen.getByLabelText('Second field')).toHaveFocus())
   })

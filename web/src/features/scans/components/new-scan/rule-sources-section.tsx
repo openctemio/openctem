@@ -76,7 +76,7 @@ export function RuleSourcesSection({
               onChange({ ruleSources: v === INHERIT ? '' : (v as RuleSources) })
             }
           >
-            <SelectTrigger id={control.id} className="w-full">
+            <SelectTrigger {...control} className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
