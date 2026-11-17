@@ -224,6 +224,9 @@ Every page, top to bottom:
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
+   - `titleAction`: one control on the title's own line, right after the title
+     text and outside the h1, when the title itself is a choice (a chevron that
+     switches between dashboards). Not a place for the page's actions.
 4. **One tab row per page**, right under the header, no margins on it.
    - **Section tabs** when the sub-views are routes: the shared
      `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
@@ -257,6 +260,23 @@ Every page, top to bottom:
 Checked in a browser on every route at 1440px and 390px by
 `e2e/specs/31-page-rhythm.spec.ts` (gaps from bounding boxes, one tab row,
 tab icons, strip rules, chips, empty pagination, name column width).
+
+### Graph pages
+
+Attack paths, Exposure chains and Exploration use `src/components/graph-page`:
+
+- **Order**: the title row (`PageHeader`, with the Graph | List view switch and the page's primary action), one
+  `GraphToolbar` (filters at the start; `GraphLegend`, `GraphNote` and other canvas actions at the end), then the
+  graph in a `GraphFrame` that takes the rest of the window (never under 24rem, 30rem from 768 px). Cards that
+  belong to the page (choke points, the score of a path) go under the graph, never beside it.
+- **Detail**: the detail of a node opens over the page in `GraphNodeSheet` (click, or Enter on the focused
+  node). Its `action` (the node's main way on, e.g. "View findings") is the first thing in it and has focus,
+  so Enter twice follows it. Esc closes it and focus returns to the node. No panel stands beside a graph.
+- **Keyboard and screen readers**: the canvas is one tab stop, the arrow keys follow the edges, and every page
+  keeps the same content as a list or table (the List view, the default below 768 px).
+- **Legend**: every mark drawn on the graph is in the legend; a legend never lists a mark the graph does not draw.
+
+The scan workflow editor keeps its own editing layout (palette and step settings beside the canvas).
 
 ## 2. Headline numbers
 

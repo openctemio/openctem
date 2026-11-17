@@ -163,11 +163,40 @@ describe('/attack-paths view', () => {
     expect(document.activeElement).toBe(nodeBtn(/Hop[\s\S]*ci-runner-3/))
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
     expect(document.activeElement).toBe(nodeBtn(/Crown jewel[\s\S]*billing-db/))
-    // Enter opens the findings of the step; Escape clears the highlight.
-    fireEvent.keyDown(document.activeElement!, { key: 'Enter' })
-    expect(push).toHaveBeenCalledWith('/findings?asset_id=asset-n0&informational=true')
+    // Escape clears the highlight.
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
     expect(nodeBtn(/Hop[\s\S]*jump-host-02/)).toHaveAttribute('data-state', 'normal')
+  })
+
+  it('opens the detail of a step over the page with Enter or a click, findings one link away', () => {
+    search = new URLSearchParams('paths=all')
+    render(<AttackPathsPage />)
+    const jewel = nodeBtn(/Crown jewel[\s\S]*billing-db/)
+    act(() => jewel.focus())
+    fireEvent.keyDown(jewel, { key: 'Enter' })
+    const sheet = screen.getByTestId('attack-path-node-sheet')
+    expect(within(sheet).getByRole('heading', { name: 'billing-db' })).toBeInTheDocument()
+    const findings = within(sheet).getByTestId('node-sheet-findings')
+    expect(findings).toHaveAttribute('href', '/findings?asset_id=asset-n0&informational=true')
+    // The first action in the sheet, focused: Enter, then Enter again reaches the findings.
+    expect(within(sheet).getAllByRole('link')[0]).toBe(findings)
+    expect(document.activeElement).toBe(findings)
+    expect(within(sheet).getByText('2 of 2 shown')).toBeInTheDocument()
+    // Nothing navigates on its own, and no panel stands beside the graph.
+    expect(push).not.toHaveBeenCalled()
+    expect(document.querySelector('aside')).toBeNull()
+    fireEvent.keyDown(sheet, { key: 'Escape' })
+    expect(screen.queryByTestId('attack-path-node-sheet')).not.toBeInTheDocument()
+  })
+
+  it('keeps the legend and the scoring note in the toolbar, not over the graph', () => {
+    render(<AttackPathsPage />)
+    const bar = screen.getByRole('toolbar', { name: 'Attack path filters' })
+    expect(within(bar).getByRole('combobox', { name: 'Target asset' })).toBeInTheDocument()
+    fireEvent.click(within(bar).getByRole('button', { name: 'Legend' }))
+    expect(screen.getByTestId('attack-path-legend')).toHaveTextContent('Selected path')
+    fireEvent.click(within(bar).getByRole('button', { name: 'How paths are scored' }))
+    expect(screen.getByText('How a path is scored')).toBeInTheDocument()
   })
 
   it('cycles the selected path with the square brackets and the score card', () => {
