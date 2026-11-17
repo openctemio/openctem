@@ -144,12 +144,7 @@ export default function AttackPathsPage() {
 
   // The detail of a step opens over the page; its findings are one link away.
   const [openKey, setOpenKey] = useState<string | null>(null)
-  const openNode = useCallback(
-    (key: string) => {
-      if (byKey.has(key)) setOpenKey(key)
-    },
-    [byKey]
-  )
+  const openNode: (key: string) => void = setOpenKey
   const openNodeData = openKey ? (byKey.get(openKey) ?? null) : null
   const legendItems = useAttackPathLegendItems()
 
@@ -277,74 +272,75 @@ export default function AttackPathsPage() {
                 label={t('prioritization.attackPath.howLabel', 'How paths are scored')}
                 title={t('prioritization.attackPath.howTitle', 'How a path is scored')}
               >
-
-                    <p>
-                      {t(
-                        'prioritization.attackPath.howStep',
-                        'Each step weighs the open finding most likely to let an attacker onto that asset: its EPSS score, at least 0.9 when it is known exploited, and at least 0.5, 0.3, 0.1 or 0.05 for a critical, high, medium or low finding.'
-                      )}
-                    </p>
-                    <p>
-                      {t(
-                        'prioritization.attackPath.howAssumed',
-                        'A step with no open finding counts as 1: the relationship alone is taken to allow it.'
-                      )}
-                    </p>
-                    <p>
-                      {t(
-                        'prioritization.attackPath.howProduct',
-                        'The path likelihood is the product of its step weights. A choke point is a step whose findings, once fixed, cut the most of the paths shown.'
-                      )}
-                    </p>
+                <p>
+                  {t(
+                    'prioritization.attackPath.howStep',
+                    'Each step weighs the open finding most likely to let an attacker onto that asset: its EPSS score, at least 0.9 when it is known exploited, and at least 0.5, 0.3, 0.1 or 0.05 for a critical, high, medium or low finding.'
+                  )}
+                </p>
+                <p>
+                  {t(
+                    'prioritization.attackPath.howAssumed',
+                    'A step with no open finding counts as 1: the relationship alone is taken to allow it.'
+                  )}
+                </p>
+                <p>
+                  {t(
+                    'prioritization.attackPath.howProduct',
+                    'The path likelihood is the product of its step weights. A choke point is a step whose findings, once fixed, cut the most of the paths shown.'
+                  )}
+                </p>
               </GraphNote>
             </>
           ) : undefined
         }
       >
-      {targets.length > 0 && (
-        <Select value={targetId ?? undefined} onValueChange={(v) => setParam('target', v)}>
-          <SelectTrigger
-            className="w-full sm:w-56"
-            aria-label={t('prioritization.attackPath.targetLabel', 'Target asset')}
-          >
-            <SelectValue placeholder={t('prioritization.attackPath.targetLabel', 'Target asset')} />
-          </SelectTrigger>
-          <SelectContent>
-            {targetId && !targets.some((o) => o.id === targetId) && target && !target.hidden && (
-              <SelectItem value={targetId}>{target.name}</SelectItem>
-            )}
-            {targets.map((o) => (
-              <SelectItem key={o.id} value={o.id}>
-                <span className="flex items-center gap-1.5">
-                  {o.crown && (
-                    <Crown
-                      className="size-3.5"
-                      aria-label={t('prioritization.attackPath.crownJewel', 'Crown jewel')}
-                    />
-                  )}
-                  {o.name}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-      {detail && detail.paths.length > 1 && (
-        <FilterSelect<PathMode>
-          label={t('prioritization.attackPath.pathsLabel', 'Paths')}
-          value={mode}
-          clearable={false}
-          onChange={(v) => setParam('paths', v === 'all' ? 'all' : null)}
-          options={[
-            { value: 'shortest', label: t('prioritization.attackPath.shortest', 'Shortest') },
-            {
-              value: 'all',
-              label: t('prioritization.attackPath.all', 'All'),
-              count: detail.paths.length,
-            },
-          ]}
-        />
-      )}
+        {targets.length > 0 && (
+          <Select value={targetId ?? undefined} onValueChange={(v) => setParam('target', v)}>
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label={t('prioritization.attackPath.targetLabel', 'Target asset')}
+            >
+              <SelectValue
+                placeholder={t('prioritization.attackPath.targetLabel', 'Target asset')}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {targetId && !targets.some((o) => o.id === targetId) && target && !target.hidden && (
+                <SelectItem value={targetId}>{target.name}</SelectItem>
+              )}
+              {targets.map((o) => (
+                <SelectItem key={o.id} value={o.id}>
+                  <span className="flex items-center gap-1.5">
+                    {o.crown && (
+                      <Crown
+                        className="size-3.5"
+                        aria-label={t('prioritization.attackPath.crownJewel', 'Crown jewel')}
+                      />
+                    )}
+                    {o.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {detail && detail.paths.length > 1 && (
+          <FilterSelect<PathMode>
+            label={t('prioritization.attackPath.pathsLabel', 'Paths')}
+            value={mode}
+            clearable={false}
+            onChange={(v) => setParam('paths', v === 'all' ? 'all' : null)}
+            options={[
+              { value: 'shortest', label: t('prioritization.attackPath.shortest', 'Shortest') },
+              {
+                value: 'all',
+                label: t('prioritization.attackPath.all', 'All'),
+                count: detail.paths.length,
+              },
+            ]}
+          />
+        )}
       </GraphToolbar>
     ) : null
 
@@ -500,7 +496,9 @@ export default function AttackPathsPage() {
         <AttackPathNodeSheet
           detail={detail}
           node={openNodeData}
-          through={openKey ? shown.filter((i) => detail.paths[i]?.nodes.includes(openKey)).length : 0}
+          through={
+            openKey ? shown.filter((i) => detail.paths[i]?.nodes.includes(openKey)).length : 0
+          }
           shownTotal={shown.length}
           onOpenChange={(o) => {
             if (!o) setOpenKey(null)

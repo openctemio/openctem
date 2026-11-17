@@ -169,7 +169,10 @@ export default function ExposureChainsPage() {
     {
       key: 'asset',
       mark: <span className="h-3 w-5 rounded-sm border-2 bg-card" />,
-      label: t('prioritization.exposureChains.legendAsset', 'An asset on the chain; opens its findings'),
+      label: t(
+        'prioritization.exposureChains.legendAsset',
+        'An asset on the chain; opens its findings'
+      ),
     },
     {
       key: 'hidden',
@@ -179,7 +182,10 @@ export default function ExposureChainsPage() {
     {
       key: 'link',
       mark: <span className="h-0.5 w-5 rounded bg-border-strong" />,
-      label: t('prioritization.exposureChains.legendLink', 'A relationship an attacker could follow'),
+      label: t(
+        'prioritization.exposureChains.legendLink',
+        'A relationship an attacker could follow'
+      ),
     },
     {
       key: 'linkKev',

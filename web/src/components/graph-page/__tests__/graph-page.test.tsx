@@ -1,12 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import {
-  GraphFrame,
-  GraphLegend,
-  GraphNodeSheet,
-  GraphNote,
-  GraphToolbar,
-} from '../graph-page'
+import { GraphFrame, GraphLegend, GraphNodeSheet, GraphNote, GraphToolbar } from '../graph-page'
 
 describe('graph page kit', () => {
   it('names the toolbar and keeps canvas actions at its end', () => {
