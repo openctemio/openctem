@@ -539,7 +539,7 @@
   "settings.closing.savedPending": "Saved. The change takes effect in 24 hours; owners and administrators were told.",
   "settings.closing.title": "Closing findings",
   "settings.closing.willWait": "This change lets the platform close more findings alone: it asks you to sign in again, takes effect in 24 hours, and owners and administrators are told.",
-  "settings.createTeam.title": "Create team",
+  "settings.createTeam.title": "Create organization",
   "settings.desc.account-security": "Password, two-factor authentication and active sessions.",
   "settings.desc.activity": "Your own recent sign-ins and actions.",
   "settings.desc.ai": "Whether findings may be sent to an AI provider for triage.",

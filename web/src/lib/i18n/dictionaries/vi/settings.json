@@ -539,7 +539,7 @@
   "settings.closing.savedPending": "Đã lưu. Thay đổi có hiệu lực sau 24 giờ; chủ sở hữu và quản trị viên đã được thông báo.",
   "settings.closing.title": "Đóng phát hiện",
   "settings.closing.willWait": "Thay đổi này cho phép nền tảng tự đóng nhiều phát hiện hơn: bạn cần đăng nhập lại, thay đổi có hiệu lực sau 24 giờ và chủ sở hữu, quản trị viên sẽ được thông báo.",
-  "settings.createTeam.title": "Tạo nhóm",
+  "settings.createTeam.title": "Tạo tổ chức",
   "settings.desc.account-security": "Mật khẩu, xác thực hai lớp và các phiên đăng nhập.",
   "settings.desc.activity": "Các lần đăng nhập và thao tác gần đây của bạn.",
   "settings.desc.ai": "Có cho phép gửi phát hiện tới nhà cung cấp AI để phân loại hay không.",
