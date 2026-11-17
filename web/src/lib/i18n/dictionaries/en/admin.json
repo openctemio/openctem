@@ -410,6 +410,8 @@
   "admin.catalog.bundle": "Bundle (tar or tar.gz)",
   "admin.catalog.cancel": "Cancel",
   "admin.catalog.caption": "Catalog packages",
+  "admin.catalog.card.latest": "Latest {version}",
+  "admin.catalog.card.versions": "{count, plural, one {# version} other {# versions}}",
   "admin.catalog.col.latest": "Latest",
   "admin.catalog.col.origin": "Source",
   "admin.catalog.col.package": "Package",

@@ -11,5 +11,7 @@
   table's own toolbar; rows are on one line (the title, then the package id) and the package stays in view while the
   table scrolls sideways; Source steps aside on a narrow table. A failed read shows in the table with Retry while the
   toolbar stays; an empty list says whether the catalog is empty or nothing matches, with Clear filters.
+- On a phone a package is a card with fixed slots instead of a label/value grid: its title, its package id, the
+  type chip and the source, then the latest version and the version count on one line; a tap opens its versions.
 - No API change: the same reads, 25 a page, the versions sheet and its Revoke dialog.
 - Docs: none (layout of an existing console list; what it reads and who may change it are unchanged)

@@ -21,6 +21,7 @@ import {
   ErrorState,
   FilterSelect,
   PageHeader,
+  MetaLine,
   PageStack,
   RelativeTime,
 } from '@/features/shared'
@@ -42,6 +43,64 @@ import {
 } from '@console/features/admin-console/components/content-catalog-dialogs'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminHas } from '@console/features/admin-console/types'
+
+/**
+ * A catalog package on a phone. Fixed slots, never a label/value grid; a tap
+ * opens its versions, as a row click does:
+ *
+ *   Web templates (the whole width, cut to one line)
+ *   org.example.web-templates
+ *   Templates  Signed catalog
+ *   Latest 2.4.1  Revoked   3 versions
+ */
+function CatalogMobileCard({ item, onOpen }: { item: CatalogListItem; onOpen: () => void }) {
+  const { t } = useTranslation()
+  const p = item.latest
+  return (
+    <button
+      type="button"
+      data-slot="catalog-card"
+      onClick={onOpen}
+      className="flex w-full min-w-0 flex-col gap-1 px-3 py-3 text-start hover:bg-muted/50"
+    >
+      <span className="w-full truncate font-medium" title={p.title}>
+        {p.title}
+      </span>
+      <span
+        className="w-full truncate font-mono text-code text-muted-foreground"
+        title={p.package_id}
+      >
+        {p.package_id}
+      </span>
+      <span data-slot="catalog-card-kind" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Badge variant="outline">{t(`contentCatalog.type.${p.type}`, p.type)}</Badge>
+        <span className="text-meta text-muted-foreground">
+          {p.origin === 'instance'
+            ? t('admin.catalog.origin.instance', 'This installation')
+            : t('admin.catalog.origin.catalog', 'Signed catalog')}
+        </span>
+      </span>
+      <MetaLine
+        className="items-center"
+        items={[
+          <span key="latest" className="inline-flex items-center gap-1.5">
+            {t('admin.catalog.card.latest', 'Latest {version}', { version: p.version })}
+            {p.revoked && (
+              <Badge variant="destructive">{t('admin.catalog.revokedBadge', 'Revoked')}</Badge>
+            )}
+          </span>,
+          <span key="versions" className="tabular-nums">
+            {t(
+              'admin.catalog.card.versions',
+              '{count, plural, one {# version} other {# versions}}',
+              { count: item.versions }
+            )}
+          </span>,
+        ]}
+      />
+    </button>
+  )
+}
 
 /**
  * Scanning > Content catalog (RFC-099): the instance catalog organizations
@@ -246,7 +305,10 @@ export default function ContentCatalogPage() {
             />
           }
           showSelectionCount={false}
-          mobileCards
+          // A phone card with fixed slots, not the automatic label/value card.
+          mobileRow={(p) => (
+            <CatalogMobileCard item={p} onOpen={() => setOpen(p.latest.package_id)} />
+          )}
           onRowClick={(p) => setOpen(p.latest.package_id)}
           isFiltered={!!(q || list.filters.type)}
           onClearFilters={list.reset}

@@ -410,6 +410,8 @@
   "admin.catalog.bundle": "Bundle (tar hoặc tar.gz)",
   "admin.catalog.cancel": "Hủy",
   "admin.catalog.caption": "Các gói trong danh mục",
+  "admin.catalog.card.latest": "Mới nhất {version}",
+  "admin.catalog.card.versions": "{count} phiên bản",
   "admin.catalog.col.latest": "Mới nhất",
   "admin.catalog.col.origin": "Nguồn",
   "admin.catalog.col.package": "Gói",

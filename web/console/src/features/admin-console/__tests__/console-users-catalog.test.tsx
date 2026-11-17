@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   usersCalls: [] as unknown[][],
   revoke: vi.fn(),
   stale: false,
+  phone: false,
+}))
+
+vi.mock('@/hooks/use-mobile', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/use-mobile')>()),
+  useIsMobile: () => mocks.phone,
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -192,6 +198,29 @@ describe('Content catalog', () => {
       expect(within(trust).getByText('The catalog is out of date')).toBeInTheDocument()
     } finally {
       mocks.stale = false
+    }
+  })
+
+  it('shows a package on a phone in fixed slots, no label/value grid, a tap opens its versions', async () => {
+    mocks.phone = true
+    try {
+      const user = userEvent.setup()
+      render(<CatalogPage />)
+      const card = document.querySelector('[data-slot="catalog-card"]') as HTMLElement
+      expect(card).not.toBeNull()
+      expect(within(card).getByText('Scanning sensor')).toBeInTheDocument()
+      expect(within(card).getByText('openctem/sensor')).toBeInTheDocument()
+      const kind = card.querySelector('[data-slot="catalog-card-kind"]') as HTMLElement
+      expect(kind).toHaveTextContent('Signed catalog')
+      const facts = card.querySelector('[data-slot="meta-line"]') as HTMLElement
+      expect(facts).toHaveTextContent('Latest 0.24.0')
+      expect(facts).toHaveTextContent('2 versions')
+      expect(card.querySelector('dl, dt, dd')).toBeNull()
+      expect(within(card).queryByText('Versions')).toBeNull()
+      await user.click(card)
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    } finally {
+      mocks.phone = false
     }
   })
 
