@@ -30,7 +30,6 @@ const PENDING = new Set([
   'features/access-control/components/role-detail-sheet.tsx',
   'features/activity/components/activity-items.tsx',
   'features/assets/components/asset-owners-tab.tsx',
-  'features/assets/components/inventory/inventory-table.tsx',
   'features/assets/components/relationships/related-assets-list.tsx',
   'features/dashboards/components/dashboard-home.tsx',
   'features/dashboards/editor/dashboard-editor.tsx',
