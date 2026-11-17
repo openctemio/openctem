@@ -10,7 +10,6 @@
   "console/src/app/(console)/system/ai-applications/page.tsx": 2,
   "console/src/app/(console)/system/announcements/page.tsx": 5,
   "console/src/app/(console)/system/content-packs/page.tsx": 6,
-  "console/src/app/(console)/users/page.tsx": 6,
   "console/src/features/admin-console/components/admin-activity-table.tsx": 5,
   "console/src/features/admin-console/components/organization-users-section.tsx": 5,
   "console/src/features/admin-console/components/scope-blocked-names-panel.tsx": 8,
