@@ -101,7 +101,7 @@ export function OpenSourceLicenses({
     <div className="grid gap-4" data-testid="open-source-licenses">
       {lead && (
         <StaticLead>
-          {loading || rows.length === 0
+          {loading || rows.length === 0 || missing.length > 0
             ? t(
                 'help.licenses.description',
                 'The open-source components this build is made of, with their licenses. The list is generated when the release is built.'
@@ -188,7 +188,9 @@ export function OpenSourceLicenses({
               className="flex items-center gap-3 border-b px-3 py-2 text-cap text-muted-foreground"
             >
               <span className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1">{t('help.licenses.col.component', 'Component')}</span>
+              <span className="min-w-0 flex-1">
+                {t('help.licenses.col.component', 'Component')}
+              </span>
               <span className="hidden w-24 shrink-0 sm:inline">
                 {t('help.licenses.col.version', 'Version')}
               </span>
@@ -233,9 +235,13 @@ function LicenseRow({ row, part }: { row: Row; part: string }) {
           <span className="hidden w-20 shrink-0 text-dense text-muted-foreground md:inline">
             {part}
           </span>
-          <Badge variant="outline" className="shrink-0">
-            {row.license === 'Unknown' ? t('help.licenses.unknown', 'Unknown') : row.license}
-          </Badge>
+          <span className="flex w-28 shrink-0 justify-end">
+            <Badge variant="outline" className="max-w-full">
+              <span className="truncate">
+                {row.license === 'Unknown' ? t('help.licenses.unknown', 'Unknown') : row.license}
+              </span>
+            </Badge>
+          </span>
         </CollapsibleTrigger>
         <CollapsibleContent className="px-3 pb-3">
           {row.text ? (

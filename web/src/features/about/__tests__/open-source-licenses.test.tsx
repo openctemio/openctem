@@ -134,6 +134,25 @@ describe('OpenSourceLicenses', () => {
     ).toBeInTheDocument()
   })
 
+  it('gives no per-part count while a part is missing', async () => {
+    render(
+      <OpenSourceLicenses
+        lead
+        api={{
+          id: 'api',
+          load: async () => {
+            throw new Error('503')
+          },
+        }}
+        web={{ id: 'web', load: async () => webDoc }}
+      />,
+      { wrapper }
+    )
+    expect(await screen.findByTestId('licenses-missing-api')).toBeInTheDocument()
+    expect(screen.queryByText(/0 in the API/)).not.toBeInTheDocument()
+    expect(screen.getByText(/The open-source components this build is made of/)).toBeInTheDocument()
+  })
+
   it('names the columns for sighted readers only; rows stay one disclosure each', async () => {
     renderPage(
       async () => apiDoc,
