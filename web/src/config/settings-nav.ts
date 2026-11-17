@@ -39,9 +39,7 @@
 import {
   Fingerprint,
   GitMerge,
-  Handshake,
   LifeBuoy,
-  Globe,
   Activity,
   Bell,
   Bot,
@@ -396,27 +394,45 @@ const coreSettingsNav: SettingsNavGroup[] = [
         keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
       },
       {
-        id: 'authentication',
+        // One page, two tabs: Sign-in (two-factor, re-verification, email
+        // verification, IP allowlist) and Joining (who may join, personal
+        // accounts, verified domains, trusted organizations, SSO changes).
+        // Viewing needs team:update; saving is owner only in the API.
+        id: 'sign-in',
         section: 'sign-in',
-        title: 'Authentication',
-        description: 'Two-factor, who may join, the IP allowlist and email verification.',
-        url: '/settings/authentication',
+        title: 'Sign-in',
+        description: 'Two-factor, re-verification, the IP allowlist, and who may join.',
+        url: '/settings/sign-in',
         icon: LockKeyhole,
         permission: Permission.TeamUpdate,
-        keywords: ['2fa', 'mfa', 'ip allowlist', 'domains', 'sso', 'saml', 'sign-in'],
+        keywords: [
+          '2fa',
+          'mfa',
+          'ip allowlist',
+          'authentication',
+          'domains',
+          'sso',
+          'saml',
+          'sign-in',
+          'joining',
+          'trusted organizations',
+          'trust',
+          'partner',
+          'sso approvals',
+          'identity provider',
+        ],
         anchors: [
           {
             id: 'two-factor',
             title: 'Require two-factor authentication',
             keywords: ['2fa', 'mfa', 'totp'],
           },
-          { id: 'sso-member-approval', title: 'Approve new SSO members', keywords: ['jit', 'sso'] },
-          { id: 'email-verification', title: 'Email verification', keywords: ['verify email'] },
           {
-            id: 'allowed-domains',
-            title: 'Allowed email domains',
-            keywords: ['domain', 'restrict'],
+            id: 're-verification',
+            title: 'Re-verification',
+            keywords: ['step-up', 'reauthentication', 'confirm identity'],
           },
+          { id: 'email-verification', title: 'Email verification', keywords: ['verify email'] },
           {
             id: 'ip-allowlist',
             title: 'IP allowlist',
@@ -428,23 +444,32 @@ const coreSettingsNav: SettingsNavGroup[] = [
             keywords: ['invite', 'external', 'guest'],
           },
           {
+            id: 'allowed-domains',
+            title: 'Allowed email domains',
+            keywords: ['domain', 'restrict'],
+          },
+          { id: 'sso-member-approval', title: 'Approve new SSO members', keywords: ['jit', 'sso'] },
+          {
             id: 'personal-accounts',
             title: 'Personal accounts and SSO exceptions',
             keywords: ['gmail', 'personal email', 'break-glass'],
           },
+          {
+            id: 'domains',
+            title: 'Verified domains',
+            keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
+          },
+          {
+            id: 'trusted-organizations',
+            title: 'Trusted organizations',
+            keywords: ['trust', 'partner', 'sister company', 'external', 'home realm'],
+          },
+          {
+            id: 'sso-approvals',
+            title: 'SSO changes waiting for an owner',
+            keywords: ['sso approvals', 'saml', 'identity provider', 'approval', 'owner'],
+          },
         ],
-      },
-      {
-        // What the verified SSO domains do to accounts on them (api RFC-104):
-        // read by owners and admins, changed by owners only.
-        id: 'domains',
-        section: 'sign-in',
-        title: 'Domains',
-        description: 'Who may join with your domain, and whether it must use single sign-on.',
-        url: '/settings/domains',
-        icon: Globe,
-        permission: Permission.TeamUpdate,
-        keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
       },
       {
         id: 'scim',
@@ -455,30 +480,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
         icon: UserCog,
         permission: Permission.MembersRead,
         keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
-      },
-      {
-        // Two-sided trusts with partner organizations (api RFC-058): read by
-        // owners and admins, changed by owners only.
-        id: 'trusted-organizations',
-        section: 'sign-in',
-        title: 'Trusted organizations',
-        description: 'Partner organizations whose people sign in here with their own SSO.',
-        url: '/settings/trusted-organizations',
-        icon: Handshake,
-        permission: Permission.TeamUpdate,
-        keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
-      },
-      {
-        // Owners approve or reject SSO changes the platform administrator
-        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
-        id: 'sso-approvals',
-        section: 'sign-in',
-        title: 'SSO approvals',
-        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
-        url: '/settings/sso-approvals',
-        icon: ShieldCheck,
-        permission: Permission.TeamUpdate,
-        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
       },
       {
         // The organization's posture checks and score (api: GET
@@ -539,26 +540,39 @@ const coreSettingsNav: SettingsNavGroup[] = [
         ],
       },
       {
-        id: 'finding-approvals',
-        title: 'Finding approvals',
+        id: 'approvals',
+        title: 'Approvals',
         description: 'Who decides false positives and accepted risks, and who is told.',
-        url: '/settings/finding-approvals',
+        url: '/settings/approvals',
         icon: ClipboardCheck,
         permission: Permission.SettingsRead,
         keywords: [
           'approval',
+          'approvals',
           'approval policy',
+          'finding approvals',
           'four-eyes',
           'false positive',
           'accepted risk',
           'risk acceptance',
           'backup contact',
+          'second look',
         ],
         anchors: [
           {
             id: 'approval-tiers',
             title: 'Approval tiers and approvers',
             keywords: ['four-eyes', 'approvers', 'decision lasts'],
+          },
+          {
+            id: 'security-pool',
+            title: 'Security pool and exclusions',
+            keywords: ['security pool', 'assignee', 're-authentication'],
+          },
+          {
+            id: 'approval-limits',
+            title: 'Limits and deadlines',
+            keywords: ['longest acceptance', 'decision deadline', 'epss'],
           },
         ],
       },

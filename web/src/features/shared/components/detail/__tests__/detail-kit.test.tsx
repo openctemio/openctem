@@ -148,6 +148,29 @@ describe('PropertyList', () => {
     )
   })
 
+  it('keeps a phone row with a control at 44 px: little padding, more for a value of several lines', () => {
+    const { container } = render(
+      <PropertyList label="Properties">
+        <PropertyGroup>
+          <PropertyRow label="Status">
+            <button type="button">Confirmed</button>
+          </PropertyRow>
+          <PropertyRow label="Description" top>
+            Two lines of text
+          </PropertyRow>
+        </PropertyGroup>
+      </PropertyList>
+    )
+    const [control, text] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot=property-row]')
+    )
+    // 2 + 36 + 2 + 1 (rule) = 41, so the row is the 44 px minimum.
+    expect(control.className).toContain('max-md:min-h-touch-target')
+    expect(control.className).toContain('max-md:py-0.5')
+    expect(control.className).not.toContain('max-md:py-1.5')
+    expect(text.className).toContain('max-md:py-1.5')
+  })
+
   it('renders no row for an empty value', () => {
     render(
       <PropertyList label="Properties">

@@ -1,7 +1,9 @@
 /**
  * The finding page offers "Add to task" (it was only on the list and in
  * triage): shown only with the task write permission and the remediation
- * module, and it opens the shared dialog for this one finding.
+ * module, and it opens the shared dialog for this one finding. It is the main
+ * action of an open finding; otherwise (a resolved finding has no main
+ * action) it stays in the More menu.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -64,6 +66,28 @@ describe('Add to task on the finding page', () => {
     canMutate = false
     render(<FindingHeader finding={finding} status="new" />)
     expect(screen.queryByRole('button', { name: 'Add to task' })).toBeNull()
+  })
+
+  it('a resolved finding has no main action; Add to task is in More', async () => {
+    const { container } = render(<FindingHeader finding={finding} status="resolved" />)
+    expect(container.querySelector('[data-main-action]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add to task' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Add to task' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('f1:Heartbleed')
+  })
+
+  it('is not in More while it is the main action, nor without the permission', async () => {
+    const { unmount } = render(<FindingHeader finding={finding} status="new" />)
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await screen.findByRole('menuitem', { name: 'Copy link' })
+    expect(screen.queryByRole('menuitem', { name: 'Add to task' })).toBeNull()
+    unmount()
+    canMutate = false
+    render(<FindingHeader finding={finding} status="resolved" />)
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await screen.findByRole('menuitem', { name: 'Copy link' })
+    expect(screen.queryByRole('menuitem', { name: 'Add to task' })).toBeNull()
   })
 
   it('is hidden when the remediation module is off', () => {
