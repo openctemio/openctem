@@ -48,6 +48,29 @@ describe('DetailPageHeader', () => {
     expect(names).toEqual(['More actions', 'Retest', 'Add to task'])
   })
 
+  it('keeps a lone More on the title line on a phone; buttons take their own row', () => {
+    const menu = [
+      { id: 'a', label: 'Copy link', onSelect: () => {} },
+      { id: 'b', label: 'Copy ID', onSelect: () => {} },
+    ]
+    const { unmount } = render(<DetailPageHeader title="A record" parent={parent} menu={menu} />)
+    let actions = document.querySelector('[data-slot="detail-actions"]') as HTMLElement
+    expect(actions.className).not.toContain('max-md:w-full')
+    expect(screen.getByRole('heading', { level: 1 }).className).toContain('max-md:basis-0')
+    unmount()
+    render(
+      <DetailPageHeader
+        title="A record"
+        parent={parent}
+        menu={menu}
+        primary={<Button>Add to task</Button>}
+      />
+    )
+    actions = document.querySelector('[data-slot="detail-actions"]') as HTMLElement
+    expect(actions.className).toContain('max-md:w-full')
+    expect(screen.getByRole('heading', { level: 1 }).className).not.toContain('max-md:basis-0')
+  })
+
   it('is the page-header block of the page stack', () => {
     const { container } = render(<DetailPageHeader title="A record" parent={parent} />)
     expect(container.querySelector('header[data-slot="page-header"]')).not.toBeNull()
