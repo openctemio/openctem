@@ -7,7 +7,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  *
  * - Criticality and risk never read as the same word: a risk cell shows its
  *   number (band as colour, shape and tooltip), and on a phone card, which
- *   has no column headers, criticality names itself ("Criticality: High")
+ *   has no column headers, criticality names itself in plain words ("High criticality")
  *   and the risk number sits under the word "Risk".
  * - The findings count is "N open findings" everywhere, and the list its link
  *   opens has the same total.
@@ -79,7 +79,8 @@ test.describe('phone card @phone', { tag: ['@assets'] }, () => {
 
       // A real score sits at the card's right edge under the word "Risk".
       const risk = page.locator('[data-slot="asset-card-risk"]').first()
-      if (await risk.count()) await expect(risk).toHaveText(/^Risk\s*\d+(\.\d)?$/)
+      // The slot is on every card: the score, or a dash while there is none.
+      await expect(risk).toHaveText(/^Risk\s*(\d+(\.\d)?|—\s*Not yet scored)$/)
 
       const metas = page.locator('[data-slot="asset-card-meta"]')
       await expect(metas.first()).toBeVisible()
@@ -87,9 +88,8 @@ test.describe('phone card @phone', { tag: ['@assets'] }, () => {
       for (let i = 0; i < n; i++) {
         const meta = metas.nth(i)
         const text = (await meta.innerText()).replace(/\s+/g, ' ')
-        // Criticality names itself; a band word never stands alone.
-        expect(text).toMatch(/Criticality: /)
-        const bare = text.replace(/Criticality: \w+/, '')
+        // Criticality names itself in plain words; a band word never stands alone.
+        const bare = text.replace(/Business-critical|\w+ criticality/, '')
         expect(bare, `a bare band word on card ${i}: "${text}"`).not.toMatch(BAND)
         // One meta line (the 22 px pill sets its height).
         const box = await meta.boundingBox()

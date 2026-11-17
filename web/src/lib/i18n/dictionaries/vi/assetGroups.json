@@ -119,6 +119,7 @@
   "assetGroups.facet.riskScore": "Điểm rủi ro",
   "assetGroups.filterActions.add": "Thêm vào nhóm",
   "assetGroups.filterActions.addAll": "Thêm tất cả {count} tài sản khớp vào nhóm",
+  "assetGroups.filterActions.addAllShort": "Thêm mọi tài sản khớp vào nhóm",
   "assetGroups.filterActions.addDesc": "Mọi tài sản khớp bộ lọc này mà bạn xem được đều được thêm, trên tất cả các trang. Chúng vẫn ở trong nhóm khi không còn khớp.",
   "assetGroups.filterActions.addFailed": "Không thể thêm các tài sản",
   "assetGroups.filterActions.addTitle": "Thêm tất cả {count} tài sản khớp vào nhóm",

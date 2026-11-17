@@ -43,7 +43,9 @@ vi.mock('../attention-queue-header', () => ({
 vi.mock('../../inventory/inventory-table', () => ({
   InventoryTable: ({ total }: { total: number }) => <div data-testid="table">{total}</div>,
 }))
-vi.mock('../../inventory/inventory-bulk-bar', () => ({ InventoryBulkBar: () => null }))
+vi.mock('../../inventory/inventory-bulk-bar', () => ({
+  useInventoryTableBulk: () => ({ bulk: undefined, dialogs: null, resetKey: 0, clear: () => {} }),
+}))
 
 import { AttentionAssetsPage } from '../attention-assets-page'
 
@@ -80,7 +82,7 @@ describe('AttentionAssetsPage', () => {
   it('shows only the access message without assets:read, and asks for nothing it shows', () => {
     state.canRead = false
     render(<AttentionAssetsPage reason="no_owner" />)
-    expect(screen.getByText("You don't have access to assets")).toBeInTheDocument()
+    expect(screen.getByText('You do not have access to assets')).toBeInTheDocument()
     expect(screen.queryByTestId('table')).toBeNull()
   })
 })

@@ -9,10 +9,10 @@
  * own pages under the same tabs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Lock } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, PageStack } from '@/features/shared'
+import { NoAccessState, PageHeader, PageStack } from '@/features/shared'
+import { inSentence } from '@/features/asset-types/lib/type-view'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useAssets, type AssetSearchFilters } from '../../hooks/use-assets'
@@ -21,11 +21,10 @@ import {
   DEFAULT_PAGE_SIZE,
   serializeInventoryFilters,
 } from '../../lib/inventory-url'
-import type { Asset } from '../../types/asset.types'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { AttentionQueueHeader } from './attention-queue-header'
 import { ATTENTION_FILTERS, type AttentionReason } from './attention-filters'
-import { InventoryBulkBar } from '../inventory/inventory-bulk-bar'
+import { useInventoryTableBulk } from '../inventory/inventory-bulk-bar'
 import { InventoryTable } from '../inventory/inventory-table'
 
 export { ATTENTION_FILTERS, type AttentionReason }
@@ -53,12 +52,10 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   )
   const { assets, total, isLoading, mutate } = useAssets(query)
 
-  const [selected, setSelected] = useState<Asset[]>([])
-  const [epoch, setEpoch] = useState(0)
-  const clearSelection = useCallback(() => {
-    setEpoch((n) => n + 1)
-    setSelected([])
-  }, [])
+  // The table draws the checkbox column and the bulk bar; a new page, size,
+  // sort or reason starts with nothing selected.
+  const tableBulk = useInventoryTableBulk({ canWrite, onDone: () => void mutate() })
+  const clearSelection = tableBulk.clear
   useEffect(() => {
     clearSelection()
   }, [reason, page, pageSize, sort, clearSelection])
@@ -68,16 +65,10 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title={title} />
-        <EmptyState
-          className="mt-8 border-dashed"
-          icon={Lock}
-          title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
-          description={t(
-            'assets.inventoryPage.noAccessHint',
-            'Ask an administrator for the assets:read permission to view the inventory.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={title} />
+          <NoAccessState title={inSentence(title)} permission={Permission.AssetsRead} />
+        </PageStack>
       </Main>
     )
   }
@@ -109,8 +100,8 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
             setSort(next)
             setPage(1)
           }}
-          onSelectionChange={setSelected}
-          resetSelectionKey={epoch}
+          bulk={tableBulk.bulk}
+          resetSelectionKey={tableBulk.resetKey}
           onAssetUpdated={() => void mutate()}
           hasFilters
           emptyMessage={t('assets.attention.empty', 'Nothing needs attention here')}
@@ -121,15 +112,7 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
         />
       </PageStack>
 
-      <InventoryBulkBar
-        selected={selected}
-        canWrite={canWrite}
-        onClear={clearSelection}
-        onDone={() => {
-          clearSelection()
-          void mutate()
-        }}
-      />
+      {tableBulk.dialogs}
     </Main>
   )
 }
