@@ -18,14 +18,14 @@ import { safeInternalHref } from '@/lib/safe-href'
  * passed as `ListToolbar`'s / `DataTable`'s `below`. Exactly one line, of one
  * height, with fixed places:
  *
- *   [locked chip] [chip] [chip] [+N more] ...... [Reset to view] [Clear filters]
+ *   [locked chip] [chip] [chip] [+N more] ...... [trailing] [Clear filters]
  *
  * - `leading`: what the list always hides (`LockedChip`), first, never folded;
  *   at most half the row (its text shortens, in full in its title).
  * - `chips`: the removable filter chips, one element each (keyed). The ones
  *   that do not fit fold into "+N more", a popover listing them, each still
  *   removable there. Never a second line.
- * - `trailing`: the list's own actions (Reset to view), then Clear filters
+ * - `trailing`: the list's own actions, if it has any, then Clear filters
  *   (`onClearAll`), drawn by the row so it sits in the same place, with the
  *   same look, on every list: pinned to the row's end, so nothing to its
  *   right can move it, and a chip coming or going never moves them.
