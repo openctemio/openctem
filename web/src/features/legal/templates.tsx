@@ -305,24 +305,26 @@ function subprocessors(v: LegalValues): LegalSection[] {
             {v.organization} uses these subprocessors to provide {v.service}. We announce changes
             before they take effect. Questions: {v.contactEmail}.
           </P>
-          <table className="w-full text-start text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2 pe-4 text-start font-medium text-foreground">Subprocessor</th>
-                <th className="py-2 pe-4 text-start font-medium text-foreground">Purpose</th>
-                <th className="py-2 text-start font-medium text-foreground">Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(([name, purpose, where]) => (
-                <tr key={name} className="border-b">
-                  <td className="py-2 pe-4">{name}</td>
-                  <td className="py-2 pe-4">{purpose}</td>
-                  <td className="py-2">{where}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-start text-dense">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-2 pe-4 text-start font-medium text-foreground">Subprocessor</th>
+                  <th className="py-2 pe-4 text-start font-medium text-foreground">Purpose</th>
+                  <th className="py-2 text-start font-medium text-foreground">Location</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map(([name, purpose, where]) => (
+                  <tr key={name} className="border-b">
+                    <td className="py-2 pe-4">{name}</td>
+                    <td className="py-2 pe-4">{purpose}</td>
+                    <td className="py-2">{where}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       ),
     },
