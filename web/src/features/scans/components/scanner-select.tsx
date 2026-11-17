@@ -50,10 +50,11 @@ export function scannerOptions(tools: Tool[] | undefined, allowConnectors = fals
 export function scannerUnavailableReason(
   tool: Tool,
   availability: Map<string, ToolAvailabilityItem> | null,
+  t: Parameters<typeof toolUnavailableReason>[1],
   inZone = false
 ): string | null {
   if (!availability || tool.metadata?.kind === 'connector') return null
-  return toolUnavailableReason(availability.get(tool.name), inZone)
+  return toolUnavailableReason(availability.get(tool.name), t, inZone)
 }
 
 export function useScannerOptions(allowConnectors = false, zoneId?: string | null) {
@@ -118,7 +119,7 @@ export function ScannerSelect({
   const known = options.some((tool) => tool.name === value)
   const selected = options.find((tool) => tool.name === value)
   const selectedReason = selected
-    ? scannerUnavailableReason(selected, availability, !!zoneId)
+    ? scannerUnavailableReason(selected, availability, t, !!zoneId)
     : null
 
   const placeholder = isLoading
@@ -150,7 +151,7 @@ export function ScannerSelect({
           {options.map((tool) => {
             // A scanner no sensor can run now stays selectable with why: the
             // scan is saved, and only its start waits for such a sensor.
-            const reason = scannerUnavailableReason(tool, availability, !!zoneId)
+            const reason = scannerUnavailableReason(tool, availability, t, !!zoneId)
             return (
               <SelectItem key={tool.id} value={tool.name} title={reason ?? undefined}>
                 <span className="flex flex-col">
