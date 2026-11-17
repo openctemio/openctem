@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	"github.com/openctemio/openctem/server/internal/app/systemstatus"
 	"github.com/openctemio/openctem/server/internal/config"
 	"github.com/openctemio/openctem/server/internal/diag"
@@ -136,8 +138,10 @@ func diagDeps(offline bool) (diag.Deps, func()) {
 		closers = append(closers, func() { _ = db.Close() })
 	}
 
-	// The clients log to nowhere: the commands' output is the report.
+	// The clients log to nowhere: the commands' output is the report, and a
+	// Redis that is down is one failed check, not a page of dial errors.
 	quiet := logger.New(logger.Config{Level: "error", Output: io.Discard})
+	goredis.SetLogger(silentRedisLog{})
 	redisCfg := cfg.Redis
 	redisCfg.MaxRetries = 0
 	if rc, err := redis.New(&redisCfg, quiet); err != nil {
@@ -155,6 +159,11 @@ func diagDeps(offline bool) (diag.Deps, func()) {
 		}
 	}
 }
+
+// silentRedisLog drops the Redis client library's own log lines.
+type silentRedisLog struct{}
+
+func (silentRedisLog) Printf(context.Context, string, ...any) {}
 
 // servedCertExpiry sends one HEAD request to the installation's own public
 // origin (APP_URL, the operator's setting) with a normal, verifying TLS
