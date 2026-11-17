@@ -18,7 +18,6 @@ const ALLOW_LIST = [
   'src/features/capabilities/components/capability-table.tsx',
   'src/features/credentials/components/credential-identity-groups.tsx',
   'src/features/findings/components/detail/related-tab.tsx',
-  'src/features/findings/components/group-exceptions-panel.tsx',
   'src/features/my-work/components/finding-queue.tsx',
   'src/features/pentest/components/pentest-findings-section.tsx',
   'src/features/pentest/components/pentest-reports-section.tsx',

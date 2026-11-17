@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import Link from '@/components/link'
 import { type ColumnDef } from '@tanstack/react-table'
-import { MoreHorizontal, Check, X, Ban, BellRing, Loader2, ShieldCheck, Layers } from 'lucide-react'
+import { Ban, BellRing, Loader2, ShieldCheck, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
@@ -14,14 +14,24 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent, TabsCount } from '@/components/ui/tabs'
 import { FilterSelect } from '@/features/shared/components/filter-select'
 import { PageStack } from '@/features/shared/components/page-stack'
-import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
-import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { RefreshButton } from '@/components/list-page-parts'
+import { type ActionMenuEntry } from '@/components/ui/action-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
-import { ErrorState } from '@/features/shared/components/error-state'
+import { formatAbsoluteTime, formatCalendarDate, formatRelativeTime } from '@/lib/format-metric'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { accessStateOf } from '@/lib/api/access-state'
+import { Permission, usePermissions } from '@/lib/permissions'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import {
+  QueueCard,
+  QueueDecideBy,
+  QueueDecisionActions,
+  QueueEmpty,
+  decideByState,
+  useQueueAnnouncer,
+} from '@/features/queue'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
@@ -43,6 +53,7 @@ import {
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
 import { Tag } from '@/components/ui/tag'
+import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
 import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
 import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
@@ -86,9 +97,60 @@ function parseApprovalLens(raw: string): ApprovalLens {
   return (APPROVAL_LENSES as readonly string[]).includes(raw) ? (raw as ApprovalLens) : 'pending'
 }
 
+/**
+ * Column widths in px (the kind's default where none is given) and the frame
+ * widths below which a column leaves the table. The request's finding, what
+ * is asked, who asked, why, the decide-by date and the decision stay at every
+ * width; the phone card shows every field.
+ */
+const APPROVALS_WIDTH = {
+  findingMin: 192,
+  // "Chấp nhận rủi ro" whole.
+  requested: 144,
+  tier: 160,
+  requester: 116,
+  justificationMin: 156,
+  // "Overdue, 15 Nov" / "Quá hạn, 15 thg 11" whole.
+  decideBy: 148,
+  expires: 120,
+  // Approve + Reject (or "Your request" + More) in en and vi, and the cell padding.
+  actions: 196,
+} as const
+const APPROVALS_HIDE_BELOW = { created: 1360, expires: 1240, tier: 1100 } as const
+
 // ============================================
 // HELPERS
 // ============================================
+
+/**
+ * The requester's reason on one line, after the AI mark when an AI wrote it.
+ * Model or member input: plain text, capped, bidi-isolated.
+ */
+function JustificationCell({ approval, lines = 1 }: { approval: ApiApproval; lines?: 1 | 2 }) {
+  const text = toDisplayText(approval.justification, 500)
+  return (
+    // In a row the text takes the room the column has and never widens it
+    // (zero intrinsic width, filled to the cell).
+    <div className={lines === 1 ? 'flex w-0 min-w-full items-center gap-2' : 'grid gap-1'}>
+      {/* The AI mark keeps its place; in a narrow cell its label shortens
+          before the text gives way (both whole on hover). */}
+      <span className={lines === 1 ? 'flex min-w-0 shrink empty:hidden' : 'empty:hidden'}>
+        <AIProposalBadge approval={approval} truncate={lines === 1} />
+      </span>
+      <span
+        dir="auto"
+        className={
+          lines === 1
+            ? 'min-w-8 flex-1 truncate text-sm text-muted-foreground [unicode-bidi:isolate]'
+            : 'line-clamp-2 text-sm text-muted-foreground [unicode-bidi:isolate]'
+        }
+        title={text}
+      >
+        {text}
+      </span>
+    </div>
+  )
+}
 
 /** A relative time in the app's locale, with the absolute time on hover. */
 function RelativeTime({ value, locale }: { value: string; locale: string }) {
@@ -171,6 +233,14 @@ export default function ApprovalsPage() {
     error,
     mutate: mutateList,
   } = useApprovals(list.page, list.perPage, lensStatus)
+  // The page of group exceptions the other view lists (the same read as its
+  // panel's, so one request), for that view's count in the title row.
+  const { data: groupsPage } = useApprovalBatches(
+    list.page,
+    list.perPage,
+    lensStatus,
+    view === 'groups'
+  )
   // Pending group exceptions, for the view switch's count.
   const { data: pendingGroups, mutate: mutatePendingGroups } = useApprovalBatches(1, 1, 'pending')
   // A decision changes the lists and the sidebar's Approvals badge.
@@ -179,8 +249,11 @@ export default function ApprovalsPage() {
     [mutateList, mutatePendingGroups]
   )
 
+  // Every outcome is also said to assistive technology (one status region).
+  const announcer = useQueueAnnouncer()
+  const { announce } = announcer
   // Approve and reject: the shared decision dialogs (also on My Work).
-  const decision = useApprovalDecision({ onDecided: mutate })
+  const decision = useApprovalDecision({ onDecided: mutate, announce })
   const { trigger: triggerCancel, isMutating: isCancelling } = useCancelApproval(
     selectedApproval?.id ?? ''
   )
@@ -211,7 +284,6 @@ export default function ApprovalsPage() {
   )
 
   const isInitialLoading = isLoading && !data
-  const pendingTotal = counts.pending + (pendingGroups?.total ?? 0)
 
   // ============================================
   // ACTION HANDLERS
@@ -229,6 +301,7 @@ export default function ApprovalsPage() {
     setActionInProgress(selectedApproval.id)
     try {
       await triggerCancel()
+      announce(t('findings.approvals.toast.canceled', 'Approval request canceled'))
       toast.success(t('findings.approvals.toast.canceled', 'Approval request canceled'))
       await mutate()
     } catch (err) {
@@ -250,19 +323,19 @@ export default function ApprovalsPage() {
       setActionInProgress(approval.id)
       try {
         const res = await remindApprovers(approval.id)
-        toast.success(
-          t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
-            count: res?.reminded ?? 0,
-          })
-        )
+        const reminded = t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
+          count: res?.reminded ?? 0,
+        })
+        announce(reminded)
+        toast.success(reminded)
       } catch (err) {
         if (err instanceof ApiClientError && err.statusCode === 409) {
-          toast.error(
-            t(
-              'findings.approvals.toast.remindTooSoon',
-              'The approvers were already reminded in the last hour.'
-            )
+          const tooSoon = t(
+            'findings.approvals.toast.remindTooSoon',
+            'The approvers were already reminded in the last hour.'
           )
+          announce(tooSoon)
+          toast.error(tooSoon)
         } else {
           toast.error(
             getErrorMessage(
@@ -275,7 +348,7 @@ export default function ApprovalsPage() {
         setActionInProgress(null)
       }
     },
-    [actionInProgress, t]
+    [actionInProgress, announce, t]
   )
 
   // The spinning button is the feedback; the list itself shows the result.
@@ -283,9 +356,9 @@ export default function ApprovalsPage() {
     await mutate()
   }
 
-  // The list toolbar: the status filter first, refresh at the end. The status
-  // is a filter of the rows (a filter token), not a second row of tabs; its
-  // counts are the finding requests' and are shown only on that view.
+  // The list toolbar: the status lens is its one filter token (a filter of
+  // the rows, not a second row of tabs); its counts are the finding requests'
+  // and are shown only on that view.
   const statusLens = (
     <FilterSelect<Exclude<ApprovalLens, 'all'>>
       label={t('findings.approvals.lens.status', 'Status')}
@@ -309,7 +382,7 @@ export default function ApprovalsPage() {
 
   // The row's decision controls; the table cell and the phone card share them.
   const actionsCell = useCallback(
-    (approval: ApiApproval) => {
+    (approval: ApiApproval, layout: 'row' | 'card' = 'row') => {
       if (approval.status !== 'pending') return null
       // A member of a group exception is decided only with its group.
       if (approval.batch_id) {
@@ -332,7 +405,6 @@ export default function ApprovalsPage() {
         approval.finding_title || t('findings.approvalLink.untitled', 'Untitled finding'),
         80
       )
-      const menuLabel = t('common.actionMenu.label', 'Actions for {name}', { name: findingTitle })
       const menuItems: ActionMenuEntry[] = [
         ...(mineSelf && can(Permission.FindingsApprove)
           ? [
@@ -362,62 +434,24 @@ export default function ApprovalsPage() {
             ]
           : []),
       ]
-      const busy = actionInProgress === approval.id || decision.busyId === approval.id
       return (
-        <div className="flex items-center justify-end gap-1.5">
-          {/* The decision is one click from the row; the dialog shows the
-                finding before anything is sent. */}
-          <Can permission={Permission.FindingsApprove}>
-            {own ? (
-              <span className="max-w-[180px] text-xs text-muted-foreground">
-                {t('findings.approvals.ownRequestShort', 'Your request')}
-              </span>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => handleApproveClick(approval)}
-                >
-                  <Check className="me-1 h-4 w-4" aria-hidden />
-                  {t('findings.approvals.action.approve', 'Approve')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => handleRejectClick(approval)}
-                >
-                  <X className="me-1 h-4 w-4" aria-hidden />
-                  {t('findings.approvals.action.reject', 'Reject')}
-                </Button>
-              </>
-            )}
-          </Can>
-          {menuItems.length > 0 && (
-            <ActionMenu
-              title={findingTitle}
-              label={menuLabel}
-              items={menuItems}
-              trigger={
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="p-0"
-                  disabled={busy}
-                  aria-label={menuLabel}
-                >
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  ) : (
-                    <MoreHorizontal className="h-4 w-4" aria-hidden />
-                  )}
-                </Button>
-              }
-            />
+        <QueueDecisionActions
+          name={findingTitle}
+          layout={layout}
+          canDecide={can(Permission.FindingsApprove)}
+          own={own}
+          ownLabel={t('findings.approvals.ownRequestShort', 'Your request')}
+          ownReason={t(
+            'findings.approvals.ownRequestHint',
+            'Another approver must decide your own request.'
           )}
-        </div>
+          busy={actionInProgress === approval.id || decision.busyId === approval.id}
+          onApprove={() => handleApproveClick(approval)}
+          onReject={() => handleRejectClick(approval)}
+          approveLabel={t('findings.approvals.action.approve', 'Approve')}
+          rejectLabel={t('findings.approvals.action.reject', 'Reject')}
+          menu={menuItems}
+        />
       )
     },
     [
@@ -433,149 +467,283 @@ export default function ApprovalsPage() {
     ]
   )
 
+  /** The request's state, and how it was decided when that is unusual. */
+  const statusCell = useCallback(
+    (approval: ApiApproval) => (
+      <div className="flex items-center gap-1 whitespace-nowrap">
+        <ApprovalStatusLozenge
+          status={approval.status}
+          label={t(
+            `findings.approvals.status.${approval.status}`,
+            APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
+          )}
+        />
+        {approval.self_approved && (
+          <Tag
+            label={t('findingApprovals.selfApprove.badge', 'Self-approved')}
+            title={t(
+              'findingApprovals.selfApprove.badgeTitle',
+              "Approved by its own requester, the organization's only member"
+            )}
+          />
+        )}
+        {approval.single_person && (
+          <Tag
+            label={t('findingApprovals.single.badge', 'Single person')}
+            title={t(
+              'findingApprovals.single.badgeTitle',
+              "Decided by one person: the organization's false-positive level did not require a second"
+            )}
+          />
+        )}
+      </div>
+    ),
+    [t]
+  )
+
+  const requestedCell = useCallback(
+    (approval: ApiApproval) => {
+      const status = approval.requested_status
+      const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
+      return config ? (
+        <FindingStatusBadge status={status as FindingStatus} />
+      ) : (
+        <Badge variant="outline">{requestedStatusLabel(t, status)}</Badge>
+      )
+    },
+    [t]
+  )
+
   // ============================================
   // TABLE COLUMNS
   // ============================================
 
-  const columns: ColumnDef<ApiApproval>[] = useMemo(
-    () => [
+  // Under the Pending lens every row is pending: the Status column would say
+  // one word down the whole table, so it shows on the other lenses only.
+  const showStatusColumn = lens !== 'pending'
+
+  const columns: ColumnDef<ApiApproval>[] = useMemo(() => {
+    const label = {
+      finding: t('findings.approvals.col.finding', 'Finding'),
+      status: t('findings.approvals.col.status', 'Status'),
+      requested: t('findings.approvals.col.requestedStatus', 'Requested status'),
+      tier: t('findings.approvals.col.tier', 'Approval'),
+      requester: t('findings.approvals.col.requester', 'Requester'),
+      justification: t('findings.approvals.col.justification', 'Justification'),
+      created: t('findings.approvals.col.created', 'Created'),
+      decideBy: t('findings.approvals.col.decideBy', 'Decide by'),
+      expires: t('findings.approvals.col.expires', 'Acceptance ends'),
+      actions: t('findings.approvals.col.actions', 'Decision'),
+    }
+    const meta = (m: DataTableColumnMeta) => m
+    const all: ColumnDef<ApiApproval>[] = [
       {
-        accessorKey: 'status',
-        header: t('findings.approvals.col.status', 'Status'),
-        cell: ({ row }) => {
-          const status = row.getValue('status') as ApprovalStatus
-          return (
-            <div className="flex flex-wrap items-center gap-1">
-              <ApprovalStatusLozenge
-                status={status}
-                label={t(
-                  `findings.approvals.status.${status}`,
-                  APPROVAL_STATUS_LABELS[status] ?? status
-                )}
-              />
-              {row.original.self_approved && (
-                <Tag
-                  label={t('findingApprovals.selfApprove.badge', 'Self-approved')}
-                  title={t(
-                    'findingApprovals.selfApprove.badgeTitle',
-                    "Approved by its own requester, the organization's only member"
-                  )}
-                />
-              )}
-              {row.original.single_person && (
-                <Tag
-                  label={t('findingApprovals.single.badge', 'Single person')}
-                  title={t(
-                    'findingApprovals.single.badgeTitle',
-                    "Decided by one person: the organization's false-positive level did not require a second"
-                  )}
-                />
-              )}
-            </div>
-          )
-        },
+        // The row's name: what the request is about. Frozen at the start.
+        accessorKey: 'finding_id',
+        meta: meta({
+          kind: 'name',
+          pin: 'start',
+          minWidth: APPROVALS_WIDTH.findingMin,
+          label: label.finding,
+        }),
+        header: label.finding,
+        enableHiding: false,
         enableSorting: false,
+        cell: ({ row }) => (
+          // The title takes the room the column has and never widens it.
+          <div className="w-0 min-w-full">
+            <ApprovalFindingLink
+              findingId={row.original.finding_id}
+              findingTitle={row.original.finding_title}
+              lines={1}
+            />
+          </div>
+        ),
       },
       {
-        accessorKey: 'finding_id',
-        meta: { primary: true },
-        header: t('findings.approvals.col.finding', 'Finding'),
-        cell: ({ row }) => (
-          <ApprovalFindingLink
-            findingId={row.original.finding_id}
-            findingTitle={row.original.finding_title}
-          />
-        ),
+        accessorKey: 'status',
+        meta: meta({ kind: 'status', minWidth: 128, maxWidth: 264, label: label.status }),
+        header: label.status,
         enableSorting: false,
+        cell: ({ row }) => statusCell(row.original),
       },
       {
         accessorKey: 'requested_status',
-        header: t('findings.approvals.col.requestedStatus', 'Requested status'),
-        cell: ({ row }) => {
-          const status = row.getValue('requested_status') as string
-          const config = FINDING_STATUS_CONFIG[status as keyof typeof FINDING_STATUS_CONFIG]
-          return config ? (
-            <FindingStatusBadge status={status as FindingStatus} />
-          ) : (
-            <Badge variant="outline" className="text-xs">
-              {requestedStatusLabel(t, status)}
-            </Badge>
-          )
-        },
+        meta: meta({ kind: 'status', width: APPROVALS_WIDTH.requested, label: label.requested }),
+        header: label.requested,
         enableSorting: false,
+        cell: ({ row }) => requestedCell(row.original),
       },
       {
         id: 'tier',
-        header: t('findings.approvals.col.tier', 'Approval'),
-        cell: ({ row }) => <ApprovalTierCell approval={row.original} />,
+        meta: meta({
+          kind: 'text',
+          width: APPROVALS_WIDTH.tier,
+          hideBelow: APPROVALS_HIDE_BELOW.tier,
+          label: label.tier,
+        }),
+        header: label.tier,
         enableSorting: false,
+        cell: ({ row }) => <ApprovalTierCell approval={row.original} inline />,
       },
       {
         id: 'requester',
-        header: t('findings.approvals.col.requester', 'Requester'),
-        cell: ({ row }) => <RequesterCell approval={row.original} currentUserId={currentUserId} />,
+        meta: meta({ kind: 'owner', width: APPROVALS_WIDTH.requester, label: label.requester }),
+        header: label.requester,
         enableSorting: false,
+        cell: ({ row }) => (
+          <div className="truncate">
+            <RequesterCell approval={row.original} currentUserId={currentUserId} />
+          </div>
+        ),
       },
       {
         accessorKey: 'justification',
-        header: t('findings.approvals.col.justification', 'Justification'),
-        cell: ({ row }) => {
-          const text = row.getValue('justification') as string
-          return (
-            <div className="flex max-w-[300px] flex-col gap-1">
-              <AIProposalBadge approval={row.original} />
-              <span
-                dir="auto"
-                className="text-sm text-muted-foreground line-clamp-2 [unicode-bidi:isolate]"
-                title={toDisplayText(text, 500)}
-              >
-                {toDisplayText(text, 500)}
-              </span>
-            </div>
-          )
-        },
+        meta: meta({
+          kind: 'text',
+          minWidth: APPROVALS_WIDTH.justificationMin,
+          label: label.justification,
+        }),
+        header: label.justification,
         enableSorting: false,
-      },
-      {
-        accessorKey: 'created_at',
-        header: t('findings.approvals.col.created', 'Created'),
-        cell: ({ row }) => <RelativeTime value={row.getValue('created_at')} locale={locale} />,
-        enableSorting: false,
+        cell: ({ row }) => <JustificationCell approval={row.original} />,
       },
       {
         accessorKey: 'decide_by',
-        header: t('findings.approvals.col.decideBy', 'Decide by'),
-        cell: ({ row }) => {
-          const by = row.original.decide_by
-          return by && row.original.status === 'pending' ? (
-            <RelativeTime value={by} locale={locale} />
-          ) : (
-            <span className="text-muted-foreground text-sm">—</span>
-          )
-        },
+        meta: meta({ kind: 'due', width: APPROVALS_WIDTH.decideBy, label: label.decideBy }),
+        header: label.decideBy,
         enableSorting: false,
+        cell: ({ row }) => (
+          <QueueDecideBy
+            value={row.original.status === 'pending' ? row.original.decide_by : undefined}
+          />
+        ),
       },
       {
         accessorKey: 'expires_at',
-        header: t('findings.approvals.col.expires', 'Acceptance ends'),
-        cell: ({ row }) => {
-          const expires = row.getValue('expires_at') as string | undefined
-          return expires ? (
-            <RelativeTime value={expires} locale={locale} />
-          ) : (
-            <span className="text-muted-foreground text-sm">—</span>
-          )
-        },
+        meta: meta({
+          kind: 'date',
+          width: APPROVALS_WIDTH.expires,
+          hideBelow: APPROVALS_HIDE_BELOW.expires,
+          label: label.expires,
+        }),
+        header: label.expires,
         enableSorting: false,
+        cell: ({ row }) =>
+          row.original.expires_at ? (
+            <time
+              dateTime={row.original.expires_at}
+              title={formatAbsoluteTime(row.original.expires_at, locale)}
+              className="text-sm whitespace-nowrap text-muted-foreground tabular-nums"
+            >
+              {formatCalendarDate(row.original.expires_at, locale)}
+            </time>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          ),
+      },
+      {
+        accessorKey: 'created_at',
+        meta: meta({
+          kind: 'datetime-recent',
+          hideBelow: APPROVALS_HIDE_BELOW.created,
+          label: label.created,
+        }),
+        header: label.created,
+        enableSorting: false,
+        cell: ({ row }) => <RelativeTime value={row.original.created_at} locale={locale} />,
       },
       {
         id: 'actions',
+        meta: meta({ kind: 'actions', width: APPROVALS_WIDTH.actions, label: label.actions }),
+        header: () => <span className="sr-only">{label.actions}</span>,
         enableHiding: false,
         enableSorting: false,
         cell: ({ row }) => actionsCell(row.original),
       },
-    ],
-    [actionsCell, currentUserId, locale, t]
+    ]
+    return showStatusColumn
+      ? all
+      : all.filter((c) => !('accessorKey' in c && c.accessorKey === 'status'))
+  }, [actionsCell, currentUserId, locale, requestedCell, showStatusColumn, statusCell, t])
+
+  // ============================================
+  // STATES
+  // ============================================
+
+  // A refused read is "no access", not a failure with Retry.
+  const noAccess = !data && accessStateOf(error) === 'no_access'
+  const showAll = (
+    <Button variant="outline" size="sm" onClick={() => changeLens('all')}>
+      {t('findings.approvals.showAll', 'Show all requests')}
+    </Button>
+  )
+  // Three ways the queue is empty: it never held a request, nothing waits, or
+  // the status lens left no row.
+  const emptyState =
+    counts.all === 0 ? (
+      <QueueEmpty
+        kind="first-run"
+        title={t('findings.approvals.empty', 'No approval requests')}
+        hint={t(
+          'findings.approvals.emptyFirstRun',
+          'A false positive or risk acceptance that needs a second person appears here.'
+        )}
+      />
+    ) : lens === 'pending' ? (
+      <QueueEmpty
+        kind="nothing-waiting"
+        title={t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')}
+        hint={t(
+          'findings.approvals.emptyPendingDesc',
+          'A false positive or risk acceptance that needs a second person appears here. To see decided requests, change the Status filter.'
+        )}
+        action={showAll}
+      />
+    ) : (
+      <QueueEmpty
+        kind="no-match"
+        title={t('findings.approvals.emptyStatus', 'No requests with the status {status}.', {
+          status: t(
+            `findings.approvals.status.${lens}`,
+            lens === 'all' ? 'All' : APPROVAL_STATUS_LABELS[lens]
+          ),
+        })}
+        action={showAll}
+      />
+    )
+
+  const groupsTotal = groupsPage?.total ?? 0
+  const viewTitle =
+    view === 'groups'
+      ? t(`findingApprovals.group.viewName.${lens}`, 'Group exceptions')
+      : t(`findings.approvals.viewName.${lens}`, 'Requests')
+  const total = view === 'groups' ? groupsTotal : (data?.total ?? 0)
+  const titleRow = (
+    <ListTitleRow
+      title={viewTitle}
+      count={
+        <ListCount
+          total={total}
+          loading={view === 'groups' ? !groupsPage : isInitialLoading || noAccess}
+          label={
+            view === 'groups'
+              ? t(
+                  'findingApprovals.group.total',
+                  '{count, plural, one {# group exception} other {# group exceptions}}',
+                  { count: total }
+                )
+              : t(
+                  'findings.approvals.total',
+                  '{count, plural, one {# request} other {# requests}}',
+                  { count: total }
+                )
+          }
+        />
+      }
+    >
+      {refreshButton}
+    </ListTitleRow>
   )
 
   // ============================================
@@ -586,18 +754,7 @@ export default function ApprovalsPage() {
     <>
       <Main>
         <PageStack>
-          <PageHeader
-            title={t('findings.approvals.title', 'Approval requests')}
-            description={
-              isInitialLoading
-                ? t('findings.approvals.loading', 'Loading approvals…')
-                : pendingTotal > 0
-                  ? t('findings.approvals.summaryPending', '{count} waiting for a decision', {
-                      count: pendingTotal,
-                    })
-                  : t('findings.approvals.summaryNone', 'Nothing is waiting for a decision')
-            }
-          />
+          <PageHeader title={t('findings.approvals.title', 'Approval requests')} />
 
           {/* The one tab row: the two kinds of request are different objects
             with their own columns. Each tab counts only what waits for a
@@ -616,102 +773,98 @@ export default function ApprovalsPage() {
 
             {/* The tab panel: its id is what the tab triggers point at. */}
             <TabsContent value={view}>
-              {isInitialLoading ? (
-                <TableSkeleton />
-              ) : view === 'requests' && error && !data ? (
-                // A failed read keeps the page, its tabs and the other view; the
-                // shared error state says what failed and offers Retry.
-                <ErrorState
-                  title={t('findings.approvals.errorTitle', 'approval requests')}
-                  error={error}
-                  onRetry={() => void mutate()}
-                />
-              ) : view === 'groups' ? (
-                <GroupExceptionsPanel
-                  status={lensStatus}
-                  pagination={list.pagination}
-                  onPaginationChange={list.setPagination}
-                  currentUserId={currentUserId}
-                  openId={openBatch}
-                  onOpenChange={changeOpenBatch}
-                  onDecided={mutate}
-                  toolbarStart={statusLens}
-                  toolbarEnd={refreshButton}
-                />
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={approvals}
-                  manualPagination
-                  pageCount={pageCount}
-                  rowCount={data?.total ?? 0}
-                  pagination={list.pagination}
-                  onPaginationChange={list.setPagination}
-                  getRowId={(row) => row.id}
-                  mobileRow={(approval) => (
-                    <div className="grid gap-2 p-3" data-testid="approval-phone-card">
-                      <ApprovalFindingLink
-                        findingId={approval.finding_id}
-                        findingTitle={approval.finding_title}
+              <PageStack>
+                {titleRow}
+                {view === 'groups' ? (
+                  <GroupExceptionsPanel
+                    status={lensStatus}
+                    pagination={list.pagination}
+                    onPaginationChange={list.setPagination}
+                    currentUserId={currentUserId}
+                    openId={openBatch}
+                    onOpenChange={changeOpenBatch}
+                    onDecided={mutate}
+                    toolbarStart={statusLens}
+                  />
+                ) : noAccess ? (
+                  <NoAccessState
+                    title={t('findings.approvals.errorTitle', 'approval requests')}
+                    permission={Permission.FindingsRead}
+                  />
+                ) : (
+                  <DataTable
+                    columns={columns}
+                    data={approvals}
+                    caption={viewTitle}
+                    // The first read: skeleton rows under a toolbar that stays.
+                    isLoading={isInitialLoading}
+                    isRefreshing={isValidating && !!data}
+                    refreshingLabel={t('findings.approvals.refreshing', 'Refreshing requests')}
+                    // A failed read keeps the page, its tabs and the other
+                    // view; the table says what failed and offers Retry.
+                    error={error}
+                    onRetry={() => void mutate()}
+                    errorTitle={t('findings.approvals.errorTitle', 'approval requests')}
+                    manualPagination
+                    pageCount={pageCount}
+                    rowCount={data?.total ?? 0}
+                    pagination={list.pagination}
+                    onPaginationChange={list.setPagination}
+                    paginationNoun={t('findings.approvals.paginationNoun', 'requests')}
+                    getRowId={(row) => row.id}
+                    pinActions
+                    showSearch={false}
+                    toolbarStart={statusLens}
+                    emptyState={emptyState}
+                    mobileRow={(approval) => (
+                      <QueueCard
+                        data-testid="approval-phone-card"
+                        title={
+                          <ApprovalFindingLink
+                            findingId={approval.finding_id}
+                            findingTitle={approval.finding_title}
+                          />
+                        }
+                        marks={
+                          <>
+                            {statusCell(approval)}
+                            {requestedCell(approval)}
+                            <ApprovalTierCell approval={approval} inline />
+                          </>
+                        }
+                        meta={
+                          <>
+                            <RequesterCell approval={approval} currentUserId={currentUserId} />
+                            {approval.decide_by && approval.status === 'pending' && (
+                              <span>
+                                {/* "Overdue, 12 Nov" says it alone. */}
+                                {decideByState(approval.decide_by) !== 'overdue' && (
+                                  <>{t('findings.approvals.col.decideBy', 'Decide by')} </>
+                                )}
+                                <QueueDecideBy value={approval.decide_by} className="text-xs" />
+                              </span>
+                            )}
+                            {approval.expires_at && (
+                              <span>
+                                {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
+                                {formatCalendarDate(approval.expires_at, locale)}
+                              </span>
+                            )}
+                          </>
+                        }
+                        reason={<JustificationCell approval={approval} lines={2} />}
+                        actions={actionsCell(approval, 'card')}
                       />
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        <ApprovalStatusLozenge
-                          status={approval.status}
-                          label={t(
-                            `findings.approvals.status.${approval.status}`,
-                            APPROVAL_STATUS_LABELS[approval.status] ?? approval.status
-                          )}
-                        />
-                        <span>{requestedStatusLabel(t, approval.requested_status)}</span>
-                        <RequesterCell approval={approval} currentUserId={currentUserId} />
-                        {approval.decide_by && approval.status === 'pending' && (
-                          <span>
-                            {t('findings.approvals.col.decideBy', 'Decide by')}{' '}
-                            <RelativeTime value={approval.decide_by} locale={locale} />
-                          </span>
-                        )}
-                      </div>
-                      {actionsCell(approval)}
-                    </div>
-                  )}
-                  showColumnToggle={false}
-                  showSearch={false}
-                  toolbarStart={statusLens}
-                  toolbarEnd={refreshButton}
-                  emptyMessage={
-                    lens === 'pending'
-                      ? t('findings.approvals.emptyPending', 'No pending requests')
-                      : t('findings.approvals.empty', 'No approval requests')
-                  }
-                  emptyDescription={
-                    lens === 'pending'
-                      ? t(
-                          'findings.approvals.emptyPendingDesc',
-                          'A false positive or risk acceptance that needs a second person appears here. To see decided requests, change the Status filter.'
-                        )
-                      : lens === 'all'
-                        ? t(
-                            'findings.approvals.emptyAll',
-                            'There are no approval requests to review at this time.'
-                          )
-                        : t(
-                            'findings.approvals.emptyStatus',
-                            'No requests with the status {status}.',
-                            {
-                              status: t(
-                                `findings.approvals.status.${lens}`,
-                                APPROVAL_STATUS_LABELS[lens]
-                              ),
-                            }
-                          )
-                  }
-                />
-              )}
+                    )}
+                  />
+                )}
+              </PageStack>
             </TabsContent>
           </Tabs>
         </PageStack>
       </Main>
 
+      {announcer.region}
       {decision.dialogs}
 
       <ConfirmDialog

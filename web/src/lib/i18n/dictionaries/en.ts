@@ -100,6 +100,7 @@ import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
 import en_queryFields from './en/queryFields.json'
 import en_queryInput from './en/queryInput.json'
+import en_queue from './en/queue.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import en_threatModel from './en/threatModel.json'
@@ -206,6 +207,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: en_remediationCampaigns,
   queryFields: en_queryFields,
   queryInput: en_queryInput,
+  queue: en_queue,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
   threatModel: en_threatModel,
