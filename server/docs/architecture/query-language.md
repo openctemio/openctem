@@ -160,7 +160,7 @@ person's own text from its own state, and translates the code.
 | Route | Gate | Input | Result |
 |---|---|---|---|
 | `POST /api/v1/query/parse` | `findings:read`, `assets:read` or `scans:read`, then the entity's own; burst 30, 5/s per user | `{"entity", "text"}` or `{"entity", "document"}` or `{"entity", "params"}` (a list URL's query string) | `valid`, `form`, canonical short `text`, long `query`, the version 1 `document` (relative times kept), `chips` (top-level conditions, or one `advanced` chip that is never flattened), the list's flat `params` when every chip has one, `problems`. Reads no data; a problem is 200 with `valid: false` |
-| `GET /api/v1/query/values?entity=&field=&prefix=&fq=` | same; burst 20, 2/s per user | a groupable field (a path or short name), a prefix, the box's filter | up to 20 values with counts, under the filter minus the field's own conditions; `counted: false` when the 1 s budget ran out (enum and boolean values are then listed without counts). Cached 60 s per tenant, user and request |
+| `GET /api/v1/query/values?entity=&field=&prefix=&fq=` | same; burst 20, 2/s per user | a groupable field (a path or short name), a prefix, the box's filter | up to 20 values with counts, under the filter minus the field's own conditions; `counted: false` when the 1 s budget ran out (enum and boolean values are then listed without counts). Not cached: every call runs as the caller with their current access, so a removed group, grant, campaign membership or role changes the next answer |
 
 Values run as `<entity> where <filter> | count by <field> | sort count desc |
 limit N` through `Build` and the executor, so the tenant, the data scope, the

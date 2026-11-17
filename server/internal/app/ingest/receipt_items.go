@@ -47,6 +47,13 @@ func addRefusedItems(output *Output, sent *ctis.Report, holds *contractHolds, re
 
 // refusedV2Items are the receipt items of the findings of a protocol v2
 // segment that name no asset of it (resolveV2Assets refused them).
+//
+// SECURITY: these findings never reach Ingest, where a report is masked, so
+// they are masked here before an item is built: a secret scanner's raw match
+// (redactReportSecrets) and e-mail addresses (maskReportEmails). The stored
+// title and the item key (a hash that includes the title) then hold the
+// masked text, as for every item Ingest books. A receipt item is read with
+// findings:read alone; the reveal gate never applies to it.
 func refusedV2Items(r *ctis.Report, keptIdx []int) []ingestreceipt.Item {
 	if r == nil || len(keptIdx) == len(r.Findings) {
 		return nil
@@ -55,12 +62,22 @@ func refusedV2Items(r *ctis.Report, keptIdx []int) []ingestreceipt.Item {
 	for _, i := range keptIdx {
 		kept[i] = true
 	}
-	out := make([]ingestreceipt.Item, 0, len(r.Findings)-len(keptIdx))
+	// The refused findings alone, under the report's own tool and capability
+	// (what tells the masking that a generically typed finding is a secret).
+	refused := *r
+	refused.Findings = make([]ctis.Finding, 0, len(r.Findings)-len(keptIdx))
 	for i := range r.Findings {
-		if kept[i] || len(out) >= ingestreceipt.MaxActionsPerReceipt {
+		if kept[i] || len(refused.Findings) >= ingestreceipt.MaxActionsPerReceipt {
 			continue
 		}
-		out = append(out, receiptItem(r, &r.Findings[i], ingestreceipt.DispositionRejected, ingestreceipt.ReasonUnresolvedRef,
+		refused.Findings = append(refused.Findings, r.Findings[i])
+	}
+	redactReportSecrets(&refused)
+	maskReportEmails(&refused)
+
+	out := make([]ingestreceipt.Item, 0, len(refused.Findings))
+	for i := range refused.Findings {
+		out = append(out, receiptItem(&refused, &refused.Findings[i], ingestreceipt.DispositionRejected, ingestreceipt.ReasonUnresolvedRef,
 			ingestreceipt.PolicyValidation, nil, 0))
 	}
 	return out

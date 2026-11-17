@@ -268,7 +268,3 @@ type wait for their boards. All text through i18n, en and vi.
    redesign, or is browser print enough?
 4. **Ticket definition.** `validation_to_ticket` counts a remediation task or
    an external ticket link. Should only an external ticket count?
-</content>
-</invoke>
-<invoke name="Bash">
-<parameter name="command">cd /home/ubuntu/projects/openctemio/agent-ops/work/ctem-rfcs/repo/api; grep -n "remediation_task\|ticket" internal/infra/postgres/ctem_cycle_metrics_repository.go | head -3; grep -n "downgraded_at" migrations/001146_baseline.up.sql | head -2; grep -rln "primary_owner\|ownership_type = 'primary'\|'primary'" internal/infra/postgres/*owner*.go | head -2

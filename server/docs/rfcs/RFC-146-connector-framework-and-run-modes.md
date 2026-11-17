@@ -145,13 +145,11 @@ Third-party code never runs in the platform. Connectors are distributed as signe
 experience: a `connector init` scaffold, a local runner against a recorded cassette, a conformance command, and a
 documentation template that lists the required vendor permissions.
 
-## 10. Packaging
+## 10. Scope
 
-Source connectors (inventory and findings) and the connector kit are part of the open core. Integrations with
-enterprise systems of record (ServiceNow ITSM and CMDB, a SIEM pack with event streaming, GRC
-export, scheduled warehouse export, WAF and patch hooks) belong to the Enterprise overlay. The asset collector
-remains a separate add-on for the on-premises estate (vCenter, directory, monitoring, MDM). Curated early-warning
-intelligence is separate premium content. Managed connector executors exist only in a managed deployment.
+Source connectors (inventory and findings) and the connector kit are part of this repository. Other
+integrations are written as extensions or as optional modules that speak the open protocols. Managed
+connector executors exist only in a managed deployment.
 
 ## 11. Connector list and roadmap
 
@@ -166,8 +164,8 @@ Order of work (the kit lands first; each item after it is small):
 5. Endpoint and cloud-security sources: Defender Vulnerability Management and CrowdStrike Spotlight (with device
    lists as host anchors), Wiz, AWS Security Hub.
 6. The declarative REST connector.
-7. Trackers on the generalised ticket engine: GitLab Issues, Azure DevOps Boards, then ServiceNow (Enterprise).
-8. OCSF export, then the SIEM pack (Enterprise).
+7. Trackers on the generalised ticket engine: GitLab Issues, Azure DevOps Boards.
+8. OCSF export.
 
 Phase 0 (foundations) precedes all of them: the kit in sdk-go (interface, HTTP client, cassette testing), ctis
 capability keys and identifier kinds, the connector instance model in the console (per tenant, bound to a sensor,

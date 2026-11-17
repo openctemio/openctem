@@ -91,7 +91,7 @@ func (r *FindingRepository) ListCVEExposures(ctx context.Context, q vulnerabilit
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, findingTimeout(fmt.Errorf("list cve exposures: %w", err))
+		return nil, findingTimeout(ctx, fmt.Errorf("list cve exposures: %w", err))
 	}
 	defer rows.Close()
 	return r.scanCVEList(ctx, tx, q.Where, rows, page)
@@ -310,12 +310,12 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 		out.Data = append(out.Data, it)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	rows.Close()
 
 	if err := r.cveListDetails(ctx, tx, w, out.Data); err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit cve exposure list: %w", err)
