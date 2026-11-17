@@ -12,6 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Label } from '@/components/ui/label'
+import { FormSection } from '@/features/shared/components/forms'
 import { Switch } from '@/components/ui/switch'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import type { ScanStepParams } from '@/lib/api/scan-types'
@@ -80,9 +81,11 @@ export function StepSettingsSection({ workflowId, request, value, onChange }: Pr
   }
 
   return (
-    <fieldset className="space-y-3" data-testid="step-settings">
-      <legend className="text-sm font-medium">{t('scans.stepSettings.title')}</legend>
-      <p className="text-muted-foreground text-xs">{t('scans.stepSettings.help')}</p>
+    <FormSection
+      title={t('scans.stepSettings.title')}
+      description={t('scans.stepSettings.help')}
+      data-testid="step-settings"
+    >
       {rows.map((row) => {
         const enabled = on[row.key] === true
         const current = enabled ? { ...row.shown, ...(value[row.key] ?? {}) } : row.shown
@@ -135,6 +138,6 @@ export function StepSettingsSection({ workflowId, request, value, onChange }: Pr
           </div>
         )
       })}
-    </fieldset>
+    </FormSection>
   )
 }
