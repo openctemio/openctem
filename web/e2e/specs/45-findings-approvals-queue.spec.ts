@@ -63,7 +63,11 @@ async function freeFindings(page: Page, count: number): Promise<FreeFinding[]> {
     '/api/v1/findings?status=new,confirmed&pending_approval=false&per_page=50'
   )
   expect(list.status, 'list open findings').toBe(200)
-  const free = (list.body.data ?? []).slice(-count)
+  // Only findings on an asset: the member is granted the asset to see them.
+  const NO_ASSET = '00000000-0000-0000-0000-000000000000'
+  const free = (list.body.data ?? [])
+    .filter((f) => f.asset_id && f.asset_id !== NO_ASSET)
+    .slice(-count)
   expect(free.length, 'open findings without a pending request').toBe(count)
   return free
 }

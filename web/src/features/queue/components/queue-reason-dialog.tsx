@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import {
   Dialog,
@@ -22,6 +22,9 @@ import { useTranslation } from '@/context/i18n-provider'
  * with the reason as typed and says why, so nobody writes it twice.
  *
  * The page owns the state and the request; this is the one frame.
+ *
+ * Closing it puts the focus back on the control that opened it (the row's
+ * Reject), so a keyboard user carries on from the same row.
  */
 export function QueueReasonDialog({
   open,
@@ -63,9 +66,29 @@ export function QueueReasonDialog({
 }) {
   const { t } = useTranslation()
   const errorId = useId()
+  // The control that had the focus when the dialog opened. Read in a layout
+  // effect, before the dialog moves the focus inside itself.
+  const opener = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement) {
+      opener.current = document.activeElement
+    }
+  }, [open])
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="sm">
+      <DialogContent
+        size="sm"
+        onCloseAutoFocus={(e) => {
+          // Back to the opener while it is still on the page (a decided row
+          // may be gone; then the dialog's default applies).
+          const el = opener.current
+          opener.current = null
+          if (el?.isConnected) {
+            e.preventDefault()
+            el.focus()
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
