@@ -29,6 +29,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -36,6 +37,8 @@ import { Button } from '@/components/ui/button'
 import { CircleHelp, Maximize2, Minimize2, MoreHorizontal, Play } from 'lucide-react'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { containingOverlay } from '@/components/ui/floating'
+import type { ListSearchStatusSlot } from '@/features/shared/components/list-search'
 import { TOKEN_CLASSES } from '@/lib/code-tokens'
 import { cn } from '@/lib/utils'
 import {
@@ -120,6 +123,17 @@ function reducedMotion(): boolean {
 export const SUGGESTION_LIST_CLASSES =
   'w-[min(28rem,var(--radix-popover-trigger-width))] min-w-0 max-h-[min(16rem,var(--radix-popover-content-available-height))] overflow-y-auto p-1'
 
+/**
+ * Below 768 px a list field shares its line with the mode toggle and the
+ * Filters button, so a list as wide as the field cramps every row. There the
+ * list spans the screen less the popover's gutters (the page gutter, or the
+ * safe area when that is wider; the kit's collision padding puts its start on
+ * the gutter) and shows about eight one-line rows. A field inside a dialog,
+ * sheet or popover keeps the field's width, so the list never leaves it.
+ */
+export const SUGGESTION_LIST_PHONE_CLASSES =
+  'max-md:w-[calc(100vw-var(--float-gutter-x,2rem))] max-md:max-h-[min(17rem,var(--radix-popover-content-available-height))]'
+
 export interface QueryInputProps {
   entity: QueryEntity
   value: string
@@ -166,6 +180,12 @@ export interface QueryInputProps {
    * hint, the check and the result count are still read out, not drawn.
    */
   quietStatus?: boolean
+  /**
+   * Where a quiet field draws its problem line: the status row the list
+   * toolbar keeps under itself, so the toolbar row keeps its height. Without
+   * it the line shows under the field.
+   */
+  statusSlot?: ListSearchStatusSlot
   /** Escape with no suggestion open (a list search field reverts its text). */
   onEscape?: () => void
 }
@@ -190,6 +210,7 @@ export function QueryInput({
   inputClassName,
   adornments,
   quietStatus,
+  statusSlot,
   onEscape,
 }: QueryInputProps) {
   const { t, locale } = useTranslation()
@@ -206,6 +227,12 @@ export function QueryInput({
   // The syntax help, opened from its button or from a phone's overflow.
   const [helpOpen, setHelpOpen] = useState(false)
   const controlsRef = useRef<HTMLDivElement>(null)
+  // A field in a dialog, sheet or popover: its suggestions keep its width.
+  const [inOverlay, setInOverlay] = useState(false)
+  useLayoutEffect(() => {
+    const el = anchorRef.current
+    setInOverlay(!!el && !!containingOverlay(el))
+  }, [])
   useEffect(() => {
     if (!autoFocus || disabled || focusedOnce.current) return
     focusedOnce.current = true
@@ -594,29 +621,53 @@ export function QueryInput({
   }
 
   const drawn = !!problem || localShown || failed === value
+  // A list toolbar's field hands its problem line to the toolbar's status
+  // row: one line of the row's height, so the toolbar row never grows.
+  const slotted = !!quietStatus && !!statusSlot
+  const statusHost = slotted ? (statusSlot?.host ?? null) : null
+  const reportDrawn = statusSlot?.onDrawnChange
+  const slotDrawn = slotted && drawn
+  useEffect(() => {
+    reportDrawn?.(slotDrawn)
+  }, [reportDrawn, slotDrawn])
+  useEffect(() => () => reportDrawn?.(false), [reportDrawn])
+  const unavailable = t('queryInput.unavailable')
   const statusLine = (
     <div
       id={statusId}
       aria-live="polite"
+      data-slot="query-status"
+      data-drawn={quietStatus && drawn ? '' : undefined}
       className={cn(
-        'text-muted-foreground min-h-5 text-xs',
-        // A list field adds no space under itself until there is a problem.
-        quietStatus && (drawn ? 'mt-1' : 'sr-only')
+        'text-muted-foreground text-xs',
+        slotted
+          ? // In the toolbar's status row; read out only until there is a problem.
+            drawn && statusHost
+            ? 'flex min-w-0 flex-1 items-center'
+            : 'sr-only'
+          : // A list field adds no space under itself until there is a problem.
+            cn('min-h-5', quietStatus && (drawn ? 'mt-1' : 'sr-only'))
       )}
     >
       {problem ? (
         <ProblemLine
           problem={problem}
+          row={slotted}
           onFix={(fix) =>
             setText(applyFix(value, problem.start, problem.end, fix), problem.start + fix.length)
           }
         />
       ) : local ? (
-        <LocalProblemLine problem={local} text={value} strong={localShown} />
+        <LocalProblemLine problem={local} text={value} strong={localShown} row={slotted} />
       ) : checking ? (
         <span>{t('queryInput.checking')}</span>
       ) : failed === value ? (
-        <span>{t('queryInput.unavailable')}</span>
+        <span
+          className={slotted ? 'min-w-0 truncate' : undefined}
+          title={slotted ? unavailable : undefined}
+        >
+          {unavailable}
+        </span>
       ) : dirty ? (
         <span>{t('queryInput.pending')}</span>
       ) : typeof resultCount === 'number' && value.trim() !== '' ? (
@@ -768,13 +819,13 @@ export function QueryInput({
             )}
           </div>
         </div>
-        {statusLine}
+        {statusHost ? createPortal(statusLine, statusHost) : statusLine}
       </div>
       <PopoverContent
         asChild
         side="bottom"
         hideWhenDetached
-        className={SUGGESTION_LIST_CLASSES}
+        className={cn(SUGGESTION_LIST_CLASSES, !inOverlay && SUGGESTION_LIST_PHONE_CLASSES)}
         // The caret stays in the field: the list never takes focus.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
@@ -952,46 +1003,74 @@ function LocalProblemLine({
   problem,
   text,
   strong,
+  row,
 }: {
   problem: LocalProblem
   text: string
   strong: boolean
+  /** One line of a fixed height: the text is cut, in full in its title. */
+  row?: boolean
 }) {
   const { t } = useTranslation()
   const column = [...text.slice(0, problem.start)].length + 1
+  const message = `${t(`queryInput.local.${problem.code}`)} ${t('queryInput.atColumn', undefined, { column })}`
   return (
-    <span className={cn(strong && 'text-destructive')}>
-      {t(`queryInput.local.${problem.code}`)} {t('queryInput.atColumn', undefined, { column })}
+    <span
+      className={cn(strong && 'text-destructive', row && 'min-w-0 truncate')}
+      title={row ? message : undefined}
+    >
+      {message}
     </span>
   )
 }
 
 /** The first problem, in the person's language, with its fixes as buttons. */
-function ProblemLine({ problem, onFix }: { problem: QueryProblem; onFix: (fix: string) => void }) {
+function ProblemLine({
+  problem,
+  onFix,
+  row,
+}: {
+  problem: QueryProblem
+  onFix: (fix: string) => void
+  /**
+   * One line of a fixed height (a list toolbar's status row): the text is
+   * cut, in full in its title; the fix buttons keep their size.
+   */
+  row?: boolean
+}) {
   const { t } = useTranslation()
   const known = KNOWN_CODES.has(problem.code)
   const fixes = FIXABLE.has(problem.code) ? (problem.suggestions ?? []).slice(0, 3) : []
+  const message =
+    (known ? t(`queryInput.problem.${problem.code}`) : t('queryInput.problem.invalid')) +
+    (DETAILED.has(problem.code) && problem.message ? ` (${problem.message})` : '') +
+    (problem.column > 0
+      ? ` ${t('queryInput.atColumn', undefined, { column: problem.column })}`
+      : '') +
+    (problem.code === 'operator_not_allowed' && problem.suggestions?.length
+      ? ' ' + t('queryInput.allowedOperators', undefined, { ops: problem.suggestions.join(' ') })
+      : '')
   return (
-    <span className="text-destructive flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span>
-        {known ? t(`queryInput.problem.${problem.code}`) : t('queryInput.problem.invalid')}
-        {DETAILED.has(problem.code) && problem.message ? ` (${problem.message})` : ''}
-        {problem.column > 0
-          ? ` ${t('queryInput.atColumn', undefined, { column: problem.column })}`
-          : ''}
-        {problem.code === 'operator_not_allowed' && problem.suggestions?.length
-          ? ' ' +
-            t('queryInput.allowedOperators', undefined, { ops: problem.suggestions.join(' ') })
-          : ''}
+    <span
+      data-slot="query-problem"
+      className={cn(
+        'text-destructive flex items-center gap-x-2',
+        row ? 'min-w-0 flex-nowrap' : 'flex-wrap gap-y-1'
+      )}
+    >
+      <span className={row ? 'min-w-0 truncate' : undefined} title={row ? message : undefined}>
+        {message}
       </span>
-      {fixes.length > 0 && <span>{t('queryInput.didYouMean')}</span>}
+      {fixes.length > 0 && (
+        <span className={row ? 'shrink-0' : undefined}>{t('queryInput.didYouMean')}</span>
+      )}
       {fixes.map((f) => (
         <Button
           key={f}
           type="button"
           variant="outline"
           size="sm"
-          className="h-6 px-2 font-mono text-xs"
+          className="h-6 shrink-0 px-2 font-mono text-xs"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onFix(f)}
         >
