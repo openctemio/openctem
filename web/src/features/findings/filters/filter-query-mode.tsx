@@ -16,7 +16,7 @@
  */
 
 import { type ParseResult } from '@/features/query/api/query-api'
-import { FQ_PARAM } from '@/features/query/components/query-mode'
+import { FQ_PARAM, FROM_VIEW_PARAM } from '@/features/query/components/query-mode'
 import { savedViewId } from '@/features/saved-views/api/use-saved-views'
 import { isPractice, PRACTICE_PARAM, type PracticeView } from '../lib/practice'
 import { NON_FILTER_PARAMS } from './model'
@@ -65,10 +65,10 @@ function practiceViewOf(params: Record<string, string>): PracticeView | null {
  * owns the State lens and the Practice switch: both are written explicitly,
  * "all" when the text leaves them out.
  *
- * With a saved view open (`view=<id>`) the view sets the lens and the switch
- * while the URL does not, and the text does not print them (`filterParams`
- * is given no scope for them): what the text leaves out then stays the
- * view's, so applying a text never widens the view's own scope.
+ * With a saved view open (`view=<id>`) the field holds the view's own text,
+ * so an applied text is the whole filter: the view leaves the URL (it would
+ * apply its conditions a second time, under the text) and stays only as the
+ * view the list came from, `from_view=<id>`, which no request sends.
  */
 export function applyTextFilter(
   search: URLSearchParams,
@@ -80,10 +80,13 @@ export function applyTextFilter(
     if ((KEEP.has(k) || skip.has(k)) && k !== PRACTICE_PARAM) next.append(k, v)
   })
   next.delete('page')
-  const view = !!savedViewId(search.get('view'))
-  // null: not written, the open view's own applies.
-  let state: string | null = view && !search.has(STATE_PARAM) ? null : 'all'
-  let practice: PracticeView | null = view && !search.has(PRACTICE_PARAM) ? null : 'all'
+  const view = savedViewId(search.get('view'))
+  if (view) {
+    next.delete('view')
+    next.set(FROM_VIEW_PARAM, view)
+  }
+  let state = 'all'
+  let practice: PracticeView = 'all'
   if (result.text !== '') {
     const flat = !result.advanced && result.params ? { ...result.params } : null
     const said = flat ? practiceViewOf(flat) : null
@@ -92,13 +95,13 @@ export function applyTextFilter(
       delete flat[STATE_PARAM]
       delete flat.practice
       delete flat.practice_not
-      if (said !== 'all') practice = said
+      practice = said
       for (const [k, v] of Object.entries(flat)) next.set(k, v)
     } else {
       next.set(FQ_PARAM, result.text)
     }
   }
-  if (state !== null) next.set(STATE_PARAM, state)
-  if (practice !== null) next.set(PRACTICE_PARAM, practice)
+  next.set(STATE_PARAM, state)
+  next.set(PRACTICE_PARAM, practice)
   return next
 }

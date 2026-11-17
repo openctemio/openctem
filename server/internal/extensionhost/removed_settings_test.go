@@ -8,13 +8,13 @@ import (
 	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
-func TestRemovedSettingsRefuseCommunity(t *testing.T) {
+func TestRemovedSettingsRefuseDefaultBuild(t *testing.T) {
 	env := map[string]string{"ADMIN_AUDIT_SINK": "https://siem.example.test/hook"}
 	get := func(k string) string { return env[k] }
 	for _, s := range []*Set{nil, build(t)} {
 		err := s.CheckRemovedSettings(get)
 		if err == nil || !strings.Contains(err.Error(), "ADMIN_AUDIT_SINK") || strings.Contains(err.Error(), "siem.example.test") {
-			t.Fatalf("Community with a sink set: %v (must refuse and never repeat the value)", err)
+			t.Fatalf("default build with a sink set: %v (must refuse and never repeat the value)", err)
 		}
 	}
 	if err := build(t).CheckRemovedSettings(func(string) string { return "" }); err != nil {
@@ -56,7 +56,7 @@ func TestRemovedSettingsAreNotCoreSettings(t *testing.T) {
 func TestConfigKeysMatchDeclares(t *testing.T) {
 	var none *Set
 	if none.ConfigKeys() != nil || build(t).ConfigKeys() != nil {
-		t.Fatal("Community has no extension config keys")
+		t.Fatal("the default build has no extension config keys")
 	}
 	s := build(t,
 		ext.Extension{Name: "one", ConfigKeys: []string{"ADMIN_AUDIT_SINK"}},

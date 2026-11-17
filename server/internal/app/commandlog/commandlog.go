@@ -248,8 +248,9 @@ func (s *Service) ListForCommand(ctx context.Context, tenantID, commandID shared
 	return shown(p), nil
 }
 
-// CommandSubject is the finding a command is about (a retest or a
-// validate job), nil for any other command.
+// CommandSubject is the finding a command is about (an AI analysis job, a
+// retest or a validate job), nil for any other command; the zero id when the
+// subject cannot be read.
 func (s *Service) CommandSubject(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error) {
 	r, ok := s.store.(commandReader)
 	if !ok {
@@ -258,10 +259,21 @@ func (s *Service) CommandSubject(ctx context.Context, tenantID, commandID shared
 	return r.SubjectFinding(ctx, tenantID, commandID)
 }
 
+// CommandSubjects is CommandSubject for a page of commands: the finding of
+// each command that is about one (zero id: unreadable subject).
+func (s *Service) CommandSubjects(ctx context.Context, tenantID shared.ID, commandIDs []shared.ID) (map[shared.ID]shared.ID, error) {
+	r, ok := s.store.(commandReader)
+	if !ok {
+		return map[shared.ID]shared.ID{}, nil
+	}
+	return r.SubjectFindings(ctx, tenantID, commandIDs)
+}
+
 // commandReader reads a command's logs and subject by command id.
 type commandReader interface {
 	ListForCommand(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (Page, error)
 	SubjectFinding(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error)
+	SubjectFindings(ctx context.Context, tenantID shared.ID, commandIDs []shared.ID) (map[shared.ID]shared.ID, error)
 }
 
 // sanitize makes one line safe to store and show: bounded, plain, redacted.

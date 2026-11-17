@@ -105,7 +105,13 @@ enrolls at their first sign-in. The token-mint gate looks the role up in the
 organization and fails closed when it cannot.
 
 - Login: a member of any organization that requires 2FA, who has not enrolled, gets an
-  enrollment challenge. They cannot get a session until they enroll.
+  enrollment challenge. They cannot get a session until they enroll. Completing the
+  enrollment (`/auth/mfa/enroll/confirm`, from the sign-in or from an invitation)
+  **signs out every earlier session of the user**, including the one that asked for
+  the challenge in place, and opens a new one; the `auth.mfa_enabled` audit record
+  carries `other_sessions_ended: true`. A password session passes the 2FA rule only
+  because the user's factor is on, so a session opened before the factor existed must
+  not survive it.
 - Token mint (`/auth/token`, `/auth/refresh`): a password session of an unenrolled user
   gets `403 {code:"MFA_ENROLLMENT_REQUIRED"}` for a tenant that requires 2FA. The UI
   then signs the user out and back in, which leads to enrollment. A policy turned on
@@ -216,8 +222,11 @@ If an organization or the platform floor requires the factor, turning it off wou
 the account on password only until its open sessions expire (the requirement is checked
 when a token is minted, not on every request). So the API refuses and names who
 requires it, and the replacement flow covers the one legitimate need (a new device)
-without a moment of being unprotected. Every change of factor (on, off, replace) signs
-out the user's other sessions: a session opened before the change must not outlive it.
+without a moment of being unprotected. Every change of factor (on from My account or
+through a sign-in or invitation enrollment, off, replace, reset by an administrator or
+the console) signs out the user's other sessions: a session opened before the change
+must not outlive it. Regenerating the recovery codes is not a change of factor and
+keeps the sessions.
 
 If the recovery codes are also lost, an owner or administrator of their organization
 resets it: **Settings > Members**, row menu **Reset 2FA**
