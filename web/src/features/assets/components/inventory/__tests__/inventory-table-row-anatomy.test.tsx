@@ -62,7 +62,6 @@ function renderTable(assets: Asset[]) {
       pageSize={20}
       onPageChange={() => {}}
       onSortChange={() => {}}
-      onSelectionChange={() => {}}
       resetSelectionKey={0}
       hasFilters={false}
     />

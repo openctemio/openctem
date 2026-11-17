@@ -37,12 +37,26 @@ interface AddToScopeActionProps {
   names: string[]
   /** Called after entries were added (refresh the list, clear the selection). */
   onDone?: () => void
+  /**
+   * Opened from elsewhere (an item of a menu): the dialog follows `open` and
+   * the component draws no button of its own.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function AddToScopeAction({ names, onDone }: AddToScopeActionProps) {
+export function AddToScopeAction({
+  names,
+  onDone,
+  open: openProp,
+  onOpenChange,
+}: AddToScopeActionProps) {
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScopeWrite)
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const controlled = onOpenChange !== undefined
+  const open = controlled ? !!openProp : ownOpen
+  const setOpen = controlled ? onOpenChange : setOwnOpen
   const [busy, setBusy] = useState(false)
   const { items, skipped } = useMemo(() => scopeItemsForAssets(names), [names])
   const tooMany = items.length > MAX_ITEMS
@@ -70,10 +84,12 @@ export function AddToScopeAction({ names, onDone }: AddToScopeActionProps) {
 
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <Crosshair className="me-2 h-4 w-4" aria-hidden />
-        {t('scope.bulk.action', 'Add to scope')}
-      </Button>
+      {!controlled && (
+        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+          <Crosshair className="me-2 h-4 w-4" aria-hidden />
+          {t('scope.bulk.action', 'Add to scope')}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent>
           <DialogHeader>
