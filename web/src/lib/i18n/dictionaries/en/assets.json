@@ -1054,6 +1054,8 @@
   "assets.repository.danger.deleteTitle": "Delete repository",
   "assets.repository.findingsSearch.label": "Search findings",
   "assets.repository.findingsSearch.placeholder": "Search findings…",
+  "assets.repository.menu.copyUrl": "Copy URL",
+  "assets.repository.menu.urlCopied": "URL copied",
   "assets.repository.notScannedYet": "This repo has findings from ingest, but {product} hasn’t scanned it yet.",
   "assets.repository.runFirstScan": "Run first scan",
   "assets.repository.runFirstScanHint": "Run a scan to map its branches, build the SBOM (components), and enable per-branch drift and SLA tracking.",

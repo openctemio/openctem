@@ -1054,6 +1054,8 @@
   "assets.repository.danger.deleteTitle": "Xóa kho mã",
   "assets.repository.findingsSearch.label": "Tìm phát hiện",
   "assets.repository.findingsSearch.placeholder": "Tìm phát hiện…",
+  "assets.repository.menu.copyUrl": "Sao chép URL",
+  "assets.repository.menu.urlCopied": "Đã sao chép URL",
   "assets.repository.notScannedYet": "Kho mã này có phát hiện từ dữ liệu nhập, nhưng {product} chưa quét nó.",
   "assets.repository.runFirstScan": "Chạy lần quét đầu tiên",
   "assets.repository.runFirstScanHint": "Chạy một lần quét để lập bản đồ các nhánh, tạo SBOM (thành phần) và bật theo dõi độ lệch và SLA theo từng nhánh.",

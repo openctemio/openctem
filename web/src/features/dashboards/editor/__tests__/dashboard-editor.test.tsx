@@ -144,7 +144,15 @@ describe('DashboardEditor', () => {
     )
     const menu = screen.getByRole('menu')
     const items = within(menu).getAllByRole('menuitem')
-    expect(items.map((i) => i.textContent?.replace(/[←→↑↓⇧]|Del$|D$/g, '').trim())).toEqual([
+    // An unavailable item says why under its name.
+    expect(
+      items.map((i) =>
+        i.textContent
+          ?.replace(/Already [a-z ]+/, '')
+          .replace(/[←→↑↓⇧]|Del$|D$/g, '')
+          .trim()
+      )
+    ).toEqual([
       'Move earlier',
       'Move later',
       'Narrower',
@@ -154,12 +162,15 @@ describe('DashboardEditor', () => {
       'Duplicate',
       'Remove',
     ])
-    // Remove is last, after a separator, in the destructive colour.
-    expect(items.at(-1)).toHaveClass('text-destructive')
-    expect(items.at(-1)?.previousElementSibling).toHaveAttribute('role', 'separator')
-    expect(within(menu).getByRole('menuitem', { name: /Move earlier/ })).toHaveAttribute(
-      'data-disabled'
+    // Remove is last, in a group of its own after a separator, in the destructive colour.
+    expect(items.at(-1)).toHaveAttribute('data-variant', 'destructive')
+    expect(items.at(-1)?.closest('[role=group]')?.previousElementSibling).toHaveAttribute(
+      'role',
+      'separator'
     )
+    const earlier = within(menu).getByRole('menuitem', { name: /Move earlier/ })
+    expect(earlier).toHaveAttribute('data-disabled')
+    expect(earlier).toHaveTextContent('Already first')
     await userEvent.click(within(menu).getByRole('menuitem', { name: /Move later/ }))
     expect(screen.getAllByTestId('editor-card')[1]).toHaveAccessibleName(
       'Open findings, position 2 of 2'

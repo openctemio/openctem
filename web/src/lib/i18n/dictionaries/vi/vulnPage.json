@@ -1,4 +1,5 @@
 {
+  "vulnPage.actions.busy": "Đang xử lý...",
   "vulnPage.actions.exception.description": "Một quyết định cho các phát hiện đang mở của {cves} mà bạn thấy được theo bộ lọc hiện tại. Phát hiện tìm thấy sau này không được bao gồm.",
   "vulnPage.actions.exception.open": "Chấp nhận rủi ro hoặc đánh dấu dương tính giả",
   "vulnPage.actions.exception.pending": "Các phát hiện này đang chờ một quyết định ngoại lệ. Hãy quyết định hoặc hủy nó trước.",

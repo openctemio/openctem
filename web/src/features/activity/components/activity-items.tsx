@@ -30,13 +30,7 @@ import {
 import { toast } from 'sonner'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -237,6 +231,9 @@ export interface CommentCardProps {
   className?: string
 }
 
+/** Wait for the actions menu to close and return the focus before the picker opens. */
+const PICKER_AFTER_MENU_MS = 250
+
 export function CommentCard({
   item,
   viewer,
@@ -255,10 +252,6 @@ export function CommentCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
-  // "Add reaction" in the actions menu opens the picker once the menu has
-  // closed: opening it while the menu hands focus back to its trigger
-  // closed it again at once.
-  const pickerFromMenu = useRef(false)
   const editRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -270,6 +263,44 @@ export function CommentCard({
   const isPending = !!item.pending
   const canReact = !!onToggleReaction && !isPending
   const hasMenu = canReact || !!onEdit || !!onDelete || !isPending
+
+  const menuItems: ActionMenuEntry[] = []
+  if (canReact)
+    menuItems.push({
+      id: 'react',
+      label: t('activity.item.addReaction', 'Add reaction'),
+      icon: SmilePlus,
+      // The picker opens once the menu has closed and handed the focus back
+      // to its trigger: opening it sooner closed it again at once.
+      onSelect: () => window.setTimeout(() => setPickerOpen(true), PICKER_AFTER_MENU_MS),
+    })
+  menuItems.push({
+    id: 'copy',
+    label: t('activity.item.copyText', 'Copy text'),
+    icon: Copy,
+    onSelect: () => {
+      void copyToClipboard(item.body)
+      toast.success(t('activity.item.copied', 'Comment copied'))
+    },
+  })
+  if (onEdit && !isPending)
+    menuItems.push({
+      id: 'edit',
+      label: t('activity.item.edit', 'Edit'),
+      icon: Pencil,
+      onSelect: () => {
+        setDraft(item.body)
+        setEditing(true)
+      },
+    })
+  if (onDelete && !isPending)
+    menuItems.push({
+      id: 'delete',
+      label: t('activity.item.delete', 'Delete'),
+      icon: Trash2,
+      destructive: true,
+      onSelect: () => setConfirmDelete(true),
+    })
 
   const addReaction = (emoji: string) => {
     if (reactions.find((r) => r.emoji === emoji)?.reactedByMe) return
@@ -428,8 +459,11 @@ export function CommentCard({
               </button>
             </ReactionPicker>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            title={t('activity.item.actions', 'Comment actions')}
+            label={t('activity.item.actions', 'Comment actions')}
+            items={menuItems}
+            trigger={
               <button
                 type="button"
                 aria-label={t('activity.item.actions', 'Comment actions')}
@@ -437,59 +471,8 @@ export function CommentCard({
               >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              onCloseAutoFocus={(e) => {
-                if (!pickerFromMenu.current) return
-                pickerFromMenu.current = false
-                e.preventDefault()
-                setPickerOpen(true)
-              }}
-            >
-              {canReact && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    pickerFromMenu.current = true
-                  }}
-                >
-                  <SmilePlus className="h-4 w-4" />
-                  {t('activity.item.addReaction', 'Add reaction')}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onSelect={() => {
-                  void copyToClipboard(item.body)
-                  toast.success(t('activity.item.copied', 'Comment copied'))
-                }}
-              >
-                <Copy className="h-4 w-4" />
-                {t('activity.item.copyText', 'Copy text')}
-              </DropdownMenuItem>
-              {onEdit && !isPending && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setDraft(item.body)
-                    setEditing(true)
-                  }}
-                >
-                  <Pencil className="h-4 w-4" />
-                  {t('activity.item.edit', 'Edit')}
-                </DropdownMenuItem>
-              )}
-              {onDelete && !isPending && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onSelect={() => setConfirmDelete(true)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    {t('activity.item.delete', 'Delete')}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         </div>
       )}
 
