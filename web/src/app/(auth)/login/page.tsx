@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { legalConfig } from '@/lib/legal'
 import { legalSettings } from '@/lib/legal-settings'
-import { Card, CardContent, CardFooter } from '@/components/ui/card'
+import { EntryCard, EntryLine, EntryNote } from '@/components/entry'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { hasSessionCookie } from '@/lib/middleware/auth'
@@ -11,6 +11,7 @@ import { hasSessionCookie } from '@/lib/middleware/auth'
 import { LoginForm } from '@/features/auth/components/login-form'
 import { LoginHeader } from '@/features/auth/components/login-header'
 import { LegalNotice } from '@/features/auth/components/legal-notice'
+import { SignUpPrompt } from '@/features/auth/components/sign-up-prompt'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 
 interface LoginPageProps {
@@ -79,14 +80,19 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
   }
 
   return (
-    <Card className="gap-4">
-      <LoginHeader returnTo={returnTo} email={params.email} />
-      <CardContent>
-        <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
-      </CardContent>
-      <CardFooter className="justify-center empty:hidden">
+    // While a second step shows (two-factor), the step's title is the page's.
+    <EntryCard className="has-[[data-entry-step]]:[&>[data-slot=entry-header]]:hidden has-[[data-entry-step]]:[&>[data-slot=entry-note]]:hidden has-[[data-entry-step]]:[&>[data-slot=entry-line]]:hidden">
+      <LoginHeader />
+      <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
+      <EntryNote>
         <LegalNotice kind="signIn" termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
-      </CardFooter>
-    </Card>
+      </EntryNote>
+      {/* Sign-up is offered only when the server allows it, or when the visitor
+          came from an invitation (accounts are otherwise created by an
+          administrator). */}
+      <EntryLine>
+        <SignUpPrompt returnTo={returnTo} email={params.email} />
+      </EntryLine>
+    </EntryCard>
   )
 }
