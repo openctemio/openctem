@@ -23,8 +23,6 @@
   "assetDetail.ownersErrorTitle": "owners",
   "assetDetail.properties": "Properties",
   "assetDetail.propertiesAria": "Asset properties",
-  "assetDetail.richerHint": "The inventory lists every {type} with its filters, columns and actions.",
-  "assetDetail.richerTitle": "Looking for richer details?",
   "assetDetail.riskScore": "Risk score",
   "assetDetail.scanningErrorTitle": "scope and scanning",
   "assetDetail.status": "Status",

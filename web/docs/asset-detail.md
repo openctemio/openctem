@@ -8,12 +8,14 @@ How `/assets/[id]` is laid out, and why. The code is in
 
 - **Header** (`DetailPageHeader`): the asset type, scope, exposure and criticality as chips, the name as the
   page's only `h1`, and the More menu: Copy link, Copy ID, Open the list of this type. Status is a property, not
-  a header chip. Below 768 px the first line is "‹ Assets".
+  a header chip. The criticality chip shows its level with the bars and the word on the plain pill (no solid
+  fill: next to the actions it would read as a button). Below 768 px the first line is "‹ Assets", the chips wrap
+  onto lines, and More sits at the end of the name's line.
 - **Tabs** right under the header, the active one in `?tab=`:
 
   | Tab                | Key             | Shown when                               | Content                                                                                |
   | ------------------ | --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-  | Overview           | `overview`      | always                                   | next steps, the scan window (hidden when none), the list of this type                  |
+  | Overview           | `overview`      | always                                   | next steps, the scan window (hidden when none)                                         |
   | Relationships n    | `relationships` | the relationships module is on           | `AssetRelationshipsTab` (add, edit, delete, open a related asset)                      |
   | How we found this  | `found`         | always                                   | ownership and scope, lineage, where values come from, freshness, coverage, identifiers |
   | Ports and services | `ports`         | domain, subdomain                        | open ports of the addresses it resolves to                                             |
@@ -21,7 +23,7 @@ How `/assets/[id]` is laid out, and why. The code is in
   | Owners and access  | `owners`        | always                                   | `AssetOwnersTab` (owners, groups, access grants)                                       |
   | Activity           | `activity`      | always                                   | `AssetTimeline`; "Why" opens How we found this                                         |
 
-- **Properties** (`PropertyList`): risk score, open findings (a link to the asset's findings), status and
+- **Properties** (`PropertyList`): risk score (the value with its mark; the label names it), open findings (a link to the asset's findings), status and
   liveness, type; then ID, description and tags (folded on a phone). Beside the panel from 1280 px, under the
   header below that.
 - A repository keeps its own workspace at the same URL.

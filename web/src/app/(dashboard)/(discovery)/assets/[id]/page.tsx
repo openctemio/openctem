@@ -33,7 +33,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import Link from '@/components/link'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,7 +42,6 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
   DetailPageHeader,
-  DetailSectionBlock,
   DetailSectionList,
   PropertyFold,
   PropertyGroup,
@@ -91,7 +89,6 @@ import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { copyToClipboard } from '@/lib/clipboard'
 import { shareableLink } from '@/lib/org-link'
-import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 
@@ -323,7 +320,7 @@ export default function AssetDetailPage() {
   const listingQuery = new URLSearchParams({ types: asset.type })
   if (asset.subType) listingQuery.set('sub_type', asset.subType)
   const listingHref = `/assets?${listingQuery}`
-  const typeLabel = getAssetTypeLabel(asset.type)
+  const typeLabel = t(`assets.typeLabel.${asset.type}`, getAssetTypeLabel(asset.type))
 
   const menu: ActionMenuEntry[] = [
     {
@@ -371,7 +368,9 @@ export default function AssetDetailPage() {
                 criticality={asset.criticality}
                 size="md"
                 labelled
-                className="flex-wrap"
+                // The chips join the header's wrapping row, so on a phone
+                // they break onto lines instead of running off the screen.
+                className="contents"
               />
             </>
           }
@@ -384,11 +383,7 @@ export default function AssetDetailPage() {
               <PropertyList label={t('assetDetail.properties', 'Properties')}>
                 <PropertyGroup>
                   <PropertyRow label={t('assetDetail.riskScore', 'Risk score')}>
-                    <RiskScoreBadge
-                      score={asset.riskScore}
-                      state={riskScoreState(asset)}
-                      labelled
-                    />
+                    <RiskScoreBadge score={asset.riskScore} state={riskScoreState(asset)} />
                   </PropertyRow>
                   <PropertyRow label={t('assetDetail.openFindings', 'Open findings')}>
                     {asset.findingCount > 0 ? (
@@ -466,24 +461,6 @@ export default function AssetDetailPage() {
                   <AssetNextSteps assetId={asset.id} />
                   {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
                   <AssetScanWindowCard assetId={asset.id} />
-                  <DetailSectionBlock
-                    title={t('assetDetail.richerTitle', 'Looking for richer details?')}
-                    actions={
-                      <Button variant="outline" asChild>
-                        <Link href={safeHref(listingHref) ?? '/assets'}>
-                          {t('assetDetail.openList', 'Open {type} list', { type: typeLabel })}
-                        </Link>
-                      </Button>
-                    }
-                  >
-                    <p className="text-body text-muted-foreground">
-                      {t(
-                        'assetDetail.richerHint',
-                        'The inventory lists every {type} with its filters, columns and actions.',
-                        { type: typeLabel }
-                      )}
-                    </p>
-                  </DetailSectionBlock>
                 </DetailSectionList>
               </TabsContent>
               {relationshipsOn && (

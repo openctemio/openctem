@@ -244,6 +244,17 @@ describe('/assets/[id]', () => {
     expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
   })
 
+  it('shows the risk score as its value only, and no filler block in Overview', () => {
+    state.asset = { ...BASE, type: 'subdomain', riskScore: 82, riskScored: true }
+    render(<AssetDetailPage />)
+    const props = screen.getByRole('group', { name: 'Properties' })
+    expect(props).toHaveTextContent('82')
+    expect(props).not.toHaveTextContent('Risk: 82')
+    expect(screen.queryByText('Looking for richer details?')).toBeNull()
+    // The way to the list stays in More.
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+  })
+
   it('opens Owners and access and Relationships on their components', async () => {
     state.asset = { ...BASE, type: 'domain' }
     state.tab = 'owners'

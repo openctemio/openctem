@@ -62,6 +62,22 @@ describe('ClassificationBadges, labelled (asset header)', () => {
     )
     expect(container.textContent).not.toContain('Zone:')
   })
+
+  it('draws a header criticality without the solid fill a list uses, never cut at 200 px', () => {
+    const { container, unmount } = render(
+      <ClassificationBadges scope="internal" exposure="public" criticality="critical" labelled />
+    )
+    let tag = container.querySelector('[data-slot="tag"]') as HTMLElement
+    expect(tag.className).not.toContain('bg-lvl-4-bg')
+    expect(tag.className).toContain('max-w-full')
+    expect(tag.className).not.toContain('max-w-[200px]')
+    unmount()
+    const list = render(
+      <ClassificationBadges scope="internal" exposure="public" criticality="critical" />
+    )
+    tag = list.container.querySelector('[data-slot="tag"]') as HTMLElement
+    expect(tag.className).toContain('bg-lvl-4-bg')
+  })
 })
 
 describe('AssetScopeChip', () => {

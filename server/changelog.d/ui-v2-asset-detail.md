@@ -1,8 +1,10 @@
 ### Changed: the asset page follows the redesigned detail layout (redesign branch)
 
 - Header: the asset type and its scope, exposure and criticality as chips above the name, and a More menu (Copy
-  link, Copy ID, Open the list of this type). On a phone the way back to Assets leads the header.
-- Tabs sit right under the header: Overview (next steps, scan window, the list of this type), Relationships with
+  link, Copy ID, Open the list of this type). On a phone the way back to Assets leads the header, the chips wrap
+  onto lines and More sits at the end of the name's line. The criticality chip in a header (page and drawer) shows
+  its level by bars and word without a solid fill.
+- Tabs sit right under the header: Overview (next steps, scan window), Relationships with
   its count (when the relationships module is on), How we found this (ownership and scope, lineage, where values
   come from, freshness, coverage, identifiers), Ports and services (domains and subdomains), Web (web origins, or
   any asset a sensor kept web evidence for), Owners and access, and Activity (the timeline; its "Why" opens How
