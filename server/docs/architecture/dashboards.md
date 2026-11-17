@@ -14,7 +14,7 @@ here as they ship.
 | Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
 | Snapshots, the refresher, Refresh now (migration `003260_dashboard_snapshots`) | **Shipped** |
 | Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
-| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
+| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher on the title, scope badge, freshness line, Refresh now, schedule in the actions menu | **Shipped** |
 
 The typed widget endpoints read the facts, and `/` renders only stored
 dashboards of typed widgets; the built-in CTEM and Classic views are removed.
@@ -1280,22 +1280,24 @@ widget kit's frame, with its own error boundary.
   name, followed by "by <dimension>" when it groups by something other than
   the metric's default ("Open findings by SLA state"), so two widgets of one
   metric are told apart.
-- **Switcher**: one menu with "Organization" (shown only with
+- **Switcher**: the dashboard's name is the switcher: a chevron button right
+  after the page title (outside the heading; its accessible name is "Switch
+  dashboard: <name>") opens one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
 - **Scope badge**: "Organization-wide" or "Your scope", from the response's
   `scope`; drill-downs open lists in the viewer's own access.
-- **Toolbar**: on a phone (below 640px) one row with the switcher filling the
-  width, an icon-only Refresh now and an icon-only More menu (44px targets,
-  accessible names); Customize and the refresh schedule move into More. From
-  640px one row: switcher, Customize, schedule picker, Refresh now, More. The
-  dashboard description is hidden on a phone.
+- **Toolbar**: at the end of the title row at every width: Customize (from
+  640px; an item of More below it), an icon-only Refresh now and an icon-only
+  More menu (accessible names; 44px touch targets on a phone). The refresh
+  schedule is a submenu of More at every width. The dashboard description is
+  hidden on a phone.
 - **Freshness line**: one muted line under the toolbar, "Your scope · Updated
   2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
   truncates first on narrow screens; a status line appears under it only when the
   figures are stale, the last refresh failed, or the data is being built for
   the first time. Refresh now answers a 429 with a message. The schedule
-  picker is offered to the owner of a personal dashboard or a manager of an
+  submenu is offered to the owner of a personal dashboard or a manager of an
   organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).

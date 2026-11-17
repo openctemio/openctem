@@ -1215,10 +1215,10 @@ repositories, SCM connections, the vulnerability page).
 holds a More icon; menus that are not action menus (breadcrumb levels, editor
 formatting, a menu of choices) are listed there with the reason.
 
-- A control that moves into the toolbar from 640 px up (the dashboard's Customize
-  and refresh schedule) is an item of the menu only below that width
-  (`useIsBelowSm`); a choice among values (the schedule) is a submenu, the
-  saved value marked "(current)".
+- A control that moves into the toolbar from 640 px up (the dashboard's
+  Customize) is an item of the menu only below that width (`useIsBelowSm`); a
+  choice among values (the dashboard's refresh schedule) is a submenu of the
+  menu at every width, the saved value marked "(current)".
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 

@@ -12,7 +12,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
-import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2, X } from 'lucide-react'
+import {
+  Copy,
+  LayoutGrid,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  SlidersHorizontal,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -22,7 +32,7 @@ import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useIsBelowSm } from '@/hooks/use-mobile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader, PageStack } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
@@ -65,7 +75,6 @@ import {
   DashboardFreshness,
   RefreshButton,
   scheduleSubmenu,
-  ScheduleSelect,
 } from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
@@ -385,8 +394,8 @@ export function DashboardHome() {
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
-  // Customize and the schedule are toolbar controls from 640px; below it they
-  // are items of this menu.
+  // Customize is a toolbar button from 640px and an item of this menu below
+  // it; the refresh schedule is an item of this menu at every width.
   const menuItems: ActionMenuEntry[] = []
   if (dashboard) {
     if (canCustomize && belowSm)
@@ -423,7 +432,7 @@ export function DashboardHome() {
         icon: Pencil,
         href: `/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`,
       })
-    if (canSchedule && !customizing && belowSm)
+    if (canSchedule && !customizing)
       menuItems.push({
         ...scheduleSubmenu(t, dashboard.refresh_schedule, schedule),
         section: 'schedule',
@@ -441,52 +450,51 @@ export function DashboardHome() {
   return (
     <Main>
       <PageStack>
-        {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
-            Customize and the schedule move into More. From 640px one toolbar
-            row: switcher, Customize, schedule, Refresh now, More. */}
+        {/* The dashboard's name is the switcher (a chevron right after it).
+            The actions sit at the end of the title row at every width:
+            Customize (from 640px; in More below it), Refresh now and More,
+            which also holds the refresh schedule. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
+          titleAction={
+            listsLoading ? undefined : (
+              <DashboardSwitcher
+                personal={personal}
+                organization={organization}
+                active={active}
+                onChoose={choose}
+              />
+            )
+          }
           // Whose figures these are and how fresh: one line under the name,
-          // part of the header, so the widgets start right below it.
+          // part of the header, so the widgets start right below it. While
+          // the lists load, a line of the same height holds its place.
           description={
-            dashboard && active && !customizing ? (
+            dashboard && active ? (
               <DashboardFreshness kind={active.kind} data={data.data} />
+            ) : listsLoading ? (
+              <Skeleton className="h-4 w-56 max-w-full" data-testid="dashboard-meta-pending" />
             ) : undefined
           }
-          actionsClassName="basis-full sm:basis-auto"
         >
-          <div
-            className="flex w-full min-w-0 flex-nowrap items-center gap-2 sm:w-auto"
-            data-testid="dashboard-toolbar"
-          >
-            <DashboardSwitcher
-              personal={personal}
-              organization={organization}
-              active={active}
-              onChoose={choose}
-              className="min-w-0 max-w-none flex-1 justify-start sm:max-w-[16rem] sm:flex-none"
-            />
-            {canCustomize && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden sm:inline-flex"
-                onClick={() => setCustomizing(true)}
-                disabled={customizing}
-              >
-                <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.actions.customize', 'Customize')}
-              </Button>
-            )}
-            {canSchedule && !customizing && (
-              <ScheduleSelect
-                schedule={dashboard?.refresh_schedule}
-                onSchedule={schedule}
-                className="hidden sm:flex"
-              />
-            )}
-            {dashboard && !customizing && <RefreshButton onRefresh={refresh} />}
-            {dashboard && (
+          {dashboard && (
+            <div
+              className="flex min-w-0 flex-nowrap items-center gap-2"
+              data-testid="dashboard-toolbar"
+            >
+              {canCustomize && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden sm:inline-flex"
+                  onClick={() => setCustomizing(true)}
+                  disabled={customizing}
+                >
+                  <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
+                  {t('dashboards.actions.customize', 'Customize')}
+                </Button>
+              )}
+              {!customizing && <RefreshButton onRefresh={refresh} iconOnly />}
               <ActionMenu
                 title={dashboard.name}
                 label={t('dashboards.actions.more', 'More dashboard actions')}
@@ -502,8 +510,8 @@ export function DashboardHome() {
                   </Button>
                 }
               />
-            )}
-          </div>
+            </div>
+          )}
         </PageHeader>
         {dashboard && active && !customizing && <DashboardDataNotice data={data.data} />}
 
@@ -511,12 +519,18 @@ export function DashboardHome() {
           <DashboardSkeleton />
         ) : !dashboard || !active ? (
           seedFailed || !nothing ? (
-            <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-              {t('dashboards.view.none', 'You have no dashboards yet.')}{' '}
-              <Link href="/dashboards" className="font-medium text-foreground underline">
-                {t('dashboards.switcher.new', 'New dashboard')}
-              </Link>
-            </div>
+            <EmptyState
+              icon={LayoutGrid}
+              title={t('dashboards.view.none', 'You have no dashboards yet.')}
+              action={
+                <Button asChild>
+                  <Link href="/dashboards">
+                    <Plus aria-hidden />
+                    {t('dashboards.switcher.new', 'New dashboard')}
+                  </Link>
+                </Button>
+              }
+            />
           ) : (
             <DashboardSkeleton />
           )

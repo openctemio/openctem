@@ -6,9 +6,9 @@
  *   next scheduled refresh) plus a status line only when the figures are
  *   stale or still being built;
  * - `RefreshButton`: Refresh now (budgeted on the server), icon-only on a
- *   phone with the same accessible name;
- * - `ScheduleSelect` (toolbar, from 640px) and `scheduleSubmenu` (a submenu of
- *   the actions menu on a phone) for those who may change the schedule.
+ *   phone (or at every width with `iconOnly`) with the same accessible name;
+ * - `scheduleSubmenu`: the refresh schedule as a submenu of the dashboard's
+ *   actions menu, for those who may change it.
  */
 
 import { useEffect, useState } from 'react'
@@ -16,13 +16,6 @@ import { AlertTriangle, Building2, Clock, RefreshCw, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import type { ActionMenuSubmenu } from '@/components/ui/action-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
@@ -43,19 +36,8 @@ export const SCHEDULE_OPTIONS: readonly DashboardRefreshSchedule[] = [
   'manual',
 ]
 
-/** Select values cannot be empty: the organization default travels as "default". */
-const DEFAULT_VALUE = 'default'
-
-const toValue = (s: DashboardRefreshSchedule) => s || DEFAULT_VALUE
-const fromValue = (v: string) => (v === DEFAULT_VALUE ? '' : v) as DashboardRefreshSchedule
-
-function useScheduleLabel() {
-  const { t } = useTranslation()
-  return (s: DashboardRefreshSchedule) =>
-    s === ''
-      ? t('dashboards.schedule.default', 'Organization default')
-      : t(`dashboards.schedule.${s}`, s)
-}
+/** Item ids cannot be empty: the organization default travels as "default". */
+const toValue = (s: DashboardRefreshSchedule) => s || 'default'
 
 /** Whose figures these are: an icon and a short label, the full rule on hover or focus. */
 export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: DashboardKind }) {
@@ -195,9 +177,12 @@ export function DashboardDataNotice({ data }: { data?: DashboardData }) {
 export function RefreshButton({
   onRefresh,
   disabled,
+  iconOnly,
 }: {
   onRefresh: () => Promise<unknown>
   disabled?: boolean
+  /** Icon-only at every width (the dashboard header); the name stays "Refresh now". */
+  iconOnly?: boolean
 }) {
   const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
@@ -221,6 +206,23 @@ export function RefreshButton({
       setRefreshing(false)
     }
   }
+  const label = t('dashboards.refresh.now', 'Refresh now')
+  if (iconOnly)
+    return (
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="shrink-0"
+        onClick={refresh}
+        disabled={refreshing || disabled}
+        aria-busy={refreshing || undefined}
+        aria-label={label}
+        title={label}
+        data-testid="dashboard-refresh"
+      >
+        <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} aria-hidden />
+      </Button>
+    )
   return (
     <Button
       iconOnlyBelow="sm"
@@ -236,62 +238,19 @@ export function RefreshButton({
         className={cn('h-4 w-4 sm:me-1.5 sm:h-3.5 sm:w-3.5', refreshing && 'animate-spin')}
         aria-hidden
       />
-      <span className="sr-only sm:not-sr-only">{t('dashboards.refresh.now', 'Refresh now')}</span>
+      <span className="sr-only sm:not-sr-only">{label}</span>
     </Button>
   )
-}
-
-function useScheduleChange(onSchedule: (s: DashboardRefreshSchedule) => Promise<unknown>) {
-  const [saving, setSaving] = useState(false)
-  const change = async (value: string) => {
-    setSaving(true)
-    try {
-      // The select shows the saved value: no success toast.
-      await onSchedule(fromValue(value))
-    } catch (e) {
-      toast.error(getErrorMessage(e))
-    } finally {
-      setSaving(false)
-    }
-  }
-  return { saving, change }
 }
 
 export interface ScheduleControlProps {
   /** The dashboard's own schedule (empty: organization default). */
   schedule?: DashboardRefreshSchedule
   onSchedule: (schedule: DashboardRefreshSchedule) => Promise<unknown>
-  className?: string
-}
-
-/** The schedule picker in the toolbar (from 640px). */
-export function ScheduleSelect({ schedule = '', onSchedule, className }: ScheduleControlProps) {
-  const { t } = useTranslation()
-  const label = useScheduleLabel()
-  const { saving, change } = useScheduleChange(onSchedule)
-  return (
-    <Select value={toValue(schedule)} onValueChange={change} disabled={saving}>
-      <SelectTrigger
-        size="sm"
-        className={cn('w-auto gap-1.5', className)}
-        aria-label={t('dashboards.schedule.label', 'Refresh schedule')}
-      >
-        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {SCHEDULE_OPTIONS.map((s) => (
-          <SelectItem key={toValue(s)} value={toValue(s)}>
-            {label(s)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
 }
 
 /**
- * The same choice inside the dashboard's actions menu (phone): a submenu with
+ * The refresh schedule inside the dashboard's actions menu: a submenu with
  * one item per schedule; the saved one says "(current)" and does nothing.
  */
 export function scheduleSubmenu(
