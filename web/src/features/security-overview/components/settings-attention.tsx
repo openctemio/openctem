@@ -5,6 +5,7 @@ import { HealthStatus } from '@/components/ui/health-status'
 import { TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsBlock, SettingsRow, SettingsSection } from '@/features/shared'
+import { safeInternalHref } from '@/lib/safe-href'
 import { useSecurityOverview } from '../api/use-security-overview'
 import { normalizeChecks, safeInternalLink } from '../lib/checks'
 
@@ -67,7 +68,8 @@ export function SettingsAttention({ enabled }: { enabled: boolean }) {
         </SettingsBlock>
       ) : (
         todo.map((c) => {
-          const href = safeInternalLink(c.link)
+          // A moved page's new home with its #setting, checked as an in-app path.
+          const href = safeInternalHref(safeInternalLink(c.link))
           const title = t(`securityOverview.check.${c.id}.title`, c.id)
           return (
             <SettingsRow
