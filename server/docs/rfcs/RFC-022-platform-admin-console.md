@@ -1241,8 +1241,8 @@ organization and off the main site:
   exponential backoff, lag and chain-break alerts, an idle head export every
   `ADMIN_AUDIT_SINK_HEAD_INTERVAL`).
   See `docs/architecture/audit-hash-chain.md`. Revised 2026-11-03: the
-  stream is an extension feature, no longer part of the Community build
-  (`docs/development/editions.md`); the chain and its verification stay.
+  stream is provided by an optional module and is not included in this build
+  (`docs/development/extensions.md`); the chain and its verification stay.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /

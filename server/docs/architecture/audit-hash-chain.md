@@ -306,17 +306,17 @@ change, with `postgres.CreateAdminAuditLogTx`).
 | Append: a `BEFORE INSERT` trigger takes a transaction-scoped advisory lock, reads the tail and overwrites whatever chain values the writer sent | `admin_audit_chain_append` |
 | Append-only: `UPDATE`, `DELETE` and `TRUNCATE` are refused by triggers, and the API role holds no `UPDATE`/`DELETE`/`TRUNCATE` grant on the table (the migration and `deploy/postgres/least-privilege-roles.sql` revoke them) | `admin_audit_refuse_change` |
 | Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
-| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break). The report carries the chain `head` (position and hash of the newest row, or of the newest anchor when no row is online) in every edition, so a copy of the rows can be verified offline and compared with the head of an earlier copy, with or without a forwarding sink |
+| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break). The report carries the chain `head` (position and hash of the newest row, or of the newest anchor when no row is online) in every build, so a copy of the rows can be verified offline and compared with the head of an earlier copy, with or without a forwarding sink |
 
 Off-box copy. The chain cannot stop the table owner from re-signing it, so
 a copy at a destination the database operator cannot write is the stronger
-guarantee. Streaming the log to such a destination continuously is an
-extension feature, not part of the Community build
-([editions](../development/editions.md)); its table
+guarantee. Streaming the log to such a destination continuously is provided
+by an optional module and is not included in this build
+([extensions](../development/extensions.md)); its table
 `admin_audit_forward_cursor` stays in the schema. Every build keeps the chain,
 its verification (`GET /api/v1/admin/audit-logs/chain`, `bootstrap-admin
 verify-audit`), the hourly chain verification controller and the audit log
-views and exports. A Community server refuses to start when `ADMIN_AUDIT_SINK`
+views and exports. A server of the default build refuses to start when `ADMIN_AUDIT_SINK`
 is set, so an operator never loses an off-box copy unnoticed.
 
 The administrator a row names is history: the foreign key from `admin_id` to
