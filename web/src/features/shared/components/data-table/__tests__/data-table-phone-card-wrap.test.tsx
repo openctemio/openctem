@@ -5,7 +5,7 @@
  * chip beside it. Regression: a run's message beside its state wrapped in the
  * few pixels the chip left and made the card taller than the screen
  * (/scans/runs at 390px, 2026-11-17). Layout itself is measured by the e2e
- * spec 63-phone-card-bounds; this pins the rules the card applies.
+ * spec 66-phone-card-bounds; this pins the rules the card applies.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
