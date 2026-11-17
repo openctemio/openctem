@@ -7,4 +7,4 @@
   when it swaps in. `font-display: swap` is unchanged.
 - Console > Admin activity: the audit-chain strip has its final height while it loads, so the list under it no
   longer moves (4 px, 24 px on a phone).
-- Docs: `web/docs/ui-style-contract.md` (fonts)
+- Docs: web/docs/ui-style-contract.md (fonts)
