@@ -3,7 +3,7 @@ export { ExposureSeverityBreakdown, ExposureStateBreakdown } from './exposure-st
 
 export { ExposureStateBadge } from './exposure-state-badge'
 
-export { getExposureColumns, EXPOSURE_EVENT_TYPE_LABELS } from './exposure-table'
+export { getExposureColumns, ExposureRowMenu, EXPOSURE_EVENT_TYPE_LABELS } from './exposure-table'
 
 export {
   ExposureThreatPills,
@@ -18,6 +18,7 @@ export {
   ExposureActionDialog,
   ExposureQuickActions,
   ExposureBulkActions,
+  useExposureBulkActions,
   APPROVE_REQUIRED_REASON,
   useCanApproveExposures,
   type ExposureActionType,
