@@ -63,7 +63,6 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/sensors/components/tool-settings-list.tsx': 'not-org-data',
   'src/features/shared/components/data-table/use-table-density.ts': 'not-org-data',
   'src/features/shared/components/filter-panel-layout.tsx': 'not-org-data',
-  'src/features/vulnerabilities/components/vulnerability-filters.tsx': 'not-org-data',
   'src/hooks/use-display-user.ts': 'not-org-data',
   'src/lib/auth-refresh-lock.ts': 'not-org-data',
   'src/lib/deployment-skew.ts': 'not-org-data',
