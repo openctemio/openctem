@@ -272,7 +272,7 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     expect(made.status).toBe(201)
     const box = page.getByRole('combobox', { name: /filter as query text/i })
     const modified = page.locator('main [data-slot="list-modified"]')
-    const title = page.locator('main h1').first()
+    const title = page.getByTestId('findings-view-title')
     const edited = 'severity=critical OR is_in_kev=true'
     try {
       await page.goto(`/findings?view=${made.id}&mode=query`)
