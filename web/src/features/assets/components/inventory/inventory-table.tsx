@@ -376,10 +376,15 @@ export function InventoryTable({
       },
       ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
         id: `attr:${attribute.key}`,
-        meta: { kind: 'text', minWidth: 120, maxWidth: 240, label: propertyLabel(attribute.key) },
+        meta: {
+          kind: 'text',
+          minWidth: 120,
+          maxWidth: 240,
+          label: propertyLabel(attribute.key, locale),
+        },
         enableSorting: false,
         header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={propertyLabel(attribute.key)} />
+          <DataTableColumnHeader column={column} title={propertyLabel(attribute.key, locale)} />
         ),
         cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
       })),
