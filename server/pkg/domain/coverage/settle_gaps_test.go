@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,17 @@ func TestVerdicts_UnknownGapReasonIsNotCovered(t *testing.T) {
 	v := Verdicts(gapTask([]string{"a.example.test"}, `{"metadata": {"coverage_gaps_total": 1,
 		"coverage_gaps": [{"host": "a.example.test", "reason": "mystery"}]}}`), nil)
 	if a := v["a.example.test"]; a.Kind != VerdictFailed || a.Outcome != OutcomeUnfinished {
+		t.Errorf("a = %+v", a)
+	}
+}
+
+// host_busy is the sensor's own connection limit: the host is not covered
+// (unfinished), and nothing on the target is blamed.
+func TestVerdicts_HostBusyIsUnfinished(t *testing.T) {
+	v := Verdicts(gapTask([]string{"a.example.test"}, `{"metadata": {"coverage_gaps_total": 1,
+		"coverage_gaps": [{"host": "a.example.test", "reason": "host_busy", "detail": "limit full"}]}}`), nil)
+	a := v["a.example.test"]
+	if a.Kind != VerdictFailed || a.Outcome != OutcomeUnfinished || !strings.Contains(a.Error, "connection limit") {
 		t.Errorf("a = %+v", a)
 	}
 }

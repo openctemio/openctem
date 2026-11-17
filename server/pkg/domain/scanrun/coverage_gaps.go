@@ -29,6 +29,13 @@ const (
 	// GapReasonProxyUnavailable: the proxy the scan used failed, so the
 	// host was not judged.
 	GapReasonProxyUnavailable = "proxy_unavailable"
+	// GapReasonHostBusy: the sensor's own per-host connection limit (its
+	// per-host scan budget) stayed full for the whole wait, so one of the
+	// tool's connections to the host was never opened and part of the host
+	// was not scanned. It says nothing about the target: it is caused by
+	// the sensor, the run is partial, the host is not covered and the gap
+	// never holds findings.
+	GapReasonHostBusy = "host_busy"
 )
 
 // Coverage-gap reasons of path discovery (enumerate.web_paths,
@@ -86,7 +93,7 @@ const ErrCodeCoverageGaps = FailureCoverageGaps
 // stable order (the console has words for each; a test checks it).
 var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable,
 	GapReasonCatchAll, GapReasonAuthWall, GapReasonEdgeProtected, GapReasonThrottled, GapReasonUnstableBaseline,
-	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered, GapReasonNoCandidates}
+	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered, GapReasonNoCandidates, GapReasonHostBusy}
 
 // NormalizeGapReason returns a known reason and the detail it carries: the
 // path discovery form "scope_filtered:<n>" is the reason scope_filtered with
