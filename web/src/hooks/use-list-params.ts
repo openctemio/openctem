@@ -1,6 +1,6 @@
 'use client'
 
-import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '@/lib/page-size-options'
+import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, isPhonePageSize } from '@/lib/page-size-options'
 import { useCallback, useMemo } from 'react'
 import type { SortingState } from '@tanstack/react-table'
 import { replaceUrlSearch, useUrlParams } from './use-url-param'
@@ -102,9 +102,12 @@ export function useListParams<F extends string = never>(
   const rawPage = params.get('page')
   const page = rawPage && DIGITS.test(rawPage) && Number(rawPage) > 0 ? Number(rawPage) : 1
   const rawSize = Number(params.get('per_page'))
-  // A size the list offers, or one a page still accepts from older links.
+  // A size the list offers, one a page still accepts from older links, or a
+  // step of a phone's "Show more" (75).
   const perPage =
-    (TABLE_PAGE_SIZES as readonly number[]).includes(rawSize) || pageSizes.includes(rawSize)
+    (TABLE_PAGE_SIZES as readonly number[]).includes(rawSize) ||
+    pageSizes.includes(rawSize) ||
+    isPhonePageSize(rawSize)
       ? rawSize
       : defaultPageSize
   const sort = (sortFields && parseListSort(params.get('sort'), sortFields)) || defaultSort

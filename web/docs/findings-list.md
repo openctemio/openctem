@@ -71,6 +71,20 @@ Nothing is discarded: the list shows the value masked, and "Show" exists only on
   mode. On a phone the bar is a full-width bottom row of two lines (the count and X, then the actions), every
   control 36, and the page keeps room for it under the last card. Selecting a card is a separate control
   from opening it.
+- A phone card reads top to bottom (`FindingPhoneCard`): the priority, with the row menu (36, touch target 44)
+  at the end of its line and the checkbox (its own 44 target) at its start in select mode; the title on up to
+  two lines, a link named by the whole title; the asset and the place on it on one line; the id (the CVE, else the rule id, the
+  same `FindingRowId` as the table row) and the time left (the same `SlaDueChip`; nothing when the finding has
+  no deadline); the severity, the status and one exploit mark, then the branch-only and duplicates marks
+  when set. A tap anywhere else on the card opens the finding.
+- A phone has no numbered pager. The list's footer (the shared `DataTable`, for every list drawn as cards) is
+  one full-width "Show 25 more" button and a line "50 of 418" ("50 shown" when the total is capped or could
+  not be counted). The button grows `per_page` in the URL by one step (25, 50, 75, 100), so the cards on
+  screen stay where they are, the new ones come under them, the first new card takes the focus and a reload
+  shows the same number. The button names what is left when that is less than a step ("Show 10 more") and
+  goes when everything is shown. 100 is the largest page the API returns: there the button gives way to
+  "These are the first 100. Narrow the filters to see the rest." A link to a later page opens on the first
+  one on a phone. Growing the list clears the selection, as a page-size change does on a desktop.
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
