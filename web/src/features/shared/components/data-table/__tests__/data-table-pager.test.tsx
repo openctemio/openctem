@@ -1,7 +1,7 @@
 /**
  * The one pager: "Showing 26 to 50 of 418 findings", Rows per page 25 / 50 /
  * 100 whatever the page passes (plus a size a link asked for), "Page 2 of 17",
- * ghost arrows, and no Last page without a known total.
+ * ghost arrows, and Last page disabled with its reason without a known total.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -73,10 +73,46 @@ describe('pager', () => {
     expect(screen.queryByRole('combobox', { name: /rows per page/i })).not.toBeInTheDocument()
   })
 
-  it('a capped total has no Last page and no page count', () => {
+  it('a capped total disables Last page with its reason and shows no page count', () => {
     render(<DataTable {...server(1, 25, { rowCount: 10_000, rowCountCapped: true })} />)
-    expect(screen.queryByRole('button', { name: 'Last page' })).not.toBeInTheDocument()
+    const last = screen.getByRole('button', { name: 'Last page' })
+    expect(last).toBeDisabled()
+    expect(last).toHaveAccessibleDescription('More match than were counted. Narrow the list.')
     expect(screen.getByText('Page 2')).toBeInTheDocument()
     expect(screen.getByText(/of 10,000\+ findings/)).toBeInTheDocument()
+  })
+
+  it('a known total has Last page without a reason', () => {
+    render(<DataTable {...server(1, 25)} />)
+    const last = screen.getByRole('button', { name: 'Last page' })
+    expect(last).toBeEnabled()
+    expect(last.parentElement).not.toHaveAttribute('title')
+  })
+
+  it('an unknown total shows the rows on screen, Page N, and Last page disabled with its reason', () => {
+    render(<DataTable {...server(0, 25, { rowCount: undefined, countUnavailable: true })} />)
+    expect(screen.getByText('Showing 1 to 25')).toBeInTheDocument()
+    expect(screen.queryByText(/of .* findings/)).not.toBeInTheDocument()
+    expect(screen.getByText('Page 1')).toBeInTheDocument()
+    const last = screen.getByRole('button', { name: 'Last page' })
+    expect(last).toBeDisabled()
+    expect(last).toHaveAccessibleDescription('The total is not known yet')
+    expect(last.parentElement).toHaveAttribute('title', 'The total is not known yet')
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled()
+    // The title row says the count failed; the footer repeats it only for a
+    // list that retries from the footer.
+    expect(screen.queryByText('Could not count')).not.toBeInTheDocument()
+  })
+
+  it('an unknown total with a footer retry says so and retries', async () => {
+    const onRetryCount = vi.fn()
+    render(
+      <DataTable
+        {...server(0, 25, { rowCount: undefined, countUnavailable: true, onRetryCount })}
+      />
+    )
+    expect(screen.getByText('Could not count')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetryCount).toHaveBeenCalledTimes(1)
   })
 })
