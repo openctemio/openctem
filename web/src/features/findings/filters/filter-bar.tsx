@@ -1,17 +1,19 @@
 'use client'
 
-import { useMemo, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { FilterChip } from './filter-chip'
+import { FilterChip, type FilterChipEdit } from './filter-chip'
 import { AdvancedChip, FQ_PARAM } from './filter-query-mode'
 import {
+  paramFor,
   readFilters,
   viewFilters,
+  withFilterReplaced,
   withoutParam,
   type FieldContract,
   type FilterContract,
@@ -38,6 +40,12 @@ interface FilterBarProps {
   queryActive?: boolean
   /** Open the search field's Query mode (the Advanced chip's text). */
   onOpenQuery?: () => void
+  /**
+   * Lets a chip's text open its filter's editor (operator and values): the
+   * loaded contract, and a signal to load it while an editor is open. Chips
+   * of the open saved view and unknown filters are never editable.
+   */
+  edit?: Omit<FilterChipEdit, 'onApply'>
 }
 
 /**
@@ -55,9 +63,30 @@ export function FilterBar({
   onSearchChange,
   queryActive,
   onOpenQuery,
+  edit,
 }: FilterBarProps) {
   const { t } = useTranslation()
   const fq = search.get(FQ_PARAM)
+
+  // An edited filter may move to another param ("is" to "is not"), which
+  // draws a new chip: focus goes to that chip's text once the URL has it.
+  const focusParam = useRef<string | null>(null)
+  useEffect(() => {
+    const param = focusParam.current
+    if (!param || !search.has(param)) return
+    focusParam.current = null
+    if (!/^[\w.-]+$/.test(param)) return
+    document
+      .querySelector<HTMLElement>(`[data-slot="filter-chip-edit"][data-filter-param="${param}"]`)
+      ?.focus()
+  }, [search])
+  const chipEdit: FilterChipEdit | undefined = edit && {
+    ...edit,
+    onApply: (filter, field, op, values) => {
+      focusParam.current = paramFor(field, op) ?? null
+      onSearchChange(withFilterReplaced(search, filter.param, field, op, values))
+    },
+  }
   const fieldOf = (name: string): FieldContract | undefined =>
     contract.fields.find((f) => f.name === name)
 
@@ -107,6 +136,7 @@ export function FilterBar({
               key={f.param}
               filter={f}
               field={field}
+              edit={chipEdit}
               onRemove={(x) => onSearchChange(withoutParam(search, x.param))}
             />,
           ]
