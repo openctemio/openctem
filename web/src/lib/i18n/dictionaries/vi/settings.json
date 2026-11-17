@@ -1165,6 +1165,7 @@
   "settings.section.api-access": "Truy cập API",
   "settings.section.assets": "Tài sản",
   "settings.section.content": "Nội dung trình quét",
+  "settings.section.detection": "Nội dung phát hiện",
   "settings.section.oversight": "Giám sát",
   "settings.section.risk": "Rủi ro và mối đe dọa",
   "settings.section.sensors": "Sensor",
