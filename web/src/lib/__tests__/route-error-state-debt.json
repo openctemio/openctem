@@ -7,7 +7,6 @@
     "(dashboard)/dashboards/page.tsx",
     "(dashboard)/findings/[id]/page.tsx",
     "(dashboard)/notifications/page.tsx",
-    "(dashboard)/settings/modules/page.tsx",
     "(dashboard)/settings/pentest/checklists/page.tsx",
     "(dashboard)/settings/pentest/page.tsx",
     "(dashboard)/settings/pentest/report-templates/page.tsx",
