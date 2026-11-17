@@ -1,7 +1,17 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, Loader2, Download, Trash2, Layers, PowerOff } from 'lucide-react'
+import {
+  Plus,
+  Loader2,
+  Download,
+  Trash2,
+  Layers,
+  MoreHorizontal,
+  PowerOff,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
@@ -20,12 +30,15 @@ import {
   irreversibleTypeToConfirm,
 } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
+import { RefreshButton } from '@/components/list-page-parts'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { useHeldRows } from '@/hooks/use-held-rows'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { accessStateOf } from '@/lib/api/access-state'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useNow } from '@/hooks/use-now'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 
 import { InstallSensorDialog } from './install-sensor-dialog'
 import { AddSensorButton, AddSensorDialog, ApproveSensorButton } from './add-sensor-dialog'
@@ -36,7 +49,14 @@ import { SensorDetailSheet } from './sensor-detail-sheet'
 import { FleetContentRefreshButton } from './sensor-content-cells'
 import { SensorTable } from './sensor-table'
 import { FleetHealthStrip } from './fleet-health-strip'
-import { SensorFacetPanel } from './sensor-facet-panel'
+import {
+  MODE_LABELS,
+  POLICY_LABELS,
+  PROTOCOL_LABELS,
+  ROLE_LABELS,
+  SensorFacetPanel,
+  VERSION_LABELS,
+} from './sensor-facet-panel'
 import { dispatchTools } from '../lib/capabilities'
 import {
   useAllSensors,
@@ -54,7 +74,13 @@ import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlatformScanningCard } from '@/features/platform'
-import { BulkActionBar, ErrorState, FilterSheet, PageHeader, PageStack } from '@/features/shared'
+import { FilterSheet, PageHeader, PageStack, usePhoneSelectMode } from '@/features/shared'
+import type { DataTableBulk } from '@/features/shared/components/data-table/data-table-selection'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
 import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
@@ -73,6 +99,7 @@ import {
 import { normalizeSensorVersion, sensorSdkStatus, sensorSdkVersion } from '../lib/sensor-version'
 import {
   activeFilterCount,
+  EMPTY_FLEET_FILTERS,
   filterSensors,
   groupSensors,
   NOT_CONNECTED_STATES,
@@ -86,6 +113,8 @@ import {
   type SensorPolicyFilter,
   versionStatusIn,
 } from '../lib/fleet'
+
+const sensorId = (s: Sensor) => s.id
 
 interface SensorsSectionProps {
   /** Page title and description; the section renders the page header. */
@@ -164,7 +193,6 @@ export function SensorsSection({
   const title = titleProp ?? t('sensors.list.title')
   const description = descriptionProp ?? t('sensors.list.description')
   const [detailSheetOpen, setDetailSheetOpen] = useState(false)
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [zoneCreateOpen, setZoneCreateOpen] = useState(false)
   // The first sensor is installed from the empty page: "Install with an API
@@ -679,39 +707,219 @@ export function SensorsSection({
     label: t('sensors.list.search.label'),
   }
 
+  // The active filters as chips ("Field: values"), one per facet, each
+  // removable on its own.
+  const listed = (values: string[]) => values.join(', ')
+  const chipList: { key: string; text: string; clear: () => void }[] = [
+    ...(filters.attention
+      ? [
+          {
+            key: 'attention',
+            text: t('sensors.facets.attention'),
+            clear: () => setFilters({ ...filters, attention: false }),
+          },
+        ]
+      : []),
+    ...(filters.cleanup
+      ? [
+          {
+            key: 'cleanup',
+            text: t('sensors.list.chip.cleanup', 'To review for removal'),
+            clear: () => setFilters({ ...filters, cleanup: false }),
+          },
+        ]
+      : []),
+    ...(filters.states.length
+      ? [
+          {
+            key: 'state',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.status'),
+              value: listed(filters.states.map((st) => stateLabel(st, t))),
+            }),
+            clear: () => setFilters({ ...filters, states: [] }),
+          },
+        ]
+      : []),
+    ...(filters.roles.length
+      ? [
+          {
+            key: 'role',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.roleTitle'),
+              value: listed(filters.roles.map((r) => t(ROLE_LABELS[r]))),
+            }),
+            clear: () => setFilters({ ...filters, roles: [] }),
+          },
+        ]
+      : []),
+    ...(filters.versions.length
+      ? [
+          {
+            key: 'version',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.versionTitle'),
+              value: listed(filters.versions.map((v) => t(VERSION_LABELS[v]))),
+            }),
+            clear: () => setFilters({ ...filters, versions: [] }),
+          },
+        ]
+      : []),
+    ...(filters.protocols.length
+      ? [
+          {
+            key: 'protocol',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.protocolTitle'),
+              value: listed(filters.protocols.map((p) => t(PROTOCOL_LABELS[p]))),
+            }),
+            clear: () => setFilters({ ...filters, protocols: [] }),
+          },
+        ]
+      : []),
+    ...(filters.sdkVersions.length
+      ? [
+          {
+            key: 'sdk_version',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.filters.sdkVersion', 'SDK version'),
+              value: listed(
+                filters.sdkVersions.map((v) =>
+                  v === 'unknown' ? t('sensors.filters.sdkUnknown', 'Not reported') : v
+                )
+              ),
+            }),
+            clear: () => setFilters({ ...filters, sdkVersions: [] }),
+          },
+        ]
+      : []),
+    ...(filters.policies.length
+      ? [
+          {
+            key: 'policy',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.policyTitle'),
+              value: listed(filters.policies.map((p) => t(POLICY_LABELS[p]))),
+            }),
+            clear: () => setFilters({ ...filters, policies: [] }),
+          },
+        ]
+      : []),
+    ...(filters.modes.length
+      ? [
+          {
+            key: 'exec',
+            text: t('sensors.list.chip.value', '{field}: {value}', {
+              field: t('sensors.facets.modeTitle'),
+              value: listed(filters.modes.map((m) => t(MODE_LABELS[m]))),
+            }),
+            clear: () => setFilters({ ...filters, modes: [] }),
+          },
+        ]
+      : []),
+  ]
+  const clearFacets = () => setFilters({ ...EMPTY_FLEET_FILTERS, q: filters.q })
+  /** Everything that narrows the list: the facets and the search text. */
+  const clearFilters = () => {
+    clearFacets()
+    setSearchQuery('')
+  }
+  const chipsRow =
+    chipList.length > 0 ? (
+      <FilterChipsRow
+        data-testid="sensors-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chipList.map((c) => (
+          <RemovableFilterChip
+            key={c.key}
+            text={c.text}
+            onRemove={c.clear}
+            removeLabel={t('sensors.list.chip.remove', 'Remove filter {filter}', {
+              filter: c.text,
+            })}
+          />
+        ))}
+        onClearAll={chipList.length > 1 ? clearFacets : undefined}
+      />
+    ) : undefined
+
+  // The toolbar row after the search: Add filter (it never changes size)
+  // holds every facet; a facet in use shows as a chip under the toolbar.
+  const toolbarStart = <AddFilterPanel>{facetPanel}</AddFilterPanel>
+
   const toolbarEnd = (
-    <>
-      <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
-        <SelectTrigger
-          className="w-auto gap-2 sm:min-w-36"
-          aria-label={t('sensors.list.groupBy.label')}
-        >
-          <Layers className="h-4 w-4 text-muted-foreground" />
-          <span className="sr-only sm:not-sr-only">
-            <SelectValue />
-          </span>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">{t('sensors.list.groupBy.none')}</SelectItem>
-          {zones.length > 0 && <SelectItem value="zone">{t(GROUP_LABELS.zone)}</SelectItem>}
-          <SelectItem value="role">{t(GROUP_LABELS.role)}</SelectItem>
-          <SelectItem value="version">{t(GROUP_LABELS.version)}</SelectItem>
-        </SelectContent>
-      </Select>
-      <LiveIndicator updatedAt={updatedAt} now={now} />
-      <FleetContentRefreshButton sensors={scopedSensors} onDone={handleRefresh} />
-      <RefreshButton onClick={handleRefresh} loading={isLoading} />
-    </>
+    <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
+      <SelectTrigger
+        className="w-auto gap-2 sm:min-w-36"
+        aria-label={t('sensors.list.groupBy.label')}
+      >
+        <Layers className="h-4 w-4 text-muted-foreground" />
+        <span className="sr-only sm:not-sr-only">
+          <SelectValue />
+        </span>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">{t('sensors.list.groupBy.none')}</SelectItem>
+        {zones.length > 0 && <SelectItem value="zone">{t(GROUP_LABELS.zone)}</SelectItem>}
+        <SelectItem value="role">{t(GROUP_LABELS.role)}</SelectItem>
+        <SelectItem value="version">{t(GROUP_LABELS.version)}</SelectItem>
+      </SelectContent>
+    </Select>
   )
 
+  // The bulk bar: Disable direct, Delete under More. Each shows only with its
+  // permission (the API checks again); with neither there is no checkbox
+  // column. Both open the page's own confirmation.
+  const sensorsBulk: DataTableBulk<Sensor> | undefined =
+    canWriteSensors || canDeleteSensors
+      ? {
+          rowLabel: (s) => s.name,
+          checkboxLabel: (s) =>
+            t('sensors.table.selectNamed', 'Select sensor {name}', { name: s.name }),
+          noun: t('sensors.list.selected'),
+          actions: canWriteSensors ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={selectedActive.length === 0}
+              onClick={() => setBulkDisableDialogOpen(true)}
+            >
+              <PowerOff aria-hidden />
+              {t('confirm.disable', 'Disable')}
+            </Button>
+          ) : null,
+          more: canDeleteSensors
+            ? [
+                {
+                  id: 'delete',
+                  label: t('confirm.delete', 'Delete'),
+                  icon: Trash2,
+                  destructive: true,
+                  onSelect: () => setBulkDeleteDialogOpen(true),
+                },
+              ]
+            : [],
+          onSelectionChange: (selection) =>
+            setSelectedIds(selection?.kind === 'ids' ? selection.rows.map((s) => s.id) : []),
+        }
+      : undefined
+
+  // The same decision the table makes for its cards (under 768 px).
+  const isPhone = useIsMobile()
+  const phoneSelect = usePhoneSelectMode(isPhone && !!sensorsBulk)
+
+  // The fleet re-reads itself every 15 s. Rows under the pointer keep their
+  // places through a re-read; a new filter, search or grouping (the view
+  // key) shows its rows at once.
+  const viewKey = JSON.stringify([filters, groupBy])
+  const heldRows = useHeldRows(filteredSensors, sensorId, viewKey)
+
   const fleetEmpty = inlineInstall || (!isLoading && !error && scopedSensors.length === 0)
+  const noAccess = accessStateOf(error) === 'no_access'
+  const narrowed = filterCount > 0 || searchQuery.trim() !== ''
 
   let body: React.ReactNode
-  if (error && !inlineInstall) {
-    body = <ErrorState title={t('sensors.list.errorTitle')} error={error} onRetry={handleRefresh} />
-  } else if (isLoading && !inlineInstall) {
-    body = <TableSkeleton rows={5} />
-  } else if (fleetEmpty) {
+  if (fleetEmpty) {
     // No sensors yet: what a sensor is and how to add one; "Install with an
     // API key" opens the install flow here.
     body = inlineInstall ? (
@@ -732,10 +940,12 @@ export function SensorsSection({
         onOpenSensor={handleViewSensor}
       />
     )
+  } else if (noAccess) {
+    body = <NoAccessState title={t('sensors.list.subject', 'the sensors list')} />
   } else {
     body = (
       <SensorTable
-        sensors={filteredSensors}
+        sensors={heldRows.rows}
         grants={grants}
         onViewSensor={handleViewSensor}
         onEditSensor={handleEditSensor}
@@ -744,24 +954,145 @@ export function SensorsSection({
         onDeleteSensor={handleDeleteClick}
         onRegenerateKey={handleRegenerateKey}
         onRevokeSensor={handleRevokeSensor}
-        onSelectionChange={(rows) => setSelectedIds(rows.map((a) => a.id))}
+        bulk={sensorsBulk}
+        selectMode={phoneSelect.selectMode}
         resetSelectionKey={selectionEpoch}
         thresholds={thresholds}
         now={now}
         channel={channel}
         rowGroups={rowGroups}
+        // The first read: skeleton rows under a toolbar that stays mounted.
+        isLoading={isLoading && !sensorsData}
+        error={error}
+        onRetry={handleRefresh}
+        isFiltered={narrowed}
+        onClearFilters={clearFilters}
+        // One filter entry per width: Add filter from 768, this button
+        // (joined to the search field) on a phone, where it opens the sheet.
         filterToggle={{
-          open: filtersOpen,
-          onToggle: () => setFiltersOpen((o) => !o),
+          open: false,
+          onToggle: () => setFilterSheetOpen(true),
           onOpenSheet: () => setFilterSheetOpen(true),
           activeCount: filterCount,
           controlsId: 'sensor-filters',
+          label: t('sensors.list.filters'),
+          sheetOnly: true,
         }}
         search={search}
+        toolbarStart={toolbarStart}
         toolbarEnd={toolbarEnd}
+        toolbarBelow={chipsRow}
       />
     )
   }
+
+  // The list's own actions. From 768 px: the content refresh, Refresh and
+  // Export as buttons. On a phone they are the items of one More, after
+  // Select, with the way to the approve page (the header keeps Add sensor).
+  const refreshLabel = t('sensors.list.refresh', 'Refresh')
+  const exportLabel = t('sensors.list.export')
+  const nothingToExport = filteredSensors.length === 0
+  const moreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    { id: 'refresh', label: refreshLabel, icon: RefreshCw, onSelect: () => void handleRefresh() },
+    {
+      id: 'export',
+      label: exportLabel,
+      icon: Download,
+      disabledReason: nothingToExport
+        ? t('sensors.list.exportNothing', 'There are no sensors to export.')
+        : undefined,
+      onSelect: handleExport,
+    },
+    ...(canPairSensors
+      ? [
+          {
+            id: 'approve',
+            section: 'pair',
+            label: t('sensors.list.approve'),
+            icon: ShieldCheck,
+            href: '/activate',
+          },
+        ]
+      : []),
+  ]
+  const viewTitle = t('sensors.list.viewAll', 'All sensors')
+  const moreLabel = t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })
+  const titleRow = (
+    <ListTitleRow
+      title={viewTitle}
+      count={
+        <ListCount
+          total={filteredSensors.length}
+          loading={!sensorsData || !!error}
+          label={t(
+            filteredSensors.length === 1 ? 'sensors.list.count.one' : 'sensors.list.count.other',
+            undefined,
+            { count: filteredSensors.length }
+          )}
+        />
+      }
+      start={<LiveIndicator updatedAt={updatedAt} now={now} />}
+    >
+      <FleetContentRefreshButton sensors={scopedSensors} onDone={handleRefresh} />
+      <div className="flex items-center gap-2 max-md:hidden">
+        <RefreshButton onClick={handleRefresh} loading={isLoading} label={refreshLabel} />
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={nothingToExport}>
+          <Download className="h-4 w-4" aria-hidden />
+          {exportLabel}
+        </Button>
+      </div>
+      <div className="md:hidden">
+        <ActionMenu
+          title={viewTitle}
+          label={moreLabel}
+          items={moreItems}
+          trigger={
+            <Button variant="outline" size="icon" aria-label={moreLabel}>
+              <MoreHorizontal aria-hidden />
+            </Button>
+          }
+        />
+      </div>
+    </ListTitleRow>
+  )
+
+  // What surrounds the list: the way across to CI pipelines, the platform's
+  // shared scanning, the cleanup hint and the fleet's health. Above the list
+  // from 768 px; on a phone the list comes first and these follow it.
+  const context = (
+    <>
+      {/* The one way across to CI pipelines: a line, never their list. */}
+      {!fleetEmpty && <CIPipelinesHint enabled={canReadCI} />}
+      {/* Where else scans can run: the platform's shared scanning, shown
+          only when the organization may use it. */}
+      <PlatformScanningCard />
+      {!fleetEmpty && !error && !isLoading && (
+        <SensorCleanupHint
+          count={summary.cleanup}
+          active={!!filters.cleanup}
+          onToggle={toggleCleanup}
+        />
+      )}
+      {!fleetEmpty && (
+        <FleetHealthStrip
+          loading={isLoading}
+          summary={summary}
+          channel={channel}
+          notConnectedActive={notConnectedActive}
+          onToggleNotConnected={toggleNotConnected}
+          attentionActive={filters.attention}
+          onToggleAttention={toggleAttention}
+          updatesActive={updatesActive}
+          onToggleUpdates={toggleUpdates}
+          zoneGroupingActive={groupBy === 'zone'}
+          onToggleZoneGrouping={toggleZoneGrouping}
+          protocolV1Active={protocolV1Active}
+          onToggleProtocolV1={toggleProtocolV1}
+        />
+      )}
+    </>
+  )
 
   const offlineAfter = thresholds.offlineAfterSeconds
   const secondsLabel = (s: number) =>
@@ -771,7 +1102,12 @@ export function SensorsSection({
 
   return (
     <PageStack>
-      <PageHeader title={title} description={description}>
+      <PageHeader
+        title={title}
+        // From 768 px. On a phone the title row holds the title and the
+        // tab's action as an icon, so the list starts higher.
+        description={<span className="max-md:hidden">{description}</span>}
+      >
         {tokensTab ? null : zonesTab ? (
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => setZoneCreateOpen(true)}>
@@ -783,21 +1119,20 @@ export function SensorsSection({
           // With no sensor yet, the empty state carries these actions.
           !fleetEmpty && (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExport}
-                disabled={filteredSensors.length === 0}
-              >
-                <Download className="h-4 w-4" />
-                {t('sensors.list.export')}
-              </Button>
-              <ApproveSensorButton />
-              <AddSensorButton onClick={() => setPairDialogOpen(true)} />
+              {/* On a phone the way to the approve page is in the list's More. */}
+              <div className="max-md:hidden">
+                <ApproveSensorButton />
+              </div>
+              <AddSensorButton onClick={() => setPairDialogOpen(true)} compact />
               {canInstallWithKey && !canPairSensors && (
-                <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  {t('sensors.list.install')}
+                <Button
+                  size="sm"
+                  iconOnlyBelow="md"
+                  onClick={() => setAddDialogOpen(true)}
+                  aria-label={t('sensors.list.install')}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  <span className="sr-only md:not-sr-only">{t('sensors.list.install')}</span>
                 </Button>
               )}
             </>
@@ -832,63 +1167,19 @@ export function SensorsSection({
         <ScanZonesPanel createOpen={zoneCreateOpen} onCreateOpenChange={setZoneCreateOpen} />
       ) : (
         <>
-          {/* The one way across to CI pipelines: a line, never their list. */}
-          {!fleetEmpty && <CIPipelinesHint enabled={canReadCI} />}
-          {/* Where else scans can run: the platform's shared scanning, shown
-              only when the organization may use it. */}
-          <PlatformScanningCard />
-          {!fleetEmpty && !error && !isLoading && (
-            <SensorCleanupHint
-              count={summary.cleanup}
-              active={!!filters.cleanup}
-              onToggle={toggleCleanup}
-            />
-          )}
-          {!fleetEmpty && (
-            <FleetHealthStrip
-              loading={isLoading}
-              summary={summary}
-              channel={channel}
-              notConnectedActive={notConnectedActive}
-              onToggleNotConnected={toggleNotConnected}
-              attentionActive={filters.attention}
-              onToggleAttention={toggleAttention}
-              updatesActive={updatesActive}
-              onToggleUpdates={toggleUpdates}
-              zoneGroupingActive={groupBy === 'zone'}
-              onToggleZoneGrouping={toggleZoneGrouping}
-              protocolV1Active={protocolV1Active}
-              onToggleProtocolV1={toggleProtocolV1}
-            />
-          )}
-
-          <div className="flex items-start">
-            {/* The facet panel, as on Findings: a floating card beside the
-                table from lg up, a sheet below. */}
-            {!fleetEmpty && !error && (
-              <div
-                inert={!filtersOpen}
-                className={cn(
-                  'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
-                  filtersOpen ? 'me-5 w-60 opacity-100' : 'me-0 w-0 opacity-0'
-                )}
-              >
-                <aside
-                  id="sensor-filters"
-                  aria-label={t('sensors.list.filters')}
-                  className="flex max-h-[calc(100svh-7.5rem)] w-60 flex-col rounded-xl border bg-card p-4 shadow-sm"
-                >
-                  {facetPanel}
-                </aside>
-              </div>
+          {!isPhone && context}
+          {!fleetEmpty && titleRow}
+          <div
+            data-slot="sensors-list"
+            data-held={heldRows.held ? 'true' : undefined}
+            {...heldRows.bind}
+          >
+            {body}
+            {!fleetEmpty && !error && !isLoading && (
+              <SensorStateLegend offlineAfter={secondsLabel(offlineAfter)} />
             )}
-            <div className="min-w-0 flex-1">
-              {body}
-              {!fleetEmpty && !error && !isLoading && (
-                <SensorStateLegend offlineAfter={secondsLabel(offlineAfter)} />
-              )}
-            </div>
           </div>
+          {isPhone && context}
         </>
       )}
 
@@ -904,32 +1195,6 @@ export function SensorsSection({
       >
         {facetPanel}
       </FilterSheet>
-
-      {(canWriteSensors || canDeleteSensors) && (
-        <BulkActionBar
-          count={selectedIds.length}
-          onClear={clearSelection}
-          noun={t('sensors.list.selected')}
-        >
-          {canWriteSensors && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={selectedActive.length === 0}
-              onClick={() => setBulkDisableDialogOpen(true)}
-            >
-              <PowerOff className="h-4 w-4" />
-              {t('confirm.disable', 'Disable')}
-            </Button>
-          )}
-          {canDeleteSensors && (
-            <Button variant="destructive" size="sm" onClick={() => setBulkDeleteDialogOpen(true)}>
-              <Trash2 className="h-4 w-4" />
-              {t('confirm.delete', 'Delete')}
-            </Button>
-          )}
-        </BulkActionBar>
-      )}
 
       {pairDialogOpen && (
         <AddSensorDialog
