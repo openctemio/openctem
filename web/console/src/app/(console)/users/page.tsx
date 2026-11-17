@@ -85,13 +85,17 @@ export default function AdminUsersPage() {
         cell: ({ row }) => {
           const href = platformUserHref(row.original.id)
           return (
-            <RowNameLink
-              href={href}
-              onOpen={() => router.push(href)}
-              title={toDisplayText(row.original.email)}
-            >
-              {toDisplayText(row.original.email)}
-            </RowNameLink>
+            // A block around the link: the cell is sized by its floor and the
+            // room left, never by the address.
+            <div className="flex min-w-0">
+              <RowNameLink
+                href={href}
+                onOpen={() => router.push(href)}
+                title={toDisplayText(row.original.email)}
+              >
+                {toDisplayText(row.original.email)}
+              </RowNameLink>
+            </div>
           )
         },
       },
