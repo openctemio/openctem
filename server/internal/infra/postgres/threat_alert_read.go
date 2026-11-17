@@ -191,7 +191,7 @@ func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, sco
 			&v.Product, &v.Version, &finding, &v.FindingStatus, &task); err != nil {
 			return nil, fmt.Errorf("alert assets: %w", err)
 		}
-		v.Kind = threatalert.MatchKind(kind)
+		v.Kind, v.TenantID = threatalert.MatchKind(kind), tenantID
 		if finding.Valid {
 			if fid, err := shared.IDFromString(finding.String); err == nil {
 				v.FindingID = &fid
