@@ -28,8 +28,8 @@ import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 import { AssetsSectionTabs } from './assets-section-tabs'
 import { AttentionQueueHeader } from './attention/attention-queue-header'
 
-/** Merge + Keep separate in en and vi, and the cell padding. */
-const DECISIONS_WIDTH = 196
+/** Merge + Keep separate in en (the wider) and the cell padding: measured 208. */
+const DECISIONS_WIDTH = 216
 
 /** Column floors and the frame widths below which a column is dropped. */
 const WIDTH = {
@@ -37,8 +37,8 @@ const WIDTH = {
   reason: 168,
   keepMin: 180,
   mergeMin: 180,
-  // "khoảng 20 giờ trước" whole.
-  flagged: 144,
+  // "less than a minute ago" / "khoảng 20 giờ trước" whole.
+  flagged: 160,
   // 1440 screen (frame 1116): every column but Evidence; 1280 (956): no Flagged.
   evidenceFrom: 1300,
   flaggedFrom: 1100,
