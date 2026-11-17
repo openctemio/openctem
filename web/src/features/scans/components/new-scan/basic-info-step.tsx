@@ -14,6 +14,7 @@
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
 import { Label } from '@/components/ui/label'
+import { FormField, FormStack } from '@/features/shared/components/forms'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Badge } from '@/components/ui/badge'
 import Link from '@/components/link'
@@ -40,7 +41,7 @@ import {
   stepReason,
   type WorkflowReadiness,
 } from '@/features/scan-workflows/lib/readiness'
-import { Radar, GitBranch, Layers, ChevronRight, RefreshCw } from 'lucide-react'
+import { Layers, ChevronRight } from 'lucide-react'
 import { useMemo } from 'react'
 import type { NewScanFormData } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
@@ -176,27 +177,22 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
   const aboveHere = runnable.filter((w) => !!aboveReason(tierOf.get(w.id)))
 
   return (
-    <div className="space-y-5 px-4 sm:px-6 py-4">
+    <FormStack className="px-4 py-4 sm:px-6">
       {/* Scan Name */}
-      <div className="space-y-2">
-        <Label htmlFor="scan-name">
-          {t('scans.basic.name')} <span className="text-destructive">*</span>
-        </Label>
+      <FormField id="scan-name" label={t('scans.basic.name')}>
         <Input
-          id="scan-name"
           placeholder={t('scans.basic.namePlaceholder')}
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
         />
-      </div>
+      </FormField>
 
       {/* Intensity first: everything below is filtered by it */}
       <IntensityPicker value={data.intensity} onChange={changeIntensity} />
 
       {/* What to run: a single check, a starter workflow or another workflow */}
       {!lockMode && offerWorkflows && (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">{t('scans.basic.whatToRun')}</legend>
+        <FormField group label={t('scans.basic.whatToRun')}>
           <RadioGroup
             value={choice}
             onValueChange={choose}
@@ -206,7 +202,6 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               value="single"
               title={t('scans.basic.singleCheck')}
               description={t('scans.basic.singleCheckHint')}
-              icon={<Radar className="h-4 w-4" />}
             />
             {starters.map((s) => (
               <ChoiceCard
@@ -214,7 +209,6 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 value={s.id}
                 title={s.name}
                 description={s.description ?? ''}
-                icon={<GitBranch className="h-4 w-4" />}
                 stages={planStages(s.steps ?? []).stages.map((g) => g.map((st) => st.name))}
                 readiness={s.readiness}
                 aboveCeiling={aboveReason(tierOf.get(s.id))}
@@ -225,7 +219,6 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 value="continuous"
                 title={t('scans.basic.continuous')}
                 description={t('scans.basic.continuousHint')}
-                icon={<RefreshCw className="h-4 w-4" />}
                 readiness={pair.passive.readiness}
               />
             )}
@@ -233,31 +226,34 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               value="other"
               title={t('scans.basic.anotherWorkflow')}
               description={t('scans.basic.anotherWorkflowHint')}
-              icon={<Layers className="h-4 w-4" />}
             />
           </RadioGroup>
-        </fieldset>
+        </FormField>
       )}
 
       {/* Single scan: the scanner, from the tool registry */}
       {data.mode === 'single' && (
-        <div className="space-y-2">
-          <Label htmlFor="scan-scanner">
-            {t('scans.basic.scanner')} <span className="text-destructive">*</span>
-          </Label>
-          <ScannerSelect
-            id="scan-scanner"
-            value={data.scannerName}
-            onChange={(scannerName) => onChange({ scannerName })}
-            allowConnectors={TENABLE_CONNECTOR_ENABLED}
-            zoneId={data.scanZoneId}
-            intensity={data.intensity}
-          />
-          <p className="text-muted-foreground text-xs">
-            {t('scans.basic.scannerHint')}
-            {!lockMode && ` ${t('scans.basic.chainHint')}`}
-          </p>
-        </div>
+        <FormField
+          id="scan-scanner"
+          label={t('scans.basic.scanner')}
+          hint={
+            <>
+              {t('scans.basic.scannerHint')}
+              {!lockMode && ` ${t('scans.basic.chainHint')}`}
+            </>
+          }
+        >
+          {(control) => (
+            <ScannerSelect
+              {...control}
+              value={data.scannerName}
+              onChange={(scannerName) => onChange({ scannerName })}
+              allowConnectors={TENABLE_CONNECTOR_ENABLED}
+              zoneId={data.scanZoneId}
+              intensity={data.intensity}
+            />
+          )}
+        </FormField>
       )}
 
       {/* A Tenable.sc scan: the connector, policy and repository it launches with */}
@@ -270,100 +266,105 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
 
       {/* Workflow Scan: Workflow Selection (a starter is chosen above) */}
       {data.mode === 'workflow' && (lockMode || !selectedStarter) && (
-        <div className="space-y-3">
-          <Label>
-            {t('scans.basic.selectWorkflow')} <span className="text-destructive">*</span>
-          </Label>
-          <Select
-            value={data.workflowId || undefined}
-            onValueChange={(value) => onChange({ workflowId: value })}
+        <FormStack className="gap-3">
+          <FormField
+            label={t('scans.basic.selectWorkflow')}
+            hint={
+              !isLoadingWorkflows && workflows.length === 0 ? (
+                <Link href="/scans/workflows" className="underline">
+                  {t('scans.basic.createWorkflow')}
+                </Link>
+              ) : undefined
+            }
           >
-            <SelectTrigger aria-label={t('scans.basic.workflow')}>
-              <SelectValue
-                placeholder={
-                  isLoadingWorkflows
-                    ? t('scans.basic.loadingWorkflows')
-                    : workflows.length === 0
-                      ? t('scans.basic.noActiveWorkflows')
-                      : t('scans.basic.chooseWorkflow')
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
-                <SelectItem value={data.workflowId}>{t('scans.basic.currentInactive')}</SelectItem>
-              )}
-              {runnableHere.map((workflow) => (
-                <SelectItem key={workflow.id} value={workflow.id}>
-                  <div className="flex items-center gap-2">
-                    <span>{workflow.name}</span>
-                    {workflow.is_system_template && (
-                      <Badge variant="outline" className="text-xs">
-                        {t('scans.basic.system')}
-                      </Badge>
-                    )}
-                    {readinessLabel(workflow.readiness, t) && (
-                      <span className="text-[10px] text-warning">
-                        {readinessLabel(workflow.readiness, t)}
-                      </span>
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
-              {aboveHere.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel className="text-xs text-muted-foreground">
-                    {t('scans.intensity.aboveGroup')}
-                  </SelectLabel>
-                  {aboveHere.map((workflow) => (
-                    <SelectItem
-                      key={workflow.id}
-                      value={workflow.id}
-                      disabled
-                      title={aboveReason(tierOf.get(workflow.id))}
-                    >
+            {(control) => (
+              <Select
+                value={data.workflowId || undefined}
+                onValueChange={(value) => onChange({ workflowId: value })}
+              >
+                <SelectTrigger {...control} aria-label={t('scans.basic.workflow')}>
+                  <SelectValue
+                    placeholder={
+                      isLoadingWorkflows
+                        ? t('scans.basic.loadingWorkflows')
+                        : workflows.length === 0
+                          ? t('scans.basic.noActiveWorkflows')
+                          : t('scans.basic.chooseWorkflow')
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
+                    <SelectItem value={data.workflowId}>
+                      {t('scans.basic.currentInactive')}
+                    </SelectItem>
+                  )}
+                  {runnableHere.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
                       <div className="flex items-center gap-2">
                         <span>{workflow.name}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {aboveReason(tierOf.get(workflow.id))}
-                        </span>
+                        {workflow.is_system_template && (
+                          <Badge variant="outline" className="text-xs">
+                            {t('scans.basic.system')}
+                          </Badge>
+                        )}
+                        {readinessLabel(workflow.readiness, t) && (
+                          <span className="text-cap text-warning">
+                            {readinessLabel(workflow.readiness, t)}
+                          </span>
+                        )}
                       </div>
                     </SelectItem>
                   ))}
-                </SelectGroup>
-              )}
-              {notAvailable.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel className="text-xs text-muted-foreground">
-                    {t('scans.basic.notAvailable')}
-                  </SelectLabel>
-                  {notAvailable.map((workflow) => (
-                    <SelectItem
-                      key={workflow.id}
-                      value={workflow.id}
-                      disabled
-                      title={problemText(workflow.readiness, t)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>{workflow.name}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {problemText(workflow.readiness, t) ??
-                            readinessLabel(workflow.readiness, t)}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
-          {!isLoadingWorkflows && workflows.length === 0 && (
-            <p className="text-muted-foreground text-xs">
-              <Link href="/scans/workflows" className="underline">
-                {t('scans.basic.createWorkflow')}
-              </Link>
-            </p>
-          )}
+                  {aboveHere.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-xs text-muted-foreground">
+                        {t('scans.intensity.aboveGroup')}
+                      </SelectLabel>
+                      {aboveHere.map((workflow) => (
+                        <SelectItem
+                          key={workflow.id}
+                          value={workflow.id}
+                          disabled
+                          title={aboveReason(tierOf.get(workflow.id))}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{workflow.name}</span>
+                            <span className="text-cap text-muted-foreground">
+                              {aboveReason(tierOf.get(workflow.id))}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {notAvailable.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-xs text-muted-foreground">
+                        {t('scans.basic.notAvailable')}
+                      </SelectLabel>
+                      {notAvailable.map((workflow) => (
+                        <SelectItem
+                          key={workflow.id}
+                          value={workflow.id}
+                          disabled
+                          title={problemText(workflow.readiness, t)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{workflow.name}</span>
+                            <span className="text-cap text-muted-foreground">
+                              {problemText(workflow.readiness, t) ??
+                                readinessLabel(workflow.readiness, t)}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+          </FormField>
 
           {/* Selected workflow: its steps, in order */}
           {selectedWorkflow && (
@@ -392,9 +393,9 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               </div>
             </div>
           )}
-        </div>
+        </FormStack>
       )}
-    </div>
+    </FormStack>
   )
 }
 
@@ -403,7 +404,6 @@ function ChoiceCard({
   value,
   title,
   description,
-  icon,
   stages,
   readiness,
   aboveCeiling,
@@ -411,7 +411,6 @@ function ChoiceCard({
   value: string
   title: string
   description: string
-  icon: React.ReactNode
   /** Step names by stage: steps of one stage run in parallel. */
   stages?: string[][]
   readiness?: WorkflowReadiness
@@ -433,7 +432,7 @@ function ChoiceCard({
     <Label
       htmlFor={id}
       className={cn(
-        'flex items-start gap-3 rounded-lg border p-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5',
+        'flex items-start gap-2.5 rounded-lg border border-input p-3 font-normal has-[[data-state=checked]]:border-foreground has-[[data-state=checked]]:bg-foreground/5',
         off ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted/50'
       )}
     >
@@ -446,15 +445,12 @@ function ChoiceCard({
         aria-describedby={label ? `${id}-readiness` : undefined}
       />
       <span className="min-w-0 space-y-1">
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          {icon}
-          {title}
-        </span>
-        <span className="text-xs text-muted-foreground line-clamp-2">{description}</span>
+        <span className="block text-body font-medium">{title}</span>
+        <span className="line-clamp-2 text-dense text-muted-foreground">{description}</span>
         {label && (
           <span
             id={`${id}-readiness`}
-            className={cn('block text-[11px]', off ? 'text-muted-foreground' : 'text-warning')}
+            className={cn('block text-cap', off ? 'text-muted-foreground' : 'text-warning')}
           >
             {problemReason ?? label}
             {problemFix && fixHref && (
@@ -468,7 +464,7 @@ function ChoiceCard({
           </span>
         )}
         {skipped.length > 0 && (
-          <span className="block text-xs text-muted-foreground" data-testid="skipped-note">
+          <span className="block text-cap text-muted-foreground" data-testid="skipped-note">
             {t('scans.readiness.skippedSome', undefined, {
               count: skipped.length,
               capabilities: skipped.map((x) => x.capability ?? x.name).join(', '),
@@ -477,7 +473,7 @@ function ChoiceCard({
         )}
         {stages && stages.length > 0 && (
           <span
-            className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
+            className="flex flex-wrap items-center gap-0.5 text-cap text-muted-foreground"
             aria-label={t('scans.basic.stages')}
           >
             {stages.map((names, i) => (
