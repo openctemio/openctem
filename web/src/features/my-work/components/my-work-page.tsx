@@ -434,7 +434,7 @@ export function MyWorkPage() {
                       <Info aria-hidden="true" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="max-w-xs text-sm">{explain}</PopoverContent>
+                  <PopoverContent className="text-sm">{explain}</PopoverContent>
                 </Popover>
               </>
             }
