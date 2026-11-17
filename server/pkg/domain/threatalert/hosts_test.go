@@ -2,6 +2,7 @@ package threatalert
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -166,5 +167,159 @@ func TestServiceOfName(t *testing.T) {
 		if host != want[0] || label != want[1] || ok != (want[0] != "") {
 			t.Errorf("%q: got %q %q %v, want %q", name, host, label, ok, want)
 		}
+	}
+}
+
+func hostAsset(name string, kind MatchKind, internet bool, criticality string) Asset {
+	return Asset{AssetID: shared.NewID(), Name: name, Type: "service", Kind: kind, InternetFacing: internet, Criticality: criticality}
+}
+
+func TestCountHosts(t *testing.T) {
+	cases := []struct {
+		name   string
+		assets []Asset
+		want   HostCounts
+	}{
+		{"nothing", nil, HostCounts{}},
+		{"two ports of one host are one confirmed host",
+			[]Asset{hostAsset("http://192.0.2.20", MatchConfirmed, true, ""), hostAsset("https://192.0.2.20", MatchConfirmed, true, "")},
+			HostCounts{Confirmed: 1, InternetFacing: 1}},
+		{"likely is its own number, never part of confirmed",
+			[]Asset{hostAsset("https://example.com", MatchLikely, false, ""), hostAsset("https://example.org", MatchConfirmed, false, "")},
+			HostCounts{Confirmed: 1, Likely: 1}},
+		{"many ports, default ports, case, trailing slash and dot: still one host",
+			[]Asset{hostAsset("http://example.com:8080", MatchPossible, false, ""), hostAsset("HTTPS://Example.COM:443/", MatchPossible, false, ""),
+				hostAsset("https://example.com./app", MatchPossible, false, ""), hostAsset("http://example.com:80", MatchPossible, false, "")},
+			HostCounts{Possible: 1}},
+		{"a host in two tiers is a row in each, and one internet-facing, one critical host",
+			[]Asset{hostAsset("https://example.com", MatchConfirmed, true, "critical"), hostAsset("http://example.com", MatchPossible, true, "critical")},
+			HostCounts{Confirmed: 1, Possible: 1, InternetFacing: 1, Critical: 1}},
+		{"an asset not named by a URL is a host of its own, even with the name of another",
+			[]Asset{hostAsset("web-01", MatchConfirmed, false, "Critical"), hostAsset("web-01", MatchConfirmed, false, ""),
+				hostAsset("example.com", MatchConfirmed, false, ""), hostAsset("https://example.com", MatchConfirmed, false, "")},
+			HostCounts{Confirmed: 4, Critical: 1}},
+		{"IPv6 literals fold like names",
+			[]Asset{hostAsset("http://[2001:db8::1]", MatchConfirmed, false, ""), hostAsset("https://[2001:DB8::1]:8443/", MatchConfirmed, true, "")},
+			HostCounts{Confirmed: 1, InternetFacing: 1}},
+	}
+	for _, c := range cases {
+		if got := CountHosts(c.assets); got != c.want {
+			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
+		}
+	}
+}
+
+// The counts are the rows GroupByHost lists: the number in a header is the
+// number of rows under it, for any mix of names and tiers.
+func TestCountHostsEqualsGroupRows(t *testing.T) {
+	names := []string{"http://192.0.2.20", "https://192.0.2.20", "https://192.0.2.20:8443", "HTTP://EXAMPLE.COM", "https://example.com/",
+		"https://example.com./x?y=1", "example.com", "web-01", "http://[2001:db8::1]", "https://[2001:db8::1]:9443", "ftp://files.example.org",
+		"https://user@files.example.org", "//no-scheme.example.com", "https://", "http://192.0.2.21:80", " https://192.0.2.21 "}
+	kinds := []MatchKind{MatchConfirmed, MatchLikely, MatchPossible}
+	tn := shared.NewID()
+	// Every subset pattern of a deterministic walk: asset i takes name
+	// i*step mod len and tier (i*step+round) mod 3.
+	for round := 0; round < 60; round++ {
+		var assets []Asset
+		var views []AssetView
+		for i := 0; i < 3+round%14; i++ {
+			a := hostAsset(names[(i*(round%5+1)+round)%len(names)], kinds[(i*(round%3+1)+round)%3], (i+round)%2 == 0, "")
+			assets = append(assets, a)
+			views = append(views, AssetView{Asset: a, TenantID: tn})
+		}
+		got := CountHosts(assets)
+		rows := map[MatchKind]int{}
+		for _, g := range GroupByHost(views) {
+			rows[g.Kind] = len(g.Hosts)
+		}
+		want := HostCounts{Confirmed: rows[MatchConfirmed], Likely: rows[MatchLikely], Possible: rows[MatchPossible], InternetFacing: got.InternetFacing}
+		if got != want {
+			t.Fatalf("round %d: counts %+v, group rows %+v", round, got, rows)
+		}
+	}
+}
+
+// The key stored with an alert asset is the key the rows are grouped by.
+func TestHostKey(t *testing.T) {
+	id := shared.NewID()
+	cases := map[string]string{
+		"http://192.0.2.20":           "h:192.0.2.20",
+		"HTTPS://Example.COM.:443/a/": "h:example.com",
+		"https://[2001:DB8::1]:8443":  "h:[2001:db8::1]",
+		"example.com":                 "a:" + id.String(),
+		"web-01":                      "a:" + id.String(),
+		"https://":                    "a:" + id.String(),
+		"":                            "a:" + id.String(),
+	}
+	for name, want := range cases {
+		if got := HostKey(Asset{AssetID: id, Name: name}); got != want {
+			t.Errorf("HostKey(%q) = %q, want %q", name, got, want)
+		}
+	}
+	long := HostKey(Asset{AssetID: id, Name: "https://" + strings.Repeat("a", 400) + ".example.com"})
+	if len(long) != maxHostKey {
+		t.Fatalf("a long host key has %d bytes, want it cut at %d", len(long), maxHostKey)
+	}
+}
+
+func TestHostsGrew(t *testing.T) {
+	known := []Asset{hostAsset("https://192.0.2.20", MatchLikely, false, ""), hostAsset("web-01", MatchConfirmed, false, "")}
+	with := func(extra ...Asset) []Asset { return append(append([]Asset{}, known...), extra...) }
+	cases := []struct {
+		name   string
+		before []Asset
+		now    []Asset
+		want   bool
+	}{
+		{"nothing changed", known, known, false},
+		{"a second port of a known host", known, with(hostAsset("http://192.0.2.20", MatchLikely, false, "")), false},
+		{"a second port of a known host, in a weaker tier", known, with(hostAsset("http://192.0.2.20:8080", MatchPossible, false, "")), false},
+		{"a new host", known, with(hostAsset("https://192.0.2.21", MatchPossible, false, "")), true},
+		{"a known host moves from likely to confirmed",
+			known, []Asset{hostAsset("https://192.0.2.20", MatchConfirmed, false, ""), known[1]}, true},
+		{"a second port of a known host is confirmed while the first is likely",
+			known, with(hostAsset("http://192.0.2.20", MatchConfirmed, false, "")), true},
+		{"a host left", known, known[:1], false},
+		{"the first plan of an alert", nil, known, true},
+		{"a host moves to a weaker tier", known, []Asset{hostAsset("https://192.0.2.20", MatchPossible, false, ""), known[1]}, false},
+	}
+	for _, c := range cases {
+		if got := HostsGrew(c.before, c.now); got != c.want {
+			t.Errorf("%s: grew = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestHostCountsSentence(t *testing.T) {
+	cases := []struct {
+		c    HostCounts
+		want string
+	}{
+		{HostCounts{Confirmed: 3, Likely: 1}, "3 hosts confirmed, 1 likely"},
+		{HostCounts{Confirmed: 1, Possible: 2, InternetFacing: 1}, "1 host confirmed, 2 possibly affected, 1 internet-facing"},
+		{HostCounts{Likely: 2, Possible: 1}, "2 hosts likely, 1 possibly affected"},
+		{HostCounts{Possible: 1}, "1 host possibly affected"},
+		{HostCounts{Confirmed: 2, Likely: 1, Possible: 4, InternetFacing: 2}, "2 hosts confirmed, 1 likely, 4 possibly affected, 2 internet-facing"},
+		{HostCounts{}, "no hosts affected"},
+	}
+	for _, c := range cases {
+		got := c.c.Sentence()
+		if got != c.want {
+			t.Errorf("%+v: %q, want %q", c.c, got, c.want)
+		}
+		if strings.Contains(got, "asset") {
+			t.Errorf("%q names assets for a host count", got)
+		}
+	}
+}
+
+func TestHostNames(t *testing.T) {
+	assets := []Asset{hostAsset("http://192.0.2.20", MatchConfirmed, false, ""), hostAsset("https://192.0.2.20", MatchConfirmed, false, ""),
+		hostAsset("web-01", MatchConfirmed, false, ""), hostAsset("https://example.com/app", MatchLikely, false, ""),
+		hostAsset("https://<b>.example.org", MatchLikely, false, "")}
+	got := HostNames(assets, 3)
+	want := []string{"192.0.2.20", "web-01", "example.com"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("HostNames = %v, want %v", got, want)
 	}
 }

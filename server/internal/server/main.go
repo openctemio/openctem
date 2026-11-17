@@ -741,6 +741,20 @@ func run() int {
 				log.Info("pending commands given host keys", "count", n)
 			}
 		}()
+
+		// Host keys and host counts for emerging-threat alerts planned
+		// before an alert counted hosts. Idempotent, short batches, one
+		// replica at a time; nothing is sent again.
+		go func() {
+			n, err := postgres.BackfillThreatAlertHosts(ctx, db.DB)
+			if err != nil {
+				log.Error("emerging-threat alert host count backfill failed", "error", err, "updated", n)
+				return
+			}
+			if n > 0 {
+				log.Info("emerging-threat alerts recounted by host", "count", n)
+			}
+		}()
 	}
 
 	if err := requireSelfServiceStartLimits(ctx, cfg, services); err != nil {

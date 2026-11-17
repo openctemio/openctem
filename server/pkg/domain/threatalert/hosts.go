@@ -1,6 +1,7 @@
 package threatalert
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -61,7 +62,7 @@ func GroupByHost(assets []AssetView) []HostGroup {
 	type rowKey struct {
 		tenant shared.ID
 		kind   MatchKind
-		host   string
+		key    string
 	}
 	groups := make([]HostGroup, 0, 3)
 	groupAt := map[MatchKind]int{}
@@ -79,19 +80,19 @@ func GroupByHost(assets []AssetView) []HostGroup {
 		}
 		g := &groups[gi]
 		host, label, isService := serviceOfName(a.Name)
-		if !isService {
-			id := a.AssetID
-			g.Hosts = append(g.Hosts, HostRow{Host: a.Name, AssetID: &id})
-		} else {
-			key := rowKey{a.TenantID, a.Kind, host}
-			if _, seen := rowAt[key]; !seen {
-				rowAt[key] = len(g.Hosts)
+		// One row per host key (HostKey): the counts of an alert are the
+		// number of these rows.
+		key := rowKey{a.TenantID, a.Kind, HostKey(a.Asset)}
+		ri, seen := rowAt[key]
+		if !seen {
+			ri = len(g.Hosts)
+			rowAt[key] = ri
+			if isService {
 				g.Hosts = append(g.Hosts, HostRow{Host: host})
+			} else {
+				id := a.AssetID
+				g.Hosts = append(g.Hosts, HostRow{Host: a.Name, AssetID: &id})
 			}
-		}
-		ri := len(g.Hosts) - 1
-		if isService {
-			ri = rowAt[rowKey{a.TenantID, a.Kind, host}]
 		}
 		row := &g.Hosts[ri]
 		row.InternetFacing = row.InternetFacing || a.InternetFacing
@@ -109,6 +110,166 @@ func GroupByHost(assets []AssetView) []HostGroup {
 		}
 	}
 	return out
+}
+
+// maxHostKey bounds a stored host key.
+const maxHostKey = 300
+
+// HostKey identifies the host row an affected asset belongs to within one
+// organization: the host of an asset named by a URL ("h:" and the host), or
+// the asset itself for any other asset ("a:" and its id). Every place that
+// counts or compares the hosts of an alert uses this key: the rows of
+// GroupByHost, CountHosts, HostsGrew and the key stored with each alert
+// asset, which the scoped list and digest counts read.
+func HostKey(a Asset) string {
+	host, _, ok := serviceOfName(a.Name)
+	if !ok {
+		return "a:" + a.AssetID.String()
+	}
+	key := "h:" + host
+	if len(key) > maxHostKey {
+		key = key[:maxHostKey]
+	}
+	return key
+}
+
+// HostCounts is how many hosts an alert affects. Confirmed, Likely and
+// Possible count the host rows of each tier, as GroupByHost lists them (a
+// host with services in two tiers is a row in each). InternetFacing and
+// Critical count each host once, whatever its tiers: hosts with a service
+// that is internet-facing, hosts with a service of criticality "critical".
+type HostCounts struct {
+	Confirmed      int
+	Likely         int
+	Possible       int
+	InternetFacing int
+	Critical       int
+}
+
+// Total is the number of host rows over the three tiers.
+func (c HostCounts) Total() int { return c.Confirmed + c.Likely + c.Possible }
+
+// CountHosts counts the hosts of one organization's affected assets.
+func CountHosts(assets []Asset) HostCounts {
+	type tierKey struct {
+		kind MatchKind
+		key  string
+	}
+	var c HostCounts
+	rows := make(map[tierKey]bool, len(assets))
+	internet, critical := map[string]bool{}, map[string]bool{}
+	for _, a := range assets {
+		key := HostKey(a)
+		if tk := (tierKey{a.Kind, key}); !rows[tk] {
+			rows[tk] = true
+			switch a.Kind {
+			case MatchConfirmed:
+				c.Confirmed++
+			case MatchLikely:
+				c.Likely++
+			default:
+				c.Possible++
+			}
+		}
+		if a.InternetFacing {
+			internet[key] = true
+		}
+		if strings.EqualFold(a.Criticality, "critical") {
+			critical[key] = true
+		}
+	}
+	c.InternetFacing, c.Critical = len(internet), len(critical)
+	return c
+}
+
+func tierRank(k MatchKind) int {
+	switch k {
+	case MatchConfirmed:
+		return 3
+	case MatchLikely:
+		return 2
+	case MatchPossible:
+		return 1
+	}
+	return 0
+}
+
+// HostsGrew reports whether an alert reaches further than it did: a host
+// that was not affected before, or a host whose strongest tier is stronger
+// than before (possible to likely or confirmed, likely to confirmed). One
+// more service on a host already known at that tier or a stronger one is not
+// growth.
+func HostsGrew(before, now []Asset) bool {
+	was := make(map[string]int, len(before))
+	for _, a := range before {
+		key := HostKey(a)
+		was[key] = max(was[key], tierRank(a.Kind))
+	}
+	for _, a := range now {
+		if tierRank(a.Kind) > was[HostKey(a)] {
+			return true
+		}
+	}
+	return false
+}
+
+// HostNames names up to limit of the hosts of the assets, each once, in the
+// order given: the host of an asset named by a URL, the name of any other.
+func HostNames(assets []Asset, limit int) []string {
+	names := make([]string, 0, limit)
+	seen := map[string]bool{}
+	for _, a := range assets {
+		if len(names) >= limit {
+			break
+		}
+		key := HostKey(a)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		name := a.Name
+		if host, _, ok := serviceOfName(a.Name); ok {
+			name = host
+		}
+		if n := PlainText(name, 80); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// Sentence says the counts in the words the console uses, zero parts left
+// out: "3 hosts confirmed, 1 likely, 2 possibly affected, 2 internet-facing".
+// The first tier named carries the word "host".
+func (c HostCounts) Sentence() string {
+	var parts []string
+	tier := func(n int, word string) {
+		if n == 0 {
+			return
+		}
+		if len(parts) == 0 {
+			parts = append(parts, fmt.Sprintf("%d %s %s", n, plural(n, "host", "hosts"), word))
+			return
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", n, word))
+	}
+	tier(c.Confirmed, "confirmed")
+	tier(c.Likely, "likely")
+	tier(c.Possible, "possibly affected")
+	if len(parts) == 0 {
+		return "no hosts affected"
+	}
+	if c.InternetFacing > 0 {
+		parts = append(parts, fmt.Sprintf("%d internet-facing", c.InternetFacing))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // defaultPorts are the ports a scheme implies; they are not part of a
