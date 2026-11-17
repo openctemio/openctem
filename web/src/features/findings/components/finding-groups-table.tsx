@@ -23,6 +23,7 @@ import {
 import { formatEpssScore } from '@/lib/epss'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { cn } from '@/lib/utils'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import type { FilterPanelToggleProps } from '@/features/shared/components/filter-button'
 import type { DataTableSearch } from '@/features/shared'
@@ -131,6 +132,16 @@ class GroupFilterUnsupported extends Error {}
 
 const humanize = (v: string) => v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ')
 
+/**
+ * A group's name as a header may show it. A rule, asset, component, type,
+ * family or CVE label is text a scanner or an importer wrote, so it is masked
+ * like a row's title. An owner group is named after a member of the
+ * organization (an identity, not scanner text) and stays as it is.
+ */
+export function groupDisplayLabel(group: Pick<FindingGroup, 'group_type' | 'label'>): string {
+  return group.group_type === 'owner' ? group.label : maskSensitiveText(group.label)
+}
+
 /** Group name plus the facts that identify it (type, owner, CVSS / EPSS, KEV). */
 function GroupTitle({ group }: { group: FindingGroup }) {
   const { t } = useTranslation()
@@ -143,13 +154,14 @@ function GroupTitle({ group }: { group: FindingGroup }) {
   }
   if (group.group_type === 'asset') {
     if (meta.asset_type) facts.push(humanize(String(meta.asset_type)))
+    // The owner is a member's name: an identity, not scanner text.
     if (meta.owner)
       facts.push(t('findings.groupsTable.owner', 'Owner {name}', { name: String(meta.owner) }))
   }
   if (group.group_type === 'component' && meta.ecosystem) facts.push(String(meta.ecosystem))
   if (group.group_type === 'rule') {
     // The rule id is the key; the label is the rule name or a title.
-    if (group.label !== group.group_key) facts.push(group.group_key)
+    if (group.label !== group.group_key) facts.push(maskSensitiveText(group.group_key))
     if (Array.isArray(meta.tools) && meta.tools.length > 0) facts.push(meta.tools.join(', '))
   }
   facts.push(
@@ -166,6 +178,7 @@ function GroupTitle({ group }: { group: FindingGroup }) {
   }
 
   const isSeverityGroup = group.group_type === 'severity'
+  const label = groupDisplayLabel(group)
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       {isSeverityGroup ? (
@@ -178,9 +191,9 @@ function GroupTitle({ group }: { group: FindingGroup }) {
             'max-w-[28rem] truncate text-sm font-medium text-foreground',
             group.group_type === 'cve' && /^CVE-/i.test(group.label) && 'font-mono'
           )}
-          title={group.label}
+          title={label}
         >
-          {group.group_type === 'finding_type' ? humanize(group.label) : group.label}
+          {group.group_type === 'finding_type' ? humanize(label) : label}
         </span>
       )}
       {group.group_type === 'cve' && group.severity && (
@@ -494,12 +507,15 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       selectable: true,
       expandedKeys,
       onExpandedKeysChange: setExpandedKeys,
-      getLabel: (key) => byKey.get(key)?.label || key,
+      getLabel: (key) => {
+        const g = byKey.get(key)
+        return g ? groupDisplayLabel(g) || maskSensitiveText(key) : maskSensitiveText(key)
+      },
       // An open group that has not answered yet shows skeleton rows.
       isGroupLoading: (key) => expandable && (!lazy.groups[key] || !!lazy.groups[key]?.loading),
       renderHeader: (key) => {
         const g = byKey.get(key)
-        return g ? <GroupTitle group={g} /> : key
+        return g ? <GroupTitle group={g} /> : maskSensitiveText(key)
       },
       renderSummary: (key) => {
         const g = byKey.get(key)

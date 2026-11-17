@@ -14,6 +14,7 @@ import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badg
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 import { cn } from '@/lib/utils'
 import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
@@ -32,7 +33,8 @@ interface FindingPhoneCardProps {
  * A finding on a phone (list and grouped views alike): the same selection
  * checkbox and action menu the table row has, around a button that opens the
  * finding. Selecting a card is a separate control from opening it, so a tap
- * on the body never changes the selection.
+ * on the body never changes the selection. Its text is masked like a table
+ * row's (maskSensitiveText): no secret or e-mail address in clear, no "Show".
  */
 export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: FindingPhoneCardProps) {
   const { t } = useTranslation()
@@ -51,7 +53,7 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             checked={selection.selected}
             onCheckedChange={(v) => selection.onSelectedChange(!!v)}
             aria-label={t('findings.list.selectRow', 'Select finding {title}', {
-              title: toDisplayText(f.title, 80),
+              title: toDisplayText(maskSensitiveText(f.title), 80),
             })}
           />
         </div>
@@ -79,7 +81,10 @@ export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: Findin
             meta={
               (f.cve || f.scanner) && (
                 <MetaLine
-                  items={[f.cve && <span className="font-mono">{f.cve}</span>, f.scanner]}
+                  items={[
+                    f.cve && <span className="font-mono">{maskSensitiveText(f.cve)}</span>,
+                    f.scanner,
+                  ]}
                 />
               )
             }

@@ -4,6 +4,7 @@ import Link from '@/components/link'
 import { TruncatedText } from '@/features/shared'
 import type { Finding } from '@/features/findings/types/finding.types'
 import { useTranslation } from '@/context/i18n-provider'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 import { AssetMarkers } from './asset-markers'
 
 /**
@@ -11,11 +12,17 @@ import { AssetMarkers } from './asset-markers'
  * and crown-jewel markers on one line. The place on the asset (a path or URL)
  * is in the name's tooltip and accessible name; with no asset name the place
  * is the line, cut from the middle so the part that differs stays visible.
+ * The name and the place are masked (maskSensitiveText): the line, its tooltip
+ * and its accessible name never show an address, a URL credential or a secret.
  */
 export function FindingAssetCell({ finding }: { finding: Finding }) {
   const { t } = useTranslation()
   const asset = finding.assets[0]
-  const loc = finding.location
+  const raw = finding.location
+  const loc = raw && {
+    asset: maskSensitiveText(raw.asset),
+    detail: maskSensitiveText(raw.detail),
+  }
   const markers = (
     <AssetMarkers internetFacing={asset?.isInternetAccessible} crownJewel={asset?.isCrownJewel} />
   )
