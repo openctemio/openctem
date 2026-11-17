@@ -10,7 +10,7 @@
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
+import { FormField, FormSection } from '@/features/shared/components/forms'
 import {
   Select,
   SelectContent,
@@ -62,26 +62,32 @@ export function RuleSourcesSection({
   }
 
   return (
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-medium">{t('scans.rules.title')}</legend>
-      <Label htmlFor="rule-sources" className="sr-only">
-        {t('scans.rules.sources')}
-      </Label>
-      <Select
-        value={ruleSources === '' ? INHERIT : ruleSources}
-        onValueChange={(v) => onChange({ ruleSources: v === INHERIT ? '' : (v as RuleSources) })}
+    <FormSection title={t('scans.rules.title')}>
+      <FormField
+        id="rule-sources"
+        label={t('scans.rules.sources')}
+        required={false}
+        hint={t('scans.rules.help')}
       >
-        <SelectTrigger id="rule-sources" className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={INHERIT}>{t('scans.rules.inherit')}</SelectItem>
-          <SelectItem value="both">{t('scans.rules.both')}</SelectItem>
-          <SelectItem value="platform">{t('scans.rules.platform')}</SelectItem>
-          <SelectItem value="tenant">{t('scans.rules.tenant')}</SelectItem>
-        </SelectContent>
-      </Select>
-      <p className="text-muted-foreground text-xs">{t('scans.rules.help')}</p>
+        {(control) => (
+          <Select
+            value={ruleSources === '' ? INHERIT : ruleSources}
+            onValueChange={(v) =>
+              onChange({ ruleSources: v === INHERIT ? '' : (v as RuleSources) })
+            }
+          >
+            <SelectTrigger id={control.id} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={INHERIT}>{t('scans.rules.inherit')}</SelectItem>
+              <SelectItem value="both">{t('scans.rules.both')}</SelectItem>
+              <SelectItem value="platform">{t('scans.rules.platform')}</SelectItem>
+              <SelectItem value="tenant">{t('scans.rules.tenant')}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </FormField>
 
       {listDisabled && canRead && customTemplateIds.length > 0 && (
         <p className="text-muted-foreground text-xs">{t('scans.rules.platformKept')}</p>
@@ -131,10 +137,10 @@ export function RuleSourcesSection({
         </div>
       )}
       {error && (
-        <p role="alert" className="text-destructive text-xs">
+        <p role="alert" className="text-destructive text-cap">
           {error}
         </p>
       )}
-    </fieldset>
+    </FormSection>
   )
 }

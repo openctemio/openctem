@@ -404,7 +404,7 @@ export function WizardFrame<S extends string>({
         data-testid={testId}
       >
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-dialog">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <WizardSteps

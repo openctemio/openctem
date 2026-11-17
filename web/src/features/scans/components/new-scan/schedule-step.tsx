@@ -10,7 +10,7 @@
 
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+import { FormField, FormRow, FormStack } from '@/features/shared/components/forms'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -80,61 +80,58 @@ export function ScheduleStep({
   // user replaces it with one of the frequencies.
   if (schedule.custom) {
     return (
-      <div className="space-y-3 p-4" data-testid="custom-schedule">
-        <Label>{t('scans.schedule.whenToRun')}</Label>
-        <div className="space-y-2 rounded-lg border border-primary bg-primary/5 p-4">
-          <p className="font-medium">
-            {t(
-              schedule.custom.type === 'crontab'
-                ? 'scans.schedule.customCron'
-                : 'scans.schedule.customRRule'
-            )}
-          </p>
-          <code className="block break-all rounded bg-muted px-2 py-1 text-xs">
-            {schedule.custom.expression}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            {t('scans.schedule.customKept', undefined, { timezone })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => set({ custom: undefined, frequency: 'weekly' })}
-          >
-            {t('scans.schedule.customReplace')}
-          </Button>
-        </div>
-      </div>
+      <FormStack className="p-4" data-testid="custom-schedule">
+        <FormField group label={t('scans.schedule.whenToRun')}>
+          <div className="space-y-2 rounded-lg border border-primary bg-primary/5 p-4">
+            <p className="font-medium">
+              {t(
+                schedule.custom.type === 'crontab'
+                  ? 'scans.schedule.customCron'
+                  : 'scans.schedule.customRRule'
+              )}
+            </p>
+            <code className="block break-all rounded bg-muted px-2 py-1 text-xs">
+              {schedule.custom.expression}
+            </code>
+            <p className="text-xs text-muted-foreground">
+              {t('scans.schedule.customKept', undefined, { timezone })}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => set({ custom: undefined, frequency: 'weekly' })}
+            >
+              {t('scans.schedule.customReplace')}
+            </Button>
+          </div>
+        </FormField>
+      </FormStack>
     )
   }
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="space-y-3">
-        <Label>{t('scans.schedule.whenToRun')}</Label>
+    <FormStack className="p-4">
+      <FormField group label={t('scans.schedule.whenToRun')}>
         <RadioGroup
           value={schedule.runImmediately ? 'now' : schedule.saveOnly ? 'save' : 'later'}
           onValueChange={(value) =>
             set({ runImmediately: value === 'now', saveOnly: value === 'save' })
           }
-          className="space-y-3"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
         >
           <label
             htmlFor="run-now"
             className={cn(
-              'flex items-center gap-3 rounded-lg border p-4 transition-colors',
-              runNowBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-              schedule.runImmediately
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:border-primary/50'
+              'flex items-start gap-2.5 rounded-lg border border-input p-3 has-[[data-state=checked]]:border-foreground has-[[data-state=checked]]:bg-foreground/5',
+              runNowBlocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted/50'
             )}
           >
-            <RadioGroupItem value="now" id="run-now" disabled={runNowBlocked} />
-            <span>
-              <span className="block font-medium">{t('scans.schedule.now')}</span>
+            <RadioGroupItem value="now" id="run-now" disabled={runNowBlocked} className="mt-0.5" />
+            <span className="min-w-0">
+              <span className="block text-body font-medium">{t('scans.schedule.now')}</span>
               {runNowBlocked && (
-                <span className="text-muted-foreground block text-xs">
+                <span className="block text-dense text-muted-foreground">
                   {t(
                     'scanDetail.newScan.runNowNeedsExecute',
                     'You can create scans but not run them. Ask an administrator for the scans:execute permission.'
@@ -144,186 +141,165 @@ export function ScheduleStep({
             </span>
           </label>
 
-          <div
-            className={cn(
-              'space-y-4 rounded-lg border p-4 transition-colors',
-              !schedule.runImmediately && !schedule.saveOnly
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:border-primary/50'
-            )}
+          <label
+            htmlFor="run-later"
+            className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-input p-3 hover:bg-muted/50 has-[[data-state=checked]]:border-foreground has-[[data-state=checked]]:bg-foreground/5"
           >
-            <label htmlFor="run-later" className="flex cursor-pointer items-center gap-3">
-              <RadioGroupItem value="later" id="run-later" />
-              <span className="font-medium">{t('scans.schedule.later')}</span>
-            </label>
+            <RadioGroupItem value="later" id="run-later" className="mt-0.5" />
+            <span className="min-w-0 text-body font-medium">{t('scans.schedule.later')}</span>
+          </label>
 
-            {later && (
-              <div className="ms-6 grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="frequency" className="text-sm">
-                    {t('scans.schedule.frequency')}
-                  </Label>
-                  <Select
-                    value={frequency}
-                    onValueChange={(value: ScheduleFrequency) => set({ frequency: value })}
-                  >
-                    <SelectTrigger id="frequency" className="w-full">
-                      <SelectValue placeholder={t('scans.schedule.frequencyPlaceholder')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FREQUENCY_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {t(`scans.frequency.${option.value}`, option.label)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="schedule-timezone" className="text-sm">
-                    {t('scans.schedule.timezone')}
-                  </Label>
-                  <TimezoneSelect
-                    id="schedule-timezone"
-                    value={timezone}
-                    onChange={(zone) => set({ timezone: zone })}
-                  />
-                </div>
-
-                {frequency === 'once' && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="run-at-date" className="text-sm">
-                        {t('scans.schedule.date')}
-                      </Label>
-                      <Input
-                        id="run-at-date"
-                        type="date"
-                        min={todayIn(timezone)}
-                        value={schedule.runAtDate ?? ''}
-                        onChange={(e) => set({ runAtDate: e.target.value })}
-                        aria-invalid={problem ? true : undefined}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="run-at-time" className="text-sm">
-                        {t('scans.schedule.time')}
-                      </Label>
-                      <Input
-                        id="run-at-time"
-                        type="time"
-                        value={schedule.runAtTime ?? ''}
-                        onChange={(e) => set({ runAtTime: e.target.value })}
-                        aria-invalid={problem ? true : undefined}
-                      />
-                    </div>
-                  </>
-                )}
-
-                {frequency === 'weekly' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="day" className="text-sm">
-                      {t('scans.schedule.day')}
-                    </Label>
-                    <Select
-                      value={schedule.dayOfWeek?.toString()}
-                      onValueChange={(v) => set({ dayOfWeek: parseInt(v, 10) })}
-                    >
-                      <SelectTrigger id="day" className="w-full">
-                        <SelectValue placeholder={t('scans.schedule.dayPlaceholder')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DAY_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value.toString()}>
-                            {t(`scans.day.${option.value}`, option.label)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {frequency === 'monthly' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="day-of-month" className="text-sm">
-                      {t('scans.schedule.dayOfMonth')}
-                    </Label>
-                    <Select
-                      value={(schedule.dayOfMonth ?? 1).toString()}
-                      onValueChange={(v) => set({ dayOfMonth: parseInt(v, 10) })}
-                    >
-                      <SelectTrigger id="day-of-month" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DAY_OF_MONTH_OPTIONS.map((d) => (
-                          <SelectItem key={d} value={d.toString()}>
-                            {d}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {(schedule.dayOfMonth ?? 1) > 28 && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('scans.schedule.shortMonth')}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {frequency !== 'once' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="time" className="text-sm">
-                      {t('scans.schedule.time')}
-                    </Label>
-                    <Input
-                      id="time"
-                      type="time"
-                      step={900}
-                      value={schedule.time ?? ''}
-                      onChange={(e) => set({ time: e.target.value })}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {later && problem && (
-              <p role="alert" className="ms-6 text-sm text-destructive">
-                {problem}
-              </p>
-            )}
-          </div>
           {offerSaveOnly && (
             <label
               htmlFor="run-save"
-              className={cn(
-                'flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors',
-                schedule.saveOnly
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50'
-              )}
+              className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-input p-3 hover:bg-muted/50 has-[[data-state=checked]]:border-foreground has-[[data-state=checked]]:bg-foreground/5"
             >
               <RadioGroupItem value="save" id="run-save" className="mt-0.5" />
-              <span>
-                <span className="block font-medium">{t('scans.schedule.saveOnly')}</span>
-                <span className="text-muted-foreground block text-xs">
+              <span className="min-w-0">
+                <span className="block text-body font-medium">{t('scans.schedule.saveOnly')}</span>
+                <span className="block text-dense text-muted-foreground">
                   {t('scans.schedule.saveOnlyHint')}
                 </span>
               </span>
             </label>
           )}
         </RadioGroup>
+
+        {later && (
+          <FormRow>
+            <FormField id="frequency" label={t('scans.schedule.frequency')}>
+              {(control) => (
+                <Select
+                  value={frequency}
+                  onValueChange={(value: ScheduleFrequency) => set({ frequency: value })}
+                >
+                  <SelectTrigger id={control.id} className="w-full">
+                    <SelectValue placeholder={t('scans.schedule.frequencyPlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FREQUENCY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(`scans.frequency.${option.value}`, option.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+
+            <FormField id="schedule-timezone" label={t('scans.schedule.timezone')}>
+              {(control) => (
+                <TimezoneSelect
+                  id={control.id}
+                  value={timezone}
+                  onChange={(zone) => set({ timezone: zone })}
+                />
+              )}
+            </FormField>
+
+            {frequency === 'once' && (
+              <>
+                <FormField id="run-at-date" label={t('scans.schedule.date')}>
+                  {(control) => (
+                    <Input
+                      id={control.id}
+                      type="date"
+                      min={todayIn(timezone)}
+                      value={schedule.runAtDate ?? ''}
+                      onChange={(e) => set({ runAtDate: e.target.value })}
+                      aria-invalid={problem ? true : undefined}
+                    />
+                  )}
+                </FormField>
+                <FormField id="run-at-time" label={t('scans.schedule.time')}>
+                  {(control) => (
+                    <Input
+                      id={control.id}
+                      type="time"
+                      value={schedule.runAtTime ?? ''}
+                      onChange={(e) => set({ runAtTime: e.target.value })}
+                      aria-invalid={problem ? true : undefined}
+                    />
+                  )}
+                </FormField>
+              </>
+            )}
+
+            {frequency === 'weekly' && (
+              <FormField id="day" label={t('scans.schedule.day')}>
+                {(control) => (
+                  <Select
+                    value={schedule.dayOfWeek?.toString()}
+                    onValueChange={(v) => set({ dayOfWeek: parseInt(v, 10) })}
+                  >
+                    <SelectTrigger id={control.id} className="w-full">
+                      <SelectValue placeholder={t('scans.schedule.dayPlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value.toString()}>
+                          {t(`scans.day.${option.value}`, option.label)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </FormField>
+            )}
+
+            {frequency === 'monthly' && (
+              <FormField
+                id="day-of-month"
+                label={t('scans.schedule.dayOfMonth')}
+                hint={(schedule.dayOfMonth ?? 1) > 28 ? t('scans.schedule.shortMonth') : undefined}
+              >
+                {(control) => (
+                  <Select
+                    value={(schedule.dayOfMonth ?? 1).toString()}
+                    onValueChange={(v) => set({ dayOfMonth: parseInt(v, 10) })}
+                  >
+                    <SelectTrigger id={control.id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAY_OF_MONTH_OPTIONS.map((d) => (
+                        <SelectItem key={d} value={d.toString()}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </FormField>
+            )}
+
+            {frequency !== 'once' && (
+              <FormField id="time" label={t('scans.schedule.time')}>
+                <Input
+                  type="time"
+                  step={900}
+                  value={schedule.time ?? ''}
+                  onChange={(e) => set({ time: e.target.value })}
+                />
+              </FormField>
+            )}
+          </FormRow>
+        )}
+
+        {later && problem && (
+          <p role="alert" className="text-sm text-destructive">
+            {problem}
+          </p>
+        )}
         {later && !problem && (
-          <div className="mt-4 rounded-lg border p-4">
+          <div className="rounded-lg border p-4">
             <SchedulePreview
               request={schedulePreviewRequestFromForm(data)}
               title={frequency === 'once' ? t('scans.schedule.runsOnce') : undefined}
             />
           </div>
         )}
-      </div>
-    </div>
+      </FormField>
+    </FormStack>
   )
 }

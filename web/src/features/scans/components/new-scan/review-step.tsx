@@ -10,7 +10,7 @@ import { AlertTriangle, CheckCircle2, Pencil, RefreshCw, ShieldAlert, XCircle } 
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField, FormStack } from '@/features/shared/components/forms'
 import { cn } from '@/lib/utils'
 import type { ApiScopeCheckRouting } from '@/features/scope'
 import { ScanRoutingSection } from '@/features/scan-zones'
@@ -213,18 +213,14 @@ export function ReviewStep({
   ].filter(Boolean)
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="space-y-2">
-        <Label htmlFor="review-name">
-          {t('scans.review.scanName')} <span className="text-destructive">*</span>
-        </Label>
+    <FormStack className="p-4">
+      <FormField id="review-name" label={t('scans.review.scanName')}>
         <Input
-          id="review-name"
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder={t('scans.review.namePlaceholder')}
         />
-      </div>
+      </FormField>
 
       <dl className="rounded-lg border px-3">
         <Row title={t('scans.review.rowWhat')} step="basic" onEdit={onEdit}>
@@ -397,6 +393,6 @@ export function ReviewStep({
         </ul>
       )}
       {approvalBlock}
-    </div>
+    </FormStack>
   )
 }

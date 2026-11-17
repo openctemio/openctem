@@ -11,7 +11,7 @@ import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
 
-import { Label } from '@/components/ui/label'
+import { FormField, FormStack } from '@/features/shared/components/forms'
 import {
   Select,
   SelectContent,
@@ -46,49 +46,50 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
     onChange(tenableScanConfigToApi({ ...cfg, ...patch }, value))
 
   return (
-    <div className="space-y-3 rounded-lg border p-3">
-      <div className="space-y-2">
-        <Label htmlFor="tsc-scan-connector">
-          {t('scans.tenable.connector', 'Tenable.sc connector')}{' '}
-          <span className="text-destructive">*</span>
-        </Label>
-        <Select
-          value={cfg.integrationId || undefined}
-          onValueChange={(integrationId) =>
-            // A different connector has its own allow-list: start the picks over.
-            set({ integrationId, policyId: 0, repositoryId: 0, zoneId: 0 })
-          }
-        >
-          <SelectTrigger
-            id="tsc-scan-connector"
-            aria-label={t('scans.tenable.connector', 'Tenable.sc connector')}
-          >
-            <SelectValue
-              placeholder={
-                isLoading
-                  ? t('scans.tenable.loading', 'Loading connectors…')
-                  : connectors.length === 0
-                    ? t('scans.tenable.none', 'No Tenable.sc connector')
-                    : t('scans.tenable.choose', 'Choose a connector')
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {connectors.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!isLoading && connectors.length === 0 && (
-          <p className="text-muted-foreground text-xs">
+    <FormStack className="rounded-lg border p-3">
+      <FormField
+        id="tsc-scan-connector"
+        label={t('scans.tenable.connector', 'Tenable.sc connector')}
+        hint={
+          !isLoading && connectors.length === 0 ? (
             <Link href="/settings/integrations/scanners" className="underline">
               {t('scans.tenable.connectLink', 'Connect a vulnerability scanner')}
             </Link>
-          </p>
+          ) : undefined
+        }
+      >
+        {(control) => (
+          <Select
+            value={cfg.integrationId || undefined}
+            onValueChange={(integrationId) =>
+              // A different connector has its own allow-list: start the picks over.
+              set({ integrationId, policyId: 0, repositoryId: 0, zoneId: 0 })
+            }
+          >
+            <SelectTrigger
+              id={control.id}
+              aria-label={t('scans.tenable.connector', 'Tenable.sc connector')}
+            >
+              <SelectValue
+                placeholder={
+                  isLoading
+                    ? t('scans.tenable.loading', 'Loading connectors…')
+                    : connectors.length === 0
+                      ? t('scans.tenable.none', 'No Tenable.sc connector')
+                      : t('scans.tenable.choose', 'Choose a connector')
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {connectors.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-      </div>
+      </FormField>
 
       {cfg.integrationId && (
         <>
@@ -118,7 +119,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
               optional
             />
           )}
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-dense">
             {t(
               'scans.tenable.note',
               "The scan runs in Tenable.sc, launched by the connector's sensor; its results arrive like any scan's. Targets still pass the scope, exclusion and data-scope checks."
@@ -126,6 +127,6 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           </p>
         </>
       )}
-    </div>
+    </FormStack>
   )
 }
