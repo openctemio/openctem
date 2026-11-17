@@ -236,6 +236,13 @@ wrapper:
   an entry page is one call to action. `signal` is for entry pages only; an
   app page's primary action stays the kit default (ink). Fields and buttons are the kit's and
   take no size, padding or text class from the page. Links are `TextLink`.
+- Pages outside the `(auth)` group put themselves in the frame:
+  `/invitations` (card width) and `/ownership-invitations` (`width="wide"`,
+  the shared card with `surface="entry"`; My account keeps its own card).
+  The account space hub `/welcome` keeps its account header and uses
+  `EntryCard` + `EntryHeader level={2}` for its sections under the page's h1.
+  The entry rows inside the app shell (`/activate`, the GitHub App setup
+  page) keep `PageStack` with one `PageHeader` h1.
 - Entry pages change how a flow looks, never what it does: no request,
   redirect, cookie, message text or autofill attribute changes with a restyle.
 
