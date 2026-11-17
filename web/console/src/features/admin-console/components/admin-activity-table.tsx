@@ -4,7 +4,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { History } from 'lucide-react'
-import { DataTable, EmptyState, RelativeTime } from '@/features/shared'
+import { DataTable, EmptyState, RelativeTime, type FilterPanelToggleProps } from '@/features/shared'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import type { AdminAuditEntry } from '../types'
@@ -109,6 +109,10 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** The active filter chips, one row under the toolbar. */
+  toolbarBelow?: React.ReactNode
+  /** The phone's filter entry (a sheet), joined to the toolbar's start. */
+  filterToggle?: FilterPanelToggleProps
   /** Opens one entry (the detail sheet). */
   onRowClick?: (entry: AdminAuditEntry) => void
   /** The table's accessible name. */
@@ -129,6 +133,8 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  toolbarBelow,
+  filterToggle,
   onRowClick,
   caption,
   error,
@@ -163,6 +169,8 @@ export function AdminActivityTable({
       showSelectionCount={false}
       showPagination={!!paging}
       toolbarStart={toolbarStart}
+      toolbarBelow={toolbarBelow}
+      filterToggle={filterToggle}
       isFiltered={isFiltered}
       onClearFilters={onClearFilters}
       emptyState={{
