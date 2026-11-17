@@ -445,6 +445,7 @@
   "confirm.savedView.change.density": "density changed",
   "confirm.savedView.change.filters": "{count, plural, one {# filter added} other {# filters added}}",
   "confirm.savedView.change.group": "grouping changed",
+  "confirm.savedView.change.query": "query text changed",
   "confirm.savedView.change.search": "search changed",
   "confirm.savedView.change.sort": "sort changed",
   "confirm.savedView.clear": "Clear view",
