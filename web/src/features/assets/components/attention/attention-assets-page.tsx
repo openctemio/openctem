@@ -9,18 +9,23 @@
  * own pages under the same tabs.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { NoAccessState, PageHeader, PageStack } from '@/features/shared'
+import {
+  ErrorState,
+  NoAccessState,
+  PageHeader,
+  PageStack,
+  usePhoneSelectMode,
+} from '@/features/shared'
 import { inSentence } from '@/features/asset-types/lib/type-view'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useListParams } from '@/hooks/use-list-params'
+import { accessStateOf } from '@/lib/api/access-state'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useAssets, type AssetSearchFilters } from '../../hooks/use-assets'
-import {
-  attributionQuery,
-  DEFAULT_PAGE_SIZE,
-  serializeInventoryFilters,
-} from '../../lib/inventory-url'
+import { attributionQuery, serializeInventoryFilters, SORT_FIELDS } from '../../lib/inventory-url'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { AttentionQueueHeader } from './attention-queue-header'
 import { ATTENTION_FILTERS, type AttentionReason } from './attention-filters'
@@ -29,14 +34,22 @@ import { InventoryTable } from '../inventory/inventory-table'
 
 export { ATTENTION_FILTERS, type AttentionReason }
 
+/** Riskiest first: the order of every Needs attention queue at rest. */
+const DEFAULT_SORT = '-risk_score'
+
 export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
   const canWrite = can(Permission.AssetsWrite)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [sort, setSort] = useState<string | undefined>('-risk_score')
+  const isPhone = useIsMobile()
+  // Page, size and sort live in the address, so a queue position can be
+  // linked to and survives a reload (riskiest first by default).
+  const list = useListParams({
+    sortFields: Object.values(SORT_FIELDS),
+    defaultSort: DEFAULT_SORT,
+  })
+  const { page, perPage: pageSize, sort } = list
 
   const base = ATTENTION_FILTERS[reason]
   const query = useMemo<AssetSearchFilters>(
@@ -50,7 +63,10 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
     }),
     [base, sort, page, pageSize]
   )
-  const { assets, total, isLoading, mutate } = useAssets(query)
+  const { assets, total, totalCapped, isLoading, hasLoaded, error, mutate } = useAssets(query)
+  // The first read draws skeleton rows; a later one keeps the rows on screen.
+  const firstLoad = isLoading && !hasLoaded
+  const noAccess = !!error && accessStateOf(error) === 'no_access'
 
   // The table draws the checkbox column and the bulk bar; a new page, size,
   // sort or reason starts with nothing selected.
@@ -59,10 +75,12 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   useEffect(() => {
     clearSelection()
   }, [reason, page, pageSize, sort, clearSelection])
+  // Phone cards have no header checkbox: "Select" is in the queue's More.
+  const phoneSelect = usePhoneSelectMode(isPhone && !!tableBulk.bulk)
 
   const title = t('assets.overview.title', 'Assets')
 
-  if (!canRead) {
+  if (!canRead || noAccess) {
     return (
       <Main>
         <PageStack>
@@ -82,25 +100,38 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
         <AssetsSectionTabs />
         <AttentionQueueHeader
           reason={reason}
-          count={isLoading ? undefined : total}
+          count={firstLoad || error ? undefined : total}
           inventoryHref={inventoryHref}
+          moreItems={phoneSelect.item ? [phoneSelect.item] : undefined}
         />
 
         <InventoryTable
           assets={assets}
           total={total}
+          totalCapped={totalCapped}
           page={page}
           pageSize={pageSize}
           sort={sort}
-          onPageChange={(p, size) => {
-            setPageSize(size)
-            setPage(size !== pageSize ? 1 : p)
-          }}
-          onSortChange={(next) => {
-            setSort(next)
-            setPage(1)
-          }}
+          onPageChange={(p, size) => list.setPagination({ pageIndex: p - 1, pageSize: size })}
+          onSortChange={(next) =>
+            list.setSorting(
+              next ? [{ id: next.replace(/^-/, ''), desc: next.startsWith('-') }] : []
+            )
+          }
+          isLoading={firstLoad}
+          isRefreshing={isLoading && hasLoaded}
+          // A failed read keeps the queue's header; the table says what failed.
+          errorState={
+            error ? (
+              <ErrorState
+                title={t('assets.inventoryPage.errorTitle', 'assets')}
+                error={error}
+                onRetry={() => void mutate()}
+              />
+            ) : undefined
+          }
           bulk={tableBulk.bulk}
+          selectMode={phoneSelect.selectMode}
           resetSelectionKey={tableBulk.resetKey}
           onAssetUpdated={() => void mutate()}
           hasFilters
