@@ -3,7 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { formatAbsoluteTime } from '@/lib/format-metric'
 import { cn } from '@/lib/utils'
-import { decideByState, formatDecideByDate } from '../lib/decide-by'
+import { decideByState, formatDecideByDate } from './decide-by'
 
 /**
  * When a queue item must be decided: a calendar date (day and month; the year
