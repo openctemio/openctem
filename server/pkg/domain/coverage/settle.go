@@ -577,7 +577,9 @@ func gapHostKey(s string) string {
 // lists as a gap, mapped like the sensor's own per-target outcomes: blocked
 // is edge_blocked (edge_challenged when the sensor says challenged),
 // rate_floor is rate_limited, breaker_open is unreachable and
-// proxy_unavailable is sensor_network_fault (the platform's side). A reason
+// proxy_unavailable is sensor_network_fault (the platform's side). slots_full
+// (the sensor's own per-host connection limit stayed full) and budget are
+// unfinished: not covered, and not the target's doing. A reason
 // this package does not know is unfinished: never covered.
 func (g resultGaps) verdict(target string) (Verdict, bool) {
 	if len(g.byHost) == 0 {
@@ -611,6 +613,9 @@ func (g resultGaps) verdict(target string) (Verdict, bool) {
 	case scanrun.GapReasonBudget:
 		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
 			Error: "the request budget ran out before every candidate was checked"}, true
+	case scanrun.GapReasonSlotsFull:
+		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+			Error: "the sensor's connection limit for the host stayed full, so part of it was not scanned"}, true
 	case scanrun.GapReasonNoCandidates:
 		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
 			Error: "no candidate was left to request on the origin"}, true
