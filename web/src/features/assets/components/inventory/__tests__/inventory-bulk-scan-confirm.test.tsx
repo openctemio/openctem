@@ -17,6 +17,7 @@ vi.mock('../../../hooks/use-assets', () => ({
 vi.mock('../../../hooks/use-asset-owners', () => ({ addAssetOwner: vi.fn() }))
 vi.mock('../inventory-business-context-actions', () => ({
   InventoryBusinessContextActions: () => null,
+  useBusinessContextAccess: () => ({ canUnit: false, canService: false }),
 }))
 vi.mock('swr', () => ({ default: () => ({ data: undefined, isLoading: false }) }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't1' } }) }))
@@ -60,7 +61,8 @@ describe('bulk repository scan confirmation', () => {
         onDone={vi.fn()}
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Scan' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Scan' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Scan 2 repositories now?')
     expect(within(dialog).getByText('acme/a')).toBeInTheDocument()
@@ -69,8 +71,11 @@ describe('bulk repository scan confirmation', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(2))
   })
 
-  it('styles the bulk delete as destructive', () => {
+  it('keeps Delete last in More, as the destructive item', async () => {
     render(<InventoryBulkBar selected={[repo('a')]} canWrite onClear={vi.fn()} onDone={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Delete 1' }).className).toContain('destructive')
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.at(-1)).toHaveAccessibleName('Delete 1')
+    expect(items.at(-1)?.getAttribute('data-variant')).toBe('destructive')
   })
 })

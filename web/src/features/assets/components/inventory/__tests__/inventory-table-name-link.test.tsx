@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 vi.mock('../../asset-detail-sheet', () => ({
@@ -41,7 +42,6 @@ function renderTable() {
       pageSize={20}
       onPageChange={() => {}}
       onSortChange={() => {}}
-      onSelectionChange={() => {}}
       resetSelectionKey={0}
       hasFilters={false}
     />
@@ -71,10 +71,7 @@ describe('InventoryTable name link', () => {
 
   it('the row menu offers the details page as a real link', async () => {
     renderTable()
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Actions for web-01/ }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    await userEvent.click(screen.getByRole('button', { name: /Actions for web-01/ }))
     const item = await screen.findByRole('menuitem', { name: /Open details page/ })
     expect(item).toHaveAttribute('href', `/assets/${asset.id}`)
   })

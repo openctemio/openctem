@@ -2,8 +2,8 @@ import path from 'path'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Asset list rows (research/266): every row has the same height, the type is
- * the name's second line (no Type column by default), Last seen shows a time,
+ * Asset list rows: every row has the same height on one line, the type
+ * follows the name on that line (no Type column by default), Last seen shows a time,
  * labels carry their tone, no horizontal page scroll on a phone, and no
  * serious or critical accessibility violation (axe-core, colour contrast
  * included) in light and dark.
@@ -29,13 +29,15 @@ async function seriousViolations(page: import('@playwright/test').Page) {
 }
 
 for (const scheme of ['light', 'dark'] as const) {
-  // 1920px: at narrower widths Last seen is one of the columns the table
-  // drops to fit (column priority, 41-assets-service-facts).
+  // 2200px: at narrower widths Last seen is one of the columns the table
+  // drops to fit (column priority, 41-assets-service-facts). Every column has
+  // the width of its whole header and longest chip in English and Vietnamese,
+  // so the full set needs a 1726 px frame.
   test(
-    `asset rows at 1920px in ${scheme}: one height, type under the name, a time`,
+    `asset rows at 2200px in ${scheme}: one height, type after the name, a time`,
     { tag: ['@assets'] },
     async ({ page }, testInfo) => {
-      await page.setViewportSize({ width: 1920, height: 900 })
+      await page.setViewportSize({ width: 2200, height: 900 })
       await page.emulateMedia({ colorScheme: scheme })
       await page.goto('/assets')
       const cells = page.getByTestId('asset-name-cell')
@@ -51,6 +53,8 @@ for (const scheme of ['light', 'dark'] as const) {
         .locator('main tbody tr')
         .evaluateAll((rows) => rows.map((r) => Math.round(r.getBoundingClientRect().height)))
       expect(new Set(heights).size, `row heights ${heights.join(',')}`).toBe(1)
+      // One line at the default density.
+      expect(heights[0]).toBe(40)
 
       await expect(page.getByRole('columnheader', { name: /^Type/ })).toHaveCount(0)
       await expect(cells.first().locator('[data-slot="asset-type-line"]')).toBeVisible()
@@ -59,7 +63,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(lastSeen).toHaveText(/ago|now/)
 
       expect(await seriousViolations(page)).toEqual([])
-      await testInfo.attach(`assets-1920-${scheme}.png`, {
+      await testInfo.attach(`assets-2200-${scheme}.png`, {
         body: await page.screenshot({ fullPage: true }),
         contentType: 'image/png',
       })
