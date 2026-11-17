@@ -76,6 +76,14 @@ describe('FindingsQuickViews', () => {
     )
   })
 
+  it('links Pending approval to the approvals inbox, never as the current view', () => {
+    window.history.replaceState(null, '', '/findings?pending_approval=true&state=all')
+    render(<FindingsQuickViews />)
+    const link = screen.getByRole('link', { name: /^Pending approval/ })
+    expect(link).toHaveAttribute('href', '/findings/approvals')
+    expect(link).not.toHaveAttribute('aria-current')
+  })
+
   it('shows counts, and nothing for a zero', () => {
     render(<FindingsQuickViews />)
     expect(screen.getByRole('link', { name: /^Active/ })).toHaveTextContent('12')
