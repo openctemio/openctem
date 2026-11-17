@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import {
@@ -260,6 +260,51 @@ describe('TargetMappingsPage', () => {
     await waitFor(() =>
       expect(deleteTargetMapping).toHaveBeenCalledWith('m1', 'Duplicate of the registry pair')
     )
+  })
+
+  it('shows the view name and the count once, the two filters as toolbar selects', async () => {
+    asRole('readonly')
+    render(<TargetMappingsPage />)
+    expect(screen.getByRole('heading', { name: /All custom mappings/ })).toBeInTheDocument()
+    expect(screen.getAllByText('1 mapping')).toHaveLength(1)
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /target type/i })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: /asset type/i })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Target mappings' })
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.trim())
+      .filter(Boolean)
+    expect(headers).toEqual(
+      expect.arrayContaining(['Target type', 'Asset type', 'Priority', 'Status', 'Updated'])
+    )
+  })
+
+  it('names the row menu after the pair', () => {
+    asRole('super_admin')
+    render(<TargetMappingsPage />)
+    expect(
+      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Website$/ }).length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows a failed read in the table with Retry, the filters staying', async () => {
+    asRole('super_admin')
+    const mutate = vi.fn()
+    vi.mocked(useTargetMappings).mockReturnValue({
+      data: undefined,
+      error: new Error('boom'),
+      isLoading: false,
+      mutate,
+    } as unknown as ReturnType<typeof useTargetMappings>)
+    render(<TargetMappingsPage />)
+    expect(
+      within(screen.getByTestId('data-table-toolbar')).getByRole('button', {
+        name: /target type/i,
+      })
+    ).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /retry/i }))
+    expect(mutate).toHaveBeenCalled()
   })
 
   it('explains that an empty list only lacks custom mappings', () => {

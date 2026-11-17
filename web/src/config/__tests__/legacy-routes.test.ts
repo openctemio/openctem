@@ -132,9 +132,15 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/settings/access-control/permission-sets')).toBe('/settings/roles')
     expect(redirectOnce('/settings/tenant')).toBe('/settings/general')
     expect(redirectOnce('/settings/tenant?tab=storage')).toBe('/settings/general?tab=storage')
-    expect(redirectOnce('/settings/tenant?tab=security')).toBe(
-      '/settings/authentication?tab=security'
+    expect(redirectOnce('/settings/tenant?tab=security')).toBe('/settings/sign-in?tab=security')
+    // Sign-in and joining: four pages became one with two tabs.
+    expect(redirectOnce('/settings/authentication')).toBe('/settings/sign-in')
+    expect(redirectOnce('/settings/integrations/saml')).toBe('/settings/sign-in')
+    expect(redirectOnce('/settings/domains')).toBe('/settings/sign-in?tab=domains')
+    expect(redirectOnce('/settings/trusted-organizations')).toBe(
+      '/settings/sign-in?tab=trusted-organizations'
     )
+    expect(redirectOnce('/settings/sso-approvals')).toBe('/settings/sign-in?tab=sso-approvals')
     expect(redirectOnce('/settings/tenant/create')).toBeNull()
     expect(redirectOnce('/settings/audit')).toBe('/settings/audit-log')
     expect(redirectOnce('/settings/scoring')).toBe('/settings/risk-scoring')
