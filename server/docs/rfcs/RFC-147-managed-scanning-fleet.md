@@ -70,7 +70,7 @@ flowchart LR
       MIR[(Content mirror, read-only)]
     end
     subgraph PUB["Public subnets"]
-      EPP[Egress proxies, paid pool<br/>one static address each]
+      EPP[Egress proxies, standard pool<br/>one static address each]
       EPF[Egress proxies, no-cost pool]
       EPD[Dedicated egress<br/>per organization]
     end
@@ -341,8 +341,8 @@ forwarder; the proxy enforces destination deny). Organization pools keep their s
 
 | Tier | Pool | Placement |
 |---|---|---|
-| No-cost | `free-<region>` | own subnet and security group, separate cloud account when no-cost scanning opens, so a provider action against those addresses cannot touch paid egress |
-| Paid shared | `paid-<region>` | fleet account |
+| No-cost | `free-<region>` | own subnet and security group, separate cloud account when no-cost scanning opens, so a provider action against those addresses cannot touch standard egress |
+| Standard shared | `std-<region>` | fleet account |
 | Dedicated | `ded-<tenant>-<region>` (instance pool offered to one organization) | fleet account; stable addresses, "proxy required" on |
 
 The pool is chosen at claim from entitlements, never from the job payload. The signed payload binds pool
@@ -416,7 +416,7 @@ sharding by assigning endpoints to collectors in the console, not replicas.
 | # | Threat | Control |
 |---|---|---|
 | T1 | Executor reaches the operator's network or instance metadata through the egress proxy | proxy destination deny; executors have no internet route; metadata hop limit 1 |
-| T2 | No-cost executor uses the paid pool | lanes per tier with label-bound claims, network policy per tier, pool credentials per tier, pool chosen from entitlements |
+| T2 | No-cost executor uses the standard pool | lanes per tier with label-bound claims, network policy per tier, pool credentials per tier, pool chosen from entitlements |
 | T3 | Leaked proxy credential reused | per-job HMAC bound to command, lease epoch and expiry; logged per connection |
 | T4 | Platform compromise inflates demand to burn money | controller local maximum, node limits, mint cap, budget brake outside the platform |
 | T5 | Platform compromise points executors at an attacker proxy | executors reach only the proxy security group; pool digest in the signed payload; network policy fixed in version control |
@@ -457,7 +457,7 @@ another tier's tenant. Each implementation PR carries cross-tenant negative test
 
 Builds on RFC-129's phases. Each item states its threat model and ships cross-tenant negatives.
 
-First, before paid shared scanning: RFC-129 usage records, SLIs and the console deny list; labels as hard
+First, before standard shared scanning: RFC-129 usage records, SLIs and the console deny list; labels as hard
 selectors; executor tickets and `executor` mode (claim one task of my lane, run, deliver, exit; 60 s idle
 exit); demand per pool and class with the section 3.2 formula; `controller` mode with a Kubernetes launcher,
 template validation and exit events, and the matching Helm mode with a network policy per tier; the

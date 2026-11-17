@@ -6,6 +6,7 @@ import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { FilterChipsRow, LockedChip } from '@/features/shared/components/filter-chips-row'
 import {
   joinFilterText,
+  joinViewText,
   modePageParams,
   queryModeIn,
   useListQueryMode,
@@ -53,10 +54,19 @@ const REFUSED = result({
   ],
 })
 
-/** The server: params print as PRINTED; texts answer from a table. */
+/**
+ * The server: params print as PRINTED; a filter document prints the text its
+ * `text` key names (a stand-in for the printer); texts answer from a table.
+ */
 function serve(texts: Record<string, ParseResult>) {
   api.parse.mockImplementation((req: ParseRequest) =>
-    Promise.resolve(req.params !== undefined ? PRINTED : (texts[req.text ?? ''] ?? REFUSED))
+    Promise.resolve(
+      req.document !== undefined
+        ? result({ text: String(req.document.text) })
+        : req.params !== undefined
+          ? PRINTED
+          : (texts[req.text ?? ''] ?? REFUSED)
+    )
   )
 }
 
@@ -64,11 +74,16 @@ function Harness({
   onApply,
   fq = null,
   initialActive = false,
+  params = 'severity=critical&state=open&practice_not=compliance',
+  base,
 }: {
   onApply: (r: ParseResult) => void
   fq?: string | null
   /** The page URL says Query mode (a link, a reload). */
   initialActive?: boolean
+  params?: string
+  /** The open saved view's filter document. */
+  base?: Record<string, unknown> | null
 }) {
   // The page keeps the mode in its URL; here, in state.
   const [active, setActive] = useState(initialActive)
@@ -77,7 +92,8 @@ function Harness({
     active,
     onActiveChange: setActive,
     fq,
-    params: 'severity=critical&state=open&practice_not=compliance',
+    params,
+    base,
     onApply: (r, on) => {
       onApply(r)
       setActive(on)
@@ -390,6 +406,73 @@ describe('the list search field Query mode', () => {
     // Only the printer: the person is about to edit the text.
     expect(api.parse).toHaveBeenCalledTimes(1)
     expect(document.activeElement).toBe(box())
+  })
+
+  describe('with a saved view open', () => {
+    const VIEW_TEXT = 'severity=critical OR is_in_kev=true'
+    const doc = (text: string) => ({ v: 1, text })
+    const EDITED = result({ text: 'severity=high OR is_in_kev=true', advanced: true })
+
+    it("the field holds the view's own text, printed from its document in one request", async () => {
+      serve({})
+      render(<Harness onApply={vi.fn()} params="" base={doc(VIEW_TEXT)} initialActive />)
+      await settle()
+      expect(box().value).toBe(VIEW_TEXT)
+      expect(api.parse).toHaveBeenCalledTimes(1)
+      expect(api.parse).toHaveBeenCalledWith({ entity: 'findings', document: doc(VIEW_TEXT) })
+      // Typing asks nothing more.
+      fireEvent.change(box(), { target: { value: `${VIEW_TEXT} x` } })
+      await settle()
+      expect(api.parse).toHaveBeenCalledTimes(1)
+    })
+
+    it('unchanged, Enter and the switch to Basic write nothing: the URL stays the view', async () => {
+      serve({ [VIEW_TEXT]: result({ text: VIEW_TEXT, advanced: true }) })
+      const onApply = vi.fn()
+      render(<Harness onApply={onApply} params="" base={doc(VIEW_TEXT)} initialActive />)
+      await settle()
+      fireEvent.keyDown(box(), { key: 'Enter' })
+      await settle()
+      fireEvent.click(basic())
+      await settle()
+      expect(onApply).not.toHaveBeenCalled()
+      expect(basic()).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('round trip: another text is applied whole; the saved view reopened shows the new text', async () => {
+      serve({ [EDITED.text]: EDITED })
+      const onApply = vi.fn()
+      const { rerender } = render(
+        <Harness onApply={onApply} params="" base={doc(VIEW_TEXT)} initialActive />
+      )
+      await settle()
+      fireEvent.change(box(), { target: { value: EDITED.text } })
+      fireEvent.keyDown(box(), { key: 'Enter' })
+      await settle()
+      // The page gets the whole text (it writes it with from_view, no view).
+      expect(onApply).toHaveBeenCalledWith(EDITED)
+      // Save changes stored it; the view is open again with its new document.
+      rerender(<Harness onApply={onApply} params="" base={doc(EDITED.text)} initialActive />)
+      await settle()
+      expect(box().value).toBe(EDITED.text)
+    })
+
+    it('what the URL adds on top follows the view text, the view text grouped', async () => {
+      serve({})
+      render(<Harness onApply={vi.fn()} base={doc(VIEW_TEXT)} initialActive />)
+      await settle()
+      expect(box().value).toBe(`(${VIEW_TEXT}) ${PRINTED.text}`)
+      expect(joinViewText('', 'a=1')).toBe('a=1')
+      expect(joinViewText('a=1', '')).toBe('a=1')
+    })
+
+    it('a view document the printer refuses leaves the field usable', async () => {
+      api.parse.mockRejectedValue(new Error('400'))
+      render(<Harness onApply={vi.fn()} params="" base={doc(VIEW_TEXT)} initialActive />)
+      await settle()
+      expect(box().value).toBe('')
+      expect(box()).toBeEnabled()
+    })
   })
 
   it('the mode is a URL param: absent is Basic, a saved view keeps it', () => {
