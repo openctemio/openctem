@@ -197,7 +197,7 @@ export function OpenSourceLicenses({
               <span className="hidden w-20 shrink-0 md:inline">
                 {t('help.licenses.source', 'Part')}
               </span>
-              <span className="w-28 shrink-0 text-end">
+              <span className="shrink-0 text-end sm:w-28">
                 {t('help.licenses.col.license', 'License')}
               </span>
             </div>
@@ -235,7 +235,7 @@ function LicenseRow({ row, part }: { row: Row; part: string }) {
           <span className="hidden w-20 shrink-0 text-dense text-muted-foreground md:inline">
             {part}
           </span>
-          <span className="flex w-28 shrink-0 justify-end">
+          <span className="flex max-w-28 shrink-0 justify-end sm:w-28">
             <Badge variant="outline" className="max-w-full">
               <span className="truncate">
                 {row.license === 'Unknown' ? t('help.licenses.unknown', 'Unknown') : row.license}
