@@ -22,6 +22,7 @@ import {
   type RowMenuFinding,
   type RowMenuGatedAction,
 } from '../lib/row-menu-state'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 
 export type FindingRowAction =
   | 'view'
@@ -60,7 +61,8 @@ interface FindingRowMenuProps {
  * with its approval step), so their labels say they open it; each is offered
  * only to someone the API lets make that change (hidden otherwise). An item
  * that does not apply to this finding's state stays in its place, disabled,
- * with the reason (`rowMenuBlocks`); nothing is disabled without one.
+ * with the reason (`rowMenuBlocks`); nothing is disabled without one. Copy ID and Copy link copy
+ * the id and the link, never the title; the menu has no "Show".
  */
 export function FindingRowMenu({
   title,
@@ -168,7 +170,8 @@ export function FindingRowMenu({
         ]
       : []),
   ]
-  const name = toDisplayText(title, 80)
+  // Masked, then cut: the menu's title and name never show a secret or an address.
+  const name = toDisplayText(maskSensitiveText(title), 80)
   const label = t('findings.row.actionsFor', 'Actions for {title}', { title: name })
   return (
     <ActionMenu

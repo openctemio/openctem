@@ -16,8 +16,12 @@ const finding = {
   status: 'new',
   cve: 'CVE-2026-0001',
   scanner: 'semgrep',
+  ruleId: 'rule-1',
   priorityClass: 'P1',
   isInKev: true,
+  slaStatus: 'warning',
+  slaDeadline: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+  location: { asset: 'shop.example.com', detail: '/login', full: 'shop.example.com /login' },
   tags: [],
   assets: [],
 } as unknown as Finding
@@ -59,13 +63,108 @@ function card(
 }
 
 describe('FindingPhoneCard', () => {
-  it('leads with the priority box and keeps severity and status under the title', () => {
+  it('reads top to bottom: priority and menu, title, asset, id and due, severity and status', () => {
     const { container } = card()
-    const open = screen.getByText('SQL injection in login').closest('button') as HTMLElement
-    expect((open.firstElementChild as HTMLElement).getAttribute('data-slot')).toBe('priority-badge')
-    const under = open.querySelector('[data-slot="severity-badge"]') as HTMLElement
-    expect(under).not.toBeNull()
-    expect(container.querySelector('[data-slot="status-lozenge"]')).not.toBeNull()
+    const root = screen.getByTestId('finding-phone-card')
+    const slots = Array.from(root.children).map((c) => c.getAttribute('data-slot'))
+    expect(slots).toEqual([
+      'finding-card-head',
+      'finding-title-cell',
+      'finding-card-meta',
+      'finding-card-state',
+    ])
+    const head = container.querySelector('[data-slot="finding-card-head"]') as HTMLElement
+    expect(head.querySelector('[data-slot="priority-badge"]')).not.toBeNull()
+    // The row menu ends the first line.
+    expect(head.lastElementChild).toHaveAttribute('data-slot', 'finding-card-menu')
+    expect(head.lastElementChild?.querySelector('button')).not.toBeNull()
+    expect(container.querySelector('[data-slot="finding-target"]')).toHaveTextContent(
+      'shop.example.com'
+    )
+    const meta = container.querySelector('[data-slot="finding-card-meta"]') as HTMLElement
+    expect(meta.querySelector('[data-slot="finding-row-id"]')).toHaveTextContent('CVE-2026-0001')
+    expect(meta.querySelector('[data-slot="sla-due-chip"]')).not.toBeNull()
+    const state = container.querySelector('[data-slot="finding-card-state"]') as HTMLElement
+    expect(state.querySelector('[data-slot="severity-badge"]')).not.toBeNull()
+    expect(state.querySelector('[data-slot="status-lozenge"]')).not.toBeNull()
+    expect(state.querySelector('[data-slot="kev-badge"]')).not.toBeNull()
+    // No separator characters between the parts.
+    expect(root.textContent).not.toContain('\u00b7')
+  })
+
+  it('shows the rule id when there is no CVE, and no due text without a deadline', () => {
+    const noDue = {
+      ...finding,
+      cve: undefined,
+      ruleId: 'go.lang.security.audit.sqli',
+      slaDeadline: undefined,
+      slaStatus: 'not_applicable',
+    } as unknown as Finding
+    const { container } = render(
+      <FindingPhoneCard
+        finding={noDue}
+        selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
+        onOpen={vi.fn()}
+        menu={null}
+      />
+    )
+    expect(container.querySelector('[data-slot="finding-row-id"]')).toHaveTextContent(
+      'go.lang.security.audit.sqli'
+    )
+    expect(container.querySelector('[data-slot="sla-due-chip"]')).toBeNull()
+    expect(container.textContent).not.toMatch(/No SLA/)
+  })
+
+  it('has no meta line without an id and a deadline', () => {
+    const bare = {
+      ...finding,
+      cve: undefined,
+      ruleId: undefined,
+      slaDeadline: undefined,
+    } as unknown as Finding
+    const { container } = render(
+      <FindingPhoneCard
+        finding={bare}
+        selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
+        onOpen={vi.fn()}
+        menu={null}
+      />
+    )
+    expect(container.querySelector('[data-slot="finding-card-meta"]')).toBeNull()
+  })
+
+  it('cuts the title at two lines and keeps the whole text in its name', () => {
+    const long = `${'Outdated TLS configuration allows downgrade '.repeat(6)}end`
+    render(
+      <FindingPhoneCard
+        finding={{ ...finding, title: long } as unknown as Finding}
+        selection={{ selectable: false, selected: false, onSelectedChange: vi.fn() }}
+        onOpen={vi.fn()}
+        menu={null}
+      />
+    )
+    const link = screen.getByRole('link', { name: `${long}, view details` })
+    expect(link).toHaveClass('line-clamp-2')
+    expect(link).toHaveAttribute('href', '/findings/f1')
+  })
+
+  it('a tap anywhere on the card opens the finding, once', () => {
+    const { container, onOpen } = card()
+    fireEvent.click(container.querySelector('[data-slot="finding-card-state"]') as HTMLElement)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('link', { name: /SQL injection in login, view details/ }))
+    expect(onOpen).toHaveBeenCalledTimes(2)
+    // The menu is its own target.
+    fireEvent.click(screen.getByRole('button', { name: /Actions for SQL injection in login/ }))
+    expect(onOpen).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives the checkbox a touch target of its own', () => {
+    const { container } = card()
+    const target = container.querySelector('[data-slot="finding-card-select"]') as HTMLElement
+    expect(target.tagName).toBe('LABEL')
+    expect(target).toHaveClass('size-touch-target')
+    expect(target.querySelector('[role="checkbox"]')).not.toBeNull()
   })
 
   it('shows at most one exploit chip: KEV wins over EPSS, EPSS only from 10 percent', () => {
