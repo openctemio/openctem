@@ -4,7 +4,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * The list/category switcher on /assets sits at the far right of the title row,
  * in the same place in both views, on a phone and on desktop. On a phone the
  * list's primary action (Add asset) is a 36 px square in that row, before the
- * switcher, not a row of its own.
+ * switcher, not a row of its own, and Export is an item of the list's More.
  */
 for (const width of [390, 1440]) {
   test(
@@ -33,8 +33,26 @@ for (const width of [390, 1440]) {
       }
       expect(Math.abs(boxes[0].x - boxes[1].x)).toBeLessThan(2)
       expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(2)
+      await page.goto('/assets')
+      // Export: a button of the list's title row from 768 px; on a phone an
+      // item of that row's More, so the row keeps the view's name and state.
+      const titleRow = page.getByTestId('inventory-title-row')
+      await expect(titleRow).toBeVisible({ timeout: 30_000 })
+      const exportButton = titleRow.getByRole('button', { name: /^export/i })
+      if (width < 768) {
+        await expect(exportButton).toHaveCount(0)
+        await titleRow.getByRole('button', { name: 'More actions' }).click()
+        // A menu, or a bottom sheet when the menu does not fit.
+        const item = page
+          .getByRole('menuitem', { name: 'Export' })
+          .or(page.getByRole('dialog').getByRole('button', { name: 'Export' }))
+        await expect(item).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(item).toHaveCount(0)
+      } else {
+        await expect(exportButton).toBeVisible()
+      }
       if (width < 640) {
-        await page.goto('/assets')
         const add = page.locator('main [data-slot="page-header"]').getByRole('button', {
           name: /^add /i,
         })
