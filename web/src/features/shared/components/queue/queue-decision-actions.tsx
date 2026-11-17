@@ -23,7 +23,8 @@ import { cn } from '@/lib/utils'
  * In a table row the two decisions are text buttons (the column stays
  * narrow); on a card they carry their icon.
  *
- * The buttons are named after the item ("Approve {name}"), so a list of
+ * The buttons are named by their visible label and the item ("Approve {name}",
+ * "Merge {name}"), so a list of
  * identical "Approve" buttons can be told apart by assistive technology.
  */
 export function QueueDecisionActions({
@@ -38,6 +39,8 @@ export function QueueDecisionActions({
   onReject,
   approveLabel,
   rejectLabel,
+  approveAccessibleName,
+  rejectAccessibleName,
   menu,
   layout = 'row',
   className,
@@ -56,8 +59,17 @@ export function QueueDecisionActions({
   busy?: boolean
   onApprove: () => void
   onReject: () => void
+  /** The first decision's visible label (default "Approve"). */
   approveLabel?: string
+  /** The second decision's visible label (default "Reject"). */
   rejectLabel?: string
+  /**
+   * The first decision's accessible name when "{label} {name}" does not read
+   * well (e.g. "Merge {name}" is fine, "Keep {name} separate" is not).
+   */
+  approveAccessibleName?: string
+  /** The second decision's accessible name, as `approveAccessibleName`. */
+  rejectAccessibleName?: string
   menu?: ActionMenuEntry[]
   layout?: 'row' | 'card'
   className?: string
@@ -65,6 +77,14 @@ export function QueueDecisionActions({
   const { t } = useTranslation()
   const approve = approveLabel ?? t('queue.decision.approve', 'Approve')
   const reject = rejectLabel ?? t('queue.decision.reject', 'Reject')
+  // A button is announced by what it says plus the item ("Merge {name}"),
+  // never by a fixed word that differs from its visible label.
+  const approveName =
+    approveAccessibleName ??
+    t('queue.decision.actionNamed', '{action} {name}', { action: approve, name })
+  const rejectName =
+    rejectAccessibleName ??
+    t('queue.decision.actionNamed', '{action} {name}', { action: reject, name })
   const yours = ownLabel ?? t('queue.decision.own', 'Your request')
   const why = ownReason ?? t('queue.decision.ownReason', 'Someone else decides a request you made.')
   const menuLabel = t('common.actionMenu.label', 'Actions for {name}', { name })
@@ -113,7 +133,7 @@ export function QueueDecisionActions({
               disabled={busy}
               onClick={onApprove}
               data-slot="queue-approve"
-              aria-label={t('queue.decision.approveNamed', 'Approve {name}', { name })}
+              aria-label={approveName}
             >
               {layout === 'card' && <Check className="me-1 h-4 w-4" aria-hidden />}
               {approve}
@@ -124,7 +144,7 @@ export function QueueDecisionActions({
               disabled={busy}
               onClick={onReject}
               data-slot="queue-reject"
-              aria-label={t('queue.decision.rejectNamed', 'Reject {name}', { name })}
+              aria-label={rejectName}
             >
               {layout === 'card' && <X className="me-1 h-4 w-4" aria-hidden />}
               {reject}

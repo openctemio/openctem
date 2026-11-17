@@ -41,7 +41,7 @@ import type { DataTableColumnMeta } from '@/features/shared/components/data-tabl
 import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { accessStateOf } from '@/lib/api/access-state'
-import { QueueDecideBy } from '@/features/queue'
+import { QueueDecideBy } from '@/features/shared/components/queue'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
