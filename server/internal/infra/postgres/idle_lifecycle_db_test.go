@@ -70,7 +70,7 @@ func TestIdleLifecycleRepository(t *testing.T) {
 	}
 
 	by := shared.NewID()
-	if err := r.SetPolicy(ctx, opted, lifecycle.Policy{Enabled: true, Reason: "hosted free tier", By: &by, At: time.Now()}); err != nil {
+	if err := r.SetPolicy(ctx, opted, lifecycle.Policy{Enabled: true, Reason: "idle policy opt-in", By: &by, At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	got = listed()
@@ -85,7 +85,7 @@ func TestIdleLifecycleRepository(t *testing.T) {
 		t.Fatalf("latest member sign-in should be 95 days ago, got %v", idle)
 	}
 	st, err := r.Status(ctx, opted)
-	if err != nil || !st.PolicyEnabled || st.PolicyReason != "hosted free tier" || st.PolicySetAt == nil {
+	if err != nil || !st.PolicyEnabled || st.PolicyReason != "idle policy opt-in" || st.PolicySetAt == nil {
 		t.Fatalf("status: %+v %v", st, err)
 	}
 

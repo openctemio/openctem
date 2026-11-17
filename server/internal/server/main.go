@@ -116,7 +116,7 @@ func defineFlags(fs *flag.FlagSet) {
 // command-line tools (see toolFor), parses the server flags, and otherwise runs
 // the API server until it stops. It does not return normally; it exits the
 // process with the server's exit status. exts are the build's extensions
-// (none in the Community build); an invalid set stops the start.
+// (none in the default build); an invalid set stops the start.
 func Main(exts ...ext.Extension) {
 	set, err := extensionhost.New(exts)
 	if err != nil {
@@ -143,7 +143,7 @@ func Main(exts ...ext.Extension) {
 }
 
 // buildExtensions are the extensions the build passed to Main (empty for
-// Community), set once before the server starts.
+// the default build), set once before the server starts.
 var buildExtensions *extensionhost.Set
 
 func run() int {
@@ -583,7 +583,7 @@ func run() int {
 		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
 	}
 
-	// Routes of the build's extensions (none in the Community build): a
+	// Routes of the build's extensions (none in the default build): a
 	// route the core refuses stops the start.
 	extRoutes, err := buildExtensions.Routes(ctx, services.ExtensionHost)
 	if err != nil {
@@ -629,7 +629,7 @@ func run() int {
 	}
 
 	// A grant provider that keeps itself fresh runs on every plane until
-	// shutdown; the Community build has none.
+	// shutdown; the default build has none.
 	if r, ok := services.GrantProvider.(ext.Runner); ok {
 		go r.Run(ctx)
 	}
