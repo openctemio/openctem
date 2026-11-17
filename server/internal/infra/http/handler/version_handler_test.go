@@ -37,7 +37,7 @@ func TestVersionHandler(t *testing.T) {
 		body.Channel != want.Channel || body.ExtensionAPI != want.ExtensionAPI {
 		t.Errorf("body = %+v, want %+v", body, want)
 	}
-	// The Community build lists no extension: an empty list, never null.
+	// The default build lists no extension: an empty list, never null.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatal(err)
