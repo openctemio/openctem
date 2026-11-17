@@ -89,6 +89,35 @@ describe('QueueDecisionActions', () => {
     expect(base.onReject).toHaveBeenCalledTimes(1)
   })
 
+  // Each page's own labels: the accessible name is what the button says plus
+  // the item, never a fixed "Approve" / "Reject".
+  it.each([
+    ['approvals', undefined, undefined, 'Approve Request A', 'Reject Request A'],
+    ['duplicates', 'Merge', 'Keep separate', 'Merge Request A', 'Keep separate Request A'],
+    ['suggestions', 'Accept', 'Dismiss', 'Accept Request A', 'Dismiss Request A'],
+  ])('%s: the buttons are announced by their own label', (_page, a, r, approveName, rejectName) => {
+    render(<QueueDecisionActions {...base} canDecide approveLabel={a} rejectLabel={r} />)
+    expect(screen.getByRole('button', { name: approveName })).toHaveTextContent(a ?? 'Approve')
+    expect(screen.getByRole('button', { name: rejectName })).toHaveTextContent(r ?? 'Reject')
+    expect(screen.queryAllByRole('button', { name: /^(Approve|Reject) / })).toHaveLength(a ? 0 : 2)
+  })
+
+  it('takes a whole accessible name when label + item does not read well', () => {
+    render(
+      <QueueDecisionActions
+        {...base}
+        canDecide
+        approveLabel="Merge"
+        rejectLabel="Keep separate"
+        rejectAccessibleName="Keep Request A separate"
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Merge Request A' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Keep Request A separate' })).toHaveTextContent(
+      'Keep separate'
+    )
+  })
+
   it('renders nothing without the permission and without menu items', () => {
     const { container } = render(<QueueDecisionActions {...base} canDecide={false} />)
     expect(container).toBeEmptyDOMElement()
