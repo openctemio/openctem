@@ -256,6 +256,7 @@
   "assetGroups.refresh": "Làm mới",
   "assetGroups.search.label": "Tìm nhóm tài sản",
   "assetGroups.search.placeholder": "Tìm theo tên, mô tả hoặc thẻ…",
+  "assetGroups.search.placeholderShort": "Tìm nhóm…",
   "assetGroups.selectAll": "Chọn tất cả",
   "assetGroups.selectRow": "Chọn dòng",
   "assetGroups.subject": "danh sách nhóm tài sản",
