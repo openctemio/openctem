@@ -116,7 +116,20 @@ the dashboard owns the KPI tiles.
 - The views show, and their counts are requested, only on the list page. Other pages pay nothing.
 - A zero count shows nothing. SLA breached is in the error colour when above zero. Awaiting verification, which
   was a metric card, is a button in the list's first row while something waits and the viewer can verify.
-- The first row names the view and its total. A URL that is no quick view reads "Custom view".
+- The first row (the shared `ListTitleRow`) names the view and its total, and the name is always a real view's:
+  the open saved view's own name; else the quick view the URL is exactly; else the base view the URL was derived
+  from, which is the quick view whose own params are all in the URL with the same values (the one with the most
+  params wins), and otherwise "All findings" (every state, no filter). Code: `src/features/findings/lib/view-base.ts`.
+- A changed view says so right after the count: a dashed "Modified" lozenge, then **Save view** and **Reset**. A view
+  is changed when it is a saved view with unsaved changes (filters, search, sort, grouping, columns, density), or a
+  quick view or All findings with a filter or search text on top. The practice is the list's scope and the search
+  mode is presentation: neither marks the view changed.
+  - Save view opens the save dialog of the Views menu. On a saved view the viewer owns it is a menu: Save changes
+    (updates the view) or Save as new view. The API decides whether a save is allowed.
+  - Reset returns to exactly the base view: the saved view as stored, the quick view's link, or every state with
+    no filter for All findings. The practice is kept.
+  - On a title row under 42rem and on a phone, Save view and Reset are in the row's More and only the lozenge stays.
+- The count is a pill whose tooltip reads "Counted in your data scope" (and that the count stopped, when capped).
 
 ## Filters
 
@@ -160,8 +173,8 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
 - The row is the shared `FilterChipsRow`, exactly one line of one height (32): the quiet locked chip for what
   the list leaves out (informational findings, drawn with the shared `LockedChip`, at most half the row) first,
-  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Reset to
-  view or Clear filters pinned at the row's end. The count is said once, beside the view name in the first row,
+  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Clear
+  filters pinned at the row's end (going back to the view is the title row's Reset). The count is said once, beside the view name in the first row,
   never on the chips row. The row shows only when it holds something: the list moves down once when it
   appears, and never again while filters change.
 - Nothing in the list's header moves while it is used: Practice, State, Group and Views keep one width per
