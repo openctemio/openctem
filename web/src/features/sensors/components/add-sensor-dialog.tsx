@@ -19,10 +19,28 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { SensorOnboardingPanel } from './sensor-onboarding-panel'
 
 /** The page-header entry point; hidden without sensors:pair. */
-export function AddSensorButton({ onClick }: { onClick: () => void }) {
+export function AddSensorButton({
+  onClick,
+  compact = false,
+}: {
+  onClick: () => void
+  /**
+   * In a page header: an icon button that keeps its name on a phone, the
+   * label from 768 px.
+   */
+  compact?: boolean
+}) {
   const { t } = useTranslation()
   const canPair = useHasPermission(Permission.SensorsPair)
   if (!canPair) return null
+  if (compact) {
+    return (
+      <Button size="sm" iconOnlyBelow="md" onClick={onClick} aria-label={t('sensors.onboard.add')}>
+        <Plus className="h-4 w-4" aria-hidden />
+        <span className="sr-only md:not-sr-only">{t('sensors.onboard.add')}</span>
+      </Button>
+    )
+  }
   return (
     <Button size="sm" onClick={onClick}>
       <Plus className="h-4 w-4" />
