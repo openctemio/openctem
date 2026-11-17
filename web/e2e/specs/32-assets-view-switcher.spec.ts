@@ -3,7 +3,8 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * The list/category switcher on /assets sits at the far right of the title row,
  * in the same place in both views, on a phone and on desktop. On a phone the
- * page actions wrap to their own row under the title instead of beside it.
+ * list's primary action (Add asset) is a 36 px square in that row, before the
+ * switcher, not a row of its own.
  */
 for (const width of [390, 1440]) {
   test(
@@ -33,10 +34,17 @@ for (const width of [390, 1440]) {
       expect(Math.abs(boxes[0].x - boxes[1].x)).toBeLessThan(2)
       expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(2)
       if (width < 640) {
-        const add = page.getByRole('button', { name: /export/i })
         await page.goto('/assets')
-        const exportBox = await add.boundingBox()
-        if (exportBox) expect(exportBox.y).toBeGreaterThan(boxes[0].y + boxes[0].height - 1)
+        const add = page.locator('main [data-slot="page-header"]').getByRole('button', {
+          name: /^add /i,
+        })
+        await expect(add).toBeVisible({ timeout: 30_000 })
+        const addBox = (await add.boundingBox())!
+        // In the title's row, a square, left of the switcher.
+        expect(Math.abs(addBox.y - boxes[0].y)).toBeLessThan(2)
+        expect(Math.abs(addBox.width - 36)).toBeLessThanOrEqual(0.5)
+        expect(Math.abs(addBox.height - 36)).toBeLessThanOrEqual(0.5)
+        expect(addBox.x + addBox.width).toBeLessThanOrEqual(boxes[0].x)
       }
     }
   )
