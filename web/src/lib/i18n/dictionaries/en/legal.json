@@ -1,0 +1,9 @@
+{
+  "legal.frame.contact": "Contact: {contact}. Documentation: {docs}.",
+  "legal.frame.documents": "Legal documents",
+  "legal.frame.effective": "Effective {date}",
+  "legal.frame.onThisPage": "On this page",
+  "legal.frame.print": "Print or save as PDF",
+  "legal.frame.signIn": "Sign in",
+  "legal.frame.skip": "Skip to the document"
+}
