@@ -223,14 +223,21 @@ wrapper:
 - **`EntryBanner`** (`info`, `ok`, `warn`, `danger`): ink on the status tint.
   `danger` and `warn` are `role="alert"`, `info` and `ok` are `role="status"`;
   a page passes `role` when the message must interrupt.
+  Sign-in failures (a refused password, a locked or suspended account, the
+  security check, a provider that could not start, an expired two-factor
+  challenge) and the reason a session ended are one `EntryBanner` above the
+  form: `role="alert"`, referenced by the form's `aria-describedby`, kept until
+  the next attempt starts. Never a toast. The texts are the API code's message
+  exactly as before; only where they are drawn is the entry page's.
 - **`EntryDivider`**, **`EntryActions`** (stacked full-width, or `row` for a
   choice), **`EntryLine`** (centred secondary line), **`EntryNote`** (small
   print).
 - One primary action per card, the teal fill (`<Button variant="signal">`):
-  an entry page is one call to action. Fields and buttons are the kit's and
+  an entry page is one call to action. `signal` is for entry pages only; an
+  app page's primary action stays the kit default (ink). Fields and buttons are the kit's and
   take no size, padding or text class from the page. Links are `TextLink`.
 - Entry pages change how a flow looks, never what it does: no request,
-  redirect, cookie, message or autofill attribute changes with a restyle.
+  redirect, cookie, message text or autofill attribute changes with a restyle.
 
 ## 1. Page anatomy
 
