@@ -17,8 +17,9 @@
  * No card: groups are separated by a rule. The list follows the width it is
  * given (a container query): one column in a rail, two columns when it sits
  * under the header on a narrower page. Below 768 px every row is a 44 px
- * line with the value at the end, and a `PropertyFold` keeps the long tail
- * one tap away; from 768 px a fold is always open.
+ * line with the value at the end (also with a 36 px control in it), and a
+ * `PropertyFold` keeps the long tail one tap away; from 768 px a fold is
+ * always open.
  *
  * Each group is a `dl` of `dt` / `dd` pairs. A row whose value is empty
  * renders nothing, so a caller never guards a row twice.
@@ -109,8 +110,12 @@ export function PropertyRow({ label, children, top, className }: PropertyRowProp
       className={cn(
         'grid min-h-control min-w-0 grid-cols-[6.75rem_minmax(0,1fr)] gap-x-3',
         top ? 'items-start' : 'items-center',
-        // Phone: a full-width line, the value at the end.
-        'max-md:min-h-touch-target max-md:grid-cols-[auto_minmax(0,1fr)] max-md:items-center max-md:border-b max-md:border-border-subtle max-md:py-1.5',
+        // Phone: a full-width 44 px line, the value at the end. The padding is
+        // small enough that a 36 px control keeps the line at 44 px (2 + 36 +
+        // 2 + the 1 px rule, then the minimum); a value of several lines
+        // (`top`) keeps more air above and below.
+        'max-md:min-h-touch-target max-md:grid-cols-[auto_minmax(0,1fr)] max-md:items-center max-md:border-b max-md:border-border-subtle',
+        top ? 'max-md:py-1.5' : 'max-md:py-0.5',
         className
       )}
     >

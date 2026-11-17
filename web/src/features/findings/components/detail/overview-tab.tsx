@@ -71,6 +71,8 @@ import { FindingIdentitySection } from './finding-identity-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
+  /** `false` when the page shows the scanner output elsewhere (its first tab). */
+  scannerOutput?: boolean
 }
 
 /** The latest completed AI triage of the finding (its own endpoint). */
@@ -87,7 +89,7 @@ function Mono({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-[13px] break-all">{children}</span>
 }
 
-export function OverviewTab({ finding }: OverviewTabProps) {
+export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps) {
   const { t, locale } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
@@ -111,8 +113,6 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   // controls in its own section: the description does not repeat them.
   const check = complianceCheckOf(finding)
   const descText = check && desc.text ? complianceDescriptionText(desc.text, check) : desc.text
-  const actualFromOutput =
-    !!check?.actualValue && check.actualValue === finding.scannerOutput?.text.trim()
   const adv = finding.advisory
   const hasContext =
     finding.confidence !== undefined ||
@@ -162,9 +162,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <FindingIssueGroupSection findingId={finding.id} />
 
-      {finding.scannerOutput && !actualFromOutput && (
-        <ScannerOutputSection output={finding.scannerOutput} />
-      )}
+      {scannerOutput && <FindingScannerOutput finding={finding} />}
 
       {finding.toolName === VERSION_MATCH_TOOL && (
         <VersionMatchPanel metadata={finding.metadata} locations={finding.locations} />
@@ -323,6 +321,17 @@ function formatDay(iso: string, locale: string): string {
     day: 'numeric',
     year: 'numeric',
   })
+}
+
+/**
+ * The scanner output of a finding, when it has one that its configuration
+ * check section does not already show as the actual value.
+ */
+export function FindingScannerOutput({ finding }: { finding: FindingDetail }) {
+  const check = complianceCheckOf(finding)
+  if (!finding.scannerOutput) return null
+  if (!!check?.actualValue && check.actualValue === finding.scannerOutput.text.trim()) return null
+  return <ScannerOutputSection output={finding.scannerOutput} />
 }
 
 /**

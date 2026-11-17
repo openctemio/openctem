@@ -11,6 +11,12 @@ import { LoginForm } from './login-form'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
 
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
+
 const initiateSocialLogin = vi.fn()
 vi.mock('../actions/social-auth-actions', () => ({
   initiateSocialLogin: (...a: unknown[]) => initiateSocialLogin(...a),
@@ -51,7 +57,7 @@ describe('LoginForm social sign-in navigation', () => {
 
   const click = async () => {
     render(<LoginForm />)
-    await userEvent.click(screen.getAllByRole('button', { name: /Google/ })[0])
+    await user.click(screen.getAllByRole('button', { name: /Google/ })[0])
   }
 
   it('navigates to the provider and shows no error', async () => {

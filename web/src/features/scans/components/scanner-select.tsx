@@ -69,6 +69,10 @@ export function useScannerOptions(allowConnectors = false, zoneId?: string | nul
 
 interface ScannerSelectProps {
   id?: string
+  /** Help and error ids of the field around it. */
+  'aria-describedby'?: string
+  'aria-invalid'?: true
+  'aria-required'?: true
   value: string
   onChange: (name: string) => void
   disabled?: boolean
@@ -89,6 +93,9 @@ export function ScannerSelect({
   onChange,
   disabled,
   allowConnectors = false,
+  'aria-describedby': describedBy,
+  'aria-invalid': invalid,
+  'aria-required': required,
   zoneId,
   intensity,
 }: ScannerSelectProps) {
@@ -125,7 +132,13 @@ export function ScannerSelect({
   return (
     <div className="space-y-1">
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id} aria-label={t('scans.basic.scanner')}>
+        <SelectTrigger
+          id={id}
+          aria-label={t('scans.basic.scanner')}
+          aria-describedby={describedBy}
+          aria-invalid={invalid}
+          aria-required={required}
+        >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>

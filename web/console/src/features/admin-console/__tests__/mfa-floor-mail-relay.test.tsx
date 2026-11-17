@@ -134,7 +134,11 @@ describe('organization mail servers', () => {
     await userEvent.click(screen.getByLabelText('Never'))
     await confirmWithReason('relay abuse')
     await waitFor(() =>
-      expect(saveEmailRelay).toHaveBeenCalledWith({ mode: 'off', reason: 'relay abuse', version: 1 })
+      expect(saveEmailRelay).toHaveBeenCalledWith({
+        mode: 'off',
+        reason: 'relay abuse',
+        version: 1,
+      })
     )
   })
 

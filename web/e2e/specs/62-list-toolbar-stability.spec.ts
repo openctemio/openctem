@@ -96,6 +96,19 @@ const LISTS = {
     group: false,
     search: false,
   },
+  // No query language for this list: its search field has no mode switch.
+  '/vulnerabilities': {
+    filters: [
+      ['kev', 'true'],
+      ['exploit', 'true'],
+      ['has_fix', 'true'],
+      ['epss_gte', '0.1'],
+      ['severity', 'critical,high'],
+      ['priority_class', 'P0,P1'],
+    ],
+    group: false,
+    query: false,
+  },
   // Searched by name on the page; no query language for workflows.
   '/scans/workflows': {
     filters: [
@@ -712,6 +725,10 @@ test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
 test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/runs')
   saysItsCountOnce('/scans/runs')
+})
+test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () => {
+  headerHoldsStill('/vulnerabilities')
+  saysItsCountOnce('/vulnerabilities')
 })
 test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/workflows')
