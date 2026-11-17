@@ -60,7 +60,6 @@ import { PageHeader } from '@/features/shared/components/page-header'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
@@ -188,10 +187,9 @@ export function VulnerabilitiesList() {
 }
 
 function VulnerabilitiesListBody() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const router = useRouter()
   const severityLabel = useSeverityLabel()
-  const dateLocale = dateFnsLocaleFor(locale)
   const urlSettled = useUrlSettled()
   const params = useUrlParams()
   const query = useMemo(() => buildVulnListQuery(params), [params])
@@ -817,7 +815,7 @@ function VulnerabilitiesListBody() {
         ),
       },
     ],
-    [t, params, dateLocale]
+    [t, params]
   )
 
   const sorting = useMemo(() => sortToSorting(sort), [sort])
