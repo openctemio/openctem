@@ -171,7 +171,12 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn('flex-1 outline-none', className)}
+      // The panel takes focus from the keyboard (Tab after the strip): it shows
+      // the ring every other focus stop shows.
+      className={cn(
+        'flex-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className
+      )}
       {...props}
     />
   )

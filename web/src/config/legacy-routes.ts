@@ -85,6 +85,9 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     destination: '/settings/sign-in?tab=sso-approvals',
     permanent: true,
   },
+  // Finding approvals is the Approvals page (its sections keep their ids, so a
+  // link's #setting still lands; scan approval keeps its own page).
+  { source: '/settings/finding-approvals', destination: '/settings/approvals', permanent: true },
   { source: '/settings/audit/:path*', destination: '/settings/audit-log/:path*', permanent: true },
   // Policies: Risk scoring says what it is; Priority rules are a CTEM working
   // object, so they leave /settings and stay in Prioritization.
