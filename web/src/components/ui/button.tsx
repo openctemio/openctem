@@ -22,6 +22,11 @@ const buttonVariants = cva(
         outline:
           'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
         secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
+        // An on/off button (`aria-pressed`): the outline box in both states,
+        // filled while pressed. The border stays, so pressing it never
+        // changes its width (outline and secondary differ by the border).
+        toggle:
+          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80 dark:aria-pressed:bg-secondary dark:aria-pressed:hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
         // A standalone link: plain at rest, underlined on hover and focus.
         link: 'text-signal-text underline-offset-4 hover:underline focus-visible:underline',
