@@ -1,43 +1,74 @@
 /**
- * Generic asset detail page — `/assets/{id}`.
+ * An asset's own page — `/assets/{id}`.
  *
  * Catches deep-links from blast-radius views (Vuln Detail Sheet → "Affected
  * Assets" tab → click row, Component Detail Sheet → "Used By Assets" tab →
- * click row). Without this route those clicks 404'd.
+ * click row) and the drawer's "Open full page".
  *
- * Behavior:
- *  - Fetch asset by id.
  *  - A repository opens its workspace here (branches, findings by branch,
  *    scan settings): one URL per asset, whatever its type.
- *  - Other asset types: render a minimal detail layout (header + key fields)
- *    plus a link to the inventory filtered to the asset's type.
+ *  - Every other type follows the detail layout (docs/ui-style-contract.md,
+ *    "Detail pages"): the header, the tab strip, the properties beside the
+ *    panel from 1280 px and under the header below it. The panels are the
+ *    drawer's own section components.
  */
 
 'use client'
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { OpenFindingsLink } from '@/features/assets/components/service-cells'
-import { ArrowLeft, Lock } from 'lucide-react'
+import {
+  ArrowLeft,
+  Globe,
+  Hash,
+  History,
+  LayoutGrid,
+  Link2,
+  List,
+  Lock,
+  Network,
+  Plug,
+  Route,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import Link from '@/components/link'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { type ActionMenuEntry } from '@/components/ui/action-menu'
+import {
+  DetailPageHeader,
+  DetailSectionBlock,
+  DetailSectionList,
+  PropertyFold,
+  PropertyGroup,
+  PropertyList,
+  PropertyRow,
+} from '@/features/shared/components/detail'
 import { DetailSections } from '@/features/shared/components/detail-sheet'
+import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { PageHeader } from '@/features/shared/components/page-header'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { RiskScoreBadge, riskScoreState } from '@/features/shared/components/risk-score-badge'
+import { SettleGroup, useSettleSignal } from '@/features/shared/components/settle-group'
+import { OpenFindingsLink } from '@/features/assets/components/service-cells'
 import { AssetAttributeSourcesSection } from '@/features/assets/components/asset-attribute-sources-section'
 import { AssetFreshnessSection } from '@/features/assets/components/asset-freshness-section'
 import { AssetCoverageSection } from '@/features/assets/components/asset-coverage-section'
 import { AssetAttributionSection } from '@/features/assets/components/asset-attribution-section'
 import { AssetIdentitySections } from '@/features/assets/components/asset-identity-sections'
 import { AssetLineageSection } from '@/features/assets/components/asset-lineage-section'
+import { RELATED_PREVIEW_ROWS } from '@/features/assets/components/relationships/related-assets-list'
 import { AssetTimeline } from '@/features/assets/components/asset-timeline'
 import { useAssetPage } from '@/features/assets/hooks/use-assets'
+import { useRelatedAssets } from '@/features/assets/hooks/use-related-assets'
 import {
   ResolvedPortsSection,
   hasResolvedPorts,
@@ -48,15 +79,20 @@ import { AssetLivenessBadge } from '@/features/asset-lifecycle/components/asset-
 import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
 import { AssetScanWindowCard } from '@/features/scan-windows/components/asset-scan-window-card'
 import { AssetWebEvidenceCard } from '@/features/attack-surface/components/asset-web-evidence-card'
+import { useWebEvidence } from '@/features/attack-surface/hooks/use-web-evidence'
 import {
   OriginWebSection,
   isWebOriginType,
 } from '@/features/web-surface/components/origin-web-section'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useTranslation } from '@/context/i18n-provider'
 import { AssetNextSteps } from '@/features/exploration/components/asset-next-steps'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { SettleGroup } from '@/features/shared/components/settle-group'
+import { copyToClipboard } from '@/lib/clipboard'
+import { shareableLink } from '@/lib/org-link'
+import { safeHref } from '@/lib/safe-href'
+import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 
 // Only a repository opens its workspace here (branches, scan settings, drag
@@ -81,6 +117,99 @@ const RepositoryWorkspace = dynamic(
   }
 )
 
+// Owners and access and Relationships hold their own dialogs (add, edit,
+// grant, revoke): they load when their tab opens, not with the page.
+const TabSkeleton = () => <Skeleton className="h-40 w-full" />
+const AssetOwnersTab = dynamic(
+  () => import('@/features/assets/components/asset-owners-tab').then((m) => m.AssetOwnersTab),
+  { ssr: false, loading: TabSkeleton }
+)
+const AssetRelationshipsTab = dynamic(
+  () =>
+    import('@/features/assets/components/asset-relationships-tab').then(
+      (m) => m.AssetRelationshipsTab
+    ),
+  { ssr: false, loading: TabSkeleton }
+)
+
+type TabKey = 'overview' | 'relationships' | 'found' | 'ports' | 'web' | 'owners' | 'activity'
+
+const TAB_LABEL: Record<TabKey, string> = {
+  overview: 'Overview',
+  relationships: 'Relationships',
+  found: 'How we found this',
+  ports: 'Ports and services',
+  web: 'Web',
+  owners: 'Owners and access',
+  activity: 'Activity',
+}
+
+const TAB_ICON: Record<TabKey, LucideIcon> = {
+  overview: LayoutGrid,
+  relationships: Network,
+  found: Route,
+  ports: Plug,
+  web: Globe,
+  owners: Users,
+  activity: History,
+}
+
+/** The page's grid: the tab strip across, then the panel beside the properties rail. */
+const GRID = 'grid min-w-0 gap-page xl:grid-cols-[minmax(0,1fr)_19rem]'
+const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
+const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
+const PANEL = 'min-w-0 max-xl:order-4 xl:col-start-1 xl:row-start-2'
+
+/**
+ * Same blocks and order as the page (header, tab strip, properties, panel),
+ * so the swap to the real page moves nothing.
+ */
+function PageSkeleton(props: React.ComponentProps<'div'>) {
+  return (
+    <PageStack aria-busy {...props}>
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-56" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Skeleton className="h-8 w-3/5" />
+          <Skeleton className="h-8 w-8" />
+        </div>
+      </div>
+      <div className={GRID}>
+        <div className={cn(RAIL, 'space-y-2')}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="grid grid-cols-[6.75rem_1fr] items-center gap-3">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-6 w-full" />
+            </div>
+          ))}
+        </div>
+        <PanelSkeleton />
+      </div>
+    </PageStack>
+  )
+}
+
+/** The tab strip and the panel while their reads load (grid items of the page). */
+function PanelSkeleton() {
+  return (
+    <>
+      <div className={STRIP} aria-busy data-testid="asset-detail-panels-skeleton">
+        <Skeleton className="h-10 w-full max-w-xl" />
+      </div>
+      <div className={cn(PANEL, 'space-y-4')}>
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-28 w-full" />
+      </div>
+    </>
+  )
+}
+
+/** Reports the page-level reads that decide which tabs exist to the SettleGroup. */
+function SettleOn({ pending }: { pending: boolean }) {
+  useSettleSignal(pending)
+  return null
+}
+
 export default function AssetDetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -92,20 +221,36 @@ export default function AssetDetailPage() {
   const { asset, isLoading, error, mutate } = useAssetPage(assetId)
   useBreadcrumbTitle(asset?.name)
 
+  // Reads that decide the tab strip. Each is the request its tab's component
+  // makes itself (same SWR key), so the tab opens on the cached answer.
+  const backed = !!asset && asset.type !== 'repository'
+  const relationshipsOn = useModuleEnabled('relationships') && backed
+  const related = useRelatedAssets(relationshipsOn ? (asset?.id ?? null) : null, {
+    limit: RELATED_PREVIEW_ROWS,
+  })
+  const webEvidence = useWebEvidence(backed ? (asset?.id ?? '') : '')
+
+  const tabs: TabKey[] = backed
+    ? [
+        'overview',
+        ...(relationshipsOn ? (['relationships'] as const) : []),
+        'found',
+        ...(hasResolvedPorts(asset?.type ?? '') ? (['ports'] as const) : []),
+        // The web tab holds the origin's own section, or what a sensor saw
+        // when it fetched the asset; hidden when neither applies.
+        ...(isWebOriginType(asset?.type) || webEvidence.items.length > 0 ? (['web'] as const) : []),
+        'owners',
+        'activity',
+      ]
+    : ['overview']
+  const [tab, setTab] = useDetailTab<TabKey>('tab', tabs)
+
   // useAssetPage sends nothing until the tenant is known, so wait for it instead
   // of reading the empty answer as "not found".
   if (tenantLoading || isLoading) {
     return (
       <Main>
-        <div
-          className="space-y-4"
-          role="status"
-          aria-label={t('assetDetail.loading', 'Loading asset')}
-        >
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-40 w-full" />
-        </div>
+        <PageSkeleton role="status" aria-label={t('assetDetail.loading', 'Loading asset')} />
       </Main>
     )
   }
@@ -157,10 +302,12 @@ export default function AssetDetailPage() {
                   'The asset may have been deleted or you may not have access.'
                 )}
               </p>
-              <Button variant="outline" className="mt-4" onClick={() => router.push('/assets')}>
-                <ArrowLeft className="me-2 h-4 w-4" />
-                {t('assetDetail.backToAssets', 'Back to assets')}
-              </Button>
+              <div className="mt-4">
+                <Button variant="outline" onClick={() => router.push('/assets')}>
+                  <ArrowLeft aria-hidden />
+                  {t('assetDetail.backToAssets', 'Back to assets')}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </PageStack>
@@ -175,178 +322,230 @@ export default function AssetDetailPage() {
   // The inventory filtered to this asset's type (and alias sub-type).
   const listingQuery = new URLSearchParams({ types: asset.type })
   if (asset.subType) listingQuery.set('sub_type', asset.subType)
+  const listingHref = `/assets?${listingQuery}`
   const typeLabel = getAssetTypeLabel(asset.type)
+
+  const menu: ActionMenuEntry[] = [
+    {
+      id: 'copy-link',
+      label: t('assetDetail.copyLink', 'Copy link'),
+      icon: Link2,
+      onSelect: async () => {
+        const ok = await copyToClipboard(shareableLink(`/assets/${asset.id}`))
+        if (ok) toast.success(t('assetDetail.linkCopied', 'Link copied'))
+        else toast.error(t('common.copyFailed', 'Could not copy'))
+      },
+    },
+    {
+      id: 'copy-id',
+      label: t('assets.sheet.copyId', 'Copy ID'),
+      icon: Hash,
+      onSelect: async () => {
+        const ok = await copyToClipboard(asset.id)
+        if (ok) toast.success(t('assets.sheet.idCopied', 'Asset ID copied'))
+        else toast.error(t('common.copyFailed', 'Could not copy'))
+      },
+    },
+    {
+      id: 'open-list',
+      icon: List,
+      label: t('assetDetail.openList', 'Open {type} list', { type: typeLabel }),
+      href: listingHref,
+    },
+  ]
+
+  const goToRelated = (id: string) => router.push(`/assets/${encodeURIComponent(id)}`)
 
   return (
     <Main>
       <PageStack>
-        <Button variant="ghost" size="sm" className="self-start" onClick={() => router.back()}>
-          <ArrowLeft className="me-2 h-4 w-4" />
-          {t('assetDetail.back', 'Back')}
-        </Button>
-
-        <PageHeader
+        <DetailPageHeader
           title={asset.name}
-          description={t('assetDetail.subtitle', 'Asset type: {type}', { type: typeLabel })}
+          parent={{ href: '/assets', label: t('nav.item.assets', 'Assets') }}
+          chips={
+            <>
+              <Badge variant="outline">{typeLabel}</Badge>
+              <ClassificationBadges
+                scope={asset.scope}
+                exposure={asset.exposure}
+                criticality={asset.criticality}
+                size="md"
+                labelled
+                className="flex-wrap"
+              />
+            </>
+          }
+          menu={menu}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <ClassificationBadges
-            scope={asset.scope}
-            exposure={asset.exposure}
-            criticality={asset.criticality}
-            size="md"
-            labelled
-          />
-          <RiskScoreBadge score={asset.riskScore} state={riskScoreState(asset)} labelled />
-          {asset.findingCount > 0 ? (
-            <OpenFindingsLink assetId={assetId} count={asset.findingCount} className="text-sm" />
-          ) : (
-            <span className="text-sm text-muted-foreground">
-              {t('assets.overview2.noOpenShort', 'No open findings')}
-            </span>
-          )}
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('assetDetail.properties', 'Properties')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <DetailRow
-              label={t('assetDetail.id', 'ID')}
-              value={<code className="font-mono text-xs break-all">{asset.id}</code>}
-            />
-            <DetailRow label={t('assetDetail.type', 'Type')} value={typeLabel} />
-            <DetailRow
-              label={t('assetDetail.status', 'Status')}
-              value={
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  <AssetStatusBadge status={asset.status} />
-                  <AssetLivenessBadge liveness={asset.liveness} />
-                </span>
-              }
-            />
-            {asset.description && (
-              <DetailRow
-                label={t('assetDetail.description', 'Description')}
-                value={asset.description}
-              />
-            )}
-            {asset.tags && asset.tags.length > 0 && (
-              <DetailRow
-                label={t('assetDetail.tags', 'Tags')}
-                value={
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {asset.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                }
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* The panels below read their own data (served from the page view a
-            moment after the asset) and some hide when empty: show them
-            together so none pushes the page after it painted. */}
-        <SettleGroup
-          fallback={
-            <div className="space-y-4" aria-busy data-testid="asset-detail-panels-skeleton">
-              <Skeleton className="h-96 w-full rounded-lg" />
-              <Skeleton className="h-64 w-full rounded-lg" />
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className={GRID}>
+          <aside aria-label={t('assetDetail.propertiesAria', 'Asset properties')} className={RAIL}>
+            <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
+              <PropertyList label={t('assetDetail.properties', 'Properties')}>
+                <PropertyGroup>
+                  <PropertyRow label={t('assetDetail.riskScore', 'Risk score')}>
+                    <RiskScoreBadge
+                      score={asset.riskScore}
+                      state={riskScoreState(asset)}
+                      labelled
+                    />
+                  </PropertyRow>
+                  <PropertyRow label={t('assetDetail.openFindings', 'Open findings')}>
+                    {asset.findingCount > 0 ? (
+                      <OpenFindingsLink assetId={asset.id} count={asset.findingCount} />
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {t('assets.overview2.noOpenShort', 'No open findings')}
+                      </span>
+                    )}
+                  </PropertyRow>
+                  <PropertyRow label={t('assetDetail.status', 'Status')}>
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <AssetStatusBadge status={asset.status} />
+                      <AssetLivenessBadge liveness={asset.liveness} />
+                    </span>
+                  </PropertyRow>
+                  <PropertyRow label={t('assetDetail.type', 'Type')}>{typeLabel}</PropertyRow>
+                </PropertyGroup>
+                <PropertyFold
+                  label={t('assetDetail.moreProperties', 'ID, description and tags')}
+                  openLabel={t('assetDetail.fewerProperties', 'Fewer details')}
+                >
+                  <PropertyGroup>
+                    <PropertyRow label={t('assetDetail.id', 'ID')}>
+                      <code className="font-mono text-xs break-all">{asset.id}</code>
+                    </PropertyRow>
+                    <PropertyRow label={t('assetDetail.description', 'Description')} top>
+                      {asset.description}
+                    </PropertyRow>
+                    {asset.tags && asset.tags.length > 0 && (
+                      <PropertyRow label={t('assetDetail.tags', 'Tags')} top>
+                        <span className="flex flex-wrap gap-1 max-md:justify-end">
+                          {asset.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </span>
+                      </PropertyRow>
+                    )}
+                  </PropertyGroup>
+                </PropertyFold>
+              </PropertyList>
             </div>
-          }
-        >
-          <Card id="asset-identity">
-            <CardHeader>
-              <CardTitle>{t('assetDetail.identity', 'Identity')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DetailSections>
-                <AssetAttributionSection
-                  assetId={asset.id}
-                  assetName={asset.name}
-                  assetType={asset.type}
-                />
-                <AssetLineageSection assetId={asset.id} />
-                <AssetNextSteps assetId={asset.id} />
-                <AssetAttributeSourcesSection assetId={asset.id} />
-                <AssetFreshnessSection assetId={asset.id} />
-                <AssetCoverageSection assetId={asset.id} />
-                <AssetIdentitySections
-                  assetId={asset.id}
-                  assetName={asset.name}
-                  properties={asset.metadata}
-                />
-              </DetailSections>
-            </CardContent>
-          </Card>
+          </aside>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AssetTimeline
-                assetId={asset.id}
-                onWhy={() =>
-                  document
-                    .getElementById('asset-identity')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
-              />
-            </CardContent>
-          </Card>
-          {/* Open ports of the addresses a domain or subdomain resolves to. */}
-          {hasResolvedPorts(asset.type) && <ResolvedPortsSection assetId={asset.id} />}
-          {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
-          <AssetWebEvidenceCard assetId={asset.id} />
-          {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
-          {isWebOriginType(asset.type) && (
-            <OriginWebSection
-              assetId={asset.id}
-              assetName={asset.name}
-              properties={asset.metadata}
-            />
-          )}
-          {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
-          <AssetScanWindowCard assetId={asset.id} />
-        </SettleGroup>
+          {/* The strip waits for the reads that decide its tabs, and the panel's
+                sections read their own data (served from the page view a moment
+                after the asset) and some hide when empty: both show once they
+                answered, so nothing moves after it painted. The name and the
+                properties paint at once. */}
+          <SettleGroup fallback={<PanelSkeleton />}>
+            <SettleOn pending={related.isLoading || webEvidence.isLoading} />
 
-        {/* The inventory filtered to this type */}
-        <Card className="bg-muted/30">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">
-                {t('assetDetail.richerTitle', 'Looking for richer details?')}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t(
-                  'assetDetail.richerHint',
-                  'The inventory lists every {type} with its filters, columns and actions.',
-                  { type: typeLabel }
-                )}
-              </p>
+            <div className={STRIP}>
+              <TabsList>
+                {tabs.map((key) => {
+                  const Icon = TAB_ICON[key]
+                  return (
+                    <TabsTrigger key={key} value={key}>
+                      <Icon aria-hidden />
+                      {t(`assetDetail.tab.${key}`, TAB_LABEL[key])}
+                      {key === 'relationships' && related.total > 0 && (
+                        <TabsCount value={related.total} />
+                      )}
+                    </TabsTrigger>
+                  )
+                })}
+              </TabsList>
             </div>
-            <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
-              {t('assetDetail.openList', 'Open {type} list', { type: typeLabel })}
-            </Button>
-          </CardContent>
-        </Card>
+
+            <div data-slot="asset-panel" className={PANEL}>
+              <TabsContent value="overview">
+                <DetailSectionList>
+                  <AssetNextSteps assetId={asset.id} />
+                  {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
+                  <AssetScanWindowCard assetId={asset.id} />
+                  <DetailSectionBlock
+                    title={t('assetDetail.richerTitle', 'Looking for richer details?')}
+                    actions={
+                      <Button variant="outline" asChild>
+                        <Link href={safeHref(listingHref) ?? '/assets'}>
+                          {t('assetDetail.openList', 'Open {type} list', { type: typeLabel })}
+                        </Link>
+                      </Button>
+                    }
+                  >
+                    <p className="text-body text-muted-foreground">
+                      {t(
+                        'assetDetail.richerHint',
+                        'The inventory lists every {type} with its filters, columns and actions.',
+                        { type: typeLabel }
+                      )}
+                    </p>
+                  </DetailSectionBlock>
+                </DetailSectionList>
+              </TabsContent>
+              {relationshipsOn && (
+                <TabsContent value="relationships">
+                  <AssetRelationshipsTab
+                    assetId={asset.id}
+                    sourceAsset={{
+                      id: asset.id,
+                      name: asset.name,
+                      type: asset.type,
+                      subType: asset.subType,
+                    }}
+                    onNavigateToAsset={goToRelated}
+                  />
+                </TabsContent>
+              )}
+              <TabsContent value="found">
+                <DetailSections>
+                  <AssetAttributionSection
+                    assetId={asset.id}
+                    assetName={asset.name}
+                    assetType={asset.type}
+                  />
+                  <AssetLineageSection assetId={asset.id} />
+                  <AssetAttributeSourcesSection assetId={asset.id} />
+                  <AssetFreshnessSection assetId={asset.id} />
+                  <AssetCoverageSection assetId={asset.id} />
+                  <AssetIdentitySections
+                    assetId={asset.id}
+                    assetName={asset.name}
+                    properties={asset.metadata}
+                  />
+                </DetailSections>
+              </TabsContent>
+              {/* Open ports of the addresses a domain or subdomain resolves to. */}
+              <TabsContent value="ports">
+                <ResolvedPortsSection assetId={asset.id} />
+              </TabsContent>
+              <TabsContent value="web">
+                <div className="flex min-w-0 flex-col gap-page">
+                  {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
+                  <AssetWebEvidenceCard assetId={asset.id} />
+                  {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
+                  {isWebOriginType(asset.type) && (
+                    <OriginWebSection
+                      assetId={asset.id}
+                      assetName={asset.name}
+                      properties={asset.metadata}
+                    />
+                  )}
+                </div>
+              </TabsContent>
+              <TabsContent value="owners">
+                <AssetOwnersTab assetId={asset.id} />
+              </TabsContent>
+              <TabsContent value="activity">
+                <AssetTimeline assetId={asset.id} onWhy={() => setTab('found')} />
+              </TabsContent>
+            </div>
+          </SettleGroup>
+        </Tabs>
       </PageStack>
     </Main>
-  )
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b py-2 last:border-0">
-      <span className="shrink-0 text-sm text-muted-foreground">{label}</span>
-      <div className="min-w-0 text-end text-sm break-words">{value}</div>
-    </div>
   )
 }
