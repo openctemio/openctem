@@ -348,7 +348,8 @@ reference.
    card. The value takes text, links, chips or a control (a status or
    assignee picker). The list follows its own width: one column in a rail,
    two columns when it sits under the header on a narrower page. Below
-   768 px every row is a 44 px line with the value at its end, and
+   768 px every row is a 44 px line with the value at its end (a 36 px
+   control in it keeps the line at 44 px), and
    `PropertyFold` keeps the rows after the first group one tap away. A row
    with an empty value renders nothing.
    Read-only facts inside a panel (a source record, a score table) keep
@@ -1071,7 +1072,8 @@ The shared pieces are in `src/features/shared/components/forms/`.
 - **Form dialog.** `FormDialog` is the frame of a create or edit dialog: title, optional description, a body that
   scrolls, and a footer with Cancel (ghost) and one primary action (a verb). It is a form: Enter submits. A failed
   submit shows above the actions as an alert; the reason for a disabled primary action is read with the button.
-  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors).
+  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors). A result view inside the same
+  dialog (after a submit that keeps the dialog open) passes `cancelLabel={null}`: its one action (Done) closes it.
 - **Leaving with unsaved changes.** A dialog form asks before it closes (`dirty` on `FormDialog`, or
   `useDiscardPrompt`): Keep editing, Discard, and Keep as draft where the form keeps a draft. A page form renders
   `LeaveGuard`: the browser asks on reload or close, and an in-app link is held until the person chooses. A
