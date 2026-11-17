@@ -48,6 +48,10 @@ vi.mock('@/features/organization/api/use-tenant-settings', () => ({
 vi.mock('@/features/organization/api/use-ownership-transfer', () => ({
   usePendingOwnershipTransfer: () => ({ transfer: undefined, mutate: vi.fn() }),
 }))
+// The page reads the join requests for its tab count (the card's own read, shared).
+vi.mock('@/features/organization/api/use-domain-signup', () => ({
+  useJoinRequests: () => ({ requests: [] }),
+}))
 vi.mock('@/features/organization/components/join-requests-card', () => ({
   JoinRequestsCard: () => null,
 }))
