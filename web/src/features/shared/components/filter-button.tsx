@@ -11,15 +11,19 @@ import { useTranslation } from '@/context/i18n-provider'
  * The one Filters trigger. Every filter panel, sheet or popover in the app opens
  * from this button, so its look is decided here and nowhere else: an icon-only
  * square (the same size as the toolbar's other icon buttons) with the
- * filter-lines icon, a tooltip, and the active-filter count on its corner.
+ * filter-lines icon, a tooltip, and the active-filter count inside it.
  *
  * `src/features/shared/components/__tests__/filter-trigger-governance.test.ts`
  * fails the build if a page draws its own filter button.
  */
 
-/** Visible count badge on the button's corner. */
-const COUNT_BADGE_CLASS =
-  'pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none font-medium tabular-nums text-primary-foreground ring-2 ring-background'
+/**
+ * The visible count: a number beside the icon, inside the square, so the
+ * button keeps its width and nothing sits on its border (a badge on the
+ * corner read as clipped where the button joins the search field). Above 9
+ * it says "9+"; the exact count is in the accessible name.
+ */
+const COUNT_CLASS = 'pointer-events-none text-xs leading-none font-semibold tabular-nums'
 
 /** Tint when at least one filter is applied (theme tokens: works in dark mode). */
 const ACTIVE_CLASS =
@@ -74,6 +78,7 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
             data-active={active ? '' : undefined}
             className={cn(
               'relative shrink-0',
+              active && 'gap-0.5',
               panelOpen && PRESSED_CLASS,
               active && ACTIVE_CLASS,
               className
@@ -83,8 +88,8 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
             <ListFilter className="size-4" aria-hidden="true" />
             {active && (
               // The count is read out through the button's accessible name.
-              <span data-slot="filter-count" aria-hidden="true" className={COUNT_BADGE_CLASS}>
-                {activeCount > 99 ? '99+' : activeCount}
+              <span data-slot="filter-count" aria-hidden="true" className={COUNT_CLASS}>
+                {activeCount > 9 ? '9+' : activeCount}
               </span>
             )}
           </Button>
