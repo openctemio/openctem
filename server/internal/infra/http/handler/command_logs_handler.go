@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/commandlog"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -88,6 +89,48 @@ func (h *CommandHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// findingContentReadable reports, per command, whether the caller may see
+// the content it carries about a finding (its payload and result): true for a
+// command about no finding; for one about a finding (an AI analysis job, a
+// retest's command, a validate job), findings:read and the finding in the
+// caller's data scope. Without the subject resolver, the kinds that always
+// carry a finding (analyze, validate) are not readable (fail closed).
+func (h *CommandHandler) findingContentReadable(ctx context.Context, cmds []*commanddom.Command) ([]bool, error) {
+	out := make([]bool, len(cmds))
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(ctx))
+	if err != nil {
+		return out, nil //nolint:nilerr // no tenant: nothing is readable
+	}
+	var subjects map[shared.ID]shared.ID
+	if h.logs != nil && len(cmds) > 0 {
+		ids := make([]shared.ID, len(cmds))
+		for i, c := range cmds {
+			ids[i] = c.ID
+		}
+		if subjects, err = h.logs.CommandSubjects(ctx, tenantID, ids); err != nil {
+			return nil, err
+		}
+	}
+	checked := make(map[shared.ID]bool)
+	for i, c := range cmds {
+		subject, about := subjects[c.ID]
+		switch {
+		case about:
+			ok, seen := checked[subject]
+			if !seen {
+				ok = h.mayReadFinding(ctx, tenantID, subject)
+				checked[subject] = ok
+			}
+			out[i] = ok
+		case c.Type == commanddom.CommandTypeAnalyze, c.Type == commanddom.CommandTypeValidate && subjects == nil:
+			out[i] = false
+		default:
+			out[i] = true
+		}
+	}
+	return out, nil
 }
 
 // mayReadFinding: findings:read, and the finding in the caller's data

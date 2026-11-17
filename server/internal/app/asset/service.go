@@ -944,6 +944,7 @@ func (s *AssetService) GetAssetInCallerScope(ctx context.Context, tenantID, asse
 // Security: fail-closed — any error during scope check denies access.
 // Returns ErrNotFound (not ErrForbidden) to prevent information disclosure.
 func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID, actingUserID string, isAdmin bool) (*assetdom.Asset, error) {
+	ctx = s.findingViewer(ctx)
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -2455,6 +2456,7 @@ func (s *AssetService) GetAssetDisplayInfo(ctx context.Context, tenantID string,
 // GetAssetWithRepository retrieves an asset with its repository extension.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (s *AssetService) GetAssetWithRepository(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, *assetdom.RepositoryExtension, error) {
+	ctx = s.findingViewer(ctx)
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -2887,4 +2889,15 @@ func tagsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// findingViewer records the request's caller as the reader of the asset's
+// finding counts, so a member counts only the pentest findings of campaigns
+// they are on (the findings list's rule). A context that already names a
+// viewer keeps it; without an enforcer (tests) nothing is recorded.
+func (s *AssetService) findingViewer(ctx context.Context) context.Context {
+	if _, ok := shared.FindingViewerOf(ctx); ok || s.dataScope == nil {
+		return ctx
+	}
+	return s.dataScope.WithFindingViewer(ctx)
 }
