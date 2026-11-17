@@ -198,7 +198,10 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
     const rows = page.locator('tbody tr')
     test.skip((await rows.count()) < 2, 'Needs two findings on this stack')
 
-    const total = digits(await page.locator('[data-slot="list-count"]').first().innerText())
+    // The count's visible number (its sentence for assistive technology is beside it).
+    const total = digits(
+      await page.locator('[data-slot="list-count"] [aria-hidden="true"]').first().innerText()
+    )
     await rows
       .first()
       .getByRole('button', { name: /^Actions for / })
