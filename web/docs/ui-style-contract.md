@@ -512,7 +512,8 @@ reference.
 - **The row's name is `RowNameLink`** where the row has a detail page: a real
   link built by a route builder or `safeHref`. A plain click opens the detail
   overlay; a modified click (Ctrl, Cmd, Shift, Alt), a middle click and "Open
-  in new tab" follow the link.
+  in new tab" follow the link. On one line it ends in an ellipsis by itself,
+  alone in a cell or in a flex row: a page adds no wrapper around it.
 - **Column kinds** (`meta.kind`, `KIND_LAYOUT` in `data-table/column-meta.ts`)
   set a column's alignment, width and first sort direction; a page overrides a
   width only for a measured reason:
