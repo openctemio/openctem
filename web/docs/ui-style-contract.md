@@ -536,6 +536,46 @@ load.
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
 
+### Settings pages
+
+Every settings page is built from the same parts (`@/features/shared`):
+
+- **`SettingsPage`** is the frame: `Main`, `PageStack`, the `PageHeader` (the
+  only h1; the phone bar repeats it once it scrolls away) and one column of
+  sections at a reading width (`--settings-col`, class `max-w-settings`),
+  16px apart. It also draws the three states every page shares: `state="loading"`
+  (header and skeleton rows), `state="error"` (the failure with Retry; saved
+  values are never replaced by defaults) and `readOnly` (the "View only"
+  notice; the page disables its own controls). A settings page that is a list
+  passes `wide` and uses the list kit unchanged.
+- **`SettingsSection framed`** is a section: no card and no fill, a hairline
+  above every section but the first, the title (`text-section`), one line of
+  description, an optional quiet `meta` note ("Last changed by ...") and
+  actions. Its children draw their own dividers:
+  - `SettingsRow`: one setting per line, label and hint at the start, the
+    control at the end (`wide` for a text field or select); stacked when the
+    section is narrower than 45rem. `SettingsSwitchRow` is the row of an
+    on / off setting: the label names the switch, the hint describes it.
+  - `SettingsBlock` with `SettingsFieldGrid` and `SettingsField`: fields with
+    the label above, as many columns as fit. `SettingsField` ties the label,
+    the hint and the error to the control (`aria-describedby`,
+    `aria-invalid`); an error is `role="alert"` text under the field.
+- **Fields** are the kit's at the kit's sizes (32px; 36px with 16px text
+  below 768px). A secret the user types is a `SecretField` (masked, Show
+  value / Hide value; a stored secret is never read back). A secret the
+  server shows once is a `OneTimeSecretField` (masked, reveal, copy).
+- **`SettingsSaveBar`** is the one save of a page: shown only while there are
+  unsaved changes, pinned to the bottom of the column (a full-width bottom bar
+  below 768px), with the count of changed settings, "What changes", a failed
+  save said in the bar, Discard and Save (Ctrl/Cmd+S). Leaving with unsaved
+  changes asks first. Never a save button per field. A setting that applies
+  the moment it is switched does not use the bar: it says that it applies at
+  once and confirms when it loosens protection.
+- **`DangerZone`** is the last section, with one `DangerZoneItem` row per
+  action: a ghost button with a destructive icon, a destructive
+  `ConfirmDialog`, `typeToConfirm` for what cannot be undone. The red is on
+  the action, not on a frame.
+
 ### Dashboard widgets
 
 - Every dashboard widget renders in `WidgetFrame`
