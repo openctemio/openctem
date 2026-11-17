@@ -46,10 +46,33 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
-- `j` and `k` open the next and previous finding while the drawer is open, and are listed in Help,
-  Keyboard shortcuts.
-- The row menu items that need the full flow (assign, change status, mark as false positive) say they open
-  it ("Open to assign…").
+- The drawer is an overlay over the list (never a permanent side panel). Opened from a row, its header
+  shows the finding's place in the list, "3 of 418" (`findings.drawer.position`, `FindingListPosition` from
+  `findingListPosition`): the row's place on the page plus the page's offset, of the total the title row
+  counts. It is announced politely when it changes. Previous and next buttons beside it move through the
+  rows of the page shown and are disabled at its first and last row; they do not load another page. `j`
+  and `k` make the same moves while the drawer is open (not while typing or inside a menu), and are listed
+  in Help, Keyboard shortcuts; Escape closes the drawer. A finding that is not a row of the page (a shared
+  `#finding=` link, a row of a grouped view) shows no position.
+- The row menu has one set and one order on a desktop and a phone: View details, Open to assign…, Open to
+  change status…, Create ticket, Add to remediation, then Copy ID, Copy link, then Open to mark as false
+  positive…, then Delete. The items that need the full flow (assign, change status, mark as false
+  positive) say they open it ("Open to assign…").
+- An item the user has no permission for is hidden. An item that does not apply to this finding's state
+  stays in its place, disabled, with the reason (a tooltip on a desktop, a line under the label on a phone
+  or a touch screen); no item is disabled without one. The rules read only what the list row carries
+  (`rowMenuBlocks` in `lib/row-menu-state.ts`), never a request per row:
+
+  | Item                                                                     | Disabled when                                                                                                     | Reason key                                 |
+  | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+  | Create ticket                                                            | the finding has a linked ticket (`work_item_uris`)                                                                | `findings.row.reason.ticketLinked`         |
+  | Open to mark as false positive…                                          | it is already a false positive                                                                                    | `findings.row.reason.alreadyFalsePositive` |
+  | Open to mark as false positive…                                          | it is closed (resolved, risk accepted, duplicate): a closed finding only reopens                                  | `findings.row.reason.closed`               |
+  | Open to assign…, Open to change status…, Open to mark as false positive… | people reported it (pentest, bug bounty, red team, manual): the drawer locks the same controls (`isTriageLocked`) | `findings.row.reason.managedElsewhere`     |
+
+  The list row does not say whether an approval request is pending or whether the finding is in an open
+  remediation task, so the menu does not disable for those; the drawer's status menu (the API's moves for
+  this finding, each blocked one with its reason) and the remediation dialog decide there.
 
 ## Empty and error states
 

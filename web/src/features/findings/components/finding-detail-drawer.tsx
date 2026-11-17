@@ -86,6 +86,7 @@ import { AIProposalBadge } from './ai-proposal-badge'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
 import { shareableLink } from '@/lib/org-link'
+import type { FindingListPosition } from '../hooks/use-drawer-navigation'
 
 /** The drawer inside a task: position in the task's findings and the task to return to. */
 export interface FindingDrawerTaskNav {
@@ -100,6 +101,12 @@ export interface FindingDrawerTaskNav {
 interface FindingDetailDrawerProps {
   /** Set when the drawer is opened from a task's findings. */
   taskNav?: FindingDrawerTaskNav
+  /**
+   * Set when the drawer is opened from a row of the findings list: its place
+   * in the list and the moves to its neighbours. Absent (a shared link, a
+   * finding outside the page shown): the header shows no position.
+   */
+  listNav?: FindingListPosition
   finding: Finding | null
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -108,6 +115,57 @@ interface FindingDetailDrawerProps {
   onStatusChange?: (findingId: string, status: FindingStatus) => void
   onSeverityChange?: (findingId: string, severity: Severity) => void
   onAssigneeChange?: (findingId: string, assignee: FindingUser | null) => void
+}
+
+/**
+ * The finding's place in the list ("3 of 418") with previous / next, at the
+ * end of the header's control row. The position is announced when it changes.
+ */
+function DrawerListNav({ nav }: { nav: FindingListPosition }) {
+  const { t, locale } = useTranslation()
+  const n = new Intl.NumberFormat(locale)
+  return (
+    <nav
+      data-slot="finding-drawer-nav"
+      aria-label={t('findings.drawer.listNav', 'Findings of this list')}
+      className="ms-auto flex shrink-0 items-center gap-1"
+    >
+      <span
+        data-slot="finding-drawer-position"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="text-meta me-1 tabular-nums text-muted-foreground"
+      >
+        {t('findings.drawer.position', '{index} of {total}', {
+          index: n.format(nav.index),
+          total: n.format(nav.total),
+        })}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        data-slot="finding-drawer-prev"
+        disabled={!nav.onPrev}
+        onClick={nav.onPrev}
+        aria-label={t('findings.drawer.prev', 'Previous finding')}
+        title={t('findings.drawer.prev', 'Previous finding')}
+      >
+        <ChevronLeft className="h-4 w-4 rtl:rotate-180" aria-hidden />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        data-slot="finding-drawer-next"
+        disabled={!nav.onNext}
+        onClick={nav.onNext}
+        aria-label={t('findings.drawer.next', 'Next finding')}
+        title={t('findings.drawer.next', 'Next finding')}
+      >
+        <ChevronRight className="h-4 w-4 rtl:rotate-180" aria-hidden />
+      </Button>
+    </nav>
+  )
 }
 
 function DrawerBodySkeleton() {
@@ -134,6 +192,7 @@ export function FindingDetailDrawer({
   onSeverityChange,
   onAssigneeChange,
   taskNav,
+  listNav,
 }: FindingDetailDrawerProps) {
   const { t, locale } = useTranslation()
   const router = useRouter()
@@ -307,6 +366,7 @@ export function FindingDetailDrawer({
                   loading={triage.assigneeBusy}
                   disabled={locked || !canAssign}
                 />
+                {listNav && !taskNav && <DrawerListNav nav={listNav} />}
               </>
             }
           />
