@@ -129,6 +129,11 @@ func Main(exts ...ext.Extension) {
 		tool()
 		return
 	}
+	// The diagnosis commands are words, not flags: `server doctor`,
+	// `server support-bundle` (diag_cmd.go).
+	if len(os.Args) > 1 && isDiagCommand(os.Args[1]) {
+		os.Exit(runDiagCommand(os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
 	defineFlags(fs)
 	_ = fs.Parse(os.Args[1:]) // ExitOnError: never returns an error
