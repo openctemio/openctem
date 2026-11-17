@@ -124,7 +124,12 @@ export function SignupEventsPanel() {
       {
         id: 'source',
         header: t('admin.signups.col.source'),
-        meta: { kind: 'text', width: 184, label: t('admin.signups.col.source') },
+        meta: {
+          kind: 'text',
+          width: 152,
+          hideBelow: 800,
+          label: t('admin.signups.col.source'),
+        },
         cell: ({ row }) => (
           <span className="block truncate">
             {t(`admin.signups.source.${sourceKey(row.original.source)}`, row.original.source)}
@@ -134,7 +139,7 @@ export function SignupEventsPanel() {
       {
         id: 'domain',
         header: t('admin.signups.col.domain'),
-        meta: { kind: 'text', width: 200, label: t('admin.signups.col.domain') },
+        meta: { kind: 'text', width: 176, label: t('admin.signups.col.domain') },
         cell: ({ row }) => (
           <span className="block truncate font-mono text-code" title={row.original.email_domain}>
             {row.original.email_domain || '—'}
@@ -146,7 +151,7 @@ export function SignupEventsPanel() {
         header: t('admin.signups.col.network'),
         meta: {
           kind: 'text',
-          width: 168,
+          width: 152,
           hideBelow: 900,
           label: t('admin.signups.col.network'),
         },
@@ -159,7 +164,7 @@ export function SignupEventsPanel() {
       {
         id: 'organization',
         header: t('admin.signups.col.organization'),
-        meta: { kind: 'text', width: 176, label: t('admin.signups.col.organization') },
+        meta: { kind: 'text', width: 128, label: t('admin.signups.col.organization') },
         cell: ({ row }) =>
           row.original.tenant_id ? (
             <Link
