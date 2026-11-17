@@ -1,37 +1,54 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { SETTINGS_SECTION_FRAME, SETTINGS_SECTION_HEAD } from './settings-section'
 
 interface DangerZoneProps {
   /** Defaults to "Danger zone". */
   title?: string
+  /** One line under the title, e.g. who sees the section. */
+  description?: ReactNode
   /** Heading level for the page outline: h2 on a page, h3 inside a sheet. */
   as?: 'h2' | 'h3'
   children: ReactNode
   className?: string
+  id?: string
 }
 
 /**
  * Destructive, hard-to-undo actions, kept apart at the bottom of a page or
- * sheet: a destructive-bordered block with one row per action
- * (DangerZoneItem). One look everywhere (settings, detail pages, sheets), in
- * theme tokens only. Pair the action with a destructive ConfirmDialog, and
- * typeToConfirm for the ones that cannot be undone at all.
+ * sheet: a section titled "Danger zone" with one row per action
+ * (DangerZoneItem), drawn like every other settings section (a hairline
+ * above, rows divided by hairlines); the red is on the action, not on the
+ * frame. Pair the action with a destructive ConfirmDialog, and typeToConfirm
+ * for the ones that cannot be undone at all.
  */
-export function DangerZone({ title, as: Heading = 'h2', children, className }: DangerZoneProps) {
+export function DangerZone({
+  title,
+  description,
+  as: Heading = 'h2',
+  children,
+  className,
+  id,
+}: DangerZoneProps) {
   const { t } = useTranslation()
   return (
-    <section className={cn('@container rounded-xl border border-destructive/40', className)}>
-      <div className="flex items-center gap-2 border-b border-destructive/20 px-4 py-3">
-        <AlertTriangle className="size-4 shrink-0 text-destructive" aria-hidden />
-        <Heading className="text-sm font-semibold text-destructive">
-          {title ?? t('common.dangerZone', 'Danger zone')}
-        </Heading>
+    <section id={id} data-slot="danger-zone" className={cn(SETTINGS_SECTION_FRAME, className)}>
+      <div className={SETTINGS_SECTION_HEAD}>
+        <div className="min-w-0">
+          <Heading className="text-section">
+            {title ?? t('common.dangerZone', 'Danger zone')}
+          </Heading>
+          {description && (
+            <p className="max-w-[58ch] text-dense text-muted-foreground text-pretty">
+              {description}
+            </p>
+          )}
+        </div>
       </div>
-      <div className="divide-y divide-destructive/15">{children}</div>
+      {children}
     </section>
   )
 }
@@ -39,18 +56,21 @@ export function DangerZone({ title, as: Heading = 'h2', children, className }: D
 interface DangerZoneItemProps {
   title: string
   description?: ReactNode
-  /** The button(s). Usually one `variant="destructive"` or outline button. */
+  /** The button(s) or link. Usually one ghost button with a destructive icon. */
   action: ReactNode
 }
 
-/** One destructive action: what it does on the left, the button on the right (stacked when narrow). */
+/** One destructive action: what it does at the start, the button at the end (stacked when narrow). */
 export function DangerZoneItem({ title, description, action }: DangerZoneItemProps) {
   return (
-    <div className="flex flex-col gap-3 p-4 @md:flex-row @md:items-center @md:justify-between">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
+    <div
+      data-slot="danger-zone-item"
+      className="flex min-w-0 flex-col gap-3 border-t border-border-subtle py-3.5 @[45rem]:flex-row @[45rem]:items-center @[45rem]:justify-between @[45rem]:gap-8"
+    >
+      <div className="min-w-0 max-w-[58ch]">
+        <p className="text-body font-medium">{title}</p>
         {description && (
-          <p className="mt-0.5 text-sm text-muted-foreground text-pretty">{description}</p>
+          <p className="mt-0.5 text-cap text-muted-foreground text-pretty">{description}</p>
         )}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">{action}</div>
