@@ -1,7 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import type { MouseEvent, ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SeverityBadge } from '@/features/shared'
 import type { MobileRowSelection } from '@/features/shared'
@@ -10,15 +9,15 @@ import { FindingStatusBadge } from '@/features/findings/components/finding-statu
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
 import { ExploitSignals } from '@/features/findings/components/exploit-signals'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
-import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
-import { MetaLine } from '@/features/shared/components/text-layout'
+import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { maskSensitiveText } from '@/lib/mask-sensitive'
-import { cn } from '@/lib/utils'
 import { findingRowTone } from '@/features/findings/lib/row-tone'
+import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
 import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
+import { FindingRowId } from '@/features/findings/components/cells/finding-row-id'
 import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
 
 interface FindingPhoneCardProps {
@@ -29,88 +28,110 @@ interface FindingPhoneCardProps {
   menu: ReactNode
 }
 
+/** The card's own controls: a tap on one never opens the finding as well. */
+const CONTROL_SELECTOR =
+  'button, a[href], input, label, [role="checkbox"], [role="menuitem"], [tabindex="0"]'
+
 /**
- * A finding on a phone (list and grouped views alike): the same selection
- * checkbox and action menu the table row has, around a button that opens the
- * finding. Selecting a card is a separate control from opening it, so a tap
- * on the body never changes the selection. Its text is masked like a table
- * row's (maskSensitiveText): no secret or e-mail address in clear, no "Show".
+ * A finding on a phone (list and grouped views alike), top to bottom: the
+ * priority with the row menu at the end of its line (and the checkbox in
+ * select mode); the title on up to two lines; the asset and the place on it,
+ * one line; the id (the CVE, else the rule) and the time left; the severity,
+ * the status and the exploit mark, then the branch-only and duplicates marks
+ * when the finding has them. A tap anywhere on the card opens the finding; the title is
+ * the link that does so from the keyboard, named by the whole title. The
+ * checkbox and the menu are separate targets, so a tap on one never opens
+ * the finding and a tap on the body never changes the selection.
+ * Its text is masked like a table row's (maskSensitiveText): no secret or
+ * e-mail address in clear, no "Show".
  */
 export function FindingPhoneCard({ finding: f, selection, onOpen, menu }: FindingPhoneCardProps) {
   const { t } = useTranslation()
+  const hasDue = !!f.slaDeadline && !!f.slaStatus && f.slaStatus !== 'not_applicable'
+  const hasId = !!(f.cve ?? '').trim() || !!(f.ruleId ?? '').trim()
+  const open = (e: MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    // A menu or sheet opened from the card is drawn outside it.
+    if (!e.currentTarget.contains(target) || target.closest(CONTROL_SELECTOR)) return
+    onOpen(f)
+  }
   return (
     <div
       data-testid="finding-phone-card"
+      data-slot="finding-phone-card"
       data-state={selection.selected ? 'selected' : undefined}
       data-tone={findingRowTone(f)}
-      className={cn(
-        'flex w-full items-start gap-1 ps-3 pe-1 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted'
-      )}
+      onClick={open}
+      className="flex w-full cursor-pointer flex-col gap-1 px-3 pt-1 pb-3 transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
     >
-      {selection.selectable && (
-        <div className="flex h-10 shrink-0 items-center pt-2">
-          <Checkbox
-            checked={selection.selected}
-            onCheckedChange={(v) => selection.onSelectedChange(!!v)}
-            aria-label={t('findings.list.selectRow', 'Select finding {title}', {
-              title: toDisplayText(maskSensitiveText(f.title), 80),
-            })}
+      {/* Priority is the queue order, so it leads the card. The line is as
+          tall as a touch target, which the checkbox and the menu fill. */}
+      <div data-slot="finding-card-head" className="flex h-touch-target items-center gap-2">
+        {selection.selectable && (
+          <label
+            data-slot="finding-card-select"
+            className="-ms-3 flex size-touch-target shrink-0 cursor-pointer items-center justify-center"
+          >
+            <Checkbox
+              checked={selection.selected}
+              onCheckedChange={(v) => selection.onSelectedChange(!!v)}
+              aria-label={t('findings.list.selectRow', 'Select finding {title}', {
+                title: toDisplayText(maskSensitiveText(f.title), 80),
+              })}
+            />
+          </label>
+        )}
+        <PriorityClassBadge priorityClass={f.priorityClass} />
+        <div data-slot="finding-card-menu" className="-me-1 ms-auto flex shrink-0 items-center">
+          {menu}
+        </div>
+      </div>
+      <FindingTitleCell
+        className="gap-0.5 text-sm"
+        titleLines={2}
+        title={f.title}
+        onOpen={() => onOpen(f)}
+        findingId={f.id}
+        openLabel={t('findings.list.openRow', '{title}, view details', {
+          title: toDisplayText(f.title, 500),
+        })}
+        target={f.location?.full}
+        markers={
+          <AssetMarkers
+            interactive={false}
+            internetFacing={f.assets[0]?.isInternetAccessible}
+            crownJewel={f.assets[0]?.isCrownJewel}
           />
+        }
+      />
+      {(hasId || hasDue) && (
+        <div data-slot="finding-card-meta" className="flex min-w-0 items-center gap-3">
+          <FindingRowId cve={f.cve} ruleId={f.ruleId} className="max-w-none min-w-0 shrink" />
+          {hasDue && (
+            <SlaDueChip
+              status={f.slaStatus}
+              deadline={f.slaDeadline}
+              kevCapped={f.slaKevCapped}
+              className="shrink-0"
+            />
+          )}
         </div>
       )}
-      <button
-        type="button"
-        onClick={() => onOpen(f)}
-        className="flex min-w-0 flex-1 items-start gap-3 py-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {/* Priority is the queue order, so it leads the card (left slot). */}
-        <PriorityClassBadge priorityClass={f.priorityClass} className="mt-0.5" />
-        <div className="min-w-0 flex-1">
-          <FindingTitleCell
-            className="gap-0.5 text-sm"
-            titleLines={2}
-            title={f.title}
-            target={f.location?.full}
-            markers={
-              <AssetMarkers
-                interactive={false}
-                internetFacing={f.assets[0]?.isInternetAccessible}
-                crownJewel={f.assets[0]?.isCrownJewel}
-              />
-            }
-            meta={
-              (f.cve || f.scanner) && (
-                <MetaLine
-                  items={[
-                    f.cve && <span className="font-mono">{maskSensitiveText(f.cve)}</span>,
-                    f.scanner,
-                  ]}
-                />
-              )
-            }
-          />
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <SeverityBadge severity={f.severity} />
-            <FindingStatusBadge status={f.status} />
-            <FindingSubStatus subStatusId={f.subStatusId} />
-            {f.branchOnly && <BranchOnlyBadge />}
-            {/* At most one exploit chip on a phone row: KEV, else EPSS from 10%. */}
-            <ExploitSignals
-              variant="compact"
-              isInKev={f.isInKev}
-              kevDueDate={f.kevDueDate}
-              kevRansomware={f.kevRansomware}
-              epssScore={f.epssScore}
-            />
-            <DuplicatesChip count={f.duplicatesMarked} interactive={false} />
-          </div>
-        </div>
-        <ChevronRight
-          className="mt-1 h-4 w-4 shrink-0 text-muted-foreground rtl:rotate-180"
-          aria-hidden
+      <div data-slot="finding-card-state" className="mt-0.5 flex flex-wrap items-center gap-1.5">
+        <SeverityBadge severity={f.severity} />
+        <FindingStatusBadge status={f.status} />
+        <FindingSubStatus subStatusId={f.subStatusId} />
+        {/* At most one exploit chip on a phone row: KEV, else EPSS from 10%. */}
+        <ExploitSignals
+          variant="compact"
+          isInKev={f.isInKev}
+          kevDueDate={f.kevDueDate}
+          kevRansomware={f.kevRansomware}
+          epssScore={f.epssScore}
         />
-      </button>
-      <div className="flex h-10 shrink-0 items-center pt-2">{menu}</div>
+        {f.branchOnly && <BranchOnlyBadge />}
+        <DuplicatesChip count={f.duplicatesMarked} interactive={false} />
+      </div>
     </div>
   )
 }

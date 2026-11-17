@@ -80,7 +80,13 @@ import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
 import { bulkSelectColumn, useRangeSelection, type DataTableBulk } from './data-table-selection'
 import { BulkActionBar } from '../bulk-action-bar'
-import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, pageSizeChoices } from '@/lib/page-size-options'
+import {
+  DEFAULT_TABLE_PAGE_SIZE,
+  MAX_TABLE_PAGE_SIZE,
+  TABLE_PAGE_SIZES,
+  pageSizeChoices,
+} from '@/lib/page-size-options'
+import { PhoneMoreFooter } from './phone-more-footer'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -497,6 +503,10 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
  * title, the next few become label/value fields, and the row's checkbox and
  * actions stay reachable. Built from the same cells, so it needs no per-page code.
  */
+/** A card that takes the focus after "Show more" (never in the tab order). */
+const PHONE_CARD_FOCUS_CLASS =
+  'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+
 function AutoMobileCard<TData>({
   row,
   labels,
@@ -517,8 +527,11 @@ function AutoMobileCard<TData>({
   return (
     <div
       data-slot="mobile-card"
+      data-phone-card=""
+      tabIndex={-1}
       data-state={row.getIsSelected() ? 'selected' : undefined}
       className={cn(
+        PHONE_CARD_FOCUS_CLASS,
         'px-3 py-3 data-[state=selected]:bg-muted',
         onRowClick && 'cursor-pointer hover:bg-muted/50'
       )}
@@ -719,6 +732,10 @@ export function DataTable<TData, TValue>({
   // with CSS, so only one of the two is ever rendered.
   const isPhone = useIsMobile()
   const phoneCards = isPhone && (!!mobileRow || mobileCards)
+  // Cards have no numbered pager: their footer grows the page size ("Show 25
+  // more"). A list with one fixed size keeps the pager.
+  const phoneMore = phoneCards && pageSizeOptions?.length !== 1
+  const cardsRef = React.useRef<HTMLDivElement>(null)
   // Which sides of the horizontally-scrolling table have content hidden under
   // the pinned columns — drives the edge shadows.
   const tableWrapRef = React.useRef<HTMLDivElement>(null)
@@ -1386,7 +1403,7 @@ export function DataTable<TData, TValue>({
       )}
 
       {phoneCards && (
-        <div className="relative divide-y overflow-hidden rounded-md border">
+        <div ref={cardsRef} className="relative divide-y overflow-hidden rounded-md border">
           <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
           {hasBody ? (
             displayGroups.map((group) => {
@@ -1432,7 +1449,12 @@ export function DataTable<TData, TValue>({
                     <div id={ids.rows} className="divide-y">
                       {group.rows.map((row) =>
                         mobileRow ? (
-                          <div key={row.id}>
+                          <div
+                            key={row.id}
+                            data-phone-card=""
+                            tabIndex={-1}
+                            className={PHONE_CARD_FOCUS_CLASS}
+                          >
                             {mobileRow(row.original, {
                               selectable: cardsSelectable,
                               selected: row.getIsSelected(),
@@ -1797,7 +1819,28 @@ export function DataTable<TData, TValue>({
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
           "Page 1 of 0". */}
-      {pagerShown && (
+      {pagerShown && phoneMore && (
+        <PhoneMoreFooter
+          shown={pageRows.length}
+          total={
+            !manualPagination
+              ? paginationTotal
+              : countUnavailable || rowCountCapped || rowCount == null
+                ? undefined
+                : rowCount
+          }
+          mayHaveMore={table.getCanNextPage()}
+          pageIndex={table.getState().pagination.pageIndex}
+          pageSize={table.getState().pagination.pageSize}
+          maxPageSize={manualPagination ? MAX_TABLE_PAGE_SIZE : undefined}
+          onPageSizeChange={(size) => table.setPageSize(size)}
+          onFirstPage={() => table.setPageIndex(0)}
+          busy={isLoading || isRefreshing}
+          cardsRef={cardsRef}
+          note={staleNote(false)}
+        />
+      )}
+      {pagerShown && !phoneMore && (
         <div
           data-slot="data-table-pager"
           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
