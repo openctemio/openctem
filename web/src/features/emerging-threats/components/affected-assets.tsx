@@ -157,6 +157,7 @@ export function AffectedAssets({
     () => [
       {
         id: 'asset',
+        meta: { kind: 'asset' },
         header: t('emergingThreats.assets.asset'),
         enableSorting: false,
         enableHiding: false,
@@ -164,6 +165,7 @@ export function AffectedAssets({
       },
       {
         id: 'exposure',
+        meta: { kind: 'status' },
         header: t('emergingThreats.assets.exposure'),
         enableSorting: false,
         cell: ({ row }) =>
@@ -175,18 +177,21 @@ export function AffectedAssets({
       },
       {
         id: 'criticality',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.criticality'),
         enableSorting: false,
         cell: ({ row }) => cells.criticality(row.original) || <Dash />,
       },
       {
         id: 'product',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.product'),
         enableSorting: false,
         cell: ({ row }) => row.original.products.join(', ') || <Dash />,
       },
       {
         id: 'version',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.version'),
         enableSorting: false,
         cell: ({ row }) =>
@@ -198,12 +203,14 @@ export function AffectedAssets({
       },
       {
         id: 'finding',
+        meta: { kind: 'status' },
         header: t('emergingThreats.assets.finding'),
         enableSorting: false,
         cell: ({ row }) => cells.finding(row.original),
       },
       {
         id: 'task',
+        meta: { kind: 'status' },
         header: t('emergingThreats.assets.task'),
         enableSorting: false,
         cell: ({ row }) => cells.task(row.original),
