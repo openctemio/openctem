@@ -796,7 +796,9 @@ export default function UsersPage() {
   const columns: ColumnDef<MemberWithUser>[] = [
     {
       accessorKey: 'name',
-      meta: { kind: 'name', label: t('org.membersPage.col.user', 'User') },
+      // The floor makes the name and e-mail shrink and cut instead of pushing
+      // the Two-factor and row-actions columns out of the frame.
+      meta: { kind: 'name', minWidth: 200, label: t('org.membersPage.col.user', 'User') },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.user', 'User')} />
       ),
