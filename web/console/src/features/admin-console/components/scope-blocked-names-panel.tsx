@@ -13,7 +13,7 @@
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertTriangle, Loader2, Lock } from 'lucide-react'
+import { AlertTriangle, Loader2, Lock, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -35,7 +35,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { DataTable, ErrorState, PageStack } from '@/features/shared'
+import {
+  DataTable,
+  DataTableRowActions,
+  EmptyState,
+  ErrorState,
+  PageStack,
+} from '@/features/shared'
 import { ListSearch } from '@/features/shared/components/list-search'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -619,22 +625,46 @@ function ExceptionsCard({
       {
         accessorKey: 'organization_name',
         header: t('admin.blockedNames.organization', 'Organization'),
-        cell: ({ row }) => <span className="font-medium">{row.original.organization_name}</span>,
-      },
-      {
-        accessorKey: 'name',
-        header: t('admin.blockedNames.name', 'Domain'),
+        // The organization is the row's name; it stays in view while the
+        // table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 160,
+          label: t('admin.blockedNames.organization', 'Organization'),
+        },
         cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.include_subdomains ? `*.${row.original.name}` : row.original.name}
+          <span className="block truncate font-medium" title={row.original.organization_name}>
+            {row.original.organization_name}
           </span>
         ),
       },
       {
+        accessorKey: 'name',
+        header: t('admin.blockedNames.name', 'Domain'),
+        meta: { kind: 'text', width: 200, label: t('admin.blockedNames.name', 'Domain') },
+        cell: ({ row }) => {
+          const name = row.original.include_subdomains
+            ? `*.${row.original.name}`
+            : row.original.name
+          return (
+            <span className="block truncate font-mono text-xs" title={name}>
+              {name}
+            </span>
+          )
+        },
+      },
+      {
         accessorKey: 'reason',
         header: t('admin.blockedNames.reasonCol', 'Reason'),
+        meta: {
+          kind: 'text',
+          width: 200,
+          hideBelow: 1000,
+          label: t('admin.blockedNames.reasonCol', 'Reason'),
+        },
         cell: ({ row }) => (
-          <span className="block max-w-56 truncate" title={row.original.reason}>
+          <span className="block truncate" title={row.original.reason}>
             {row.original.reason}
           </span>
         ),
@@ -642,8 +672,14 @@ function ExceptionsCard({
       {
         accessorKey: 'authorization_ref',
         header: t('admin.blockedNames.referenceCol', 'Authorisation'),
+        meta: {
+          kind: 'text',
+          width: 160,
+          hideBelow: 1060,
+          label: t('admin.blockedNames.referenceCol', 'Authorisation'),
+        },
         cell: ({ row }) => (
-          <span className="block max-w-48 truncate" title={row.original.authorization_ref}>
+          <span className="block truncate" title={row.original.authorization_ref}>
             {row.original.authorization_ref}
           </span>
         ),
@@ -651,35 +687,60 @@ function ExceptionsCard({
       {
         accessorKey: 'granted_by',
         header: t('admin.blockedNames.grantedBy', 'Granted by'),
-        cell: ({ row }) => <span className="text-xs">{row.original.granted_by}</span>,
+        meta: {
+          kind: 'text',
+          width: 176,
+          hideBelow: 900,
+          label: t('admin.blockedNames.grantedBy', 'Granted by'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate" title={row.original.granted_by}>
+            {row.original.granted_by}
+          </span>
+        ),
       },
       {
         accessorKey: 'expires_at',
         header: t('admin.blockedNames.expires', 'Expires'),
+        meta: { kind: 'date', width: 120, label: t('admin.blockedNames.expires', 'Expires') },
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-xs">{shortDate(row.original.expires_at)}</span>
+          <span className="tabular-nums">{shortDate(row.original.expires_at)}</span>
         ),
       },
       {
         accessorKey: 'state',
         header: t('admin.blockedNames.stateCol', 'State'),
+        meta: { kind: 'status', width: 112, label: t('admin.blockedNames.stateCol', 'State') },
         cell: ({ row }) => stateBadge(row.original.state, t),
       },
     ]
     if (canEdit) {
       cols.push({
         id: 'actions',
-        header: () => <span className="sr-only">{t('admin.blockedNames.actions', 'Actions')}</span>,
+        header: '',
+        enableSorting: false,
+        meta: { kind: 'actions' },
         cell: ({ row }) =>
           row.original.state === 'revoked' ? null : (
-            <div className="flex justify-end gap-1 whitespace-nowrap">
-              <Button variant="ghost" size="sm" onClick={() => setExtend(row.original)}>
-                {t('admin.blockedNames.extend', 'Extend')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setRevoke(row.original)}>
-                {t('admin.blockedNames.revoke', 'Revoke')}
-              </Button>
-            </div>
+            <DataTableRowActions
+              label={t(
+                'admin.blockedNames.rowActions',
+                'Actions for the exception {name} of {org}',
+                { name: row.original.name, org: row.original.organization_name }
+              )}
+              actions={[
+                {
+                  label: t('admin.blockedNames.extend', 'Extend'),
+                  onClick: () => setExtend(row.original),
+                },
+                {
+                  label: t('admin.blockedNames.revoke', 'Revoke'),
+                  onClick: () => setRevoke(row.original),
+                  destructive: true,
+                  separatorBefore: true,
+                },
+              ]}
+            />
           ),
       })
     }
@@ -708,10 +769,21 @@ function ExceptionsCard({
         <DataTable
           columns={columns}
           data={items}
+          caption={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
+          getRowId={(e) => e.id}
           showSearch={false}
-          showColumnToggle={false}
+          showSelectionCount={false}
           showPagination={items.length > 20}
-          emptyMessage={t('admin.blockedNames.noExceptions', 'No exceptions.')}
+          paginationNoun={t('admin.blockedNames.exceptionsNoun', 'exceptions')}
+          mobileCards
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={ShieldCheck}
+                title={t('admin.blockedNames.noExceptions', 'No exceptions.')}
+              />
+            ),
+          }}
         />
         {!canEdit && (
           <div className="mt-4">

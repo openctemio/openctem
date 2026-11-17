@@ -185,6 +185,7 @@ describe('Platform scanning console page', () => {
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Retire/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Targets and logs/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for the job/ })).not.toBeInTheDocument()
   })
 
   it('lets an operations administrator view a job only with a reason', async () => {
@@ -192,7 +193,9 @@ describe('Platform scanning console page', () => {
     state.tab = 'queue'
     render(<PlatformScanningPage />)
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getAllByRole('button', { name: /Targets and logs/ })[0])
+    // The job's one action is in its row menu.
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for the job of / })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Targets and logs' }))
     await userEvent.type(screen.getByLabelText(/reason/i), 'abuse report 42 from the operator')
     await userEvent.click(screen.getByRole('button', { name: 'View' }))
     await waitFor(() =>

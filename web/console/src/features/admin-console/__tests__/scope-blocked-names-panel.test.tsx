@@ -100,6 +100,9 @@ describe('ScopeBlockedNamesPanel', () => {
     expect(screen.getByRole('switch')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Grant exception' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /^Actions for the exception/ })
+    ).not.toBeInTheDocument()
     expect(screen.getByText('portal.example.gov.xx')).toBeInTheDocument()
   })
 
@@ -112,7 +115,14 @@ describe('ScopeBlockedNamesPanel', () => {
     const row = screen.getByText('portal.example.gov.xx').closest('tr') as HTMLElement
     expect(within(row).getByText('Org A')).toBeInTheDocument()
     expect(within(row).getByText('letter 42')).toBeInTheDocument()
-    await userEvent.click(within(row).getByRole('button', { name: 'Revoke' }))
+    // Extend and Revoke are in the row's menu, named after the exception.
+    await userEvent.click(
+      within(row).getByRole('button', {
+        name: 'Actions for the exception portal.example.gov.xx of Org A',
+      })
+    )
+    expect(await screen.findByRole('menuitem', { name: 'Extend' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Revoke' }))
     const dialog = await screen.findByRole('dialog')
     const confirm = within(dialog).getByRole('button', { name: 'Revoke' })
     expect(confirm).toBeDisabled()
