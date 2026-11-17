@@ -211,6 +211,8 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).toContain('@max-md/toolbar:order-last')
     expect(tokens.className).toContain('@max-md/toolbar:ms-auto')
     expect(tokens.className).not.toContain('@max-md/toolbar:flex-[1_1_0%]')
+    // Never shrinks: its width does not depend on the chips beside it.
+    expect(tokens.className).toContain('@max-md/toolbar:flex-[0_0_auto]')
     const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
     expect(end.className).toContain('@max-md/toolbar:order-last')
   })

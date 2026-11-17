@@ -282,7 +282,7 @@ export function ListToolbar({
                 // The padding keeps focus rings inside the scroll box.
                 'no-scrollbar @max-md/toolbar:-my-1 @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
                 EDGE_FADE_X_CLASS,
-                '@max-md/toolbar:order-last @max-md/toolbar:ms-auto @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_1_auto]'
+                '@max-md/toolbar:order-last @max-md/toolbar:ms-auto @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_0_auto]'
               )}
             >
               {start}

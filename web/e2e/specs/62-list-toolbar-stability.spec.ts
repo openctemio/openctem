@@ -491,8 +491,8 @@ const NO_LIST = 'the list shows only once it has held a row: the seed has none'
  * the entry with that fix.
  */
 function knownMovement(route: Route, width: number, locale: 'en' | 'vi'): string | null {
-  if (route === '/attack-surface/exposures' && width >= 768)
-    return 'exposures page (attack-surface list owner): after five filters its third toolbar select narrows by 2 px'
+  if (route === '/attack-surface/exposures')
+    return 'exposures page: its Primary assets toggle swaps outline for secondary and narrows by 2 px (kit FilterToggle fixes it, branch feat/ui2-filter-toggle)'
   if (route === '/scans' && width === 390 && locale === 'vi')
     return 'scans page (scans list owner): on first load in Vietnamese the first token narrows by 2 px when the rows arrive'
   if (route === '/assets' && width === 1440 && locale === 'vi')
