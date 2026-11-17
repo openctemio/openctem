@@ -340,10 +340,35 @@ parameter (LIKE metacharacters escaped) and is at most 255 characters.
 
 Every arm of the search can use an index, so the planner can combine them
 instead of reading all the tenant's findings. The list, count, stats and SLA
-breakdown each run in a read-only transaction with a 5 s statement timeout; a
-read that runs out of time is `503 QUERY_TIMEOUT` ("narrow the search or the
-filters"). `GET /findings`, its stats and groups are under the heavy-read rate
-limiter.
+breakdown, the grouped view (`GET /findings/groups`, every `group_by`), related
+CVEs, and the components list, facets and summary each run in a read-only
+transaction with a 5 s statement timeout; a read that runs out of time is
+`503 QUERY_TIMEOUT` ("narrow the search or the filters"). `GET /findings`, its
+stats and groups are under the heavy-read rate limiter.
+
+### Timeouts
+
+Every interactive read (list, count, stats, facets, groups, export pages) opens
+its transaction with one helper, `beginRead` in
+`internal/infra/postgres/statement_timeout.go`: READ ONLY, and a `SET LOCAL
+statement_timeout` (5 s unless the read documents a shorter bound; 60 s for an
+export page). The bound holds whatever the database role's own limit is, so an
+install that did not apply `deploy/postgres/least-privilege-roles.sql` is still
+protected: a broad request gives its pool connection back after the timeout
+instead of holding it. A read stopped this way:
+
+- answers `503 QUERY_TIMEOUT`, never 500, so the console can say "narrow the
+  filter";
+- is counted in `openctem_db_read_timeouts_total{read}` (the read's name, never
+  a tenant or a value);
+- is logged once at WARN as "interactive read stopped at its statement
+  timeout" with the read's name only, never the statement or its values.
+
+A grouping of every finding of a very large organization (millions of open
+findings) with no filter can need more than the bound; it answers
+`QUERY_TIMEOUT` and the person narrows the filter. Figures that must cover the
+whole organization come from the precomputed dashboard tables, not from a
+live grouping.
 
 ## Limits
 
