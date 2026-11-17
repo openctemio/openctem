@@ -49,6 +49,9 @@ const SAFE_CALLS = new Set([
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/components/lib/links.ts: `/components/` with the id URI-encoded
+  // as one path segment.
+  'componentHref',
   // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
   // filters as URLSearchParams values.
   'cveFindingsHref',
