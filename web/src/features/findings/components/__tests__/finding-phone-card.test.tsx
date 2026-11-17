@@ -42,6 +42,7 @@ function card(
           menu={
             <FindingRowMenu
               title={finding.title}
+              finding={finding}
               onAction={onAction}
               canAssign
               canChangeStatus

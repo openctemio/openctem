@@ -49,6 +49,7 @@ import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-
 import {
   readFindingHash,
   useDrawerKeyboardNav,
+  findingListPosition,
   writeFindingHash,
 } from '@/features/findings/hooks/use-drawer-navigation'
 import {
@@ -376,6 +377,8 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     duplicateOf: undefined,
     relatedFindings: [],
     remediationTaskId: undefined,
+    // Linked tickets: the row menu does not offer a second one.
+    workItemUris: api.work_item_uris,
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
     verifiedAt: undefined,
@@ -1505,6 +1508,21 @@ function FindingsContent() {
     currentId: selectedFinding?.id,
     onSelect: setSelectedFinding,
   })
+  // The open finding's place in the list ("3 of 418"): its row on this page
+  // plus the page's offset, of the total the title row counts. A finding that
+  // is not a row of the page (a shared link, a row of a grouped view) has none.
+  const drawerListNav = useMemo(
+    () =>
+      findingListPosition({
+        items: findings,
+        currentId: drawerOpen ? selectedFinding?.id : undefined,
+        page: findingsResponse?.page,
+        perPage: findingsResponse?.per_page,
+        total: findingsResponse?.total,
+        onSelect: setSelectedFinding,
+      }),
+    [findings, drawerOpen, selectedFinding?.id, findingsResponse]
+  )
   const [deepLinkId] = useState(() => readFindingHash())
   const { data: deepLinked } = useFindingApi(deepLinkId && !selectedFinding ? deepLinkId : null)
   useEffect(() => {
@@ -1828,6 +1846,7 @@ function FindingsContent() {
           return (
             <FindingRowMenu
               title={finding.title}
+              finding={finding}
               onAction={(action) => handleRowAction(action, finding)}
               canAssign={canAssignOne}
               canChangeStatus={canChangeStatusOne}
@@ -2726,6 +2745,7 @@ function FindingsContent() {
         <FindingRowMenu
           size="icon"
           title={f.title}
+          finding={f}
           onAction={(action) => handleRowAction(action, f)}
           canAssign={canAssignOne}
           canChangeStatus={canChangeStatusOne}
@@ -3158,6 +3178,7 @@ function FindingsContent() {
       <FindingDetailDrawer
         finding={selectedFinding}
         open={drawerOpen}
+        listNav={drawerListNav}
         onOpenChange={setDrawerOpen}
         onStatusChange={refreshAfterDrawerChange}
         onSeverityChange={refreshAfterDrawerChange}
