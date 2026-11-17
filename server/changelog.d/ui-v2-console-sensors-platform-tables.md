@@ -13,6 +13,13 @@
   fields (name, validity 5 to 60 minutes), the same reason and code confirmation and the same one-time token,
   shown once in its own dialog. The note on shared scanning in this release sits behind an info mark in the fleet's
   title row; the line on what pausing and retiring do follows the table.
+- On a phone a fleet sensor is a card with fixed slots instead of a label/value grid: name and region; its state
+  and health on one line that wraps (never cut); version, current jobs and last seen on one line; the tools only
+  when it has some. A value the sensor lacks is left out, not shown as a dash.
+- Platform scanning, Blocked names: the exceptions are the tab's list and come first (title row with the count and
+  Grant exception, the table, then one line on what an exception lifts); the policy card follows it. The warning
+  shown while the government and military rule is off stays above both. On a phone an exception is a fixed-slot
+  card (organization and state, the domain, expiry and who granted it, the reason).
 - A failed read shows in the table with Retry; each table has a name and its own empty state.
 - Nothing moves on first load: on Platform sensors nothing above the fleet waits for a read; on Platform scanning one
   placeholder stands until the shared sensors setting is read (the tabs no longer flash before the closed layout,
