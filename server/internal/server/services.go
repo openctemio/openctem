@@ -888,7 +888,7 @@ type Services struct {
 	// role / status / membership rows change.
 	MembershipCache *accesscontrol.MembershipCacheService
 
-	// Module Service (OSS - all modules enabled, UI metadata only)
+	// Module Service (all modules enabled, UI metadata only)
 	Module *module.ModuleService
 
 	// SLA
@@ -1176,7 +1176,7 @@ type ServiceDeps struct {
 	RedisClient *redis.Client
 	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
 	IngestDB *postgres.DB
-	// Extensions are the build's extensions (nil or empty: Community).
+	// Extensions are the build's extensions (nil or empty: the default build).
 	Extensions *extensionhost.Set
 }
 
@@ -1217,7 +1217,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	// Grants (off unless granted) come only from an extension of the
-	// build; the Community build has none.
+	// build; the default build has none.
 	s.ExtensionHost = extensionhost.Host{
 		DB: deps.DB, Log: log, Production: cfg.IsProduction(), ManagedService: cfg.App.ManagedService,
 		Entitlements: extensionEntitlements{s.Entitlement},
