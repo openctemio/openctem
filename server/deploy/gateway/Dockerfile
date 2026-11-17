@@ -38,7 +38,7 @@ RUN printf '%s\n' 'package main' \
  && /usr/bin/caddy version | grep -q "^${CADDY_VERSION} " \
  && /usr/bin/caddy list-modules | grep -qx layer4
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 # mailcap: /etc/mime.types for file responses, as in the Caddy image.
 # The gateway runs as uid/gid 1000 (as in the Helm chart). /data and /config
 # belong to it, so a new named volume mounted there starts with that owner.

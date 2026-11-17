@@ -12,12 +12,8 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// Pages that have saved views, and limits.
+// Limits (the page registry and its limits are in pages.go).
 const (
-	PageFindings        = "findings"
-	PageVulnerabilities = "vulnerabilities"
-	PageAssets          = "assets"
-
 	MaxNameLen        = 120
 	MaxDescriptionLen = 500
 	MaxColumns        = 50
@@ -28,11 +24,14 @@ const (
 
 // Errors.
 var (
-	ErrNotFound    = errors.New("saved view not found")
-	ErrNotOwner    = errors.New("only the owner of a saved view can change it")
-	ErrLimit       = errors.New("too many saved views")
-	ErrInvalid     = errors.New("invalid saved view")
-	ErrUnknownPage = errors.New("unknown page")
+	ErrNotFound = errors.New("saved view not found")
+	ErrNotOwner = errors.New("only the owner of a saved view can change it")
+	ErrLimit    = errors.New("too many saved views")
+	ErrInvalid  = errors.New("invalid saved view")
+	// ErrUnknownPage: the page key is not in the registry (pages.go).
+	ErrUnknownPage = errors.New("unknown page key")
+	// ErrPageForbidden: the caller may not read the list the page key names.
+	ErrPageForbidden = errors.New("the list of this page key is not readable by the caller")
 	// ErrShareForbidden: sharing with the organization needs
 	// findings:views:share.
 	ErrShareForbidden = errors.New("sharing a view with the organization needs the findings:views:share permission")
@@ -57,7 +56,9 @@ type View struct {
 	Density string
 	// PageParams are the page's own params that are not findings filters
 	// (the vulnerabilities list's kev, epss_gte, q, sort), validated by the
-	// page on save and again on every run.
+	// page on save and again on every run. On a page without a filter
+	// registry they are the whole list state (filters, sort, search) as the
+	// page's own URL params: stored as text, never read by the server.
 	PageParams map[string]string
 	// SharedWithOrg: every member of the organization may use the view
 	// (set only with findings:views:share); never together with GroupID.
@@ -77,7 +78,9 @@ type Repository interface {
 	Delete(ctx context.Context, tenantID, id, ownerID shared.ID) error
 	GetVisible(ctx context.Context, tenantID, id, userID shared.ID) (*View, error)
 	ListVisible(ctx context.Context, tenantID, userID shared.ID, page string) ([]*View, error)
-	CountByOwner(ctx context.Context, tenantID, ownerID shared.ID) (int, error)
+	// CountByOwner counts the owner's views in the tenant: all of them, and
+	// the ones of one page.
+	CountByOwner(ctx context.Context, tenantID, ownerID shared.ID, page string) (total, onPage int, err error)
 	CountByGroup(ctx context.Context, tenantID, groupID shared.ID) (int, error)
 	CountSharedWithOrg(ctx context.Context, tenantID shared.ID) (int, error)
 	// IsActiveGroupMember reports whether the user is a member of an active

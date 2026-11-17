@@ -89,8 +89,8 @@ Answer each question in the incident record before choosing a path:
       `git tag --contains <commit> 'v*'`. Check whether the previous release
       has it too (`git log vA..vB -- <path>`); that decides whether a
       rollback helps.
-- [ ] **Affected editions and deployments.** Community, Enterprise (extension
-      overlay), the hosted service; Docker Compose with the deployment kit,
+- [ ] **Affected builds and deployments.** Every supported build and
+      deployment: Docker Compose with the deployment kit,
       the all-in-one image, Helm, the release archives (systemd). A defect in
       the API image affects all of them; one in the kit, a chart or a
       gateway file affects only that deployment type.
@@ -445,9 +445,9 @@ publish. When the fix is there:
 - **Timeline.** Agree the disclosure date with the reporter. The default is
   the day the fixed release is published; at the latest 90 days after the
   report even without a fix, with the reporter told in advance.
-- **Customers.** For the hosted service and for Enterprise customers,
-  notify the affected customers directly, in their language, within the
-  contractual window, before or with the public advisory; for an incident
+- **Operators of a managed service.** Notify the affected organizations
+  directly, in their language, within the agreed window, before or with the
+  public advisory; for an incident
   that touched their data, say what was affected and what they need to do.
   Update the status page during and after a production incident.
 

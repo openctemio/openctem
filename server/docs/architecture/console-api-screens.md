@@ -579,7 +579,7 @@ Planned pages that do not exist today start inside the budget.
 | Console overview | "Needs you" attention queue (orgs without owner, break-glass sign-ins 7d, failed admin actions 24h, break-glass tests overdue, offline platform sensors, access requests pending, schema drift, stuck commands, scan runs past deadline, failed/dead outbox) | GET /api/v1/admin/overview | first view | snapshot | any admin role | shipped, change planned |
 |  | Recent administrator activity | GET /api/v1/admin/audit-logs?kind=changes&per_page=8 | first view | working | audit reader | shipped |
 |  | Banner: security release | GET /api/v1/admin/version-check | first view / shell) | snapshot | any admin | shipped |
-| Software updates and licences | (see screen description) | `GET /api/v1/admin/edition` | first view or on open |  |  | shipped |
+| Software updates | (see screen description) | `GET /api/v1/admin/version-check` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/admin/version-check/import` | action |  |  | shipped |
 |  | (see screen description) | `PUT /api/v1/admin/version-check/enabled` | action |  |  | shipped |
 | Admin activity | List (administrator, action, resource, result, IP; filters admin, action, resource type, success, from/to, search, `kind=changes`) | GET /api/v1/admin/audit-logs | first view | working |  | shipped, change planned |

@@ -1,6 +1,6 @@
 package routes
 
-// Routes of a build's extension (pkg/extension, docs/development/editions.md).
+// Routes of a build's extension (pkg/extension, docs/development/extensions.md).
 // Each one runs behind the same chain as a core
 // organization route, then the route's core permission, then its grant;
 // only then does the extension's handler see the request, with the caller
