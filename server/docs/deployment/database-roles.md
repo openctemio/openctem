@@ -41,7 +41,7 @@ These were checked against the code and against the full test suite run as
 | `LISTEN`/`NOTIFY` | not used (job notifications use Redis pub/sub) | none |
 | Extensions `pgcrypto`, `pg_trgm`, `uuid-ossp` | migrations | created by the bootstrap script as the superuser; the migrations' `CREATE EXTENSION IF NOT EXISTS` is then a no-op |
 | Runtime DDL | none in the server. `CREATE INDEX CONCURRENTLY` and every `ALTER`/`CREATE` live in migrations | migrator only |
-| Owner-rights functions | two `SECURITY DEFINER` functions, each doing one fixed job as the schema owner: `admin_audit_prune` (administrators' audit retention) and `dash_asset_day_maintain` (no input: creates the coming monthly partitions of `dash_asset_day` and drops those past the 13-month window; names come from dates only). Both pin `search_path`; `EXECUTE` is revoked from `PUBLIC`, and the console role does not get `dash_asset_day_maintain` | `EXECUTE` on those functions only; the app still cannot create or drop anything itself |
+| Owner-rights functions | four `SECURITY DEFINER` functions, each doing one fixed job as the schema owner: `audit_chain_prune_prefix` (tenant audit retention: the oldest prefix older than 365 days, anchored) and `audit_chain_rebaseline_apply` (tenant audit chain rebaseline, archived and checked), the only ways to delete or rewrite tenant audit history (the app holds no `UPDATE`/`DELETE`/`TRUNCATE` on `audit_logs` and `audit_log_chain` and no write on the anchor and rebaseline tables; the console role does not get them either), `admin_audit_prune` (administrators' audit retention) and `dash_asset_day_maintain` (no input: creates the coming monthly partitions of `dash_asset_day` and drops those past the 13-month window; names come from dates only). All four pin `search_path`; `EXECUTE` is revoked from `PUBLIC`, and the console role does not get `dash_asset_day_maintain` | `EXECUTE` on those functions only; the app still cannot create or drop anything itself |
 
 If a future change needs something the app does not have, the API fails with
 `permission denied` (SQLSTATE 42501). Move the DDL into a migration; grant a
@@ -317,6 +317,31 @@ uses `DB_ADMIN_USER` re-runs this release's grant script after migrating, or
 console passkey and recovery-code sign-in fails with `permission denied`; the
 shipped Compose stack does it through `db-grants`, and the ansible kit must
 vendor `least-privilege-roles.sql` from this release.
+
+## Organization audit history
+
+Migration `audit_chain_owner_only` takes `UPDATE`, `DELETE` and `TRUNCATE` on
+`audit_logs` and `audit_log_chain`, and every write on `audit_chain_anchors`,
+`audit_chain_rebaselines` and `audit_chain_rebaseline_entries`, from every role
+but the schema owner, and grants `EXECUTE` on `audit_chain_prune_prefix` and
+`audit_chain_rebaseline_apply` to the roles that append audit rows (the app
+role). The migration does this itself; re-run this release's
+`least-privilege-roles.sql` after upgrading anyway, so its verify step checks
+it (it fails if the app role can still change or remove audit history) and a
+later re-run of an older script cannot hand the privileges back. The shipped
+Compose stack does this through `db-grants`; the ansible kit must vendor the
+script from this release.
+
+- The app role can still append audit rows and read every audit table
+  (verification, the admin console's chain views, retention archives).
+- An installation whose API connects as the schema owner keeps working, but the
+  database cannot protect audit history from the API's credentials there; the
+  API logs `audit log preflight: the API connects as the owner of the audit
+  tables` at start-up. To fix it, run the script and point `DB_USER` at the
+  app role (above).
+- During a rolling upgrade an API of the previous release cannot prune or
+  rebaseline once the migration ran (`permission denied`); retention retries on
+  its next run.
 
 ## Upgrading to v0.11.0
 

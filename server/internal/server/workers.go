@@ -1355,7 +1355,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		)
 	}
 
-	// Controllers of the build's extensions (none in the Community build).
+	// Controllers of the build's extensions (none in the default build).
 	// One an extension cannot start fails the boot, like a core
 	// controller's bad configuration.
 	extCtrls, err := buildExtensions.Controllers(context.Background(), deps.Services.ExtensionHost)

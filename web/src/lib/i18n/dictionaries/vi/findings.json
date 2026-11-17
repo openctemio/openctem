@@ -827,6 +827,7 @@
   "findings.filter.value.validation.not_reproducible": "Không tái hiện được",
   "findings.filter.value.validation.reproducible": "Tái hiện được",
   "findings.filter.valuesHint": "Các giá trị, cách nhau bằng dấu phẩy",
+  "findings.filter.viewAdvanced": "Bộ lọc nâng cao",
   "findings.filter.viewConditions": "Điều kiện từ chế độ xem đã lưu",
   "findings.filters.show": "Hiển thị {count, plural, other {# phát hiện}}",
   "findings.filters.title": "Bộ lọc phát hiện",

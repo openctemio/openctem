@@ -24,11 +24,17 @@ export interface EmergingThreatSummary {
   in_kev: boolean
   kev_ransomware: boolean
   epss: number | null
-  confirmed_assets: number
-  possible_assets: number
-  internet_facing_assets: number
-  /** Affected assets of criticality "critical" (the crown jewels), in the caller's scope. */
-  critical_assets: number
+  /**
+   * Affected hosts in the caller's scope, by tier: the rows of `asset_groups`.
+   * A host that serves several ports (one service asset per port) is one.
+   */
+  confirmed_hosts: number
+  likely_hosts: number
+  possible_hosts: number
+  /** Affected hosts with an internet-facing service. */
+  internet_facing_hosts: number
+  /** Affected hosts of criticality "critical" (the crown jewels), in the caller's scope. */
+  critical_hosts: number
   /** The product of the best in-scope match ('' when none is known). */
   product: string
   /** How many distinct products match, in the caller's scope. */
@@ -66,6 +72,38 @@ export interface EmergingThreatAsset {
   task_id: string
 }
 
+/** One affected asset inside a host row. */
+export interface EmergingThreatHostService extends EmergingThreatAsset {
+  /**
+   * The service within its host: the scheme, an explicit non-default port and
+   * the path ("http", "https:8443"). '' for an asset not named by a URL.
+   */
+  label: string
+}
+
+/**
+ * The affected assets of one host in one tier. Assets named by a URL of the
+ * same host share a row; any other asset is a row of its own.
+ */
+export interface EmergingThreatHost {
+  /** The host of the services, or the asset's name. */
+  host: string
+  /** Set when the row is one asset that is not named by a URL. */
+  asset_id: string
+  /** Any of the services is internet-facing. */
+  internet_facing: boolean
+  /** The highest criticality of the services. */
+  criticality: string
+  products: string[]
+  versions: string[]
+  services: EmergingThreatHostService[]
+}
+
+export interface EmergingThreatAssetGroup {
+  tier: AssetTier
+  hosts: EmergingThreatHost[]
+}
+
 export interface TimelineEvent {
   kind: string
   at: string
@@ -85,6 +123,8 @@ export interface EmergingThreatDetail extends EmergingThreatSummary {
   suppressed_until: string | null
   can_suppress: boolean
   assets: EmergingThreatAsset[]
+  /** The same assets as one row per host, by tier; a tier without an asset is left out. */
+  asset_groups: EmergingThreatAssetGroup[]
   timeline: TimelineEvent[]
 }
 

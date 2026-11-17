@@ -2,9 +2,9 @@ package entitlement
 
 // Grants: things that are off unless granted (pkg/domain/limits/grants.go).
 // Every gate on a grant calls Addon or RequireAddon here, never a provider
-// directly. The Community build registers no provider, so every grant is
+// directly. The default build registers no provider, so every grant is
 // none and there are no notices. Nothing that is not a grant ever depends on
-// this: a Community feature, a limit or a security control cannot be
+// this: a feature, a limit or a security control of the default build cannot be
 // switched off by it.
 
 import (

@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Demo Seed: Vulnerable Components, Package Ecosystems, License Compliance, CVE
--- OpenCTEM OSS Edition
+-- OpenCTEM
 -- =============================================================================
 -- Fills the four UI pages under /components and the CVE catalog with
 -- realistic demo data:
