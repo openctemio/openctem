@@ -26,7 +26,12 @@ import { AssetsSectionTabs } from '@/features/assets/components/assets-section-t
 import { AttentionQueueHeader } from '@/features/assets/components/attention/attention-queue-header'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { relationVerbFallback, relationVerbKey } from '@/features/assets/lib/relationship-verbs'
-import { QueueCard, QueueDecisionActions, QueueEmpty, useQueueAnnouncer } from '@/features/queue'
+import {
+  QueueCard,
+  QueueDecisionActions,
+  QueueEmpty,
+  useQueueAnnouncer,
+} from '@/features/shared/components/queue'
 import {
   useRelationshipSuggestions,
   useApproveSuggestion,
