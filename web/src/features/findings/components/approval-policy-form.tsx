@@ -13,7 +13,7 @@
  * policies applying meanwhile.
  */
 
-import { useId, useState } from 'react'
+import { memo, useId, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -212,8 +212,12 @@ interface ApprovalPolicySectionsProps {
   onSaved?: (next: FindingApprovalSettings) => void
 }
 
-/** Who approves, the security pool, limits and deadlines, and material changes. */
-export function ApprovalPolicySections({
+/**
+ * Who approves, the security pool, limits and deadlines, and material changes.
+ * Memoised: typing in another section of the page does not redraw the tier
+ * grid (twelve selects).
+ */
+export const ApprovalPolicySections = memo(function ApprovalPolicySections({
   settings,
   form,
   onChange,
@@ -472,11 +476,7 @@ export function ApprovalPolicySections({
             </legend>
             <SettingsFieldGrid className="grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
               {RISK_CLASSES.map((c) => (
-                <SettingsField
-                  key={c}
-                  id={`${id}-cap-${c}`}
-                  label={riskClassLabel(t, c)}
-                >
+                <SettingsField key={c} id={`${id}-cap-${c}`} label={riskClassLabel(t, c)}>
                   {(control) => (
                     <Input
                       {...control}
@@ -647,7 +647,10 @@ export function ApprovalPolicySections({
           wide
           label={
             <label htmlFor={`${id}-mc-fp`}>
-              {t('findingApprovals.policy.materialSingleFP', 'False positive decided by one person')}
+              {t(
+                'findingApprovals.policy.materialSingleFP',
+                'False positive decided by one person'
+              )}
             </label>
           }
         >
@@ -672,7 +675,7 @@ export function ApprovalPolicySections({
       </SettingsSection>
     </>
   )
-}
+})
 
 interface TierCellProps {
   id: string
