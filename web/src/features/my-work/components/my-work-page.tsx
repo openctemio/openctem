@@ -228,44 +228,46 @@ export function MyWorkPage() {
         onRetry={refresh}
         // The queue's one filter token (due in 72 hours) is the toolbar's
         // start: a toggle at the row's control height (the kit button,
-        // pressed while the queue shows only what falls due).
-        // On a phone the locked rule leads it: the kit's chips row shares
-        // its line with the toolbar there and gave the chip no width.
+        // pressed while the queue shows only what falls due). On a phone it
+        // is the timer and the count, named in full, so the toolbar's start
+        // and end share one line without cutting it.
         toolbarStart={
-          <>
-            {isPhone && lockedChip(which)}
-            {which === 'assigned' && dueSoonCount !== undefined && (
-              <Button
-                size="sm"
-                variant={dueSoon ? 'secondary' : 'outline'}
-                aria-pressed={dueSoon}
-                onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-              >
-                <Timer className="me-2 size-4" aria-hidden="true" />
-                {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
-              </Button>
-            )}
-          </>
+          which === 'assigned' && dueSoonCount !== undefined ? (
+            <Button
+              size="sm"
+              variant={dueSoon ? 'secondary' : 'outline'}
+              aria-pressed={dueSoon}
+              aria-label={
+                isPhone
+                  ? t('myWork.chip.dueSoonNamed', 'SLA due in 72 hours: {count}', {
+                      count: dueSoonCount,
+                    })
+                  : undefined
+              }
+              onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
+            >
+              <Timer className="me-2 size-4" aria-hidden="true" />
+              {!isPhone && t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+              <span className={isPhone ? 'tabular-nums' : 'ms-2 tabular-nums'}>{dueSoonCount}</span>
+            </Button>
+          ) : undefined
         }
-        // Line 2 from md, the kit's chips row: the queue's locked rule first
-        // and how much of the queue is on screen at the end (on a phone the
+        // Line 2, the kit's chips row: the queue's locked rule first and how
+        // much of the queue is on screen at the end (from md; on a phone the
         // title row's count and View all carry that).
         toolbarBelow={
-          isPhone ? undefined : (
-            <FilterChipsRow
-              data-testid="my-work-chips"
-              leading={lockedChip(which)}
-              chips={[]}
-              trailing={
-                total > rows.length ? (
-                  <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
-                    {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
-                  </span>
-                ) : undefined
-              }
-            />
-          )
+          <FilterChipsRow
+            data-testid="my-work-chips"
+            leading={lockedChip(which)}
+            chips={[]}
+            trailing={
+              !isPhone && total > rows.length ? (
+                <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+                  {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
+                </span>
+              ) : undefined
+            }
+          />
         }
         // The toolbar's end: the queue's one main action, everything else
         // under More (View all opens the same list on Findings).
