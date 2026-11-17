@@ -115,7 +115,7 @@ Each pass, per tenant, after reconciling:
    as covered: `blocked` settles as `edge_blocked` (`edge_challenged` when
    the sensor says challenged), `rate_floor` as `rate_limited`,
    `breaker_open` as `unreachable` and `proxy_unavailable` as
-   `sensor_network_fault` (platform side); `host_busy` (the sensor's own
+   `sensor_network_fault` (platform side); `slots_full` (the sensor's own
    per-host connection limit stayed full) settles as `unfinished`, not
    covered and never the target's doing. When per-target outcomes say
    done for a host the gaps also list, the gap wins. A gap list shorter than

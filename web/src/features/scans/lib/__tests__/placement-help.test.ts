@@ -104,7 +104,7 @@ describe('every outcome reason the API keeps has words', () => {
         'rate_floor',
         'blocked',
         'proxy_unavailable',
-        'host_busy',
+        'slots_full',
       ])
     )
     for (const r of [...reasons, 'other']) {
@@ -274,6 +274,6 @@ describe('gapReasonHelp', () => {
       /TLS handshake failed/
     )
     expect(gapLabel({ reason: 'rate_floor' })).toBe('kept rate-limiting the scan')
-    expect(gapLabel({ reason: 'host_busy' })).toBe('sensor connection limit was full')
+    expect(gapLabel({ reason: 'slots_full' })).toBe('sensor connection limit was full')
   })
 })

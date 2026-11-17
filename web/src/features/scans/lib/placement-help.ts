@@ -207,7 +207,7 @@ export const GAP_REASONS = [
   'rate_floor',
   'blocked',
   'proxy_unavailable',
-  'host_busy',
+  'slots_full',
 ] as const
 
 /** Step codes whose message is the sensor's or the tool's own text. */
