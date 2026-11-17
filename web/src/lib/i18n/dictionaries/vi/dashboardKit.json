@@ -1,6 +1,9 @@
 {
   "dashboardKit.action.clearFilters": "Xóa bộ lọc",
+  "dashboardKit.action.closeDefinition": "Đóng phần cách tính số liệu",
   "dashboardKit.action.definition": "Cách tính số liệu này",
+  "dashboardKit.action.menu": "Thao tác cho {title}",
+  "dashboardKit.action.openList": "Mở danh sách",
   "dashboardKit.action.openSettings": "Mở cài đặt",
   "dashboardKit.action.retry": "Thử lại",
   "dashboardKit.action.showChart": "Xem biểu đồ",
@@ -257,6 +260,7 @@
   "dashboardKit.stat.ofOpen": "trên {den} đang mở",
   "dashboardKit.stat.ofTotal": "{num} trên {den}",
   "dashboardKit.state.error": "Không tải được số liệu này",
+  "dashboardKit.state.errorHint": "Các widget khác không bị ảnh hưởng.",
   "dashboardKit.state.loading": "Đang tải",
   "dashboardKit.state.moduleOff": "Tính năng này đang tắt",
   "dashboardKit.state.moduleOffHint": "Quản trị viên tổ chức có thể bật trong Cài đặt.",
