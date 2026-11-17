@@ -76,7 +76,9 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
               <button
                 type="button"
                 title={t('assets.attention.switch', 'Switch reason')}
-                className="-ms-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                // The row's control height (32, 36 on a phone): the inventory
+                // link and the More share its line.
+                className="-ms-1 inline-flex h-control items-center gap-1.5 rounded-md px-1 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-md:h-control-touch"
               >
                 {t(current.labelKey, current.label)}
                 <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
