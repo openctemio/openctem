@@ -229,37 +229,43 @@ export function MyWorkPage() {
         // The queue's one filter token (due in 72 hours) is the toolbar's
         // start: a toggle at the row's control height (the kit button,
         // pressed while the queue shows only what falls due).
+        // On a phone the locked rule leads it: the kit's chips row shares
+        // its line with the toolbar there and gave the chip no width.
         toolbarStart={
-          which === 'assigned' && dueSoonCount !== undefined ? (
-            <Button
-              size="sm"
-              variant={dueSoon ? 'secondary' : 'outline'}
-              aria-pressed={dueSoon}
-              onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-            >
-              <Timer className="me-2 size-4" aria-hidden="true" />
-              {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-              <span className="ms-2 tabular-nums">{dueSoonCount}</span>
-            </Button>
-          ) : undefined
+          <>
+            {isPhone && lockedChip(which)}
+            {which === 'assigned' && dueSoonCount !== undefined && (
+              <Button
+                size="sm"
+                variant={dueSoon ? 'secondary' : 'outline'}
+                aria-pressed={dueSoon}
+                onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
+              >
+                <Timer className="me-2 size-4" aria-hidden="true" />
+                {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
+              </Button>
+            )}
+          </>
         }
-        // Line 2, the kit's chips row: the queue's locked rule first and how
-        // much of the queue is on screen at the end. On a phone the row
-        // shares its line with the toolbar's start, so the note gives the
-        // locked chip its room (the title row's count and View all remain).
+        // Line 2 from md, the kit's chips row: the queue's locked rule first
+        // and how much of the queue is on screen at the end (on a phone the
+        // title row's count and View all carry that).
         toolbarBelow={
-          <FilterChipsRow
-            data-testid="my-work-chips"
-            leading={lockedChip(which)}
-            chips={[]}
-            trailing={
-              total > rows.length ? (
-                <span className="hidden text-meta whitespace-nowrap text-muted-foreground tabular-nums md:inline">
-                  {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
-                </span>
-              ) : undefined
-            }
-          />
+          isPhone ? undefined : (
+            <FilterChipsRow
+              data-testid="my-work-chips"
+              leading={lockedChip(which)}
+              chips={[]}
+              trailing={
+                total > rows.length ? (
+                  <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+                    {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
+                  </span>
+                ) : undefined
+              }
+            />
+          )
         }
         // The toolbar's end: the queue's one main action, everything else
         // under More (View all opens the same list on Findings).
