@@ -80,7 +80,7 @@ import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
-import { ScanAddFilter } from '@/features/scans/components/scan-add-filter'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
 import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
@@ -845,7 +845,7 @@ export function SensorsSection({
 
   // The toolbar row after the search: Add filter (it never changes size)
   // holds every facet; a facet in use shows as a chip under the toolbar.
-  const toolbarStart = <ScanAddFilter>{facetPanel}</ScanAddFilter>
+  const toolbarStart = <AddFilterPanel>{facetPanel}</AddFilterPanel>
 
   const toolbarEnd = (
     <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
