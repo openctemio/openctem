@@ -5,9 +5,10 @@ import type { Page } from '@playwright/test'
  * The field suggestions of Query mode on the findings, assets and scans
  * lists: with nothing typed they lead with the fields people filter by and
  * end with record identifiers, under labelled groups; each row says what
- * the field means; the list keeps the page gutter on a phone and never
- * covers the field; nothing is sent to the server while typing. Needs no
- * particular data.
+ * the field means; on a phone the list spans the screen from gutter to
+ * gutter (wider than the field, which shares its line with the mode toggle
+ * and the Filters button) and never covers the field; nothing is sent to the
+ * server while typing. Needs no particular data.
  */
 
 const GUTTER = 16
@@ -20,12 +21,13 @@ const LISTS = [
 
 async function openEmpty(page: Page, path: string) {
   await page.goto(`${path}?mode=query`)
-  const box = page.getByRole('combobox', { name: /filter (scans )?as query text/i })
+  // By its place, not its name: the phone cases run in both languages.
+  const box = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
   await expect(box).toBeEnabled({ timeout: 20_000 })
   await page.waitForLoadState('networkidle')
   await box.click()
   await box.fill('')
-  const list = page.getByRole('listbox', { name: /search suggestions/i })
+  const list = page.getByRole('listbox', { name: /search suggestions|gợi ý tìm kiếm/i })
   await expect(list).toBeVisible()
   // Let the popover finish its entry animation before measuring.
   await page.waitForFunction(
@@ -72,39 +74,53 @@ for (const l of LISTS) {
         await expect(list).toBeHidden()
       })
 
-      test(
-        `keeps the gutter and the field clear on a phone (390)`,
-        { tag: ['@phone'] },
-        async ({ page }) => {
-          await page.setViewportSize({ width: 390, height: 844 })
-          const { box, list } = await openEmpty(page, l.path)
-          const lb = (await list.boundingBox())!
-          const fb = (await box.boundingBox())!
-          expect(lb.x, 'left gutter').toBeGreaterThanOrEqual(GUTTER - 0.5)
-          expect(lb.x + lb.width, 'right gutter').toBeLessThanOrEqual(390 - GUTTER + 0.5)
-          expect(
-            lb.y >= fb.y + fb.height - 0.5 || lb.y + lb.height <= fb.y + 0.5,
-            'never over the field'
-          ).toBe(true)
-          // About eight rows show without scrolling; each row is one line.
-          const visible = await list.getByRole('option').evaluateAll((els) => {
-            const frame = els[0].closest('[role="listbox"]')!.getBoundingClientRect()
-            return els
-              .map((e) => e.getBoundingClientRect())
-              .filter((r) => r.top >= frame.top - 0.5 && r.bottom <= frame.bottom + 0.5)
-              .map((r) => r.height)
-          })
-          expect(visible.length).toBeGreaterThanOrEqual(6)
-          expect(visible.length).toBeLessThanOrEqual(9)
-          for (const h of visible) expect(h).toBeLessThanOrEqual(36)
-          // A field name is never cut: its box is as wide as its text.
-          const cut = await list
-            .getByRole('option')
-            .locator('.font-mono')
-            .evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length)
-          expect(cut).toBe(0)
+      for (const locale of ['en', 'vi'] as const) {
+        for (const width of [390, 375]) {
+          test(
+            `spans the screen between the gutters, clear of the field, on a phone (${width} ${locale})`,
+            { tag: ['@phone'] },
+            async ({ page, baseURL }) => {
+              await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
+              await page.setViewportSize({ width, height: 844 })
+              const { box, list } = await openEmpty(page, l.path)
+              const lb = (await list.boundingBox())!
+              const fb = (await box.boundingBox())!
+              // From the left gutter to the right one: wider than the field.
+              expect(Math.abs(lb.x - GUTTER), 'left edge on the gutter').toBeLessThanOrEqual(0.5)
+              expect(
+                Math.abs(lb.x + lb.width - (width - GUTTER)),
+                'right edge on the gutter'
+              ).toBeLessThanOrEqual(0.5)
+              expect(lb.width).toBeGreaterThan(fb.width)
+              expect(
+                lb.y >= fb.y + fb.height - 0.5 || lb.y + lb.height <= fb.y + 0.5,
+                'never over the field'
+              ).toBe(true)
+              // About eight rows show without scrolling; each row is one line.
+              const visible = await list.getByRole('option').evaluateAll((els) => {
+                const frame = els[0].closest('[role="listbox"]')!.getBoundingClientRect()
+                return els
+                  .map((e) => e.getBoundingClientRect())
+                  .filter((r) => r.top >= frame.top - 0.5 && r.bottom <= frame.bottom + 0.5)
+                  .map((r) => r.height)
+              })
+              expect(visible.length).toBeGreaterThanOrEqual(6)
+              expect(visible.length).toBeLessThanOrEqual(9)
+              for (const h of visible) expect(h).toBeLessThanOrEqual(36)
+              // A field name is never cut: its box is as wide as its text.
+              const cut = await list
+                .getByRole('option')
+                .locator('.font-mono')
+                .evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length)
+              expect(cut).toBe(0)
+              // No sideways scroll of the page behind it.
+              expect(
+                await page.evaluate(() => document.documentElement.scrollWidth)
+              ).toBeLessThanOrEqual(width)
+            }
+          )
         }
-      )
+      }
     }
   )
 }

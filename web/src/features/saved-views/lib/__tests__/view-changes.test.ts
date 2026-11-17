@@ -43,6 +43,13 @@ describe('viewChanges (the unsaved-changes dot)', () => {
     ['another value on a field the view sets', 'severity=low', {}, ['filters']],
     ['a filter added', 'epss_score_gte=0.5', {}, ['filters']],
     ['two filters added', 'epss_score_gte=0.5&is_in_kev=true', {}, ['filters']],
+    [
+      'query text applied on top of the view',
+      'view=abc&mode=query&fq=a%3D1+OR+b%3D2',
+      {},
+      ['filters'],
+    ],
+    ['the search mode alone is no change', 'view=abc&mode=query', {}, []],
     ["the view's search text repeated", 'q=log4j', {}, []],
     ['another search text', 'q=struts', {}, ['search']],
     ["the view's sort repeated", 'sort=-created_at', {}, []],
@@ -62,6 +69,12 @@ describe('viewChanges (the unsaved-changes dot)', () => {
   for (const [name, search, over, want] of cases) {
     it(name, () => expect(kinds(changes(search, over))).toEqual(want))
   }
+
+  it('counts query text on top of the view as one filter', () => {
+    expect(changes('is_in_kev=true&fq=severity%3Dlow+OR+epss%3E%3D0.5')).toEqual([
+      { kind: 'filters', count: 2 },
+    ])
+  })
 
   it('counts the filters added', () => {
     expect(changes('epss_score_gte=0.5&is_in_kev=true&severity=critical,high')).toEqual([

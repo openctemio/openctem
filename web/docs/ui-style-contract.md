@@ -331,6 +331,22 @@ tab icons, strip rules, chips, empty pagination, name column width).
     can be removed and the row draws "Clear filters" after its chips, the same
     on every list. On a phone the chips strip starts at its first chip (only
     its end fades) and a leading chip wider than the strip shortens its text.
+  - A list whose search takes query text has a status row, owned by
+    `ListToolbar` (`data-slot="list-toolbar-status"`, handed to the field as
+    `ListSearchStatusSlot`): the field says what is wrong with a refused text
+    there, never in the toolbar row, so the toolbar row keeps its height in
+    every state of the text. The row takes room only while there is a problem:
+    one line of the chips row's height (32, 36 on a phone), on the chips row's
+    line when one shows (the list does not move), a row of its own otherwise
+    (the list moves by the row and its 8 px gap, as for the first chip), the
+    last line on a phone. The text is cut on that line (in full in its title);
+    its fix buttons keep their size. A page never draws this line itself.
+  - The suggestions of a query field are as wide as the field from 768 px
+    (28rem at most). Below 768 px they span the screen from gutter to gutter
+    (the field shares its line with the mode toggle and the Filters button),
+    under the field or above it when there is no room, about eight one-line
+    rows; a field inside a dialog, sheet or popover keeps the field's width so
+    the list stays inside it.
   - The filter icons (`ListFilter`, `Filter`, `Funnel`, …) are imported only by
     `filter-button.tsx`. Dropdown filters and their select triggers carry no
     filter icon; label them with `aria-label="Filter by …"`.
@@ -1013,7 +1029,8 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   with `typingSurface`. `touch-focus-guard.test.ts` lists every opt-in, every
   raw `<input autoFocus>` and every `onOpenAutoFocus` that moves focus
   itself; a new one fails until it is reviewed.
-- A picker with a search field on a phone (`ResponsivePopover`): the field is
+- A picker with a search field on a phone (`ResponsivePopover`, used by Add
+  filter and by the assignee picker `AssigneeSelect`): the field is
   pinned at the top of the sheet, the list scrolls under it with sticky group
   headings, rows 44. When the keyboard opens the sheet sits on it and is never
   taller than the visible part of the screen (`--modal-kb`, `--modal-vvh` from

@@ -138,8 +138,11 @@ export interface ListQueryModeOptions {
  * - Basic to Query: the field shows the current filter as text, printed by
  *   the server from the page's params (never built on the client).
  * - Enter applies a valid text (the page writes it back as flat params, or as
- *   fq when chips cannot show it); the field stays in Query mode.
+ *   fq when chips cannot show it); the field stays in Query mode. Enter on
+ *   the text already in force writes nothing.
  * - Escape puts back the applied text.
+ * - A refused text says its problem in the toolbar's status row, under the
+ *   toolbar (`ListToolbar`), so the toolbar row keeps its height.
  * - Query to Basic with an edit not applied yet applies it first, so the
  *   switch never drops what was typed; an invalid text keeps Query mode with
  *   its problem shown.
@@ -222,13 +225,20 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
     [entity]
   )
 
-  const onSubmit = useCallback((r: ParseResult) => latest.current.onApply(r, true), [])
+  const onSubmit = useCallback((r: ParseResult) => {
+    const { draft: text, applied: was, onApply } = latest.current
+    // Enter on the text that is already in force writes nothing: the run
+    // button is off then too. (On an open saved view the text leaves the
+    // view's own conditions out, so writing it back would change the list.)
+    if ((text ?? '').trim() === (was ?? '').trim()) return
+    onApply(r, true)
+  }, [])
   const revert = useCallback(() => setDraft(latest.current.applied), [setDraft])
 
   const query: ListSearchQuery = {
     active,
     onActiveChange: setActive,
-    renderEditor: ({ inputClassName, adornments }) => (
+    renderEditor: ({ inputClassName, adornments, status }) => (
       <div className="w-full" data-testid={testId}>
         <Suspense
           fallback={
@@ -259,6 +269,7 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
             onSubmit={onSubmit}
             onEscape={revert}
             quietStatus
+            statusSlot={status}
             inputClassName={inputClassName}
             adornments={adornments}
           />

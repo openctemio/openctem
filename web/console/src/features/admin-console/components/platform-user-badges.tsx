@@ -2,12 +2,19 @@
 
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
 import type { PlatformUser } from '../types'
 
-/** Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased. */
+/**
+ * Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased.
+ * `oneLine` keeps the marks on one line in a table row (from 768px): what does
+ * not fit ends at the cell edge, and the account page shows every mark.
+ */
 export function PlatformUserBadges({
   user,
+  oneLine = false,
 }: {
+  oneLine?: boolean
   user: Pick<
     PlatformUser,
     | 'erased'
@@ -28,7 +35,14 @@ export function PlatformUserBadges({
     user.status === 'active' &&
     user.email_verified
   return (
-    <div className="flex flex-wrap gap-1">
+    <div
+      data-slot="platform-user-badges"
+      className={cn(
+        'flex flex-wrap gap-1',
+        // One line in a table row; a phone card has the room to wrap.
+        oneLine && 'md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0'
+      )}
+    >
       {plain && <Badge variant="outline">{t('admin.users.badge.active', 'Active')}</Badge>}
       {user.erased && <Badge variant="outline">{t('admin.users.badge.erased', 'Erased')}</Badge>}
       {user.is_platform_admin && (
