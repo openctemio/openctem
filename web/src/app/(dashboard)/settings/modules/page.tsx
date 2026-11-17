@@ -415,235 +415,232 @@ export default function ModuleManagementPage() {
         </Can>
       }
     >
-        <ListToolbar
-          search={{
-            value: query,
-            onChange: setQuery,
-            placeholder: t('settings.modules.searchPlaceholder', 'Search modules…'),
-            label: t('settings.modules.searchLabel', 'Search modules'),
-          }}
-          start={
-            <FilterSelect<StateFilter>
-              label={t('settings.modules.filter.label', 'Show')}
-              value={stateFilter}
-              onChange={(v) => setStateParam(v)}
-              allLabel={t('settings.modules.filter.all', 'All')}
-              allCount={featureModules.length}
-              options={[
-                {
-                  value: 'on',
-                  label: t('settings.modules.filter.on', 'On'),
-                  count: stateCounts.on,
-                },
-                {
-                  value: 'off',
-                  label: t('settings.modules.filter.off', 'Off'),
-                  count: stateCounts.off,
-                },
-                {
-                  value: 'unavailable',
-                  label: t('settings.modules.filter.unavailable', 'Unavailable'),
-                  count: stateCounts.unavailable,
-                },
-              ]}
-            />
-          }
-          end={
-            <span className="text-dense tabular-nums text-muted-foreground" role="status">
-              {t('settings.modules.onCount', '{on} of {total} on', {
-                on: featureOn,
-                total: featureModules.length,
-              })}
-            </span>
-          }
-        />
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: setQuery,
+          placeholder: t('settings.modules.searchPlaceholder', 'Search modules…'),
+          label: t('settings.modules.searchLabel', 'Search modules'),
+        }}
+        start={
+          <FilterSelect<StateFilter>
+            label={t('settings.modules.filter.label', 'Show')}
+            value={stateFilter}
+            onChange={(v) => setStateParam(v)}
+            allLabel={t('settings.modules.filter.all', 'All')}
+            allCount={featureModules.length}
+            options={[
+              {
+                value: 'on',
+                label: t('settings.modules.filter.on', 'On'),
+                count: stateCounts.on,
+              },
+              {
+                value: 'off',
+                label: t('settings.modules.filter.off', 'Off'),
+                count: stateCounts.off,
+              },
+              {
+                value: 'unavailable',
+                label: t('settings.modules.filter.unavailable', 'Unavailable'),
+                count: stateCounts.unavailable,
+              },
+            ]}
+          />
+        }
+        end={
+          <span className="text-dense tabular-nums text-muted-foreground" role="status">
+            {t('settings.modules.onCount', '{on} of {total} on', {
+              on: featureOn,
+              total: featureModules.length,
+            })}
+          </span>
+        }
+      />
 
-        {coreShown.length > 0 && (
+      {coreShown.length > 0 && (
+        <SettingsSection
+          framed
+          id="modules-always-on"
+          title={t('settings.modules.alwaysOnTitle', 'Always on')}
+          description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
+          meta={firstGroup === 'always-on' ? lastChange : undefined}
+        >
+          {coreWithSubs.length > 0 && (
+            <ul>
+              {coreWithSubs.map((m) => (
+                <ModuleRow
+                  key={m.id}
+                  id={m.id}
+                  apiName={m.name}
+                  apiDescription={m.description}
+                  enabled
+                  lock={{ kind: 'always_on' }}
+                  readOnly={!canEdit}
+                  busy={isUpdating}
+                  apiNames={apiNames}
+                  subModules={m.sub_modules}
+                  subEnabled={Object.fromEntries(
+                    (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
+                  )}
+                  onToggle={onToggle}
+                />
+              ))}
+            </ul>
+          )}
+        </SettingsSection>
+      )}
+
+      {groups
+        .filter((g) => g.shown.length > 0)
+        .map((g) => (
           <SettingsSection
             framed
-            id="modules-always-on"
-            title={t('settings.modules.alwaysOnTitle', 'Always on')}
-            description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
-            meta={firstGroup === 'always-on' ? lastChange : undefined}
+            key={g.key}
+            id={`modules-${g.key}`}
+            title={g.label}
+            description={t('settings.modules.onCount', '{on} of {total} on', {
+              on: g.on,
+              total: g.total,
+            })}
+            meta={firstGroup === g.key ? lastChange : undefined}
           >
-            {coreWithSubs.length > 0 && (
-              <ul>
-                {coreWithSubs.map((m) => (
-                  <ModuleRow
-                    key={m.id}
-                    id={m.id}
-                    apiName={m.name}
-                    apiDescription={m.description}
-                    enabled
-                    lock={{ kind: 'always_on' }}
-                    readOnly={!canEdit}
-                    busy={isUpdating}
-                    apiNames={apiNames}
-                    subModules={m.sub_modules}
-                    subEnabled={Object.fromEntries(
-                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
-                    )}
-                    onToggle={onToggle}
-                  />
-                ))}
-              </ul>
-            )}
+            <ul>
+              {g.shown.map((m) => (
+                <ModuleRow
+                  key={m.id}
+                  id={m.id}
+                  apiName={m.name}
+                  apiDescription={m.description}
+                  beta={m.release_status === 'beta'}
+                  enabled={effective(m.id)}
+                  change={changeOf(m.id)}
+                  lock={rowLock(m)}
+                  readOnly={!canEdit}
+                  busy={isUpdating}
+                  requires={listed(index.requires[m.id])}
+                  requiredBy={listed(index.requiredBy[m.id])}
+                  apiNames={apiNames}
+                  health={m.health}
+                  healthDetail={m.health_detail}
+                  subModules={m.sub_modules}
+                  subEnabled={Object.fromEntries(
+                    (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
+                  )}
+                  onToggle={onToggle}
+                />
+              ))}
+            </ul>
           </SettingsSection>
-        )}
+        ))}
 
-        {groups
-          .filter((g) => g.shown.length > 0)
-          .map((g) => (
-            <SettingsSection
-              framed
-              key={g.key}
-              id={`modules-${g.key}`}
-              title={g.label}
-              description={t('settings.modules.onCount', '{on} of {total} on', {
-                on: g.on,
-                total: g.total,
-              })}
-              meta={firstGroup === g.key ? lastChange : undefined}
+      {shownCount === 0 && (
+        <EmptyState
+          icon={SearchX}
+          title={t('settings.modules.noMatch', 'No modules match')}
+          description={t('settings.modules.noMatchHint', 'Try another word, or show all modules.')}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setQuery('')
+                setStateParam('')
+              }}
             >
-              <ul>
-                {g.shown.map((m) => (
-                  <ModuleRow
-                    key={m.id}
-                    id={m.id}
-                    apiName={m.name}
-                    apiDescription={m.description}
-                    beta={m.release_status === 'beta'}
-                    enabled={effective(m.id)}
-                    change={changeOf(m.id)}
-                    lock={rowLock(m)}
-                    readOnly={!canEdit}
-                    busy={isUpdating}
-                    requires={listed(index.requires[m.id])}
-                    requiredBy={listed(index.requiredBy[m.id])}
-                    apiNames={apiNames}
-                    health={m.health}
-                    healthDetail={m.health_detail}
-                    subModules={m.sub_modules}
-                    subEnabled={Object.fromEntries(
-                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
-                    )}
-                    onToggle={onToggle}
-                  />
-                ))}
-              </ul>
-            </SettingsSection>
-          ))}
+              {t('settings.modules.clearFilters', 'Show all modules')}
+            </Button>
+          }
+        />
+      )}
 
-        {shownCount === 0 && (
-          <EmptyState
-            icon={SearchX}
-            title={t('settings.modules.noMatch', 'No modules match')}
-            description={t(
-              'settings.modules.noMatchHint',
-              'Try another word, or show all modules.'
-            )}
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setQuery('')
-                  setStateParam('')
-                }}
-              >
-                {t('settings.modules.clearFilters', 'Show all modules')}
-              </Button>
-            }
-          />
-        )}
+      {!firstGroup && lastChange}
 
-        {!firstGroup && lastChange}
-
-        {canEdit && (
-          <SettingsSaveBar
-            dirty={isDirty}
-            saving={isUpdating}
-            onSave={handleSave}
-            onDiscard={() => setPending({})}
-            summary={
-              formatList([
-                toEnable > 0 &&
-                  t('settings.modules.toEnable', '{count} to turn on', { count: toEnable }),
-                toDisable > 0 &&
-                  t('settings.modules.toDisable', '{count} to turn off', { count: toDisable }),
-              ]) || undefined
-            }
-          />
-        )}
-
-        <ModuleImpactDialog
-          open={showImpact}
-          onOpenChange={setShowImpact}
-          plan={plan}
-          apiNames={apiNames}
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={isDirty}
           saving={isUpdating}
-          onConfirm={() => void runSave(plan.changes)}
+          onSave={handleSave}
+          onDiscard={() => setPending({})}
+          summary={
+            formatList([
+              toEnable > 0 &&
+                t('settings.modules.toEnable', '{count} to turn on', { count: toEnable }),
+              toDisable > 0 &&
+                t('settings.modules.toDisable', '{count} to turn off', { count: toDisable }),
+            ]) || undefined
+          }
         />
+      )}
 
-        <ConfirmDialog
-          open={!!depConflict}
-          onOpenChange={(open) => !open && setDepConflict(null)}
-          title={
-            <span className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-              {depConflict?.action === 'disable'
-                ? t('settings.modules.cannotDisable', '{name} cannot turn off alone', {
-                    name: conflictName,
-                  })
-                : t('settings.modules.cannotEnable', '{name} cannot turn on alone', {
-                    name: conflictName,
-                  })}
-            </span>
-          }
-          desc={
-            depConflict?.action === 'disable'
-              ? t(
-                  'settings.modules.blockedBody',
-                  '{names} {count, plural, one {needs} other {need}} {name}. Turn them off together, or cancel.',
-                  {
-                    names: conflictNames(depConflict.blockers),
-                    count: conflictCount,
-                    name: conflictName,
-                  }
-                )
-              : t(
-                  'settings.modules.requiredBody',
-                  '{name} needs {names}. Turn them on together, or cancel.',
-                  { names: conflictNames(depConflict?.required), name: conflictName }
-                )
-          }
-          confirmText={
-            depConflict?.action === 'disable'
-              ? t('confirm.modules.offTogether', 'Turn off all {count} together', {
-                  count: conflictCount + 1,
-                })
-              : t('confirm.modules.onTogether', 'Turn on all {count} together', {
-                  count: conflictCount + 1,
-                })
-          }
-          destructive={depConflict?.action === 'disable'}
-          isLoading={isUpdating}
-          handleConfirm={handleConflictResolve}
-        />
+      <ModuleImpactDialog
+        open={showImpact}
+        onOpenChange={setShowImpact}
+        plan={plan}
+        apiNames={apiNames}
+        saving={isUpdating}
+        onConfirm={() => void runSave(plan.changes)}
+      />
 
-        <ConfirmDialog
-          open={showReset}
-          onOpenChange={setShowReset}
-          title={t('confirm.modules.resetTitle', 'Reset modules to the defaults?')}
-          desc={t(
-            'confirm.modules.resetDesc',
-            'Every module available to this organization turns on again, and the choices made on this page are cleared. This cannot be undone.'
-          )}
-          confirmText={t('confirm.modules.reset', 'Reset to defaults')}
-          destructive
-          isLoading={isResetting}
-          handleConfirm={() => void handleReset()}
-        />
+      <ConfirmDialog
+        open={!!depConflict}
+        onOpenChange={(open) => !open && setDepConflict(null)}
+        title={
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+            {depConflict?.action === 'disable'
+              ? t('settings.modules.cannotDisable', '{name} cannot turn off alone', {
+                  name: conflictName,
+                })
+              : t('settings.modules.cannotEnable', '{name} cannot turn on alone', {
+                  name: conflictName,
+                })}
+          </span>
+        }
+        desc={
+          depConflict?.action === 'disable'
+            ? t(
+                'settings.modules.blockedBody',
+                '{names} {count, plural, one {needs} other {need}} {name}. Turn them off together, or cancel.',
+                {
+                  names: conflictNames(depConflict.blockers),
+                  count: conflictCount,
+                  name: conflictName,
+                }
+              )
+            : t(
+                'settings.modules.requiredBody',
+                '{name} needs {names}. Turn them on together, or cancel.',
+                { names: conflictNames(depConflict?.required), name: conflictName }
+              )
+        }
+        confirmText={
+          depConflict?.action === 'disable'
+            ? t('confirm.modules.offTogether', 'Turn off all {count} together', {
+                count: conflictCount + 1,
+              })
+            : t('confirm.modules.onTogether', 'Turn on all {count} together', {
+                count: conflictCount + 1,
+              })
+        }
+        destructive={depConflict?.action === 'disable'}
+        isLoading={isUpdating}
+        handleConfirm={handleConflictResolve}
+      />
+
+      <ConfirmDialog
+        open={showReset}
+        onOpenChange={setShowReset}
+        title={t('confirm.modules.resetTitle', 'Reset modules to the defaults?')}
+        desc={t(
+          'confirm.modules.resetDesc',
+          'Every module available to this organization turns on again, and the choices made on this page are cleared. This cannot be undone.'
+        )}
+        confirmText={t('confirm.modules.reset', 'Reset to defaults')}
+        destructive
+        isLoading={isResetting}
+        handleConfirm={() => void handleReset()}
+      />
     </SettingsPage>
   )
 }
