@@ -312,10 +312,34 @@ func (r *ThreatAlertRepository) AffectedAssets(ctx context.Context, tenantID sha
 	return out, rows.Err()
 }
 
+// PlannedAssets (see threatalert.PlannerStore).
+func (r *ThreatAlertRepository) PlannedAssets(ctx context.Context, tenantID, alertID shared.ID) ([]threatalert.Asset, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT taa.asset_id, a.name, taa.match_kind
+		FROM threat_alert_assets taa
+		JOIN assets a ON a.tenant_id = taa.tenant_id AND a.id = taa.asset_id
+		WHERE taa.tenant_id = $1 AND taa.alert_id = $2`, tenantID.String(), alertID.String())
+	if err != nil {
+		return nil, fmt.Errorf("planned assets: %w", err)
+	}
+	defer rows.Close()
+	var out []threatalert.Asset
+	for rows.Next() {
+		var a threatalert.Asset
+		var kind string
+		if err := rows.Scan(&a.AssetID, &a.Name, &kind); err != nil {
+			return nil, fmt.Errorf("planned assets: %w", err)
+		}
+		a.Kind = threatalert.MatchKind(kind)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // alertColumns is the column list scanAlert reads (alias a).
 const alertColumns = `a.id, a.tenant_id, a.vuln_id, a.title, a.severity, a.level, a.tier, a.state, a.state_reason, a.state_note,
 	a.state_changed_by, a.state_changed_at, a.suppressed_until, a.ets, a.ets_breakdown, a.in_kev, a.kev_ransomware, a.epss,
-	a.confirmed_assets, a.possible_assets, a.internet_facing_assets, a.last_event_kind, a.source_at, a.event_at,
+	a.confirmed_assets, a.likely_assets, a.possible_assets, a.internet_facing_assets, a.last_event_kind, a.source_at, a.event_at,
 	a.notified_level, a.notified_tier, a.notified_at, a.digest_pending, a.held, a.baseline, a.planned_at,
 	a.acknowledged_at, a.resolved_at, a.created_at, a.updated_at`
 
@@ -328,7 +352,7 @@ func scanAlert(s interface{ Scan(...any) error }, extra ...any) (*threatalert.Al
 	var epss sql.NullFloat64
 	dest := []any{&a.ID, &a.TenantID, &a.VulnID, &a.Title, &a.Severity, &level, &tier, &state, &a.StateReason, &a.StateNote,
 		&changedBy, &changedAt, &suppressed, &a.ETS, &breakdown, &a.InKEV, &a.KEVRansomware, &epss,
-		&a.Confirmed, &a.Possible, &a.InternetFacing, &a.LastEventKind, &sourceAt, &eventAt,
+		&a.Confirmed, &a.Likely, &a.Possible, &a.InternetFacing, &a.LastEventKind, &sourceAt, &eventAt,
 		&a.NotifiedLevel, &a.NotifiedTier, &notifiedAt, &a.DigestPending, &a.Held, &a.Baseline, &a.PlannedAt,
 		&ackAt, &resolvedAt, &a.CreatedAt, &a.UpdatedAt}
 	if err := s.Scan(append(dest, extra...)...); err != nil {
@@ -392,15 +416,16 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 		INSERT INTO threat_alerts (tenant_id, vuln_id, title, severity, level, tier, state, state_reason, state_note,
 			state_changed_at, suppressed_until, ets, ets_breakdown, in_kev, kev_ransomware, epss,
 			confirmed_assets, possible_assets, internet_facing_assets, last_event_kind, source_at, event_at,
-			notified_level, notified_tier, digest_pending, baseline, planned_at, resolved_at)
+			notified_level, notified_tier, digest_pending, baseline, planned_at, resolved_at, likely_assets)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-			$23, $24, $25, $26, now(), $27)
+			$23, $24, $25, $26, now(), $27, $29)
 		ON CONFLICT (tenant_id, vuln_id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity,
 			level = EXCLUDED.level, tier = EXCLUDED.tier, state = EXCLUDED.state, state_reason = EXCLUDED.state_reason,
 			state_note = EXCLUDED.state_note, state_changed_at = EXCLUDED.state_changed_at,
 			suppressed_until = EXCLUDED.suppressed_until, ets = EXCLUDED.ets, ets_breakdown = EXCLUDED.ets_breakdown,
 			in_kev = EXCLUDED.in_kev, kev_ransomware = EXCLUDED.kev_ransomware, epss = EXCLUDED.epss,
-			confirmed_assets = EXCLUDED.confirmed_assets, possible_assets = EXCLUDED.possible_assets,
+			confirmed_assets = EXCLUDED.confirmed_assets, likely_assets = EXCLUDED.likely_assets,
+			possible_assets = EXCLUDED.possible_assets,
 			internet_facing_assets = EXCLUDED.internet_facing_assets, last_event_kind = EXCLUDED.last_event_kind,
 			source_at = EXCLUDED.source_at, event_at = EXCLUDED.event_at, notified_level = EXCLUDED.notified_level,
 			notified_tier = EXCLUDED.notified_tier, digest_pending = EXCLUDED.digest_pending,
@@ -411,7 +436,7 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 		a.StateReason, a.StateNote, nullTime(a.StateChangedAt), nullTime(a.SuppressedUntil), a.ETS, breakdown,
 		a.InKEV, a.KEVRansomware, epss, a.Confirmed, a.Possible, a.InternetFacing, a.LastEventKind,
 		nullTime(a.SourceAt), nullTime(a.EventAt), notified, a.NotifiedTier, a.DigestPending, a.Baseline,
-		nullTime(a.ResolvedAt), readAt).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
+		nullTime(a.ResolvedAt), readAt, a.Likely).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return threatalert.ErrStale
 	}
@@ -425,23 +450,25 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 	if len(assets) > 0 {
 		n := len(assets)
 		ids, kinds, crit, prods, vers := make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n)
+		hosts := make([]string, 0, n)
 		confs := make([]int64, 0, n)
 		inet := make([]bool, 0, n)
 		finds := make([]sql.NullString, 0, n)
 		for _, x := range assets {
 			ids, kinds = append(ids, x.AssetID.String()), append(kinds, string(x.Kind))
+			hosts = append(hosts, threatalert.HostKey(x))
 			crit, prods, vers = append(crit, clipStr(x.Criticality, 32)), append(prods, clipStr(x.Product, 200)), append(vers, clipStr(x.Version, 64))
 			confs, inet, finds = append(confs, int64(max(0, min(100, x.Confidence)))), append(inet, x.InternetFacing), append(finds, nullIDPtr(x.FindingID))
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO threat_alert_assets (tenant_id, alert_id, asset_id, match_kind, confidence, internet_facing,
-				criticality, product, version_seen, finding_id)
-			SELECT $1, $2, x.asset, x.kind, x.conf, x.inet, x.crit, x.prod, x.ver, x.finding
-			FROM unnest($3::uuid[], $4::text[], $5::int[], $6::bool[], $7::text[], $8::text[], $9::text[], $10::uuid[])
-				AS x(asset, kind, conf, inet, crit, prod, ver, finding)
+				criticality, product, version_seen, finding_id, host_key)
+			SELECT $1, $2, x.asset, x.kind, x.conf, x.inet, x.crit, x.prod, x.ver, x.finding, x.host
+			FROM unnest($3::uuid[], $4::text[], $5::int[], $6::bool[], $7::text[], $8::text[], $9::text[], $10::uuid[], $11::text[])
+				AS x(asset, kind, conf, inet, crit, prod, ver, finding, host)
 			ON CONFLICT (alert_id, asset_id) DO NOTHING`,
 			a.TenantID.String(), a.ID.String(), pq.Array(ids), pq.Array(kinds), pq.Array(confs), pq.Array(inet),
-			pq.Array(crit), pq.Array(prods), pq.Array(vers), pq.Array(finds)); err != nil {
+			pq.Array(crit), pq.Array(prods), pq.Array(vers), pq.Array(finds), pq.Array(hosts)); err != nil {
 			return fmt.Errorf("save alert assets: %w", err)
 		}
 	}
@@ -671,10 +698,10 @@ func (r *ThreatAlertRepository) DigestSummary(ctx context.Context, tenantID shar
 	if err != nil {
 		return d, fmt.Errorf("digest summary: %w", err)
 	}
-	// The counts of each listed alert are those in scope (a scoped member's
-	// e-mail never counts assets they cannot see).
+	// The host counts of each listed alert are those in scope (a scoped
+	// member's e-mail never counts assets they cannot see).
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.vuln_id, a.title, a.level, a.ets, a.in_kev, vc.c, vc.p, vc.i
+		SELECT a.id, a.vuln_id, a.title, a.level, a.ets, a.in_kev, vc.c, vc.l, vc.p, vc.i
 		FROM threat_alerts a `+viewerCountsSQL(cond)+`
 		WHERE a.tenant_id = $1 AND a.state IN `+openAlertStates+` AND a.level IN ('immediate', 'digest')
 		  AND (a.digest_pending OR a.notified_at >= $2) AND `+visible+`
@@ -686,7 +713,7 @@ func (r *ThreatAlertRepository) DigestSummary(ctx context.Context, tenantID shar
 	for rows.Next() {
 		var it threatalert.DigestItem
 		var level string
-		if err := rows.Scan(&it.ID, &it.VulnID, &it.Title, &level, &it.ETS, &it.InKEV, &it.Confirmed, &it.Possible, &it.InternetFacing); err != nil {
+		if err := rows.Scan(&it.ID, &it.VulnID, &it.Title, &level, &it.ETS, &it.InKEV, &it.Confirmed, &it.Likely, &it.Possible, &it.InternetFacing); err != nil {
 			return d, fmt.Errorf("digest top: %w", err)
 		}
 		it.Level = threatalert.Level(level)
