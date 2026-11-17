@@ -829,6 +829,7 @@
   "findings.filter.value.validation.not_reproducible": "Not reproducible",
   "findings.filter.value.validation.reproducible": "Reproducible",
   "findings.filter.valuesHint": "Values, separated by commas",
+  "findings.filter.viewAdvanced": "Advanced filter",
   "findings.filter.viewConditions": "Conditions from the saved view",
   "findings.filters.show": "Show {count, plural, one {# finding} other {# findings}}",
   "findings.filters.title": "Finding filters",

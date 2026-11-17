@@ -158,7 +158,7 @@ func TestSavedViews_VisibilityOwnershipAndRunAsViewer(t *testing.T) {
 	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "bad", "query": "severity=urgent"}); status != http.StatusBadRequest || !strings.Contains(raw, "INVALID_FILTER") {
 		t.Errorf("invalid filter saved: %d %s", status, raw)
 	}
-	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "assets", "name": "x"}); status != http.StatusNotFound {
+	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "no-such-page", "name": "x"}); status != http.StatusBadRequest {
 		t.Errorf("unknown page: %d %s", status, raw)
 	}
 	h.exec(`UPDATE saved_views SET filter = '{"filter":{"field":"retired_field","op":"in","value":["x"]}}' WHERE id = $1`, personal.ID)

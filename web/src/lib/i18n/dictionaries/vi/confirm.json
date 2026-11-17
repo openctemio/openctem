@@ -445,6 +445,7 @@
   "confirm.savedView.change.density": "đã đổi mật độ",
   "confirm.savedView.change.filters": "{count, plural, other {đã thêm # bộ lọc}}",
   "confirm.savedView.change.group": "đã đổi cách nhóm",
+  "confirm.savedView.change.query": "đã đổi văn bản truy vấn",
   "confirm.savedView.change.search": "đã đổi từ khóa tìm kiếm",
   "confirm.savedView.change.sort": "đã đổi thứ tự sắp xếp",
   "confirm.savedView.clear": "Bỏ chế độ xem",

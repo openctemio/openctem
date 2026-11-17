@@ -56,7 +56,7 @@ func TestAdminAuditChain_DB(t *testing.T) {
 		t.Fatalf("fresh chain: %+v", r)
 	}
 	// The report carries the chain head, so a copy of the rows verifies
-	// offline and an earlier copy's head can be compared in every edition.
+	// offline and an earlier copy's head can be compared in every build.
 	hp, hh, herr := repo.ChainHead(ctx)
 	if herr != nil || r.Head == nil || r.Head.Position != 4 || r.Head.Position != hp || r.Head.Hash == "" || r.Head.Hash != hh {
 		t.Fatalf("report head %+v; chain head %d %q %v", r.Head, hp, hh, herr)
