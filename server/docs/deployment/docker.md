@@ -382,6 +382,9 @@ make docker-psql         # psql shell in the postgres container
 
 ## Troubleshooting
 
+- **Start here:** `./support.sh doctor` in `server/deploy` checks the installation and names the fix for
+  each failed check; `./support.sh bundle` writes an archive without your data to send to whoever helps
+  you ([Diagnose and get support](../operations/diagnose-and-get-support.md)).
 - **Hot reload does not pick up changes:** `.air.toml` uses polling
   (`poll = true`, `poll_interval = 500`); check the bind mount works on your
   host.
