@@ -33,7 +33,7 @@ exceptions and OIDC back-channel logout. This RFC covers three gaps:
 | D2 | A generic per-organization OIDC connector with discovery and a strict profile (§4.1). Every OIDC vendor is a preset of it (data: name, logo, scopes, group claim, issuer rule, setup hints). |
 | D3 | GitLab sign-in is an OIDC preset (gitlab.com or a self-managed URL); its `groups_direct` claim feeds group links. |
 | D4 | GitHub Enterprise sign-in is a small OAuth 2.0 adapter: base URL, client id and secret, a **required** organization allow-list, optional teams for group links. The identity key is (host, numeric user id). The email is the primary verified email. |
-| D5 | LDAP only for self-managed Enterprise, built only on real demand. The free path is a directory federated by an OIDC provider (for example Keycloak or Authentik) through D2. |
+| D5 | LDAP is not built. A directory is federated by an OIDC provider (for example Keycloak or Authentik) through D2. |
 | D6 | IdP-initiated SAML stays refused. The IdP app tile points at the SP-initiated login URL, so every response has an `InResponseTo`. |
 | D7 | SAML hardening: (a) assertion-ID replay cache, fail-closed; (b) a signed assertion, exactly one, no SHA-1; (c) current and next certificate for rollover; (d) optional metadata URL refreshed daily through the SSRF-guarded client; (e) certificate expiry alerts at 30, 7 and 1 day(s). |
 | D8 | IdP group links for OIDC and SAML, sharing one model with SCIM groups. Viewer and member map freely. Admin maps only through a link an owner configured. Owner is never granted by an IdP. A missing or overage group claim means "unknown", which never demotes anyone. |
@@ -44,7 +44,7 @@ exceptions and OIDC back-channel logout. This RFC covers three gaps:
 | D13 | SCIM tokens expire (1–365 days) and rotate with a short overlap. |
 | D14 | A test sign-in (dry run) and a health panel per connection. A dry-run state can never create an account, a membership or a session. |
 | D15 | An instance "Sign-in" page in the console: password sign-in on or off, social providers moved from environment variables to encrypted console settings, MFA for everyone, session ceilings. |
-| D16 | Edition gating: security controls (MFA, passkeys, session policy, audit, break-glass) are free everywhere. On the hosted service, per-organization connections, SSO enforcement, SCIM and group links belong to the Enterprise plan. Self-managed Community keeps everything it has; LDAP is the only new Enterprise-only item. |
+| D16 | Security controls (MFA, passkeys, session policy, audit, break-glass) are never gated. Per-organization connections, SSO enforcement, SCIM and group links are deniable features an operator may switch off per organization; an installation keeps all of them by default. |
 
 ## 3. Threat model (summary)
 

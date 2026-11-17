@@ -232,4 +232,4 @@ func RequireLocalUser() func(http.Handler) http.Handler {
 // Note: RequireActiveUser middleware was removed. It was never wired
 // into any route, and tenant-scoped routes already enforce access via
 // RequireMembership (which checks membership.IsSuspended). Platform-
-// level user suspension has no UI in the OSS product.
+// level user suspension has no UI in this build.

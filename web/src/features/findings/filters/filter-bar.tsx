@@ -34,8 +34,8 @@ interface FilterBarProps {
   onSearchChange: (next: URLSearchParams) => void
   /**
    * The search field is in Query mode: the text owns the filter, so the
-   * chips, Add filter and Clear step aside (the context chips and the open
-   * view's locked chips stay).
+   * chips, Add filter and Clear step aside (the context chips stay). An open
+   * view's conditions are in the text too.
    */
   queryActive?: boolean
   /** Open the search field's Query mode (the Advanced chip's text). */
@@ -96,19 +96,24 @@ export function FilterBar({
   )
   const fromView = useMemo(() => viewFilters(viewFilter, contract), [viewFilter, contract])
 
-  // The open view's own conditions: locked, and the query text never holds
-  // them (the server applies the view under whatever the URL adds).
+  // The open view's own conditions: locked. Conditions chips cannot show
+  // (an OR, a group) are one chip that opens Query mode, where the field
+  // holds the view's whole text.
   const viewChips: ReactElement[] = [
     ...(fromView.complex
       ? [
-          <span
+          <button
             key="view-complex"
+            type="button"
             data-testid="filter-chip"
+            data-slot="filter-chip-view-advanced"
             data-locked="true"
-            className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs"
+            title={t('findings.filter.viewConditions', 'Conditions from the saved view')}
+            onClick={() => onOpenQuery?.()}
+            className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            {t('findings.filter.viewConditions', 'Conditions from the saved view')}
-          </span>,
+            {t('findings.filter.viewAdvanced', 'Advanced filter')}
+          </button>,
         ]
       : []),
     ...fromView.filters.flatMap((f) => {
@@ -176,10 +181,10 @@ export function FilterBar({
   }
 
   if (queryActive) {
-    // The text owns the filters it shows. The open view's conditions are not
-    // in it, so their locked chips stay: what else applies is always said.
-    return leading || viewChips.length > 0 ? (
-      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={viewChips} />
+    // The text is the whole filter, an open view's own conditions included
+    // (the field prints them): no chip repeats it.
+    return leading ? (
+      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={[]} />
     ) : null
   }
   return (

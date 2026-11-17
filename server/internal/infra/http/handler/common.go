@@ -70,8 +70,8 @@ func NewPaginationLinks(r *http.Request, page, perPage, totalPages int) *Paginat
 // buildBaseURL constructs the base URL from the request.
 //
 // X-Forwarded-Proto / X-Forwarded-Host are honored only when the TCP peer is a
-// configured trusted proxy (SERVER_TRUSTED_PROXIES) — the same rule as
-// samlBaseURL and client-IP attribution. Taking them from any client let a
+// configured trusted proxy (SERVER_TRUSTED_PROXIES), the same rule as
+// client-IP attribution. Taking them from any client let a
 // request choose the host its own pagination links point at.
 func buildBaseURL(r *http.Request) string {
 	scheme := schemeHTTPS

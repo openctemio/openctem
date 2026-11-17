@@ -215,45 +215,80 @@ export function ExploitBadges({
   )
 }
 
-/** Compact affected-asset tokens: zeros are left out, the tooltip spells all four. */
+export interface HostTierCounts {
+  confirmed: number
+  likely: number
+  possible: number
+}
+
+const HOST_TIERS = ['confirmed', 'likely', 'possible'] as const
+
+/**
+ * The host counts in words, zero tiers left out: "3 hosts confirmed",
+ * "+1 likely", "+2 possibly affected". The first tier named carries the word
+ * "host"; messages and digests say the same (the API's HostCounts.Sentence).
+ */
+export function hostTierParts(
+  t: ReturnType<typeof useTranslation>['t'],
+  counts: HostTierCounts
+): { tier: (typeof HOST_TIERS)[number]; text: string }[] {
+  const out: { tier: (typeof HOST_TIERS)[number]; text: string }[] = []
+  for (const tier of HOST_TIERS) {
+    const n = counts[tier]
+    if (!(n > 0)) continue
+    const key =
+      out.length === 0
+        ? `emergingThreats.affected.first.${tier}${n === 1 ? 'One' : ''}`
+        : `emergingThreats.affected.more.${tier}`
+    out.push({ tier, text: t(key, undefined, { n }) })
+  }
+  return out
+}
+
+/**
+ * Affected hosts in words, zeros left out; the tooltip spells every number.
+ * A host that serves several ports is one host.
+ */
 export function AffectedCell({
   confirmed,
+  likely,
   possible,
   internet,
   critical,
-}: {
-  confirmed: number
-  possible: number
+}: HostTierCounts & {
   internet: number
   critical: number
 }) {
   const { t } = useTranslation()
   const full = t('emergingThreats.affected.summary', undefined, {
     confirmed,
+    likely,
     possible,
     internet,
     critical,
   })
+  const tiers = hostTierParts(t, { confirmed, likely, possible })
   return (
     <span
-      className="inline-flex items-center gap-3 whitespace-nowrap text-sm tabular-nums"
+      className="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm tabular-nums"
       title={full}
       aria-label={full}
       data-slot="affected-cell"
     >
-      {confirmed > 0 && (
-        <span aria-hidden className="font-medium">
-          {confirmed}
+      {tiers.map((p, i) => (
+        <span
+          key={p.tier}
+          aria-hidden
+          data-tier={p.tier}
+          className={
+            i === 0 && p.tier === 'confirmed'
+              ? 'whitespace-nowrap font-medium'
+              : 'whitespace-nowrap text-muted-foreground'
+          }
+        >
+          {p.text}
         </span>
-      )}
-      {possible > 0 && (
-        <span aria-hidden className="text-muted-foreground">
-          {/* "+2" beside a confirmed count, "2 possible" on its own. */}
-          {confirmed > 0
-            ? t('emergingThreats.affected.possibleShort', undefined, { n: possible })
-            : t('emergingThreats.affected.possibleOnly', undefined, { n: possible })}
-        </span>
-      )}
+      ))}
       {internet > 0 && (
         <span aria-hidden className="inline-flex items-center gap-1">
           <Globe className="size-3.5 text-muted-foreground" />

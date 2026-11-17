@@ -447,7 +447,7 @@ describe('FilterBar', () => {
     for (const c of locked) expect(within(c).queryByRole('button')).toBeNull()
   })
 
-  it("in Query mode the open view's locked chips stay, the removable ones step aside", () => {
+  it("in Query mode no chip repeats the text: the open view's chips step aside too", () => {
     bar('epss_score_gte=0.5&fq=a%3D1', {
       queryActive: true,
       viewFilter: {
@@ -460,31 +460,31 @@ describe('FilterBar', () => {
         },
       },
     })
-    const chips = screen.getAllByTestId('filter-chip')
-    expect(chips).toHaveLength(2)
-    for (const c of chips) expect(c).toHaveAttribute('data-locked', 'true')
+    expect(screen.queryByTestId('filter-chip')).toBeNull()
     expect(screen.queryByTestId('filter-chip-advanced')).toBeNull()
-    expect(screen.queryByRole('button', { name: /clear filters/i })).toBeNull()
-  })
-
-  it('in Query mode a view whose conditions are a tree is still named', () => {
-    bar('', {
-      queryActive: true,
-      viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
-    })
-    expect(screen.getByText('Conditions from the saved view')).toBeInTheDocument()
-  })
-
-  it('in Query mode without a view or a context chip there is no row', () => {
-    bar('epss_score_gte=0.5', { queryActive: true })
     expect(screen.queryByTestId('findings-filter-bar')).toBeNull()
   })
 
-  it('names a view whose conditions are a tree', () => {
+  it('in Query mode the context chips stay', () => {
+    bar('asset_id=abc', { queryActive: true, leading: <span>asset chip</span> })
+    expect(screen.getByText('asset chip')).toBeInTheDocument()
+    expect(screen.queryByTestId('filter-chip')).toBeNull()
+  })
+
+  it('a view whose conditions chips cannot show is one Advanced filter chip that opens Query mode', () => {
+    const onOpenQuery = vi.fn()
     bar('', {
+      onOpenQuery,
       viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
     })
-    expect(screen.getByText('Conditions from the saved view')).toBeInTheDocument()
+    const chips = screen.getAllByTestId('filter-chip')
+    expect(chips).toHaveLength(1)
+    expect(chips[0]).toHaveAttribute('data-locked', 'true')
+    const chip = screen.getByRole('button', { name: 'Advanced filter' })
+    expect(chip).toBe(chips[0])
+    expect(chip).toHaveAttribute('title', 'Conditions from the saved view')
+    fireEvent.click(chip)
+    expect(onOpenQuery).toHaveBeenCalledTimes(1)
   })
 
   it('an unknown param is shown, and removable', () => {

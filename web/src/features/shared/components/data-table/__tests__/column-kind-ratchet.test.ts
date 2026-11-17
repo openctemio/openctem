@@ -11,7 +11,8 @@
  *   UPDATE_COLUMN_KIND_DEBT=1, then review the diff: counts only go down).
  *
  * A column definition is a `header:` property in a file that types columns
- * (`ColumnDef`); a kind is `kind: '<one of the ColumnKind values>'`. Columns
+ * (`ColumnDef`), inside an object that also has `accessorKey`, `accessorFn`,
+ * `cell` or `id` (a CSV export field `{ header, accessor }` is not one); a kind is `kind: '<one of the ColumnKind values>'`. Columns
  * with id `select` / `actions` need no header and take their kind from the id.
  *
  *   UPDATE_COLUMN_KIND_DEBT=1 npx vitest run src/features/shared/components/data-table/__tests__/column-kind-ratchet.test.ts
@@ -39,10 +40,44 @@ function sources(dir: string): string[] {
 const KINDS = Object.keys(KIND_LAYOUT).join('|')
 const KIND_RE = new RegExp(`\\bkind:\\s*['"](?:${KINDS})['"]`, 'g')
 
+/** The object literal around `at`: from its `{` to its matching `}` (or the text's end). */
+function enclosingObject(text: string, at: number): string {
+  let depth = 0
+  let open = -1
+  for (let i = at - 1; i >= 0; i--) {
+    const c = text[i]
+    if (c === '}') depth++
+    else if (c === '{') {
+      if (depth === 0) {
+        open = i
+        break
+      }
+      depth--
+    }
+  }
+  if (open < 0) return ''
+  depth = 0
+  for (let i = open; i < text.length; i++) {
+    const c = text[i]
+    if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return text.slice(open, i + 1)
+  }
+  return text.slice(open)
+}
+
+/**
+ * A table column: a `header:` in an object that also says what the column
+ * reads or draws (`accessorKey`, `accessorFn`, `cell`, `id`). Other objects
+ * with a `header` (a CSV export field `{ header, accessor }`) are no column.
+ */
+const COLUMN_KEY_RE = /\b(?:accessorKey|accessorFn|cell|id):/
+
 /** Columns without a kind, per file that defines DataTable columns. */
 function columnKindDebt(text: string): number {
   if (!/\bColumnDef\b/.test(text)) return 0
-  const headers = text.match(/\bheader:\s/g)?.length ?? 0
+  const headers = [...text.matchAll(/\bheader:\s/g)].filter((m) =>
+    COLUMN_KEY_RE.test(enclosingObject(text, m.index))
+  ).length
   const kinds = text.match(KIND_RE)?.length ?? 0
   return Math.max(0, headers - kinds)
 }
@@ -74,6 +109,19 @@ describe('column kind ratchet', () => {
     ).toBe(0)
     // A kind that is not a column kind does not count.
     expect(columnKindDebt(cols.replace("kind: 'name'", "kind: 'banana'"))).toBe(2)
+  })
+
+  it('counts only table columns, not CSV export fields in the same file', () => {
+    const text = `const c: ColumnDef<R>[] = [
+      { accessorKey: 'a', header: 'A', meta: { kind: 'name' } },
+      { id: 'b', header: ({ column }) => <H column={column} />, cell: ({ row }) => row.original.b },
+    ]
+    const exportFields = [
+      { header: 'Name', accessor: (r: R) => r.a },
+      { header: 'Owner', accessor: (r: R) => r.b },
+    ]`
+    // Column b has no kind; the two export fields are not columns.
+    expect(columnKindDebt(text)).toBe(1)
   })
 
   const found = census()
