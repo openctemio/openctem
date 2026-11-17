@@ -176,7 +176,7 @@ affected asset ids for the delivery resolver (private program routing).
 | Route | Gate | Data scope |
 |---|---|---|
 | `GET /api/v1/emerging-threats` | `findings:vulnerabilities:read` | alerts with an asset in scope; counts, crown jewels (`critical_assets`), the best product (`product`, `product_count`) all over in-scope assets |
-| `GET /api/v1/emerging-threats/{id}` | `findings:vulnerabilities:read` | 404 without an asset in scope; assets in scope; `can_suppress` |
+| `GET /api/v1/emerging-threats/{id}` | `findings:vulnerabilities:read` | 404 without an asset in scope; assets in scope (`assets`, one entry per asset) and the same assets as one row per host by tier (`asset_groups`, see below); `can_suppress` |
 | `POST /api/v1/emerging-threats/{id}/state` | `findings:triage` | not affected needs every asset in scope (409) |
 | `GET, PUT /api/v1/organization/settings/emerging-threats` | administrator | organization settings, audited |
 
@@ -221,6 +221,26 @@ Audit: `tenant.emerging_threats_updated`, `emerging_threat.state_changed`
   (`scans:write` and `scans:execute`: the quick-scan dialog over the
   affected domains, subdomains and IP addresses, scope-checked before it
   starts). The alert page keeps the full asset table and timeline.
+- The alert page lists the affected assets in one table grouped by tier, each
+  group shown only when it has a row: **Confirmed affected**, **Likely
+  affected**, **Possibly affected (version unknown)**. A group's count is its
+  rows. A row is a host: a host that serves several ports has one service
+  asset per port, each named by its URL (`http://host`, `https://host`), and
+  those assets share the host's row. The row shows internet-facing when any
+  service is, the highest criticality, the distinct products and versions, and
+  each service as a link to its own asset with its own finding and task
+  links. An asset that is not named by a URL is a row of its own. On a phone
+  the rows are cards under the same group headers.
+- The rows come from the API (`asset_groups`), computed by
+  `threatalert.GroupByHost` from the in-scope assets of the detail read: same
+  organization, same tier, same host of the name (scheme and default port
+  ignored, case-insensitive, trailing slash ignored; an explicit non-default
+  port and a path stay in the service's label, for example `https:8443`).
+  The host is read from the asset's name because a stored relationship from a
+  service to the asset that exposes it exists only when a report carried one,
+  and several assets can expose one service. The stored counters
+  (`confirmed_assets`, `possible_assets`, `internet_facing_assets`), the list,
+  the drawer, messages and the score still count assets, not hosts.
 - Triage (`findings:triage`): acknowledge, remediating, reopen, not affected
   (reason required; hidden with a hint when assets are outside the viewer's
   scope). **Create remediation task** (`findings:remediation:write`) from the

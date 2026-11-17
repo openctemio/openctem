@@ -133,3 +133,40 @@ func TestEmergingThreatHandler(t *testing.T) {
 		t.Fatalf("no data scope enforcer: %d", w.Code)
 	}
 }
+
+// The detail keeps the per-asset list and adds the same assets as one row
+// per host; no asset, finding or task is lost on the way.
+func TestToEmergingDetail_AssetGroups(t *testing.T) {
+	tenant, finding, task := shared.NewID(), shared.NewID(), shared.NewID()
+	view := func(name string, kind threatalert.MatchKind) threatalert.AssetView {
+		return threatalert.AssetView{TenantID: tenant,
+			Asset: threatalert.Asset{AssetID: shared.NewID(), Name: name, Type: "service", Kind: kind, Product: "nginx"}}
+	}
+	plain, tls, likely, box := view("http://192.0.2.20", threatalert.MatchConfirmed), view("https://192.0.2.20", threatalert.MatchConfirmed),
+		view("https://example.com", threatalert.MatchLikely), view("web-01", threatalert.MatchLikely)
+	tls.FindingID, tls.TaskID, tls.FindingStatus, tls.InternetFacing = &finding, &task, "confirmed", true
+
+	out := toEmergingDetail(&threatalert.Detail{Assets: []threatalert.AssetView{plain, tls, likely, box}})
+	if len(out.Assets) != 4 {
+		t.Fatalf("the per-asset list stays: got %d", len(out.Assets))
+	}
+	if len(out.AssetGroups) != 2 || out.AssetGroups[0].Tier != "confirmed" || out.AssetGroups[1].Tier != "likely" {
+		t.Fatalf("groups: %+v", out.AssetGroups)
+	}
+	host := out.AssetGroups[0].Hosts
+	if len(host) != 1 || host[0].Host != "192.0.2.20" || host[0].AssetID != "" || !host[0].InternetFacing || len(host[0].Services) != 2 {
+		t.Fatalf("confirmed hosts: %+v", host)
+	}
+	s := host[0].Services[1]
+	if s.Label != "https" || s.AssetID != tls.AssetID.String() || s.FindingID != finding.String() || s.TaskID != task.String() ||
+		s.FindingStatus != "confirmed" {
+		t.Fatalf("service: %+v", s)
+	}
+	rows := out.AssetGroups[1].Hosts
+	if len(rows) != 2 || rows[1].AssetID != box.AssetID.String() || rows[1].Services[0].Label != "" {
+		t.Fatalf("likely hosts: %+v", rows)
+	}
+	if empty := toEmergingDetail(&threatalert.Detail{}); empty.AssetGroups == nil || len(empty.AssetGroups) != 0 {
+		t.Fatalf("no assets: an empty list, not null")
+	}
+}
