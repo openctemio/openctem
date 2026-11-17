@@ -132,16 +132,18 @@ Proof of fix                                         Found by   SCA, npm-audit
 - **Header** (`FindingHeader` on `DetailPageHeader`): type and identifier chips, the place in the list the
   finding was opened from ("2 of 27" links back to that list; previous and next, also `k` and `j`), the title,
   one main action, two secondary ones (Re-verify, AI triage) and a More menu (Copy link, Copy finding ID,
-  Create ticket, Mark as duplicate). Who found it is said once, in the properties.
+  Add to task when it is not the main action, Create ticket, Mark as duplicate). Who found it is said once,
+  in the properties.
 - **Main action** (`FindingMainAction`), chosen by the finding's state; when the state's action is not
   available to the viewer, the next row applies:
 
-  | State                             | Main action       | Gate (the same as elsewhere on the page)                                   |
-  | --------------------------------- | ----------------- | -------------------------------------------------------------------------- |
-  | Duplicate of another finding      | Open the original | none (a link)                                                              |
-  | Fix applied, and a retest can run | Retest now        | `findings:verify` and the server's `can_retest` (the Proof of fix section) |
-  | In progress                       | Mark fix applied  | status permission, not a people-written finding, the lifecycle's move      |
-  | Any other state                   | Add to task       | task write permission and the remediation module                           |
+  | State                              | Main action       | Gate (the same as elsewhere on the page)                                   |
+  | ---------------------------------- | ----------------- | -------------------------------------------------------------------------- |
+  | Duplicate of another finding       | Open the original | none (a link)                                                              |
+  | Fix applied, and a retest can run  | Retest now        | `findings:verify` and the server's `can_retest` (the Proof of fix section) |
+  | In progress                        | Mark fix applied  | status permission, not a people-written finding, the lifecycle's move      |
+  | Resolved, accepted, false positive | none              | (Add to task stays in More)                                                |
+  | Any other state                    | Add to task       | task write permission and the remediation module                           |
 
   Mark fix applied asks the lifecycle for the move when clicked (as the status menu does) and then takes the
   status menu's path: the note dialog, the organization's move fields, approvals and Undo are unchanged.

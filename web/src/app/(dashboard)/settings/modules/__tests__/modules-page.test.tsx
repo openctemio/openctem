@@ -26,7 +26,12 @@ vi.mock('@/lib/permissions', async (orig) => ({
 }))
 
 const updateModules = vi.hoisted(() => vi.fn())
-const state = vi.hoisted(() => ({ modules: [] as Record<string, unknown>[] }))
+const state = vi.hoisted(() => ({
+  modules: [] as Record<string, unknown>[],
+  error: undefined as unknown,
+  isLoading: false,
+}))
+const refetch = vi.hoisted(() => vi.fn())
 const mod = (id: string, over: Record<string, unknown> = {}) => ({
   id,
   name: `api ${id}`,
@@ -41,9 +46,9 @@ const mod = (id: string, over: Record<string, unknown> = {}) => ({
 vi.mock('@/features/organization/api/use-tenant-modules', () => ({
   useTenantModules: () => ({
     modules: state.modules,
-    isLoading: false,
-    error: undefined,
-    mutate: vi.fn(),
+    isLoading: state.isLoading,
+    error: state.error,
+    mutate: refetch,
   }),
   useUpdateTenantModules: () => ({ updateModules, isUpdating: false }),
   useResetTenantModules: () => ({ resetModules: vi.fn(), isResetting: false }),
@@ -77,6 +82,9 @@ const row = (id: string) => document.querySelector(`[data-module="${id}"]`) as H
 
 beforeEach(() => {
   perms.canEdit = true
+  state.error = undefined
+  state.isLoading = false
+  refetch.mockReset()
   updateModules.mockReset().mockResolvedValue(undefined)
   window.history.replaceState(null, '', '/settings/modules')
   state.modules = [
@@ -236,5 +244,40 @@ describe('modules page', () => {
     renderPage()
     expect(screen.getByText(/Only administrators can change them/)).toBeInTheDocument()
     for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled()
+  })
+
+  it('says why a module is locked in the words its server reason maps to, and names no plan', () => {
+    state.modules = state.modules.map((m) =>
+      m.id === 'compliance' ? { ...m, is_enabled: false, reason: 'not_entitled' } : m
+    )
+    for (const locale of ['en', 'vi']) {
+      const { container, unmount } = renderPage(locale)
+      expect(within(row('compliance')).getByRole('switch')).toBeDisabled()
+      expect(container.textContent ?? '').not.toMatch(
+        /\b(plan|tier|upgrade|subscription)\b|gói|nâng cấp/i
+      )
+      unmount()
+    }
+    renderPage()
+    expect(row('compliance')).toHaveTextContent(
+      'Not available for this organization. The administrator of this installation can make it available.'
+    )
+  })
+
+  it('shows a failed load with Retry, never an empty list', async () => {
+    const user = userEvent.setup()
+    state.modules = []
+    state.error = new Error('down')
+    renderPage()
+    expect(screen.getByText("Couldn't load Modules")).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetch).toHaveBeenCalled()
+  })
+
+  it('shows the loading state while the modules load', () => {
+    state.isLoading = true
+    renderPage()
+    expect(screen.getByLabelText('Loading Modules')).toHaveAttribute('aria-busy', 'true')
   })
 })

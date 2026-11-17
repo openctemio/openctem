@@ -7,6 +7,7 @@ import { importContentPack, uploadContentPack } from '../api/use-content-packs'
 import { AddContentPackDialog, contentPackFormProblem } from '../components/add-content-pack-dialog'
 import { stepUpErrorMessage } from '../components/admin-confirm-dialog'
 import { asLintReport } from '../components/content-lint-report'
+import { enter } from '@/test/user-input'
 
 vi.mock('../api/use-content-packs', async (orig) => ({
   ...(await orig<typeof import('../api/use-content-packs')>()),
@@ -80,33 +81,33 @@ describe('AddContentPackDialog', () => {
   async function fillImport(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole('button', { name: 'Add pack' }))
     await user.click(screen.getByRole('tab', { name: 'Import from a URL' }))
-    await user.type(screen.getByLabelText('Name'), 'nuclei-core')
-    await user.type(screen.getByLabelText('Version'), '10.2.4')
-    await user.type(screen.getByLabelText('Release URL (https)'), 'https://example.test/p.tgz')
-    await user.type(screen.getByLabelText('Expected digest'), DIGEST)
+    await enter(user, screen.getByLabelText('Name'), 'nuclei-core')
+    await enter(user, screen.getByLabelText('Version'), '10.2.4')
+    await enter(user, screen.getByLabelText('Release URL (https)'), 'https://example.test/p.tgz')
+    await enter(user, screen.getByLabelText('Expected digest'), DIGEST)
   }
 
   it('needs a reason and a six-digit code before it sends', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<AddContentPackDialog onAdded={vi.fn()} />)
     await fillImport(user)
     const send = screen.getByRole('button', { name: 'Import and sign' })
     expect(send).toBeDisabled()
-    await user.type(screen.getByLabelText('Reason'), 'monthly template refresh')
+    await enter(user, screen.getByLabelText('Reason'), 'monthly template refresh')
     expect(send).toBeDisabled()
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '12ab3456')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '12ab3456')
     expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('123456')
     expect(send).toBeEnabled()
   })
 
   it('sends the reason and code with an import', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const onAdded = vi.fn()
     vi.mocked(importContentPack).mockResolvedValue({ id: 'p1', lint: { excluded: 0 } })
     render(<AddContentPackDialog onAdded={onAdded} />)
     await fillImport(user)
-    await user.type(screen.getByLabelText('Reason'), 'monthly template refresh')
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await enter(user, screen.getByLabelText('Reason'), 'monthly template refresh')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Import and sign' }))
     await waitFor(() => expect(onAdded).toHaveBeenCalled())
     expect(importContentPack).toHaveBeenCalledWith({
@@ -122,7 +123,7 @@ describe('AddContentPackDialog', () => {
   })
 
   it('suspected secrets show the report and need an acknowledgement and a new code', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     vi.mocked(importContentPack)
       .mockRejectedValueOnce(
         new AdminApiError('suspected secrets', 422, 'CONTENT_SECRETS_FOUND', {
@@ -136,8 +137,8 @@ describe('AddContentPackDialog', () => {
       .mockResolvedValueOnce({ id: 'p1' })
     render(<AddContentPackDialog onAdded={vi.fn()} />)
     await fillImport(user)
-    await user.type(screen.getByLabelText('Reason'), 'monthly template refresh')
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await enter(user, screen.getByLabelText('Reason'), 'monthly template refresh')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Import and sign' }))
 
     expect(await screen.findByText('a/key.yaml')).toBeInTheDocument()
@@ -146,7 +147,7 @@ describe('AddContentPackDialog', () => {
     expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('')
     expect(again).toBeDisabled()
     await user.click(screen.getByRole('checkbox'))
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '654321')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '654321')
     expect(again).toBeEnabled()
     await user.click(again)
     await waitFor(() => expect(importContentPack).toHaveBeenCalledTimes(2))
@@ -157,16 +158,16 @@ describe('AddContentPackDialog', () => {
   })
 
   it('sends the reason and code as upload form fields', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     vi.mocked(uploadContentPack).mockResolvedValue({ id: 'p1' })
     render(<AddContentPackDialog onAdded={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: 'Add pack' }))
-    await user.type(screen.getByLabelText('Name'), 'nuclei-core')
-    await user.type(screen.getByLabelText('Version'), '10.2.4')
+    await enter(user, screen.getByLabelText('Name'), 'nuclei-core')
+    await enter(user, screen.getByLabelText('Version'), '10.2.4')
     const archive = new File([new Uint8Array([0x1f, 0x8b])], 'p.tgz', { type: 'application/gzip' })
     await user.upload(screen.getByLabelText(/Archive/), archive)
-    await user.type(screen.getByLabelText('Reason'), 'monthly template refresh')
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await enter(user, screen.getByLabelText('Reason'), 'monthly template refresh')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Upload and sign' }))
     await waitFor(() => expect(uploadContentPack).toHaveBeenCalled())
     expect(vi.mocked(uploadContentPack).mock.calls[0][0]).toMatchObject({
@@ -178,14 +179,14 @@ describe('AddContentPackDialog', () => {
   })
 
   it('a rejected code shows the API message and clears the code', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     vi.mocked(importContentPack).mockRejectedValue(
       new AdminApiError('Invalid or already used code', 401)
     )
     render(<AddContentPackDialog onAdded={vi.fn()} />)
     await fillImport(user)
-    await user.type(screen.getByLabelText('Reason'), 'monthly template refresh')
-    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await enter(user, screen.getByLabelText('Reason'), 'monthly template refresh')
+    await enter(user, screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Import and sign' }))
     expect(await screen.findByText('Invalid or already used code')).toBeInTheDocument()
     expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('')
