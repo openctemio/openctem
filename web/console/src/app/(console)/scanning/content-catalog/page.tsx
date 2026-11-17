@@ -160,7 +160,9 @@ export default function ContentCatalogPage() {
             'The signed catalog of rules, templates, sensors and other packages organizations install from.'
           )}
         >
-          {canEdit && tr && (
+          {/* Drawn from the first frame: Import waits for the trust state (it
+              needs a configured root), so nothing in the header changes on load. */}
+          {canEdit && (
             <>
               <Button variant="outline" size="sm" onClick={() => setPublishOpen(true)}>
                 <Package className="me-1.5 size-4" aria-hidden />
@@ -169,7 +171,7 @@ export default function ContentCatalogPage() {
               <Button
                 size="sm"
                 onClick={() => setImportOpen(true)}
-                disabled={tr.roots_configured === 0}
+                disabled={!tr || tr.roots_configured === 0}
               >
                 <Upload className="me-1.5 size-4" aria-hidden />
                 {t('admin.catalog.importButton', 'Import a bundle')}
@@ -256,84 +258,90 @@ export default function ContentCatalogPage() {
           </>
         )}
 
-        <ListTitleRow
-          title={
-            list.filters.type
-              ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
-              : t('admin.catalog.viewAll', 'All packages')
-          }
-          count={
-            <ListCount
-              total={total}
-              loading={!pkgs.data && !pkgs.error}
-              label={t(
-                'admin.catalog.total',
-                '{count, plural, one {# package} other {# packages}}',
-                {
-                  count: total,
-                }
-              )}
+        {/* The list comes once the trust state above it has its final height,
+            so its title row and toolbar are drawn where they stay. */}
+        {(tr || trust.error) && (
+          <>
+            <ListTitleRow
+              title={
+                list.filters.type
+                  ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
+                  : t('admin.catalog.viewAll', 'All packages')
+              }
+              count={
+                <ListCount
+                  total={total}
+                  loading={!pkgs.data && !pkgs.error}
+                  label={t(
+                    'admin.catalog.total',
+                    '{count, plural, one {# package} other {# packages}}',
+                    {
+                      count: total,
+                    }
+                  )}
+                />
+              }
             />
-          }
-        />
-        <DataTable
-          columns={columns}
-          data={pkgs.data?.data ?? []}
-          caption={t('admin.catalog.caption', 'Catalog packages')}
-          getRowId={(p) => p.latest.package_id}
-          error={pkgs.error}
-          onRetry={() => void pkgs.mutate()}
-          errorTitle={t('admin.catalog.packagesError', 'the catalog packages')}
-          // The first read: skeleton rows under a toolbar that stays mounted.
-          isLoading={pkgs.isLoading && !pkgs.data}
-          isRefreshing={pkgs.isValidating && !!pkgs.data}
-          refreshingLabel={t('admin.catalog.refreshing', 'Refreshing packages')}
-          showSearch={false}
-          search={{
-            value: list.q,
-            onChange: list.setSearch,
-            placeholder: t('admin.catalog.search', 'Search package id or title…'),
-            label: t('admin.catalog.searchLabel', 'Search packages'),
-          }}
-          toolbarStart={
-            <FilterSelect
-              label={t('admin.catalog.typeFilter', 'Package type')}
-              value={list.filters.type}
-              foldLabel
-              allLabel={t('admin.catalog.allTypes', 'All types')}
-              options={CONTENT_TYPES.map((ty) => ({
-                value: ty,
-                label: t(`contentCatalog.type.${ty}`, ty),
-              }))}
-              onChange={(v) => list.setFilter('type', v)}
+            <DataTable
+              columns={columns}
+              data={pkgs.data?.data ?? []}
+              caption={t('admin.catalog.caption', 'Catalog packages')}
+              getRowId={(p) => p.latest.package_id}
+              error={pkgs.error}
+              onRetry={() => void pkgs.mutate()}
+              errorTitle={t('admin.catalog.packagesError', 'the catalog packages')}
+              // The first read: skeleton rows under a toolbar that stays mounted.
+              isLoading={pkgs.isLoading && !pkgs.data}
+              isRefreshing={pkgs.isValidating && !!pkgs.data}
+              refreshingLabel={t('admin.catalog.refreshing', 'Refreshing packages')}
+              showSearch={false}
+              search={{
+                value: list.q,
+                onChange: list.setSearch,
+                placeholder: t('admin.catalog.search', 'Search package id or title…'),
+                label: t('admin.catalog.searchLabel', 'Search packages'),
+              }}
+              toolbarStart={
+                <FilterSelect
+                  label={t('admin.catalog.typeFilter', 'Package type')}
+                  value={list.filters.type}
+                  foldLabel
+                  allLabel={t('admin.catalog.allTypes', 'All types')}
+                  options={CONTENT_TYPES.map((ty) => ({
+                    value: ty,
+                    label: t(`contentCatalog.type.${ty}`, ty),
+                  }))}
+                  onChange={(v) => list.setFilter('type', v)}
+                />
+              }
+              showSelectionCount={false}
+              mobileCards
+              onRowClick={(p) => setOpen(p.latest.package_id)}
+              isFiltered={!!(q || list.filters.type)}
+              onClearFilters={list.reset}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState
+                    icon={Package}
+                    title={t(
+                      'admin.catalog.empty',
+                      'No package in the catalog yet: import a signed bundle.'
+                    )}
+                  />
+                ),
+                noMatch: {
+                  title: t('admin.catalog.noMatch', 'No package matches these filters'),
+                },
+              }}
+              manualPagination
+              pageCount={Math.max(1, Math.ceil(total / list.perPage))}
+              rowCount={total}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+              paginationNoun={t('admin.catalog.noun', 'packages')}
             />
-          }
-          showSelectionCount={false}
-          mobileCards
-          onRowClick={(p) => setOpen(p.latest.package_id)}
-          isFiltered={!!(q || list.filters.type)}
-          onClearFilters={list.reset}
-          emptyState={{
-            nothingYet: (
-              <EmptyState
-                icon={Package}
-                title={t(
-                  'admin.catalog.empty',
-                  'No package in the catalog yet: import a signed bundle.'
-                )}
-              />
-            ),
-            noMatch: {
-              title: t('admin.catalog.noMatch', 'No package matches these filters'),
-            },
-          }}
-          manualPagination
-          pageCount={Math.max(1, Math.ceil(total / list.perPage))}
-          rowCount={total}
-          pagination={list.pagination}
-          onPaginationChange={list.setPagination}
-          paginationNoun={t('admin.catalog.noun', 'packages')}
-        />
+          </>
+        )}
 
         <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
           <SheetContent className="w-full sm:max-w-lg">
