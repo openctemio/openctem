@@ -202,7 +202,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 #### Before you upgrade
 
-- **Removed: off-box administrators' audit stream leaves the Community build**: unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
+- **Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build**: unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
 - **Added: sensors that check no job signature are flagged, with the fix**: after the upgrade a sensor that reports signed jobs `off` is listed as unhardened (`jobs_unsigned`) until you pair it again or set `SENSOR_JOB_SIGNING_ROOT`; sensors that do not report it show `unknown` and are not flagged.
 - **Changed: the Go backend directory is server/ (source layout only)**: installs from the published images or release archives need no change. If you build from source or vendor files from this repository, use the new paths: `server/` for Go commands, `make -C server ...`, the Dockerfiles under `server/`, the deployment files under `server/deploy/` (compose, gateway, least-privilege SQL) and the module `github.com/openctemio/openctem/server` for Go imports. Release tags up to v0.21.x keep `api/`.
 - **Changed: sensor v0.41.1 and later need platform v0.22.0**: upgrade the platform to v0.22.0 first, then sensors to v0.41.1 (sdk-go v0.51.0). Sensors from v0.36.0 (the oldest v0.22.0 accepts) to v0.41.0 keep working with v0.22.0.
@@ -214,7 +214,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 #### Behaviour changes, removals and deprecations
 
-- Removed: off-box administrators' audit stream leaves the Community build (`audit-stream-extension.md`)
+- Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build (`audit-stream-extension.md`)
 
 ### Security: cross-organization negative tests for bulk and by-id routes, tenant-scoped run, workflow and integration getters
 
@@ -249,12 +249,12 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 - **Upgrade note:** no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
 - Docs: none (the console now matches what the server already enforced; no setting or workflow changes)
 
-### Removed: off-box administrators' audit stream leaves the Community build
+### Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build
 
-- Streaming the administrators' audit log to an external destination (`ADMIN_AUDIT_SINK`, `ADMIN_AUDIT_SINK_SECRET`, `ADMIN_AUDIT_SINK_SYSLOG_*`, `ADMIN_AUDIT_SINK_HEAD_INTERVAL`) is now provided by an extension, no longer by the Community build. The audit hash chain, its verification, the hourly chain check and every audit view and export stay. The table `admin_audit_forward_cursor` stays in the schema; no migration.
+- Streaming the administrators' audit log to an external destination (`ADMIN_AUDIT_SINK`, `ADMIN_AUDIT_SINK_SECRET`, `ADMIN_AUDIT_SINK_SYSLOG_*`, `ADMIN_AUDIT_SINK_HEAD_INTERVAL`) is now provided by an optional module and is not included in this build. The audit hash chain, its verification, the hourly chain check and every audit view and export stay. The table `admin_audit_forward_cursor` stays in the schema; no migration.
 - Moved now rather than after a notice period: no outside installation uses the stream yet.
 - **Upgrade note:** unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
-- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/development/editions.md
+- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/development/extensions.md
 
 ### Added: RFC-157 console API design and per-screen data map
 
@@ -1069,7 +1069,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 ### Added: public, versioned back-end extension API (`pkg/extension`) and custom builds through `server.Main`
 
-- Anyone can build their own edition: a separate Go module requires `github.com/openctemio/openctem/server`, writes extensions against `server/pkg/extension`, and calls `server.Main(ext1, ext2, ...)` from its own `main`; Go then lets it use only the public `server/pkg` packages. Several extensions per build; names, schemas and config keys must be unique, and at most one extension provides grants. The server checks the whole build before anything starts and refuses to start on a mistake.
+- Anyone can build OpenCTEM with their own extensions: a separate Go module requires `github.com/openctemio/openctem/server`, writes extensions against `server/pkg/extension`, and calls `server.Main(ext1, ext2, ...)` from its own `main`; Go then lets it use only the public `server/pkg` packages. Several extensions per build; names, schemas and config keys must be unique, and at most one extension provides grants. The server checks the whole build before anything starts and refuses to start on a mistake.
 - An extension can add a grant provider, background controllers, HTTP routes under `/api/v1` (each needs a core permission and a grant key; mounted behind the organization chain, the permission and the grant; core routes and planes cannot be replaced), migrations in its own schema, and the config keys it reads (core settings are refused). What the core hands over (`Deps`) is interfaces only: a scoped `Store` (one transaction per call, no pool), declared settings, entitlements, read access to the administrators' audit chain, and the environment.
 - `pkg/extension/example` is a complete extension and `server/examples/custombuild` a complete custom build, both compiled in every core build; `pkg/extension/extensiontest` gives an extension's tests the real core `Deps` and a migrated test database; `testdata/api.golden` records the exported surface. The extension API stays at version 1 until the core's 1.0 release.
 - `/api/v1/version` (and `openctem-server -version`) lists the build's `extensions` (empty for Community) and the `extension_api` version.
@@ -2024,7 +2024,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 - CI check "Edition fence" (and the pre-commit hook) keeps extension code and restricted words out of this repository; the extension mount points are git-ignored.
 - Every limit key and named feature has a description in `pkg/domain/limits`; the entitlement keys test fails on an undescribed, unknown or literal key.
-- Docs: [Editions](../docs/development/editions.md); the pull request template has an extension-point checklist. No behaviour change.
+- Docs: [Extensions](docs/development/extensions.md); the pull request template has an extension-point checklist. No behaviour change.
 
 ### Added: an opt-in HTTPS proxy for the platform's own feeds
 
@@ -2053,7 +2053,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 ### Added: extension point for things that are off unless granted
 
-- The core asks one entitlement answer for granted extras (`Addon`, `RequireAddon` with 403 `ADDON_NOT_LICENSED` / `ADDON_LICENSE_EXPIRED`, and installation notices for banners). The Community build has no provider: nothing is granted, there are no notices, and no Community feature, limit or security control changes.
+- The core asks one entitlement answer for granted extras (`Addon`, `RequireAddon` with 403 `ADDON_NOT_LICENSED` / `ADDON_LICENSE_EXPIRED`, and installation notices for banners). The default build has no provider: nothing is granted, there are no notices, and no feature, limit or security control of the default build changes.
 - RFC-145 is re-scoped to the grant seam and the guarantees every grant provider keeps (a grant only adds, fails closed for grants only, never touches sign-in, SSO, MFA, audit or security controls, keeps data, makes no outbound call). No migration, no licence code, no grant key and no new setting in this repository.
 
 ### Added: report a bug, send feedback or report a vulnerability from the Help menu
