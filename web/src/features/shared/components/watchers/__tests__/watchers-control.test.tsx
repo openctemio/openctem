@@ -121,7 +121,7 @@ describe('WatchersControl rail rows', () => {
   it('the self toggle names the action and offers Undo in its toast', async () => {
     renderControl()
     const toggle = screen.getByRole('button', { name: 'Stop watching this finding' })
-    expect(toggle).toHaveTextContent('Watching')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await userEvent.click(toggle)
     expect(setWatching).toHaveBeenCalledWith(false)
     const [message, opts] = toastSuccess.mock.calls[0]
@@ -135,7 +135,10 @@ describe('WatchersControl rail rows', () => {
   it('says Watch when you are not watching', () => {
     participants = { ...base, me: { user_id: 'u-me', state: 'unsubscribed' } }
     renderControl({ kind: 'task' })
-    expect(screen.getByRole('button', { name: 'Watch this task' })).toHaveTextContent('Watch')
+    expect(screen.getByRole('button', { name: 'Watch this task' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 
   it('shows only the count when the API hides names', async () => {
