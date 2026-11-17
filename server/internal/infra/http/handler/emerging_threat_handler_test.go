@@ -90,15 +90,21 @@ func TestEmergingThreatHandler(t *testing.T) {
 	// kev=true keeps known-exploited alerts; the row carries the in-scope
 	// product, the crown-jewel count and the score breakdown.
 	store.alert.Product, store.alert.ProductCount, store.alert.Critical = "WordPress", 2, 1
+	store.alert.Confirmed, store.alert.Likely, store.alert.Possible, store.alert.InternetFacing = 3, 1, 2, 2
 	store.alert.Breakdown = threatalert.Breakdown{Exploitation: 40, Total: 40}
 	w := do(h.List, emergingReq(http.MethodGet, "/api/v1/emerging-threats?kev=true", "", tenant, ""))
 	if w.Code != http.StatusOK || !store.lastFilter.KEVOnly {
 		t.Fatalf("kev list: %d %+v", w.Code, store.lastFilter)
 	}
-	for _, want := range []string{`"product":"WordPress"`, `"product_count":2`, `"critical_assets":1`, `"ets_breakdown":{"exploitation":40`, `"new":0`} {
+	for _, want := range []string{`"product":"WordPress"`, `"product_count":2`, `"critical_hosts":1`, `"ets_breakdown":{"exploitation":40`, `"new":0`,
+		`"confirmed_hosts":3`, `"likely_hosts":1`, `"possible_hosts":2`, `"internet_facing_hosts":2`} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Fatalf("list body misses %s: %s", want, w.Body.String())
 		}
+	}
+	// A host count is never named assets on the wire.
+	if strings.Contains(w.Body.String(), `_assets"`) {
+		t.Fatalf("list body names a host count assets: %s", w.Body.String())
 	}
 	if w := do(h.Get, emergingReq(http.MethodGet, "/", "", tenant, id)); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"can_suppress":false`) {
 		t.Fatalf("get: %d %s", w.Code, w.Body.String())

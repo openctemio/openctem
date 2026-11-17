@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The affected assets of an alert: one table grouped by tier (confirmed,
+ * The affected hosts of an alert: one table grouped by tier (confirmed,
  * likely, possible), one row per host. A host that serves several ports has
  * one service asset per port; the API folds them into the host's row
  * (`asset_groups`) and the row lists each service with its own asset,
@@ -24,14 +24,14 @@ import type {
 const TIER_ORDER: AssetTier[] = ['confirmed', 'likely', 'possible']
 const PAGE_SIZES = [25, 50, 100]
 
-type HostRow = EmergingThreatHost & { tier: AssetTier; key: string }
+export type HostRow = EmergingThreatHost & { tier: AssetTier; key: string }
 
 function Dash() {
   return <span className="text-muted-foreground">—</span>
 }
 
 /** The row's name: the host, and under it each service as a link to its asset. */
-function HostTitle({ row }: { row: HostRow }) {
+export function HostTitle({ row }: { row: HostRow }) {
   const { t } = useTranslation()
   const single = row.asset_id ? row.services[0] : undefined
   return (
