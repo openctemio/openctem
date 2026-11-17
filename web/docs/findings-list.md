@@ -238,6 +238,15 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
   button opens the same facets in a sheet.
 - Chips read as label and value ("Severity: Critical, High"); other operators keep their word ("Severity is
   not Low", "EPSS score ≥ 0.5").
+- A chip's text is a button (Enter or Space; its X stays the remove button): it opens the editor Add filter
+  shows for that field (`FieldEditor`, `filters/field-editor.tsx`) on the chip's own operator and values,
+  anchored to the chip, a bottom sheet on a phone (`ResponsivePopover`). The operators and values come from
+  the filter contract, which is fetched when the editor opens. Changing between two operators of one kind
+  ("is" and "is not", "≥" and "≤") keeps the values. Apply rewrites the filter in the URL in its place
+  (`withFilterReplaced`: the param and value Add filter would write, the page reset) and focus goes to the
+  chip; Escape or a click outside changes nothing. A chip in "+N more" is edited the same way. Not editable:
+  the locked chips of the open saved view (lock and tooltip as before), unknown filters, the Advanced chip,
+  and fields Add filter does not offer.
 
 - The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
   filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
