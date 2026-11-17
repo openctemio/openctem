@@ -165,6 +165,17 @@ describe('column kinds', () => {
       style: { width: 148, minWidth: 148, maxWidth: 148 },
     })
   })
+
+  it('decisions: end-aligned, the width the page gives its buttons', () => {
+    expect(columnLayout('decide', { kind: 'decisions', width: 196 })).toEqual({
+      kind: 'decisions',
+      align: 'end',
+      sortFirst: 'asc',
+      style: { width: 196, minWidth: 196, maxWidth: 196 },
+    })
+    // No width from the page: as wide as its content.
+    expect(columnLayout('decide', { kind: 'decisions' }).style).toBeUndefined()
+  })
 })
 
 describe('accessible name', () => {

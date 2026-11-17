@@ -153,7 +153,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-142](RFC-142-feed-relay.md) | Feed relay: signed feeds through a platform sensor, zero platform egress | Accepted (2026-11-01, revised 2026-11-02). |
 | [RFC-143](RFC-143-vulnerability-catalog.md) | Vulnerability catalog: separate store, reproducible keys, minimal disk, detachable | Proposed (2026-11-02) |
 | [RFC-144](RFC-144-application-security-posture.md) | Application security posture: branches, CI closure, code-to-runtime context | Draft (2026-11-02). |
-| [RFC-145](RFC-145-enterprise-licence-and-entitlements.md) | Grants and the guarantees of any grant provider | Accepted (2026-11-02; re-scoped 2026-11-03: the open core holds the grant seam and the guarantees; licence files, their verifier and storage belong to the extension that provides grants) |
+| [RFC-145](RFC-145-grants-and-grant-providers.md) | Grants and the guarantees of any grant provider | Accepted (2026-11-02; re-scoped 2026-11-03: the core holds the grant seam and the guarantees; a provider's source, its verification and storage belong to the extension that provides grants) |
 | [RFC-146](RFC-146-connector-framework-and-run-modes.md) | Connector framework and run modes | Proposed (2026-11-02). |
 | [RFC-147](RFC-147-managed-scanning-fleet.md) | Managed scanning fleet: demand scaling, owned egress proxies, proxy selection | Proposed (2026-11-02); nothing here is built unless a section says "shipped" |
 | [RFC-148](RFC-148-asset-neighborhood.md) | Asset neighborhood and lineage graph read | Implemented (2026-11-04) |

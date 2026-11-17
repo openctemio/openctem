@@ -150,12 +150,45 @@ export function distinctHostname(sensor: Pick<Sensor, 'name' | 'hostname'>): str
 /**
  * Name, then host and address on lines of their own (short lines instead of
  * one long one); badges for a platform sensor and the deprecated protocol.
+ *
+ * `inline` (the list's one-line row): the name and its badges only; the host
+ * and the address are the list's Host column (`SensorHostCell`).
  */
-export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: SensorGrantSummary }) {
+export function SensorNameCell({
+  sensor,
+  grant,
+  inline = false,
+}: {
+  sensor: Sensor
+  grant?: SensorGrantSummary
+  inline?: boolean
+}) {
   const { t } = useTranslation()
   const host = distinctHostname(sensor)
   const ip = sensor.ip_address || null
   const fallback = isOneShotSensor(sensor) ? t('sensors.cells.oneShot') : t('sensors.cells.noHost')
+  if (inline) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5" data-slot="sensor-name-cell">
+        <span
+          dir="auto"
+          className="min-w-16 truncate font-medium [unicode-bidi:isolate]"
+          data-slot="sensor-name"
+          title={sensor.name}
+        >
+          {sensor.name}
+        </span>
+        {/* The marks give way with the name; one that does not fit is cut at
+            the cell's edge and is whole in the sensor's drawer. */}
+        <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden empty:hidden">
+          <ProtocolTag sensor={sensor} />
+          <ConfigHealthTag health={sensor.config_health} />
+          <SensorPostureTag sensor={sensor} />
+          {sensor.status !== 'revoked' && <SensorGrantTags grant={grant} />}
+        </span>
+      </span>
+    )
+  }
   return (
     <div className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
@@ -188,6 +221,48 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
       )}
       {!sensor.hostname && !ip && <span className={cn('truncate text-xs', muted)}>{fallback}</span>}
     </div>
+  )
+}
+
+/**
+ * The list's Host column, on one line: the host name the sensor reports
+ * (when it differs from the sensor's name), else its address; both in the
+ * hover text. A sensor that reports neither says so in words.
+ */
+export function SensorHostCell({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
+  const host = distinctHostname(sensor)
+  const ip = sensor.ip_address || null
+  if (!host && !ip) {
+    return (
+      <span className={cn('block truncate text-sm', muted)}>
+        {sensor.hostname
+          ? sensor.hostname
+          : isOneShotSensor(sensor)
+            ? t('sensors.cells.oneShot')
+            : t('sensors.cells.noHost')}
+      </span>
+    )
+  }
+  const title = [
+    host ? `${t('sensors.cells.hostTitle')}: ${host}` : null,
+    ip ? `${t('sensors.cells.ipTitle')}: ${ip}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  return (
+    <span className="flex min-w-0 items-baseline gap-2" title={title} data-slot="sensor-host-cell">
+      {host && (
+        <span className="min-w-16 truncate text-sm" data-slot="sensor-host">
+          {host}
+        </span>
+      )}
+      {ip && (
+        <span className={cn('shrink-0 text-sm tabular-nums', host && muted)} data-slot="sensor-ip">
+          {ip}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -360,6 +435,7 @@ export function SensorVersionCell({
   channel,
   showChannelTag = true,
   showSdk = true,
+  inline = false,
 }: {
   sensor: SensorVersionFields
   /** The product catalog and SDK entries from GET /sensors/stats. */
@@ -371,6 +447,12 @@ export function SensorVersionCell({
    * see SensorSdkValue) unless the SDK needs attention.
    */
   showSdk?: boolean | 'when-flagged'
+  /**
+   * The list's one-line row: the release and its channel tag, then the SDK's
+   * tag only when the SDK needs attention; the SDK version is in the hover
+   * text with the build facts.
+   */
+  inline?: boolean
 }) {
   const { t, locale } = useTranslation()
   const v = normalizeSensorVersion(sensor.version)
@@ -411,6 +493,39 @@ export function SensorVersionCell({
           : undefined
   const build = sensorBuildTooltip(sensor, t, locale)
   const sdkShown = showSdk === 'when-flagged' ? !!sdkTag : showSdk
+  if (inline) {
+    return (
+      <span
+        // A second tag that does not fit is cut at the cell's edge, never
+        // drawn over the next column; the hover text has both.
+        className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+        title={[build, title, sdkTitle].filter(Boolean).join('\n') || undefined}
+        data-slot="sensor-version-cell"
+      >
+        {v ? (
+          <span className="text-sm tabular-nums" data-slot="sensor-version">
+            {v}
+          </span>
+        ) : (
+          sdk && (
+            <span className={cn('min-w-0 truncate text-sm tabular-nums', muted)} title={sdk}>
+              {t('sensors.version.sdk', 'SDK')} {sdkLabel(sdk, t)}
+            </span>
+          )
+        )}
+        {tag && (
+          <SensorTag tone={tag.tone} title={title}>
+            {t(tag.key, tag.label)}
+          </SensorTag>
+        )}
+        {sdk && sdkTag && (
+          <SensorTag tone={sdkTag.tone} title={sdkTitle}>
+            {t(sdkTag.key, sdkTag.label)}
+          </SensorTag>
+        )}
+      </span>
+    )
+  }
   // Two short lines instead of one long one: the sensor release with its
   // channel tag, then the SDK (smaller, muted) with its warning. min-w-0 and
   // max-w-full keep a long value inside its column (a grid cell or a table
@@ -481,8 +596,12 @@ export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
   )
 }
 
-/** Results waiting on the sensor (its outbox), as it last reported. */
-export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
+/**
+ * Results waiting on the sensor (its outbox), as it last reported. `inline`
+ * (the list's one-line row): the counts side by side, the age of the oldest
+ * in the hover text.
+ */
+export function SensorOutboxCell({ sensor, inline = false }: { sensor: Sensor; inline?: boolean }) {
   const { t } = useTranslation()
   const ob = sensor.outbox
   if (!ob && sensor.status !== 'active') return <span className={muted}>—</span>
@@ -497,8 +616,15 @@ export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
   if (ob.pending_count === 0 && lost === 0) {
     return <span className={cn('text-sm tabular-nums', muted)}>0</span>
   }
+  const oldest =
+    ob.pending_count > 0 && ob.oldest_age_seconds > 0
+      ? t('sensors.cells.oldest', undefined, { age: formatDurationShort(ob.oldest_age_seconds) })
+      : undefined
   return (
-    <span className="flex flex-col">
+    <span
+      className={inline ? 'flex items-baseline gap-2 whitespace-nowrap' : 'flex flex-col'}
+      title={inline ? oldest : undefined}
+    >
       {ob.pending_count > 0 && (
         <span
           className={cn(
@@ -514,13 +640,7 @@ export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
           {t('sensors.cells.lost', undefined, { count: lost.toLocaleString() })}
         </span>
       )}
-      {ob.pending_count > 0 && ob.oldest_age_seconds > 0 && (
-        <span className={cn('text-xs', muted)}>
-          {t('sensors.cells.oldest', undefined, {
-            age: formatDurationShort(ob.oldest_age_seconds),
-          })}
-        </span>
-      )}
+      {oldest && !inline && <span className={cn('text-xs', muted)}>{oldest}</span>}
     </span>
   )
 }

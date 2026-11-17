@@ -67,10 +67,10 @@ func TestIdleWorkspaceHandler(t *testing.T) {
 		t.Fatalf("no reason: %d", rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	h.SetPolicy(rec, req(http.MethodPut, id.String(), `{"enabled":true,"reason":"hosted free tier"}`, true))
+	h.SetPolicy(rec, req(http.MethodPut, id.String(), `{"enabled":true,"reason":"idle policy opt-in"}`, true))
 	var resp IdleWorkspaceResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if rec.Code != http.StatusOK || !resp.PolicyEnabled || resp.PolicyReason != "hosted free tier" || resp.Stage != "active" {
+	if rec.Code != http.StatusOK || !resp.PolicyEnabled || resp.PolicyReason != "idle policy opt-in" || resp.Stage != "active" {
 		t.Fatalf("enable: %d %+v", rec.Code, resp)
 	}
 }

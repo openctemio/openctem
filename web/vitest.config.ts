@@ -57,7 +57,7 @@ export default defineConfig({
   },
   resolve: {
     // `@extension/*` is the empty stub here; an extension's own test run points it
-    // at the overlay with its own config (docs/development/editions.md).
+    // at its own code with its own config (docs/development/extensions.md).
     alias: [
       {
         find: /^@extension\/(.*)$/,

@@ -544,7 +544,11 @@ reference.
   | `masked`          | start  | 200        | asc        |
   | `select`          | center | 40         | asc        |
   | `actions`         | center | 48         | asc        |
+  | `decisions`       | end    | from page  | asc        |
   | `text`            | start  | by content | asc        |
+
+  `decisions` is a queue's last column of decision buttons (Approve, Reject,
+  More): end-aligned, as wide as the page's `width` says its buttons need.
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.
@@ -796,6 +800,25 @@ Every settings page is built from the same parts (`@/features/shared`):
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
   `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+
+### Charts
+
+- One chart library (recharts, loaded on demand through
+  `src/components/charts`), and one set of defaults in
+  `src/components/charts/chart-defaults.ts`: `CHART_AXIS` (tick labels 12 px
+  in the muted ink, no axis line, no tick marks), `CHART_GRID` (horizontal
+  dashed guides in the border colour), `CHART_BAR_CURSOR` / `CHART_LINE_CURSOR`
+  (hover), `CHART_REFERENCE` (+ label) for markers and targets,
+  `CHART_TOOLTIP_PROPS` and `CHART_HEIGHT`. A chart spreads these; it does not
+  write its own axis, grid or tooltip colours.
+- Series colours come from the `--viz-*` tokens by meaning: severity,
+  priority, the eight categories, new against fixed, the sequential ramp.
+  Teal (the action colour) never encodes data.
+- Colour never carries the meaning alone: a series has its name in the legend
+  or beside its mark, a state has an icon or a word, a not-prioritised part is
+  hatched.
+- Every chart has a one-sentence summary as its accessible name and a data
+  table (a table view, or a visually hidden table).
 
 ## 7. States
 

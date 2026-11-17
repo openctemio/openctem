@@ -55,6 +55,9 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'fq',
   // The search field's mode (`mode=query`, features/query/components/query-mode.tsx).
   'mode',
+  // The saved view the list was derived from once another query text is
+  // applied (`FROM_VIEW_PARAM`): the title names it, the request never sends it.
+  'from_view',
 ])
 
 /** The URL suffix each operator uses, longest first (`_gte` before `_gt`). */
