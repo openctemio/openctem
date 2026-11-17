@@ -2,6 +2,7 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from '@/components/link'
 import {
   AlertTriangle,
   Building2,
@@ -640,6 +641,12 @@ function Unavailable({ message }: { message: string }) {
         title={t('mcp.consent.cannotConnect', 'Cannot connect the application')}
         description={message}
       />
+      {/* A way out of the dead end: nothing was connected. */}
+      <EntryActions>
+        <Button asChild variant="outline">
+          <Link href="/">{t('common.access.toDashboard', 'Go to the dashboard')}</Link>
+        </Button>
+      </EntryActions>
     </EntryCard>
   )
 }

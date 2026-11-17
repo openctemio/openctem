@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from '@/components/link'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 
 import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
@@ -164,6 +165,7 @@ export function ConfirmView({ id }: { id: string | null }) {
 }
 
 function Message({ title, text, icon }: { title: string; text: string; icon?: 'ok' | 'no' }) {
+  const { t } = useTranslation()
   return (
     <EntryCard>
       <EntryHeader
@@ -178,6 +180,12 @@ function Message({ title, text, icon }: { title: string; text: string; icon?: 'o
         }
         description={text}
       />
+      {/* Every end state has a way on: nothing is left to do on this page. */}
+      <EntryActions>
+        <Button asChild variant="outline">
+          <Link href="/">{t('common.access.toDashboard', 'Go to the dashboard')}</Link>
+        </Button>
+      </EntryActions>
     </EntryCard>
   )
 }

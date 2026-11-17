@@ -163,7 +163,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   function onSubmit(data: ResetPasswordInput) {
     setError(null)
     setErrorCode(null)
-    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy, t)
     if (issue) {
       form.setError('password', { message: issue })
       return

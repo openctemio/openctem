@@ -48,7 +48,7 @@ export function VerifyEmail() {
             : t('auth.verifyEmail.failed', 'This link is invalid or has expired.')}
         </EntryBanner>
       )}
-      {state === 'failed' && <ResendVerification />}
+      {state === 'failed' && <ResendVerification primary />}
       <EntryActions>
         <Button asChild variant={state === 'verified' ? 'signal' : 'outline'}>
           <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>

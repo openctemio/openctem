@@ -165,7 +165,7 @@ export function RegisterForm({
    * Handle form submission for local auth
    */
   function onSubmit(data: RegisterInput) {
-    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy, t)
     if (issue) {
       form.setError('password', { message: issue })
       return

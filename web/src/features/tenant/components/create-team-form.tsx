@@ -188,6 +188,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
       isSubmitting={isSubmitting}
       isMutating={false}
       showCancel={showCancel}
+      entry
       bundles={bundles}
       isLoadingBundles={isLoadingBundles}
       selectedBundles={selected}
@@ -323,6 +324,8 @@ interface CreateTeamFormUIProps {
   isSubmitting: boolean
   isMutating: boolean
   showCancel: boolean
+  /** On an entry page (first organization): the card's one main action is teal. */
+  entry?: boolean
   onCancel?: () => void
   bundles: ModulePreset[]
   isLoadingBundles: boolean
@@ -339,6 +342,7 @@ function CreateTeamFormUI({
   isSubmitting,
   isMutating,
   showCancel,
+  entry = false,
   onCancel,
   bundles,
   isLoadingBundles,
@@ -465,7 +469,7 @@ function CreateTeamFormUI({
           )}
           <Button
             type="submit"
-            size="lg"
+            variant={entry ? 'signal' : 'default'}
             disabled={isMutating || isSubmitting || !isFormValid}
             className="flex-1"
           >

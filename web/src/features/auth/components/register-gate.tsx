@@ -58,7 +58,7 @@ export function RegisterGate({
           )}
         />
         <EntryActions>
-          <Button variant="signal" asChild>
+          <Button variant="outline" asChild>
             <Link href="/login">
               <ArrowLeft aria-hidden className="size-4" />
               {t('auth.common.backToSignIn', 'Back to sign in')}

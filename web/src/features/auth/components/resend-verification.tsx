@@ -14,6 +14,8 @@ import { useEmailUnavailable } from '../api/use-auth-providers'
 interface ResendVerificationProps {
   /** Known address (the sign-in form). Without it the person types theirs. */
   email?: string
+  /** The card's one main action (the failed verification page): teal, no icon. */
+  primary?: boolean
 }
 
 /**
@@ -22,7 +24,10 @@ interface ResendVerificationProps {
  * account. On a server that cannot send email the person is told to ask an
  * administrator instead.
  */
-export function ResendVerification({ email: knownEmail }: ResendVerificationProps) {
+export function ResendVerification({
+  email: knownEmail,
+  primary = false,
+}: ResendVerificationProps) {
   const { t } = useTranslation()
   const emailUnavailable = useEmailUnavailable()
   const [typed, setTyped] = useState('')
@@ -85,11 +90,11 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
           />
         </>
       )}
-      <Button type="submit" variant="outline" disabled={busy || !email}>
+      <Button type="submit" variant={primary ? 'signal' : 'outline'} disabled={busy || !email}>
         {busy ? (
           <Loader2 aria-hidden className="size-4 animate-spin" />
         ) : (
-          <Mail aria-hidden className="size-4" />
+          !primary && <Mail aria-hidden className="size-4" />
         )}
         {t('auth.verifyEmail.resendSubmit', 'Send a new verification link')}
       </Button>

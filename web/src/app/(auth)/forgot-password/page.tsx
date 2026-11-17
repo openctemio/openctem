@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
-import { ArrowLeft, Loader2, Mail } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
@@ -90,9 +90,10 @@ export default function ForgotPasswordPage() {
                 "If an account exists with the email you entered, we've sent a password reset link. Please check your inbox and spam folder."
               )}
               {passwordPolicy &&
+                passwordPolicy.reset_link_valid_minutes > 0 &&
                 ' ' +
                   t('auth.forgot.expiresIn', 'The link expires in {lifetime}.', {
-                    lifetime: formatLinkLifetime(passwordPolicy.reset_link_valid_minutes),
+                    lifetime: formatLinkLifetime(passwordPolicy.reset_link_valid_minutes, t),
                   })}
             </>
           }
@@ -142,11 +143,7 @@ export default function ForgotPasswordPage() {
 
           <EntryActions>
             <Button variant="signal" disabled={isPending} type="submit">
-              {isPending ? (
-                <Loader2 aria-hidden className="size-4 animate-spin" />
-              ) : (
-                <Mail aria-hidden className="size-4" />
-              )}
+              {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
               {t('auth.forgot.submit', 'Send reset link')}
             </Button>
             <Button variant="outline" asChild>
