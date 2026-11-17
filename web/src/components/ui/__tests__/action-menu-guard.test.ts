@@ -22,29 +22,6 @@ const ALLOW: Record<string, string> = {
     'the phone list menu holds checkbox items (choices, not actions)',
 }
 
-/**
- * Files whose "⋯" menu moves in a follow-up change (or in a change that owns
- * the file). Remove an entry when its menu moves; never add one for new code.
- */
-const PENDING = new Set([
-  'features/access-control/components/role-detail-sheet.tsx',
-  'features/activity/components/activity-items.tsx',
-  'features/assets/components/asset-owners-tab.tsx',
-  'features/assets/components/inventory/inventory-table.tsx',
-  'features/assets/components/relationships/related-assets-list.tsx',
-  'features/dashboards/components/dashboard-home.tsx',
-  'features/dashboards/editor/dashboard-editor.tsx',
-  'features/findings/components/detail/finding-header.tsx',
-  'features/findings/components/lifecycle/sub-status-lanes.tsx',
-  'features/pentest/components/campaign-detail-sheet.tsx',
-  'features/pentest/components/steps-editor.tsx',
-  'features/remediation/components/campaign-detail.tsx',
-  'features/remediation-hub/components/task-detail.tsx',
-  'features/repositories/components/repository-workspace.tsx',
-  'features/scm-connections/components/scm-connection-card.tsx',
-  'features/vulnerabilities/components/actions/vuln-actions-menu.tsx',
-])
-
 function* tsxFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
@@ -78,12 +55,12 @@ describe('"⋯" menus', () => {
   const found = handBuiltMoreMenus()
 
   it('use ActionMenu', () => {
-    const offenders = [...found].filter((rel) => !(rel in ALLOW) && !PENDING.has(rel))
+    const offenders = [...found].filter((rel) => !(rel in ALLOW))
     expect(offenders).toEqual([])
   })
 
   it('lists only files that still need it', () => {
-    const stale = [...Object.keys(ALLOW), ...PENDING].filter((rel) => !found.has(rel))
+    const stale = Object.keys(ALLOW).filter((rel) => !found.has(rel))
     expect(stale).toEqual([])
   })
 })

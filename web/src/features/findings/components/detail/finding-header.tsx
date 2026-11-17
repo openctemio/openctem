@@ -41,12 +41,7 @@ import { Badge } from '@/components/ui/badge'
 import { BranchOnlyBadge } from '../branch-only-badge'
 import { ExploitSignals } from '../exploit-signals'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -141,6 +136,39 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const TypeIcon = TYPE_ICON[finding.findingType ?? 'vulnerability'] ?? Bug
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
 
+  const menuItems: ActionMenuEntry[] = [
+    {
+      id: 'copy-link',
+      label: t('findings.header.copyLink', 'Copy link'),
+      icon: Link2,
+      onSelect: async () => {
+        const ok = await copyToClipboard(shareableLink(`/findings/${finding.id}`))
+        if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
+        else toast.error(t('common.copyFailed', 'Could not copy'))
+      },
+    },
+    ...(canCreateTicket
+      ? [
+          {
+            id: 'ticket',
+            label: t('findings.header.createTicket', 'Create ticket'),
+            icon: Ticket,
+            onSelect: () => setTicketOpen(true),
+          },
+        ]
+      : []),
+    ...(canMarkDuplicate
+      ? [
+          {
+            id: 'duplicate',
+            label: t('findings.header.markDuplicate', 'Mark as duplicate'),
+            icon: Copy,
+            onSelect: () => setDuplicateOpen(true),
+          },
+        ]
+      : []),
+  ]
+
   return (
     <header className="min-w-0" data-slot="finding-header">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -232,42 +260,20 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           size="sm"
           onTriageCompleted={onTriageCompleted}
         />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <ActionMenu
+          title={finding.title}
+          label={t('findings.header.moreActions', 'More actions')}
+          items={menuItems}
+          trigger={
             <Button
               variant="ghost"
               size="icon"
-
               aria-label={t('findings.header.moreActions', 'More actions')}
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem
-              onClick={async () => {
-                const ok = await copyToClipboard(shareableLink(`/findings/${finding.id}`))
-                if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
-                else toast.error(t('common.copyFailed', 'Could not copy'))
-              }}
-            >
-              <Link2 className="h-4 w-4" />
-              {t('findings.header.copyLink', 'Copy link')}
-            </DropdownMenuItem>
-            {canCreateTicket && (
-              <DropdownMenuItem onClick={() => setTicketOpen(true)}>
-                <Ticket className="h-4 w-4" />
-                {t('findings.header.createTicket', 'Create ticket')}
-              </DropdownMenuItem>
-            )}
-            {canMarkDuplicate && (
-              <DropdownMenuItem onClick={() => setDuplicateOpen(true)}>
-                <Copy className="h-4 w-4" />
-                {t('findings.header.markDuplicate', 'Mark as duplicate')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        />
       </div>
 
       <ConfirmDialog
