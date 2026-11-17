@@ -2,12 +2,9 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
@@ -15,7 +12,7 @@ import (
 
 // assetListTimeout bounds one list or count statement: a filter that
 // cannot finish in time is a 503 QUERY_TIMEOUT.
-const assetListTimeout = "5s"
+const assetListTimeout = interactiveReadTimeout
 
 var errUncompiledAssetFilter = errors.New("asset filter was not compiled for the assets registry")
 
@@ -48,12 +45,8 @@ func buildAssetPageQuery(selectList, where, order string, limit, offset int) str
 
 // assetTimeout maps a statement timeout to asset.ErrQueryTimeout. The
 // sentinel replaces the driver text: the timeout is all the caller learns.
-func assetTimeout(err error) error {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
-		return asset.ErrQueryTimeout
-	}
-	return err
+func assetTimeout(ctx context.Context, err error) error {
+	return readTimeout(ctx, readAssets, asset.ErrQueryTimeout, err)
 }
 
 // assetKeysetOrder is the keyset order of WhereQuery.Keyset; the index
@@ -71,14 +64,11 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 	if q.Where == nil || !strings.HasPrefix(q.Where.SQL, assetlist.Fields.TenantSQL+" = $") || q.Where.OrderBy == "" {
 		return asset.WhereResult{}, errUncompiledAssetFilter
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, assetListTimeout)
 	if err != nil {
 		return asset.WhereResult{}, fmt.Errorf("begin asset list: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+assetListTimeout+"'"); err != nil {
-		return asset.WhereResult{}, fmt.Errorf("set asset list timeout: %w", err)
-	}
 	perPage := q.PerPage
 	if perPage <= 0 {
 		perPage = 20
@@ -100,7 +90,7 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 	countSQL := fmt.Sprintf("SELECT count(*) FROM (SELECT 1 FROM assets a WHERE %s LIMIT %d) c", where, asset.CountCap+1)
 	var total int64
 	if err := tx.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
-		return asset.WhereResult{}, assetTimeout(fmt.Errorf("count assets: %w", err))
+		return asset.WhereResult{}, assetTimeout(ctx, fmt.Errorf("count assets: %w", err))
 	}
 	capped := total > asset.CountCap
 	if capped {
@@ -115,10 +105,10 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 			listArgs = append(listArgs, q.After.LastSeen, q.After.ID.String())
 		}
 	}
-	query := buildAssetPageQuery(r.selectQuery(), listWhere, order, perPage, offset)
+	query := buildAssetPageQuery(r.selectQuery(ctx), listWhere, order, perPage, offset)
 	rows, err := tx.QueryContext(ctx, query, listArgs...)
 	if err != nil {
-		return asset.WhereResult{}, assetTimeout(fmt.Errorf("list assets: %w", err))
+		return asset.WhereResult{}, assetTimeout(ctx, fmt.Errorf("list assets: %w", err))
 	}
 	defer func() { _ = rows.Close() }()
 	// A constant capacity: perPage is clamped to maxAssetPageRows above.
@@ -131,7 +121,7 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 		data = append(data, a)
 	}
 	if err := rows.Err(); err != nil {
-		return asset.WhereResult{}, assetTimeout(fmt.Errorf("list assets: %w", err))
+		return asset.WhereResult{}, assetTimeout(ctx, fmt.Errorf("list assets: %w", err))
 	}
 	if err := tx.Commit(); err != nil {
 		return asset.WhereResult{}, fmt.Errorf("commit asset list: %w", err)

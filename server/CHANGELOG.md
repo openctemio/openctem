@@ -8,13 +8,201 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.23.0 (2026-11-15)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: PostgreSQL 17.12 in CI and the release build**: upgrade your PostgreSQL 17 server to 17.12 and restart it. No dump, restore or data migration; rebuild any third-party C extensions you added. With the Compose stack (`postgres:17`): `docker compose pull postgres` then `docker compose up -d postgres`.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: the server image is ghcr.io/openctemio/openctem-server (`image-name-server.md`)
+
+### Security: analysis jobs reach only an explicit AI worker grant
+
+- An `analyze` command is handed only to a sensor of the organization whose grant is the `ai-worker` profile (job types exactly `analyze`). A sensor on the `legacy-broad` grant that advertised an `analyze.<kind>` capability could have claimed one; it now gets none, by poll or by id, and a claim that reads no grant withholds analysis jobs.
+- Docs: server/docs/architecture/sensor-pairing.md ("The AI worker profile")
+
+### Security: the app role can no longer write an extension schema's migration tracking tables
+
+- The database roles script (`deploy/postgres/least-privilege-roles.sql`) took write access to the migration tracking tables (`schema_migrations`, `schema_migrations_applied`) away from the app role in `public` only, and granted it full DML on every table of an extension's schema, those tables included. A role that can write them can make the next migration run skip a migration or run one again. The script now takes INSERT, UPDATE, DELETE and TRUNCATE on those two tables back from the app role and `PUBLIC` in every application schema, and its verification fails if the app can still write one. Re-run the script (or let the next release's install step run it) on a database that holds an extension schema.
+- Docs: server/docs/deployment/database-roles.md ("The bootstrap script")
+
+### Security: PostgreSQL 17.12 in CI and the release build
+
+- PostgreSQL 17.12 (2026-11-12) is an upstream security release; it fixes CVE-2026-6460
+  (authenticated arbitrary code execution, CVSS 8.8) among others. CI and the release image
+  build now test against `postgres:17-alpine` at 17.12.
+- **Upgrade note:** upgrade your PostgreSQL 17 server to 17.12 and restart it. No dump, restore
+  or data migration; rebuild any third-party C extensions you added. With the Compose stack
+  (`postgres:17`): `docker compose pull postgres` then `docker compose up -d postgres`.
+- Docs: https://docs.openctem.io/operations/upgrade/#security-advisories-database-patch-releases
+
+### Behaviour change: the server image is ghcr.io/openctemio/openctem-server
+
+- From this release the server (API) image is published as `ghcr.io/openctemio/openctem-server`, signed by the same release workflow identity as before (`.github/workflows/docker-publish.yml@refs/tags/<version>`). `ghcr.io/openctemio/openctem-api` keeps every tag up to v0.22.x and receives no new ones; nothing is copied under an old name (the `ghcr.io/openctemio/api` copies stop too). The offline bundle lists the image as `openctem-server` (`openctem-image-openctem-server-<version>.oci.tar`), and the release notes, the Compose files, the all-in-one build and the air-gapped kit use the new name.
+- **Upgrade note, Docker Compose:** take the Compose files of the new release as usual; they default to the new name. If your `.env` sets `API_IMAGE=ghcr.io/openctemio/openctem-api` (or a mirror path ending in `/openctem-api`), change that one line to `.../openctem-server` before you set `OPENCTEM_VERSION` to this release, or the pull fails with "not found".
+- **Upgrade note, Helm:** the chart release for this version changes the default `api.image.repository` to `ghcr.io/openctemio/openctem-server`. Values that set `api.image.repository` to the old name must change it; with `global.imageRegistry` the image is looked up as `<registry>/openctem-server`.
+- **Upgrade note, Ansible kit:** nothing to do; the kit's release entry pins the new image by digest.
+- **Upgrade note, private registries and air-gapped sites:** mirror this release with its own `mirror-images.sh` (it copies `openctem-server`; `mirror-images.sh server-image <version>` prints the name for any release, so mirroring an older release still copies `openctem-api`). A Harbor replication rule created from `deploy/airgap/harbor/replication-rule-openctem.json` must add `openctem-server` to its name filter (the template now lists both names). The GitLab build pipeline names its own images `openctem-server`; `bump-deployment.sh` and `discover-release.sh` accept both names. Admission policies or registry allow-lists that name `openctem-api` need the new name too.
+- **Upgrade note, all-in-one image:** no change (`ghcr.io/openctemio/openctem`).
+- Docs: server/docs/deployment/docker.md, deploy/airgap/README.md
+
+### Added: an AI agent can run on the organization's AI workers
+
+- An AI agent runs built in (the platform calls the model) or on the organization's AI workers: `PUT /api/v1/ai/agents/{id}/executor` with `builtin` or `tenant_worker` (`service_accounts:manage` and a recent sign-in, audited `ai_agent.executor_changed` with the value before and after).
+- For an AI agent on AI workers, `POST /api/v1/findings/{id}/ai/analyze` runs the same checks as a built-in run (AI off for the organization, use case, data scope, data class ceiling, masked bundle with the mapping kept on the platform), then answers 202 with a queued run and sends one analysis job (`analyze` command) whose payload is the validated `openctem.analyze/v1` job (masked `bundle.text`, budgets, model policy, a 15-minute deadline) next to `required_capabilities: ["analyze.<kind>"]`. A bundle over the job size limit is shortened by its encoded size, and the job says so. Audited `ai_agent.analysis_job_queued`, without the bundle text.
+- A run on an AI worker always ends: past its deadline, or when its job expired, failed, was canceled or is gone, the `ai-worker-run-sweep` controller ends it `failed` (`deadline_exceeded`, `worker_error`, `worker_unavailable`) or `canceled` within a minute and cancels a job still open. Applying a worker's result comes in a later release.
+- Migrations 20261113063356 (`ai_runs.injection_suspected`, boolean, default false) and 20261113063414 (index `idx_ai_runs_worker_live`, built concurrently): schema only, no data changes.
+- Docs: server/docs/architecture/ai-analysis.md ("Runs on an AI worker"), server/docs/rfcs/RFC-131-ai-analysis.md §5
+
+### Added: the analyze job can carry the masked bundle inline (`bundle.text`)
+
+- The `openctem.analyze/v1` job schema gains an optional `bundle.text` (a string of at most 196608 characters): the bundle an AI worker reads, masked when `bundle.masked` is true. The placeholder mapping stays on the platform; a worker never receives a secret value. Additive: the contract stays v1 and a job without it is still valid.
+- Docs: server/docs/architecture/ai-analyze-contract.md ("The bundle in a job")
+
+### Added: the `analyze` command type and the `ai-worker` sensor grant profile
+
+- An AI worker is a sensor on the new `ai-worker` grant profile: it runs analysis jobs (command type `analyze`) and nothing else, at the passive tier, with no target network, no credentials and no push ingest. It can be made Trusted at approval.
+- A grant that lists `analyze` lists no other job type, and every scanning profile refuses `analyze`, so one sensor is either an AI worker or a scanner. An `analyze` command carries `required_capabilities: ["analyze.<kind>"]`, so only a worker that advertises the kind claims it; it is signed at claim like every command type.
+- Migration 20261113024824 adds `analyze` to the command types, lets a run on an AI worker be queued (or end canceled, refused or failed) before a worker claims it, and adds `ai_runs.result_digest`. It changes no data: both checks only widen the old ones (added NOT VALID, then validated).
+- Docs: server/docs/architecture/sensor-pairing.md ("The AI worker profile"), server/docs/rfcs/RFC-131-ai-analysis.md §5
+
+### Added: one-command Compose install (`server/deploy/install.sh`)
+
+- `install.sh` takes a Linux host from nothing to a running, healthy stack: it checks Docker Engine and the
+  Compose plugin (and offers Ubuntu's packages when they are missing), the host's memory, disk, ports,
+  network, DNS and clock, asks at most five questions with defaults (host name, Let's Encrypt or the
+  built-in CA, the first and break-glass administrators, the bundled sensor), writes `.env` through
+  `setup.sh`, verifies every release image's keyless signature in a cosign container pinned by digest and
+  checks the pulled digests against it, runs the configuration check, starts the stack, waits for it to be
+  healthy, creates the first administrators with `bootstrap-admin` and prints the URLs and the first
+  sign-in.
+- Unattended: every answer is an option or an `OPENCTEM_INSTALL_*` variable, `--yes` never asks, and a
+  missing required answer is an error. Without a terminal the one-time credentials go only to a new
+  `--credentials-file` (mode 0600).
+- The release comes from `--version`, the bundle's `VERSION` or the release tag checked out; a git checkout that is
+  not at a release tag must name it with `--version` (its `VERSION` file is the last release merged back).
+- Idempotent: an existing `.env` is reused and never overwritten, and a rerun against a healthy stack recreates nothing; the compose file set is recorded in
+  `.env` (`COMPOSE_FILE`), and a change to it is backed up first and printed. It stops with the exact
+  `.env` line to add when a stack of the same project name runs elsewhere or with an overlay the file set
+  lacks.
+- `setup.sh --set NAME=VALUE` writes any other setting into the new `.env`; a typed secret is checked for
+  characters that would break a connection URL or Compose and for its length.
+- Releases ship the Compose files as `openctem-compose-vX.Y.Z.tar.gz`, covered by the signed
+  `checksums-sha256.txt`, so the install needs no git checkout: download, verify, then run.
+- Docs: server/docs/deployment/docker.md#one-command-install
+
+### Added: held findings when the target throttled or blocked the scan
+
+- A finding gets a verification state: `unchecked` (default, every existing finding), `held`, `verified` or `not_reproduced`, with the codes behind a hold (`edge_block_page`, `throttled_response`, `soft_404`, `target_throttled`, `timing_based`, `oob_weak`). The finding API and the findings export (CSV and NDJSON, columns `verification_state` and `hold_reasons`, reasons joined with `;` in CSV) return `verification_state` and `hold_reasons`; the findings list and the query language filter on `verification_state` (for example `verification_state=held`).
+- When a scan command's result names a host as throttled, blocked, edge protected, at the rate floor or answering every path alike (coverage gaps), the findings that command's reports sighted first on that host are held with `target_throttled`: when the report is ingested if the result is already in, otherwise when the command's coverage is evaluated. A held sighting never downgrades a finding that was already there or was verified. A later completed run that sights a held finding again on a host its result does not name as throttled releases it when that run is evaluated (whatever path recorded the sighting); the released finding then sends its notifications, automations and automatic tickets once, re-enters risk scores and SLA escalation, and its asset is rescored.
+- A held finding is kept and listed, but stays out of asset risk counts and rollups, business unit and asset group counts, dashboard open and overdue counts, KEV critical counts, emerging-threat alerts, SLA breach and at-risk escalation, new-finding events (notifications, automation rules), priority-escalation notices, and ticket creation (an automatic Jira ticket becomes a policy hold that is released once the finding is checked; an automation `create_ticket` step is skipped with reason `finding_held`).
+- At most one notice per scan command, `finding_held_critical` (default on for new integrations), says how many critical findings were held.
+- Migrations 20261114071207 (`findings.verification_state`, `findings.hold_reasons`, constant defaults, CHECKs added NOT VALID: no table rewrite, no scan under the ALTER lock), 20261114071208 (partial index `idx_findings_tenant_held`, built concurrently), 20261114090424 (validates the two CHECKs under SHARE UPDATE EXCLUSIVE: reads and writes continue) and 20261114090425 (the asset risk trigger also watches `verification_state`, so holding and releasing rescore the asset). Schema only, no data changes.
+- Docs: server/docs/architecture/held-findings.md, server/docs/rfcs/RFC-158-held-findings.md
+
+### Added: the findings query language negates the state field
+
+- `state` (open, fixed, dispositioned, closed, all) was already a findings field; `-state:closed` and `state!=open` now work in the short and long form, so the State chip of the findings list and a query say the same thing. A negation compiles to `NOT` of the same constant status predicate the list's state filter uses; no new query shape, the tenant condition is unchanged.
+- Docs: https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/query-language.md
+
+### Changed: CI runs for the next integration branch, which takes no migrations
+
+- Pull requests into `next`, its merge queue and pushes to it run the same checks as `develop`. Nothing is published or deployed from `next`.
+- A pull request into `next`, or a merge group for it, fails `API CI OK` when a path under `server/migrations/` differs from `develop`'s: schema changes land on `develop`, additive only, and reach `next` through the sync pull request.
+- Docs: server/docs/development/ci-cd.md#the-next-integration-branch
+
+### Changed: the security gate does not re-judge what a develop -> next sync merges cleanly
+
+- A pull request into `next` is judged only on the files that differ from git's clean merge of `develop` into `next`, which the gate computes from the commits. Conflict resolutions, edits hidden in the merge and anything not on `develop` still need the maintainer's ack.
+- Docs: server/docs/development/ci-cd.md#security-gate
+
+### Fixed: IP range filters find hosts by their recorded addresses
+
+- The address range filters compared the range with the asset's name only, so a host named by a DNS name (`web01.example.com`) with an address inside the range in its properties was missed. The Assets `ip` filter, the findings `asset_ip` filter (query language `asset.ip`), `GET /assets?in_cidr=` and smart asset group rules (`in_cidr`) now match an asset when its name or any address it has is inside the range: the `ip_addresses`, `private_ip` and `public_ip` of hosts and network devices (IPv4 and IPv6). A domain's or a service's resolved addresses do not count. All four use one condition, so a group rule matches what the list shows. The findings `asset_ip` filter now also matches hosts named by an address, as the Assets `ip` filter already did.
+- Migrations `20261113075346_asset_ip_addresses` and `20261114055218_asset_ip_addresses_backfill`: a new table `asset_ip_addresses` with a btree index on `(tenant_id, addr)`, kept by triggers on `assets`. The first only creates it (a lock on `assets` of a few milliseconds); the second copies the existing assets' addresses in batches of 2000 assets, each its own transaction, so asset writes keep going (a write to an asset of the running batch waits about a tenth of a second); measured 137 s for 1.35 million assets, 167 s under 2,900 concurrent asset writes a second. Until it ends, a range filter can miss an asset that existed before the upgrade and was not written since. No existing row changes.
+- The Assets list reads a page's ids before it joins the open-findings counts, and the range filters use a semi join: a wide range (`10.0.0.0/8`) on a large organization answers in milliseconds instead of timing out.
+- Groups whose rule uses `in_cidr` may gain members at their next evaluation (hosts by recorded address); the change is recorded in the group's member history like any rule match. A team whose data scope comes from such a group (team access rule `asset_group_match`) then sees those hosts and their findings too: review `in_cidr` groups used for access before upgrading.
+- Docs: server/docs/architecture/asset-addresses.md
+
+### Fixed: saving an asset's tags no longer removes tags the editor did not remove
+
+- The asset edit form, the detail sheet and the row's "+ Add label" sent the whole tag list they had loaded, and the API replaced the stored list with it: a tag a sensor, an import, a rule or another person set after the page loaded was deleted on save. They now send only the tags added and removed (`tags_add`, `tags_remove` on `PUT /api/v1/assets/{id}`, additive), and the API applies the change to the stored list inside the update, so concurrent edits keep both changes. `tags` (the whole list) still replaces the list for API clients that send the list they just read.
+- The edit form shows tags as chips, so a tag containing a comma is no longer split, and a stored tag longer than 50 characters is no longer cut on save.
+- The bulk "Add tag" and "Remove tags" actions sent one full update per asset built from the list page's copy (tags, name, description, scope, exposure, owner and properties), which could drop tags and revert fields changed meanwhile. They now call `POST /api/v1/assets/bulk/tags` (new, `assets:write`, at most 100 assets per request, the console sends larger selections in batches): only the named tag changes on each asset. Bulk "Set criticality" sends only the criticality.
+- `asset.updated` audit entries now name the tags added and removed; bulk tag changes are audited as `asset.bulk_tags_changed`.
+- Docs: server/docs/architecture/asset-schema.md ("Editing tags never drops another writer's tags")
+
+### Fixed: detail section headings no longer lose their title or push buttons past the edge
+
+- In a narrow column (the finding page's right-hand side, a phone) the "Verification" heading lost its title and its two buttons ran past the card. The shared section heading now wraps: the actions move to their own line, end-aligned, and the title keeps its width. Wide layouts are unchanged.
+- The finding's asset line shows the type, the criticality and the exposure as separate pieces instead of joining them with " · ".
+- Docs: none (layout fix in the web console)
+
+### Fixed: no "set but not read" start-up warning for a key an extension declares
+
+- A server built with extensions logged `environment: <KEY> is set but not read by the API` for every config key an extension declared (for example the off-box administrators' audit stream settings), and a declared key close to a core name would have been refused as a typo. The start-up environment check now counts the build's declared extension keys as read; unknown keys are still warned about and typos of core names still refused, and a removed setting no extension declares still stops the start.
+- Docs: server/docs/deployment/database-roles.md ("The bootstrap script", "How it is tested"), server/docs/development/extension-api.md (Migrations, Config keys)
+
+### Fixed: a vulnerability feed stuck on an expired bundle is now loud
+
+- The vulnerability bundle controller warned "corpus is stale" only when its import ran without error, so a feed failing for days (an expired pointer on the publisher) logged nothing but the 20-minute failure line. It now judges by the last successful import and warns whenever there has been none for six hours or the newest bundle is over three days old, and it returns the import error so the controller error counter sees it.
+- New gauges `openctem_feed_last_success_timestamp_seconds{source}` and `openctem_feed_failing{source}` (epss, kev, vulnfeed; enabled feeds only) and a Prometheus alert `FeedStale` (bundle feed 36 hours without a successful import, KEV 12 hours, EPSS 72 hours) with promtool tests. Operators with their own rules file: copy the `FeedStale` rule from `deploy/observability/prometheus/rules/openctem.yml`.
+- Threat intel, Sync status shows "Last successful import" next to a failed feed.
+- Docs: none (operator monitoring page server/docs/operations/monitoring.md, anchor FeedStale)
+
+### Fixed: no "Unknown filter" chip after drilling into a findings group
+
+- Opening a group's findings (for example Findings, By rule) added the navigation parameter `from` to the URL, and the filter bar showed it as a red "Unknown filter" chip and counted it as an active filter. `from` is now a navigation parameter, not a filter: no chip, no count, and it is not saved into a saved view. The breadcrumb back to the grouped view is unchanged.
+- Docs: none (bug fix, no behaviour to document)
+
+### Fixed: a group in the related-assets graph names its assets
+
+- Selecting a counted group node ("22 assets") in an asset's relationship graph now lists its first five members (name and type, each opening the asset) with "and N more", and "Show all" is the card's primary action to draw the rest. Only assets in the viewer's data scope are named.
+- The zoom and fit controls, and the full-screen button, no longer cover graph nodes: the fitted view keeps clear of them (phone and desktop, also on the attack-path graph).
+- Docs: server/docs/architecture/asset-relationships.md ("Web")
+
+### Fixed: accepting an invitation opens the organization just joined
+
+- Accepting an invitation added the membership but left the session on the previous organization, or on none: an account with its own organization landed back in it, and an account without one was sent to its account space ("not in an organization yet"). Opening the link again showed "Invitation already accepted" with only "Go to sign in". Accept now makes the joined organization the active one (the API checks the membership) and loads its home, where "You joined <organization>." is shown; an organization that requires two-factor authentication walks through it first.
+- An accepted invitation offers "Open <organization>" to a signed-in person; accepting in a second tab shows the invitation as accepted with the same button instead of an error.
+- Every page that changes the session (sign-in, selecting, creating, leaving or deleting an organization, joining from the account space, two-factor set-up) now leaves through one helper: a full page load to a same-origin path, with its message shown on the page that loads instead of being lost with the old one.
+- Docs: web/.claude/auth.md ("Full Page Reload After Auth Changes"); the public docs site needs no change (no step the person takes changes)
+
+### Fixed: "Mark all read" now clears every notification
+
+- A notification dated ahead of the database clock stayed unread forever after "Mark all read" (the unread count compares its time with the read-all watermark). The store now clamps a notification's time to the database clock on insert and on a coalescing update, and "Mark all read" sets the watermark to the later of now and the newest notification time in the organization. The bell also drops its badge at once instead of waiting for the refresh.
+- No migration and no data change: a stored future-dated notification is cleared by the next "Mark all read" (the watermark covers the newest notification time).
+- Docs: none (bug fix, no behaviour change to document)
+
+### Fixed: the Threat intelligence "Sync status" tab no longer ends in a page error
+
+- The tab threw "Prioritization Error" as soon as the API listed a feed the console had no display entry for (the `vulnfeed` catalog feed next to EPSS and KEV). It now shows that feed as "Vulnerability feed", and any other new feed under its id. The Prioritization error page no longer says "failed to load data" for a page that broke while drawing, and asks for a reload when a deploy replaced the code under an open tab.
+- Docs: none (console fix, no behaviour change)
+
+### Fixed: no colour flash on buttons when a page loads
+
+- Buttons no longer fade from one colour to another when their look changes after the page loads (data arriving, hydration); they still fade in on hover and focus. The Findings page's Triage button is drawn as the main action from the first paint instead of turning from light to dark.
+- Docs: none (visual fix, no behaviour change)
+
+### Fixed: menus, destructive buttons, toasts and the sidebar outline in the dark theme
+
+- The highlighted row of a menu, a select list and the command palette is visible in the dark theme; it was the popover's own colour.
+- Destructive buttons and badges use the destructive text colour on the full destructive fill in both themes.
+- Toasts follow the light or dark theme and use the console's colours.
+- The outlined sidebar button draws its edge.
+- Docs: none (visual fixes to existing controls; no behaviour or setting changes)
+
 ## v0.22.0 (2026-11-13)
 
 ### Upgrade notes
 
 #### Before you upgrade
 
-- **Removed: off-box administrators' audit stream leaves the Community build**: unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
+- **Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build**: unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
 - **Added: sensors that check no job signature are flagged, with the fix**: after the upgrade a sensor that reports signed jobs `off` is listed as unhardened (`jobs_unsigned`) until you pair it again or set `SENSOR_JOB_SIGNING_ROOT`; sensors that do not report it show `unknown` and are not flagged.
 - **Changed: the Go backend directory is server/ (source layout only)**: installs from the published images or release archives need no change. If you build from source or vendor files from this repository, use the new paths: `server/` for Go commands, `make -C server ...`, the Dockerfiles under `server/`, the deployment files under `server/deploy/` (compose, gateway, least-privilege SQL) and the module `github.com/openctemio/openctem/server` for Go imports. Release tags up to v0.21.x keep `api/`.
 - **Changed: sensor v0.41.1 and later need platform v0.22.0**: upgrade the platform to v0.22.0 first, then sensors to v0.41.1 (sdk-go v0.51.0). Sensors from v0.36.0 (the oldest v0.22.0 accepts) to v0.41.0 keep working with v0.22.0.
@@ -26,7 +214,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 #### Behaviour changes, removals and deprecations
 
-- Removed: off-box administrators' audit stream leaves the Community build (`audit-stream-extension.md`)
+- Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build (`audit-stream-extension.md`)
 
 ### Security: cross-organization negative tests for bulk and by-id routes, tenant-scoped run, workflow and integration getters
 
@@ -61,12 +249,12 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 - **Upgrade note:** no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
 - Docs: none (the console now matches what the server already enforced; no setting or workflow changes)
 
-### Removed: off-box administrators' audit stream leaves the Community build
+### Removed: off-box administrators' audit stream is provided by an optional module and is not included in this build
 
-- Streaming the administrators' audit log to an external destination (`ADMIN_AUDIT_SINK`, `ADMIN_AUDIT_SINK_SECRET`, `ADMIN_AUDIT_SINK_SYSLOG_*`, `ADMIN_AUDIT_SINK_HEAD_INTERVAL`) is now provided by an extension, no longer by the Community build. The audit hash chain, its verification, the hourly chain check and every audit view and export stay. The table `admin_audit_forward_cursor` stays in the schema; no migration.
+- Streaming the administrators' audit log to an external destination (`ADMIN_AUDIT_SINK`, `ADMIN_AUDIT_SINK_SECRET`, `ADMIN_AUDIT_SINK_SYSLOG_*`, `ADMIN_AUDIT_SINK_HEAD_INTERVAL`) is now provided by an optional module and is not included in this build. The audit hash chain, its verification, the hourly chain check and every audit view and export stay. The table `admin_audit_forward_cursor` stays in the schema; no migration.
 - Moved now rather than after a notice period: no outside installation uses the stream yet.
 - **Upgrade note:** unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
-- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/development/editions.md
+- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/development/extensions.md
 
 ### Added: RFC-157 console API design and per-screen data map
 
@@ -881,7 +1069,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 ### Added: public, versioned back-end extension API (`pkg/extension`) and custom builds through `server.Main`
 
-- Anyone can build their own edition: a separate Go module requires `github.com/openctemio/openctem/server`, writes extensions against `server/pkg/extension`, and calls `server.Main(ext1, ext2, ...)` from its own `main`; Go then lets it use only the public `server/pkg` packages. Several extensions per build; names, schemas and config keys must be unique, and at most one extension provides grants. The server checks the whole build before anything starts and refuses to start on a mistake.
+- Anyone can build OpenCTEM with their own extensions: a separate Go module requires `github.com/openctemio/openctem/server`, writes extensions against `server/pkg/extension`, and calls `server.Main(ext1, ext2, ...)` from its own `main`; Go then lets it use only the public `server/pkg` packages. Several extensions per build; names, schemas and config keys must be unique, and at most one extension provides grants. The server checks the whole build before anything starts and refuses to start on a mistake.
 - An extension can add a grant provider, background controllers, HTTP routes under `/api/v1` (each needs a core permission and a grant key; mounted behind the organization chain, the permission and the grant; core routes and planes cannot be replaced), migrations in its own schema, and the config keys it reads (core settings are refused). What the core hands over (`Deps`) is interfaces only: a scoped `Store` (one transaction per call, no pool), declared settings, entitlements, read access to the administrators' audit chain, and the environment.
 - `pkg/extension/example` is a complete extension and `server/examples/custombuild` a complete custom build, both compiled in every core build; `pkg/extension/extensiontest` gives an extension's tests the real core `Deps` and a migrated test database; `testdata/api.golden` records the exported surface. The extension API stays at version 1 until the core's 1.0 release.
 - `/api/v1/version` (and `openctem-server -version`) lists the build's `extensions` (empty for Community) and the `extension_api` version.
@@ -1836,7 +2024,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 - CI check "Edition fence" (and the pre-commit hook) keeps extension code and restricted words out of this repository; the extension mount points are git-ignored.
 - Every limit key and named feature has a description in `pkg/domain/limits`; the entitlement keys test fails on an undescribed, unknown or literal key.
-- Docs: [Editions](../docs/development/editions.md); the pull request template has an extension-point checklist. No behaviour change.
+- Docs: [Extensions](docs/development/extensions.md); the pull request template has an extension-point checklist. No behaviour change.
 
 ### Added: an opt-in HTTPS proxy for the platform's own feeds
 
@@ -1865,7 +2053,7 @@ Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/
 
 ### Added: extension point for things that are off unless granted
 
-- The core asks one entitlement answer for granted extras (`Addon`, `RequireAddon` with 403 `ADDON_NOT_LICENSED` / `ADDON_LICENSE_EXPIRED`, and installation notices for banners). The Community build has no provider: nothing is granted, there are no notices, and no Community feature, limit or security control changes.
+- The core asks one entitlement answer for granted extras (`Addon`, `RequireAddon` with 403 `ADDON_NOT_LICENSED` / `ADDON_LICENSE_EXPIRED`, and installation notices for banners). The default build has no provider: nothing is granted, there are no notices, and no feature, limit or security control of the default build changes.
 - RFC-145 is re-scoped to the grant seam and the guarantees every grant provider keeps (a grant only adds, fails closed for grants only, never touches sign-in, SSO, MFA, audit or security controls, keeps data, makes no outbound call). No migration, no licence code, no grant key and no new setting in this repository.
 
 ### Added: report a bug, send feedback or report a vulnerability from the Help menu
