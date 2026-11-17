@@ -83,7 +83,8 @@ export function ScanMobileCard({
               <button
                 type="button"
                 data-slot="scan-card-status"
-                className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                // As tall as the row menu beside it (one height per row of controls).
+                className="-my-1 inline-flex h-control-touch shrink-0 items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => onOpenRun(run.id)}
                 aria-label={t('scans.cell.openLatestRun', undefined, { status: run.status })}
               >

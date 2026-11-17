@@ -35,9 +35,21 @@ async function textBoxes(root: Locator): Promise<Box[]> {
       if (parent.closest('.sr-only')) continue
       const range = document.createRange()
       range.selectNodeContents(n)
+      // What is drawn: a text cut by its box (one-line cells end in an
+      // ellipsis) is measured up to the edge of every clipping ancestor.
+      const clips: DOMRect[] = []
+      for (let a: Element | null = parent; a && a !== el.parentElement; a = a.parentElement) {
+        if (getComputedStyle(a).overflowX !== 'visible') clips.push(a.getBoundingClientRect())
+      }
       for (const r of Array.from(range.getClientRects())) {
-        if (r.width < 1 || r.height < 1) continue
-        out.push({ x: r.x, y: r.y, width: r.width, height: r.height, text, owner: i })
+        let left = r.left
+        let right = r.right
+        for (const c of clips) {
+          left = Math.max(left, c.left)
+          right = Math.min(right, c.right)
+        }
+        if (right - left < 1 || r.height < 1) continue
+        out.push({ x: left, y: r.y, width: right - left, height: r.height, text, owner: i })
       }
       i += 1
     }
@@ -75,9 +87,12 @@ async function outside(container: Locator, boxes: Box[]): Promise<string[]> {
 }
 
 async function openScans(page: Page): Promise<boolean> {
-  const res = page.waitForResponse((r) => /\/api\/v1\/scans\?/.test(r.url()) && r.ok(), {
-    timeout: 60_000,
-  })
+  // The list's own read: the managed-scans section reads the same endpoint
+  // with origin=system, and may answer first (and empty).
+  const res = page.waitForResponse(
+    (r) => /\/api\/v1\/scans\?/.test(r.url()) && !/origin=system/.test(r.url()) && r.ok(),
+    { timeout: 60_000 }
+  )
   await page.goto('/scans')
   const body = (await (await res).json()) as { data?: unknown[] }
   return (body.data?.length ?? 0) > 0
