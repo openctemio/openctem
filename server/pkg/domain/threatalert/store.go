@@ -160,6 +160,8 @@ type Summary struct {
 // AssetView is one affected asset as a viewer sees it.
 type AssetView struct {
 	Asset
+	// TenantID is the organization the asset belongs to.
+	TenantID      shared.ID
 	FindingStatus string
 	TaskID        *shared.ID
 }

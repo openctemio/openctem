@@ -311,7 +311,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 		}
 	}
 	d, err := svc.Get(ctx, A, scope, alertA.ID)
-	if err != nil || len(d.Assets) != 1 || d.Assets[0].AssetID != a2 || d.AllInScope {
+	if err != nil || len(d.Assets) != 1 || d.Assets[0].AssetID != a2 || d.Assets[0].TenantID != A || d.AllInScope {
 		t.Fatalf("scoped detail: %+v %v", d, err)
 	}
 	if _, err := svc.ChangeState(ctx, A, scope, alertA.ID, threatalertapp.StateChange{State: threatalert.StateNotAffected, Reason: threatalert.ReasonWrongProduct, Actor: user}, auditapp.AuditContext{}); !errors.Is(err, threatalert.ErrOutOfScope) {
