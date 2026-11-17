@@ -10,7 +10,12 @@ import {
   RelativeTime,
   PageStack,
 } from '@/features/shared'
-import { QueueCard, QueueDecisionActions, QueueEmpty, useQueueAnnouncer } from '@/features/queue'
+import {
+  QueueCard,
+  QueueDecisionActions,
+  QueueEmpty,
+  useQueueAnnouncer,
+} from '@/features/shared/components/queue'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
