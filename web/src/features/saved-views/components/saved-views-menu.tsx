@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Bookmark, Building2, Copy, Pin, PinOff, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -61,8 +61,21 @@ export interface BuiltInView {
   onToggle: () => void
 }
 
+/**
+ * What a list's title row asks of the menu (its Save view button): the menu
+ * owns the one save dialog and the update of the open view.
+ */
+export interface SavedViewsActions {
+  /** Open the save-view dialog (a new view from the list as it is). */
+  openSave: () => void
+  /** Save the changes into the open view (its owner only). */
+  saveChanges: () => Promise<void>
+}
+
 interface SavedViewsMenuProps {
   page: SavedViewPage
+  /** Lets the page's title row open the save dialog and save the open view's changes. */
+  actionsRef?: Ref<SavedViewsActions>
   /**
    * The filter to save: the API's own list params, or a checked filter document.
    * Defaults to the page URL's query; a page whose URL keeps other names (or
@@ -133,6 +146,7 @@ export function summarizeChanges(
  */
 export function SavedViewsMenu({
   page,
+  actionsRef,
   resolveFilter,
   pageParams,
   builtIn,
@@ -260,6 +274,20 @@ export function SavedViewsMenu({
       setSaving(false)
     }
   }
+
+  // One handle for the life of the menu; it always runs the latest save.
+  const latestSaveChanges = useRef(saveChanges)
+  useEffect(() => {
+    latestSaveChanges.current = saveChanges
+  })
+  useImperativeHandle(
+    actionsRef,
+    () => ({
+      openSave: () => setSaveOpen(true),
+      saveChanges: () => latestSaveChanges.current(),
+    }),
+    []
+  )
 
   const remove = async (view: SavedView) => {
     try {
