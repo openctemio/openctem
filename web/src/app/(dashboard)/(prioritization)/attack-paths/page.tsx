@@ -452,7 +452,9 @@ export default function AttackPathsPage() {
               {(full) => (
                 <div
                   className={
-                    full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : 'flex min-h-0 flex-1 flex-col'
+                    full
+                      ? 'flex min-h-0 flex-1 flex-col rounded-md border'
+                      : 'flex min-h-0 flex-1 flex-col'
                   }
                 >
                   {full && (
