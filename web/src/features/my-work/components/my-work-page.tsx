@@ -13,6 +13,7 @@ import { ArrowRight, CheckCircle2, Info, MoreHorizontal, Timer } from 'lucide-re
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { RefreshButton } from '@/components/list-page-parts'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -21,7 +22,7 @@ import { PageHeader, PageStack } from '@/features/shared'
 import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
-import { LockedChip } from '@/features/shared/components/filter-chips-row'
+import { FilterChipsRow, LockedChip } from '@/features/shared/components/filter-chips-row'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
@@ -225,33 +226,40 @@ export function MyWorkPage() {
         isLoading={(views.isLoading || findingRows.isLoading) && !findingRows.data}
         error={views.error ?? findingRows.error}
         onRetry={refresh}
-        // Line 2 of the toolbar: the queue's locked rule, its one filter token
-        // (due in 72 hours) and how much of the queue is on screen. Each item
-        // keeps its own width; the line wraps between items, never inside one.
+        // Line 2 of the toolbar, the kit's chips row: the queue's locked rule
+        // first (its own line on a phone), its one filter token (due in 72
+        // hours), and how much of the queue is on screen at the end.
         toolbarBelow={
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {lockedChip(which)}
-            {which === 'assigned' && dueSoonCount !== undefined && (
-              // A toggle at the row's control height (the kit button, pressed
-              // while the queue shows only what falls due).
-              <Button
-                size="sm"
-                variant={dueSoon ? 'secondary' : 'outline'}
-                aria-pressed={dueSoon}
-                className="shrink-0"
-                onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-              >
-                <Timer className="me-2 size-4" aria-hidden="true" />
-                {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
-              </Button>
-            )}
-            {total > rows.length && (
-              <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
-                {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
-              </span>
-            )}
-          </div>
+          <FilterChipsRow
+            data-testid="my-work-chips"
+            leading={lockedChip(which)}
+            chips={
+              which === 'assigned' && dueSoonCount !== undefined
+                ? [
+                    // A toggle at the row's control height (the kit button,
+                    // pressed while the queue shows only what falls due).
+                    <Button
+                      key="due"
+                      size="sm"
+                      variant={dueSoon ? 'secondary' : 'outline'}
+                      aria-pressed={dueSoon}
+                      onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
+                    >
+                      <Timer className="me-2 size-4" aria-hidden="true" />
+                      {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+                      <span className="ms-2 tabular-nums">{dueSoonCount}</span>
+                    </Button>,
+                  ]
+                : []
+            }
+            trailing={
+              total > rows.length ? (
+                <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+                  {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
+                </span>
+              ) : undefined
+            }
+          />
         }
         // The toolbar's end: the queue's one main action, everything else
         // under More (View all opens the same list on Findings).
@@ -364,28 +372,37 @@ export function MyWorkPage() {
 
   const asOf = views.data?.as_of
   const explain = t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])
+  const isPhone = useIsMobile()
+  const triageButton =
+    canTriage && triageView ? (
+      <Button
+        onClick={() =>
+          triageView.count > 0
+            ? openTriage(triageView.params, NEEDS_TRIAGE_VIEW)
+            : router.push(quickViewHref(triageView.params, include))
+        }
+      >
+        {t('myWork.triage', 'Triage')}
+        {triageView.count > 0 && <span className="ms-1.5 tabular-nums">{triageView.count}</span>}
+      </Button>
+    ) : null
   return (
     <Main>
       <PageStack>
         {/* The page's one main action (Triage, with what waits) sits on the
-            title's line; Refresh belongs to the list, in its title row. */}
-        <PageHeader title={t('myWork.title')} description={t('myWork.description')}>
-          <>
-            {canTriage && triageView && (
-              <Button
-                onClick={() =>
-                  triageView.count > 0
-                    ? openTriage(triageView.params, NEEDS_TRIAGE_VIEW)
-                    : router.push(quickViewHref(triageView.params, include))
-                }
-              >
-                {t('myWork.triage', 'Triage')}
-                {triageView.count > 0 && (
-                  <span className="ms-1.5 tabular-nums">{triageView.count}</span>
-                )}
-              </Button>
-            )}
-          </>
+            title's line: right after the title on a phone (the kit's title
+            action, so it never drops to a line of its own), at the end of
+            the row from md. The page sentence shows from md; on a phone each
+            tab says what it holds behind its info mark. Refresh belongs to
+            the list, in its title row. */}
+        <PageHeader
+          title={t('myWork.title')}
+          description={<span className="hidden md:inline">{t('myWork.description')}</span>}
+          titleAction={
+            isPhone && triageButton ? <span className="ms-2">{triageButton}</span> : undefined
+          }
+        >
+          {isPhone ? null : triageButton}
         </PageHeader>
 
         <Tabs value={tab} onValueChange={(v) => setQuery({ tab: v as MyWorkTab })}>
