@@ -18,7 +18,6 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -58,7 +57,7 @@ import { MAX_EXTERNAL_ACCESS_DAYS, formatShortDate } from '../lib/external-acces
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageStack } from '@/features/shared'
+import { PageStack, SettingsSection } from '@/features/shared'
 
 const DEFAULT_SETTINGS: OrgTrustSettingsInput = {
   max_role: 'member',
@@ -669,7 +668,7 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
     )
 
   return (
-    <div className="space-y-5">
+    <>
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -689,47 +688,37 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
         </Alert>
       )}
 
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="text-base">
-              {t('settings.trust.outgoing.title', 'Organizations you trust')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'settings.trust.outgoing.description',
-                "People from these organizations can be invited here and sign in with their own company's SSO."
-              )}
-            </CardDescription>
-          </div>
-          {isOwner && (
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="shrink-0">
-              <Plus className="me-2 size-4" />
+      <SettingsSection
+        framed
+        id="trusted-organizations"
+        title={t('settings.trust.outgoing.title', 'Organizations you trust')}
+        description={t(
+          'settings.trust.outgoing.description',
+          "People from these organizations can be invited here and sign in with their own company's SSO."
+        )}
+        actions={
+          isOwner && (
+            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
+              <Plus aria-hidden />
               {t('settings.trust.create.title', 'Trust an organization')}
             </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {list(outgoing, t('settings.trust.outgoing.empty', 'You trust no organization yet.'))}
-        </CardContent>
-      </Card>
+          )
+        }
+      >
+        {list(outgoing, t('settings.trust.outgoing.empty', 'You trust no organization yet.'))}
+      </SettingsSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {t('settings.trust.incoming.title', 'Organizations that trust you')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'settings.trust.incoming.description',
-              'Your people work in these organizations. When someone leaves your organization, their access there ends too.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {list(incoming, t('settings.trust.incoming.empty', 'No organization trusts yours.'))}
-        </CardContent>
-      </Card>
+      <SettingsSection
+        framed
+        id="trusted-by"
+        title={t('settings.trust.incoming.title', 'Organizations that trust you')}
+        description={t(
+          'settings.trust.incoming.description',
+          'Your people work in these organizations. When someone leaves your organization, their access there ends too.'
+        )}
+      >
+        {list(incoming, t('settings.trust.incoming.empty', 'No organization trusts yours.'))}
+      </SettingsSection>
 
       <CreateTrustDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={refresh} />
       <EditTrustDialog
@@ -772,6 +761,6 @@ export function TrustedOrganizations({ canRead, isOwner }: { canRead: boolean; i
         typeToConfirm={ending ? confirmName(ending.organization, ending.id) : undefined}
         handleConfirm={() => end()}
       />
-    </div>
+    </>
   )
 }

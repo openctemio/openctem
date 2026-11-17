@@ -61,9 +61,10 @@ test(
     })
 
     // Make sure we are watching, so our own row is in the sheet.
-    if ((await toggle.textContent())?.trim() === 'Watch') {
+    // The toggle is an icon button: its state is aria-pressed, its name the action.
+    if ((await toggle.getAttribute('aria-pressed')) !== 'true') {
       await toggle.click()
-      await expect(toggle).toHaveText('Watching')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     }
 
     // 2 and 3. The sheet.

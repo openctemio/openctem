@@ -163,6 +163,11 @@ describe('SecurityOverview', () => {
     expect(safeInternalLink('https://example.com/x')).toBeNull()
     expect(safeInternalLink('//example.com')).toBeNull()
     expect(safeInternalLink('')).toBeNull()
+    // A moved settings page: its new home, the #setting kept.
+    expect(safeInternalLink('/settings/authentication#ip-allowlist')).toBe(
+      '/settings/sign-in#ip-allowlist'
+    )
+    expect(safeInternalLink('/settings/domains')).toBe('/settings/sign-in?tab=domains')
   })
 })
 
