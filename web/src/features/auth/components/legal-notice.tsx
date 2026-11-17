@@ -2,6 +2,7 @@
 
 import { Fragment, type ReactNode } from 'react'
 
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -20,7 +21,7 @@ interface LegalNoticeProps {
   className?: string
 }
 
-const linkClass = 'hover:text-primary underline underline-offset-4'
+const linkClass = TEXT_LINK_CLASS.inline
 
 const FALLBACKS = {
   signIn: {
@@ -56,7 +57,7 @@ export function LegalNotice({ kind, termsUrl = '', privacyUrl = '', className }:
   const text = t(`auth.legal.${kind}.${which}`, FALLBACKS[kind][which])
 
   return (
-    <p className={cn('text-muted-foreground px-8 text-center text-sm', className)}>
+    <p className={cn('text-cap text-muted-foreground', className)}>
       {text.split(/(\{terms\}|\{privacy\})/).map((part, i) => (
         <Fragment key={i}>{part in links ? links[part] : part}</Fragment>
       ))}
