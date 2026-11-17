@@ -128,7 +128,7 @@ describe('settings nav config', () => {
 
   // Items research 369 moved: each sits with the task it serves.
   it.each([
-    ['sso-approvals', 'access', 'sign-in'],
+    ['sign-in', 'access', 'sign-in'],
     ['audit-log', 'access', 'oversight'],
     ['mcp', 'access', 'api-access'],
     ['service-accounts', 'access', 'api-access'],

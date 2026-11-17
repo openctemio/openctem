@@ -1,19 +1,16 @@
 'use client'
 
-import { AuthenticationSettings } from './authentication-settings'
 import { GeneralSettings } from './general-settings'
 
-export type OrganizationSettingsView = 'general' | 'authentication'
+export type OrganizationSettingsView = 'general'
 
 /**
- * The two pages over the organization's settings load:
- * - /settings/general: name, URL, logo, website, file storage and the owner's
- *   danger zone (general-settings.tsx);
- * - /settings/authentication: two-factor, new members, allowed domains, the
- *   IP allowlist, invitations and personal accounts (authentication-settings.tsx).
- * What scan jobs may do on sensors (the rest of the security section) is
- * Scanning › Sensor job safety (features/sensors/components/sensor-job-safety-settings.tsx).
+ * /settings/general: name, URL, logo, website, file storage and the owner's
+ * danger zone (general-settings.tsx). How people sign in and who may join is
+ * Settings › Sign-in (sign-in-settings.tsx); what scan jobs may do on sensors
+ * is Scanning › Sensor job safety
+ * (features/sensors/components/sensor-job-safety-settings.tsx).
  */
-export function OrganizationSettings({ view }: { view: OrganizationSettingsView }) {
-  return view === 'authentication' ? <AuthenticationSettings /> : <GeneralSettings />
+export function OrganizationSettings(_props: { view: OrganizationSettingsView }) {
+  return <GeneralSettings />
 }
