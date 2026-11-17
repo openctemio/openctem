@@ -1274,7 +1274,7 @@
   "admin.ops.transport.reason.transport_off": "Giao thức sensor v3 đang tắt trên API (SENSOR_TRANSPORT_V3=off), nên mọi sensor dùng giao thức v2. Đặt về auto để phục vụ lại giao thức v3.",
   "admin.ops.transport.reason.unreachable": "Nền tảng không kết nối được tới điểm gRPC của chính nó, nên sensor dùng kênh HTTPS. Để sensor dùng gRPC, hãy mở cổng đó và chuyển tiếp tới API.",
   "admin.org.col.created": "Ngày tạo",
-  "admin.org.col.lastSignIn": "Lần đăng nhập gần nhất của thành viên",
+  "admin.org.col.lastSignIn": "Thành viên đăng nhập",
   "admin.org.col.limits": "Giới hạn",
   "admin.org.col.members": "Thành viên",
   "admin.org.col.organization": "Tổ chức",
