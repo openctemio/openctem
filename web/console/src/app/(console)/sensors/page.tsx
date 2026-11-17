@@ -48,6 +48,20 @@ export default function PlatformSensorsPage() {
             'Sensors the platform owns. Organizations never see them by name.'
           )}
         />
+        <SharedSensorEnrollCard
+          canEdit={canEdit}
+          onIssue={({ name, ttlMinutes, reason, code }) =>
+            createSharedSensorEnrollmentToken({
+              name,
+              ttl_minutes: ttlMinutes,
+              reason,
+              totp_code: code,
+            })
+          }
+        />
+        <SharedFleetPanel />
+        {/* Below the fleet table: it appears once the setting is read and must not
+            push the table down when it does. */}
         {gateClosed && (
           <p
             className="flex items-start gap-2 text-sm text-muted-foreground"
@@ -65,18 +79,6 @@ export default function PlatformSensorsPage() {
                 )}
           </p>
         )}
-        <SharedSensorEnrollCard
-          canEdit={canEdit}
-          onIssue={({ name, ttlMinutes, reason, code }) =>
-            createSharedSensorEnrollmentToken({
-              name,
-              ttl_minutes: ttlMinutes,
-              reason,
-              totp_code: code,
-            })
-          }
-        />
-        <SharedFleetPanel />
         {zones.error ? (
           <ErrorState
             title={t('admin.instanceZones.errorTitle')}

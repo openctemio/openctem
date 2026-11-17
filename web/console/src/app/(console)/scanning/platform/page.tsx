@@ -309,11 +309,19 @@ export default function PlatformScanningPage() {
             'Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.'
           )}
         />
-        {notAvailable ? (
+        {/* Until the setting is read the page does not know its layout: one
+            placeholder, so neither the tabs nor a table flash and move. */}
+        {!s.shared.data && !s.shared.error ? (
+          <Skeleton className="h-56 w-full" />
+        ) : notAvailable ? (
           <>
             <NotAvailablePanel />
             <ProofPolicy s={s} />
-            <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
+            {/* The blocked names come once the card above has its final height,
+                so their table is drawn where it stays. */}
+            {s.proof.data || s.proof.error ? (
+              <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
+            ) : null}
           </>
         ) : (
           <SharedTabs s={s} />
