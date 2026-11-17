@@ -305,7 +305,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
   const canWrite = can(Permission.AssetsWrite)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { currentTenant } = useTenant()
   // The viewer's previous visit, for "New since last visit" (research/124).
   const lastVisit = useLastVisit('inventory', currentTenant?.id)
@@ -434,10 +434,10 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
         attribute,
-        label: propertyLabel(attribute.key),
+        label: propertyLabel(attribute.key, locale),
         counts: typeStats.metadataCounts?.[attribute.key] ?? {},
       })),
-    [typeView, typeStats]
+    [typeView, typeStats, locale]
   )
   const businessUnitLabels = useMemo(() => {
     const map: Record<string, string> = {}
@@ -684,7 +684,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const chips = inventoryChips(filters, {
     groups: facetGroups,
     t,
-    propertyLabel: attributeLabel,
+    propertyLabel: (key) => attributeLabel(key, locale),
     formatDate: (iso) => {
       const d = new Date(iso)
       return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString()

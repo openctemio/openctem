@@ -23,4 +23,11 @@ describe('assets inventory filter layout', () => {
   it('passes the toggle through to the shared data table', () => {
     expect(table).toContain('filterToggle={filterToggle}')
   })
+
+  it('reads type attribute labels in the viewer language', () => {
+    // propertyLabel(key) alone is always English: the locale must be passed.
+    expect(table).not.toMatch(/propertyLabel\(attribute\.key\)/)
+    expect(page).not.toMatch(/propertyLabel\(attribute\.key\)/)
+    expect(table).toContain('propertyLabel(attribute.key, locale)')
+  })
 })
