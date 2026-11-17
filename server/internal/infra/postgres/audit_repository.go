@@ -739,112 +739,68 @@ func (r *AuditRepository) AppendNextChainEntry(ctx context.Context, tenantID sha
 // every rewritten entry, and overwrites them — all in one transaction, so a
 // failure part-way leaves the chain exactly as it was and nothing archived.
 //
-// Every statement is scoped to rb.TenantID, and each entry is only rewritten
-// if it still holds the hashes the rebaseline was computed from, so the
-// rewrite can neither reach another tenant's chain nor clobber a change made
-// after the chain was read.
+// The work is done by audit_chain_rebaseline_apply (migration
+// audit_chain_owner_only), which runs as the schema owner: the API role holds
+// no UPDATE on audit_log_chain and cannot write the evidence tables. Under the
+// chain's advisory lock it checks that the tail is where the rebaseline
+// stopped walking, rewrites only entries of rb.TenantID that still hold the
+// hashes the rebaseline read, gives a version 2 entry only the hash the
+// database computes for its row, and checks that every rewritten entry links.
 func (r *AuditRepository) ApplyChainRebaseline(ctx context.Context, rb audit.ChainRebaseline) error {
+	var actor sql.NullString
+	if rb.ActorID != nil && !rb.ActorID.IsZero() {
+		actor = sql.NullString{String: rb.ActorID.String(), Valid: true}
+	}
+	n := len(rb.Rewrites)
+	ids := make([]string, 0, n)
+	positions := make([]int64, 0, n)
+	oldPrev := make([]string, 0, n)
+	oldHash := make([]string, 0, n)
+	newPrev := make([]string, 0, n)
+	newHash := make([]string, 0, n)
+	for _, w := range rb.Rewrites {
+		ids = append(ids, w.AuditLogID.String())
+		positions = append(positions, w.ChainPosition)
+		oldPrev = append(oldPrev, w.OldPrevHash)
+		oldHash = append(oldHash, w.OldHash)
+		newPrev = append(newPrev, w.NewPrevHash)
+		newHash = append(newHash, w.NewHash)
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin rebaseline: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// The chain rows are closed to UPDATE (migration audit_log_db_chain)
-	// except for prev_hash and hash in a transaction that declares a rebaseline.
-	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.audit_rebaseline = 'on'`); err != nil {
-		return fmt.Errorf("declare rebaseline: %w", err)
-	}
-
-	// Lock the tenant's chain for the duration, then make sure its tail is
-	// where the rebaseline stopped walking. A different tail means an entry
-	// was appended after the walk (its prev_hash would no longer link) or the
-	// chain is longer than the walk limit; either way the plan is stale.
-	const lockQ = `
-		SELECT COALESCE(MAX(chain_position), 0)
-		  FROM (SELECT chain_position FROM audit_log_chain WHERE tenant_id = $1 FOR UPDATE) c
-	`
-	var tail int64
-	if err := tx.QueryRowContext(ctx, lockQ, rb.TenantID.String()).Scan(&tail); err != nil {
-		return fmt.Errorf("lock chain: %w", err)
-	}
-	if tail != rb.LastChainPosition {
-		return fmt.Errorf("%w: chain tail is at position %d, rebaseline walked to %d",
-			audit.ErrChainRebaselineConflict, tail, rb.LastChainPosition)
-	}
-
-	var actor sql.NullString
-	if rb.ActorID != nil && !rb.ActorID.IsZero() {
-		actor = sql.NullString{String: rb.ActorID.String(), Valid: true}
-	}
-	const headerQ = `
-		INSERT INTO audit_chain_rebaselines (id, tenant_id, actor_id, entries_total, entries_rewritten)
-		VALUES ($1, $2, $3, $4, $5)
-	`
-	if _, err := tx.ExecContext(ctx, headerQ, rb.ID.String(), rb.TenantID.String(), actor,
-		rb.EntriesTotal, len(rb.Rewrites)); err != nil {
-		return fmt.Errorf("insert rebaseline record: %w", err)
-	}
-
-	if len(rb.Rewrites) > 0 {
-		n := len(rb.Rewrites)
-		ids := make([]string, 0, n)
-		positions := make([]int64, 0, n)
-		oldPrev := make([]string, 0, n)
-		oldHash := make([]string, 0, n)
-		newPrev := make([]string, 0, n)
-		newHash := make([]string, 0, n)
-		for _, w := range rb.Rewrites {
-			ids = append(ids, w.AuditLogID.String())
-			positions = append(positions, w.ChainPosition)
-			oldPrev = append(oldPrev, w.OldPrevHash)
-			oldHash = append(oldHash, w.OldHash)
-			newPrev = append(newPrev, w.NewPrevHash)
-			newHash = append(newHash, w.NewHash)
+	var rewritten int
+	err = tx.QueryRowContext(ctx, `
+		SELECT audit_chain_rebaseline_apply($1, $2, $3, $4, $5,
+			$6::uuid[], $7::bigint[], $8::text[], $9::text[], $10::text[], $11::text[])`,
+		rb.ID.String(), rb.TenantID.String(), actor, rb.EntriesTotal, rb.LastChainPosition,
+		pq.Array(ids), pq.Array(positions), pq.Array(oldPrev), pq.Array(oldHash),
+		pq.Array(newPrev), pq.Array(newHash)).Scan(&rewritten)
+	if err != nil {
+		if isAuditChainConflict(err) {
+			return fmt.Errorf("%w: %s", audit.ErrChainRebaselineConflict, pqMessage(err))
 		}
-
-		const archiveQ = `
-			INSERT INTO audit_chain_rebaseline_entries
-				(rebaseline_id, tenant_id, audit_log_id, chain_position,
-				 old_prev_hash, old_hash, new_prev_hash, new_hash)
-			SELECT $1, $2, v.id, v.pos, v.old_prev, v.old_hash, v.new_prev, v.new_hash
-			  FROM unnest($3::uuid[], $4::bigint[], $5::text[], $6::text[], $7::text[], $8::text[])
-			       AS v(id, pos, old_prev, old_hash, new_prev, new_hash)
-		`
-		if _, err := tx.ExecContext(ctx, archiveQ, rb.ID.String(), rb.TenantID.String(),
-			pq.Array(ids), pq.Array(positions), pq.Array(oldPrev), pq.Array(oldHash),
-			pq.Array(newPrev), pq.Array(newHash)); err != nil {
-			return fmt.Errorf("archive rewritten chain entries: %w", err)
-		}
-
-		const updateQ = `
-			UPDATE audit_log_chain c
-			   SET prev_hash = v.new_prev, hash = v.new_hash
-			  FROM unnest($2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[])
-			       AS v(id, old_prev, old_hash, new_prev, new_hash)
-			 WHERE c.tenant_id = $1
-			   AND c.audit_log_id = v.id
-			   AND c.prev_hash = v.old_prev
-			   AND c.hash = v.old_hash
-		`
-		res, err := tx.ExecContext(ctx, updateQ, rb.TenantID.String(),
-			pq.Array(ids), pq.Array(oldPrev), pq.Array(oldHash), pq.Array(newPrev), pq.Array(newHash))
-		if err != nil {
-			return fmt.Errorf("rewrite chain entries: %w", err)
-		}
-		affected, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("rewrite chain entries: %w", err)
-		}
-		if affected != int64(n) {
-			return fmt.Errorf("%w: %d of %d entries still held the hashes the rebaseline read",
-				audit.ErrChainRebaselineConflict, affected, n)
-		}
+		return fmt.Errorf("rewrite chain entries: %w", err)
 	}
-
+	if rewritten != n {
+		return fmt.Errorf("%w: %d of %d entries rewritten", audit.ErrChainRebaselineConflict, rewritten, n)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit rebaseline: %w", err)
 	}
 	return nil
+}
+
+// pqMessage is the server message of a PostgreSQL error (no detail, no query).
+func pqMessage(err error) string {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Message
+	}
+	return ""
 }
 
 // ListChainEntries returns one keyset page of chain rows (chain_position >

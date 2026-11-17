@@ -340,10 +340,35 @@ parameter (LIKE metacharacters escaped) and is at most 255 characters.
 
 Every arm of the search can use an index, so the planner can combine them
 instead of reading all the tenant's findings. The list, count, stats and SLA
-breakdown each run in a read-only transaction with a 5 s statement timeout; a
-read that runs out of time is `503 QUERY_TIMEOUT` ("narrow the search or the
-filters"). `GET /findings`, its stats and groups are under the heavy-read rate
-limiter.
+breakdown, the grouped view (`GET /findings/groups`, every `group_by`), related
+CVEs, and the components list, facets and summary each run in a read-only
+transaction with a 5 s statement timeout; a read that runs out of time is
+`503 QUERY_TIMEOUT` ("narrow the search or the filters"). `GET /findings`, its
+stats and groups are under the heavy-read rate limiter.
+
+### Timeouts
+
+Every interactive read (list, count, stats, facets, groups, export pages) opens
+its transaction with one helper, `beginRead` in
+`internal/infra/postgres/statement_timeout.go`: READ ONLY, and a `SET LOCAL
+statement_timeout` (5 s unless the read documents a shorter bound; 60 s for an
+export page). The bound holds whatever the database role's own limit is, so an
+install that did not apply `deploy/postgres/least-privilege-roles.sql` is still
+protected: a broad request gives its pool connection back after the timeout
+instead of holding it. A read stopped this way:
+
+- answers `503 QUERY_TIMEOUT`, never 500, so the console can say "narrow the
+  filter";
+- is counted in `openctem_db_read_timeouts_total{read}` (the read's name, never
+  a tenant or a value);
+- is logged once at WARN as "interactive read stopped at its statement
+  timeout" with the read's name only, never the statement or its values.
+
+A grouping of every finding of a very large organization (millions of open
+findings) with no filter can need more than the bound; it answers
+`QUERY_TIMEOUT` and the person narrows the filter. Figures that must cover the
+whole organization come from the precomputed dashboard tables, not from a
+live grouping.
 
 ## Limits
 
@@ -384,8 +409,18 @@ timeout is a 503 `QUERY_TIMEOUT` ("narrow the filter").
 - CSV cells a spreadsheet would run as formulas are neutralized.
 ## Saved views
 
-Saved views (UI contract D15) live in `saved_views` (migration 000777) and
-`/api/v1/views`:
+Saved views (UI contract D15) live in `saved_views` and `/api/v1/views`.
+Every list page of the console has a page key in the page registry, with the
+permission that reads its list and the limits: [saved views](saved-views.md)
+is the reference for the keys, the authorization and how a new list
+registers. This section is the contract of the pages whose views carry a
+filter document and run on the server (`findings`, `vulnerabilities`,
+`assets`); every other page stores its list state as opaque page params and
+opens the view itself.
+
+A list joins the pages below by adding its filter field registry as the
+page's `PageConfig` (`internal/server/services.go`) and calling
+`applySavedView` in its list handler; its key is already in the registry.
 
 - A view stores a FilterDocument (from a document or from the page's flat
   query) plus page state (`group_by`, `columns`, `density`). Never SQL, never
@@ -394,11 +429,13 @@ Saved views (UI contract D15) live in `saved_views` (migration 000777) and
   INVALID_FILTER`.
 - A view is personal, or shared with one active group the owner belongs to.
   Members of the group use it; only the view's owner edits or deletes it
-  (decision A1); others duplicate it. 100 views per person, 100 per group.
+  (decision A1); others duplicate it. 100 views per person (50 on one
+  page), 100 per group.
 - A view runs as the person using it (decision A5): `?view=<id>` on
   `/findings`, `/findings/stats`, `/findings/groups`, `/findings/export` and
   `/assets` (page `assets`, needs `assets:read`) compiles the view's filter as the caller, with the request's own params
   overriding it field by field (`filterspec.Overlay`). Sharing a view shares
   a query, not anyone's rows.
 - Every read and write is tenant-bound; a view the caller may not see (or of
-  another tenant) is 404. Changes are audit-logged (`saved_view.*`).
+  another tenant) is 404. A page key the caller may not read is 403, an
+  unknown key 400. Changes are audit-logged (`saved_view.*`).

@@ -78,8 +78,8 @@ type auditTrail struct {
 }
 
 // adminAuditCursorName is the cursor row an extension's audit stream uses
-// (the same row the core stream uses, so the position survives an edition
-// change and the stream never runs twice: see Claims).
+// (the same row the core stream uses, so the position survives a change
+// of build and the stream never runs twice: see Claims).
 const adminAuditCursorName = "default"
 
 func (a *auditTrail) ReadChain(ctx context.Context, after int64, limit int) ([]admin.AuditChainEntry, error) {
