@@ -162,11 +162,11 @@ stateDiagram-v2
 
   | Setting | Platform | Organization |
   |---|---|---|
-  | AI enabled | per edition and plan | opt-in, default off |
+  | AI enabled | set by the operator | opt-in, default off |
   | Allowed levels | L1 on; L2 on self-managed; L3 off | can only switch off |
   | Providers, models, regions, retention | allowlist and price table | subset |
   | Credential modes | platform-managed, worker-held, platform-provided | pick per provider |
-  | Maximum data class | per edition | at most the platform's |
+  | Maximum data class | set by the operator | at most the platform's |
   | Catalog tiers | Official, Verified, Community | subset (default Official and Verified) |
   | Vetted MCP servers | reviewed listings | installs a subset; private listings with approval |
   | Gate bars | floor | stricter only |
