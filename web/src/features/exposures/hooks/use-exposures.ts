@@ -48,6 +48,10 @@ export function useExposures(tenantId: string | null, filters?: ExposureListFilt
     isLoading: shouldFetch ? isLoading : false,
     error,
     mutate,
+    /** The answer as read (a new object for every successful read). */
+    response: data,
+    /** False when the viewer lacks the read permissions: no request is sent. */
+    canRead: Boolean(canReadFindings),
   }
 }
 

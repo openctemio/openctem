@@ -186,6 +186,8 @@ interface InventoryTableProps {
   /** Phone select mode, held by the page (its More offers "Select"). */
   selectMode?: DataTableSelectMode
   resetSelectionKey: number
+  /** The first read: skeleton rows under a toolbar that stays mounted. */
+  isLoading?: boolean
   /** Rows already on screen are being re-read (the thin bar on the frame's top edge). */
   isRefreshing?: boolean
   /** What an empty list shows: one block, or the first-run and no-match pair. */
@@ -234,6 +236,7 @@ export function InventoryTable({
   bulk,
   selectMode,
   resetSelectionKey,
+  isLoading,
   isRefreshing,
   emptyState,
   onClearFilters,
@@ -824,6 +827,7 @@ export function InventoryTable({
         selectMode={selectMode}
         resetSelectionKey={resetSelectionKey}
         showSelectionCount={false}
+        isLoading={isLoading}
         isRefreshing={isRefreshing}
         refreshingLabel={t('assets.inv.refreshing', 'Refreshing assets')}
         // A list of one type with no other filter is "nothing yet", not "no match".
