@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import type { ColumnDef, SortingState } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   DataTable,
@@ -28,9 +28,6 @@ import {
 import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 import { AssetsSectionTabs } from './assets-section-tabs'
 import { AttentionQueueHeader } from './attention/attention-queue-header'
-
-/** The order at rest: newest flag first, shown by the arrow on Flagged. */
-const DEFAULT_SORTING: SortingState = [{ id: 'created_at', desc: true }]
 
 /** "2 assets, 5 findings": what a merge moves, in words. */
 function useCountWords() {
@@ -61,7 +58,6 @@ export function DedupReviewPage() {
   const [pendingMerge, setPendingMerge] = useState<DedupReview | null>(null)
   const { t } = useTranslation()
   const words = useCountWords()
-  const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORTING)
 
   const reviews = useMemo(() => data?.data ?? [], [data])
 
@@ -267,8 +263,6 @@ export function DedupReviewPage() {
             errorTitle={t('assets.dedup.errorTitle', 'duplicate reviews')}
             getRowId={(r) => r.id}
             searchPlaceholder={t('assets.dedup.search', 'Search reviews…')}
-            sorting={sorting}
-            onSortingChange={setSorting}
             paginationNoun={t('assets.dedup.noun', 'reviews')}
             emptyState={{
               nothingYet: (
