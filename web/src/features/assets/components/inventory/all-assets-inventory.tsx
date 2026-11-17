@@ -25,9 +25,17 @@
 
 import { useOpenForm } from '@/hooks/use-open-form'
 import { AssetsSectionTabs } from '../assets-section-tabs'
-import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Boxes, Download, EyeOff, Lock, Network, RefreshCw } from 'lucide-react'
+import { Boxes, Download, EyeOff, MoreHorizontal, Network, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import {
@@ -48,11 +56,22 @@ import {
   EmptyState,
   ErrorState,
   FilterPanelSlot,
+  NoAccessState,
   openFilterPanel,
   FilterSheet,
   useFilterPanelOpen,
+  usePhoneSelectMode,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { copyToClipboard } from '@/lib/clipboard'
+import { shareableLink } from '@/lib/org-link'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
+import type { SavedViewsActions } from '@/features/saved-views/components/saved-views-menu'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -82,7 +101,11 @@ import { formatTotal } from '../../lib/capped-count'
 import { TABS_LENS, openTab, tabCounts, withTab } from '../../lib/inventory-tabs'
 import { InventoryTypeTabs } from './inventory-type-tabs'
 import { InventoryNetworks } from './inventory-networks'
-import { FilterGroupActions } from '@/features/asset-groups/components/filter-group-actions'
+import {
+  FilterGroupActions,
+  filterHasNoGroupRule,
+  type FilterGroupDialog,
+} from '@/features/asset-groups/components/filter-group-actions'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
@@ -107,7 +130,7 @@ import {
   type InventoryFilters,
 } from '../../lib/inventory-url'
 import { InventoryViewsMenu } from './inventory-views-menu'
-import { InventoryBulkBar } from './inventory-bulk-bar'
+import { useInventoryTableBulk } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryHiddenChip } from './inventory-hidden-chip'
@@ -204,16 +227,34 @@ function useAssetsKeepingPrevious(filters: AssetSearchFilters) {
 }
 
 /** How a type's assets get into the inventory, for its empty list. */
-function emptyHint(view: TypeView): string {
+function emptyHint(
+  view: TypeView,
+  t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+): string {
   if (view.type === 'repository') {
-    return 'Connect a source-code integration in Settings to import repositories, or add one.'
+    return t(
+      'assets.inventoryPage.emptyHint.repository',
+      'Connect a source-code integration in Settings to import repositories, or add one.'
+    )
   }
   if (view.type === 'cloud_account') {
-    return 'Connect a cloud integration in Settings to import accounts, or add one.'
+    return t(
+      'assets.inventoryPage.emptyHint.cloudAccount',
+      'Connect a cloud integration in Settings to import accounts, or add one.'
+    )
   }
+  const type = inSentence(view.plural)
   return view.scannable
-    ? `Add one, or run a discovery scan to find ${inSentence(view.plural)}.`
-    : `Add one, or import ${inSentence(view.plural)} from a connected source.`
+    ? t(
+        'assets.inventoryPage.emptyHint.scannable',
+        'Add one, or run a discovery scan to find {type}.',
+        { type }
+      )
+    : t(
+        'assets.inventoryPage.emptyHint.imported',
+        'Add one, or import {type} from a connected source.',
+        { type }
+      )
 }
 
 /**
@@ -240,11 +281,8 @@ function InventoryTableSkeleton() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-9" />
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="ms-auto h-9 w-36" />
-        <Skeleton className="h-9 w-9" />
-        <Skeleton className="h-9 w-24" />
+        <Skeleton className="h-control min-w-0 flex-1" />
+        <Skeleton className="h-control w-28 shrink-0" />
       </div>
       <div className="space-y-2 rounded-md border p-3">
         {Array.from({ length: 8 }).map((_, i) => (
@@ -535,21 +573,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     [setFilters, filters.lens, filters.tab, filters.sort, filters.pageSize]
   )
 
-  // Row selection: the table owns the checkboxes; bumping the epoch clears
-  // them. It is bumped whenever the query changes, so the bulk bar only ever
-  // acts on rows of the current view, and after a bulk action.
-  const [selectedAssets, setSelectedAssets] = useState<Asset[]>([])
-  const [selectionEpoch, setSelectionEpoch] = useState(0)
-  const clearSelection = useCallback(() => {
-    setSelectionEpoch((n) => n + 1)
-    setSelectedAssets([])
-  }, [])
-  // Switching the search mode changes no rows.
-  const queryKey = withQueryMode(searchParams, false).toString()
-  useEffect(() => {
-    clearSelection()
-  }, [queryKey, clearSelection])
-
   const refresh = useCallback(() => {
     void mutate()
     void statsMutate()
@@ -559,6 +582,26 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   }, [mutate, statsMutate, typeStatsMutate, lensStatsMutate, networksMutate])
 
   const forms = useInventoryAssetForms(registry, refresh)
+
+  // Several assets at once: the table draws the checkbox column and the bulk
+  // bar (two direct actions, the rest under More). Without a bulk permission
+  // there is no checkbox column.
+  const tableBulk = useInventoryTableBulk({ canWrite, onDone: refresh })
+  const assetsBulk = tableBulk.bulk
+  // Row selection: the table owns the checkboxes; a new query clears them, so
+  // the bulk bar only ever acts on rows of the current view. Switching the
+  // search mode changes no rows.
+  const clearSelection = tableBulk.clear
+  const queryKey = withQueryMode(searchParams, false).toString()
+  useEffect(() => {
+    clearSelection()
+  }, [queryKey, clearSelection])
+  // Phone cards have no header checkbox: "Select" starts the list's More.
+  const isPhone = useIsMobile()
+  const phoneSelect = usePhoneSelectMode(isPhone && !!assetsBulk)
+  // "Save filter as group" and "Add all matching to group", from the list's More.
+  const [groupDialog, setGroupDialog] = useState<FilterGroupDialog | null>(null)
+  const viewsActions = useRef<SavedViewsActions>(null)
   // "Add asset" from the Create menu or its "c a" chord: this list's own type,
   // else the type menu of the Add button.
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -601,14 +644,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       <Main>
         <PageStack>
           <PageHeader title={t('assets.overview.title', 'Assets')} />
-          <EmptyState
-            className="border-dashed"
-            icon={Lock}
-            title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
-            description={t(
-              'assets.inventoryPage.noAccessHint',
-              'Ask an administrator for the assets:read permission to view the inventory.'
-            )}
+          <NoAccessState
+            title={inSentence(t('assets.overview.title', 'Assets'))}
+            permission={Permission.AssetsRead}
           />
         </PageStack>
       </Main>
@@ -654,7 +692,10 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const search = {
     value: searchInput,
     onChange: setSearchInput,
-    placeholder: t('assets.inventoryPage.search', 'Search name, description or alias…'),
+    // A phone's field holds a short phrase whole.
+    placeholder: isPhone
+      ? t('assets.inventoryPage.searchShort', 'Search assets…')
+      : t('assets.inventoryPage.search', 'Search name, description or alias…'),
     label: t('assets.inventoryPage.searchAria', 'Search assets'),
     query: queryMode.query,
   }
@@ -679,6 +720,104 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   const page = filters.page ?? 1
   const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE
+
+  // The list's More, after Refresh and Export. On a phone it starts with
+  // "Select" (the cards have no header checkbox), in a group of its own. The
+  // two group actions work on the filter on screen: they are always listed,
+  // dimmed with the reason while there is no filter a group rule can hold.
+  // "Copy link" copies this list as it is shown (filters, sort, view, mode:
+  // all in the address).
+  // The view this list is: an open saved view by its name, else the type or
+  // lens, else every asset. "Modified" says the filter differs from that view
+  // (a saved view changed, or filters added to a built-in one); Reset goes
+  // back to it. Saving is in the Views menu, on the chips row on a phone.
+  const viewTitle = activeView?.name ?? scopeLabel ?? t('assets.quickView.all', 'All assets')
+  const titleModified = activeView ? viewModified : activeCount > 0 || Boolean(filters.search)
+  const resetView = () => (activeView ? void discardViewChanges() : clearAll())
+  // Save view opens the one save dialog, which the Views menu owns (anyone
+  // may save a view of their own).
+  const openSaveView = () => viewsActions.current?.openSave()
+  const canGroup = can(Permission.AssetGroupsWrite)
+  const groupReason = filters.advanced
+    ? t('assets.inventoryPage.groupNoQueryText', 'Not available for a filter given as query text')
+    : isInventoryFilterEmpty(filters) || filterHasNoGroupRule(filterParams)
+      ? t('assets.inventoryPage.groupNeedsFilter', 'Add a filter a group rule can hold first')
+      : total <= 0
+        ? t('assets.inventoryPage.groupNoMatch', 'No asset matches this filter')
+        : undefined
+  const listMoreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    // On a phone Refresh and Export are here, so the view's row keeps its
+    // name, count and view state.
+    ...(isPhone
+      ? [
+          {
+            id: 'refresh',
+            label: t('assets.inventoryPage.refresh', 'Refresh'),
+            onSelect: refresh,
+          },
+          {
+            id: 'export',
+            label: t('assets.inventoryPage.export', 'Export'),
+            onSelect: () => void handleExport(),
+            disabledReason: exporting
+              ? t('assets.inventoryPage.exportRunning', 'An export is running')
+              : undefined,
+          },
+        ]
+      : []),
+    ...(isPhone && titleModified
+      ? [
+          {
+            id: 'view-save',
+            section: 'view',
+            label: t('common.listView.save', 'Save view'),
+            onSelect: openSaveView,
+          },
+          {
+            id: 'view-reset',
+            section: 'view',
+            label: t('common.listView.reset', 'Reset'),
+            onSelect: resetView,
+          },
+        ]
+      : []),
+    ...(canGroup
+      ? [
+          {
+            id: 'save-as-group',
+            section: 'group',
+            label: t('assetGroups.filterActions.save', 'Save filter as group'),
+            onSelect: () => setGroupDialog('save'),
+            disabledReason: groupReason,
+          },
+          {
+            id: 'add-matching-to-group',
+            section: 'group',
+            label: groupReason
+              ? t('assetGroups.filterActions.addAllShort', 'Add all matching to group')
+              : t('assetGroups.filterActions.addAll', 'Add all {count} matching to group', {
+                  count: total.toLocaleString(),
+                }),
+            onSelect: () => setGroupDialog('add'),
+            disabledReason: groupReason,
+          },
+        ]
+      : []),
+    {
+      id: 'copy-link',
+      section: 'link',
+      label: t('assets.inventoryPage.copyLink', 'Copy link'),
+      onSelect: () =>
+        void copyToClipboard(
+          shareableLink(`${window.location.pathname}${window.location.search}`)
+        ).then((ok) =>
+          ok
+            ? toast.success(t('assets.inventoryPage.linkCopied', 'Link copied to clipboard'))
+            : toast.error(t('assets.inventoryPage.copyFailed', 'Could not copy to the clipboard'))
+        ),
+    },
+  ]
 
   // The default list leaves out names awaiting review and names marked not
   // ours (the locked chip says so). The heading counts every asset of the
@@ -746,9 +885,19 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   return (
     <Main>
       <PageStack>
-        <PageHeader title={t('assets.overview.title', 'Assets')} viewSwitcher={viewSwitcher}>
+        <PageHeader
+          title={t('assets.overview.title', 'Assets')}
+          viewSwitcher={viewSwitcher}
+          // On a phone the primary action is a 36 px square in the title row,
+          // before the view switch (not a row of its own), so the switch keeps
+          // its place at the row's end on both views: the title gives up the
+          // room it does not use.
+          className="max-md:[&>div:first-child]:basis-24"
+          actionsClassName="order-1 basis-auto sm:order-2"
+        >
           {canWrite && (
             <InventoryAddButton
+              compact
               registry={registry}
               view={typeView}
               onAdd={forms.openCreate}
@@ -773,11 +922,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
             The page header keeps the page-level ones (Add, the view switch). */}
         <ListTitleRow
           data-testid="inventory-title-row"
-          title={
-            <span data-testid="inventory-view-title">
-              {scopeLabel ?? t('assets.quickView.all', 'All assets')}
-            </span>
-          }
+          title={<span data-testid="inventory-view-title">{viewTitle}</span>}
           count={
             <ListCount
               total={total}
@@ -795,29 +940,50 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
             />
           }
           start={
-            lens?.description ? (
+            titleModified ? (
+              // The shared view state: Modified, then Save view and Reset. On
+              // a phone the two actions are in the row's More; the lozenge stays.
+              <ListViewChanged
+                changed
+                actionsClassName="max-md:hidden"
+                onSave={openSaveView}
+                onReset={resetView}
+              />
+            ) : lens?.description ? (
               <span className="hidden truncate text-xs text-muted-foreground md:inline">
                 {t(`assets.lensDescription.${lens.id}`, lens.description)}
               </span>
             ) : undefined
           }
         >
-          {refreshButton}
-          <Button
-            variant="outline"
-            size="sm"
-            iconOnlyBelow="sm"
-            aria-label={t('assets.inventoryPage.export', 'Export')}
-            onClick={() => void handleExport()}
-            disabled={exporting}
-          >
-            <Download className="h-4 w-4 sm:me-2" />
-            <span className="sr-only sm:not-sr-only">
+          {!isPhone && refreshButton}
+          {!isPhone && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleExport()}
+              disabled={exporting}
+            >
+              <Download className="me-2 h-4 w-4" aria-hidden />
               {exporting
                 ? t('assets.inventoryPage.exporting', 'Exporting…')
                 : t('assets.inventoryPage.export', 'Export')}
-            </span>
-          </Button>
+            </Button>
+          )}
+          <ActionMenu
+            title={viewTitle}
+            label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+            items={listMoreItems}
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </Button>
+            }
+          />
         </ListTitleRow>
 
         <div className="flex items-start">
@@ -873,8 +1039,11 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                   })
                 }
                 onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
-                onSelectionChange={setSelectedAssets}
-                resetSelectionKey={selectionEpoch}
+                bulk={assetsBulk}
+                selectMode={phoneSelect.selectMode}
+                resetSelectionKey={tableBulk.resetKey}
+                isRefreshing={isLoading}
+                onClearFilters={clearAll}
                 filterTags={filters.tags}
                 onToggleTagFilter={toggleTagFilter}
                 search={search}
@@ -899,10 +1068,24 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 }
                 toolbarEnd={
                   <>
+                    <InventoryViewsMenu
+                      filters={filters}
+                      presets={presets}
+                      onToggle={togglePreset}
+                      resolveFilter={resolveViewFilter}
+                      modified={viewModified}
+                      onDiscard={() => void discardViewChanges()}
+                      onSelect={(v) => void openView(v)}
+                      actionsRef={viewsActions}
+                    />
                     {typeView?.type === 'ip_address' && !typeView.subType && (
                       <Button
                         variant={groupedByNetwork ? 'secondary' : 'outline'}
                         size="sm"
+                        // A view control, as Views and Display: its label from a
+                        // 64rem toolbar, an icon below it and on a phone.
+                        iconOnlyBelow="@5xl/toolbar"
+                        aria-label={t('assets.ip.groupBy', 'Group by network /24')}
                         aria-pressed={groupedByNetwork}
                         disabled={Boolean(filters.advanced)}
                         title={
@@ -911,7 +1094,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                                 'assets.ip.groupDisabled',
                                 'Not available for a filter given as query text'
                               )
-                            : undefined
+                            : t('assets.ip.groupBy', 'Group by network /24')
                         }
                         onClick={() =>
                           setFilters({
@@ -921,21 +1104,11 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                           })
                         }
                       >
-                        <Network className="me-2 h-4 w-4" />
-                        {t('assets.ip.groupBy', 'Group by network /24')}
+                        <Network className="h-4 w-4" aria-hidden />
+                        <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+                          {t('assets.ip.groupBy', 'Group by network /24')}
+                        </span>
                       </Button>
-                    )}
-                    <InventoryViewsMenu
-                      filters={filters}
-                      presets={presets}
-                      onToggle={togglePreset}
-                      resolveFilter={resolveViewFilter}
-                      modified={viewModified}
-                      onDiscard={() => void discardViewChanges()}
-                      onSelect={(v) => void openView(v)}
-                    />
-                    {!isInventoryFilterEmpty(filters) && !filters.advanced && (
-                      <FilterGroupActions params={filterParams} total={total} />
                     )}
                   </>
                 }
@@ -966,7 +1139,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                       emptyMessage: t('assets.inventoryPage.emptyType', 'No {type} yet', {
                         type: inSentence(typeView.plural),
                       }),
-                      emptyDescription: emptyHint(typeView),
+                      emptyDescription: emptyHint(typeView, t),
                     }
                   : {})}
               />
@@ -975,15 +1148,16 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </div>
       </PageStack>
 
-      <InventoryBulkBar
-        selected={selectedAssets}
-        canWrite={canWrite}
-        onClear={clearSelection}
-        onDone={() => {
-          clearSelection()
-          refresh()
-        }}
-      />
+      {tableBulk.dialogs}
+
+      {canGroup && (
+        <FilterGroupActions
+          params={filterParams}
+          total={total}
+          dialog={groupReason ? null : groupDialog}
+          onDialogChange={setGroupDialog}
+        />
+      )}
 
       {forms.dialogs}
 
