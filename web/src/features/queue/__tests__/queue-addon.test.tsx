@@ -209,6 +209,48 @@ describe('QueueReasonDialog', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(opener).toHaveFocus())
   })
+  it('finds the same control of the same item when the list drew the row anew', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      const [drawn, setDrawn] = useState(0)
+      return (
+        <>
+          <div data-queue-item="r1">
+            <button
+              key={drawn}
+              type="button"
+              data-slot="queue-reject"
+              onClick={() => {
+                setOpen(true)
+                setDrawn((n) => n + 1)
+              }}
+            >
+              Reject row {drawn}
+            </button>
+          </div>
+          <QueueReasonDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Reject request"
+            description="Give a reason."
+            reason=""
+            onReasonChange={() => {}}
+            reasonLabel="Reason for rejection"
+            confirmLabel="Reject"
+            onConfirm={() => {}}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const first = screen.getByRole('button', { name: 'Reject row 0' })
+    first.focus()
+    fireEvent.click(first)
+    const field = await screen.findByRole('textbox', { name: 'Reason for rejection' })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reject row 1' })).toHaveFocus())
+  })
 })
 
 describe('useQueueAnnouncer', () => {

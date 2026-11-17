@@ -437,6 +437,7 @@ export default function ApprovalsPage() {
       return (
         <QueueDecisionActions
           name={findingTitle}
+          itemId={approval.id}
           layout={layout}
           canDecide={can(Permission.FindingsApprove)}
           own={own}
