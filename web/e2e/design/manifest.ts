@@ -66,7 +66,7 @@ export const MANIFEST: DesignPage[] = [
     route: '/login?reason=session_expired',
     board: {
       file: 'P3-Login.dc.html',
-      sha256: '7e5cace55b2e0cdc89589878a3dafe1e489e4d6006fbfa3cf5819fb748ea03b5',
+      sha256: '19d09d76da0336cd0cae45b7e2f8967d1f74adf44a882cf96a072a4e5e6466cc',
       crop: '.panes > section.pn:nth-of-type(1) > .ec',
     },
     page: {
