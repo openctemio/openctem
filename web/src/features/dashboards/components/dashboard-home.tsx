@@ -61,6 +61,7 @@ import {
 import { flowPanelEligible } from '../lib/flow-panel'
 import { metricNameKey } from '../metrics'
 import {
+  DashboardDataNotice,
   DashboardFreshness,
   RefreshButton,
   scheduleSubmenu,
@@ -504,6 +505,7 @@ export function DashboardHome() {
             )}
           </div>
         </PageHeader>
+        {dashboard && active && !customizing && <DashboardDataNotice data={data.data} />}
 
         {listsLoading ? (
           <DashboardSkeleton />
