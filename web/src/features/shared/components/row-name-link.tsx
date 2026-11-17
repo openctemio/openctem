@@ -43,8 +43,9 @@ export interface RowNameLinkProps {
  * opens the detail overlay (`onOpen`) and does not navigate; a modified or
  * middle click, and the browser's "Open in new tab", follow the link. The
  * click never reaches the row, so the row does not open the overlay as well.
- * The link shrinks with its cell and ends in an ellipsis; it is never
- * prefetched (a list holds one per row).
+ * The link shrinks with its cell and ends in an ellipsis, alone in a cell or
+ * in a flex row, with no wrapper from the page; it is never prefetched (a
+ * list holds one per row).
  */
 export function RowNameLink({
   href,
@@ -67,7 +68,9 @@ export function RowNameLink({
       aria-label={label}
       className={cn(
         'min-w-0 rounded-sm text-start font-medium [unicode-bidi:isolate] hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
-        lines === 2 ? 'line-clamp-2' : 'truncate',
+        // One line: an inline box no wider than its cell, so the name ends in
+        // an ellipsis alone in a cell too (an inline anchor never cuts).
+        lines === 2 ? 'line-clamp-2' : 'inline-block max-w-full truncate align-bottom',
         className
       )}
       onClick={(e) => {
