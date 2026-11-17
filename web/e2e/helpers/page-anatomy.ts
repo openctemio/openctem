@@ -47,8 +47,6 @@ const ROW_MIX_DEBT: Record<string, number> = {
   '/my-work@1440': 1,
   // The Assign tile (two-line action tile, 34) beside its person picker (32).
   '/findings/triage@1440': 1,
-  // Phone scan cards: the latest-run status chip (24) beside the row menu (36), one per card.
-  '/scans@390': 3,
 }
 
 type Probe = {

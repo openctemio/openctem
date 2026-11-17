@@ -61,6 +61,9 @@ const SAFE_CALLS = new Set([
   // filter (from the API) only in the query.
   'quickViewHref',
   'registerHref',
+  // features/scans/lib/scan-link.ts: `/scans/` with the id URI-encoded as one
+  // path segment.
+  'scanDetailHref',
   // features/findings/api/receipts-api.ts: `/findings?` with one fixed
   // "seen by" param name and the value as URLSearchParams.
   'seenByFindingsHref',
