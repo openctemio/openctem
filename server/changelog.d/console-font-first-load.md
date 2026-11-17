@@ -5,4 +5,6 @@
 - A size-adjusted fallback face (a local Arial or Liberation Sans with Inter's width, ascent and descent) follows
   Inter in the font stack of both apps, so a page that paints before the font arrives does not re-wrap or move
   when it swaps in. `font-display: swap` is unchanged.
+- Console > Admin activity: the audit-chain strip has its final height while it loads, so the list under it no
+  longer moves (4 px, 24 px on a phone).
 - Docs: `web/docs/ui-style-contract.md` (fonts)
