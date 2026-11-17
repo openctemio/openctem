@@ -11,6 +11,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { UserPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -74,35 +75,29 @@ function SignupSummary() {
       />
     )
   }
-  // The placeholder has the cards' own shape, so the list below does not move
-  // when the counts arrive.
-  if (isLoading || !data) {
-    return (
-      <div className="grid gap-4 sm:grid-cols-3" aria-hidden="true">
-        {SIGNUP_EVENT_KINDS.map((kind) => (
-          <Card key={kind}>
-            <CardHeader className="pb-2">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-8 w-12" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-5 w-40" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    )
-  }
-  const totals = summarize(data, new Date().toISOString().slice(0, 10))
+  // While the counts load, the cards are drawn with their labels and their
+  // sentence kept invisible: the same height at every width and language, so
+  // the list below does not move when the numbers arrive.
+  const loading = isLoading || !data
+  const totals = summarize(data ?? [], new Date().toISOString().slice(0, 10))
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-3" aria-busy={loading || undefined}>
       {SIGNUP_EVENT_KINDS.map((kind) => (
         <Card key={kind}>
           <CardHeader className="pb-2">
             <CardDescription>{t(`admin.signups.kind.${kind}`)}</CardDescription>
-            <CardTitle className="text-2xl tabular-nums">{totals[kind].today}</CardTitle>
+            <CardTitle className="text-2xl tabular-nums">
+              {loading ? (
+                <Skeleton className="inline-block h-6 w-10 align-middle" />
+              ) : (
+                totals[kind].today
+              )}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
+          <CardContent
+            className={cn('text-sm text-muted-foreground', loading && 'invisible')}
+            aria-hidden={loading || undefined}
+          >
             {t('admin.signups.todayWeekMonth', undefined, {
               week: totals[kind].week,
               month: totals[kind].month,
