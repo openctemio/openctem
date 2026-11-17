@@ -309,6 +309,8 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"scope_name_exceptions": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "portal.example.gov.xx", "expires_at": "2026-02-01T00:00:00Z"}
 	},
+	// page is a page key: a format CHECK, not a list of literals.
+	"saved_views": func(*schemaSeeder) map[string]any { return map[string]any{"page": "findings"} },
 	// A feature key is a lowercase identifier (CHECK on the column).
 	"tenant_feature_denies": func(*schemaSeeder) map[string]any {
 		return map[string]any{"feature": "pentest"}
