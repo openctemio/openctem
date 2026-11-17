@@ -112,7 +112,17 @@ export function savedViewId(viewParam: string | null | undefined): string | unde
 }
 
 /** The page params that are not part of a view's filter. */
-const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density', 'columns', 'mode'])
+const PAGE_ONLY = new Set([
+  'page',
+  'per_page',
+  'group',
+  'tab',
+  'density',
+  'columns',
+  'mode',
+  // The view a list was derived from: the URL holds the whole filter then.
+  'from_view',
+])
 
 /**
  * The filter part of a page query string, to save as a view: the API's own
