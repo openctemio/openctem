@@ -648,7 +648,7 @@ function ExceptionsCard({
             ? `*.${row.original.name}`
             : row.original.name
           return (
-            <span className="block truncate font-mono text-xs" title={name}>
+            <span className="block truncate font-mono text-code" title={name}>
               {name}
             </span>
           )

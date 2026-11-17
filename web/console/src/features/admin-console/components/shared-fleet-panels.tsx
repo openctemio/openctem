@@ -93,7 +93,7 @@ export function SharedFleetPanel() {
               <span className="truncate font-medium" title={row.original.name}>
                 {row.original.name}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{region}</span>
+              <span className="shrink-0 text-cap text-muted-foreground">{region}</span>
             </div>
           )
         },
@@ -125,7 +125,7 @@ export function SharedFleetPanel() {
           label: t('admin.sharedFleet.col.version'),
         },
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs">{row.original.version || '-'}</span>
+          <span className="block truncate font-mono text-code">{row.original.version || '-'}</span>
         ),
       },
       {
@@ -139,10 +139,10 @@ export function SharedFleetPanel() {
         },
         cell: ({ row }) =>
           row.original.tools.length === 0 ? (
-            <span className="text-xs text-muted-foreground">-</span>
+            <span className="text-cap text-muted-foreground">-</span>
           ) : (
             <span
-              className="block truncate font-mono text-xs"
+              className="block truncate font-mono text-code"
               title={row.original.tools.join(', ')}
             >
               {row.original.tools.join(', ')}
@@ -329,7 +329,7 @@ export function SharedQueuePanel() {
         header: t('admin.sharedFleet.col.tool'),
         meta: { kind: 'text', width: 176, label: t('admin.sharedFleet.col.tool') },
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs">
+          <span className="block truncate font-mono text-code">
             {row.original.tool || row.original.type}
           </span>
         ),
