@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../asset-detail-sheet', () => ({
@@ -48,7 +48,6 @@ function renderTable() {
       pageSize={20}
       onPageChange={() => {}}
       onSortChange={() => {}}
-      onSelectionChange={() => {}}
       resetSelectionKey={0}
       hasFilters={false}
     />
@@ -59,10 +58,7 @@ describe('InventoryTable row Scan', () => {
   it('asks before starting a scan and names the repository', async () => {
     post.mockReset().mockResolvedValue({})
     renderTable()
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Actions for acme\/api/ }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    await userEvent.click(screen.getByRole('button', { name: /Actions for acme\/api/ }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Scan' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Scan "acme/api" now?')

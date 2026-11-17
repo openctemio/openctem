@@ -47,17 +47,38 @@ interface FilterGroupActionsProps {
   params: Record<string, string>
   /** How many assets the filter matches. */
   total: number
+  /**
+   * Opened from elsewhere (items of a menu): the dialog follows `dialog` and
+   * the component draws no buttons of its own.
+   */
+  dialog?: FilterGroupDialog | null
+  onDialogChange?: (dialog: FilterGroupDialog | null) => void
 }
 
 const ENVIRONMENTS = ['production', 'staging', 'development', 'testing'] as const
 const CRITICALITIES = RATED_CRITICALITY_LEVELS
 
-export function FilterGroupActions({ params, total }: FilterGroupActionsProps) {
+/** The list's filter holds nothing a group rule can express (or no filter at all). */
+export function filterHasNoGroupRule(params: Record<string, string>): boolean {
+  return isRuleEmpty(filterParamsToRule(params).rule)
+}
+
+export type FilterGroupDialog = 'save' | 'add'
+
+export function FilterGroupActions({
+  params,
+  total,
+  dialog: dialogProp,
+  onDialogChange,
+}: FilterGroupActionsProps) {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const router = useRouter()
   const { rule, unsupported } = useMemo(() => filterParamsToRule(params), [params])
-  const [dialog, setDialog] = useState<null | 'save' | 'add'>(null)
+  const [ownDialog, setOwnDialog] = useState<null | FilterGroupDialog>(null)
+  const controlled = onDialogChange !== undefined
+  const dialog = controlled ? (dialogProp ?? null) : ownDialog
+  const setDialog = controlled ? onDialogChange : setOwnDialog
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState<(typeof ENVIRONMENTS)[number]>('production')
   const [criticality, setCriticality] = useState<(typeof CRITICALITIES)[number]>('medium')
@@ -143,18 +164,20 @@ export function FilterGroupActions({ params, total }: FilterGroupActionsProps) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2" data-testid="filter-group-actions">
-        <Button type="button" variant="outline" size="sm" onClick={() => setDialog('save')}>
-          <FolderPlus className="me-2 h-4 w-4" aria-hidden />
-          {t('assetGroups.filterActions.save', 'Save filter as group')}
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => setDialog('add')}>
-          <ListPlus className="me-2 h-4 w-4" aria-hidden />
-          {t('assetGroups.filterActions.addAll', 'Add all {count} matching to group', {
-            count: total.toLocaleString(),
-          })}
-        </Button>
-      </div>
+      {!controlled && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="filter-group-actions">
+          <Button type="button" variant="outline" size="sm" onClick={() => setDialog('save')}>
+            <FolderPlus className="me-2 h-4 w-4" aria-hidden />
+            {t('assetGroups.filterActions.save', 'Save filter as group')}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setDialog('add')}>
+            <ListPlus className="me-2 h-4 w-4" aria-hidden />
+            {t('assetGroups.filterActions.addAll', 'Add all {count} matching to group', {
+              count: total.toLocaleString(),
+            })}
+          </Button>
+        </div>
+      )}
 
       <Dialog open={dialog === 'save'} onOpenChange={(o) => !o && close()}>
         <DialogContent size="md">
