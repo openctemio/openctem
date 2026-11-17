@@ -11,6 +11,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCanMutate } from '@/lib/permissions'
+import { PropertyGroup, PropertyRow } from '@/features/shared/components/detail'
 import { WatchersControl } from '@/features/shared/components/watchers/watchers-control'
 import { useAssignableMembers } from '../../api/use-assignable-members'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -36,31 +37,20 @@ export function FindingPeople({ findingId, assignee }: FindingPeopleProps) {
   })
 
   return (
-    <div role="group" aria-label={t('findings.people.title', 'People')} className="space-y-1">
-      <div className="my-2 border-t" role="presentation" />
-      <h3 className="text-xs font-medium text-muted-foreground">
-        {t('findings.people.title', 'People')}
-      </h3>
-      <dl className="space-y-1">
-        <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-          <dt className="text-body text-muted-foreground">
-            {t('findings.properties.assignee', 'Assignee')}
-          </dt>
-          <dd className="min-w-0 text-body break-words">{assignee}</dd>
-        </div>
-        <WatchersControl
-          kind="finding"
-          itemId={findingId}
-          canAdd={canManage}
-          canRemoveOthers={canManage}
-          picker={{
-            candidates: members.map((m) => ({ id: m.user_id, name: m.name })),
-            isLoading,
-            onSearch: setSearch,
-            onOpenChange: setOpen,
-          }}
-        />
-      </dl>
-    </div>
+    <PropertyGroup caption={t('findings.people.title', 'People')}>
+      <PropertyRow label={t('findings.properties.assignee', 'Assignee')}>{assignee}</PropertyRow>
+      <WatchersControl
+        kind="finding"
+        itemId={findingId}
+        canAdd={canManage}
+        canRemoveOthers={canManage}
+        picker={{
+          candidates: members.map((m) => ({ id: m.user_id, name: m.name })),
+          isLoading,
+          onSearch: setSearch,
+          onOpenChange: setOpen,
+        }}
+      />
+    </PropertyGroup>
   )
 }

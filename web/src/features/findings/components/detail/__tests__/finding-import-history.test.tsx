@@ -170,7 +170,7 @@ describe('KEV in the finding header', () => {
         status="new"
       />
     )
-    const chips = document.querySelector('[data-slot="finding-header"] > div')
+    const chips = document.querySelector('[data-slot="detail-chips"]')
     expect(chips?.firstElementChild).toHaveAttribute('data-slot', 'exploit-signals')
     expect(screen.getByText('KEV')).toBeInTheDocument()
     expect(screen.getByText('Ransomware')).toBeInTheDocument()
