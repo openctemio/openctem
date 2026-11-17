@@ -3,7 +3,7 @@
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import type { ColumnDef, SortingState } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -104,9 +104,6 @@ type Criticality = RatedCriticality
 const ENVIRONMENTS: Environment[] = ['production', 'staging', 'development', 'testing']
 const CRITICALITIES: readonly Criticality[] = RATED_CRITICALITY_LEVELS
 
-/** The order at rest: by name, so a column on screen explains it. */
-const DEFAULT_SORTING: SortingState = [{ id: 'name', desc: false }]
-
 /** A 0–100 score from a URL value; anything else falls back. */
 function clampScore(raw: string, fallback: number): number {
   if (!/^\d+$/.test(raw)) return fallback
@@ -155,7 +152,6 @@ export default function AssetGroupsPage() {
 
   // One filter entry per width: Add filter from 768, the Filters sheet on a phone.
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
-  const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORTING)
 
   // Dialog state
   const [viewGroup, setViewGroup] = useState<AssetGroup | null>(null)
@@ -383,20 +379,28 @@ export default function AssetGroupsPage() {
   const columns: ColumnDef<AssetGroup>[] = [
     {
       accessorKey: 'name',
-      meta: { kind: 'name', pin: 'start', label: t('assetGroups.col.name', 'Name') },
+      meta: {
+        kind: 'name',
+        pin: 'start',
+        minWidth: 200,
+        label: t('assetGroups.col.name', 'Name'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('assetGroups.col.name', 'Name')} />
       ),
       cell: ({ row }) => {
         const group = row.original
         return (
-          <RowNameLink
-            href={assetGroupHref(group.id)}
-            onOpen={() => setViewGroup(group)}
-            title={group.name}
-          >
-            {group.name}
-          </RowNameLink>
+          // The link shrinks with its cell and ends in an ellipsis.
+          <div data-slot="group-name-cell" className="flex min-w-0 items-center">
+            <RowNameLink
+              href={assetGroupHref(group.id)}
+              onOpen={() => setViewGroup(group)}
+              title={group.name}
+            >
+              {group.name}
+            </RowNameLink>
+          </div>
         )
       },
     },
@@ -874,7 +878,9 @@ export default function AssetGroupsPage() {
           </PageHeader>
           <AssetsSectionTabs />
 
-          <MetricStrip loading={statsLoading} items={metrics} />
+          {/* On a phone the list starts sooner: both numbers are reachable there
+              (the count in the title row, Criticality in the Filters sheet). */}
+          {!isPhone && <MetricStrip loading={statsLoading} items={metrics} />}
 
           {/* The list's title row: its name and its one count (the groups the
               list shows, filters and search applied), then the list's actions. */}
@@ -911,10 +917,9 @@ export default function AssetGroupsPage() {
               search={{
                 value: searchQuery,
                 onChange: setSearchQuery,
-                placeholder: t(
-                  'assetGroups.search.placeholder',
-                  'Search name, description or tag…'
-                ),
+                placeholder: isPhone
+                  ? t('assetGroups.search.placeholderShort', 'Search groups…')
+                  : t('assetGroups.search.placeholder', 'Search name, description or tag…'),
                 label: t('assetGroups.search.label', 'Search asset groups'),
               }}
               // One filter entry per width: Add filter from 768, this button
@@ -930,8 +935,6 @@ export default function AssetGroupsPage() {
               }}
               toolbarStart={<GroupAddFilter>{facetPanel}</GroupAddFilter>}
               toolbarBelow={chipsRow}
-              sorting={sorting}
-              onSortingChange={setSorting}
               paginationNoun={t('assetGroups.noun', 'groups')}
               onRowClick={(group) => setViewGroup(group)}
               getRowId={(group) => group.id}

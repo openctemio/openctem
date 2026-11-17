@@ -256,6 +256,7 @@
   "assetGroups.refresh": "Refresh",
   "assetGroups.search.label": "Search asset groups",
   "assetGroups.search.placeholder": "Search name, description or tag…",
+  "assetGroups.search.placeholderShort": "Search groups…",
   "assetGroups.selectAll": "Select all",
   "assetGroups.selectRow": "Select row",
   "assetGroups.subject": "the asset groups list",
