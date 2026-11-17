@@ -485,9 +485,21 @@ reference.
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
     "All";
+  - an on/off filter ("Primary assets", "Internet-facing only") is
+    `<FilterToggle>` from `@/features/shared` in `toolbarStart`: a token of the
+    toolbar's height with `aria-pressed`, filled while on, one box in both
+    states (Button variant `toggle`: the border stays, so turning it on moves
+    nothing), an optional `shortLabel` for a phone and `disabledReason`; never
+    a `Switch` with a label, and never a Button that swaps `outline` for
+    `secondary` (they differ by the border);
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
+  - on a phone the end actions take at most about 40% of the toolbar's second
+    line: a list whose end actions would need more shows them as icons
+    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
+    a tooltip with the same name), so the filter tokens neither shrink nor
+    wrap to a third line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -662,8 +674,9 @@ load.
 
 A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
 queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
-`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue` (exported from `@/features/shared`), which
-every queue uses, the platform console's included, and no page rebuilds:
+`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue`
+(exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
+and no page rebuilds:
 
 - **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve, Reject) and one More
   for everything else, in the row's last column and on the phone card. The buttons are named after the item
@@ -822,6 +835,25 @@ Every settings page is built from the same parts (`@/features/shared`):
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
   `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+
+### Charts
+
+- One chart library (recharts, loaded on demand through
+  `src/components/charts`), and one set of defaults in
+  `src/components/charts/chart-defaults.ts`: `CHART_AXIS` (tick labels 12 px
+  in the muted ink, no axis line, no tick marks), `CHART_GRID` (horizontal
+  dashed guides in the border colour), `CHART_BAR_CURSOR` / `CHART_LINE_CURSOR`
+  (hover), `CHART_REFERENCE` (+ label) for markers and targets,
+  `CHART_TOOLTIP_PROPS` and `CHART_HEIGHT`. A chart spreads these; it does not
+  write its own axis, grid or tooltip colours.
+- Series colours come from the `--viz-*` tokens by meaning: severity,
+  priority, the eight categories, new against fixed, the sequential ramp.
+  Teal (the action colour) never encodes data.
+- Colour never carries the meaning alone: a series has its name in the legend
+  or beside its mark, a state has an icon or a word, a not-prioritised part is
+  hatched.
+- Every chart has a one-sentence summary as its accessible name and a data
+  table (a table view, or a visually hidden table).
 
 ## 7. States
 
