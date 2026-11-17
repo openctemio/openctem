@@ -3,7 +3,7 @@
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -11,21 +11,28 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   RiskScoreBadge,
-  ErrorState,
+  EmptyState,
   MetricStrip,
   type MetricStripItem,
   FacetPanel,
   FacetSection,
   FacetOption,
-  BulkActionBar,
   FilterSheet,
   PageStack,
-  useFilterPanelOpen,
+  usePhoneSelectMode,
 } from '@/features/shared'
+import type {
+  DataTableBulk,
+  DataTableSelection,
+} from '@/features/shared/components/data-table/data-table-selection'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Plus,
   Download,
@@ -37,17 +44,10 @@ import {
   Copy,
   Link,
   ExternalLink,
-  SlidersHorizontal,
-  Tags,
+  SearchX,
   Package,
+  MoreHorizontal,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {} from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   ConfirmDialog,
@@ -73,16 +73,21 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import type { AssetGroup, CreateAssetGroupInput } from '@/features/asset-groups/types'
 import type { Asset } from '@/features/assets/types'
 import { GroupAddAssetsDialog } from '@/features/asset-groups/components/group-add-assets-dialog'
+import { GroupAddFilter } from '@/features/asset-groups/components/group-add-filter'
+import { assetGroupHref } from '@/features/asset-groups/lib/group-link'
 import type { AssetGroupApiFilters } from '@/features/asset-groups/api'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { accessStateOf } from '@/lib/api/access-state'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import {
   CRITICALITY_LABELS,
   RATED_CRITICALITY_LEVELS,
   type RatedCriticality,
 } from '@/lib/criticality'
-import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
+import { useCsvExport } from '@/hooks/use-csv-export'
+import { assetGroupExportFields } from '@/features/asset-groups/lib/group-export'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
@@ -99,35 +104,10 @@ type Criticality = RatedCriticality
 const ENVIRONMENTS: Environment[] = ['production', 'staging', 'development', 'testing']
 const CRITICALITIES: readonly Criticality[] = RATED_CRITICALITY_LEVELS
 
-const FILTERS_OPEN_KEY = 'openctem:asset-groups-filters-open'
-
 /** A 0–100 score from a URL value; anything else falls back. */
 function clampScore(raw: string, fallback: number): number {
   if (!/^\d+$/.test(raw)) return fallback
   return Math.min(100, Math.max(0, Number(raw)))
-}
-
-type Translate = ReturnType<typeof useTranslation>['t']
-
-function assetGroupExportFields(t: Translate): ExportFieldConfig<AssetGroup>[] {
-  return [
-    { header: t('assetGroups.csv.name', 'Name'), accessor: (g) => g.name },
-    {
-      header: t('assetGroups.csv.description', 'Description'),
-      accessor: (g) => g.description ?? '',
-    },
-    { header: t('assetGroups.csv.environment', 'Environment'), accessor: (g) => g.environment },
-    { header: t('assetGroups.csv.criticality', 'Criticality'), accessor: (g) => g.criticality },
-    {
-      header: t('assetGroups.csv.businessUnit', 'Business unit'),
-      accessor: (g) => g.businessUnit ?? '',
-    },
-    { header: t('assetGroups.csv.owner', 'Owner'), accessor: (g) => g.owner ?? '' },
-    { header: t('assetGroups.csv.assets', 'Assets'), accessor: (g) => g.assetCount },
-    { header: t('assetGroups.csv.findings', 'Findings'), accessor: (g) => g.findingCount },
-    { header: t('assetGroups.csv.riskScore', 'Risk score'), accessor: (g) => g.riskScore },
-    { header: t('assetGroups.csv.tags', 'Tags'), accessor: (g) => (g.tags ?? []).join('; ') },
-  ]
 }
 
 // ============================================
@@ -137,6 +117,10 @@ function assetGroupExportFields(t: Translate): ExportFieldConfig<AssetGroup>[] {
 export default function AssetGroupsPage() {
   const { t } = useTranslation()
   const router = useRouter()
+  const { can } = usePermissions()
+  const canWrite = can(Permission.AssetGroupsWrite)
+  const canDelete = can(Permission.AssetGroupsDelete)
+  const isPhone = useIsMobile()
 
   // Data hooks
   const { data: stats, isLoading: statsLoading } = useAssetGroupStats()
@@ -166,8 +150,7 @@ export default function AssetGroupsPage() {
   const [riskDraft, setRiskDraft] = useState<[number, number] | null>(null)
   const riskRange: [number, number] = riskDraft ?? [riskMin, riskMax]
 
-  // Filter panel: closed by default; the viewer's choice is remembered.
-  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
+  // One filter entry per width: Add filter from 768, the Filters sheet on a phone.
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
 
   // Dialog state
@@ -182,6 +165,11 @@ export default function AssetGroupsPage() {
   // Selection state. The table owns the checkboxes; bumping the epoch clears them.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedNames, setSelectedNames] = useState<string[]>([])
+  const onSelectionChange = useCallback((selection: DataTableSelection<AssetGroup> | null) => {
+    const rows = selection?.kind === 'ids' ? selection.rows : []
+    setSelectedIds(rows.map((g) => g.id))
+    setSelectedNames(rows.map((g) => g.name))
+  }, [])
   // A bulk criticality or environment change waits here for the user to confirm.
   const [pendingBulk, setPendingBulk] = useState<{
     action: 'change-criticality' | 'change-environment'
@@ -365,7 +353,7 @@ export default function AssetGroupsPage() {
   }
 
   const handleCopyLink = (id: string) => {
-    copyToClipboard(shareableLink(`/assets/groups/${id}`))
+    copyToClipboard(shareableLink(assetGroupHref(id)))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 
@@ -381,50 +369,50 @@ export default function AssetGroupsPage() {
   const toggleIn = (setter: typeof setEnvParam, value: string, on: boolean) =>
     setter((prev) => (on ? [...prev, value] : prev.filter((v) => v !== value)))
 
-  // Column definitions
+  const clearAll = () => {
+    clearFilters()
+    setSearchQuery('')
+  }
+
+  // Column definitions. One line per row: the description is in the quick
+  // view and on the group page.
   const columns: ColumnDef<AssetGroup>[] = [
     {
-      id: 'select',
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label={t('assetGroups.selectAll', 'Select all')}
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          onClick={(e) => e.stopPropagation()}
-          aria-label={t('assetGroups.selectRow', 'Select row')}
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
-    {
       accessorKey: 'name',
+      meta: {
+        kind: 'name',
+        pin: 'start',
+        // The other columns' floors leave 180 at a 1024 screen (frame 700).
+        minWidth: 180,
+        label: t('assetGroups.col.name', 'Name'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('assetGroups.col.name', 'Name')} />
       ),
       cell: ({ row }) => {
         const group = row.original
         return (
-          <div className="flex min-w-0 items-center gap-2.5">
-            <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0">
-              <p className="truncate font-medium">{group.name}</p>
-              {group.description && (
-                <p className="line-clamp-1 text-xs text-muted-foreground">{group.description}</p>
-              )}
-            </div>
+          // No width of its own (w-0): the name never widens its column past
+          // the frame, and the link ends in an ellipsis inside it.
+          <div data-slot="group-name-cell" className="flex w-0 min-w-full items-center">
+            <RowNameLink
+              href={assetGroupHref(group.id)}
+              onOpen={() => setViewGroup(group)}
+              title={group.name}
+            >
+              {group.name}
+            </RowNameLink>
           </div>
         )
       },
     },
     {
       accessorKey: 'environment',
+      meta: {
+        kind: 'status',
+        hideBelow: 760,
+        label: t('assetGroups.col.environment', 'Environment'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -440,6 +428,7 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'criticality',
+      meta: { kind: 'status', label: t('assetGroups.col.criticality', 'Criticality') },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -456,6 +445,7 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'assetCount',
+      meta: { kind: 'number', label: t('assetGroups.col.assets', 'Assets') },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('assetGroups.col.assets', 'Assets')} />
       ),
@@ -463,6 +453,7 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'findingCount',
+      meta: { kind: 'number', label: t('assetGroups.col.findings', 'Findings') },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('assetGroups.col.findings', 'Findings')} />
       ),
@@ -482,6 +473,7 @@ export default function AssetGroupsPage() {
     },
     {
       accessorKey: 'riskScore',
+      meta: { kind: 'risk', label: t('assetGroups.col.riskScore', 'Risk score') },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -492,6 +484,9 @@ export default function AssetGroupsPage() {
     },
     {
       id: 'actions',
+      meta: { kind: 'actions', label: t('assetGroups.col.actions', 'Actions') },
+      enableSorting: false,
+      enableHiding: false,
       cell: ({ row }) => {
         const group = row.original
         return (
@@ -507,7 +502,7 @@ export default function AssetGroupsPage() {
               {
                 label: t('assetGroups.action.openFullPage', 'Open full page'),
                 icon: ExternalLink,
-                onClick: () => router.push(`/assets/groups/${group.id}`),
+                onClick: () => router.push(assetGroupHref(group.id)),
               },
               {
                 label: t('assetGroups.action.edit', 'Edit'),
@@ -524,7 +519,7 @@ export default function AssetGroupsPage() {
               {
                 label: t('assetGroups.action.manageAssets', 'Manage assets'),
                 icon: Package,
-                onClick: () => router.push(`/assets/groups/${group.id}?tab=assets`),
+                onClick: () => router.push(`${assetGroupHref(group.id)}?tab=assets`),
                 permission: Permission.AssetGroupsWrite,
               },
               {
@@ -640,41 +635,223 @@ export default function AssetGroupsPage() {
     </FacetPanel>
   )
 
-  const toolbarEnd = (
+  // The filters on screen, one chip per field ("Field: values"); removing a
+  // chip clears that field.
+  const chipList: { key: string; text: string; clear: () => void }[] = [
+    ...(environments.length > 0
+      ? [
+          {
+            key: 'environment',
+            text: t('assetGroups.chip.field', '{field}: {values}', {
+              field: t('assetGroups.facet.environment', 'Environment'),
+              values: environments.map((e) => t(`assetGroups.environment.${e}`, e)).join(', '),
+            }),
+            clear: () => setEnvParam([]),
+          },
+        ]
+      : []),
+    ...(criticalities.length > 0
+      ? [
+          {
+            key: 'criticality',
+            text: t('assetGroups.chip.field', '{field}: {values}', {
+              field: t('assetGroups.facet.criticality', 'Criticality'),
+              values: criticalities
+                .map((c) => t(`criticality.${c}`, CRITICALITY_LABELS[c]))
+                .join(', '),
+            }),
+            clear: () => setCritParam([]),
+          },
+        ]
+      : []),
+    ...(hasFindings !== null
+      ? [
+          {
+            key: 'findings',
+            text: t('assetGroups.chip.field', '{field}: {values}', {
+              field: t('assetGroups.facet.findings', 'Findings'),
+              values: hasFindings
+                ? t('assetGroups.facet.hasFindings', 'Has findings')
+                : t('assetGroups.facet.noFindings', 'No findings'),
+            }),
+            clear: () => setFindingsParam(''),
+          },
+        ]
+      : []),
+    ...(riskActive
+      ? [
+          {
+            key: 'risk',
+            text: t('assetGroups.chip.risk', 'Risk score: {min} to {max}', {
+              min: riskMin,
+              max: riskMax,
+            }),
+            clear: () => {
+              setRiskMinParam('0')
+              setRiskMaxParam('100')
+              setRiskDraft(null)
+            },
+          },
+        ]
+      : []),
+  ]
+  const chipsRow =
+    chipList.length > 0 ? (
+      <FilterChipsRow
+        data-testid="asset-groups-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chipList.map((c) => (
+          <RemovableFilterChip
+            key={c.key}
+            text={c.text}
+            onRemove={c.clear}
+            removeLabel={t('assetGroups.chip.remove', 'Remove filter {filter}', {
+              filter: c.text,
+            })}
+          />
+        ))}
+        onClearAll={chipList.length > 1 ? clearFilters : undefined}
+      />
+    ) : undefined
+
+  // Several groups at once. Without a bulk permission there is no checkbox
+  // column; each action shows only to who may use it.
+  const criticalityItems: ActionMenuEntry[] = CRITICALITIES.map((crit) => ({
+    id: crit,
+    label: t(`criticality.${crit}`, CRITICALITY_LABELS[crit]),
+    onSelect: () =>
+      setPendingBulk({
+        action: 'change-criticality',
+        value: crit,
+        label: t(`criticality.${crit}`, CRITICALITY_LABELS[crit]),
+      }),
+  }))
+  const environmentItems: ActionMenuEntry[] = ENVIRONMENTS.map((env) => ({
+    id: env,
+    label: t(`assetGroups.environment.${env}`, env),
+    onSelect: () =>
+      setPendingBulk({
+        action: 'change-environment',
+        value: env,
+        label: t(`assetGroups.environment.${env}`, env),
+      }),
+  }))
+  const groupsBulk: DataTableBulk<AssetGroup> | undefined =
+    canWrite || canDelete
+      ? {
+          rowLabel: (g) => g.name,
+          noun: t('assetGroups.bulk.noun', 'groups selected'),
+          onSelectionChange,
+          actions: canWrite ? (
+            <>
+              <ActionMenu
+                title={t('assetGroups.bulk.criticality', 'Criticality')}
+                label={t('assetGroups.bulk.criticalityFor', 'Set the criticality of the selection')}
+                items={criticalityItems}
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    {t('assetGroups.bulk.criticality', 'Criticality')}
+                  </Button>
+                }
+              />
+              <ActionMenu
+                title={t('assetGroups.bulk.environment', 'Environment')}
+                label={t('assetGroups.bulk.environmentFor', 'Set the environment of the selection')}
+                items={environmentItems}
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    {t('assetGroups.bulk.environment', 'Environment')}
+                  </Button>
+                }
+              />
+            </>
+          ) : null,
+          more: canDelete
+            ? [
+                {
+                  id: 'delete',
+                  label: t('assetGroups.action.delete', 'Delete'),
+                  destructive: true,
+                  onSelect: () => setBulkDeleteConfirm(true),
+                },
+              ]
+            : undefined,
+        }
+      : undefined
+  // Phone cards have no header checkbox: "Select" starts the list's More.
+  const phoneSelect = usePhoneSelectMode(isPhone && !!groupsBulk)
+
+  const nothingToExport =
+    groups.length === 0 ? t('assetGroups.noDataToExport', 'Nothing to export') : undefined
+  const exportItems: ActionMenuEntry[] = [
+    {
+      id: 'export-csv',
+      label: t('assetGroups.exportCsv', 'Export as CSV'),
+      disabledReason: nothingToExport,
+      onSelect: handleExportCsv,
+    },
+    {
+      id: 'export-json',
+      label: t('assetGroups.exportJson', 'Export as JSON'),
+      disabledReason: nothingToExport,
+      onSelect: handleExportJson,
+    },
+  ]
+  const viewTitle = t('assetGroups.viewAll', 'All groups')
+  // On a phone the list's actions are one More, so the row keeps its name and count.
+  const phoneMoreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    { id: 'refresh', label: t('assetGroups.refresh', 'Refresh'), onSelect: handleRefresh },
+    ...exportItems,
+  ]
+  const listActions = isPhone ? (
+    <ActionMenu
+      title={viewTitle}
+      label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+      items={phoneMoreItems}
+      trigger={
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t('assetGroups.moreActions', 'More actions')}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      }
+    />
+  ) : (
     <>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="outline"
             size="icon"
-
             onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('assetGroups.refresh', 'Refresh')}
           >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} aria-hidden />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t('assetGroups.refresh', 'Refresh')}</TooltipContent>
       </Tooltip>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button iconOnlyBelow="md" variant="outline" size="sm">
-            <Download className="h-4 w-4 md:me-2" />
-            <span className="sr-only md:not-sr-only">{t('assetGroups.export', 'Export')}</span>
+      <ActionMenu
+        title={t('assetGroups.export', 'Export')}
+        label={t('assetGroups.exportLabel', 'Export the groups in the list')}
+        items={exportItems}
+        trigger={
+          <Button variant="outline" size="sm">
+            <Download className="me-2 h-4 w-4" aria-hidden />
+            {t('assetGroups.export', 'Export')}
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onClick={handleExportCsv} disabled={groups.length === 0}>
-            {t('assetGroups.exportCsv', 'Export as CSV')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleExportJson} disabled={groups.length === 0}>
-            {t('assetGroups.exportJson', 'Export as JSON')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        }
+      />
     </>
   )
+
+  const narrowed = activeFilterCount > 0 || !!searchQuery
+  const firstLoad = isLoading && fetchedGroups.length === 0
+  const noAccess = isError && accessStateOf(listError) === 'no_access'
 
   return (
     <>
@@ -682,156 +859,139 @@ export default function AssetGroupsPage() {
         <PageStack>
           <PageHeader
             title={t('assetGroups.title', 'Asset groups')}
-            description={t(
-              'assetGroups.description',
-              'Organize and monitor assets by logical group.'
-            )}
+            description={t('assetGroups.description', 'Organize and monitor assets by group.')}
           >
             <Can permission={Permission.AssetGroupsWrite} mode="disable">
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('assetGroups.newGroup', 'New group')}
+              <Button
+                size="sm"
+                iconOnlyBelow="md"
+                aria-label={t('assetGroups.newGroup', 'New group')}
+                onClick={() => setIsCreateOpen(true)}
+              >
+                <Plus className="h-4 w-4 md:me-2" aria-hidden />
+                <span className="sr-only md:not-sr-only">
+                  {t('assetGroups.newGroup', 'New group')}
+                </span>
               </Button>
             </Can>
           </PageHeader>
           <AssetsSectionTabs />
 
-          <MetricStrip loading={statsLoading} items={metrics} />
+          {/* On a phone the list starts sooner: both numbers are reachable there
+              (the count in the title row, Criticality in the Filters sheet). */}
+          <MetricStrip loading={statsLoading} items={metrics} className="max-md:hidden" />
 
-          <div className="flex items-start gap-5">
-            {filtersOpen && (
-              <aside
-                id="asset-group-filters"
-                aria-label={t('assetGroups.filtersLabel', 'Asset group filters')}
-                className="sticky top-4 hidden max-h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
-              >
-                <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-              </aside>
-            )}
+          {/* The list's title row: its name and its one count (the groups the
+              list shows, filters and search applied), then the list's actions. */}
+          <ListTitleRow
+            title={viewTitle}
+            count={
+              <ListCount
+                total={groupsTotal}
+                loading={firstLoad || isError}
+                label={t('assetGroups.count', '{count, plural, one {# group} other {# groups}}', {
+                  count: groupsTotal,
+                })}
+              />
+            }
+          >
+            {listActions}
+          </ListTitleRow>
 
-            <div className="min-w-0 flex-1">
-              {isError && fetchedGroups.length === 0 ? (
-                <ErrorState
-                  title={t('assetGroups.errorTitle', 'asset groups')}
-                  error={listError}
-                  onRetry={() => refreshData()}
-                />
-              ) : isLoading && fetchedGroups.length === 0 ? (
-                <div className="space-y-2 rounded-xl border p-3">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={groups}
-                  showSearch={false}
-                  search={{
-                    value: searchQuery,
-                    onChange: setSearchQuery,
-                    placeholder: t(
-                      'assetGroups.search.placeholder',
-                      'Search name, description or tag…'
-                    ),
-                    label: t('assetGroups.search.label', 'Search asset groups'),
-                  }}
-                  filterToggle={{
-                    open: filtersOpen,
-                    onToggle: () => setFiltersOpen((o) => !o),
-                    onOpenSheet: () => setFilterSheetOpen(true),
-                    activeCount: activeFilterCount,
-                    controlsId: 'asset-group-filters',
-                  }}
-                  toolbarEnd={toolbarEnd}
-                  emptyMessage={t('assetGroups.empty.title', 'No asset groups found')}
-                  emptyDescription={
-                    activeFilterCount > 0 || searchQuery
-                      ? t('assetGroups.empty.filtered', 'Try adjusting your search or filters')
-                      : t('assetGroups.empty.none', 'Create a group to organize your assets')
-                  }
-                  onRowClick={(group) => setViewGroup(group)}
-                  getRowId={(group) => group.id}
-                  onSelectionChange={(rows) => {
-                    setSelectedIds(rows.map((g) => g.id))
-                    setSelectedNames(rows.map((g) => g.name))
-                  }}
-                  resetSelectionKey={selectionEpoch}
-                  showSelectionCount={false}
-                />
+          {noAccess ? (
+            <NoAccessState title={t('assetGroups.subject', 'the asset groups list')} />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={groups}
+              caption={t('assetGroups.title', 'Asset groups')}
+              // A failed read keeps the toolbar, so a search or filter from a
+              // shared link can still be changed.
+              error={isError && fetchedGroups.length === 0 ? listError : undefined}
+              onRetry={() => refreshData()}
+              errorTitle={t('assetGroups.errorTitle', 'asset groups')}
+              // The first read: skeleton rows under a toolbar that stays mounted.
+              isLoading={firstLoad}
+              showSearch={false}
+              search={{
+                value: searchQuery,
+                onChange: setSearchQuery,
+                placeholder: isPhone
+                  ? t('assetGroups.search.placeholderShort', 'Search groups…')
+                  : t('assetGroups.search.placeholder', 'Search name, description or tag…'),
+                label: t('assetGroups.search.label', 'Search asset groups'),
+              }}
+              // One filter entry per width: Add filter from 768, this button
+              // (joined to the search field) on a phone, where it opens the sheet.
+              filterToggle={{
+                open: false,
+                onToggle: () => setFilterSheetOpen(true),
+                onOpenSheet: () => setFilterSheetOpen(true),
+                activeCount: activeFilterCount,
+                controlsId: 'asset-group-filters',
+                label: t('assetGroups.filtersLabel', 'Asset group filters'),
+                sheetOnly: true,
+              }}
+              toolbarStart={<GroupAddFilter>{facetPanel}</GroupAddFilter>}
+              toolbarBelow={chipsRow}
+              paginationNoun={t('assetGroups.noun', 'groups')}
+              onRowClick={(group) => setViewGroup(group)}
+              getRowId={(group) => group.id}
+              // No bulk action for this user: no checkbox column either.
+              bulk={groupsBulk}
+              selectMode={phoneSelect.selectMode}
+              resetSelectionKey={selectionEpoch}
+              showSelectionCount={false}
+              isFiltered={narrowed}
+              onClearFilters={clearAll}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState
+                    icon={FolderKanban}
+                    title={t('assetGroups.empty.nothingYet', 'No asset groups yet')}
+                    description={t(
+                      'assetGroups.empty.none',
+                      'Create a group to organize your assets'
+                    )}
+                    action={
+                      canWrite ? (
+                        <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                          {t('assetGroups.newGroup', 'New group')}
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                ),
+                noMatch: (
+                  <EmptyState
+                    icon={SearchX}
+                    title={t('assetGroups.empty.title', 'No asset groups found')}
+                    description={t(
+                      'assetGroups.empty.filtered',
+                      'Try adjusting your search or filters'
+                    )}
+                    action={
+                      <Button variant="outline" size="sm" onClick={clearAll}>
+                        {t('common.table.clearFilters', 'Clear filters')}
+                      </Button>
+                    }
+                  />
+                ),
+              }}
+            />
+          )}
+          {truncated && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {t(
+                'assetGroups.truncated',
+                'Showing the first {shown} of {total} groups. Search or filter to narrow the list.',
+                {
+                  shown: cap,
+                  total: groupsTotal,
+                }
               )}
-              {truncated && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {t(
-                    'assetGroups.truncated',
-                    'Showing the first {shown} of {total} groups. Search or filter to narrow the list.',
-                    {
-                      shown: cap,
-                      total: groupsTotal,
-                    }
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <Tags className="me-2 h-4 w-4" />
-                  {t('assetGroups.bulk.criticality', 'Criticality')}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {CRITICALITIES.map((crit) => (
-                  <DropdownMenuItem
-                    key={crit}
-                    onClick={() =>
-                      setPendingBulk({
-                        action: 'change-criticality',
-                        value: crit,
-                        label: t(`criticality.${crit}`, CRITICALITY_LABELS[crit]),
-                      })
-                    }
-                  >
-                    {t(`criticality.${crit}`, CRITICALITY_LABELS[crit])}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  <SlidersHorizontal className="me-2 h-4 w-4" />
-                  {t('assetGroups.bulk.environment', 'Environment')}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {ENVIRONMENTS.map((env) => (
-                  <DropdownMenuItem
-                    key={env}
-                    onClick={() =>
-                      setPendingBulk({
-                        action: 'change-environment',
-                        value: env,
-                        label: t(`assetGroups.environment.${env}`, env),
-                      })
-                    }
-                  >
-                    {t(`assetGroups.environment.${env}`, env)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Can permission={Permission.AssetGroupsDelete}>
-              <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
-              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteConfirm(true)}>
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('assetGroups.action.delete', 'Delete')}
-              </Button>
-            </Can>
-          </BulkActionBar>
+            </p>
+          )}
 
           <FilterSheet
             open={filterSheetOpen}

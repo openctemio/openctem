@@ -33,13 +33,22 @@ export function ScansSectionTabs() {
 export function ScansPageHeader({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
   return (
-    <PageHeader title={t('scans.header.title')} description={t('scans.header.description')}>
+    <PageHeader
+      title={t('scans.header.title')}
+      // From 768 px. On a phone the title row holds the title and the tab's
+      // actions as icons, so the list starts higher.
+      description={<span className="max-md:hidden">{t('scans.header.description')}</span>}
+    >
       {children}
     </PageHeader>
   )
 }
 
-/** "Quick scan" and "New scan": the actions of the Scans and Runs tabs. */
+/**
+ * "Quick scan" and "New scan": the actions of the Scans and Runs tabs. On a
+ * phone both are icon buttons that keep their names; the labels show from
+ * 768 px.
+ */
 export function ScanCreateActions() {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -53,15 +62,26 @@ export function ScanCreateActions() {
       <LazyQuickScanDialog open={quickScanOpen} onOpenChange={setQuickScanOpen} />
       {/* A quick scan creates and starts a run: scans:write and scans:execute. */}
       <Can permission={[Permission.ScansWrite, Permission.ScansExecute]} requireAll mode="disable">
-        <Button variant="outline" size="sm" onClick={() => setQuickScanOpen(true)}>
-          <Zap className="me-2 h-4 w-4" />
-          {t('scans.header.quickScan')}
+        <Button
+          variant="outline"
+          size="sm"
+          iconOnlyBelow="md"
+          onClick={() => setQuickScanOpen(true)}
+          aria-label={t('scans.header.quickScan')}
+        >
+          <Zap className="h-4 w-4 md:me-2" aria-hidden />
+          <span className="sr-only md:not-sr-only">{t('scans.header.quickScan')}</span>
         </Button>
       </Can>
       <Can permission={Permission.ScansWrite} mode="disable">
-        <Button size="sm" onClick={() => setDialogOpen(true)}>
-          <Plus className="me-2 h-4 w-4" />
-          {t('scans.header.newScan')}
+        <Button
+          size="sm"
+          iconOnlyBelow="md"
+          onClick={() => setDialogOpen(true)}
+          aria-label={t('scans.header.newScan')}
+        >
+          <Plus className="h-4 w-4 md:me-2" aria-hidden />
+          <span className="sr-only md:not-sr-only">{t('scans.header.newScan')}</span>
         </Button>
       </Can>
     </>

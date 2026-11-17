@@ -234,6 +234,10 @@ type PairingRepository interface {
 	// ExpireStaleCodeUnscoped closes the open rows of this code whose
 	// expiry passed, so the code can open a new request.
 	ExpireStaleCodeUnscoped(ctx context.Context, codeHash string, now time.Time) error
+	// CodeOwnerUnscoped returns the newest expectation made with this code
+	// hash, whatever its status, and the organization that made it; found
+	// is false when no organization made the code.
+	CodeOwnerUnscoped(ctx context.Context, codeHash string) (expectationID, tenantID shared.ID, found bool, err error)
 	CreateExpectation(ctx context.Context, p *Pairing) error
 	// CloseOpenRepairs closes (expired) the tenant's open re-pair requests
 	// for sensorID, so only the newest re-pair code of a sensor works.

@@ -28,7 +28,6 @@ const ALLOW_LIST = [
   'src/features/scan-zones/components/scan-zone-table.tsx',
   'src/features/scope/components/scope-entries-table.tsx',
   'src/features/scope/components/scope-exclusions-table.tsx',
-  'src/features/sensors/components/sensor-table.tsx',
   'src/features/threat-intel/components/detections-panel.tsx',
   'src/features/threat-intel/components/iocs-panel.tsx',
   'src/features/threat-intel/components/threat-actors-panel.tsx',

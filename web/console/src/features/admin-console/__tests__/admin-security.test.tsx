@@ -104,14 +104,23 @@ describe('Sessions page', () => {
 
     expect(screen.getAllByText('This session').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Break-glass').length).toBeGreaterThan(0)
-    // One session can be ended; End is never in the current session's row.
-    const ends = screen.getAllByRole('button', { name: /^end$/i })
-    expect(ends).toHaveLength(1)
+    // The list says its count once and names its table.
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(screen.getByRole('table', { name: 'Sessions' })).toBeInTheDocument()
+    // One session can be ended, from its row's menu; the current session's row has no menu.
+    const menus = screen.getAllByRole('button', { name: /^Actions for the session of/ })
+    expect(menus).toHaveLength(1)
+    expect(menus[0]).toHaveAccessibleName('Actions for the session of ops@op.test')
     for (const badge of screen.getAllByText('This session')) {
       const row = badge.closest('tr')
-      if (row) expect(within(row).queryByRole('button', { name: /^end$/i })).toBeNull()
+      if (row) expect(within(row).queryByRole('button', { name: /^Actions for/ })).toBeNull()
     }
-    await user.click(ends[0])
+    await user.click(menus[0])
+    // Ending is the only action, and nothing happens before the confirmation.
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map((i) => i.textContent)).toEqual(['End session'])
+    await user.click(items[0])
+    expect(endAdminSession).not.toHaveBeenCalled()
 
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText(/ops@op.test is signed out/)).toBeInTheDocument()

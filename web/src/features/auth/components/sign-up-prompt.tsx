@@ -1,6 +1,6 @@
 'use client'
 
-import Link from '@/components/link'
+import { TextLink } from '@/components/ui/text-link'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useCanSelfRegister } from '../hooks/use-can-self-register'
@@ -23,14 +23,10 @@ export function SignUpPrompt({ returnTo, email }: SignUpPromptProps) {
   if (!canRegister) return null
   return (
     <>
-      {' '}
       {t('auth.signUp.prompt', "Don't have an account?")}{' '}
-      <Link
-        href={registerHref({ returnTo, email })}
-        className="hover:text-primary underline underline-offset-4"
-      >
+      <TextLink href={registerHref({ returnTo, email })} variant="inline">
         {t('auth.signUp.link', 'Sign up')}
-      </Link>
+      </TextLink>
     </>
   )
 }

@@ -70,6 +70,8 @@ const OPEN_FOCUS_HANDLERS: Record<string, string> = {
   'features/shared/components/responsive-popover.tsx': 'asks opensWithTextFocus() first',
   'components/ui/action-sheet.tsx': 'focuses a row, never a field',
   'components/ui/sidebar.tsx': 'focuses the current link, never a field',
+  'components/graph-page/graph-page.tsx':
+    "focuses the node's action (a link or button), never a field",
   'components/ui/modal-layout.tsx': 'the kit rule itself',
 }
 

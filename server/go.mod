@@ -10,13 +10,13 @@ require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.26 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.10 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.10 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.10 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.11 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.11 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.11 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.10 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.12 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.11 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.11 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -120,9 +120,9 @@ require (
 
 require (
 	connectrpc.com/connect v1.21.1
-	github.com/aws/aws-sdk-go-v2 v1.47.7
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.15
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.8
+	github.com/aws/aws-sdk-go-v2 v1.47.8
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.16
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.9
 	github.com/aws/smithy-go v1.28.8
 	github.com/beevik/etree v1.8.1
 	github.com/fxamacker/cbor/v2 v2.10.0
@@ -140,7 +140,7 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openctemio/contract v1.6.1-0.20261112042759-cf68d4ca7454
 	github.com/openctemio/contract/transfer v1.0.1
-	github.com/openctemio/ctis/v2 v2.0.3
+	github.com/openctemio/ctis/v2 v2.0.4
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
 	github.com/openctemio/ctis/v2/interop/cyclonedx v0.1.0
 	github.com/openctemio/ctis/v2/interop/openvex v0.1.0

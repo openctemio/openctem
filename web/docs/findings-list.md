@@ -85,6 +85,10 @@ Nothing is discarded: the list shows the value masked, and "Show" exists only on
   goes when everything is shown. 100 is the largest page the API returns: there the button gives way to
   "These are the first 100. Narrow the filters to see the rest." A link to a later page opens on the first
   one on a phone. Growing the list clears the selection, as a page-size change does on a desktop.
+- The assignee picker (the bulk bar's "Assign to…", the finding drawer and page, triage) is the shared
+  `AssigneeSelect` on `ResponsivePopover`: a 224 px anchored popover from 768 px up with its search field focused;
+  on a phone a bottom sheet titled "Select a person", the search field pinned under the title, rows 44, no keyboard
+  until the field is tapped, and the sheet then sits on the keyboard (`e2e/specs/61-picker-touch-keyboard.spec.ts`).
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
@@ -238,6 +242,15 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
   button opens the same facets in a sheet.
 - Chips read as label and value ("Severity: Critical, High"); other operators keep their word ("Severity is
   not Low", "EPSS score ≥ 0.5").
+- A chip's text is a button (Enter or Space; its X stays the remove button): it opens the editor Add filter
+  shows for that field (`FieldEditor`, `filters/field-editor.tsx`) on the chip's own operator and values,
+  anchored to the chip, a bottom sheet on a phone (`ResponsivePopover`). The operators and values come from
+  the filter contract, which is fetched when the editor opens. Changing between two operators of one kind
+  ("is" and "is not", "≥" and "≤") keeps the values. Apply rewrites the filter in the URL in its place
+  (`withFilterReplaced`: the param and value Add filter would write, the page reset) and focus goes to the
+  chip; Escape or a click outside changes nothing. A chip in "+N more" is edited the same way. Not editable:
+  the locked chips of the open saved view (lock and tooltip as before), unknown filters, the Advanced chip,
+  and fields Add filter does not offer.
 
 - The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
   filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
@@ -309,13 +322,18 @@ practice!=compliance`). The client never builds query text itself.
 - Enter on the text that is already in force writes nothing (the run icon is off then too).
 - In Query mode the chips and Clear step aside (the context chips stay; Add filter and the base chips stay dimmed and inactive); in Basic mode an `fq`
   filter is one Advanced chip whose text opens Query mode.
-- With a saved view open, the query text holds what the URL adds on top of the view, not the view's own
-  conditions (the server applies the view under the URL's filters). So in Query mode the view's locked chips stay
-  in the chips row (one "Conditions from the saved view" chip for a view whose conditions are a tree): what else
-  applies is always on screen. A text that does not name a state or a practice leaves the view's own in force
-  (nothing is written for them unless the URL already set one on top of the view), so applying a text never
-  widens the view. Query text applied on top of a view (`fq`) counts as a filter added: the title row shows
-  Modified with Save view and Reset, and Reset opens the view again with its own text and mode.
+- With a saved view open (`view=<id>`), Query mode shows the view's own conditions as text in the field, printed by
+  the server from the view's filter (`POST /query/parse` with the view's `document`, one request when the mode opens,
+  none while typing); filters the URL adds on top follow it, the view's text in parentheses. No chip repeats the
+  text. While the text is unchanged the URL stays `view=<id>` and nothing is Modified (Enter writes nothing).
+- Applying another text makes that text the whole filter: the URL drops `view=<id>` and keeps the view only as
+  `from_view=<id>`, page state that no request sends, so the view's conditions are never applied a second time
+  under the text. The text is written as usual (flat params when chips can show it, `fq` otherwise, the state and
+  the practice explicit). The title keeps the view's name with Modified ("query text changed"); **Save changes**
+  (the view's owner) stores the text in the view (a text chips cannot show is stored as its checked document) and
+  opens the view again; **Save as new view** is offered to everyone; **Reset** goes back to `view=<id>`.
+- In Basic mode a view's conditions show as locked chips, as before. Conditions chips cannot show (an OR across
+  fields, a group) are one locked chip, **Advanced filter**, that opens Query mode with the view's text.
 - A saved view stores the search mode as the page param `mode=query`. Basic is the default, so a view saved in Basic
   mode sends no `page_params` at all (`savedViewBody` in `src/features/saved-views/api/use-saved-views.ts` is the one
   place that decides); a view without it opens in Basic. When a save fails, the Save view dialog stays open with the

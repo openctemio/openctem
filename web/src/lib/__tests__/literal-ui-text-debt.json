@@ -139,7 +139,6 @@
   "features/import-mappings/components/save-dialogs.tsx": 1,
   "features/integrations/components/routing-rules-dialog.tsx": 22,
   "features/integrations/components/scanners/scanner-imports-view.tsx": 14,
-  "features/legal/components/legal-document.tsx": 3,
   "features/legal/templates.tsx": 52,
   "features/mcp-oauth/components/device-code-view.tsx": 1,
   "features/notifications/components/add-notification-dialog.tsx": 45,

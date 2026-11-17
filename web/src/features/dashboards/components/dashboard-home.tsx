@@ -3,8 +3,8 @@
 /**
  * The `/` dashboard (api docs/architecture/dashboards.md): one renderer for
  * every stored dashboard, a switcher between the organization's dashboards
- * and the viewer's own, the scope badge, the freshness line with Refresh now
- * and the schedule, and the dashboard's actions. Every figure comes from the
+ * and the viewer's own, the scope badge and the freshness line under the
+ * name, Refresh now, the schedule, and the dashboard's actions. Every figure comes from the
  * dashboard's stored snapshot; the server decides whose numbers they are.
  */
 
@@ -61,6 +61,7 @@ import {
 import { flowPanelEligible } from '../lib/flow-panel'
 import { metricNameKey } from '../metrics'
 import {
+  DashboardDataNotice,
   DashboardFreshness,
   RefreshButton,
   scheduleSubmenu,
@@ -445,6 +446,13 @@ export function DashboardHome() {
             row: switcher, Customize, schedule, Refresh now, More. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
+          // Whose figures these are and how fresh: one line under the name,
+          // part of the header, so the widgets start right below it.
+          description={
+            dashboard && active && !customizing ? (
+              <DashboardFreshness kind={active.kind} data={data.data} />
+            ) : undefined
+          }
           actionsClassName="basis-full sm:basis-auto"
         >
           <div
@@ -497,9 +505,7 @@ export function DashboardHome() {
             )}
           </div>
         </PageHeader>
-        {dashboard && active && !customizing && (
-          <DashboardFreshness kind={active.kind} data={data.data} />
-        )}
+        {dashboard && active && !customizing && <DashboardDataNotice data={data.data} />}
 
         {listsLoading ? (
           <DashboardSkeleton />

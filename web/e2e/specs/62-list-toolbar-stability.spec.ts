@@ -2,8 +2,9 @@ import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Nothing in a list's header jumps (owner rule): on Findings, Assets and
- * Scans, at 1440, 1024, 768 and 390 px, in English and Vietnamese, every
+ * Nothing in a list's header jumps (owner rule): on Findings, Assets,
+ * Scans, Sensors and Scan runs, at 1440, 1024, 768 and 390 px, in English
+ * and Vietnamese, every
  * control of the toolbar row and of the title row keeps its box (0 px of
  * movement, 0 px of size change) through: a filter added, five more added
  * (the chips row folds them into "+N more"), one removed, a grouping chosen,
@@ -72,7 +73,40 @@ const LISTS = {
     ],
     group: false,
   },
+  // Searched on the page; no query language for sensors.
+  '/sensors': {
+    filters: [
+      ['state', 'online'],
+      ['role', 'scanner'],
+      ['version', 'latest'],
+      ['policy', 'enforced'],
+      ['attention', '1'],
+      ['exec', 'daemon'],
+    ],
+    group: false,
+    query: false,
+  },
+  // No search field and no Query mode: the run list takes field filters only.
+  '/scans/runs': {
+    filters: [
+      ['kind', 'retest'],
+      ['status', 'failed'],
+      ['origin', 'all'],
+    ],
+    group: false,
+    search: false,
+  },
 } as const
+
+/** A list without a search field skips the Query mode and typing steps. */
+function hasSearch(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
+  return !('search' in list) || list.search !== false
+}
+
+/** A list without a query language skips the Basic | Query steps. */
+function hasQuery(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
+  return hasSearch(list) && (!('query' in list) || list.query !== false)
+}
 
 async function settle(page: Page) {
   await page.waitForLoadState('networkidle').catch(() => undefined)
@@ -231,7 +265,11 @@ function headerHoldsStill(route: keyof typeof LISTS) {
         await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
         await page.goto(route)
         await page
-          .locator('main [data-slot="list-search-input"]')
+          .locator(
+            hasSearch(list)
+              ? 'main [data-slot="list-search-input"]'
+              : 'main [data-slot="list-toolbar"]'
+          )
           .first()
           .waitFor({ state: 'visible', timeout: 45_000 })
         await settle(page)
@@ -296,69 +334,75 @@ function headerHoldsStill(route: keyof typeof LISTS) {
           }
         }
 
-        // Basic | Query and back.
-        const toQuery = page.locator(
-          'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
-        )
-        await step('switch to Query mode', async () => {
-          await toQuery.click()
-          await page
-            .locator('main [data-slot="list-search-query"] [role="combobox"]')
-            .waitFor({ state: 'visible', timeout: 20_000 })
-          await page.locator('main h1').first().click({ force: true })
-        })
-        // The tokens stay, inert: the text owns the filter.
-        const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
-        if ((await tokens.count()) > 0) await expect(tokens.first()).toHaveAttribute('inert', '')
+        if (hasQuery(list)) {
+          // Basic | Query and back.
+          const toQuery = page.locator(
+            'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
+          )
+          await step('switch to Query mode', async () => {
+            await toQuery.click()
+            await page
+              .locator('main [data-slot="list-search-query"] [role="combobox"]')
+              .waitFor({ state: 'visible', timeout: 20_000 })
+            await page.locator('main h1').first().click({ force: true })
+          })
+          // The tokens stay, inert: the text owns the filter.
+          const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
+          if ((await tokens.count()) > 0) await expect(tokens.first()).toHaveAttribute('inert', '')
 
-        // A text the server refuses: its problem shows in the status row
-        // under the toolbar, one row high, and the toolbar row keeps its
-        // height; putting the text right takes the row away again.
-        const editor = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
-        const statusRow = page.locator('main [data-slot="list-toolbar-status"]')
-        const appliedText = await editor.inputValue()
-        await step('apply a text the server refuses', async () => {
-          // One character of value: no value lookup opens a list over Enter.
-          await editor.fill('no_such_field=1')
-          await editor.press('Enter')
-          await expect(statusRow).toHaveAttribute('data-drawn', '', { timeout: 20_000 })
-          await expect(editor).toHaveAttribute('aria-invalid', 'true')
-        })
-        {
-          // The problem line is the one the field is described by, inside the
-          // status row, as tall as a chips row (32, 36 on a phone).
-          const line = statusRow.locator('[data-slot="query-status"]')
-          await expect(line).toBeVisible()
-          expect(await editor.getAttribute('aria-describedby')).toBe(await line.getAttribute('id'))
-          await expect(line).toHaveAttribute('aria-live', 'polite')
-          const h = (await statusRow.boundingBox())!.height
-          expect(Math.round(h)).toBe(width < 768 ? 36 : 32)
-          const main = (await page.locator('main').boundingBox())!
-          const sb = (await statusRow.boundingBox())!
-          expect(sb.x + sb.width).toBeLessThanOrEqual(main.x + main.width + 0.5)
+          // A text the server refuses: its problem shows in the status row
+          // under the toolbar, one row high, and the toolbar row keeps its
+          // height; putting the text right takes the row away again.
+          const editor = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
+          const statusRow = page.locator('main [data-slot="list-toolbar-status"]')
+          const appliedText = await editor.inputValue()
+          await step('apply a text the server refuses', async () => {
+            // One character of value: no value lookup opens a list over Enter.
+            await editor.fill('no_such_field=1')
+            await editor.press('Enter')
+            await expect(statusRow).toHaveAttribute('data-drawn', '', { timeout: 20_000 })
+            await expect(editor).toHaveAttribute('aria-invalid', 'true')
+          })
+          {
+            // The problem line is the one the field is described by, inside the
+            // status row, as tall as a chips row (32, 36 on a phone).
+            const line = statusRow.locator('[data-slot="query-status"]')
+            await expect(line).toBeVisible()
+            expect(await editor.getAttribute('aria-describedby')).toBe(
+              await line.getAttribute('id')
+            )
+            await expect(line).toHaveAttribute('aria-live', 'polite')
+            const h = (await statusRow.boundingBox())!.height
+            expect(Math.round(h)).toBe(width < 768 ? 36 : 32)
+            const main = (await page.locator('main').boundingBox())!
+            const sb = (await statusRow.boundingBox())!
+            expect(sb.x + sb.width).toBeLessThanOrEqual(main.x + main.width + 0.5)
+          }
+          await step('put the text right', async () => {
+            await editor.fill(appliedText)
+            await expect(statusRow).not.toHaveAttribute('data-drawn', '')
+            await expect(editor).toHaveAttribute('aria-invalid', 'false')
+            await page.locator('main h1').first().click({ force: true })
+          })
+          const toBasic = page.locator(
+            'main [data-slot="list-search-mode-basic"]:visible, main button[data-slot="list-search-mode"]:visible'
+          )
+          await step('switch back to Basic', async () => {
+            await toBasic.click()
+            await page
+              .locator('main [data-slot="list-search-input"]')
+              .waitFor({ state: 'visible', timeout: 20_000 })
+          })
         }
-        await step('put the text right', async () => {
-          await editor.fill(appliedText)
-          await expect(statusRow).not.toHaveAttribute('data-drawn', '')
-          await expect(editor).toHaveAttribute('aria-invalid', 'false')
-          await page.locator('main h1').first().click({ force: true })
-        })
-        const toBasic = page.locator(
-          'main [data-slot="list-search-mode-basic"]:visible, main button[data-slot="list-search-mode"]:visible'
-        )
-        await step('switch back to Basic', async () => {
-          await toBasic.click()
-          await page
-            .locator('main [data-slot="list-search-input"]')
-            .waitFor({ state: 'visible', timeout: 20_000 })
-        })
 
-        await step('type in the field', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
-        })
-        await step('clear the text', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('')
-        })
+        if (hasSearch(list)) {
+          await step('type in the field', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
+          })
+          await step('clear the text', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('')
+          })
+        }
 
         await step('clear the filters', async () => {
           const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
@@ -651,4 +695,12 @@ test.describe('Assets list header', { tag: ['@assets'] }, () => {
 test.describe('Scans list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans')
   saysItsCountOnce('/scans')
+})
+test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
+  headerHoldsStill('/sensors')
+  saysItsCountOnce('/sensors')
+})
+test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
+  headerHoldsStill('/scans/runs')
+  saysItsCountOnce('/scans/runs')
 })

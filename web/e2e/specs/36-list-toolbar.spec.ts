@@ -28,14 +28,14 @@ interface AxeResult {
  * to the field ('phone': only below 768px, where a list with Add filter keeps
  * the joined Filters button as its one filter entry).
  */
-const PAGES = [
-  { route: '/sensors', filter: true },
+const PAGES: readonly { route: string; filter: boolean | 'phone' }[] = [
+  { route: '/sensors', filter: 'phone' },
   { route: '/scans', filter: 'phone' },
-  { route: '/assets/groups', filter: true },
+  { route: '/assets/groups', filter: 'phone' },
   { route: '/settings/audit-log', filter: false },
   { route: '/remediation/tasks', filter: false },
   { route: '/credentials', filter: false },
-] as const
+]
 
 async function openToolbar(page: Page, route: string): Promise<boolean> {
   await page.goto(route)
