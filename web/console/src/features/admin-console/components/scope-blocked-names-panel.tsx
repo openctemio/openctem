@@ -642,7 +642,7 @@ function ExceptionsCard({
       {
         accessorKey: 'name',
         header: t('admin.blockedNames.name', 'Domain'),
-        meta: { kind: 'text', width: 200, label: t('admin.blockedNames.name', 'Domain') },
+        meta: { kind: 'text', width: 176, label: t('admin.blockedNames.name', 'Domain') },
         cell: ({ row }) => {
           const name = row.original.include_subdomains
             ? `*.${row.original.name}`
@@ -659,7 +659,7 @@ function ExceptionsCard({
         header: t('admin.blockedNames.reasonCol', 'Reason'),
         meta: {
           kind: 'text',
-          width: 200,
+          width: 160,
           hideBelow: 1000,
           label: t('admin.blockedNames.reasonCol', 'Reason'),
         },
@@ -674,7 +674,7 @@ function ExceptionsCard({
         header: t('admin.blockedNames.referenceCol', 'Authorisation'),
         meta: {
           kind: 'text',
-          width: 160,
+          width: 136,
           hideBelow: 1060,
           label: t('admin.blockedNames.referenceCol', 'Authorisation'),
         },
@@ -689,7 +689,7 @@ function ExceptionsCard({
         header: t('admin.blockedNames.grantedBy', 'Granted by'),
         meta: {
           kind: 'text',
-          width: 176,
+          width: 152,
           hideBelow: 900,
           label: t('admin.blockedNames.grantedBy', 'Granted by'),
         },
@@ -702,7 +702,7 @@ function ExceptionsCard({
       {
         accessorKey: 'expires_at',
         header: t('admin.blockedNames.expires', 'Expires'),
-        meta: { kind: 'date', width: 120, label: t('admin.blockedNames.expires', 'Expires') },
+        meta: { kind: 'date', width: 112, label: t('admin.blockedNames.expires', 'Expires') },
         cell: ({ row }) => (
           <span className="tabular-nums">{shortDate(row.original.expires_at)}</span>
         ),

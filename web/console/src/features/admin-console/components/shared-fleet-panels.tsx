@@ -101,7 +101,8 @@ export function SharedFleetPanel() {
       {
         accessorKey: 'status',
         header: t('admin.sharedFleet.col.status'),
-        meta: { kind: 'status', width: 176, label: t('admin.sharedFleet.col.status') },
+        // Two badges (state and health); Vietnamese needs the room.
+        meta: { kind: 'status', width: 232, label: t('admin.sharedFleet.col.status') },
         cell: ({ row }) => (
           <div className="flex min-w-0 gap-1 overflow-hidden">
             <Badge variant={row.original.status === 'active' ? 'secondary' : 'outline'}>
@@ -152,7 +153,12 @@ export function SharedFleetPanel() {
       {
         accessorKey: 'current_jobs',
         header: t('admin.sharedFleet.col.jobs'),
-        meta: { kind: 'number', width: 96, label: t('admin.sharedFleet.col.jobs') },
+        meta: {
+          kind: 'number',
+          width: 96,
+          hideBelow: 700,
+          label: t('admin.sharedFleet.col.jobs'),
+        },
         cell: ({ row }) => (
           <span className="tabular-nums">
             {row.original.max_jobs > 0
