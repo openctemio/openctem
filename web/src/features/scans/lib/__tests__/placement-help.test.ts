@@ -99,7 +99,13 @@ describe('every outcome reason the API keeps has words', () => {
   it('coverage-gap reasons (label and why)', () => {
     const reasons = goConsts('pkg/domain/scanrun/coverage_gaps.go', 'GapReason')
     expect(reasons).toEqual(
-      expect.arrayContaining(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable', 'host_busy'])
+      expect.arrayContaining([
+        'breaker_open',
+        'rate_floor',
+        'blocked',
+        'proxy_unavailable',
+        'host_busy',
+      ])
     )
     for (const r of [...reasons, 'other']) {
       for (const d of [en, vi]) {
