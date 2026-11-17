@@ -1,0 +1,10 @@
+{
+  "queue.decideBy.overdue": "Overdue, {date}",
+  "queue.decision.approve": "Approve",
+  "queue.decision.approveNamed": "Approve {name}",
+  "queue.decision.own": "Your request",
+  "queue.decision.ownReason": "Someone else decides a request you made.",
+  "queue.decision.reject": "Reject",
+  "queue.decision.rejectNamed": "Reject {name}",
+  "queue.reason.cancel": "Cancel"
+}
