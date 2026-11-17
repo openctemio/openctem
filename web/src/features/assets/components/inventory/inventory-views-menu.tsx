@@ -26,9 +26,11 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import type { Ref } from 'react'
 import {
   SavedViewsMenu,
   type BuiltInView,
+  type SavedViewsActions,
 } from '@/features/saved-views/components/saved-views-menu'
 import type { SavedView } from '@/features/saved-views/api/use-saved-views'
 import type { QuickPreset } from '../../lib/inventory-facets'
@@ -60,6 +62,8 @@ interface InventoryViewsMenuProps {
   modified: boolean
   onDiscard: () => void
   onSelect: (view: SavedView | null) => void
+  /** Lets the list's title row open the save dialog (its Save view button). */
+  actionsRef?: Ref<SavedViewsActions>
 }
 
 export function InventoryViewsMenu({
@@ -70,6 +74,7 @@ export function InventoryViewsMenu({
   modified,
   onDiscard,
   onSelect,
+  actionsRef,
 }: InventoryViewsMenuProps) {
   const { t } = useTranslation()
   const builtIn: BuiltInView[] = presets.map((p) => ({
@@ -90,6 +95,7 @@ export function InventoryViewsMenu({
       modified={modified}
       onDiscard={onDiscard}
       onSelect={onSelect}
+      actionsRef={actionsRef}
     />
   )
 }
