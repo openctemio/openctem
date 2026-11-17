@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 
 import { QuickScanDialog } from '../quick-scan-dialog'
+import { enter } from '@/test/user-input'
+
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
 
 // A wildcard typed into Quick Scan goes to the API as a scan target, the
 // review shows what it expands to, and a refusal is worded in user terms.
@@ -47,9 +54,9 @@ Element.prototype.hasPointerCapture ??= () => false
 Element.prototype.scrollIntoView ??= () => {}
 
 async function fill(target: string) {
-  await userEvent.type(screen.getByLabelText('Targets'), target)
-  await userEvent.click(screen.getByLabelText('Scanner'))
-  await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
+  await enter(user, screen.getByLabelText('Targets'), target)
+  await user.click(screen.getByLabelText('Scanner'))
+  await user.click(await screen.findByRole('option', { name: 'Nuclei' }))
 }
 
 describe('QuickScanDialog wildcard targets', () => {
@@ -69,7 +76,7 @@ describe('QuickScanDialog wildcard targets', () => {
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.example.net')
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await user.click(screen.getByRole('button', { name: /Start Scan/ }))
     expect(quickScan).toHaveBeenCalledWith({ targets: ['*.example.net'], scanner_name: 'nuclei' })
   })
 
@@ -82,7 +89,7 @@ describe('QuickScanDialog wildcard targets', () => {
     )
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.example.com')
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await user.click(screen.getByRole('button', { name: /Start Scan/ }))
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalled())
     const text = String(vi.mocked(toast.error).mock.calls[0][0])
     expect(text).toContain('*.example.com')
@@ -105,6 +112,15 @@ describe('QuickScanDialog wildcard targets', () => {
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.example.net')
+    // The preview follows the targets by a 400 ms pause, so on a slow machine it
+    // can ask once before the scanner is chosen (without scanner_name) and again
+    // after. Wait for the request that has the scanner, then read its answer.
+    await vi.waitFor(() =>
+      expect(previewPost).toHaveBeenCalledWith(
+        expect.stringContaining('/quick/preview'),
+        expect.objectContaining({ targets: ['*.example.net'], scanner_name: 'nuclei' })
+      )
+    )
     expect(await screen.findByText('12 known assets match')).toBeInTheDocument()
     expect(screen.getByText('9 will be scanned')).toBeInTheDocument()
     expect(screen.getByText('3 left out by exclusions or the deny list')).toBeInTheDocument()
@@ -135,7 +151,7 @@ describe('QuickScanDialog wildcard targets', () => {
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.new.example.net')
-    await userEvent.click(
+    await user.click(
       await screen.findByRole(
         'button',
         { name: /Run discovery on new.example.net/ },
