@@ -59,9 +59,10 @@ for (const scheme of ['light', 'dark'] as const) {
 
       // More carries Customize (on an editable dashboard) and the schedule.
       await more.click()
-      const menu = page.getByRole('menu')
+      // Customize and a submenu: the menu is a bottom sheet on a phone.
+      const menu = page.locator('[data-slot="action-sheet"]')
       await expect(menu).toBeVisible()
-      // The menu opens with a short zoom: measure once it has settled.
+      // The sheet slides in: measure once it has settled.
       await menu.evaluate((el) =>
         Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished))
       )
@@ -69,7 +70,7 @@ for (const scheme of ['light', 'dark'] as const) {
         body: await page.screenshot(),
         contentType: 'image/png',
       })
-      const items = menu.getByRole('menuitem')
+      const items = menu.locator('[data-slot="action-sheet-row"]')
       for (const item of await items.all()) {
         const b = await item.boundingBox()
         if (b) expect(b.height).toBeGreaterThanOrEqual(TOUCH)

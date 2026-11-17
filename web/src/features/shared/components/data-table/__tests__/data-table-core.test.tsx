@@ -156,6 +156,15 @@ describe('column kinds', () => {
     expect(columnLayout('t', undefined)).toMatchObject({ kind: 'text', style: undefined })
     expect(columnLayout('d', { kind: 'date' }).sortFirst).toBe('desc')
   })
+
+  it('risk: start-aligned, 148 wide (the longest text of the badge), highest first', () => {
+    expect(columnLayout('risk', { kind: 'risk' })).toEqual({
+      kind: 'risk',
+      align: 'start',
+      sortFirst: 'desc',
+      style: { width: 148, minWidth: 148, maxWidth: 148 },
+    })
+  })
 })
 
 describe('accessible name', () => {
@@ -194,6 +203,52 @@ describe('empty kinds', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(clear).toHaveBeenCalled()
   })
+
+  it('no match with the words of the page keeps the block and its Clear filters action', async () => {
+    const clear = vi.fn()
+    render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        emptyState={{ ...kinds, noMatch: { title: 'No asset matches', hint: 'Take a filter off' } }}
+        isFiltered
+        onClearFilters={clear}
+      />
+    )
+    expect(screen.getByText('No asset matches')).toBeInTheDocument()
+    expect(screen.getByText('Take a filter off')).toBeInTheDocument()
+    expect(screen.queryByText('No results found')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(clear).toHaveBeenCalled()
+  })
+
+  it('no match with only a title keeps the default hint', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        emptyState={{ ...kinds, noMatch: { title: 'No asset matches' } }}
+        isFiltered
+      />
+    )
+    expect(screen.getByText('No asset matches')).toBeInTheDocument()
+    expect(screen.getByText('Try adjusting your search or filters')).toBeInTheDocument()
+  })
+
+  it('no match as a node replaces the whole block', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        emptyState={{ ...kinds, noMatch: <p>Nothing here</p> }}
+        isFiltered
+        onClearFilters={() => {}}
+      />
+    )
+    expect(screen.getByText('Nothing here')).toBeInTheDocument()
+    expect(screen.queryByText('No results found')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
 })
 
 describe('footer states', () => {
@@ -206,12 +261,12 @@ describe('footer states', () => {
     onPaginationChange: () => {},
   }
 
-  it('partial counts: no total, Could not count with Retry, no Last page', async () => {
+  it('partial counts: no total, Could not count with Retry, Last page disabled', async () => {
     const retry = vi.fn()
     render(<DataTable {...paged} countUnavailable onRetryCount={retry} />)
     expect(screen.getByText('Showing 1 to 2')).toBeInTheDocument()
     expect(screen.getByText('Page 1')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Last page' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Last page' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalled()

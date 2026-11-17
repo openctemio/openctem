@@ -124,7 +124,8 @@ interface DataTableProps<TData, TValue> {
    * two kinds: `nothingYet` (the list has no records at all: say so and offer
    * the first action) and `noMatch` (a search or filter left no row; defaults
    * to "No results found" with a Clear filters action when `onClearFilters`
-   * is given). Which one shows follows `isFiltered`.
+   * is given; `{ title, hint }` keeps that block and its action with the
+   * page's words). Which one shows follows `isFiltered`.
    */
   emptyState?: React.ReactNode | DataTableEmptyStates
   /**
@@ -141,19 +142,29 @@ interface DataTableProps<TData, TValue> {
    */
   caption?: string
   /**
-   * When the rows on screen were read. Older than the list's freshness budget,
-   * the footer says "Updated 12 min ago" with a refresh button (`onRefresh`):
-   * never a silent old list.
+   * When the rows on screen were read. Once that is older than the list's
+   * freshness budget (5 minutes), or at once when `refreshFailed`, the footer
+   * says "Updated 12 minutes ago" with a refresh button (`onRefresh`): never
+   * a silent old list. Only that note re-renders as time passes.
    */
   staleAt?: Date
+  /** The last refresh failed and the rows on screen are the earlier read. */
+  refreshFailed?: boolean
   onRefresh?: () => void
   /**
    * The total could not be counted (the count failed or timed out): the
-   * footer shows the rows on screen without a total, "Could not count" with
-   * Retry (`onRetryCount`), and no Last page.
+   * footer shows the rows on screen without a total ("Showing 1 to 25",
+   * "Page 1") and Last page is disabled with its reason. With `onRetryCount`
+   * the footer also says "Could not count" with Retry; a list whose title row
+   * says it (`ListCount failed`) leaves `onRetryCount` out.
    */
   countUnavailable?: boolean
   onRetryCount?: () => void
+  /**
+   * false = no toolbar row at all (a first run or a refused read: nothing to
+   * search, filter or arrange). Default true.
+   */
+  showToolbar?: boolean
   /**
    * Shown in place of the rows when the read failed. The toolbar, filters and
    * chips stay; the error does not replace the page.
@@ -357,7 +368,27 @@ export interface DataTableSelectMode {
 /** The two kinds of empty list (`emptyState`). */
 export interface DataTableEmptyStates {
   nothingYet: React.ReactNode
-  noMatch?: React.ReactNode
+  /**
+   * A block of the page's own, or just its words: the table keeps its icon,
+   * its layout and the Clear filters action (`onClearFilters`).
+   */
+  noMatch?: React.ReactNode | DataTableNoMatchWords
+}
+
+/** The words of the default no-match block; each defaults to the table's. */
+export interface DataTableNoMatchWords {
+  title?: string
+  hint?: string
+}
+
+function isNoMatchWords(v: unknown): v is DataTableNoMatchWords {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !React.isValidElement(v) &&
+    !('$$typeof' in v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  )
 }
 
 function isEmptyStates(v: unknown): v is DataTableEmptyStates {
@@ -590,6 +621,8 @@ export function DataTable<TData, TValue>({
   onClearFilters,
   caption,
   staleAt,
+  refreshFailed = false,
+  showToolbar = true,
   onRefresh,
   countUnavailable = false,
   onRetryCount,
@@ -1170,23 +1203,35 @@ export function DataTable<TData, TValue>({
   // The empty body: one block, or the two kinds of empty list. It sits in
   // the table's one frame: a page's empty state drawn as a card loses its
   // card's frame there (one frame, as on every list), keeping its content.
-  const emptyContent = isEmptyStates(emptyState)
-    ? filterActive
-      ? (emptyState.noMatch ?? (
-          <DefaultEmpty
-            message={t('common.table.noResults', 'No results found')}
-            hint={t('common.table.adjustSearch', 'Try adjusting your search or filters')}
-            action={
-              onClearFilters ? (
-                <Button variant="outline" size="sm" onClick={onClearFilters}>
-                  {t('common.table.clearFilters', 'Clear filters')}
-                </Button>
-              ) : undefined
-            }
-          />
-        ))
-      : emptyState.nothingYet
-    : (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+  const noMatch = isEmptyStates(emptyState) ? emptyState.noMatch : undefined
+  const noMatchWords = isNoMatchWords(noMatch) ? noMatch : undefined
+  const noMatchBlock = noMatchWords ? undefined : (noMatch as React.ReactNode)
+  const emptyContent = isEmptyStates(emptyState) ? (
+    filterActive ? (
+      noMatchBlock != null ? (
+        noMatchBlock
+      ) : (
+        <DefaultEmpty
+          message={noMatchWords?.title ?? t('common.table.noResults', 'No results found')}
+          hint={
+            noMatchWords?.hint ??
+            t('common.table.adjustSearch', 'Try adjusting your search or filters')
+          }
+          action={
+            onClearFilters ? (
+              <Button variant="outline" size="sm" onClick={onClearFilters}>
+                {t('common.table.clearFilters', 'Clear filters')}
+              </Button>
+            ) : undefined
+          }
+        />
+      )
+    ) : (
+      emptyState.nothingYet
+    )
+  ) : (
+    (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+  )
   const emptyBody = (
     <div
       data-slot="table-empty"
@@ -1197,148 +1242,148 @@ export function DataTable<TData, TValue>({
   )
 
   // A stale read says so in the footer, with a refresh.
-  const staleNote = staleAt ? (
-    <span data-slot="table-stale" className="inline-flex items-center gap-1">
-      {t('common.table.updated', 'Updated')} <RelativeTime date={staleAt} />
-      {onRefresh && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t('common.table.refreshNow', 'Refresh now')}
-          onClick={onRefresh}
-        >
-          <RefreshCw className="size-4" />
-        </Button>
-      )}
-    </span>
-  ) : null
+  const pagerShown = showPagination && !errorState && paginationTotal > 0
+  const staleNote = (block: boolean) =>
+    staleAt ? (
+      <TableStaleNote readAt={staleAt} failed={refreshFailed} onRefresh={onRefresh} block={block} />
+    ) : null
+  // Without a known total there is no last page to go to: the button stays,
+  // disabled, and says why.
+  const lastPageReasonId = React.useId()
+  const lastPageReason = countUnavailable
+    ? t('common.table.lastPageUnknown', 'The total is not known yet')
+    : rowCountCapped
+      ? t('common.table.lastPageCapped', 'More match than were counted. Narrow the list.')
+      : undefined
 
   return (
     <div className="space-y-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
-      <ListToolbar
-        filterToggle={filterToggle}
-        filter={filter}
-        search={
-          serverSearch ??
-          (showSearch
-            ? {
-                value: searchKey
-                  ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
-                  : globalFilter,
-                onChange: (value: string) => {
-                  if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
-                  else setGlobalFilter(value)
-                },
-                placeholder: searchPlaceholder,
-              }
-            : undefined)
-        }
-        start={toolbarStart}
-        below={toolbarBelow}
-        end={
-          <>
-            {toolbarEnd}
-            {/* Selection info - hidden on mobile when no selection */}
-            {showSelectionCount && !bulk && selectedCount > 0 && (
-              <span className="text-sm text-muted-foreground hidden sm:inline">
-                {t('common.table.selectedOf', '{selected} of {total} selected', {
-                  selected: selectedCount,
-                  total: totalCount,
-                })}
-              </span>
-            )}
+      {showToolbar && (
+        <ListToolbar
+          filterToggle={filterToggle}
+          filter={filter}
+          search={
+            serverSearch ??
+            (showSearch
+              ? {
+                  value: searchKey
+                    ? ((table.getColumn(searchKey)?.getFilterValue() as string) ?? '')
+                    : globalFilter,
+                  onChange: (value: string) => {
+                    if (searchKey) table.getColumn(searchKey)?.setFilterValue(value)
+                    else setGlobalFilter(value)
+                  },
+                  placeholder: searchPlaceholder,
+                }
+              : undefined)
+          }
+          start={toolbarStart}
+          below={toolbarBelow}
+          end={
+            <>
+              {toolbarEnd}
+              {/* Selection info - hidden on mobile when no selection */}
+              {showSelectionCount && !bulk && selectedCount > 0 && (
+                <span className="text-sm text-muted-foreground hidden sm:inline">
+                  {t('common.table.selectedOf', '{selected} of {total} selected', {
+                    selected: selectedCount,
+                    total: totalCount,
+                  })}
+                </span>
+              )}
 
-            {/* Phone: cards have no header checkbox; More turns select mode on
+              {/* Phone: cards have no header checkbox; More turns select mode on
                 (the page's own More when it holds the mode). */}
-            {phoneSelect && !selectModeProp && (
+              {phoneSelect && !selectModeProp && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      data-slot="table-phone-more"
+                      aria-label={t('common.table.phoneMore', 'More list actions')}
+                    >
+                      <MoreHorizontal className="h-4 w-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuCheckboxItem
+                      checked={selecting}
+                      onCheckedChange={(on) => {
+                        if (on) setSelectMode(true)
+                        else clearSelection()
+                      }}
+                    >
+                      {t('common.table.selectMode', 'Select')}
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {/* Display menu: row density (every table, D14) and, when the
+              table allows it, which columns show. Named "Display" so it is
+              never confused with saved "Views". */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
+                    iconOnlyBelow="@5xl/toolbar"
                     variant="outline"
-                    size="icon-sm"
-                    data-slot="table-phone-more"
-                    aria-label={t('common.table.phoneMore', 'More list actions')}
+                    size="sm"
+                    className={cn(phoneCards && 'hidden')}
+                    aria-label={t('common.table.displayMenu', 'Display: density and columns')}
                   >
-                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                    <SlidersHorizontal className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
+                    <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+                      {t('common.table.display', 'Display')}
+                    </span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuCheckboxItem
-                    checked={selecting}
-                    onCheckedChange={(on) => {
-                      if (on) setSelectMode(true)
-                      else clearSelection()
-                    }}
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    {t('common.table.density', 'Density')}
+                  </DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={density}
+                    onValueChange={(v) => setDensity(v as TableDensity)}
                   >
-                    {t('common.table.selectMode', 'Select')}
-                  </DropdownMenuCheckboxItem>
+                    {TABLE_DENSITIES.map((d) => (
+                      <DropdownMenuRadioItem key={d} value={d}>
+                        {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  {showColumnToggle && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">
+                        {t('common.table.columns', 'Columns')}
+                      </DropdownMenuLabel>
+                    </>
+                  )}
+                  {showColumnToggle &&
+                    table
+                      .getAllColumns()
+                      .filter((column) => column.getCanHide())
+                      .map((column) => {
+                        return (
+                          <DropdownMenuCheckboxItem
+                            key={column.id}
+                            className="capitalize"
+                            checked={column.getIsVisible()}
+                            onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                          >
+                            {(column.columnDef.meta as { label?: string } | undefined)?.label ??
+                              column.id.replace(/_/g, ' ')}
+                          </DropdownMenuCheckboxItem>
+                        )
+                      })}
                 </DropdownMenuContent>
               </DropdownMenu>
-            )}
-            {/* Display menu: row density (every table, D14) and, when the
-              table allows it, which columns show. Named "Display" so it is
-              never confused with saved "Views". */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  iconOnlyBelow="@5xl/toolbar"
-                  variant="outline"
-                  size="sm"
-                  className={cn(phoneCards && 'hidden')}
-                  aria-label={t('common.table.displayMenu', 'Display: density and columns')}
-                >
-                  <SlidersHorizontal className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
-                  <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
-                    {t('common.table.display', 'Display')}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  {t('common.table.density', 'Density')}
-                </DropdownMenuLabel>
-                <DropdownMenuRadioGroup
-                  value={density}
-                  onValueChange={(v) => setDensity(v as TableDensity)}
-                >
-                  {TABLE_DENSITIES.map((d) => (
-                    <DropdownMenuRadioItem key={d} value={d}>
-                      {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-                {showColumnToggle && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      {t('common.table.columns', 'Columns')}
-                    </DropdownMenuLabel>
-                  </>
-                )}
-                {showColumnToggle &&
-                  table
-                    .getAllColumns()
-                    .filter((column) => column.getCanHide())
-                    .map((column) => {
-                      return (
-                        <DropdownMenuCheckboxItem
-                          key={column.id}
-                          className="capitalize"
-                          checked={column.getIsVisible()}
-                          onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                        >
-                          {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                            column.id.replace(/_/g, ' ')}
-                        </DropdownMenuCheckboxItem>
-                      )
-                    })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        }
-      />
+            </>
+          }
+        />
+      )}
 
       {phoneCards && (
         <div className="relative divide-y overflow-hidden rounded-md border">
@@ -1747,14 +1792,12 @@ export function DataTable<TData, TValue>({
       )}
 
       {/* A stale read with no pager (an empty list) still says how old it is. */}
-      {staleNote && !(showPagination && !errorState && paginationTotal > 0) && (
-        <div className="text-cap text-muted-foreground">{staleNote}</div>
-      )}
+      {!pagerShown && staleNote(true)}
 
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
           "Page 1 of 0". */}
-      {showPagination && !errorState && paginationTotal > 0 && (
+      {pagerShown && (
         <div
           data-slot="data-table-pager"
           className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
@@ -1772,7 +1815,7 @@ export function DataTable<TData, TValue>({
               : Math.min((pageIndex + 1) * ps, total)
             return (
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-cap text-muted-foreground tabular-nums sm:justify-start">
-                {staleNote}
+                {staleNote(false)}
                 {countUnavailable ? (
                   <>
                     <span>
@@ -1781,17 +1824,17 @@ export function DataTable<TData, TValue>({
                         end,
                       })}
                     </span>
-                    <span
-                      data-slot="table-count-unavailable"
-                      className="inline-flex items-center gap-1"
-                    >
-                      {t('common.table.countUnavailable', 'Could not count')}
-                      {onRetryCount && (
+                    {onRetryCount && (
+                      <span
+                        data-slot="table-count-unavailable"
+                        className="inline-flex items-center gap-1"
+                      >
+                        {t('common.table.countUnavailable', 'Could not count')}
                         <Button variant="ghost" size="sm" onClick={onRetryCount}>
                           {t('common.retry', 'Retry')}
                         </Button>
-                      )}
-                    </span>
+                      </span>
+                    )}
                   </>
                 ) : (
                   <span>
@@ -1886,25 +1929,78 @@ export function DataTable<TData, TValue>({
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
-              {/* Without a known total (a failed or capped count) there is no
-                  last page to go to, so there is no Last button. */}
-              {!countUnavailable && !rowCountCapped && (
+              {/* The reason is the button's description and its tooltip; a
+                  disabled button takes no pointer, so the tooltip sits on the
+                  wrapper. */}
+              <span title={lastPageReason} data-slot="table-last-page">
                 <Button
                   variant="ghost"
                   size="icon"
                   aria-label={t('common.table.lastPage', 'Last page')}
+                  aria-describedby={lastPageReason ? lastPageReasonId : undefined}
                   onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                  disabled={!table.getCanNextPage()}
+                  disabled={!!lastPageReason || !table.getCanNextPage()}
                 >
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
-              )}
+                {lastPageReason && (
+                  <span id={lastPageReasonId} className="sr-only">
+                    {lastPageReason}
+                  </span>
+                )}
+              </span>
             </div>
           </div>
         </div>
       )}
     </div>
   )
+}
+
+/** A read older than this is said to be old in the footer. */
+const STALE_AFTER_MS = 5 * 60_000
+
+/**
+ * "Updated 12 minutes ago" with a refresh button, shown once the read is
+ * older than the freshness budget or when the last refresh failed. It keeps
+ * its own clock (a tick every 30 seconds), so the table does not re-render
+ * as time passes.
+ */
+function TableStaleNote({
+  readAt,
+  failed,
+  onRefresh,
+  block,
+}: {
+  readAt: Date
+  failed: boolean
+  onRefresh?: () => void
+  /** On its own line (no pager to sit in). */
+  block: boolean
+}) {
+  const { t } = useTranslation()
+  const [now, setNow] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+  if (!failed && now - readAt.getTime() <= STALE_AFTER_MS) return null
+  const note = (
+    <span data-slot="table-stale" className="inline-flex items-center gap-1">
+      {t('common.table.updated', 'Updated')} <RelativeTime date={readAt} />
+      {onRefresh && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t('common.table.refreshNow', 'Refresh now')}
+          onClick={onRefresh}
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+      )}
+    </span>
+  )
+  return block ? <div className="text-cap text-muted-foreground">{note}</div> : note
 }
 
 /** The default empty block: icon, one line, an optional hint and action. */

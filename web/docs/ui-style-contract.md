@@ -324,7 +324,9 @@ tab icons, strip rules, chips, empty pagination, name column width).
     field, before the value tokens (Practice, State): it never changes size,
     so they never move it; its picker opens under it. Below 768 the Filters
     button joined to the field (`FilterPanelToggle sheetOnly`) is the entry and
-    Add filter does not show. `f` opens Add filter.
+    Add filter does not show. `f` opens Add filter: the picker calls
+    `useAddFilterShortcut(onOpen, enabled)` (off in a field, a menu or a
+    dialog, with a modifier key, under a modal and in Query mode).
   - Active filters show in `FilterChipsRow`; pass `onClearAll` while two or more
     can be removed and the row draws "Clear filters" after its chips, the same
     on every list. On a phone the chips strip starts at its first chip (only
@@ -353,6 +355,10 @@ tab icons, strip rules, chips, empty pagination, name column width).
     value with its count (counted in the viewer's scope), can be cleared to
     all rows, and keeps its value in the URL (`useUrlFilter`, the page's
     default value when the parameter is absent);
+    with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
+    select with nothing chosen then reads its key ("State") instead of "All"
+    (its accessible name stays "State: All"), so two selects never both read
+    "All";
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
@@ -365,6 +371,39 @@ tab icons, strip rules, chips, empty pagination, name column width).
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
+- **The row's name is `RowNameLink`** where the row has a detail page: a real
+  link built by a route builder or `safeHref`. A plain click opens the detail
+  overlay; a modified click (Ctrl, Cmd, Shift, Alt), a middle click and "Open
+  in new tab" follow the link.
+- **Column kinds** (`meta.kind`, `KIND_LAYOUT` in `data-table/column-meta.ts`)
+  set a column's alignment, width and first sort direction; a page overrides a
+  width only for a measured reason:
+
+  | Kind              | Align  | Width (px) | First sort |
+  | ----------------- | ------ | ---------- | ---------- |
+  | `name`            | start  | up to 520  | asc        |
+  | `id`              | start  | 120        | asc        |
+  | `priority`        | start  | 72         | desc       |
+  | `risk`            | start  | 148        | desc       |
+  | `severity`        | start  | 96         | desc       |
+  | `status`          | start  | 128        | asc        |
+  | `status-edit`     | start  | 140        | asc        |
+  | `asset`           | start  | 200 to 280 | asc        |
+  | `owner`           | start  | 160        | asc        |
+  | `datetime-recent` | end    | 104        | desc       |
+  | `date`            | end    | 112        | desc       |
+  | `due`             | start  | 140        | asc        |
+  | `number`          | end    | 72 to 96   | desc       |
+  | `signals`         | start  | 140        | desc       |
+  | `tags`            | start  | 160 to 240 | asc        |
+  | `masked`          | start  | 200        | asc        |
+  | `select`          | center | 40         | asc        |
+  | `actions`         | center | 48         | asc        |
+  | `text`            | start  | by content | asc        |
+
+  `risk` holds the risk score badge: 148 fits its longest text ("Not yet
+  scored") in both languages.
+
 - **Column priority**: a column that may drop on a narrow screen sets
   `meta: { hideBelow: <table frame width in px> }`; `DataTable` hides it below
   that width instead of scrolling the table sideways. Set it from measured
@@ -586,7 +625,9 @@ load.
   next step, optional primary action, optional secondary link such as docs).
   Three kinds, each worded for its case:
   - **no data yet** (first use): the setup action;
-  - **no results** (filters active): "Clear filters";
+  - **no results** (filters active): "Clear filters"; a list that wants its
+    own words passes `emptyState.noMatch` as `{ title, hint }` and `DataTable`
+    keeps the icon, the layout and the Clear filters action;
   - **not enough data** (a metric cannot be computed): what is missing.
     Never a zero or a perfect score in its place.
 
@@ -818,11 +859,19 @@ finding) and the bulk bar's More (`BulkActionBar` `more` and the data table's
 `bulk.more` take `ActionMenuEntry[]`, titled with the selection count), the
 detail drawer's More (`DetailHeader` `menu`, titled with the record) and the
 "⋯" menus of the list pages (scans, workflows, automations, exceptions,
-controls, dashboards, approvals, notification outbox, members, asset group).
+controls, dashboards, approvals, notification outbox, members, asset group) and
+of the feature screens (role members, comments, asset owners, inventory rows,
+related assets, the dashboard header and widget editor, finding header and
+sub-statuses, pentest campaigns and steps, remediation campaigns and tasks,
+repositories, SCM connections, the vulnerability page).
 `action-menu-guard.test.ts` fails on a hand-built `DropdownMenu` whose trigger
 holds a More icon; menus that are not action menus (breadcrumb levels, editor
-formatting, a menu of choices) are listed there with the reason, and the
-feature menus still to move are listed as pending (planned).
+formatting, a menu of choices) are listed there with the reason.
+
+- A control that moves into the toolbar from 640 px up (the dashboard's Customize
+  and refresh schedule) is an item of the menu only below that width
+  (`useIsBelowSm`); a choice among values (the schedule) is a submenu, the
+  saved value marked "(current)".
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 

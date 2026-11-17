@@ -7,7 +7,33 @@ import { openFindingsPhoneSelect } from '../helpers/table'
  * menu; "Select", first in the list's More (title row), turns the checkboxes on, and the bulk
  * bar's count selects the page or every finding that matches (en and vi at
  * 375). Skips when the stack has no findings.
+ *
+ * The drawer opened from a row shows the finding's place in the list ("1 of
+ * N", N = the title row's count); j / k and its previous / next buttons move
+ * through the page's rows, Escape closes it. The row menu has one order, as a
+ * menu at 1440 and as a sheet at 390.
  */
+
+const ROW_MENU_ORDER = [
+  'View details',
+  'Open to assign…',
+  'Open to change status…',
+  'Create ticket',
+  'Add to remediation',
+  'Copy ID',
+  'Copy link',
+  'Open to mark as false positive…',
+  'Delete',
+]
+
+/** The labels shown are the full order with the items this user may not use left out. */
+function expectLiveOrder(shown: string[]) {
+  expect(shown[0]).toBe('View details')
+  expect(shown).toContain('Copy ID')
+  expect(shown).toEqual(ROW_MENU_ORDER.filter((l) => shown.includes(l)))
+}
+
+const digits = (text: string) => text.replace(/[^\d]/g, '')
 
 const bulkBar = (page: import('@playwright/test').Page) =>
   page.getByRole('toolbar', { name: /actions for selected rows/i })
@@ -162,4 +188,113 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
       await expect(cards.first().getByRole('checkbox')).toHaveCount(0)
     })
   }
+
+  test('the drawer shows the place in the list; j, k and the buttons move; Escape closes', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings')
+    await page.waitForLoadState('networkidle')
+    const rows = page.locator('tbody tr')
+    test.skip((await rows.count()) < 2, 'Needs two findings on this stack')
+
+    // The count's visible number (its sentence for assistive technology is beside it).
+    const total = digits(
+      await page.locator('[data-slot="list-count"] [aria-hidden="true"]').first().innerText()
+    )
+    await rows
+      .first()
+      .getByRole('button', { name: /^Actions for / })
+      .click()
+    await page.getByRole('menuitem', { name: 'View details' }).click()
+    const drawer = page.getByRole('dialog')
+    await expect(drawer).toBeVisible()
+    const position = drawer.locator('[data-slot="finding-drawer-position"]')
+    const prev = drawer.locator('[data-slot="finding-drawer-prev"]')
+    const next = drawer.locator('[data-slot="finding-drawer-next"]')
+
+    await expect(position).toHaveText(/^1 of [\d,.]+$/)
+    expect(digits((await position.innerText()).replace(/^1 of /, ''))).toBe(total)
+    await expect(prev).toBeDisabled()
+    await expect(next).toBeEnabled()
+    const firstTitle = await drawer.getByRole('heading').first().innerText()
+
+    // Focus is in the drawer, not in a field: a key typed there is a list move.
+    await page.keyboard.press('j')
+    await expect(position).toHaveText(/^2 of /)
+    await expect(prev).toBeEnabled()
+    await page.keyboard.press('k')
+    await expect(position).toHaveText(/^1 of /)
+    await expect(drawer.getByRole('heading').first()).toHaveText(firstTitle)
+
+    await next.click()
+    await expect(position).toHaveText(/^2 of /)
+    await prev.click()
+    await expect(position).toHaveText(/^1 of /)
+
+    await page.keyboard.press('Escape')
+    await expect(drawer).toBeHidden()
+  })
+
+  test('the row menu keeps one order as a menu at 1440', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings')
+    await page.waitForLoadState('networkidle')
+    const trigger = page.getByRole('button', { name: /^Actions for / }).first()
+    test.skip(!(await trigger.isVisible().catch(() => false)), 'No findings on this stack')
+
+    await trigger.click()
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    // A disabled item carries its reason as a second line: the label is the first.
+    const shown = await menu
+      .getByRole('menuitem')
+      .evaluateAll((els) =>
+        els.map((e) => (e.querySelector('span > span')?.textContent ?? e.textContent ?? '').trim())
+      )
+    expectLiveOrder(shown)
+    // Nothing is disabled without its reason.
+    const unexplained = await menu
+      .locator('[role="menuitem"][aria-disabled="true"]')
+      .evaluateAll(
+        (els) =>
+          els.filter((e) => !e.parentElement?.getAttribute('aria-label')?.includes(': ')).length
+      )
+    expect(unexplained).toBe(0)
+    await page.keyboard.press('Escape')
+  })
+
+  test(
+    'the row menu keeps the same order as a sheet at 390',
+    { tag: ['@phone'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto('/findings')
+      await page.waitForLoadState('networkidle')
+      const card = page.getByTestId('finding-phone-card').first()
+      test.skip(!(await card.isVisible().catch(() => false)), 'No findings on this stack')
+
+      await card.getByRole('button', { name: /^Actions for / }).click()
+      const sheet = page.locator('[data-slot="action-sheet"]')
+      await expect(sheet).toBeVisible()
+      const rows = sheet.locator('[data-slot="action-sheet-row"]')
+      const shown = await rows.evaluateAll((els) =>
+        els.map((e) => (e.querySelector('span')?.textContent ?? e.textContent ?? '').trim())
+      )
+      expectLiveOrder(shown)
+      // A disabled row shows its reason as text under the label.
+      const unexplained = await sheet
+        .locator('[data-slot="action-sheet-row"][aria-disabled="true"]')
+        .evaluateAll(
+          (els) =>
+            els.filter((e) => {
+              const id = e.getAttribute('aria-describedby')
+              return !id || !document.getElementById(id)?.textContent?.trim()
+            }).length
+        )
+      expect(unexplained).toBe(0)
+      await page.keyboard.press('Escape')
+      await expect(sheet).toBeHidden()
+    }
+  )
 })

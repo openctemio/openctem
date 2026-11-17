@@ -17,7 +17,11 @@ vi.mock('@/lib/api/client', () => ({
   del: http.del,
 }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't1' } }) }))
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams() }))
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(),
+  // The only action of a menu is the button itself, which navigates through the router.
+  useRouter: () => ({ push: vi.fn() }),
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 vi.mock('next/dynamic', () => ({ default: () => () => null }))
 vi.mock('@/lib/permissions', () => ({

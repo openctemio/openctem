@@ -7,7 +7,7 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 ## Columns
 
 - Priority, the title (a real link to `/findings/{id}`: a plain click opens the drawer, Ctrl/Cmd/Shift or a
-  middle click opens the page in a new tab), Location (the asset), Severity, Signals and EPSS, Status and
+  middle click opens the page in a new tab; the shared `RowNameLink`), Location (the asset), Severity, Signals and EPSS, Status and
   Due / SLA show by default in every view; Source and Created are under Display. Columns and their widths:
   select 40, Priority 76 (its header word and sort arrow in English and Vietnamese), title at least 280 (it
   takes the rest), Location 112 to 160, Severity 88, Signals and EPSS 140, Status 120, Due / SLA 112, Source
@@ -46,27 +46,70 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
-- `j` and `k` open the next and previous finding while the drawer is open, and are listed in Help,
-  Keyboard shortcuts.
-- The row menu items that need the full flow (assign, change status, mark as false positive) say they open
-  it ("Open to assign…").
+- The drawer is an overlay over the list (never a permanent side panel). Opened from a row, its header
+  shows the finding's place in the list, "3 of 418" (`findings.drawer.position`, `FindingListPosition` from
+  `findingListPosition`): the row's place on the page plus the page's offset, of the total the title row
+  counts. It is announced politely when it changes. Previous and next buttons beside it move through the
+  rows of the page shown and are disabled at its first and last row; they do not load another page. `j`
+  and `k` make the same moves while the drawer is open (not while typing or inside a menu), and are listed
+  in Help, Keyboard shortcuts; Escape closes the drawer. A finding that is not a row of the page (a shared
+  `#finding=` link, a row of a grouped view) shows no position.
+- The row menu has one set and one order on a desktop and a phone: View details, Open to assign…, Open to
+  change status…, Create ticket, Add to remediation, then Copy ID, Copy link, then Open to mark as false
+  positive…, then Delete. The items that need the full flow (assign, change status, mark as false
+  positive) say they open it ("Open to assign…").
+- An item the user has no permission for is hidden. An item that does not apply to this finding's state
+  stays in its place, disabled, with the reason (a tooltip on a desktop, a line under the label on a phone
+  or a touch screen); no item is disabled without one. The rules read only what the list row carries
+  (`rowMenuBlocks` in `lib/row-menu-state.ts`), never a request per row:
+
+  | Item                                                                     | Disabled when                                                                                                     | Reason key                                 |
+  | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+  | Create ticket                                                            | the finding has a linked ticket (`work_item_uris`)                                                                | `findings.row.reason.ticketLinked`         |
+  | Open to mark as false positive…                                          | it is already a false positive                                                                                    | `findings.row.reason.alreadyFalsePositive` |
+  | Open to mark as false positive…                                          | it is closed (resolved, risk accepted, duplicate): a closed finding only reopens                                  | `findings.row.reason.closed`               |
+  | Open to assign…, Open to change status…, Open to mark as false positive… | people reported it (pentest, bug bounty, red team, manual): the drawer locks the same controls (`isTriageLocked`) | `findings.row.reason.managedElsewhere`     |
+
+  The list row does not say whether an approval request is pending or whether the finding is in an open
+  remediation task, so the menu does not disable for those; the drawer's status menu (the API's moves for
+  this finding, each blocked one with its reason) and the remediation dialog decide there.
 
 ## Empty and error states
 
 The list is in exactly one of these, and each says what to do next
-(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`):
+(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`, drawn with the shared `EmptyState`):
 
-| Kind        | When                                                            | Next action                                      |
-| ----------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| Nothing yet | the organization has no findings and nothing narrows the list   | Import results, Set up a scan, Integrations      |
-| No match    | filters, the search, a context scope or the state hide findings | Clear filters or search, Search all statuses     |
-| No access   | the list read was refused (403)                                 | names the missing permission when the server did |
+| Kind           | When                                                               | What shows                                                                     |
+| -------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| First run      | the organization has no findings and nothing narrows the list      | "No findings yet": Run a scan, Import results, Connect a tool                  |
+| Practice first | the chosen practice has no findings in any state, nothing narrowed | what the practice covers, Import results                                       |
+| No match       | filters, the search, a context scope or the state hide findings    | Clear filters (or Clear search), Search all states; the count reads 0          |
+| No access      | the list read was refused (403)                                    | "You cannot read findings here", the missing permission when named, one action |
+| Load error     | the read failed and there are no rows of that request to keep      | an inline alert with Retry and Copy request ID; no count, no footer            |
+| Stale          | the rows are older than 5 minutes, or a refresh of them failed     | the rows stay; the footer says "Updated 12 minutes ago" with a refresh button  |
+| Partial counts | the list answered without a usable total                           | "Could not count" and Retry beside the view name; the pager has no total       |
 
+- A state has at most one filled button: the first action the viewer may use. The buttons are kit buttons at
+  the default control height, in a row on a desktop and stacked full width on a phone.
+- First run: the page shows the state alone, with no title row, toolbar or chips row, and the table header
+  offers neither select-all nor sorting. Run a scan opens the scan form (`/scans?new=scan`, `scans:write`),
+  Import results opens the import dialog (the gate of the header's Import results) and Connect a tool opens
+  the integrations settings (`integrations:read`). An action the viewer may not use is not shown; the sentence
+  stays. The header keeps Add finding and Triage.
 - The total comes from the scope-only stats. When it is unknown, the list never claims the organization is empty.
-- A failed list is an inline alert in the table area with Retry and the server's request id (Copy request ID).
-  The heading, search, filters and chips stay, and there is no toast on top of it.
-- A refetch keeps the rows on screen with a thin progress bar above the table.
-- Set up a scan and Integrations show only to someone who can open those pages (`scans:read`, `integrations:read`).
+- No match: the toolbar and the chips stay. "Search all states" switches the State lens to All and is not
+  offered when the lens is already All.
+- No access: the header shows no Add finding and no Triage (the `t` key does nothing), there is no title row
+  or toolbar, rows from an earlier answer are removed, and the one action is "Go to the dashboard".
+- Load error: the heading, search, filters and chips stay, and there is no toast on top of the alert.
+- Stale: the page records when the list last answered, from the list's own responses (no extra request). A
+  refetch keeps the rows on screen with a thin progress bar above the table. When the refetch of the request
+  on screen fails, the rows stay and the footer says how old they are at once; a failure of a different
+  request (a new filter, another page) is a load error. Only the footer note re-renders as time passes.
+- Partial counts: the list API sends a total with every answer today. The page reads a missing or negative
+  total as "not known": the count slot says "Could not count" ("Not counted" on a phone, the full sentence in
+  its tooltip) with Retry, the pager reads "Showing 1 to 25" and "Page 1", and Last page is disabled with its
+  reason ("The total is not known yet").
 
 ## Export
 
@@ -110,18 +153,33 @@ the dashboard owns the KPI tiles.
 - The API defines the views (`GET /findings/quick-views`). Each view carries the exact `GET /findings` query
   string, so a view's count equals the total of the list it opens, in the viewer's own data scope. The web keeps
   no second definition (`src/features/findings/lib/quick-views.ts`).
-- A view is a plain link: `/findings?<params>`. A view with no `state` of its own is opened with `state=all`,
+- A view is a plain link: `/findings?<params>`. Pending approval is the exception: it links to the approvals inbox
+  (`/findings/approvals`), where the requests are approved, rejected, reminded or cancelled; the sidebar, a pinned
+  view and the command palette all use that link (`quickViewLink`), and its row is never marked as the current view. A view with no `state` of its own is opened with `state=all`,
   because the page's default is the Open lens and the count counted every state.
 - A row is active when the URL is exactly that view (page, sort, search and grouping do not count).
 - The views show, and their counts are requested, only on the list page. Other pages pay nothing.
 - A zero count shows nothing. SLA breached is in the error colour when above zero. Awaiting verification, which
   was a metric card, is a button in the list's first row while something waits and the viewer can verify.
-- The first row names the view and its total. A URL that is no quick view reads "Custom view".
+- The first row (the shared `ListTitleRow`) names the view and its total, and the name is always a real view's:
+  the open saved view's own name; else the quick view the URL is exactly; else the base view the URL was derived
+  from, which is the quick view whose own params are all in the URL with the same values (the one with the most
+  params wins), and otherwise "All findings" (every state, no filter). Code: `src/features/findings/lib/view-base.ts`.
+- A changed view says so right after the count: a dashed "Modified" lozenge, then **Save view** and **Reset**. A view
+  is changed when it is a saved view with unsaved changes (filters, search, sort, grouping, columns, density), or a
+  quick view or All findings with a filter or search text on top. The practice is the list's scope and the search
+  mode is presentation: neither marks the view changed.
+  - Save view opens the save dialog of the Views menu. On a saved view the viewer owns it is a menu: Save changes
+    (updates the view) or Save as new view. The API decides whether a save is allowed.
+  - Reset returns to exactly the base view: the saved view as stored, the quick view's link, or every state with
+    no filter for All findings. The practice is kept.
+  - On a title row under 42rem and on a phone, Save view and Reset are in the row's More and only the lozenge stays.
+- The count is a pill whose tooltip reads "Counted in your data scope" (and that the count stopped, when capped).
 
 ## Filters
 
 The toolbar row reads: the search field, the two fixed scopes **Practice** and **State**, then **Add filter**
-(shortcut `f`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
+(shortcut `f`, the shared `useAddFilterShortcut`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
 active filter is a chip in the row under it. Code: `src/features/findings/filters/`.
 
 - **Practice** ("Practice: Vulnerabilities", the default: every practice but compliance; Compliance, each
@@ -160,8 +218,8 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
 - The row is the shared `FilterChipsRow`, exactly one line of one height (32): the quiet locked chip for what
   the list leaves out (informational findings, drawn with the shared `LockedChip`, at most half the row) first,
-  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Reset to
-  view or Clear filters pinned at the row's end. The count is said once, beside the view name in the first row,
+  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Clear
+  filters pinned at the row's end (going back to the view is the title row's Reset). The count is said once, beside the view name in the first row,
   never on the chips row. The row shows only when it holds something: the list moves down once when it
   appears, and never again while filters change.
 - Nothing in the list's header moves while it is used: Practice, State, Group and Views keep one width per

@@ -18,10 +18,9 @@
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Boxes, SearchX, User, UserX, Users } from 'lucide-react'
+import { Boxes, User, UserX, Users } from 'lucide-react'
 import { formatLocalized, formatRelative } from '@/lib/format-date'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
@@ -83,7 +82,7 @@ const WIDTH = {
   select: 40,
   // The name's floor: the least it gets before a column drops.
   name: 200,
-  // The badge's longest state whole: "Not yet scored", "Chưa được chấm điểm".
+  // The kit's `risk` kind (the badge's longest state whole).
   risk: 148,
   type: 140,
   // "Guardrail hold", "Giữ bởi rào chắn".
@@ -431,9 +430,7 @@ export function InventoryTable({
         : []),
       {
         id: 'risk',
-        // The risk badge leads the facts as a finding's priority does: the
-        // highest first on the first click.
-        meta: { kind: 'priority', width: WIDTH.risk, label: t('components.col.risk', 'Risk') },
+        meta: { kind: 'risk', label: t('components.col.risk', 'Risk') },
         accessorKey: 'riskScore',
         enableSorting: sortable('risk'),
         header: ({ column }) => (
@@ -724,6 +721,7 @@ export function InventoryTable({
         enableSorting: false,
         enableHiding: false,
         header: () => <span className="sr-only">{t('components.col.actions', 'Actions')}</span>,
+        // One menu component for the table row and the phone card.
         cell: ({ row }) => rowMenu(row.original),
       },
     ]
@@ -770,23 +768,11 @@ export function InventoryTable({
         }
       />
     ),
-    noMatch: (
-      <EmptyState
-        icon={SearchX}
-        title={t('assets.inv.emptyFiltered', 'No assets match these filters')}
-        description={t(
-          'assets.inv.emptyFilteredHint',
-          'Try removing a filter or clearing them all.'
-        )}
-        action={
-          onClearFilters ? (
-            <Button variant="outline" size="sm" onClick={onClearFilters}>
-              {t('common.table.clearFilters', 'Clear filters')}
-            </Button>
-          ) : undefined
-        }
-      />
-    ),
+    // The table keeps its icon, layout and Clear filters action.
+    noMatch: {
+      title: t('assets.inv.emptyFiltered', 'No assets match these filters'),
+      hint: t('assets.inv.emptyFilteredHint', 'Try removing a filter or clearing them all.'),
+    },
   }
 
   return (

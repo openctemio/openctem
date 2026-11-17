@@ -45,13 +45,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -188,6 +182,26 @@ function OwnerCard({
   const isUser = !!owner.userId
   const name = isUser ? owner.userName : owner.groupName
   const subtitle = isUser ? owner.userEmail : t('assets.ownersTab.group', 'Group')
+  const actionsName = name || t('assets.ownersTab.unknown', 'Unknown')
+  const actionsLabel = t('assets.ownersTab.actionsFor', 'Actions for {name}', {
+    name: actionsName,
+  })
+  const menuItems: ActionMenuEntry[] = []
+  if (canEdit)
+    menuItems.push({
+      id: 'edit',
+      label: t('assets.ownersTab.edit', 'Edit'),
+      icon: Pencil,
+      onSelect: () => onEdit(owner),
+    })
+  if (canDelete)
+    menuItems.push({
+      id: 'remove',
+      label: t('assets.ownersTab.remove', 'Remove'),
+      icon: Trash2,
+      destructive: true,
+      onSelect: () => onRemove(owner),
+    })
 
   return (
     <div className="flex items-center justify-between rounded-lg border p-3">
@@ -223,35 +237,16 @@ function OwnerCard({
         </div>
       </div>
       {(canEdit || canDelete) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-
-              aria-label={t('assets.ownersTab.actionsFor', 'Actions for {name}', {
-                name: name || t('assets.ownersTab.unknown', 'Unknown'),
-              })}
-            >
+        <ActionMenu
+          title={actionsName}
+          label={actionsLabel}
+          items={menuItems}
+          trigger={
+            <Button variant="ghost" size="icon" aria-label={actionsLabel}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {canEdit && (
-              <DropdownMenuItem onClick={() => onEdit(owner)}>
-                <Pencil className="me-2 h-4 w-4" />
-                {t('assets.ownersTab.edit', 'Edit')}
-              </DropdownMenuItem>
-            )}
-            {canEdit && canDelete && <DropdownMenuSeparator />}
-            {canDelete && (
-              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(owner)}>
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('assets.ownersTab.remove', 'Remove')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        />
       )}
     </div>
   )

@@ -37,13 +37,7 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { StatusChip } from '@/features/shared/components/status-chip'
@@ -270,8 +264,39 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                 {t('remediationCampaigns.actions.reopen')}
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              title={c.name}
+              label={t('remediationCampaigns.actions.more')}
+              items={[
+                ...(!c.ticket
+                  ? [
+                      {
+                        id: 'create-epic',
+                        label: t('remediationCampaigns.actions.createEpic'),
+                        icon: ExternalLink,
+                        onSelect: () => setJiraOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(open
+                  ? [
+                      {
+                        id: 'cancel',
+                        label: t('remediationCampaigns.actions.cancelCampaign'),
+                        icon: XCircle,
+                        onSelect: () => setConfirm('cancel'),
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'delete',
+                  label: t('remediationCampaigns.actions.delete'),
+                  icon: Trash2,
+                  destructive: true,
+                  onSelect: () => setConfirm('delete'),
+                },
+              ]}
+              trigger={
                 <Button
                   variant="outline"
                   size="icon"
@@ -279,30 +304,8 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                 >
                   <MoreHorizontal className="size-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                {!c.ticket && (
-                  <DropdownMenuItem onSelect={() => setJiraOpen(true)}>
-                    <ExternalLink className="size-4" aria-hidden />
-                    {t('remediationCampaigns.actions.createEpic')}
-                  </DropdownMenuItem>
-                )}
-                {open && (
-                  <DropdownMenuItem onSelect={() => setConfirm('cancel')}>
-                    <XCircle className="size-4" aria-hidden />
-                    {t('remediationCampaigns.actions.cancelCampaign')}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => setConfirm('delete')}
-                  className="text-destructive"
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                  {t('remediationCampaigns.actions.delete')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           </div>
         )}
       </div>
@@ -419,26 +422,32 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                 />
                 {writable && (
                   <div className="absolute end-2 top-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                    <ActionMenu
+                      title={task.title}
+                      label={t('remediationCampaigns.detail.taskMenu', undefined, {
+                        task: task.title,
+                      })}
+                      items={[
+                        {
+                          id: 'remove-task',
+                          label: t('remediationCampaigns.actions.removeTask'),
+                          icon: XCircle,
+                          destructive: true,
+                          onSelect: () => setRemoveTask(task),
+                        },
+                      ]}
+                      trigger={
                         <Button
                           variant="ghost"
                           size="icon"
-
                           aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
                             task: task.title,
                           })}
                         >
                           <MoreHorizontal className="size-4" aria-hidden />
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setRemoveTask(task)}>
-                          <XCircle className="size-4" aria-hidden />
-                          {t('remediationCampaigns.actions.removeTask')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      }
+                    />
                   </div>
                 )}
               </li>

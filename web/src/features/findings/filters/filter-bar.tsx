@@ -30,10 +30,6 @@ interface FilterBarProps {
   leading?: ReactNode
   /** Navigate to a new query (the page replaces the URL). */
   onSearchChange: (next: URLSearchParams) => void
-  /** The open saved view differs from what is stored: Clear becomes "Reset to view". */
-  viewChanged?: boolean
-  /** Go back to the open saved view as stored. */
-  onResetToView?: () => void
   /**
    * The search field is in Query mode: the text owns the filter, so the
    * chips, Add filter and Clear step aside (the context chips stay).
@@ -56,8 +52,6 @@ export function FilterBar({
   viewFilter,
   leading,
   onSearchChange,
-  viewChanged,
-  onResetToView,
   queryActive,
   onOpenQuery,
 }: FilterBarProps) {
@@ -155,18 +149,9 @@ export function FilterBar({
       data-testid="findings-filter-bar"
       leading={leading}
       chips={chips}
-      trailing={
-        viewChanged && onResetToView ? (
-          <Button variant="ghost" size="sm" onClick={onResetToView}>
-            {t('findings.filter.resetToView', 'Reset to view')}
-          </Button>
-        ) : undefined
-      }
-      onClearAll={
-        !(viewChanged && onResetToView) && filters.length + unknown.length + (fq ? 1 : 0) > 1
-          ? clearAll
-          : undefined
-      }
+      // Going back to the view is the title row's Reset; the row ends with
+      // Clear filters only.
+      onClearAll={filters.length + unknown.length + (fq ? 1 : 0) > 1 ? clearAll : undefined}
     />
   )
 }

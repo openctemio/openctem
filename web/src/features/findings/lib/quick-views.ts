@@ -126,8 +126,26 @@ export function quickViewHref(params: string, includeInformational = false): str
   return `/findings?${out.toString()}`
 }
 
+/** The approvals inbox: where requests waiting for a decision are answered. */
+export const APPROVALS_PATH = '/findings/approvals'
+
+/**
+ * Where a quick view leads. Pending approval opens the approvals inbox (the
+ * requests, with Approve, Reject, Remind and Cancel), not the list filtered
+ * to findings that have a request; every other view is the list with the
+ * API's own params.
+ */
+export function quickViewLink(
+  view: Pick<QuickView, 'key' | 'params'>,
+  includeInformational = false
+): string {
+  return view.key === 'pending_approval'
+    ? APPROVALS_PATH
+    : quickViewHref(view.params, includeInformational)
+}
+
 /** Params that shape how a list shows, not which findings it holds. */
-const PRESENTATION_PARAMS = new Set([
+export const PRESENTATION_PARAMS: ReadonlySet<string> = new Set([
   'page',
   'per_page',
   'sort',
@@ -137,6 +155,8 @@ const PRESENTATION_PARAMS = new Set([
   'tab',
   'q',
   'view',
+  // The search field's mode (Basic or Query).
+  'mode',
 ])
 
 function scopeOf(

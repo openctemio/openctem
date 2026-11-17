@@ -40,13 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import {
   Select,
   SelectContent,
@@ -567,7 +561,7 @@ import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
@@ -2079,6 +2073,7 @@ function DetailPageSkeleton() {
  */
 export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   const router = useRouter()
 
   // Reactive URL params for shareable links
@@ -2359,40 +2354,52 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                   ? t('assets.repository.scanning', 'Scanning...')
                   : t('assets.repository.scanNow', 'Scan now')}
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" disabled={isDeleting}>
+              <ActionMenu
+                title={repository.name}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                  name: repository.name,
+                })}
+                items={[
+                  {
+                    id: 'copy-url',
+                    label: t('assets.repository.menu.copyUrl', 'Copy URL'),
+                    icon: Copy,
+                    onSelect: async () => {
+                      const url = repository.repository?.webUrl || window.location.href
+                      const ok = await copyToClipboard(url)
+                      if (ok) toast.success(t('assets.repository.menu.urlCopied', 'URL copied'))
+                      else toast.error(t('common.copyFailed', 'Could not copy'))
+                    },
+                  },
+                  ...(can(Permission.AssetsDelete)
+                    ? [
+                        {
+                          id: 'delete',
+                          label: t('assets.repository.danger.deleteTitle', 'Delete repository'),
+                          icon: Trash2,
+                          destructive: true,
+                          onSelect: () => setShowDeleteDialog(true),
+                        },
+                      ]
+                    : []),
+                ]}
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={isDeleting}
+                    aria-label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                      name: repository.name,
+                    })}
+                  >
                     {isDeleting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <MoreHorizontal className="h-4 w-4" />
                     )}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      const url = repository.repository?.webUrl || window.location.href
-                      const ok = await copyToClipboard(url)
-                      if (ok) toast.success('URL copied')
-                      else toast.error('Failed to copy')
-                    }}
-                  >
-                    <Copy className="me-2 h-4 w-4" />
-                    Copy URL
-                  </DropdownMenuItem>
-                  <Can permission={Permission.AssetsDelete}>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => setShowDeleteDialog(true)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('assets.repository.danger.deleteTitle', 'Delete repository')}
-                    </DropdownMenuItem>
-                  </Can>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                }
+              />
 
               <ScanConfirmDialog
                 open={showScanDialog}

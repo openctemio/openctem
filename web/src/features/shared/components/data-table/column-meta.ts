@@ -11,6 +11,7 @@ export type ColumnKind =
   | 'name'
   | 'id'
   | 'priority'
+  | 'risk'
   | 'severity'
   | 'status'
   | 'status-edit'
@@ -69,6 +70,8 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   name: { align: 'start', maxWidth: 520, sortFirst: 'asc' },
   id: { align: 'start', width: 120, sortFirst: 'asc' },
   priority: { align: 'start', width: 72, sortFirst: 'desc' },
+  // The risk badge's longest text whole: "Not yet scored" ("Chưa được chấm điểm").
+  risk: { align: 'start', width: 148, sortFirst: 'desc' },
   severity: { align: 'start', width: 96, sortFirst: 'desc' },
   status: { align: 'start', width: 128, sortFirst: 'asc' },
   'status-edit': { align: 'start', width: 140, sortFirst: 'asc' },

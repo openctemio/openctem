@@ -49,6 +49,7 @@ import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-
 import {
   readFindingHash,
   useDrawerKeyboardNav,
+  findingListPosition,
   writeFindingHash,
 } from '@/features/findings/hooks/use-drawer-navigation'
 import {
@@ -108,7 +109,11 @@ import { DecorativeText } from '@/components/ui/decorative-text'
 import { Tag } from '@/components/ui/tag'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
-import { ListCount } from '@/features/shared/components/list-title-row'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -268,7 +273,12 @@ import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
 import { findingLocation } from '@/features/findings/lib/finding-location'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
-import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
+import {
+  SavedViewsMenu,
+  summarizeChanges,
+  type SavedViewsActions,
+} from '@/features/saved-views/components/saved-views-menu'
+import { baseViewSearch, deriveBaseView } from '@/features/findings/lib/view-base'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { Label } from '@/components/ui/label'
@@ -376,6 +386,8 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     duplicateOf: undefined,
     relatedFindings: [],
     remediationTaskId: undefined,
+    // Linked tickets: the row menu does not offer a second one.
+    workItemUris: api.work_item_uris,
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
     verifiedAt: undefined,
@@ -412,6 +424,8 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
 
 type FacetSeverity = SeverityLevel
 const PAGE_SIZES = [10, 20, 30, 50, 100]
+// A refused read shows no row, whatever an earlier answer left on screen.
+const NO_FINDINGS: Finding[] = []
 /** Short option labels — the trigger's layers icon already says "group by". */
 const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   cve_id: 'CVE',
@@ -741,7 +755,10 @@ function FindingsContent() {
     // The view opens in the search mode it was saved in.
     replaceUrlSearch(withQueryMode(q, viewOpensInQueryMode(view)))
   }, [])
-  const { views: savedViewList } = useSavedViews('findings', !!savedId)
+  const { views: savedViewList, isLoading: savedViewsLoading } = useSavedViews(
+    'findings',
+    !!savedId
+  )
   const openView = savedViewList.find((v) => v.id === savedId)
 
   // asset_id and scan_id (a scan run's "View all findings") are read above.
@@ -788,7 +805,7 @@ function FindingsContent() {
   const severityLabel = useSeverityLabel()
   // The sidebar's quick views with their counts; they also say whether this
   // person's work views show informational findings.
-  const { data: quickViewData } = useFindingQuickViews(urlSettled)
+  const { data: quickViewData, isLoading: quickViewsLoading } = useFindingQuickViews(urlSettled)
   // Informational findings (info and none): the work views leave them out
   // unless the person's preference or the organization's default includes
   // them, the URL's `informational` overrides that for this view, and an
@@ -1190,6 +1207,12 @@ function FindingsContent() {
     [mutateOverviewStats]
   )
 
+  // When the list last answered, and the request that failed last (both by
+  // request key, from the list's own responses: no extra request, no timer).
+  // A refetch that fails for the request whose rows are on screen keeps them
+  // and says how old they are; a failure of another request is a load error.
+  const [listRead, setListRead] = useState<{ key: string; at: number } | null>(null)
+  const [listFailedKey, setListFailedKey] = useState<string | null>(null)
   // The flat list. The grouped and verification views render their own rows,
   // so the flat page is not fetched while one of them is shown.
   const {
@@ -1201,10 +1224,24 @@ function FindingsContent() {
   } = useFindingsApi(practiceCountsList.listFilters, {
     keepPreviousData: true,
     enabled: urlSettled && !groupBy && !verifyView,
+    onSuccess: (_data, key) => {
+      setListRead({ key, at: Date.now() })
+      setListFailedKey(null)
+    },
     // The failure shows inline in the table area (with Retry); the default
     // handler would add a toast saying the same thing.
-    onError: () => {},
+    onError: (_err, key) => setListFailedKey(key),
   })
+  // The read was refused: nothing of the list is shown or offered.
+  const listForbidden = accessStateOf(error) === 'no_access'
+  const listRefetchFailed =
+    !!error && !listForbidden && !!findingsResponse && !!listRead && listRead.key === listFailedKey
+  // A read that failed with no rows of its own to keep: the inline alert.
+  const listLoadFailed = !!error && !listForbidden && !listRefetchFailed
+  const listReadAt = useMemo(() => (listRead ? new Date(listRead.at) : undefined), [listRead])
+  // The list answered without a usable total: the count says so instead of 0.
+  const countUnknown =
+    !!findingsResponse && (typeof findingsResponse.total !== 'number' || findingsResponse.total < 0)
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
@@ -1505,6 +1542,21 @@ function FindingsContent() {
     currentId: selectedFinding?.id,
     onSelect: setSelectedFinding,
   })
+  // The open finding's place in the list ("3 of 418"): its row on this page
+  // plus the page's offset, of the total the title row counts. A finding that
+  // is not a row of the page (a shared link, a row of a grouped view) has none.
+  const drawerListNav = useMemo(
+    () =>
+      findingListPosition({
+        items: findings,
+        currentId: drawerOpen ? selectedFinding?.id : undefined,
+        page: findingsResponse?.page,
+        perPage: findingsResponse?.per_page,
+        total: findingsResponse?.total,
+        onSelect: setSelectedFinding,
+      }),
+    [findings, drawerOpen, selectedFinding?.id, findingsResponse]
+  )
   const [deepLinkId] = useState(() => readFindingHash())
   const { data: deepLinked } = useFindingApi(deepLinkId && !selectedFinding ? deepLinkId : null)
   useEffect(() => {
@@ -1828,6 +1880,7 @@ function FindingsContent() {
           return (
             <FindingRowMenu
               title={finding.title}
+              finding={finding}
               onAction={(action) => handleRowAction(action, finding)}
               canAssign={canAssignOne}
               canChangeStatus={canChangeStatusOne}
@@ -2136,21 +2189,69 @@ function FindingsContent() {
         more: bulkMore,
       }
     : undefined
-  // The view this list is: a built-in quick view when the URL is exactly one,
-  // a saved view, or a custom combination of filters.
+  // What differs from the open view: the unsaved-changes dot and its menu,
+  // and the title row's Modified.
+  const changeList = useMemo(
+    () =>
+      openView
+        ? viewChanges({
+            view: openView,
+            search: searchParams,
+            viewFilters: viewFilters(openView.filter, filterContract).filters,
+            baselineColumns,
+            columns: shownColumns,
+            density: urlDensity,
+          })
+        : undefined,
+    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
+  )
+  // The view this list is: the open saved view, the built-in quick view the
+  // URL is exactly, or the view the URL was derived from (then it is shown
+  // as changed). The title is always a real view's name.
   const activeQuickView = knownQuickViews(quickViewData?.views).find((v) =>
     quickViewIsActive(searchParams, v, includeInformational)
   )
-  const viewTitle = activeQuickView
-    ? t(
-        quickViewLabelKey(activeQuickView.key),
-        QUICK_VIEW_LABELS[activeQuickView.key as QuickViewKey]
-      )
-    : savedId
-      ? t('findings.view.saved', 'Saved view')
-      : lens === 'all' && activeCount === 0
-        ? t('findings.view.all', 'All findings')
-        : t('findings.view.custom', 'Custom view')
+  const baseView = useMemo(
+    () =>
+      deriveBaseView({
+        search: searchParams,
+        views: knownQuickViews(quickViewData?.views),
+        includeInformational,
+        savedView: !!openView,
+        savedViewChanged: (changeList?.length ?? 0) > 0,
+      }),
+    [searchParams, quickViewData, includeInformational, openView, changeList]
+  )
+  // A view that is still loading (the saved view, or the built-in views the
+  // URL is read against) has no name yet: nothing is shown rather than
+  // another view's name.
+  const viewPending = savedId
+    ? !openView && savedViewsLoading
+    : !quickViewData && !!quickViewsLoading
+  const viewTitle = viewPending
+    ? ''
+    : baseView.kind === 'saved'
+      ? (openView?.name ?? '')
+      : baseView.kind === 'quick'
+        ? t(
+            quickViewLabelKey(baseView.view.key),
+            QUICK_VIEW_LABELS[baseView.view.key as QuickViewKey]
+          )
+        : t('findings.view.all', 'All findings')
+  const viewModified = !viewPending && baseView.modified
+  const resetToBaseView = () => {
+    if (baseView.kind === 'saved') openSavedView(openView ?? null)
+    else replaceUrlSearch(baseViewSearch(baseView, searchParams, includeInformational))
+  }
+  // The save dialog and the update of the open view belong to the Views menu.
+  const [savedViewsActions, setSavedViewsActions] = useState<SavedViewsActions | null>(null)
+  const openSaveView = () => savedViewsActions?.openSave()
+  const saveViewChanges = () => void savedViewsActions?.saveChanges()
+  // Only its owner updates a saved view; anyone may save a new one.
+  const canUpdateView = baseView.kind === 'saved' && !!openView?.is_owner
+  const saveViewLabel = t('common.listView.save', 'Save view')
+  const saveChangesLabel = t('confirm.savedView.saveChanges', 'Save changes')
+  const saveAsNewLabel = t('confirm.savedView.saveAsNew', 'Save as new view…')
   const awaitingVerification = findingStats?.awaiting_verification ?? 0
   // The finding page's list context (breadcrumb with this view, prev/next):
   // the query and the ids of the page shown, kept in the tab.
@@ -2199,7 +2300,7 @@ function FindingsContent() {
   const canTriageRef = useRef(canChangeStatusOne)
   useEffect(() => {
     openTriageRef.current = openTriage
-    canTriageRef.current = canChangeStatusOne
+    canTriageRef.current = canChangeStatusOne && !listForbidden
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2274,8 +2375,18 @@ function FindingsContent() {
     filterCount: activeCount,
     hasSearch: searchQuery.trim() !== '',
     hasContextScope,
-    forbidden: accessStateOf(error) === 'no_access',
+    forbidden: listForbidden,
   })
+  // First run and a refused read show the state alone: no title row, toolbar
+  // or chips (there is nothing to search, filter, count or arrange).
+  const listFirstRun =
+    emptyKind === 'nothing' &&
+    !error &&
+    !!findingsResponse &&
+    !countUnknown &&
+    findingsResponse.total === 0 &&
+    findings.length === 0
+  const listBare = listForbidden || listFirstRun
   // Findings of the viewed state that the filters and search hide.
   const hiddenByFilters = findingStats?.by_state?.[lens]
   const denialText = describePermissionDenied(errorDetails(error)) ?? undefined
@@ -2510,7 +2621,27 @@ function FindingsContent() {
     },
   ]
   const mergeHeader = !actionsWide && headerPageItems.length === 1
+  // A changed view's Save view and Reset fold in here on a narrow row; the
+  // Modified lozenge stays in the row.
+  const viewChangedItems: ActionMenuEntry[] = viewModified
+    ? [
+        ...(canUpdateView
+          ? [{ id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges }]
+          : []),
+        {
+          id: 'view-save',
+          label: canUpdateView ? saveAsNewLabel : saveViewLabel,
+          onSelect: openSaveView,
+        },
+        {
+          id: 'view-reset',
+          label: t('common.listView.reset', 'Reset'),
+          onSelect: resetToBaseView,
+        },
+      ]
+    : []
   const narrowMoreMenu = listMoreMenu([
+    ...viewChangedItems,
     ...(phoneSelect.item ? [phoneSelect.item] : []),
     ...listActionItems,
     copyLinkItem,
@@ -2537,22 +2668,6 @@ function FindingsContent() {
   const contextChips = hasContextScope ? (
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   ) : undefined
-
-  // What differs from the open view: the unsaved-changes dot and its menu.
-  const changeList = useMemo(
-    () =>
-      openView
-        ? viewChanges({
-            view: openView,
-            search: searchParams,
-            viewFilters: viewFilters(openView.filter, filterContract).filters,
-            baselineColumns,
-            columns: shownColumns,
-            density: urlDensity,
-          })
-        : undefined,
-    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
-  )
 
   // The toolbar row after the search: the two fixed scopes (Practice, State),
   // then Add filter. In Query mode the text owns them, so they step aside.
@@ -2620,8 +2735,6 @@ function FindingsContent() {
         </>
       }
       onSearchChange={replaceUrlSearch}
-      viewChanged={!!openView && (changeList?.length ?? 0) > 0}
-      onResetToView={() => openSavedView(openView ?? null)}
       queryActive={queryMode.active}
       onOpenQuery={() => queryMode.setActive(true)}
     />
@@ -2634,6 +2747,7 @@ function FindingsContent() {
     <>
       <SavedViewsMenu
         page="findings"
+        actionsRef={setSavedViewsActions}
         activeId={savedId}
         changes={changeList}
         groupBy={groupParam}
@@ -2652,67 +2766,92 @@ function FindingsContent() {
   // into "More actions". DOM order = visual order = tab order: view,
   // verification queue, refresh, export, task.
   const primaryRow = (
-    <div
+    <ListTitleRow
       ref={actionsRowRef}
       data-testid="findings-toolbar-primary"
-      className="@container/actions flex items-center gap-2"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <h2
-          data-testid="findings-view-title"
-          className="min-w-0 truncate text-sm font-medium"
-          title={viewTitle}
-        >
-          {viewTitle}
-        </h2>
-        {!groupBy && (
+      titleTestId="findings-view-title"
+      className="@container/actions"
+      title={viewTitle}
+      count={
+        !groupBy && (
           <ListCount
             total={total}
-            loading={findingsLoading && !findingsResponse}
+            // A failed load shows no count (the alert below says what failed).
+            loading={(findingsLoading && !findingsResponse) || listLoadFailed}
+            failed={countUnknown}
+            onRetry={() => void mutateFindings()}
             label={t('findings.view.total', '{count, plural, one {# finding} other {# findings}}', {
               count: total,
             })}
           />
-        )}
-        {awaitingVerification > 0 && hasPermission(Permission.FindingsVerify) && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setViewParam('verify')}
-          >
-            {/* A short label on a narrow row, so the view title keeps its room
-                (at phone width the long one squeezed the title to nothing). */}
-            <span className="@md/actions:hidden">
-              {t('findings.view.awaitingVerificationShort', 'To verify')}
-            </span>
-            <span className="hidden @md/actions:inline">
-              {t('findings.view.awaitingVerification', 'Awaiting verification')}
-            </span>
-            <span className="ms-2 tabular-nums text-muted-foreground">
-              {awaitingVerification.toLocaleString()}
-            </span>
-          </Button>
-        )}
+        )
+      }
+      start={
+        <>
+          <ListViewChanged
+            changed={viewModified}
+            summary={changeList?.length ? summarizeChanges(changeList, t) : undefined}
+            // On a row under 42rem the two buttons are in the row's More.
+            actionsClassName="hidden @2xl/actions:flex"
+            onSave={openSaveView}
+            save={
+              canUpdateView ? (
+                <ActionMenu
+                  title={viewTitle}
+                  label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+                  items={[
+                    { id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges },
+                    { id: 'view-save', label: saveAsNewLabel, onSelect: openSaveView },
+                  ]}
+                  trigger={
+                    <Button data-slot="list-view-save" variant="outline" size="sm">
+                      {saveViewLabel}
+                    </Button>
+                  }
+                />
+              ) : undefined
+            }
+            onReset={resetToBaseView}
+          />
+          {awaitingVerification > 0 && hasPermission(Permission.FindingsVerify) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setViewParam('verify')}
+            >
+              {/* A short label on a narrow row, so the view title keeps its room
+                  (at phone width the long one squeezed the title to nothing). */}
+              <span className="@md/actions:hidden">
+                {t('findings.view.awaitingVerificationShort', 'To verify')}
+              </span>
+              <span className="hidden @md/actions:inline">
+                {t('findings.view.awaitingVerification', 'Awaiting verification')}
+              </span>
+              <span className="ms-2 tabular-nums text-muted-foreground">
+                {awaitingVerification.toLocaleString()}
+              </span>
+            </Button>
+          )}
+        </>
+      }
+    >
+      {groupBy === 'owner_id' && hasUnassignedGroup && (
+        <Button variant="outline" size="sm" onClick={() => setAutoAssignOpen(true)}>
+          <UserPlus className="h-4 w-4 @2xl/actions:me-2" />
+          <span className="sr-only @2xl/actions:not-sr-only">
+            {t('findings.toolbar.assignOwners', 'Assign to asset owners')}
+          </span>
+        </Button>
+      )}
+      {refreshButton}
+      {/* Export and the task act on the filter, grouped or not: they stay. */}
+      <div className="hidden items-center gap-2 @2xl/actions:flex">
+        {exportMenu}
+        {taskFromFiltersButton}
       </div>
-      <div className="ms-auto flex shrink-0 items-center gap-2">
-        {groupBy === 'owner_id' && hasUnassignedGroup && (
-          <Button variant="outline" size="sm" onClick={() => setAutoAssignOpen(true)}>
-            <UserPlus className="h-4 w-4 @2xl/actions:me-2" />
-            <span className="sr-only @2xl/actions:not-sr-only">
-              {t('findings.toolbar.assignOwners', 'Assign to asset owners')}
-            </span>
-          </Button>
-        )}
-        {refreshButton}
-        {/* Export and the task act on the filter, grouped or not: they stay. */}
-        <div className="hidden items-center gap-2 @2xl/actions:flex">
-          {exportMenu}
-          {taskFromFiltersButton}
-        </div>
-        <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
-      </div>
-    </div>
+      <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
+    </ListTitleRow>
   )
 
   // Phone layout of a finding row (list and grouped views alike): a card with
@@ -2726,6 +2865,7 @@ function FindingsContent() {
         <FindingRowMenu
           size="icon"
           title={f.title}
+          finding={f}
           onAction={(action) => handleRowAction(action, f)}
           canAssign={canAssignOne}
           canChangeStatus={canChangeStatusOne}
@@ -2838,7 +2978,7 @@ function FindingsContent() {
     <>
       {!urlSettled || benchmarksPending ? (
         <Skeleton className="h-9 w-80 max-w-full" />
-      ) : !verifyView ? (
+      ) : !verifyView && !(listBare && !groupBy) ? (
         primaryRow
       ) : null}
       {!urlSettled || benchmarksPending ? (
@@ -2917,7 +3057,12 @@ function FindingsContent() {
       ) : (
         <DataTable
           columns={columns}
-          data={findings}
+          data={listForbidden ? NO_FINDINGS : findings}
+          showToolbar={!listBare}
+          staleAt={listReadAt}
+          refreshFailed={listRefetchFailed}
+          onRefresh={() => void handleRefresh()}
+          countUnavailable={countUnknown}
           isRefreshing={findingsValidating}
           refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
           showSearch={false}
@@ -2928,7 +3073,7 @@ function FindingsContent() {
           toolbarBelow={filterBar}
           getRowId={(f) => f.id}
           manualPagination
-          rowCount={total}
+          rowCount={countUnknown ? undefined : total}
           pagination={pagination}
           onPaginationChange={setPagination}
           pageSizeOptions={PAGE_SIZES}
@@ -2955,7 +3100,7 @@ function FindingsContent() {
               filterCount={activeCount}
               hasSearch={searchQuery.trim() !== ''}
               canImport={canImport}
-              canSetUpScan={hasPermission(Permission.ScansRead)}
+              canRunScan={hasPermission(Permission.ScansWrite)}
               canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
               onImport={() => setImportDialogOpen(true)}
               onClearFilters={clearAllFilters}
@@ -2975,7 +3120,7 @@ function FindingsContent() {
                   replaceUrlSearch(next)
                 }}
               />
-            ) : error && accessStateOf(error) !== 'no_access' ? (
+            ) : listLoadFailed ? (
               <ErrorState
                 title={t('findings.list.errorTitle', 'findings')}
                 error={error}
@@ -3011,7 +3156,7 @@ function FindingsContent() {
                 </Button>
               }
             />
-            {hasPermission('findings:write') && (
+            {hasPermission('findings:write') && !listForbidden && (
               <Button
                 iconOnlyBelow="sm"
                 variant="outline"
@@ -3028,7 +3173,7 @@ function FindingsContent() {
             {/* The one primary action of the page: deciding, for someone who may
               change a finding's status. With nothing to triage it stays, as a
               secondary button that opens the same view. */}
-            {canChangeStatusOne && (
+            {canChangeStatusOne && !listForbidden && (
               <Button
                 size="sm"
                 // Primary until the count says there is nothing to triage, so the
@@ -3158,6 +3303,7 @@ function FindingsContent() {
       <FindingDetailDrawer
         finding={selectedFinding}
         open={drawerOpen}
+        listNav={drawerListNav}
         onOpenChange={setDrawerOpen}
         onStatusChange={refreshAfterDrawerChange}
         onSeverityChange={refreshAfterDrawerChange}

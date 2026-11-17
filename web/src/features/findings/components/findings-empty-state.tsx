@@ -1,9 +1,11 @@
 'use client'
 
-import { ClipboardCheck, FileUp, Inbox, Lock, SearchX } from 'lucide-react'
+import * as React from 'react'
+import { ClipboardCheck, FileUp, Inbox, Lock, SearchX, type LucideIcon } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { EmptyState } from '@/features/shared/components/empty-state'
 import type { FindingsEmptyKind } from '../lib/empty-kind'
 import { PRACTICE_VIEW_TEXT, practiceLabelKey, type PracticeView } from '../lib/practice'
 
@@ -17,8 +19,8 @@ interface FindingsEmptyStateProps {
   filterCount: number
   hasSearch: boolean
   canImport: boolean
-  /** May open the scans page (scans:read); hides "Set up a scan" otherwise. */
-  canSetUpScan: boolean
+  /** May create a scan (scans:write, the gate of the scan form); hides "Run a scan" otherwise. */
+  canRunScan: boolean
   /** May open the integrations settings (integrations:read). */
   canOpenIntegrations: boolean
   onImport: () => void
@@ -32,8 +34,9 @@ interface FindingsEmptyStateProps {
 }
 
 /**
- * The findings list's empty body: one of three kinds, each with the next
- * action. Rendered inside the table area so the toolbar and chips stay.
+ * The findings list's empty body: one of four kinds, each with its next
+ * action, drawn with the shared EmptyState inside the table's frame. A kind
+ * has at most one filled button; the others are outline or ghost.
  */
 export function FindingsEmptyState({
   kind,
@@ -42,7 +45,7 @@ export function FindingsEmptyState({
   filterCount,
   hasSearch,
   canImport,
-  canSetUpScan,
+  canRunScan,
   canOpenIntegrations,
   onImport,
   onClearFilters,
@@ -57,18 +60,19 @@ export function FindingsEmptyState({
   if (kind === 'practice_nothing' && practice) {
     const compliance = practice === 'compliance'
     const name = t(practiceLabelKey(practice), PRACTICE_VIEW_TEXT[practice].label)
-    const Icon = compliance ? ClipboardCheck : Inbox
     return (
-      <Body kind={kind} icon={<Icon className="h-10 w-10 text-muted-foreground/50" aria-hidden />}>
-        <p className="text-sm font-medium">
-          {compliance
+      <Body
+        kind={kind}
+        icon={compliance ? ClipboardCheck : Inbox}
+        title={
+          compliance
             ? t('findings.empty.practiceNothing.complianceTitle', 'No benchmark checks yet')
             : t('findings.empty.practiceNothing.title', 'No {practice} findings yet', {
                 practice: name,
-              })}
-        </p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          {compliance
+              })
+        }
+        description={
+          compliance
             ? t(
                 'findings.empty.practiceNothing.complianceHint',
                 'Import a scan that runs a compliance audit, and each control appears here with its result.'
@@ -76,69 +80,73 @@ export function FindingsEmptyState({
             : t(
                 'findings.empty.practiceNothing.hint',
                 'They appear when a scan or an import brings in findings of this kind.'
-              )}
-        </p>
+              )
+        }
+      >
         {canImport && (
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-            <Button size="sm" onClick={onImport}>
-              <FileUp className="me-2 h-4 w-4" aria-hidden />
-              {t('findings.empty.importResults', 'Import results')}
-            </Button>
-          </div>
+          <Button onClick={onImport}>
+            <FileUp aria-hidden />
+            {t('findings.empty.importResults', 'Import results')}
+          </Button>
         )}
       </Body>
     )
   }
 
+  // A refused read: what the viewer cannot do, and the one way on.
   if (kind === 'no_access') {
     return (
-      <Body icon={<Lock className="h-10 w-10 text-muted-foreground/50" aria-hidden />}>
-        <p className="text-sm font-medium">
-          {t('findings.empty.noAccessTitle', 'You do not have access to these findings')}
-        </p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          {denial ??
-            t(
-              'findings.empty.noAccessHint',
-              'Ask an organization administrator to grant access to findings.'
-            )}
-        </p>
+      <Body
+        kind={kind}
+        icon={Lock}
+        title={t('findings.empty.noAccessTitle', 'You cannot read findings here')}
+        description={
+          denial ??
+          t(
+            'findings.empty.noAccessHint',
+            'Your role in this organization does not include reading findings. An organization administrator can grant it.'
+          )
+        }
+      >
+        <Button variant="outline" asChild>
+          <Link href="/">{t('findings.empty.goToDashboard', 'Go to the dashboard')}</Link>
+        </Button>
       </Body>
     )
   }
 
+  // First run: the first way to bring findings in that the viewer may use is
+  // the filled button.
   if (kind === 'nothing') {
     return (
-      <Body icon={<Inbox className="h-10 w-10 text-muted-foreground/50" aria-hidden />}>
-        <p className="text-sm font-medium">
-          {t('findings.empty.nothingTitle', 'No findings in this organization yet')}
-        </p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          {t(
-            'findings.empty.nothingHint',
-            'Findings appear when a scan finishes or when you import results from another tool.'
-          )}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-          {canImport && (
-            <Button size="sm" onClick={onImport}>
-              <FileUp className="me-2 h-4 w-4" aria-hidden />
-              {t('findings.empty.importResults', 'Import results')}
-            </Button>
-          )}
-          {canSetUpScan && (
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/scans">{t('findings.empty.setUpScan', 'Set up a scan')}</Link>
-            </Button>
-          )}
-          {canOpenIntegrations && (
-            <Button size="sm" variant="ghost" asChild>
-              <Link href="/settings/integrations">
-                {t('findings.empty.integrations', 'Integrations')}
-              </Link>
-            </Button>
-          )}
-        </div>
+      <Body
+        kind={kind}
+        icon={Inbox}
+        title={t('findings.empty.nothingTitle', 'No findings yet')}
+        description={t(
+          'findings.empty.nothingHint',
+          'Findings appear when a scan finishes or when you import results from another tool.'
+        )}
+      >
+        {canRunScan && (
+          <Button asChild>
+            {/* The scans page opens its scan form for `?new=scan` (lib/open-form.ts). */}
+            <Link href="/scans?new=scan">{t('findings.empty.runScan', 'Run a scan')}</Link>
+          </Button>
+        )}
+        {canImport && (
+          <Button variant={canRunScan ? 'outline' : 'default'} onClick={onImport}>
+            <FileUp aria-hidden />
+            {t('findings.empty.importResults', 'Import results')}
+          </Button>
+        )}
+        {canOpenIntegrations && (
+          <Button variant="ghost" asChild>
+            <Link href="/settings/integrations">
+              {t('findings.empty.connectTool', 'Connect a tool')}
+            </Link>
+          </Button>
+        )}
       </Body>
     )
   }
@@ -153,12 +161,15 @@ export function FindingsEmptyState({
   }
   if (hasSearch) reasons.push(t('findings.empty.bySearch', 'your search'))
   const reasonText = reasons.join(` ${t('findings.empty.and', 'and')} `)
+  const canClear = filterCount > 0 || hasSearch
 
   return (
-    <Body icon={<SearchX className="h-10 w-10 text-muted-foreground/50" aria-hidden />}>
-      <p className="text-sm font-medium">{t('findings.empty.noMatchTitle', 'No findings match')}</p>
-      <p className="max-w-md text-xs text-muted-foreground">
-        {typeof hiddenCount === 'number' && hiddenCount > 0 && reasonText
+    <Body
+      kind="no_match"
+      icon={SearchX}
+      title={t('findings.empty.noMatchTitle', 'No findings match')}
+      description={
+        typeof hiddenCount === 'number' && hiddenCount > 0 && reasonText
           ? t('findings.empty.hidden', '{count} {state} findings are hidden by {reasons}.', {
               count: hiddenCount.toLocaleString(),
               state: (stateLabel ?? '').toLowerCase(),
@@ -167,43 +178,61 @@ export function FindingsEmptyState({
           : t(
               'findings.empty.noMatchHint',
               'Nothing in this view matches. Widen the view to see more.'
-            )}
-      </p>
-      <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-        {(filterCount > 0 || hasSearch) && (
-          <Button size="sm" onClick={onClearFilters}>
-            {filterCount > 0
-              ? t('findings.empty.clearFilters', 'Clear filters')
-              : t('findings.empty.clearSearch', 'Clear search')}
-          </Button>
-        )}
-        {onSearchAllStates && (
-          <Button size="sm" variant="outline" onClick={onSearchAllStates}>
-            {t('findings.empty.searchAllStates', 'Search all statuses')}
-          </Button>
-        )}
-      </div>
+            )
+      }
+    >
+      {canClear && (
+        <Button onClick={onClearFilters}>
+          {filterCount > 0
+            ? t('findings.empty.clearFilters', 'Clear filters')
+            : t('findings.empty.clearSearch', 'Clear search')}
+        </Button>
+      )}
+      {onSearchAllStates && (
+        <Button variant={canClear ? 'outline' : 'default'} onClick={onSearchAllStates}>
+          {t('findings.empty.searchAllStates', 'Search all states')}
+        </Button>
+      )}
     </Body>
   )
 }
 
+/**
+ * The shared empty block with this list's actions under it: in a row, and
+ * stacked full width on a phone.
+ */
 function Body({
-  icon,
-  children,
   kind,
+  icon,
+  title,
+  description,
+  children,
 }: {
-  icon: React.ReactNode
-  children: React.ReactNode
-  kind?: FindingsEmptyKind
+  kind: FindingsEmptyKind
+  icon: LucideIcon
+  title: string
+  description: string
+  children?: React.ReactNode
 }) {
+  const actions = React.Children.toArray(children)
   return (
-    <div
-      data-testid="findings-empty-state"
-      data-kind={kind}
-      className="flex flex-col items-center justify-center gap-2 py-12 text-center"
-    >
-      {icon}
-      {children}
+    <div data-testid="findings-empty-state" data-kind={kind}>
+      <EmptyState
+        card={false}
+        icon={icon}
+        title={title}
+        description={description}
+        action={
+          actions.length > 0 ? (
+            <div
+              data-slot="empty-actions"
+              className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center"
+            >
+              {actions}
+            </div>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

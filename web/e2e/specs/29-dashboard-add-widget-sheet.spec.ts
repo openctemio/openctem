@@ -26,7 +26,10 @@ async function openEditor(page: Page) {
     const more = page.getByRole('button', { name: 'More dashboard actions' })
     test.skip((await more.count()) === 0, 'the landing dashboard is not editable')
     await more.click()
-    const item = page.getByRole('menuitem', { name: 'Customize' })
+    // A menu on a desktop, a bottom sheet of plain rows on a phone.
+    const item = page
+      .getByRole('menuitem', { name: 'Customize' })
+      .or(page.locator('[data-slot="action-sheet-row"]', { hasText: 'Customize' }))
     test.skip((await item.count()) === 0, 'the landing dashboard is not editable')
     await item.click()
   }

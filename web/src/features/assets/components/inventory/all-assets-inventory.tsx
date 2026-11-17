@@ -25,7 +25,15 @@
 
 import { useOpenForm } from '@/hooks/use-open-form'
 import { AssetsSectionTabs } from '../assets-section-tabs'
-import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Boxes, Download, EyeOff, MoreHorizontal, Network, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -58,8 +66,12 @@ import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { copyToClipboard } from '@/lib/clipboard'
 import { shareableLink } from '@/lib/org-link'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
-import { Badge } from '@/components/ui/badge'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
+import type { SavedViewsActions } from '@/features/saved-views/components/saved-views-menu'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -589,6 +601,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const phoneSelect = usePhoneSelectMode(isPhone && !!assetsBulk)
   // "Save filter as group" and "Add all matching to group", from the list's More.
   const [groupDialog, setGroupDialog] = useState<FilterGroupDialog | null>(null)
+  const viewsActions = useRef<SavedViewsActions>(null)
   // "Add asset" from the Create menu or its "c a" chord: this list's own type,
   // else the type menu of the Add button.
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -721,6 +734,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const viewTitle = activeView?.name ?? scopeLabel ?? t('assets.quickView.all', 'All assets')
   const titleModified = activeView ? viewModified : activeCount > 0 || Boolean(filters.search)
   const resetView = () => (activeView ? void discardViewChanges() : clearAll())
+  // Save view opens the one save dialog, which the Views menu owns (anyone
+  // may save a view of their own).
+  const openSaveView = () => viewsActions.current?.openSave()
   const canGroup = can(Permission.AssetGroupsWrite)
   const groupReason = filters.advanced
     ? t('assets.inventoryPage.groupNoQueryText', 'Not available for a filter given as query text')
@@ -747,6 +763,22 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
             disabledReason: exporting
               ? t('assets.inventoryPage.exportRunning', 'An export is running')
               : undefined,
+          },
+        ]
+      : []),
+    ...(isPhone && titleModified
+      ? [
+          {
+            id: 'view-save',
+            section: 'view',
+            label: t('common.listView.save', 'Save view'),
+            onSelect: openSaveView,
+          },
+          {
+            id: 'view-reset',
+            section: 'view',
+            label: t('common.listView.reset', 'Reset'),
+            onSelect: resetView,
           },
         ]
       : []),
@@ -909,14 +941,14 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           }
           start={
             titleModified ? (
-              <span className="flex shrink-0 items-center gap-1">
-                <Badge variant="outline" data-testid="inventory-view-modified">
-                  {t('assets.inventoryPage.modified', 'Modified')}
-                </Badge>
-                <Button variant="ghost" size="sm" onClick={resetView}>
-                  {t('assets.inventoryPage.reset', 'Reset')}
-                </Button>
-              </span>
+              // The shared view state: Modified, then Save view and Reset. On
+              // a phone the two actions are in the row's More; the lozenge stays.
+              <ListViewChanged
+                changed
+                actionsClassName="max-md:hidden"
+                onSave={openSaveView}
+                onReset={resetView}
+              />
             ) : lens?.description ? (
               <span className="hidden truncate text-xs text-muted-foreground md:inline">
                 {t(`assets.lensDescription.${lens.id}`, lens.description)}
@@ -1044,6 +1076,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                       modified={viewModified}
                       onDiscard={() => void discardViewChanges()}
                       onSelect={(v) => void openView(v)}
+                      actionsRef={viewsActions}
                     />
                     {typeView?.type === 'ip_address' && !typeView.subType && (
                       <Button
