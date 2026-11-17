@@ -2,6 +2,7 @@ export {
   DataTable,
   groupRowsForDisplay,
   type DataTableEmptyStates,
+  type DataTableNoMatchWords,
   type DataTableRowGroups,
   type DataTableSearch,
   type DataTableSelectMode,

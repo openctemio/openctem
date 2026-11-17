@@ -7,7 +7,7 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 ## Columns
 
 - Priority, the title (a real link to `/findings/{id}`: a plain click opens the drawer, Ctrl/Cmd/Shift or a
-  middle click opens the page in a new tab), Location (the asset), Severity, Signals and EPSS, Status and
+  middle click opens the page in a new tab; the shared `RowNameLink`), Location (the asset), Severity, Signals and EPSS, Status and
   Due / SLA show by default in every view; Source and Created are under Display. Columns and their widths:
   select 40, Priority 76 (its header word and sort arrow in English and Vietnamese), title at least 280 (it
   takes the rest), Location 112 to 160, Severity 88, Signals and EPSS 140, Status 120, Due / SLA 112, Source
@@ -134,7 +134,7 @@ the dashboard owns the KPI tiles.
 ## Filters
 
 The toolbar row reads: the search field, the two fixed scopes **Practice** and **State**, then **Add filter**
-(shortcut `f`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
+(shortcut `f`, the shared `useAddFilterShortcut`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
 active filter is a chip in the row under it. Code: `src/features/findings/filters/`.
 
 - **Practice** ("Practice: Vulnerabilities", the default: every practice but compliance; Compliance, each
