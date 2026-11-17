@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import type { ActionMenuEntry } from '@/components/ui/action-menu'
 import type { BulkOutcome } from '../lib/bulk'
 import {
   Dialog,
@@ -369,16 +370,23 @@ interface ExposureBulkActionsProps {
 }
 
 /**
- * Exposure Bulk Actions - Actions for multiple selected exposures
+ * The bulk actions on selected exposures, as the parts a bulk bar takes: two
+ * direct actions (Resolve, Accept risk), False positive under More, and the
+ * confirmations. Accept risk and False positive need findings:approve: without
+ * it they stay, disabled, with the reason.
  */
-export function ExposureBulkActions({
+export function useExposureBulkActions({
   selectedIds,
   onClearSelection,
   onBulkResolve,
   onBulkAccept,
   onBulkFalsePositive,
   selectedNames = [],
-}: ExposureBulkActionsProps) {
+}: ExposureBulkActionsProps): {
+  actions: ReactNode
+  more: ActionMenuEntry[]
+  dialogs: ReactNode
+} {
   const [isProcessing, setIsProcessing] = useState(false)
   const [bulkAction, setBulkAction] = useState<'accept' | 'false_positive' | null>(null)
   const [resolveOpen, setResolveOpen] = useState(false)
@@ -387,8 +395,6 @@ export function ExposureBulkActions({
   const canApprove = useCanApproveExposures()
 
   const count = selectedIds.length
-
-  if (count === 0) return null
 
   // One place owns every bulk toast: items that went to pending approval get
   // the approval notice and no success toast, failures say "x of N failed".
@@ -463,50 +469,46 @@ export function ExposureBulkActions({
     }
   }
 
-  return (
+  const actions = (
     <>
-      <BulkActionBar
-        count={count}
-        onClear={onClearSelection}
-        noun={t('exposures.bulk.noun', 'exposures selected')}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setResolveOpen(true)}
+        disabled={isProcessing}
       >
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setResolveOpen(true)}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <Loader2 className="me-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Check className="me-2 h-4 w-4" />
-          )}
-          {t('exposures.quick.resolve', 'Resolve')}
-        </Button>
-        <GatedButton
-          size="sm"
-          variant="ghost"
-          allowed={canApprove}
-          reason={APPROVE_REQUIRED_REASON}
-          onClick={() => setBulkAction('accept')}
-          disabled={isProcessing}
-        >
-          <AlertTriangle className="me-2 h-4 w-4" />
-          {t('exposures.action.acceptButton', 'Accept risk')}
-        </GatedButton>
-        <GatedButton
-          size="sm"
-          variant="ghost"
-          allowed={canApprove}
-          reason={APPROVE_REQUIRED_REASON}
-          onClick={() => setBulkAction('false_positive')}
-          disabled={isProcessing}
-        >
-          <X className="me-2 h-4 w-4" />
-          {t('exposures.quick.falsePositive', 'False positive')}
-        </GatedButton>
-      </BulkActionBar>
-
+        {isProcessing ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />}
+        {t('exposures.quick.resolve', 'Resolve')}
+      </Button>
+      <GatedButton
+        size="sm"
+        variant="ghost"
+        allowed={canApprove}
+        reason={APPROVE_REQUIRED_REASON}
+        onClick={() => setBulkAction('accept')}
+        disabled={isProcessing}
+      >
+        <AlertTriangle aria-hidden />
+        {t('exposures.action.acceptButton', 'Accept risk')}
+      </GatedButton>
+    </>
+  )
+  const more: ActionMenuEntry[] = [
+    {
+      id: 'false-positive',
+      label: t('exposures.quick.falsePositive', 'False positive'),
+      // Not the X: the bar's own X clears the selection.
+      icon: ShieldX,
+      disabledReason: !canApprove
+        ? APPROVE_REQUIRED_REASON
+        : isProcessing
+          ? t('exposures.bulk.busy', 'Wait for the current change to finish.')
+          : undefined,
+      onSelect: () => setBulkAction('false_positive'),
+    },
+  ]
+  const dialogs = (
+    <>
       <ConfirmDialog
         open={bulkAction !== null}
         onOpenChange={(open) => {
@@ -580,6 +582,30 @@ export function ExposureBulkActions({
       >
         <ConfirmSample names={selectedNames} total={count} />
       </ConfirmDialog>
+    </>
+  )
+  return { actions, more, dialogs }
+}
+
+/**
+ * The bulk bar of selected exposures (a list that draws its own bar; a table
+ * with the shared `bulk` prop takes the parts from `useExposureBulkActions`).
+ */
+export function ExposureBulkActions(props: ExposureBulkActionsProps) {
+  const { t } = useTranslation()
+  const { actions, more, dialogs } = useExposureBulkActions(props)
+  if (props.selectedIds.length === 0) return null
+  return (
+    <>
+      <BulkActionBar
+        count={props.selectedIds.length}
+        onClear={props.onClearSelection}
+        noun={t('exposures.bulk.noun', 'exposures selected')}
+        more={more}
+      >
+        {actions}
+      </BulkActionBar>
+      {dialogs}
     </>
   )
 }
