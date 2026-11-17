@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { HealthStatus } from '@/components/ui/health-status'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SettingsBlock, SettingsRow, SettingsSection } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { get, post } from '@/lib/api/client'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
@@ -32,7 +34,7 @@ const REBUILD_PATH = '/api/v1/dashboard-data/rebuild'
  * Organization › General › Dashboard data: when the organization's dashboard
  * facts were last rebuilt and reconciled, and "Rebuild dashboard data"
  * (owners and administrators; once per hour, audited). The rebuild runs in
- * the background; the card shows it as pending, then running.
+ * the background; the section shows it as pending, then running.
  */
 export function DashboardDataCard() {
   const { t } = useTranslation()
@@ -81,34 +83,41 @@ export function DashboardDataCard() {
     }
   }
 
-  const title = t('org.dashboardData.title', 'Dashboard data')
+  const section = (body: ReactNode) => (
+    <SettingsSection
+      framed
+      id="dashboard-data"
+      title={t('org.dashboardData.title', 'Dashboard data')}
+    >
+      {body}
+    </SettingsSection>
+  )
+
   if (state === 'loading') {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-4 w-1/3" />
-        </CardContent>
-      </Card>
+    return section(
+      <SettingsBlock>
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-1/3" />
+      </SettingsBlock>
     )
   }
+
   if (state === 'error' || !status) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" aria-hidden />
-        <AlertTitle>
-          {t('org.dashboardData.loadFailed', 'Could not load dashboard data status')}
-        </AlertTitle>
-        <AlertDescription>
-          {loadError}
-          <Button variant="link" className="h-auto p-0 ps-2" onClick={load}>
-            {t('common.retry', 'Retry')}
-          </Button>
-        </AlertDescription>
-      </Alert>
+    return section(
+      <SettingsBlock>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertTitle>
+            {t('org.dashboardData.loadFailed', 'Could not load dashboard data status')}
+          </AlertTitle>
+          <AlertDescription>
+            {loadError && <p>{loadError}</p>}
+            <Button variant="outline" className="mt-2" onClick={load}>
+              {t('common.retry', 'Retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </SettingsBlock>
     )
   }
 
@@ -118,57 +127,61 @@ export function DashboardDataCard() {
     'org.dashboardData.notBuilt',
     'Not built yet: the first build runs in the background.'
   )
+  let health: 'ok' | 'run' | 'queued' | 'unknown' = 'unknown'
   if (status.running) {
     stateText = t('org.dashboardData.running', 'Rebuilding now.')
+    health = 'run'
   } else if (status.pending) {
     stateText = t('org.dashboardData.pending', 'Rebuild requested; it starts within a few minutes.')
+    health = 'queued'
   } else if (status.rebuilt_at) {
     stateText = t('org.dashboardData.upToDate', 'Kept up to date automatically.')
+    health = 'ok'
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          {t(
-            'org.dashboardData.description',
-            'Dashboard numbers are computed from stored per-asset data, kept current from every change and checked every night. Rebuild it if dashboards look wrong.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm">{stateText}</p>
-        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+  return section(
+    <>
+      <SettingsRow
+        label={<HealthStatus state={health} label={stateText} />}
+        hint={t(
+          'org.dashboardData.description',
+          'Dashboard numbers are computed from stored per-asset data, kept current from every change and checked every night. Rebuild it if dashboards look wrong.'
+        )}
+      >
+        {canRebuild && (
+          <Button
+            variant="outline"
+            onClick={() => void rebuild()}
+            disabled={busy || inProgress || blocked}
+          >
+            <RefreshCw aria-hidden />
+            {t('org.dashboardData.rebuild', 'Rebuild dashboard data')}
+          </Button>
+        )}
+      </SettingsRow>
+      <SettingsBlock divider={false}>
+        <dl className="flex flex-wrap gap-x-8 gap-y-2 text-dense">
           <div>
-            <dt className="text-muted-foreground">
+            <dt className="text-cap text-muted-foreground">
               {t('org.dashboardData.lastRebuilt', 'Last full rebuild')}
             </dt>
             <dd>{formatDateSafe(status.rebuilt_at, 'PPp')}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">
+            <dt className="text-cap text-muted-foreground">
               {t('org.dashboardData.pendingChanges', 'Changes waiting')}
             </dt>
-            <dd>{status.queue_depth}</dd>
+            <dd className="tabular-nums">{status.queue_depth}</dd>
           </div>
         </dl>
-        {canRebuild && (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => void rebuild()} disabled={busy || inProgress || blocked}>
-              <RefreshCw className="me-2 h-4 w-4" aria-hidden />
-              {t('org.dashboardData.rebuild', 'Rebuild dashboard data')}
-            </Button>
-            {blocked && (
-              <span className="text-muted-foreground text-sm">
-                {t('org.dashboardData.nextAt', 'Next rebuild possible at {time}', {
-                  time: formatDateSafe(status.next_rebuild_at, 'p'),
-                })}
-              </span>
-            )}
-          </div>
+        {canRebuild && blocked && (
+          <p className="text-cap text-muted-foreground">
+            {t('org.dashboardData.nextAt', 'Next rebuild possible at {time}', {
+              time: formatDateSafe(status.next_rebuild_at, 'p'),
+            })}
+          </p>
         )}
-      </CardContent>
-    </Card>
+      </SettingsBlock>
+    </>
   )
 }
