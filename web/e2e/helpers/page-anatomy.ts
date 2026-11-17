@@ -30,7 +30,6 @@ const SAVE_EXCEPTIONS = new Set<string>([
   '/settings/scanning/content',
   '/settings/scanning/scan-approval',
   '/settings/scope',
-  '/settings/trusted-organizations',
 ])
 
 const NAME_MIN_1440 = 160

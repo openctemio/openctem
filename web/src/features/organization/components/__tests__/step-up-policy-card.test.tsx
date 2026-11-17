@@ -9,7 +9,7 @@ import {
   ruleOf,
   stepUpLooser,
 } from '../step-up-policy-card'
-import { looseningsOf, signInFormFrom } from '../authentication-settings'
+import { looseningsOf, signInFormFrom } from '../sign-in-settings'
 import type { StepUpPolicy } from '../../types/settings.types'
 
 describe('re-verification policy', () => {
