@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { summarize, SignupEventsPanel } from '../components/signup-events-panel'
@@ -90,6 +90,32 @@ describe('SignupEventsPanel', () => {
       'href',
       '/organizations/aaaaaaaa-0000-0000-0000-000000000001'
     )
+  })
+
+  it('names the view and counts once, with the kind select in the table toolbar', () => {
+    mocks.list.data = {
+      data: [
+        {
+          id: 2,
+          kind: 'account_created',
+          source: 'password',
+          email_domain: 'example.org',
+          ip_prefix: '203.0.113.0/24',
+          occurred_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    }
+    render(<SignupEventsPanel />)
+    expect(screen.getByRole('heading', { name: 'All events' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /Event/ })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Sign-up events' })
+    expect(within(table).getByText('example.org')).toBeInTheDocument()
   })
 
   it('has an empty state', () => {
