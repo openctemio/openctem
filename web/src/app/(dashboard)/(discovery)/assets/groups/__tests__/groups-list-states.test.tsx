@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   filters: undefined as unknown,
   bulkDelete: vi.fn(),
   search: '',
+  can: true,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -21,7 +22,7 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
-  usePermissions: () => ({ can: () => true }),
+  usePermissions: () => ({ can: () => state.can }),
 }))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
@@ -78,8 +79,19 @@ beforeEach(() => {
   state.truncated = false
   state.total = 0
   state.search = ''
+  state.can = true
   state.refresh.mockReset()
   state.bulkDelete.mockReset()
+})
+
+const group = (id: string, name: string) => ({
+  id,
+  name,
+  environment: 'production',
+  criticality: 'high',
+  assetCount: 0,
+  findingCount: 0,
+  riskScore: 0,
 })
 
 describe('/assets/groups', () => {
@@ -124,10 +136,59 @@ describe('/assets/groups', () => {
     expect(screen.getByText(/Showing the first 1000 of 1500 groups/)).toBeInTheDocument()
   })
 
-  it('the Export button keeps an accessible name at every width', () => {
+  it('the title row says the list name, its one count and its actions', () => {
+    state.data = [group('g1', 'payments')]
+    state.total = 1
     render(<AssetGroupsPage />)
-    const label = screen.getByText('Export')
-    expect(label.className).toContain('sr-only')
-    expect(label.className).not.toContain('hidden')
+    expect(screen.getByRole('heading', { level: 2, name: 'All groups' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(screen.getByText('1 group')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument()
+  })
+
+  it('a group name is a link to its page', () => {
+    state.data = [group('g 1/x', 'payments')]
+    state.total = 1
+    render(<AssetGroupsPage />)
+    expect(screen.getByRole('link', { name: 'payments' })).toHaveAttribute(
+      'href',
+      '/assets/groups/g%201%2Fx'
+    )
+  })
+
+  it('an empty organization sees the first-run state, a narrowed list the no-match state', () => {
+    const { unmount } = render(<AssetGroupsPage />)
+    expect(screen.getByText('No asset groups yet')).toBeInTheDocument()
+    expect(screen.queryByText('No asset groups found')).toBeNull()
+    unmount()
+    state.search = 'zzz'
+    render(<AssetGroupsPage />)
+    expect(screen.getByText('No asset groups found')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
+  })
+
+  it('has no checkbox column for a user without a bulk permission', () => {
+    state.data = [group('g1', 'payments')]
+    state.total = 1
+    state.can = false
+    render(<AssetGroupsPage />)
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    state.can = true
+  })
+
+  it('a long name is cut inside its cell, not drawn over the next column', () => {
+    state.data = [group('g1', 'a very long group name '.repeat(8))]
+    state.total = 1
+    render(<AssetGroupsPage />)
+    const cell = document.querySelector('[data-slot="group-name-cell"]')
+    expect(cell?.className).toContain('min-w-0')
+    expect(cell?.querySelector('a')?.className).toContain('truncate')
+  })
+
+  it('has one filter entry and no docked panel', () => {
+    render(<AssetGroupsPage />)
+    expect(document.querySelectorAll('[data-slot="add-filter"]')).toHaveLength(1)
+    expect(document.getElementById('asset-group-filters')).toBeNull()
   })
 })

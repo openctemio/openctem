@@ -28,8 +28,7 @@ const REVIEWED: Record<string, string> = {
   'components/layout/sidebar-footer-links.tsx DropdownMenuContent': 'shell design: help menu',
   'components/profile-dropdown.tsx DropdownMenuContent': 'shell design: account menu 256',
   // Popovers: panels of text, forms and search pickers, not lists of actions
-  'app/(dashboard)/(prioritization)/attack-paths/page.tsx PopoverContent':
-    'explanation text needs a reading measure',
+  'components/graph-page/graph-page.tsx PopoverContent': 'explanation text needs a reading measure',
   'components/layout/team-switcher.tsx PopoverContent': 'shell design: organization switcher',
   'components/notification-bell.tsx PopoverContent': 'shell design: notifications panel',
   'features/activity/components/comment-reactions.tsx PopoverContent':
@@ -40,7 +39,6 @@ const REVIEWED: Record<string, string> = {
     'w-auto with the 360 px ceiling: sized by its content',
   'features/assets/components/service-cells/surface-facts.tsx PopoverContent':
     'a fact sheet with long values',
-  'features/findings/components/assignee-select.tsx PopoverContent': 'a picker with a search field',
   'features/findings/components/create-finding-dialog.tsx PopoverContent':
     'a combobox as wide as its field',
   'features/findings/components/detail/sla-why-this-date.tsx PopoverContent':

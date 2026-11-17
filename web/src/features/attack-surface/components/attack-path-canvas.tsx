@@ -274,6 +274,7 @@ export function AttackPathCanvas({
       help={labels.canvasHelp}
       onActiveChange={(id) => onFocusChange(id ? { kind: 'node', key: id } : null)}
       onOpen={onOpenNode}
+      onNodeClick={onOpenNode}
       onClear={() => onFocusChange(null)}
       onKey={onKey}
     />

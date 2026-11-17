@@ -224,6 +224,9 @@ Every page, top to bottom:
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
+   - `titleAction`: one control on the title's own line, right after the title
+     text and outside the h1, when the title itself is a choice (a chevron that
+     switches between dashboards). Not a place for the page's actions.
 4. **One tab row per page**, right under the header, no margins on it.
    - **Section tabs** when the sub-views are routes: the shared
      `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
@@ -258,12 +261,72 @@ Checked in a browser on every route at 1440px and 390px by
 `e2e/specs/31-page-rhythm.spec.ts` (gaps from bounding boxes, one tab row,
 tab icons, strip rules, chips, empty pagination, name column width).
 
+### Graph pages
+
+Attack paths, Exposure chains and Exploration use `src/components/graph-page`:
+
+- **Order**: the title row (`PageHeader`, with the Graph | List view switch and the page's primary action), one
+  `GraphToolbar` (filters at the start; `GraphLegend`, `GraphNote` and other canvas actions at the end), then the
+  graph in a `GraphFrame` that takes the rest of the window (never under 24rem, 30rem from 768 px). Cards that
+  belong to the page (choke points, the score of a path) go under the graph, never beside it.
+- **Detail**: the detail of a node opens over the page in `GraphNodeSheet` (click, or Enter on the focused
+  node). Its `action` (the node's main way on, e.g. "View findings") is the first thing in it and has focus,
+  so Enter twice follows it. Esc closes it and focus returns to the node. No panel stands beside a graph.
+- **Keyboard and screen readers**: the canvas is one tab stop, the arrow keys follow the edges, and every page
+  keeps the same content as a list or table (the List view, the default below 768 px).
+- **Legend**: every mark drawn on the graph is in the legend; a legend never lists a mark the graph does not draw.
+
+The scan workflow editor keeps its own editing layout (palette and step settings beside the canvas).
+
+### Detail pages
+
+A record's own page (a finding, an asset, a scan) is built from the detail
+kit in `src/features/shared/components/detail/`; `/findings/[id]` is the
+reference.
+
+1. **`DetailPageHeader`** is the page's `page-header` block and its only
+   `<h1>`. Above the title: the record's type and identifiers as chips, and
+   `DetailPosition` ("2 of 27" with previous and next) when the record was
+   opened from a list. Beside the title: `[More] [secondary] [primary]`, one
+   primary action for the record's current state, at most two outline
+   buttons, everything else in the More menu (`ActionMenu` entries, a sheet
+   on a phone). Below 768 px the first line is the way back to the parent
+   list ("‹ Findings") with the position at its end, the primary action
+   leads the action row and takes the free width, and More closes it.
+   Status, owner and dates are never in the header.
+2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
+   counts in `TabsCount`.
+3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
+   `PropertyRow` label and value pairs (a `dl`), separated by a rule, no
+   card. The value takes text, links, chips or a control (a status or
+   assignee picker). The list follows its own width: one column in a rail,
+   two columns when it sits under the header on a narrower page. Below
+   768 px every row is a 44 px line with the value at its end, and
+   `PropertyFold` keeps the rows after the first group one tap away. A row
+   with an empty value renders nothing.
+   Read-only facts inside a panel (a source record, a score table) keep
+   `KeyValueList` from `text-layout`; `PropertyList` is for the record's own
+   properties, where a value can be a control.
+4. **`DetailSectionList` / `DetailSectionBlock`** are the blocks of a tab
+   panel: a section named by its `<h2>` (`text-section`), an optional count
+   and mark after the title, controls at the end of the title row, one rule
+   between blocks. The same title row heads a table or list inside the
+   panel. `DetailFold` is a closed-by-default line ("Show output", "How
+   this was scored") with a short note saying what it holds.
+5. A detail opens over its list as a drawer (`DetailSheet`); a page never
+   keeps a permanent side panel beside a list. The drawer and the page
+   render the same section components.
+6. Text that came from a scanner or a target is rendered by
+   `UntrustedTextBlock` / `ScannerText`; a masked value keeps its Show
+   control (permission, step-up, timed, audited) and is never removed.
+   Anything an AI produced or changed carries `AIBadge`.
+
 ## 2. Headline numbers
 
 - **One `<MetricStrip>`** per page, at most **5** tiles, and only where every
   tile is a link to the list it counts (`href`, overview pages) or a one-click
   filter of the list below (`onClick` + `active`, list pages). Never for facts
-  (use `KeyValueList`), configuration inventories, or inside a card.
+  (use `PropertyList`), configuration inventories, or inside a card.
 - States that are usually zero or rarely acted on (canceled, blocked, timed
   out) are not tiles: they stay values of the list's status filter.
 - A zero is a muted `0`, never hidden; an error is `—` with the reason as the
@@ -331,6 +394,22 @@ tab icons, strip rules, chips, empty pagination, name column width).
     can be removed and the row draws "Clear filters" after its chips, the same
     on every list. On a phone the chips strip starts at its first chip (only
     its end fades) and a leading chip wider than the strip shortens its text.
+  - A list whose search takes query text has a status row, owned by
+    `ListToolbar` (`data-slot="list-toolbar-status"`, handed to the field as
+    `ListSearchStatusSlot`): the field says what is wrong with a refused text
+    there, never in the toolbar row, so the toolbar row keeps its height in
+    every state of the text. The row takes room only while there is a problem:
+    one line of the chips row's height (32, 36 on a phone), on the chips row's
+    line when one shows (the list does not move), a row of its own otherwise
+    (the list moves by the row and its 8 px gap, as for the first chip), the
+    last line on a phone. The text is cut on that line (in full in its title);
+    its fix buttons keep their size. A page never draws this line itself.
+  - The suggestions of a query field are as wide as the field from 768 px
+    (28rem at most). Below 768 px they span the screen from gutter to gutter
+    (the field shares its line with the mode toggle and the Filters button),
+    under the field or above it when there is no room, about eight one-line
+    rows; a field inside a dialog, sheet or popover keeps the field's width so
+    the list stays inside it.
   - The filter icons (`ListFilter`, `Filter`, `Funnel`, …) are imported only by
     `filter-button.tsx`. Dropdown filters and their select triggers carry no
     filter icon; label them with `aria-label="Filter by …"`.
@@ -535,6 +614,46 @@ load.
 - No card inside a card. Group related numbers with a divider or a grid, not a
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
+
+### Settings pages
+
+Every settings page is built from the same parts (`@/features/shared`):
+
+- **`SettingsPage`** is the frame: `Main`, `PageStack`, the `PageHeader` (the
+  only h1; the phone bar repeats it once it scrolls away) and one column of
+  sections at a reading width (`--settings-col`, class `max-w-settings`),
+  16px apart. It also draws the three states every page shares: `state="loading"`
+  (header and skeleton rows), `state="error"` (the failure with Retry; saved
+  values are never replaced by defaults) and `readOnly` (the "View only"
+  notice; the page disables its own controls). A settings page that is a list
+  passes `wide` and uses the list kit unchanged.
+- **`SettingsSection framed`** is a section: no card and no fill, a hairline
+  above every section but the first, the title (`text-section`), one line of
+  description, an optional quiet `meta` note ("Last changed by ...") and
+  actions. Its children draw their own dividers:
+  - `SettingsRow`: one setting per line, label and hint at the start, the
+    control at the end (`wide` for a text field or select); stacked when the
+    section is narrower than 45rem. `SettingsSwitchRow` is the row of an
+    on / off setting: the label names the switch, the hint describes it.
+  - `SettingsBlock` with `SettingsFieldGrid` and `SettingsField`: fields with
+    the label above, as many columns as fit. `SettingsField` ties the label,
+    the hint and the error to the control (`aria-describedby`,
+    `aria-invalid`); an error is `role="alert"` text under the field.
+- **Fields** are the kit's at the kit's sizes (32px; 36px with 16px text
+  below 768px). A secret the user types is a `SecretField` (masked, Show
+  value / Hide value; a stored secret is never read back). A secret the
+  server shows once is a `OneTimeSecretField` (masked, reveal, copy).
+- **`SettingsSaveBar`** is the one save of a page: shown only while there are
+  unsaved changes, pinned to the bottom of the column (a full-width bottom bar
+  below 768px), with the count of changed settings, "What changes", a failed
+  save said in the bar, Discard and Save (Ctrl/Cmd+S). Leaving with unsaved
+  changes asks first. Never a save button per field. A setting that applies
+  the moment it is switched does not use the bar: it says that it applies at
+  once and confirms when it loosens protection.
+- **`DangerZone`** is the last section, with one `DangerZoneItem` row per
+  action: a ghost button with a destructive icon, a destructive
+  `ConfirmDialog`, `typeToConfirm` for what cannot be undone. The red is on
+  the action, not on a frame.
 
 ### Dashboard widgets
 
@@ -813,6 +932,38 @@ load.
   - The step-up dialog says the action continues right away once the identity
     is confirmed; it never describes the act.
 
+### Forms, wizards and form dialogs
+
+The shared pieces are in `src/features/shared/components/forms/`.
+
+- **Form layout.** One column (`FormStack`; a page form is capped at 45rem with `page`), 16 px between fields,
+  short fields side by side in a `FormRow`, a `FormSection` (line above, 14/20 600 title) for a named group. A
+  `FormField` puts the label (13/20 500) above its control, help (12/16 muted) under it and the error (12/16 500,
+  danger text, with an icon) under the field it belongs to. A field is required unless it says "Optional" after
+  its label; there is no asterisk. `FormField` gives the control its id and ties label, help and error to it
+  (`aria-describedby`, `aria-invalid`, `aria-required`); the error is a live `role="alert"`. A group of controls
+  (radio cards, checkboxes) is `FormField group`: a fieldset named by its legend. The react-hook-form kit
+  (`components/ui/form.tsx`) has the same type and gaps.
+- **Wizard.** `WizardFrame` is a dialog (`xl`, 56rem; a full-height sheet on a phone) with ONE height for every
+  step, so the header, the step strip and the footer never move while a person goes through the steps. The strip
+  (`WizardSteps`) is a navigation landmark with an ordered list of buttons, drawn as the tab strip: every step
+  opens at any time, the current one has `aria-current="step"`, and each shows its state in one fixed 20 px box
+  (its number, a check when complete, a warning when it has problems; more than one problem adds a count badge
+  that takes no room), with the state in the accessible name ("Targets, 2 problems"). On a phone the strip
+  scrolls sideways and keeps the current step in view. The footer is one row: the summary line at the start (it
+  opens the whole summary above the row), then Back (ghost), Next (primary) and, on the last step, the primary
+  action; on a phone the summary has its own line and the buttons share one row. While the primary action is
+  disabled the footer names the first problem with a link to its step. Ctrl/Cmd+Enter runs the primary action or
+  goes to the first problem; a step change moves focus to the step's heading ("Step 2 of 5: Targets").
+- **Form dialog.** `FormDialog` is the frame of a create or edit dialog: title, optional description, a body that
+  scrolls, and a footer with Cancel (ghost) and one primary action (a verb). It is a form: Enter submits. A failed
+  submit shows above the actions as an alert; the reason for a disabled primary action is read with the button.
+  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors).
+- **Leaving with unsaved changes.** A dialog form asks before it closes (`dirty` on `FormDialog`, or
+  `useDiscardPrompt`): Keep editing, Discard, and Keep as draft where the form keeps a draft. A page form renders
+  `LeaveGuard`: the browser asks on reload or close, and an in-app link is held until the person chooses. A
+  settings form gets the same from `SettingsSaveBar`.
+
 ### Floating surfaces
 
 Every anchored surface (menu, popover, select list, tooltip, date picker) gets
@@ -941,7 +1092,8 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   with `typingSurface`. `touch-focus-guard.test.ts` lists every opt-in, every
   raw `<input autoFocus>` and every `onOpenAutoFocus` that moves focus
   itself; a new one fails until it is reviewed.
-- A picker with a search field on a phone (`ResponsivePopover`): the field is
+- A picker with a search field on a phone (`ResponsivePopover`, used by Add
+  filter and by the assignee picker `AssigneeSelect`): the field is
   pinned at the top of the sheet, the list scrolls under it with sticky group
   headings, rows 44. When the keyboard opens the sheet sits on it and is never
   taller than the visible part of the screen (`--modal-kb`, `--modal-vvh` from

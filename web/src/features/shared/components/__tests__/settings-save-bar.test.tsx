@@ -56,4 +56,32 @@ describe('SettingsSaveBar', () => {
     expect(onDiscard).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith('/settings/members')
   })
+
+  it('counts the changed settings and lists them under What changes', () => {
+    render(
+      <SettingsSaveBar
+        dirty
+        changes={['Organization name', 'Time zone']}
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+      />
+    )
+    expect(screen.getByText('2 unsaved changes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'What changes' }))
+    expect(screen.getByText('Organization name')).toBeInTheDocument()
+    expect(screen.getByText('Time zone')).toBeInTheDocument()
+  })
+
+  it('says a failed save in the bar and keeps it open', () => {
+    render(
+      <SettingsSaveBar
+        dirty
+        error="Couldn't save. Your changes are kept."
+        onSave={vi.fn()}
+        onDiscard={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save. Your changes are kept.")
+    expect(screen.getByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument()
+  })
 })
