@@ -145,11 +145,10 @@ export function SettingsSaveBar({
                 form={form}
                 onClick={form ? undefined : save}
                 disabled={saving || saveDisabled}
-                aria-label={t('settings.saveBar.save', 'Save changes')}
                 aria-keyshortcuts="Control+S Meta+S"
               >
                 {saving && <Loader2 className="animate-spin" aria-hidden />}
-                {t('settings.saveBar.saveShort', 'Save')}
+                {t('settings.saveBar.save', 'Save changes')}
                 <span className="max-md:hidden" aria-hidden>
                   <ShortcutKeys keys={['mod', 'S']} />
                 </span>
