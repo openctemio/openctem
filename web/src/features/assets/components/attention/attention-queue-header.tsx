@@ -9,7 +9,8 @@
  */
 
 import { ListCount } from '@/features/shared/components/list-title-row'
-import { ArrowRight, ChevronDown, ChevronLeft } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronLeft, MoreHorizontal } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
@@ -46,9 +47,19 @@ interface AttentionQueueHeaderProps {
   count?: number
   /** The same slice in the inventory; absent for reasons that have no inventory view. */
   inventoryHref?: string
+  /**
+   * The queue's own More (e.g. "Select" on a phone); not drawn without items.
+   * It ends the heading row, after the inventory link.
+   */
+  moreItems?: ActionMenuEntry[]
 }
 
-export function AttentionQueueHeader({ reason, count, inventoryHref }: AttentionQueueHeaderProps) {
+export function AttentionQueueHeader({
+  reason,
+  count,
+  inventoryHref,
+  moreItems,
+}: AttentionQueueHeaderProps) {
   const { t } = useTranslation()
   const router = useRouter()
   const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS)
@@ -129,6 +140,25 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
               <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
             </Link>
           </Button>
+        )}
+        {moreItems && moreItems.length > 0 && (
+          <ActionMenu
+            title={t(current.labelKey, current.label)}
+            label={t('common.actionMenu.label', 'Actions for {name}', {
+              name: t(current.labelKey, current.label),
+            })}
+            items={moreItems}
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                className={href ? undefined : 'ms-auto'}
+                aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </Button>
+            }
+          />
         )}
       </div>
       <p className="text-sm text-muted-foreground">{t(current.whyKey, current.why)}</p>

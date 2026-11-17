@@ -1,10 +1,8 @@
 {
   "console/src/app/(console)/health/page.tsx": 4,
-  "console/src/app/(console)/organizations/page.tsx": 8,
   "console/src/app/(console)/scanning/content-catalog/page.tsx": 5,
   "console/src/app/(console)/scanning/target-mappings/page.tsx": 6,
   "console/src/app/(console)/security/approvals/page.tsx": 5,
-  "console/src/app/(console)/security/sessions/page.tsx": 7,
   "console/src/app/(console)/system/ai-applications/page.tsx": 2,
   "console/src/app/(console)/system/announcements/page.tsx": 5,
   "console/src/app/(console)/system/content-packs/page.tsx": 6,
@@ -86,7 +84,6 @@
   "src/features/scan-profiles/components/scan-profiles-section.tsx": 2,
   "src/features/scan-zones/components/scan-zone-table.tsx": 4,
   "src/features/scanner-templates/components/scanner-templates-section.tsx": 7,
-  "src/features/scans/components/scan-runs-tab.tsx": 7,
   "src/features/scope/components/scope-entries-table.tsx": 6,
   "src/features/scope/components/scope-exclusions-table.tsx": 6,
   "src/features/secret-store/components/secret-store-section.tsx": 4,
