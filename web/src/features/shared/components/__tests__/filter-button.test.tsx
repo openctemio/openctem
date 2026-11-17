@@ -30,20 +30,22 @@ describe('FilterButton', () => {
     expect(btn).not.toHaveAttribute('data-active')
   })
 
-  it('shows the active count as a badge and in its accessible name', () => {
+  it('shows the active count inside the button and in its accessible name', () => {
     render(<FilterButton activeCount={3} />)
     const btn = screen.getByRole('button', { name: 'Filters (3 active)' })
     expect(btn).toHaveAttribute('data-active')
     const badge = btn.querySelector('[data-slot="filter-count"]')
     expect(badge).toHaveTextContent('3')
     expect(badge).toHaveAttribute('aria-hidden', 'true')
+    // Inside the square, beside the icon: never placed on the border.
+    expect(badge?.className).not.toMatch(/absolute|-top-|-end-/)
+    expect(btn).toHaveClass('size-control', 'max-md:size-control-touch')
   })
 
-  it('caps the badge at 99+', () => {
+  it('says 9+ above nine and keeps the exact count in the name', () => {
     render(<FilterButton activeCount={150} />)
-    expect(
-      screen.getByRole('button').querySelector('[data-slot="filter-count"]')
-    ).toHaveTextContent('99+')
+    const btn = screen.getByRole('button', { name: 'Filters (150 active)' })
+    expect(btn.querySelector('[data-slot="filter-count"]')).toHaveTextContent('9+')
   })
 
   it('reports aria-pressed when toggling a panel', () => {
