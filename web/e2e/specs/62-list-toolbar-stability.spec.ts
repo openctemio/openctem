@@ -109,6 +109,19 @@ const LISTS = {
     group: false,
     query: false,
   },
+  // The CVE catalog tab: its own `cat_` params; search narrows the loaded
+  // page, no query language.
+  '/exposures/vulnerabilities?tab=catalog': {
+    filters: [
+      ['cat_kev', 'true'],
+      ['cat_exploit', 'true'],
+      ['cat_sev', 'critical,high'],
+      ['cat_cvss', '7'],
+      ['cat_epss', '0.1'],
+    ],
+    group: false,
+    query: false,
+  },
   // Searched by name on the page; no query language for workflows.
   '/scans/workflows': {
     filters: [
@@ -597,7 +610,11 @@ function saysItsCountOnce(route: keyof typeof LISTS) {
     test(`${route} says its count once at ${width}px`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-      for (const qs of ['', `?${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`]) {
+      const join = route.includes('?') ? '&' : '?'
+      for (const qs of [
+        '',
+        `${join}${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`,
+      ]) {
         await page.goto(`${route}${qs}`)
         await expect(page.locator('main [data-slot="list-count"]:visible')).toHaveText(/\d/, {
           timeout: 45_000,
@@ -729,6 +746,10 @@ test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
 test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () => {
   headerHoldsStill('/vulnerabilities')
   saysItsCountOnce('/vulnerabilities')
+})
+test.describe('CVE catalog list header', { tag: ['@vulnerabilities'] }, () => {
+  headerHoldsStill('/exposures/vulnerabilities?tab=catalog')
+  saysItsCountOnce('/exposures/vulnerabilities?tab=catalog')
 })
 test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/workflows')

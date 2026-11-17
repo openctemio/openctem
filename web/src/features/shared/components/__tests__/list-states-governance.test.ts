@@ -33,7 +33,6 @@ const ALLOW_LIST = [
   'src/features/threat-intel/components/threat-actors-panel.tsx',
   'src/features/threat-model/components/threat-model-table.tsx',
   'src/features/tools/components/tool-table.tsx',
-  'src/features/vulnerabilities/components/vulnerability-catalog-table.tsx',
 ]
 
 const SRC = join(__dirname, '..', '..', '..', '..')
