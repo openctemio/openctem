@@ -237,13 +237,107 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
         'aria-pressed',
         'true'
       )
-      // The view's own conditions stay the view's (applied by the server);
-      // the field holds the filter laid on top of it, none here.
-      await expect(box).toHaveValue('')
+      // The field holds the view's own text, printed by the server from the
+      // view's filter; the URL stays the view and nothing is changed.
+      await expect(box).toHaveValue('severity=critical')
+      await expect(page.locator('main [data-slot="list-modified"]')).toHaveCount(0)
     } finally {
       await page.evaluate(async (viewId) => {
         await fetch(`/api/v1/views/${viewId}`, { method: 'DELETE', credentials: 'same-origin' })
       }, id.id)
+    }
+  })
+
+  test('a saved view in Query mode: edit, save changes, reopen shows the new text; Reset goes back', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings')
+    const name = `e2e query round trip ${Date.now()}`
+    const made = await page.evaluate(async (viewName) => {
+      const res = await fetch('/api/v1/views', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 'findings',
+          name: viewName,
+          query: 'severity=critical',
+          page_params: { mode: 'query' },
+        }),
+      })
+      return { status: res.status, id: ((await res.json()) as { id: string }).id }
+    }, name)
+    expect(made.status).toBe(201)
+    const box = page.getByRole('combobox', { name: /filter as query text/i })
+    const modified = page.locator('main [data-slot="list-modified"]')
+    const title = page.locator('main h1').first()
+    const edited = 'severity=critical OR is_in_kev=true'
+    try {
+      await page.goto(`/findings?view=${made.id}&mode=query`)
+      await expect(box).toBeEnabled({ timeout: 20_000 })
+      await expect(box).toHaveValue('severity=critical')
+      await expect(title).toContainText(name)
+      await expect(modified).toHaveCount(0)
+
+      // Another text: the list is driven by it alone. No list request names
+      // the view any more (its conditions would apply a second time).
+      const listRequests: string[] = []
+      page.on('request', (r) => {
+        const u = new URL(r.url())
+        if (/\/api\/v1\/findings(\/search)?$/.test(u.pathname))
+          listRequests.push(`${r.method()} ${u.pathname}${u.search} ${r.postData() ?? ''}`)
+      })
+      await box.fill(edited)
+      // Ctrl+Enter runs the text whatever the suggestions show.
+      await box.press('Control+Enter')
+      await expect(page).toHaveURL(new RegExp(`from_view=${made.id}`))
+      await expect(page).not.toHaveURL(/[?&]view=/)
+      await expect(page).toHaveURL(/[?&]fq=/)
+      await page.waitForLoadState('networkidle')
+      expect(listRequests.length).toBeGreaterThan(0)
+      for (const r of listRequests) expect(r).not.toContain(made.id)
+      // The title keeps the view's name, as changed.
+      await expect(title).toContainText(name)
+      await expect(modified).toBeVisible()
+
+      // Reset: back to the view as saved.
+      await page.locator('main [data-slot="list-view-reset"]').click()
+      await expect(page).toHaveURL(new RegExp(`[?&]view=${made.id}`))
+      await expect(box).toHaveValue('severity=critical')
+      await expect(modified).toHaveCount(0)
+
+      // Edit again and save the changes into the view (its owner).
+      await box.fill(edited)
+      // Ctrl+Enter runs the text whatever the suggestions show.
+      await box.press('Control+Enter')
+      await expect(modified).toBeVisible()
+      await page.locator('main [data-slot="list-view-actions"] button').first().click()
+      await page.getByRole('menuitem', { name: /^save changes$/i }).click()
+      await expect(page).toHaveURL(new RegExp(`[?&]view=${made.id}`))
+      await expect(page).not.toHaveURL(/from_view=/)
+      await expect(modified).toHaveCount(0)
+      await expect(box).toHaveValue(/severity=critical OR (is_in_)?kev=true/)
+
+      // Reopened from scratch: the new text, in Query mode.
+      await page.goto('/findings')
+      await page.getByRole('button', { name: /^views$/i }).click()
+      await page.getByRole('menuitem', { name }).click()
+      await expect(box).toBeEnabled({ timeout: 20_000 })
+      await expect(box).toHaveValue(/severity=critical OR (is_in_)?kev=true/)
+      await expect(modified).toHaveCount(0)
+
+      // Basic mode: conditions chips cannot show are one chip that opens Query mode.
+      await page.getByRole('button', { name: /^basic$/i }).click()
+      const chip = page.locator('main [data-slot="filter-chip-view-advanced"]')
+      await expect(chip).toHaveText(/advanced filter/i)
+      await chip.click()
+      await expect(box).toHaveValue(/severity=critical OR (is_in_)?kev=true/)
+    } finally {
+      await page.evaluate(async (viewId) => {
+        await fetch(`/api/v1/views/${viewId}`, { method: 'DELETE', credentials: 'same-origin' })
+      }, made.id)
     }
   })
 })
