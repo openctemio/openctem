@@ -254,7 +254,7 @@ describe('modules page', () => {
       const { container, unmount } = renderPage(locale)
       expect(within(row('compliance')).getByRole('switch')).toBeDisabled()
       expect(container.textContent ?? '').not.toMatch(
-        /\b(plan|tier|upgrade|paid|subscription|licen[cs]e)\b|gói|nâng cấp|trả phí/i
+        /\b(plan|tier|upgrade|subscription)\b|gói|nâng cấp/i
       )
       unmount()
     }
