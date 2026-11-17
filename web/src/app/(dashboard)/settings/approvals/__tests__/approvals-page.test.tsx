@@ -61,7 +61,6 @@ describe('Settings > Approvals page', () => {
     const { unmount } = render(<ApprovalsSettingsPage />)
     expect(screen.queryByRole('link', { name: 'Open scan approval' })).toBeNull()
     expect(asked).toContainEqual({
-      url: '/settings/scanning/scan-approval',
       permission: 'scans:read',
       module: 'scans',
     })

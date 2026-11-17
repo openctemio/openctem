@@ -9,9 +9,8 @@ import { SettingsPage, SettingsRow, SettingsSection } from '@/features/shared'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useNavItemAccess } from '@/lib/permissions/use-filtered-sidebar'
 
-/** Where scan approval is set, and who may open it (its route's gate). */
+/** Who may open the scan approval page (its route's gate). */
 const SCAN_APPROVAL = {
-  url: '/settings/scanning/scan-approval',
   permission: Permission.ScansRead,
   module: 'scans',
 }
@@ -73,7 +72,7 @@ export default function ApprovalsSettingsPage() {
                 )}
               >
                 <Button variant="outline" asChild>
-                  <Link href={SCAN_APPROVAL.url}>
+                  <Link href="/settings/scanning/scan-approval">
                     {t('settings.approvals.scansOpen', 'Open scan approval')}
                   </Link>
                 </Button>
