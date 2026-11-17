@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react'
-import Link from '@/components/link'
-import { BrandLogoFull } from '@/components/brand-logo'
+
+import {
+  StaticArticle,
+  StaticPage,
+  StaticSection,
+  staticToc,
+  type StaticPageLabels,
+} from '@/components/static-page'
 import { LEGAL_DOCS } from '@/lib/legal'
 
 export interface LegalSection {
@@ -9,55 +15,42 @@ export interface LegalSection {
 }
 
 /**
- * A plain, readable legal page (the built-in templates). Server component: no
- * client JavaScript.
+ * A legal page (the built-in templates) in the static reading frame: the five
+ * documents as route tabs, the table of contents of this one, its sections.
+ * The document text is rendered on the server.
  */
 export function LegalDocument({
   title,
-  effectiveDate,
+  effective,
   sections,
-  contact,
-  docsUrl,
+  contactLine,
+  labels,
 }: {
   title: string
-  effectiveDate: string
+  /** "Effective <date>", translated. */
+  effective: string
   sections: LegalSection[]
-  contact: string
-  docsUrl: string
+  /** "Contact: ... Documentation: ...", translated. */
+  contactLine: string
+  labels: StaticPageLabels
 }) {
+  const toc = staticToc(
+    sections.map((s) => s.heading),
+    'legal'
+  )
   return (
-    <div className="min-h-svh bg-background px-4 py-10 text-foreground">
-      <article className="mx-auto max-w-2xl space-y-6">
-        <Link href="/login" aria-label="Sign in" className="inline-block">
-          <BrandLogoFull className="h-7 w-auto" />
-        </Link>
-        <header className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">Effective {effectiveDate}</p>
-        </header>
-        {sections.map((s) => (
-          <section key={s.heading} className="space-y-2">
-            <h2 className="text-lg font-semibold">{s.heading}</h2>
-            <div className="space-y-2 text-sm leading-6 text-muted-foreground">{s.body}</div>
-          </section>
+    <StaticPage
+      labels={labels}
+      documents={LEGAL_DOCS.map((d) => ({ label: d.title, href: d.path }))}
+      toc={toc}
+    >
+      <StaticArticle title={title} meta={effective} footer={<p>{contactLine}</p>}>
+        {sections.map((s, i) => (
+          <StaticSection key={s.heading} id={toc[i].id} heading={s.heading}>
+            {s.body}
+          </StaticSection>
         ))}
-        <footer className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
-          <nav aria-label="Legal documents" className="flex flex-wrap gap-x-4 gap-y-1">
-            {LEGAL_DOCS.map((d) => (
-              <Link
-                key={d.doc}
-                href={d.path}
-                className="hover:text-primary underline-offset-4 hover:underline"
-              >
-                {d.title}
-              </Link>
-            ))}
-          </nav>
-          <p>
-            Contact: {contact}. Documentation: {docsUrl}.
-          </p>
-        </footer>
-      </article>
-    </div>
+      </StaticArticle>
+    </StaticPage>
   )
 }
