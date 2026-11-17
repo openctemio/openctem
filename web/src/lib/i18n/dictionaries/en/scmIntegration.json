@@ -1,8 +1,11 @@
 {
   "scmIntegration.actions.delete": "Delete",
   "scmIntegration.actions.edit": "Edit",
+  "scmIntegration.actions.editConnection": "Edit connection",
+  "scmIntegration.actions.openInBrowser": "Open in browser",
   "scmIntegration.actions.sync": "Sync repositories",
   "scmIntegration.actions.test": "Test connection",
+  "scmIntegration.actions.testing": "Testing...",
   "scmIntegration.col.connection": "Connection",
   "scmIntegration.col.lastVerified": "Last verified",
   "scmIntegration.col.organization": "Organization",

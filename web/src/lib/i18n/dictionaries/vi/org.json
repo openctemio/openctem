@@ -625,6 +625,7 @@
   "org.roleDetail.removeFailed": "Không gỡ được thành viên: {error}",
   "org.roleDetail.removeFromRole": "Gỡ khỏi vai trò",
   "org.roleDetail.removedFromRole": "Đã gỡ {name} khỏi vai trò",
+  "org.roleDetail.removing": "Đang gỡ...",
   "org.roleDetail.sawEveryAsset": "Thấy mọi tài sản",
   "org.roleDetail.searchMembersLabel": "Tìm thành viên",
   "org.roleDetail.searchMembersPlaceholder": "Tìm thành viên…",

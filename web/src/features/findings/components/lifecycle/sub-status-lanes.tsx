@@ -13,12 +13,7 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { GatedButton } from '@/features/shared'
@@ -111,6 +106,64 @@ export function SubStatusLanes({
     ? t('findingLifecycle.plan.subStatusesReachedShort', 'Limit of sub-statuses reached')
     : t('findingLifecycle.readOnly', 'Needs the Manage Finding Lifecycles permission')
 
+  const subStatusItems = (
+    status: FindingStatus,
+    s: LifecycleSubStatus,
+    i: number,
+    list: LifecycleSubStatus[]
+  ): ActionMenuEntry[] =>
+    !s.archived
+      ? [
+          {
+            id: 'edit',
+            label: t('findingLifecycle.subStatus.editShort', 'Edit'),
+            icon: Pencil,
+            onSelect: () => setDialog({ status, sub: s }),
+          },
+          {
+            id: 'up',
+            label: t('findingLifecycle.subStatus.moveUpShort', 'Move up'),
+            icon: ArrowUp,
+            disabledReason:
+              i === 0 ? t('findingLifecycle.subStatus.reasonFirst', 'Already first') : undefined,
+            onSelect: () => move(list, i, -1),
+          },
+          {
+            id: 'down',
+            label: t('findingLifecycle.subStatus.moveDownShort', 'Move down'),
+            icon: ArrowDown,
+            disabledReason:
+              i === list.length - 1
+                ? t('findingLifecycle.subStatus.reasonLast', 'Already last')
+                : undefined,
+            onSelect: () => move(list, i, 1),
+          },
+          {
+            id: 'archive',
+            label: t('findingLifecycle.subStatus.archiveShort', 'Archive'),
+            icon: Archive,
+            onSelect: () => setArchiving(s),
+          },
+        ]
+      : [
+          {
+            id: 'reactivate',
+            label: t('findingLifecycle.subStatus.reactivateShort', 'Reactivate'),
+            icon: ArchiveRestore,
+            disabledReason: limitReached
+              ? addReason
+              : busy !== null
+                ? t('findingLifecycle.subStatus.busy', 'Saving...')
+                : undefined,
+            onSelect: () =>
+              void run(
+                s.id,
+                () => reactivateSubStatus(s.id),
+                t('findingLifecycle.subStatus.reactivated', 'Sub-status reactivated')
+              ),
+          },
+        ]
+
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {CANONICAL_STATUSES.map((status) => {
@@ -154,8 +207,13 @@ export function SubStatusLanes({
                       </div>
                     </div>
                     {canWrite && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
+                      <ActionMenu
+                        title={s.name}
+                        label={t('findingLifecycle.subStatus.actions', 'Actions for {name}', {
+                          name: s.name,
+                        })}
+                        items={subStatusItems(status, s, i, list)}
+                        trigger={
                           <Button
                             size="icon"
                             variant="ghost"
@@ -171,53 +229,8 @@ export function SubStatusLanes({
                           >
                             <MoreHorizontal className="size-4" />
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          {!s.archived ? (
-                            <>
-                              <DropdownMenuItem onClick={() => setDialog({ status, sub: s })}>
-                                <Pencil className="mr-2 size-3.5" />
-                                {t('findingLifecycle.subStatus.editShort', 'Edit')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={i === 0}
-                                onClick={() => move(list, i, -1)}
-                              >
-                                <ArrowUp className="mr-2 size-3.5" />
-                                {t('findingLifecycle.subStatus.moveUpShort', 'Move up')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={i === list.length - 1}
-                                onClick={() => move(list, i, 1)}
-                              >
-                                <ArrowDown className="mr-2 size-3.5" />
-                                {t('findingLifecycle.subStatus.moveDownShort', 'Move down')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setArchiving(s)}>
-                                <Archive className="mr-2 size-3.5" />
-                                {t('findingLifecycle.subStatus.archiveShort', 'Archive')}
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <DropdownMenuItem
-                              disabled={limitReached}
-                              onClick={() =>
-                                void run(
-                                  s.id,
-                                  () => reactivateSubStatus(s.id),
-                                  t(
-                                    'findingLifecycle.subStatus.reactivated',
-                                    'Sub-status reactivated'
-                                  )
-                                )
-                              }
-                            >
-                              <ArchiveRestore className="mr-2 size-3.5" />
-                              {t('findingLifecycle.subStatus.reactivateShort', 'Reactivate')}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                        }
+                      />
                     )}
                   </li>
                 ))}

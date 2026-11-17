@@ -15,12 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { TabsCount } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
@@ -697,8 +692,29 @@ export function RoleDetailSheet({
                       )}
                       {/* Always visible: a hover-only trigger cannot be found on touch. */}
                       {(!isTeamRole || demoteTo) && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                        <ActionMenu
+                          title={label ?? ''}
+                          label={t('org.roleDetail.actionsFor', 'Actions for {name}', {
+                            name: label ?? '',
+                          })}
+                          items={[
+                            {
+                              id: 'remove',
+                              label: isTeamRole
+                                ? t('org.roles.changeTo', 'Change to {role}', {
+                                    role: demoteLabel,
+                                  })
+                                : t('org.roleDetail.removeFromRole', 'Remove from role'),
+                              icon: UserMinus,
+                              destructive: true,
+                              disabledReason:
+                                removingMemberId === member.id
+                                  ? t('org.roleDetail.removing', 'Removing...')
+                                  : undefined,
+                              onSelect: () => setPendingRemove(member),
+                            },
+                          ]}
+                          trigger={
                             <Button
                               variant="ghost"
                               size="icon"
@@ -713,20 +729,8 @@ export function RoleDetailSheet({
                                 <MoreHorizontal className="h-4 w-4" />
                               )}
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => setPendingRemove(member)}
-                              disabled={removingMemberId === member.id}
-                            >
-                              <UserMinus className="h-4 w-4" />
-                              {isTeamRole
-                                ? t('org.roles.changeTo', 'Change to {role}', { role: demoteLabel })
-                                : t('org.roleDetail.removeFromRole', 'Remove from role')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          }
+                        />
                       )}
                     </li>
                   )

@@ -859,11 +859,19 @@ finding) and the bulk bar's More (`BulkActionBar` `more` and the data table's
 `bulk.more` take `ActionMenuEntry[]`, titled with the selection count), the
 detail drawer's More (`DetailHeader` `menu`, titled with the record) and the
 "⋯" menus of the list pages (scans, workflows, automations, exceptions,
-controls, dashboards, approvals, notification outbox, members, asset group).
+controls, dashboards, approvals, notification outbox, members, asset group) and
+of the feature screens (role members, comments, asset owners, inventory rows,
+related assets, the dashboard header and widget editor, finding header and
+sub-statuses, pentest campaigns and steps, remediation campaigns and tasks,
+repositories, SCM connections, the vulnerability page).
 `action-menu-guard.test.ts` fails on a hand-built `DropdownMenu` whose trigger
 holds a More icon; menus that are not action menus (breadcrumb levels, editor
-formatting, a menu of choices) are listed there with the reason, and the
-feature menus still to move are listed as pending (planned).
+formatting, a menu of choices) are listed there with the reason.
+
+- A control that moves into the toolbar from 640 px up (the dashboard's Customize
+  and refresh schedule) is an item of the menu only below that width
+  (`useIsBelowSm`); a choice among values (the schedule) is a submenu, the
+  saved value marked "(current)".
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 
