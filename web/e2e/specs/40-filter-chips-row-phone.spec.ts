@@ -7,9 +7,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * the save-view and refresh buttons wrapped to a third line under the chips).
  * At 375px and 390px, in English and Vietnamese:
  *   1. the search field has the first line to itself;
- *   2. the second line holds the filter tokens and chips at the start and the
- *      icon actions at the end, one height and one centre line, nothing on a
- *      third line;
+ *   2. the second line holds the chips at the start (none: empty room), the
+ *      filter tokens anchored to the end and the icon actions after them, one
+ *      height and one centre line, nothing on a third line;
  *   3. tokens and chips that do not fit scroll sideways in their strip, and
  *      a strip fades at its end exactly when more is hidden past it; no chip
  *      folds away into "+N more";

@@ -490,21 +490,7 @@ const NO_LIST = 'the list shows only once it has held a row: the seed has none'
  * notes. A case listed here is fixme until its owner lands the fix; remove
  * the entry with that fix.
  */
-const PHONE_REFLOW =
-  'list kit: on a phone the toolbar is two lines, and when the chips row appears the tokens move to the end ' +
-  'of line 2 (ListToolbar `below` -> order-last, at most 60%); needs the owner decision on a third phone ' +
-  'line or this reflow as allowed movement'
 function knownMovement(route: Route, width: number, locale: 'en' | 'vi'): string | null {
-  if (
-    width === 390 &&
-    [
-      '/vulnerabilities',
-      '/attack-surface/exposures',
-      '/attack-surface/technologies',
-      '/attack-surface/certificates',
-    ].includes(route)
-  )
-    return PHONE_REFLOW
   if (route === '/attack-surface/exposures' && width >= 768)
     return 'exposures page (attack-surface list owner): after five filters its third toolbar select narrows by 2 px'
   if (route === '/scans' && width === 390 && locale === 'vi')

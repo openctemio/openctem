@@ -173,10 +173,51 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
   })
 
-  it('without a chips row keeps the toolbar a box of its own', () => {
-    render(<ListToolbar end={<button type="button">View</button>} />)
-    expect(screen.getByTestId('data-table-toolbar').className).not.toContain('contents')
-    expect(screen.getByTestId('data-table-toolbar').className).toMatch(/@container\/toolbar/)
+  it('has the same boxes with and without a chips row, so the first chip moves nothing', () => {
+    const classes = () => {
+      const q = (slot: string) =>
+        (document.querySelector(`[data-slot="${slot}"]`) as HTMLElement).className
+      return {
+        region: q('list-toolbar-region'),
+        toolbar: q('list-toolbar'),
+        tokens: q('list-toolbar-tokens'),
+        end: q('list-toolbar-end'),
+      }
+    }
+    const props = {
+      search: { value: '', onChange: () => {}, placeholder: 'Search things' },
+      start: <button type="button">Status: Open</button>,
+      end: <button type="button">Views</button>,
+    }
+    const { rerender } = render(<ListToolbar {...props} />)
+    const without = classes()
+    rerender(<ListToolbar {...props} below={<span>chip</span>} />)
+    expect(classes()).toEqual(without)
+    // The region is the size container in both.
+    expect(without.region).toMatch(/@container\/toolbar/)
+    expect(without.toolbar).not.toMatch(/(^|\s)@container\/toolbar/)
+  })
+
+  it('on a phone anchors the tokens to the end of line 2, the chips own its start', () => {
+    render(
+      <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
+        start={<button type="button">Status: Open</button>}
+        end={<button type="button">Views</button>}
+      />
+    )
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    // After the chips (order-last), pushed to the end while there is no chip.
+    expect(tokens.className).toContain('@max-md/toolbar:order-last')
+    expect(tokens.className).toContain('@max-md/toolbar:ms-auto')
+    expect(tokens.className).not.toContain('@max-md/toolbar:flex-[1_1_0%]')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:order-last')
+  })
+
+  it('passes its className to the outer region', () => {
+    render(<ListToolbar end={<button type="button">View</button>} className="mt-3" />)
+    expect(document.querySelector('[data-slot="list-toolbar-region"]')).toHaveClass('mt-3')
   })
 })
 

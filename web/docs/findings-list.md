@@ -284,9 +284,11 @@ active filter is a chip in the row under it. Code: `src/features/findings/filter
   checks every toolbar and title-row box (0 px) through filters, grouping, views, the mode switch and typing on
   Findings, Assets and Scans at 1440, 1024, 768 and 390 px in both languages.
 - On a phone every list toolbar (the shared `ListToolbar`) is two lines, never more: the search field alone on
-  the first; on the second the filter tokens and the chips (the locked chip first) in a strip that scrolls
-  sideways, with a fade on an edge that has more past it, and the icon actions (saved views, group, refresh)
-  pinned at the end, all 36 tall on one centre line. Nothing folds into "+N more" and nothing wraps.
+  the first; on the second the chips (the locked chip first) own the start, the filter tokens are anchored to
+  the end, and the icon actions (saved views, group, refresh) are pinned after them, all 36 tall on one centre
+  line. The chips and the tokens each scroll sideways in their strip, with a fade on an edge that has more past
+  it. With no chip the start of the line is empty room, so the first chip moves nothing. Nothing folds into "+N
+  more" and nothing wraps.
 
 ## Query mode
 
