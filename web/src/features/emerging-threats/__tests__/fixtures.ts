@@ -1,4 +1,10 @@
-import type { EmergingThreatAsset, EmergingThreatDetail, EmergingThreatSummary } from '../types'
+import type {
+  EmergingThreatAsset,
+  EmergingThreatDetail,
+  EmergingThreatHost,
+  EmergingThreatHostService,
+  EmergingThreatSummary,
+} from '../types'
 
 export const summary = (over: Partial<EmergingThreatSummary> = {}): EmergingThreatSummary => ({
   id: 'a1',
@@ -12,10 +18,11 @@ export const summary = (over: Partial<EmergingThreatSummary> = {}): EmergingThre
   in_kev: true,
   kev_ransomware: true,
   epss: 0.5,
-  confirmed_assets: 3,
-  possible_assets: 2,
-  internet_facing_assets: 1,
-  critical_assets: 1,
+  confirmed_hosts: 3,
+  likely_hosts: 1,
+  possible_hosts: 2,
+  internet_facing_hosts: 1,
+  critical_hosts: 1,
   product: 'Widget',
   product_count: 2,
   ets_breakdown: {
@@ -50,6 +57,30 @@ export const asset = (over: Partial<EmergingThreatAsset> = {}): EmergingThreatAs
   ...over,
 })
 
+export const service = (
+  label: string,
+  over: Partial<EmergingThreatAsset> = {}
+): EmergingThreatHostService => ({
+  ...asset({ asset_type: 'service', finding_id: '', finding_status: '', ...over }),
+  label,
+})
+
+/** A host row; its values are what the API derives from the services. */
+export const host = (
+  name: string,
+  services: EmergingThreatHostService[],
+  over: Partial<EmergingThreatHost> = {}
+): EmergingThreatHost => ({
+  host: name,
+  asset_id: '',
+  internet_facing: services.some((s) => s.internet_facing),
+  criticality: services[0]?.criticality ?? '',
+  products: [...new Set(services.map((s) => s.product).filter(Boolean))],
+  versions: [...new Set(services.map((s) => s.version_seen).filter(Boolean))],
+  services,
+  ...over,
+})
+
 export const detail = (over: Partial<EmergingThreatDetail> = {}): EmergingThreatDetail => ({
   ...summary(),
   recommended_action: 'patch_now',
@@ -63,6 +94,7 @@ export const detail = (over: Partial<EmergingThreatDetail> = {}): EmergingThreat
   suppressed_until: null,
   can_suppress: true,
   assets: [asset()],
+  asset_groups: [],
   timeline: [
     {
       kind: 'severity_up',

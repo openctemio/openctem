@@ -161,6 +161,7 @@ import {
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
 import { applyTextFilter, filterParams } from '@/features/findings/filters/filter-query-mode'
 import {
+  FROM_VIEW_PARAM,
   modePageParams,
   queryModeIn,
   useListQueryMode,
@@ -258,6 +259,7 @@ import {
   buildFindingsExportUrl,
   type FindingStatsFilters,
 } from '@/features/findings/api/use-findings-api'
+import { advancedFindingsDocument } from '@/features/findings/api/advanced-fetch'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
@@ -751,6 +753,12 @@ function FindingsContent() {
   // A saved view (D15) lives in the same param as its id; the API applies its
   // filter, with any filter in the URL on top, as the viewer.
   const savedId = savedViewId(viewParam)
+  // Once a query text other than the view's own is applied, the URL holds the
+  // whole filter and the view stays only as where the list came from
+  // (`from_view=<id>`): its conditions are never sent a second time, and the
+  // title still names it, as changed.
+  const fromViewId = savedId ? undefined : savedViewId(searchParams.get(FROM_VIEW_PARAM))
+  const baseViewId = savedId ?? fromViewId
   // Opening a saved view replaces the URL's filters with the view (and its
   // grouping); clearing it goes back to the plain list.
   const openSavedView = useCallback((view: SavedView | null) => {
@@ -765,9 +773,9 @@ function FindingsContent() {
   }, [])
   const { views: savedViewList, isLoading: savedViewsLoading } = useSavedViews(
     'findings',
-    !!savedId
+    !!baseViewId
   )
-  const openView = savedViewList.find((v) => v.id === savedId)
+  const openView = savedViewList.find((v) => v.id === baseViewId)
 
   // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
@@ -819,9 +827,11 @@ function FindingsContent() {
   // them, the URL's `informational` overrides that for this view, and an
   // explicit severity always wins (server/docs/architecture/findings-work-views.md).
   const includeInformational = quickViewData?.include_informational ?? false
-  const hideInfo = !savedId && informationalHidden(searchParams, includeInformational)
+  // A list derived from a saved view keeps the view's scope rule: the text
+  // is the whole filter, with no default of the plain list under it.
+  const hideInfo = !baseViewId && informationalHidden(searchParams, includeInformational)
   const informationalShownForView =
-    !savedId &&
+    !baseViewId &&
     !hideInfo &&
     searchParams.get(INFORMATIONAL_PARAM) === 'true' &&
     defaultHidesInformational(searchParams, includeInformational)
@@ -1086,8 +1096,9 @@ function FindingsContent() {
     if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
-    } else if (!savedId) {
-      // (A saved view carries its own status scope.)
+    } else if (!baseViewId) {
+      // (A saved view carries its own status scope, and so does the text
+      // applied in its place.)
       // Default: exclude draft/in_review (pentest WIP not ready for dashboard)
       filters.exclude_statuses = HIDDEN_STATUSES
     }
@@ -1113,6 +1124,7 @@ function FindingsContent() {
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
     if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
     if (fqParam) filters.fq = fqParam
+    // (`from_view` is page state: no request carries it.)
     return filters
   }, [
     fqParam,
@@ -1147,6 +1159,7 @@ function FindingsContent() {
     filterChanged,
     sortParam,
     savedId,
+    baseViewId,
     lens,
     rawLens,
     practiceView,
@@ -2211,9 +2224,10 @@ function FindingsContent() {
             baselineColumns,
             columns: shownColumns,
             density: urlDensity,
+            queryText: !!fromViewId,
           })
         : undefined,
-    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity]
+    [openView, searchParams, filterContract, baselineColumns, shownColumns, urlDensity, fromViewId]
   )
   // The view this list is: the open saved view, the built-in quick view the
   // URL is exactly, or the view the URL was derived from (then it is shown
@@ -2235,7 +2249,7 @@ function FindingsContent() {
   // A view that is still loading (the saved view, or the built-in views the
   // URL is read against) has no name yet: nothing is shown rather than
   // another view's name.
-  const viewPending = savedId
+  const viewPending = baseViewId
     ? !openView && savedViewsLoading
     : !quickViewData && !!quickViewsLoading
   const viewTitle = viewPending
@@ -2430,6 +2444,8 @@ function FindingsContent() {
       replaceUrlSearch(withQueryMode(new URLSearchParams(window.location.search), on)),
     fq: fqParam,
     params: filterParams(searchParams, FILTER_BAR_SKIP_PARAMS, textScope),
+    // The open view's own conditions lead the text (printed by the server).
+    base: savedId ? (openView?.filter ?? null) : null,
     onApply: (r, on) =>
       replaceUrlSearch(withQueryMode(applyTextFilter(searchParams, FILTER_BAR_SKIP_PARAMS, r), on)),
     resultCount: findingsLoading ? null : total,
@@ -2702,7 +2718,7 @@ function FindingsContent() {
         contractLoading={contractLoading}
         contractFailed={!!contractError}
         canReadAssets={hasPermission(Permission.AssetsRead)}
-        lockedFields={viewFields(openView?.filter)}
+        lockedFields={viewFields(savedId ? openView?.filter : undefined)}
         onOpenChange={setPickerOpen}
         onApply={(field, op, values) =>
           replaceUrlSearch(withFilter(searchParams, field, op, values))
@@ -2723,7 +2739,7 @@ function FindingsContent() {
       search={searchParams}
       contract={filterContract}
       skip={FILTER_BAR_SKIP_PARAMS}
-      viewFilter={openView?.filter}
+      viewFilter={savedId ? openView?.filter : undefined}
       leading={
         <>
           {contextChips}
@@ -2763,8 +2779,17 @@ function FindingsContent() {
       <SavedViewsMenu
         page="findings"
         actionsRef={setSavedViewsActions}
-        activeId={savedId}
+        activeId={baseViewId}
         changes={changeList}
+        // A filter the flat params cannot say (`fq`) is saved as its checked
+        // document; otherwise the URL's own params are (the menu's default).
+        resolveFilter={
+          fqParam
+            ? async () => ({
+                filter: await advancedFindingsDocument(buildFindingsEndpoint(apiFilters)),
+              })
+            : undefined
+        }
         groupBy={groupParam}
         columns={columnsToSave(shownColumns)}
         density={urlDensity ?? viewDensity}

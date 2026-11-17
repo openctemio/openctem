@@ -227,15 +227,16 @@ SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %
 WHERE to_regclass('public.admin_audit_logs') IS NOT NULL \gexec
 SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.admin_audit_chain_anchors FROM %I', :'app_user')
 WHERE to_regclass('public.admin_audit_chain_anchors') IS NOT NULL \gexec
--- The tenant audit log is never updated (its rows are chained by a trigger;
--- retention deletes the oldest prefix). The chain evidence tables are never
--- updated either; only a rebaseline rewrites audit_log_chain hashes.
-SELECT format('REVOKE UPDATE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
-FROM unnest(ARRAY['audit_logs', 'audit_chain_anchors', 'audit_chain_rebaselines',
-                  'audit_chain_rebaseline_entries']) AS t
+-- The tenant audit log and its chain are append and read only: retention and
+-- rebaseline go through the owner-rights functions audit_chain_prune_prefix
+-- and audit_chain_rebaseline_apply (migration audit_chain_owner_only), which
+-- alone write the evidence tables (anchors, rebaseline records).
+SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['audit_logs', 'audit_log_chain']) AS t
 WHERE to_regclass('public.' || t) IS NOT NULL \gexec
-SELECT format('REVOKE TRUNCATE ON public.audit_log_chain FROM %I', :'app_user')
-WHERE to_regclass('public.audit_log_chain') IS NOT NULL \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['audit_chain_anchors', 'audit_chain_rebaselines', 'audit_chain_rebaseline_entries']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
 -- The EPSS and KEV feeds replace their whole global catalog with TRUNCATE.
 SELECT format('GRANT TRUNCATE ON public.%I TO %I', t, :'app_user')
 FROM unnest(ARRAY['epss_scores', 'kev_catalog']) AS t
@@ -310,6 +311,18 @@ BEGIN
       AND has_table_privilege(app, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE');
     IF bad IS NOT NULL THEN
         RAISE EXCEPTION 'role % may write a migration tracking table: %', app, bad;
+    END IF;
+
+    -- Audit history: no removal or rewrite but through the owner functions.
+    SELECT string_agg(c.relname, ', ') INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND ((c.relname IN ('audit_logs', 'audit_log_chain')
+            AND has_table_privilege(app, c.oid, 'UPDATE, DELETE, TRUNCATE'))
+        OR (c.relname IN ('audit_chain_anchors', 'audit_chain_rebaselines', 'audit_chain_rebaseline_entries')
+            AND has_table_privilege(app, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')));
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'role % may change or remove audit history: %', app, bad;
     END IF;
 
     SELECT string_agg(c.relname, ', ') INTO bad
@@ -387,6 +400,12 @@ SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'ad
 -- (SECURITY DEFINER; only the app's background controller calls it).
 SELECT format('REVOKE EXECUTE ON FUNCTION public.dash_asset_day_maintain() FROM %I', :'admin_user')
 WHERE to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL \gexec
+-- ...nor the tenant audit log's retention and rebaseline (owner rights; the
+-- app's audit service calls them).
+SELECT format('REVOKE EXECUTE ON FUNCTION %s FROM %I', f, :'admin_user')
+FROM unnest(ARRAY['public.audit_chain_prune_prefix(uuid, bigint, text, uuid[], text, text)',
+                  'public.audit_chain_rebaseline_apply(uuid, uuid, uuid, integer, bigint, uuid[], bigint[], text[], text[], text[], text[])']) AS f
+WHERE to_regprocedure(f) IS NOT NULL \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE ALL ON TABLES FROM %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
