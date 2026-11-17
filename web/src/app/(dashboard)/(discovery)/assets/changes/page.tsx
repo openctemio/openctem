@@ -3,7 +3,7 @@
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { History, RefreshCw } from 'lucide-react'
+import { Globe, History, RefreshCw } from 'lucide-react'
 import { Main } from '@/components/layout'
 import {
   PageHeader,
@@ -23,8 +23,7 @@ import { RecentAssetChanges } from '@/features/assets'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
+import { GatedButton } from '@/features/shared/components/gated-button'
 import { useRouter } from 'next/navigation'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -248,8 +247,10 @@ export default function AssetChangesPage() {
           const c = row.original
           const name = c.asset_name || t('assetTimeline.deletedAsset', 'Deleted asset')
           // One line: the name (a link while the asset exists), then its type.
+          // No width of its own (w-0): a long name never widens the table past
+          // its frame; it ends in an ellipsis inside the column.
           return (
-            <span className="flex min-w-0 items-baseline gap-2">
+            <span className="flex w-0 min-w-full items-baseline gap-2">
               {c.asset_name && c.asset_id ? (
                 <RowNameLink
                   href={assetDetailHref(c.asset_id)}
@@ -305,7 +306,8 @@ export default function AssetChangesPage() {
         meta: {
           kind: 'text',
           width: 208,
-          hideBelow: 900,
+          // Dropped first: the frame of a 1280 screen (956) holds the rest.
+          hideBelow: 1100,
           label: t('assetTimeline.activity.col.exposure', 'Exposure now'),
         },
         header: t('assetTimeline.activity.col.exposure', 'Exposure now'),
@@ -317,7 +319,8 @@ export default function AssetChangesPage() {
         meta: {
           kind: 'text',
           width: 112,
-          hideBelow: 760,
+          // A 1024 screen (frame 700) keeps Asset, Change, Detail and When.
+          hideBelow: 900,
           label: t('assetTimeline.activity.col.source', 'Source'),
         },
         header: t('assetTimeline.activity.col.source', 'Source'),
@@ -335,7 +338,12 @@ export default function AssetChangesPage() {
       },
       {
         id: 'changed_at',
-        meta: { kind: 'datetime-recent', label: t('assetTimeline.activity.col.when', 'When') },
+        meta: {
+          kind: 'datetime-recent',
+          // "khoảng 2 giờ trước" whole: the kind's 104 cuts the Vietnamese words.
+          width: 144,
+          label: t('assetTimeline.activity.col.when', 'When'),
+        },
         header: t('assetTimeline.activity.col.when', 'When'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.changed_at} />,
@@ -396,37 +404,40 @@ export default function AssetChangesPage() {
       }}
     />
   )
-  // Newly exposed is internet-facing by definition: the switch stays in its
-  // place, on and locked, so choosing a kind moves nothing in the toolbar.
+  // Newly exposed is internet-facing by definition: the toggle stays in its
+  // place, pressed and locked, so choosing a kind moves nothing in the toolbar.
   const internetLocked = view === 'newly_exposed'
+  const internetOn = internetLocked || internetParam === 'true'
   const toolbarStart = (
     <>
       {kindSelect}
       {periodSelect}
-      <div
-        className="flex items-center gap-2"
-        title={
-          internetLocked
-            ? t(
-                'assetTimeline.activity.internetLocked',
-                'Newly exposed assets are always internet-facing'
-              )
-            : undefined
-        }
+      {/* A filter token at the toolbar's control height, pressed while on. */}
+      <GatedButton
+        allowed={!internetLocked}
+        reason={t(
+          'assetTimeline.activity.internetLocked',
+          'Newly exposed assets are always internet-facing'
+        )}
+        size="sm"
+        variant={internetOn ? 'secondary' : 'outline'}
+        aria-pressed={internetOn}
+        aria-label={t('assetTimeline.activity.internetOnly', 'Internet-facing only')}
+        data-slot="internet-only-toggle"
+        className="shrink-0"
+        onClick={() => {
+          setInternetParam(internetOn ? 'false' : 'true')
+          setPage(1)
+        }}
       >
-        <Switch
-          id="internet-only"
-          checked={internetLocked || internetParam === 'true'}
-          disabled={internetLocked}
-          onCheckedChange={(checked) => {
-            setInternetParam(checked ? 'true' : 'false')
-            setPage(1)
-          }}
-        />
-        <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
+        <Globe className="size-4" aria-hidden />
+        <span className="max-md:hidden">
           {t('assetTimeline.activity.internetOnly', 'Internet-facing only')}
-        </Label>
-      </div>
+        </span>
+        <span className="md:hidden">
+          {t('assetTimeline.activity.internetShort', 'Internet-facing')}
+        </span>
+      </GatedButton>
     </>
   )
 

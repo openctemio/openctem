@@ -32,6 +32,7 @@
   "assetTimeline.activity.internetLocked": "Tài sản mới lộ ra luôn hướng ra internet",
   "assetTimeline.activity.internetOnly": "Chỉ hướng ra Internet",
   "assetTimeline.activity.internetOnlyHint": "Tắt “Chỉ hướng ra Internet” để bao gồm tài sản nội bộ.",
+  "assetTimeline.activity.internetShort": "Hướng ra Internet",
   "assetTimeline.activity.kind.appeared": "Xuất hiện",
   "assetTimeline.activity.kind.disappeared": "Biến mất",
   "assetTimeline.activity.kind.exposure_changes": "Thay đổi phơi nhiễm",

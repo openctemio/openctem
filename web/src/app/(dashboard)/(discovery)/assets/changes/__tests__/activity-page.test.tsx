@@ -104,12 +104,20 @@ describe('Assets > Activity', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
   })
 
-  it('the internet-facing switch keeps its place, locked on, for newly exposed', () => {
+  it('the internet-facing toggle keeps its place, pressed and locked, for newly exposed', () => {
     state.view = 'newly_exposed'
     render(<AssetChangesPage />)
-    const toggle = screen.getByRole('switch', { name: 'Internet-facing only' })
+    const toggle = screen.getByRole('button', { name: 'Internet-facing only' })
     expect(toggle).toBeDisabled()
-    expect(toggle).toBeChecked()
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('the internet-facing toggle is a toolbar button, not pressed at rest', () => {
+    render(<AssetChangesPage />)
+    const toggle = screen.getByRole('button', { name: 'Internet-facing only' })
+    expect(toggle).toBeEnabled()
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('data-slot', 'internet-only-toggle')
   })
 
   it('a reader without assets:read sees only the access message', () => {
