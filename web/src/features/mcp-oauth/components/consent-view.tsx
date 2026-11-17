@@ -14,18 +14,11 @@ import {
   X,
 } from 'lucide-react'
 
+import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -195,17 +188,13 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   }
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-          <Skeleton className="h-4 w-4/6" />
-        </CardContent>
-      </Card>
+      <EntryCard aria-busy="true">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-4 w-4/6" />
+      </EntryCard>
     )
   }
   if (!request) {
@@ -228,38 +217,39 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   const device = request.flow === 'device'
 
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <CardTitle className="text-xl break-words">
-          {device && request.client_id === TERMINAL_CLIENT_ID
+    <EntryCard>
+      <EntryHeader
+        className="break-words"
+        title={
+          device && request.client_id === TERMINAL_CLIENT_ID
             ? t('mcp.consent.device.title', 'Connect a terminal to {product}?')
             : t('mcp.consent.title', 'Connect {client} to {product}?', {
                 client: request.client_name,
-              })}
-        </CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-2">
-          {device ? (
-            <>
-              <Terminal className="h-4 w-4 text-warning" aria-hidden />
-              <span>{t('mcp.consent.device.kind', 'A terminal asked to connect with a code')}</span>
-            </>
-          ) : (
-            <>
-              {verified ? (
-                <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
-              ) : (
-                <ShieldQuestion className="h-4 w-4 text-warning" aria-hidden />
-              )}
-              <span>{clientKind(request.client_kind, host)}</span>
-              {!verified && (
-                <Badge variant="outline">{t('mcp.client.unverified', 'Unverified')}</Badge>
-              )}
-            </>
-          )}
-        </CardDescription>
-      </CardHeader>
+              })
+        }
+      />
+      <div className="text-body text-muted-foreground flex flex-wrap items-center gap-2">
+        {device ? (
+          <>
+            <Terminal className="h-4 w-4 text-warning" aria-hidden />
+            <span>{t('mcp.consent.device.kind', 'A terminal asked to connect with a code')}</span>
+          </>
+        ) : (
+          <>
+            {verified ? (
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
+            ) : (
+              <ShieldQuestion className="h-4 w-4 text-warning" aria-hidden />
+            )}
+            <span>{clientKind(request.client_kind, host)}</span>
+            {!verified && (
+              <Badge variant="outline">{t('mcp.client.unverified', 'Unverified')}</Badge>
+            )}
+          </>
+        )}
+      </div>
 
-      <CardContent className="space-y-5">
+      <div className="flex flex-col gap-3.5">
         <section aria-labelledby="consent-org" className="space-y-2">
           <h2 id="consent-org" className="text-sm font-medium">
             {t('mcp.consent.organization', 'Organization')}
@@ -489,27 +479,26 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
+      </div>
 
-      <CardFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <EntryActions layout="row">
         <Button
           variant="outline"
           onClick={() => void decide('deny')}
           disabled={deciding !== null || isSwitching}
-          className="w-full sm:w-auto"
         >
-          {deciding === 'deny' && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+          {deciding === 'deny' && <Loader2 className="size-4 animate-spin" aria-hidden />}
           {t('mcp.common.cancel', 'Cancel')}
         </Button>
         <Button
+          variant="signal"
           onClick={() => void decide('approve')}
           disabled={deciding !== null || isSwitching || grantable.length === 0 || !!blocked}
-          className="w-full sm:w-auto"
         >
-          {deciding === 'approve' && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+          {deciding === 'approve' && <Loader2 className="size-4 animate-spin" aria-hidden />}
           {t('mcp.consent.allow', 'Allow')}
         </Button>
-      </CardFooter>
+      </EntryActions>
 
       <ConfirmDialog
         open={confirmAllow}
@@ -526,7 +515,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
         isLoading={allowing}
         handleConfirm={() => allow()}
       />
-    </Card>
+    </EntryCard>
   )
 }
 
@@ -600,46 +589,46 @@ function DeviceOrigin({ request }: { request: ConsentRequest }) {
 function TerminalDone({ approved, client }: { approved: boolean; client: string | null }) {
   const { t } = useTranslation()
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          {approved ? (
-            <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
-          ) : (
-            <X className="h-5 w-5 text-muted-foreground" aria-hidden />
-          )}
-          {!approved
-            ? t('mcp.consent.device.refusedTitle', 'Not connected')
-            : client
-              ? t('mcp.consent.device.doneTitle', '{client} is connected', { client })
-              : t('mcp.consent.device.doneTerminal', 'The terminal is connected')}
-        </CardTitle>
-        <CardDescription role="status">
-          {approved
-            ? t(
-                'mcp.consent.device.doneDesc',
-                'Go back to your terminal: it picks the connection up within a few seconds. You can close this page, and disconnect it any time under Connected applications.'
-              )
-            : t(
-                'mcp.consent.device.refusedDesc',
-                'Nothing was shared. The terminal is told the request was refused. You can close this page.'
-              )}
-        </CardDescription>
-      </CardHeader>
-    </Card>
+    <EntryCard>
+      <EntryHeader
+        title={
+          <span className="flex items-center gap-2">
+            {approved ? (
+              <CheckCircle2 className="text-success size-5 shrink-0" aria-hidden />
+            ) : (
+              <X className="text-muted-foreground size-5 shrink-0" aria-hidden />
+            )}
+            {!approved
+              ? t('mcp.consent.device.refusedTitle', 'Not connected')
+              : client
+                ? t('mcp.consent.device.doneTitle', '{client} is connected', { client })
+                : t('mcp.consent.device.doneTerminal', 'The terminal is connected')}
+          </span>
+        }
+      />
+      <p role="status" className="text-body text-muted-foreground">
+        {approved
+          ? t(
+              'mcp.consent.device.doneDesc',
+              'Go back to your terminal: it picks the connection up within a few seconds. You can close this page, and disconnect it any time under Connected applications.'
+            )
+          : t(
+              'mcp.consent.device.refusedDesc',
+              'Nothing was shared. The terminal is told the request was refused. You can close this page.'
+            )}
+      </p>
+    </EntryCard>
   )
 }
 
 function Unavailable({ message }: { message: string }) {
   const { t } = useTranslation()
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">
-          {t('mcp.consent.cannotConnect', 'Cannot connect the application')}
-        </CardTitle>
-        <CardDescription>{message}</CardDescription>
-      </CardHeader>
-    </Card>
+    <EntryCard>
+      <EntryHeader
+        title={t('mcp.consent.cannotConnect', 'Cannot connect the application')}
+        description={message}
+      />
+    </EntryCard>
   )
 }

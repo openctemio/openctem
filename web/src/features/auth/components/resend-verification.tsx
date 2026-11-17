@@ -33,7 +33,7 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
 
   if (emailUnavailable) {
     return (
-      <p className="text-muted-foreground text-sm" role="note">
+      <p className="text-dense text-muted-foreground" role="note">
         {t(
           'auth.verifyEmail.noEmail',
           'This server cannot send email. Ask your administrator to verify your address.'
@@ -44,7 +44,7 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
 
   if (done) {
     return (
-      <p className="text-sm" role="status">
+      <p className="text-dense" role="status">
         {t(
           'auth.verifyEmail.resendDone',
           'If this address has an account that is not verified yet, a new link is on its way.'
@@ -69,7 +69,7 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
   }
 
   return (
-    <form onSubmit={submit} className="grid w-full gap-2 text-start">
+    <form onSubmit={submit} className="flex w-full flex-col gap-2 text-start">
       {knownEmail === undefined && (
         <>
           <Label htmlFor="resend-verification-email">
@@ -86,11 +86,15 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
         </>
       )}
       <Button type="submit" variant="outline" disabled={busy || !email}>
-        {busy ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+        {busy ? (
+          <Loader2 aria-hidden className="size-4 animate-spin" />
+        ) : (
+          <Mail aria-hidden className="size-4" />
+        )}
         {t('auth.verifyEmail.resendSubmit', 'Send a new verification link')}
       </Button>
       {error && (
-        <p className="text-destructive text-sm" role="alert">
+        <p className="text-dense text-destructive" role="alert">
           {t('auth.verifyEmail.resendFailed', 'Could not send the link. Try again in a minute.')}
         </p>
       )}

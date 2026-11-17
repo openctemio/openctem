@@ -15,12 +15,12 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
-import { ArrowLeft, CheckCircle, Loader2, KeyRound } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { TextLink } from '@/components/ui/text-link'
 import {
   Form,
   FormControl,
@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/form'
 import { PasswordInput } from '@/components/password-input'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
 import { authErrorText } from '../lib/auth-error-codes'
@@ -120,26 +121,21 @@ export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; to
 
   if (!token) {
     return (
-      <Card className="gap-4">
-        <CardHeader>
-          <CardTitle className="text-lg tracking-tight">
-            <h1>{copy.invalidTitle}</h1>
-          </CardTitle>
-          <CardDescription>{copy.invalidDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <EntryCard>
+        <EntryHeader title={copy.invalidTitle} description={copy.invalidDescription} />
+        <EntryActions>
           <Button variant="outline" asChild>
             {copy.newLink ? (
               <Link href={copy.newLink.href}>{copy.newLink.label}</Link>
             ) : (
               <Link href="/login">
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft aria-hidden className="size-4" />
                 {t('auth.common.backToSignIn', 'Back to sign in')}
               </Link>
             )}
           </Button>
-        </CardContent>
-      </Card>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
@@ -198,136 +194,115 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
 
   if (isSuccess) {
     return (
-      <Card className="gap-4">
-        <CardHeader>
-          <div className="text-primary mb-2 flex justify-center">
-            <CheckCircle className="h-10 w-10" />
-          </div>
-          <CardTitle className="text-center text-lg tracking-tight">
-            <h1>{copy.successTitle}</h1>
-          </CardTitle>
-          <CardDescription className="text-center">{copy.successDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild className="w-full">
+      <EntryCard>
+        <EntryHeader title={copy.successTitle} />
+        <EntryBanner tone="ok">{copy.successDescription}</EntryBanner>
+        <EntryActions>
+          <Button variant="signal" asChild>
             <Link href="/login">
-              <ArrowLeft className="h-4 w-4" />
               {mode === 'setup'
                 ? t('auth.passwordToken.signIn', 'Sign in')
                 : t('auth.common.backToSignIn', 'Back to sign in')}
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        <CardTitle className="text-lg tracking-tight">
-          <h1>{copy.title}</h1>
-        </CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form method="post" onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  <p>{error}</p>
-                  {isStaleLinkError(errorCode) &&
-                    (copy.newLink ? (
-                      <Link
-                        href={copy.newLink.href}
-                        className="text-primary hover:text-primary/80 mt-2 inline-block text-sm underline underline-offset-4"
-                      >
-                        {copy.newLink.label}
-                      </Link>
-                    ) : (
-                      <p className="mt-2">{copy.newLinkHint}</p>
-                    ))}
-                </AlertDescription>
-              </Alert>
+    <EntryCard>
+      <EntryHeader title={copy.title} description={copy.description} />
+      <Form {...form}>
+        <form
+          method="post"
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex flex-col gap-3.5"
+        >
+          {error && (
+            <EntryBanner tone="danger" role="alert">
+              <p>{error}</p>
+              {isStaleLinkError(errorCode) &&
+                (copy.newLink ? (
+                  <TextLink href={safeHref(copy.newLink.href)} variant="inline">
+                    {copy.newLink.label}
+                  </TextLink>
+                ) : (
+                  <p>{copy.newLinkHint}</p>
+                ))}
+            </EntryBanner>
+          )}
+
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {mode === 'setup'
+                    ? t('auth.passwordToken.password', 'Password')
+                    : t('auth.passwordToken.newPassword', 'New password')}
+                </FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder={
+                      mode === 'setup'
+                        ? t('auth.passwordToken.choosePassword', 'Choose a password')
+                        : t('auth.passwordToken.enterNewPassword', 'Enter new password')
+                    }
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    {...field}
+                  />
+                </FormControl>
+                <PasswordPolicyHint />
+                <FormMessage />
+              </FormItem>
             )}
+          />
 
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {mode === 'setup'
-                      ? t('auth.passwordToken.password', 'Password')
-                      : t('auth.passwordToken.newPassword', 'New password')}
-                  </FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={
-                        mode === 'setup'
-                          ? t('auth.passwordToken.choosePassword', 'Choose a password')
-                          : t('auth.passwordToken.enterNewPassword', 'Enter new password')
-                      }
-                      autoComplete="new-password"
-                      disabled={isPending}
-                      {...field}
-                    />
-                  </FormControl>
-                  <PasswordPolicyHint />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="confirmPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('auth.passwordToken.confirmPassword', 'Confirm password')}
-                  </FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={t('auth.passwordToken.confirmPassword', 'Confirm password')}
-                      autoComplete="new-password"
-                      disabled={isPending}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {mode === 'reset' && (
-              <RevokeApiKeysOption
-                id="reset-revoke-keys"
-                checked={revokeKeys}
-                onCheckedChange={setRevokeKeys}
-                disabled={isPending}
-              />
+          <FormField
+            control={form.control}
+            name="confirmPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('auth.passwordToken.confirmPassword', 'Confirm password')}</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder={t('auth.passwordToken.confirmPassword', 'Confirm password')}
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
+          />
 
-            <Button className="mt-2" disabled={isPending} type="submit">
-              {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <KeyRound className="h-4 w-4" />
-              )}
+          {mode === 'reset' && (
+            <RevokeApiKeysOption
+              id="reset-revoke-keys"
+              checked={revokeKeys}
+              onCheckedChange={setRevokeKeys}
+              disabled={isPending}
+            />
+          )}
+
+          <EntryActions>
+            <Button variant="signal" disabled={isPending} type="submit">
+              {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
               {copy.submit}
             </Button>
-
-            <Button variant="link" size="sm" asChild className="mt-1">
+            <Button variant="outline" asChild>
               <Link href="/login">
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft aria-hidden className="size-4" />
                 {t('auth.common.backToSignIn', 'Back to sign in')}
               </Link>
             </Button>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+          </EntryActions>
+        </form>
+      </Form>
+    </EntryCard>
   )
 }

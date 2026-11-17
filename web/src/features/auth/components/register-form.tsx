@@ -20,10 +20,11 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, UserPlus } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '@/lib/utils'
+import { EntryDivider } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -241,18 +242,13 @@ export function RegisterForm({
       <form
         method="post"
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn('flex flex-col gap-3.5', className)}
         {...props}
       >
         {/* Social Login Section - Show First for Better UX */}
         {showSocialLogin && enabledSocialProviders.length > 0 && (
           <>
-            <div
-              className="grid gap-2"
-              style={{
-                gridTemplateColumns: `repeat(${enabledSocialProviders.length}, minmax(0, 1fr))`,
-              }}
-            >
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
               {enabledSocialProviders.map((provider) => (
                 <Button
                   key={provider.id}
@@ -260,33 +256,23 @@ export function RegisterForm({
                   type="button"
                   disabled={isLoading}
                   onClick={() => handleSocialLogin(provider.id)}
-                  className="relative"
                 >
                   {loadingProvider === provider.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 aria-hidden className="size-4 animate-spin" />
                   ) : (
-                    <provider.icon className="h-4 w-4" />
+                    <provider.icon className="size-4" />
                   )}
-                  <span className="sr-only">{provider.name}</span>
+                  <span>{provider.name}</span>
                 </Button>
               ))}
             </div>
 
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.register.orWithEmail', 'Or register with email')}
-                </span>
-              </div>
-            </div>
+            <EntryDivider>{t('auth.register.orWithEmail', 'Or register with email')}</EntryDivider>
           </>
         )}
 
         {/* Name Fields */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
           <FormField
             control={form.control}
             name="firstName"
@@ -397,12 +383,8 @@ export function RegisterForm({
         )}
 
         {/* Submit Button */}
-        <Button className="mt-2" disabled={isLoading} type="submit">
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <UserPlus className="h-4 w-4" />
-          )}
+        <Button variant="signal" disabled={isLoading} type="submit">
+          {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
           {t('auth.register.submit', 'Create account')}
         </Button>
       </form>
