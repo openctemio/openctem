@@ -78,6 +78,11 @@ type SavedViewRequest struct {
 	GroupBy      string   `json:"group_by,omitempty"`
 	Columns      []string `json:"columns,omitempty"`
 	Density      string   `json:"density,omitempty"`
+	// PageParams are the page's own params beside the filter (the findings
+	// and asset lists' search mode: mode=basic|query), validated by the page.
+	// On a page without filter fields they are the whole list state
+	// (filters, sort, search), kept as text.
+	PageParams map[string]string `json:"page_params,omitempty"`
 }
 
 func savedViewCaller(r *http.Request) savedviewapp.Caller {
@@ -124,7 +129,18 @@ func (h *SavedViewHandler) writeErr(w http.ResponseWriter, err error) {
 		return
 	}
 	switch {
-	case errors.Is(err, savedview.ErrNotFound), errors.Is(err, savedview.ErrUnknownPage), errors.Is(err, shared.ErrNotFound):
+	case errors.Is(err, savedview.ErrUnknownPage):
+		apierror.BadRequest("Unknown page: saved views exist for the registered list page keys only").WriteJSON(w)
+	case errors.Is(err, savedview.ErrPageForbidden):
+		// The same answer whether or not the page has views: it names the
+		// permission of the page's list, which the key alone decides.
+		details := middleware.PermissionDeniedDetails{}
+		var forbidden *savedviewapp.PageForbiddenError
+		if errors.As(err, &forbidden) {
+			details.MissingPermissions = []string{forbidden.Permission}
+		}
+		apierror.Forbidden("Insufficient permissions").WithDetails(details).WriteJSON(w)
+	case errors.Is(err, savedview.ErrNotFound), errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Saved view").WriteJSON(w)
 	case errors.Is(err, savedview.ErrShareForbidden):
 		apierror.Forbidden("Sharing a view with the organization needs the findings:views:share permission").WriteJSON(w)
@@ -161,7 +177,8 @@ func (h *SavedViewHandler) decodeRequest(w http.ResponseWriter, r *http.Request)
 
 func (h *SavedViewHandler) toInput(w http.ResponseWriter, req SavedViewRequest) (savedviewapp.Input, bool) {
 	in := savedviewapp.Input{Page: req.Page, Name: req.Name, Description: req.Description, Filter: req.Filter,
-		Query: req.Query, ShareWithOrg: req.ShareWithOrg, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density}
+		Query: req.Query, ShareWithOrg: req.ShareWithOrg, GroupBy: req.GroupBy, Columns: req.Columns, Density: req.Density,
+		PageParams: req.PageParams}
 	if string(req.Filter) == "null" {
 		in.Filter = nil
 	}
@@ -193,12 +210,16 @@ func (h *SavedViewHandler) write(w http.ResponseWriter, status int, body any) {
 
 // List handles GET /api/v1/views
 // @Summary      List saved views
-// @Description  The caller's saved views of a page and the ones shared with their groups.
+// @Description  The caller's saved views of a page and the ones shared with their groups or the organization.
+// @Description  `page` is a registered list page key (docs/architecture/saved-views.md): an unknown key is 400,
+// @Description  a key whose list the caller may not read is 403.
 // @Tags         Saved views
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page  query  string  true  "Page"  Enums(findings, vulnerabilities)
+// @Param        page  query  string  false  "Page key (default findings)"
 // @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}  "Unknown page key"
+// @Failure      403  {object}  map[string]interface{}  "The page's list is not readable by the caller"
 // @Router       /views [get]
 func (h *SavedViewHandler) List(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.caller(w, r)
@@ -252,6 +273,8 @@ func (h *SavedViewHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Description  Saves a filter (a FilterDocument, or the page's flat query) and page state. Validated against
 // @Description  the page's filter fields (400 INVALID_FILTER). group_id shares it with one of the caller's groups.
 // @Description  from_view_id instead copies a view the caller can see into a new personal view (A1).
+// @Description  A page without filter fields of its own takes no filter or query: its list state goes in
+// @Description  page_params (at most 32 params, 1024 bytes a value, 3072 bytes together), kept as text.
 // @Tags         Saved views
 // @Accept       json
 // @Produce      json
@@ -259,6 +282,7 @@ func (h *SavedViewHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Param        request  body  SavedViewRequest  true  "View"
 // @Success      201  {object}  SavedViewResponse
 // @Failure      400  {object}  map[string]interface{}
+// @Failure      403  {object}  map[string]interface{}  "The page's list is not readable by the caller"
 // @Failure      409  {object}  map[string]interface{}  "Limit reached"
 // @Router       /views [post]
 func (h *SavedViewHandler) Create(w http.ResponseWriter, r *http.Request) {
