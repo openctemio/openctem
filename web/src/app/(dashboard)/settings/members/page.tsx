@@ -186,10 +186,18 @@ const formatLastActive = (t: TFn, lastLoginAt?: string) => {
   const diffDays = Math.floor(diffMs / 86400000)
 
   if (diffMins < 1) return t('org.membersPage.justNow', 'Just now')
-  if (diffMins < 60) return t('org.membersPage.minsAgo', '{count} mins ago', { count: diffMins })
+  if (diffMins < 60)
+    return t('org.membersPage.minsAgo', '{count, plural, one {# min ago} other {# mins ago}}', {
+      count: diffMins,
+    })
   if (diffHours < 24)
-    return t('org.membersPage.hoursAgo', '{count} hours ago', { count: diffHours })
-  if (diffDays < 7) return t('org.membersPage.daysAgo', '{count} days ago', { count: diffDays })
+    return t('org.membersPage.hoursAgo', '{count, plural, one {# hour ago} other {# hours ago}}', {
+      count: diffHours,
+    })
+  if (diffDays < 7)
+    return t('org.membersPage.daysAgo', '{count, plural, one {# day ago} other {# days ago}}', {
+      count: diffDays,
+    })
   return formatDate(lastLoginAt)
 }
 
