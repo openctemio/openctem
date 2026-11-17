@@ -331,6 +331,9 @@ func run() int {
 	// Warn about connected Jira integrations without their own webhook
 	// secret: their inbound deliveries are refused until one is set.
 	warnJiraIntegrationsWithoutSecret(ctx, db.DB, log)
+	// Warn when the API connects as the owner of the audit tables: the
+	// database then cannot keep its credentials from changing audit history.
+	warnAPIRoleOwnsAuditLog(ctx, db.DB, log)
 
 	// Initialize auth services if local auth is supported
 	if cfg.Auth.Provider.SupportsLocal() {

@@ -61,6 +61,21 @@ var orphanAllowlist = map[string]string{
 	"asset_web_evidence_orphans":     "queue of screenshot files to delete; filled when the tenant's evidence rows cascade away, drained by the retention job so no stored image outlives the tenant",
 }
 
+// ownerWrittenTables are written only by the schema owner's functions
+// (audit_chain_prune_prefix, audit_chain_rebaseline_apply; migration
+// audit_chain_owner_only): the API role, which CI connects this test as,
+// holds no INSERT on them. They have no foreign key to tenants (they are in
+// orphanAllowlist: deleting an organization keeps its audit evidence), so a
+// seeded row would add no cascade path to check. The seeder fills them only
+// when the connected role may insert (a single-role run as the owner);
+// TestDeleteTenantAndUser_EverySchemaTable checks both facts so this list
+// cannot hide a table that does cascade.
+var ownerWrittenTables = map[string]bool{
+	"audit_chain_anchors":            true,
+	"audit_chain_rebaselines":        true,
+	"audit_chain_rebaseline_entries": true,
+}
+
 func openDeleteTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbURL := testdb.URL()
@@ -209,6 +224,17 @@ type schemaSeeder struct {
 	userID   string
 	lastErr  map[string]string
 	seq      int
+	skipped  []string // ownerWrittenTables the connected role may not insert into
+}
+
+// mayInsert reports whether the connected role may insert into table.
+func (s *schemaSeeder) mayInsert(table string) bool {
+	var ok bool
+	if err := s.tx.QueryRowContext(s.ctx, `SELECT has_table_privilege(current_user, $1, 'INSERT')`,
+		"public."+table).Scan(&ok); err != nil {
+		s.t.Fatalf("privilege of %s: %v", table, err)
+	}
+	return ok
 }
 
 // seedOverrides supplies values the generic rules cannot guess: cross-column
@@ -873,6 +899,10 @@ func (s *schemaSeeder) trySeed(st *seedTable, strict bool) bool {
 		s.rows[st.name] = m
 		return true
 	}
+	if ownerWrittenTables[st.name] && !s.mayInsert(st.name) {
+		s.skipped = append(s.skipped, st.name)
+		return true
+	}
 	fkVal, ok := s.fkValues(st, strict)
 	if !ok {
 		return false
@@ -1079,6 +1109,25 @@ func TestDeleteTenantAndUser_EverySchemaTable(t *testing.T) {
 		}
 	}
 	t.Logf("seeded %d tenant-scoped tables", seeded)
+	if len(s.skipped) > 0 {
+		t.Logf("not seeded (only the schema owner's functions write them): %s", strings.Join(s.skipped, ", "))
+	}
+	// A table the seeder may leave empty must not be one whose rows the
+	// tenant delete removes or blocks on: no foreign key to tenants, and the
+	// rows are kept on purpose.
+	for name := range ownerWrittenTables {
+		if _, ok := orphanAllowlist[name]; !ok {
+			t.Errorf("%s is in ownerWrittenTables but not in orphanAllowlist", name)
+		}
+		var fks int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_constraint
+			WHERE contype = 'f' AND conrelid = $1::regclass AND confrelid = 'tenants'::regclass`, "public."+name).Scan(&fks); err != nil {
+			t.Fatalf("foreign keys of %s: %v", name, err)
+		}
+		if fks != 0 {
+			t.Errorf("%s has a foreign key to tenants: seed it (through the owner's functions) instead of listing it in ownerWrittenTables", name)
+		}
+	}
 
 	// A repository with a branch finding (migration 000238's cascade path):
 	// make sure the seeded finding really sits on the seeded branch.
