@@ -17,8 +17,8 @@ organization the instance allows, and no organization ever sees it as a node.
 An **organization sensor** belongs to one organization, exactly as sensors do
 today.
 
-Shared sensors exist in every edition and are never a paid capability. The
-hosted service differs only by defaults and by the limits its control plane
+Shared sensors exist in every build and are never behind a grant. A
+managed service differs only by defaults and by the limits its control plane
 writes. A self-hosted install gets the same concept for its own needs: a
 central scanner that serves several organizations (an MSSP, an enterprise
 with business-unit organizations, a university), the sensor bundled with the
@@ -92,8 +92,8 @@ scale, adapted to scanning:
 | Compute quota with a cost factor per runner type | generic per-organization limits (§10), per-tool weights later |
 | Ephemeral VM per job on the hosted fleet | per-job isolation on shared sensors (§8) |
 
-Not taken: paid quotas on self-managed installs (limits are free
-everywhere), a shared registration secret, and a group-of-groups level.
+Not taken: quotas on self-managed installs beyond the limits an operator
+sets, a shared registration secret, and a group-of-groups level.
 
 ## 5. Access
 
@@ -123,7 +123,7 @@ default from the day it was created.
 `PlatformSensorsAllowed` becomes this policy. Its refusal names the real
 reason ("shared sensors are turned off on this instance", "your
 organization opted out", "the instance administrator has not enabled shared
-sensors for your organization") and never mentions an edition.
+sensors for your organization") and never mentions a build.
 
 ## 6. Deployment defaults
 
