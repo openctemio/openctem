@@ -1,9 +1,13 @@
 import axe from 'axe-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { SavedViewsMenu, summarizeChanges } from '../components/saved-views-menu'
+import {
+  SavedViewsMenu,
+  summarizeChanges,
+  type SavedViewsActions,
+} from '../components/saved-views-menu'
 import { createSavedView, updateSavedView, type SavedView } from '../api/use-saved-views'
 import type { ViewChange } from '../lib/view-changes'
 
@@ -286,5 +290,23 @@ describe('sharing', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+describe('the title row asks the menu to save', () => {
+  it('opens the one save dialog and saves the open view through the handle', async () => {
+    let actions: SavedViewsActions | null = null
+    const { onDiscard } = menu({
+      actionsRef: (a) => {
+        actions = a
+      },
+    })
+    expect(actions).not.toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => actions!.openSave())
+    expect(await screen.findByRole('dialog', { name: 'Save view' })).toBeInTheDocument()
+    await act(() => actions!.saveChanges())
+    expect(updateSavedView).toHaveBeenCalledWith(V1, expect.objectContaining({ name: mine.name }))
+    expect(onDiscard).toHaveBeenCalled()
   })
 })

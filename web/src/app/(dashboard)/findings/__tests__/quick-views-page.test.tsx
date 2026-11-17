@@ -67,9 +67,18 @@ vi.mock('@/features/findings/filters/contract', async (orig) => ({
   ...(await orig<typeof import('@/features/findings/filters/contract')>()),
   useFindingFilterContract: () => ({ contract: undefined, isLoading: false, error: undefined }),
 }))
+const savedViewsState: { views: Array<Record<string, unknown>>; isLoading: boolean } = {
+  views: [],
+  isLoading: false,
+}
 vi.mock('@/features/saved-views/api/use-saved-views', async (orig) => ({
   ...(await orig<typeof import('@/features/saved-views/api/use-saved-views')>()),
-  useSavedViews: () => ({ views: [], error: undefined, isLoading: false, mutate: vi.fn() }),
+  useSavedViews: () => ({
+    views: savedViewsState.views,
+    error: undefined,
+    isLoading: savedViewsState.isLoading,
+    mutate: vi.fn(),
+  }),
 }))
 
 vi.mock('@/features/findings/api/use-quick-views', () => ({
@@ -90,7 +99,8 @@ vi.mock('@/context/permission-provider', () => ({
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: () => true,
 }))
-vi.mock('@/features/saved-views/components/saved-views-menu', () => ({
+vi.mock('@/features/saved-views/components/saved-views-menu', async (orig) => ({
+  ...(await orig<typeof import('@/features/saved-views/components/saved-views-menu')>()),
   SavedViewsMenu: () => null,
 }))
 vi.mock('@/components/layout', () => ({
@@ -131,6 +141,8 @@ beforeEach(() => {
   statsCalls.length = 0
   sourcesCalls.length = 0
   quickViewsState.views = []
+  savedViewsState.views = []
+  savedViewsState.isLoading = false
 })
 
 describe('Findings list with quick views', () => {
@@ -174,15 +186,79 @@ describe('Findings list with quick views', () => {
     expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Needs triage')
   })
 
-  it('a plain list is the Active view, and an unmatched combination is a custom view', () => {
-    quickViewsState.views = [{ key: 'active', count: 12, params: 'state=open' }]
+  const row = () => screen.getByTestId('findings-toolbar-primary')
+  const title = () => screen.getByTestId('findings-view-title')
+  const modified = () => row().querySelector('[data-slot="list-modified"]')
+  const QUICK = [
+    { key: 'active', count: 12, params: 'state=open' },
+    { key: 'needs_triage', count: 3, params: 'status=new' },
+  ]
+
+  it('a plain list is the Active view, unchanged: no Modified, Save view or Reset', () => {
+    quickViewsState.views = QUICK
     openAt('')
-    const { unmount } = render(<FindingsPage />)
-    expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Active')
-    unmount()
-    openAt('?severity=high')
     render(<FindingsPage />)
-    expect(screen.getByTestId('findings-view-title')).toHaveTextContent('Custom view')
+    expect(title()).toHaveTextContent('Active')
+    expect(row()).toHaveAttribute('data-slot', 'list-title-row')
+    expect(modified()).toBeNull()
+    expect(row().querySelector('[data-slot="list-view-save"]')).toBeNull()
+    expect(row().querySelector('[data-slot="list-view-reset"]')).toBeNull()
+  })
+
+  it('a view plus a filter keeps the view name and shows Modified, Save view, Reset', () => {
+    quickViewsState.views = QUICK
+    openAt('?severity=high&practice=secrets')
+    render(<FindingsPage />)
+    expect(title()).toHaveTextContent('Active')
+    expect(title()).not.toHaveTextContent(/custom view|saved view/i)
+    expect(modified()).toHaveTextContent('Modified')
+    // Modified comes right after the count, then Save view, then Reset.
+    const start = row().querySelector('[data-slot="list-title-start"]')!
+    const order = Array.from(
+      start.querySelectorAll(
+        '[data-slot="list-count"], [data-slot="list-modified"], [data-slot="list-view-save"], [data-slot="list-view-reset"]'
+      )
+    ).map((el) => el.getAttribute('data-slot'))
+    expect(order).toEqual(['list-count', 'list-modified', 'list-view-save', 'list-view-reset'])
+    // Reset goes back to exactly the base view (the practice is its scope).
+    fireEvent.click(row().querySelector('[data-slot="list-view-reset"]')!)
+    expect(params().toString()).toBe('state=open&practice=secrets')
+  })
+
+  it('a URL no view holds is All findings, modified; Reset opens every state', () => {
+    quickViewsState.views = QUICK
+    openAt('?state=fixed&severity=high')
+    render(<FindingsPage />)
+    expect(title()).toHaveTextContent('All findings')
+    expect(modified()).not.toBeNull()
+    fireEvent.click(row().querySelector('[data-slot="list-view-reset"]')!)
+    expect(params().toString()).toBe('state=all')
+  })
+
+  it('a saved view is named by its own name, and never as "Saved view"', () => {
+    const id = '019feab9-1111-7222-8333-444455556666'
+    savedViewsState.views = [
+      { id, name: 'Internet-facing criticals', page: 'findings', filter: {}, is_owner: true },
+    ]
+    openAt(`?view=${id}`)
+    const { unmount } = render(<FindingsPage />)
+    expect(title()).toHaveTextContent('Internet-facing criticals')
+    expect(modified()).toBeNull()
+    unmount()
+    // Still loading: no name yet, rather than another view's.
+    savedViewsState.views = []
+    savedViewsState.isLoading = true
+    openAt(`?view=${id}`)
+    render(<FindingsPage />)
+    expect(title()).toBeEmptyDOMElement()
+    expect(modified()).toBeNull()
+  })
+
+  it('the chips row no longer offers Reset to view', () => {
+    quickViewsState.views = QUICK
+    openAt('?severity=high&source=pentest')
+    render(<FindingsPage />)
+    expect(screen.queryByRole('button', { name: /reset to view/i })).toBeNull()
   })
 
   it('opens the Closed quick view with state=closed', () => {

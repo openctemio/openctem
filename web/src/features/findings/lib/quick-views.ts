@@ -127,7 +127,7 @@ export function quickViewHref(params: string, includeInformational = false): str
 }
 
 /** Params that shape how a list shows, not which findings it holds. */
-const PRESENTATION_PARAMS = new Set([
+export const PRESENTATION_PARAMS: ReadonlySet<string> = new Set([
   'page',
   'per_page',
   'sort',
@@ -137,6 +137,8 @@ const PRESENTATION_PARAMS = new Set([
   'tab',
   'q',
   'view',
+  // The search field's mode (Basic or Query).
+  'mode',
 ])
 
 function scopeOf(
