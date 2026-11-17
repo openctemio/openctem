@@ -211,3 +211,38 @@ export function ShowFilterPanelButton({ onClick }: { onClick: () => void }) {
     </div>
   )
 }
+
+/** Where a key press belongs to what has the focus, not to the list. */
+const SHORTCUT_BLOCKED =
+  'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
+
+/**
+ * The key of "Add filter" (`AddFilterButton` announces it): `f` opens the
+ * list's filter picker. Not with a modifier key, not from a field, a menu or
+ * a dialog, not while a modal is open, and not in Query mode, where the text
+ * owns the filter: pass `enabled={false}` there (a `ListToolbar` whose
+ * tokens are inert is skipped as well). `onOpen` may be a new function on
+ * every render.
+ */
+export function useAddFilterShortcut(onOpen: () => void, enabled = true) {
+  const open = React.useRef(onOpen)
+  React.useEffect(() => {
+    open.current = onOpen
+  })
+  React.useEffect(() => {
+    if (!enabled) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      // In Query mode the filter tokens are inert: the text owns the filter.
+      if (document.querySelector('[data-slot="list-toolbar-tokens"][inert]')) return
+      const el = e.target as HTMLElement | null
+      if (el?.closest?.(SHORTCUT_BLOCKED)) return
+      // A modal on top owns the keyboard.
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"]')) return
+      e.preventDefault()
+      open.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [enabled])
+}

@@ -57,6 +57,8 @@ export interface FilterSelectProps<V extends string> {
   /**
    * Hide the key ("Practice:") when the toolbar is narrow (under 56rem), so a
    * base chip reads just its value there. The key stays in the accessible name.
+   * A clearable select with no value chosen reads its key there ("State")
+   * instead of "All", so two selects on one list never both read "All".
    */
   foldLabel?: boolean
   /**
@@ -68,6 +70,9 @@ export interface FilterSelectProps<V extends string> {
   sizeLabels?: readonly string[]
   className?: string
 }
+
+/** Hidden while the toolbar is narrow (under 56rem) or folds its labels. */
+const FOLD_HIDDEN = '@max-4xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
 
 export function FilterSelect<V extends string>({
   label,
@@ -86,6 +91,8 @@ export function FilterSelect<V extends string>({
   const all = allLabel ?? t('common.filter.all', 'All')
   const current = options.find((o) => o.value === value)
   const filtered = clearable && value !== allValue && Boolean(current)
+  // Folded with nothing chosen: the key stands in for "All".
+  const keyForAll = foldLabel && clearable
   const fmt = React.useMemo(() => new Intl.NumberFormat(locale), [locale])
   const count = (n?: number) =>
     typeof n === 'number' ? (
@@ -107,20 +114,30 @@ export function FilterSelect<V extends string>({
           className="inline-flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`${label}: ${current?.label ?? all}`}
         >
-          <span
-            className={cn(
-              'text-muted-foreground',
-              foldLabel && '@max-4xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
-            )}
-          >
-            {label}:
-          </span>
+          <span className={cn('text-muted-foreground', foldLabel && FOLD_HIDDEN)}>{label}:</span>
           <ToolbarSlot
             className="max-w-28 font-medium"
-            options={sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]}
+            options={[
+              ...(sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]),
+              // The key is one of the texts the slot shows: it sizes the slot
+              // too, so folding and choosing a value move nothing.
+              ...(keyForAll ? [label] : []),
+            ]}
             title={current?.label ?? all}
           >
-            {current?.label ?? all}
+            {keyForAll && !filtered ? (
+              <>
+                <span className={FOLD_HIDDEN}>{all}</span>
+                <span
+                  data-slot="filter-select-key"
+                  className="hidden @max-4xl/toolbar:inline group-data-[fold=true]/toolbar:inline"
+                >
+                  {label}
+                </span>
+              </>
+            ) : (
+              (current?.label ?? all)
+            )}
           </ToolbarSlot>
           <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>

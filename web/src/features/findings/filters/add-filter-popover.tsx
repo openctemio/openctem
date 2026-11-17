@@ -1,12 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AddFilterButton, ShowFilterPanelButton } from '@/features/shared/components/filter-button'
+import {
+  AddFilterButton,
+  ShowFilterPanelButton,
+  useAddFilterShortcut,
+} from '@/features/shared/components/filter-button'
 import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import {
   Command,
@@ -114,25 +118,10 @@ export function AddFilterPopover({
     onOpenChange?.(next)
   }
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'f' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
-      // In Query mode the filter tokens are inert: the text owns the filter.
-      if (document.querySelector('[data-slot="list-toolbar-tokens"][inert]')) return
-      const el = e.target as HTMLElement | null
-      if (
-        el?.closest?.(
-          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
-        )
-      )
-        return
-      e.preventDefault()
-      setOpenState(true)
-      onOpenChange?.(true)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onOpenChange])
+  useAddFilterShortcut(() => {
+    setOpenState(true)
+    onOpenChange?.(true)
+  })
 
   const groups = useMemo(
     () => (contract ? pickableFields(contract, { canReadAssets }) : []),

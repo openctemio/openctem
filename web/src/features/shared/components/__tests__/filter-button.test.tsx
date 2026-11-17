@@ -8,6 +8,7 @@ import {
   FilterButton,
   FilterPanelToggle,
   ShowFilterPanelButton,
+  useAddFilterShortcut,
 } from '../filter-button'
 import { FilterSheet } from '../filter-sheet'
 
@@ -154,6 +155,83 @@ describe('FilterPanelToggle sheetOnly (the list has Add filter)', () => {
     render(<ShowFilterPanelButton onClick={onClick} />)
     fireEvent.click(screen.getByRole('button', { name: 'Show the filter panel' }))
     expect(onClick).toHaveBeenCalledOnce()
+  })
+})
+
+describe('useAddFilterShortcut', () => {
+  function Probe({ onOpen, enabled }: { onOpen: () => void; enabled?: boolean }) {
+    useAddFilterShortcut(onOpen, enabled)
+    return (
+      <div>
+        <p data-testid="outside">list</p>
+        <input aria-label="field" />
+        <div role="menu">
+          <button type="button">item</button>
+        </div>
+      </div>
+    )
+  }
+  const press = (el: Element, init: KeyboardEventInit = {}) =>
+    fireEvent.keyDown(el, { key: 'f', ...init })
+
+  it('opens on f pressed outside a field, a menu or a dialog', () => {
+    const onOpen = vi.fn()
+    render(<Probe onOpen={onOpen} />)
+    press(screen.getByTestId('outside'))
+    expect(onOpen).toHaveBeenCalledOnce()
+    press(screen.getByRole('textbox', { name: 'field' }))
+    press(screen.getByRole('button', { name: 'item' }))
+    fireEvent.keyDown(screen.getByTestId('outside'), { key: 'g' })
+    expect(onOpen).toHaveBeenCalledOnce()
+  })
+
+  it('leaves the key to the browser with a modifier', () => {
+    const onOpen = vi.fn()
+    render(<Probe onOpen={onOpen} />)
+    press(screen.getByTestId('outside'), { ctrlKey: true })
+    press(screen.getByTestId('outside'), { metaKey: true })
+    press(screen.getByTestId('outside'), { altKey: true })
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('does nothing while a modal is open', () => {
+    const onOpen = vi.fn()
+    render(
+      <>
+        <Probe onOpen={onOpen} />
+        <div role="dialog" data-state="open" />
+      </>
+    )
+    press(screen.getByTestId('outside'))
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('is off in Query mode: disabled by the caller, or the toolbar tokens are inert', () => {
+    const onOpen = vi.fn()
+    const view = render(<Probe onOpen={onOpen} enabled={false} />)
+    press(screen.getByTestId('outside'))
+    expect(onOpen).not.toHaveBeenCalled()
+    view.rerender(
+      <>
+        <Probe onOpen={onOpen} />
+        <div data-slot="list-toolbar-tokens" inert />
+      </>
+    )
+    press(screen.getByTestId('outside'))
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('calls the latest callback and stops listening once its list is gone', () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const view = render(<Probe onOpen={first} />)
+    view.rerender(<Probe onOpen={second} />)
+    press(screen.getByTestId('outside'))
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledOnce()
+    view.unmount()
+    press(document.body)
+    expect(second).toHaveBeenCalledOnce()
   })
 })
 
