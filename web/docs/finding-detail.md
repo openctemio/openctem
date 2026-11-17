@@ -104,34 +104,47 @@ in the activity panel.
 
 ## Layout
 
-```
-Findings › CVE-2024-21538 · cross-spawn            (breadcrumb: CVE · package, not the raw ID)
+The page is built from the detail kit (`docs/ui-style-contract.md`, "Detail pages").
 
-[SCA] [CVE-2024-21538 ↗]                          ┌ Status    [New ▾]           ┐
-cross-spawn ReDoS vulnerability                   │ Severity  [High (7.5) ▾]    │
-[Re-verify] [AI triage] [⋯]                       │ Priority  P1                │
-                                                  │ Assignee  [Unassigned ▾]    │
-┌ ⚠ SLA overdue by 143 days ──────────────────┐   │ SLA due   May 12, 2026      │
-└─────────────────────────────────────────────┘   │           143 days overdue  │
-┌ Why it matters ─────────────────────────────┐   │ ───────────────────────     │
-│ P1 Urgent · fix within 30 days               │   │ Asset     demo-web-storefront│
-│ High severity, reachable, no compensating…   │   │           Web app · Critical │
-│ Exploitation   Exposure          Impact      │   │ Found by  SCA · npm-audit    │
-│ ● No known…    ● Internet-facing ● Critical  │   │ First seen May 7, 2026       │
-│ ● EPSS 0.87%   ● Reachable from 1            │   │ Last seen  May 10, 2026      │
-│ › How this was scored                        │   │ ID        dcdc3001… ⧉       │
-└──────────────────────────────────────────────┘   └─────────────────────────────┘
-┌ Fix ──────────────────────── Remediation plan┐     (sticky; 19rem; below lg it
-│ Upgrade cross-spawn 7.0.3 → 7.0.5             │      sits above "Why it matters",
-│ Transitive dependency · in package.json · npm │      with asset/dates folded)
-│ "overrides": { "cross-spawn": "^7.0.5" }  ⧉   │
-│ Also fixed in 6.0.6 (other release lines)     │   ┌ 💬 Activity · 3 comments ●  ┐
-└──────────────────────────────────────────────┘   │ Jamie: patched in 7.0.5 · 2h│
-Overview | Evidence | Remediation | Attack path | Related └─────────────────────────────┘
+```
+Findings > CVE-2024-21538                          (top bar breadcrumb)
+
+[Vulnerability] [CVE-2024-21538] [CWE-1333]                        <  2 of 27  >
+cross-spawn ReDoS vulnerability          [...] [Re-verify] [AI triage] [Add to task]
+Overview | Evidence 4 | Validation 2 | Remediation | Related | Details
+------------------------------------------------------------------------------
+[!] SLA overdue by 143 days                          Status     [New v]
+                                                     Severity   [High (7.5) v]
+Why it matters                                       Priority   P1
+  P1 Urgent, fix within 30 days                      SLA due    May 12, 2026
+  Exploitation   Exposure          Impact                       143 days overdue
+  > How this was scored                              People
+Fix                          Remediation plan        Assignee   [Unassigned v]
+  Upgrade cross-spawn 7.0.3 to 7.0.5                 Watchers   2 watching
+Scanner output                                       ---------------------------
+  > Show output                                      Asset      demo-web-storefront
+Proof of fix                                         Found by   SCA, npm-audit
+  Verification, Retest, Retest check                 First seen May 7, 2026
+                                                     Tickets, Tags, ID
+                                                     [ Activity, 3 comments  > ]
 ```
 
-The tab is kept in the URL (`?tab=`). Attack path appears only when the finding has
-a data flow.
+- **Header** (`FindingHeader` on `DetailPageHeader`): type and identifier chips, the place in the list the
+  finding was opened from ("2 of 27" links back to that list; previous and next, also `k` and `j`), the title,
+  one main action (Add to task), two secondary ones (Re-verify, AI triage) and a More menu (Copy link, Copy
+  finding ID, Create ticket, Mark as duplicate). Who found it is said once, in the properties.
+- **Tabs**, right under the header, kept in the URL (`?tab=`): Overview (why it matters, the fix, the scanner
+  output, proof of fix), Evidence, Validation (only when there is a result or a reachability check to run),
+  Remediation, Data flow (`attack-path`, only with a data flow), Pentest details (findings people wrote),
+  Related, Details (analysis, description, type sections, scores, identifiers, sources, discovery, import
+  history).
+- **Bands** (approval request, SLA overdue, remediation task) sit above the panel on every tab.
+- **Properties** (`FindingProperties` on `PropertyList`): a rail beside the panel from 1280 px (19rem, sticky);
+  below that it sits under the header, in two columns while there is room; on a phone it is a card of 44 px
+  rows with "Asset, dates and more" folded, after the bands.
+- **Activity** is the summary under the properties; it opens the activity panel (`?activity=open`).
+- On a phone the header starts with the way back to the list ("< Findings", or the list's name) and the
+  position; the main action leads the action row.
 
 ## Type-aware parts
 

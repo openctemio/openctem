@@ -30,7 +30,7 @@ and not an inline feed.
 The tab was removed rather than kept as a trigger: a tab that opens a sheet
 instead of showing a panel breaks the tab pattern (`role="tab"` promises a
 tabpanel), and the summary is more useful where people already look. On the
-finding page it sits under the properties rail (sticky on `lg`), so it is
+finding page it sits under the properties (a sticky rail from 1280 px), so it is
 visible from every tab.
 
 ### URL and keyboard

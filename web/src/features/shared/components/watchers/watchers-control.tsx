@@ -12,12 +12,12 @@
  * Watching grants no access.
  */
 
+import { PropertyRow } from '@/features/shared/components/detail'
 import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useRef, useState } from 'react'
 import { Bell, BellOff, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { UserAvatar, UserAvatarStack } from '../user-avatar'
 import type { WorkItemKind } from '../../api/use-participants'
 import { ManageWatchersDialog, type WatcherPickerSource } from './manage-watchers-dialog'
@@ -35,9 +35,6 @@ export interface WatchersControlProps {
   /** Where the add search gets its candidates; without it nobody can be added. */
   picker?: WatcherPickerSource
 }
-
-/** The label column and row shape of the People list. */
-const ROW = 'grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3'
 
 export function WatchersControl({
   kind,
@@ -57,16 +54,13 @@ export function WatchersControl({
 
   if (isLoading || !participants) {
     return (
-      <div className={ROW}>
-        <dt className="text-body text-muted-foreground">
-          {t('findings.people.watchers', 'Watchers')}
-        </dt>
-        <dd
-          className="h-11 animate-pulse rounded-md bg-muted/50 md:h-8"
+      <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
+        <span
+          className="block h-control animate-pulse rounded-md bg-muted/50 max-md:h-control-touch"
           aria-busy="true"
           aria-label={t('findings.people.loading', 'Loading people')}
         />
-      </div>
+      </PropertyRow>
     )
   }
 
@@ -88,24 +82,20 @@ export function WatchersControl({
 
   return (
     <>
-      {/* On a phone the toggle wraps under the summary: the label lines up
-          with the first line, not the middle of both. */}
-      <div className={cn(ROW, 'min-h-8 items-start')}>
-        <dt className="text-body leading-11 text-muted-foreground md:leading-8">
-          {t('findings.people.watchers', 'Watchers')}
-        </dt>
-        <dd className="flex min-w-0 flex-wrap items-center gap-2">
+      <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
+        {/* In a narrow rail the toggle wraps under the summary. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-md:justify-end">
           <Button
             ref={summaryRef}
             type="button"
             variant="ghost"
-            className="-ms-2 h-11 min-w-0 gap-2 px-2 font-normal"
+            className="-ms-2 min-w-0 font-normal"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
             data-testid="watchers-summary"
           >
             <UserAvatarStack names={names} />
-            <span className="truncate text-body">
+            <span className="truncate">
               {summary}
               <span className="sr-only">
                 {', '}
@@ -117,8 +107,6 @@ export function WatchersControl({
           <Button
             type="button"
             variant={watching ? 'secondary' : 'outline'}
-            size="sm"
-            className="h-11 gap-1.5 px-3"
             disabled={busy}
             aria-label={toggleLabel}
             onClick={() => void setWatching(!watching)}
@@ -135,30 +123,25 @@ export function WatchersControl({
               ? t('findings.people.watching', 'Watching')
               : t('findings.people.watch', 'Watch')}
           </Button>
-        </dd>
-      </div>
+        </span>
+      </PropertyRow>
 
       {participants.names_visible && participants.asset_owners.length > 0 && (
-        <div className={cn(ROW, 'min-h-8 items-start py-1')}>
-          <dt className="text-body text-muted-foreground">
-            {t('findings.people.assetOwners', 'Asset owners')}
-          </dt>
-          <dd className="min-w-0">
-            <ul className="space-y-1">
-              {participants.asset_owners.map((o) => (
-                <li key={o.user_id} className="flex min-w-0 items-center gap-2">
-                  <UserAvatar name={o.name} />
-                  <span className="truncate text-body">{o.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {o.type === 'primary'
-                      ? t('findings.people.ownerType.primary', 'primary')
-                      : t('findings.people.ownerType.other', 'owner')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </dd>
-        </div>
+        <PropertyRow label={t('findings.people.assetOwners', 'Asset owners')} top>
+          <ul className="space-y-1 py-1">
+            {participants.asset_owners.map((o) => (
+              <li key={o.user_id} className="flex min-w-0 items-center gap-2">
+                <UserAvatar name={o.name} />
+                <span className="truncate">{o.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {o.type === 'primary'
+                    ? t('findings.people.ownerType.primary', 'primary')
+                    : t('findings.people.ownerType.other', 'owner')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </PropertyRow>
       )}
 
       <ManageWatchersDialog
