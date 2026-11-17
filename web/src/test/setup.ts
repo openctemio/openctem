@@ -120,6 +120,24 @@ if (
   })
 }
 
+// The toast library writes a 97-rule stylesheet into <head> when it is first
+// imported. jsdom matches the rules of every sheet against an element each time
+// its computed style is read, and user-event, testing-library's role queries
+// and axe read it for many nodes. No test depends on the toast's own styling
+// (jsdom has no layout), so the sheet is dropped. The library appends the empty
+// <style> first and its text after, so the check runs when the observer fires.
+if (typeof document !== 'undefined') {
+  new MutationObserver((records) => {
+    for (const r of records) {
+      r.addedNodes.forEach((n) => {
+        if (n instanceof HTMLStyleElement && n.textContent?.includes('data-sonner-toaster')) {
+          n.remove()
+        }
+      })
+    }
+  }).observe(document.head, { childList: true })
+}
+
 // ============================================
 // ENVIRONMENT SETUP
 // ============================================

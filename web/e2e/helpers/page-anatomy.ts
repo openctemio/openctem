@@ -1,6 +1,7 @@
 import fs from 'fs'
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
+import { checkScrollEnd } from './scroll-end'
 
 /**
  * Page anatomy checks, shared by every Playwright suite that walks pages: the
@@ -503,7 +504,7 @@ export async function checkAt(
   route: string,
   width: number,
   ownLayoutRoutes: RegExp[] = [],
-  opts: { rowMix?: boolean; allTables?: boolean } = {}
+  opts: { rowMix?: boolean; allTables?: boolean; scrollEnd?: boolean } = {}
 ) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   // Let a resize settle (the tab strip re-measures what fits).
@@ -581,6 +582,8 @@ export async function checkAt(
     expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
   }
   expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)
+  // Last: it scrolls the page to its end and back.
+  if (opts.scrollEnd) await checkScrollEnd(page, at)
 }
 
 export async function open(page: Page, route: string): Promise<boolean> {

@@ -31,6 +31,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
  * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal
  *   is the shared access notice;
+ * - the scroll ends a normal bottom padding after the last visible content
+ *   (at most the page's bottom padding plus 8px) and the document never
+ *   scrolls (helpers/scroll-end.ts; every static page);
  * - the page renders: no error boundary ("Something went wrong") and no
  *   uncaught page error (a server page calling a client hook crashed
  *   /notifications on every visit with nothing visiting it).
@@ -99,7 +102,7 @@ for (const route of staticRoutes()) {
     // The page renders a block layout once its header is drawn.
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
     for (const width of [1440, 390])
-      await checkAnatomy(page, route, width, OWN_LAYOUT, { rowMix: true })
+      await checkAnatomy(page, route, width, OWN_LAYOUT, { rowMix: true, scrollEnd: true })
     if (info.errors.length > 0) {
       await info.attach(route, { body: await page.screenshot(), contentType: 'image/png' })
     }
