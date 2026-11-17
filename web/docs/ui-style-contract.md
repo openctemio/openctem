@@ -658,6 +658,35 @@ progress card per group, colour a zero, repeat the group's own value in a
 column of every row when it can be hidden, or fetch every group's rows on page
 load.
 
+### Queues
+
+A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
+queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
+`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/queue`, which every queue uses
+and no page rebuilds:
+
+- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve, Reject) and one More
+  for everything else, in the row's last column and on the phone card. The buttons are named after the item
+  ("Approve {name}"). Without the permission there is no decision control. New decisions and bulk decisions
+  are not added by a page: they need their own design with gates, confirm and audit.
+- **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
+  stands in their place, with the reason on hover and focus in a table row and written out on a card. The
+  server is the authority; the list only says so.
+- **Reason dialog** (`QueueReasonDialog`): Reject, and any decision the queue asks a reason for. It shows
+  what is decided, one required reason field with its length, and keeps the typed reason when the save fails.
+- **Decide by** (`QueueDecideBy`): a calendar date (the exact time on hover); once it has passed, "Overdue"
+  with the date in the danger tone. A closed request shows a dash.
+- **Confirm and step-up** stay where the flow has them (a destructive confirm on Cancel request, a
+  confirmation before a reminder, re-authentication on Approve). An undo toast only where the server can undo.
+- **Announcements** (`useQueueAnnouncer`): every outcome (decided, refused, reminded, canceled) is written to
+  one polite status region, beside the toast.
+- **Empty** (`QueueEmpty`): first run (the queue never held a request), nothing waiting (decided requests
+  exist; offers the way to them), no match (the lens left no row).
+- **Phone** (`QueueCard`): fixed slots in one order: title, state marks, who asked and by when, the reason
+  (two lines), the decision controls on their own row.
+- A column whose value is the same on every row of the current lens (Status under Pending) is left out on
+  that lens. Anything an AI proposed keeps its AI mark in the row, on the card and in the dialogs.
+
 ## 4. Cards and sections
 
 - shadcn `<Card>`. A section inside a card: `<CardHeader>` with `<CardTitle>`

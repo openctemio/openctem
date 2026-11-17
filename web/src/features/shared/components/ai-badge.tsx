@@ -38,6 +38,11 @@ export interface AIBadgeProps {
   verb?: AIBadgeVerb
   /** A muted line under the badge telling the reader to check before acting. */
   withHint?: boolean
+  /**
+   * One-line places (a table cell): the badge may get narrower than its
+   * label, which then ends in an ellipsis; the whole label is the hover text.
+   */
+  truncate?: boolean
   className?: string
 }
 
@@ -48,6 +53,7 @@ export function AIBadge({
   accountable,
   verb = 'suggested',
   withHint = false,
+  truncate = false,
   className,
 }: AIBadgeProps) {
   const { t } = useTranslation()
@@ -57,15 +63,16 @@ export function AIBadge({
     .filter(Boolean)
     .join(', ')
   return (
-    <span className={cn('inline-flex flex-col gap-1', className)}>
+    <span className={cn('inline-flex flex-col gap-1', truncate && 'max-w-full min-w-0', className)}>
       <Badge
         variant="outline"
-        className="w-fit gap-1 text-xs"
+        className={cn('w-fit gap-1 text-xs', truncate && 'max-w-full')}
         data-testid="ai-badge"
         data-source={source}
+        title={truncate ? label : undefined}
       >
-        <Sparkles className="h-3 w-3" aria-hidden />
-        {label}
+        <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+        {truncate ? <span className="truncate">{label}</span> : label}
       </Badge>
       {source === 'ai_agent' && owners && (
         <span className="text-xs text-muted-foreground" data-testid="ai-badge-accountable">
