@@ -114,7 +114,7 @@ export function GraphLegend({ items, testId }: { items: GraphLegendItem[]; testI
           {t('common.graph.legend', 'Legend')}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72">
+      <PopoverContent>
         <p className="mb-2 text-card-title">{t('common.graph.legend', 'Legend')}</p>
         <GraphLegendList items={items} testId={testId} />
       </PopoverContent>
@@ -141,7 +141,7 @@ export function GraphNote({
           {label}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 text-dense">
+      <PopoverContent className="w-80 text-dense">
         <p className="text-card-title">{title}</p>
         <div className="mt-2 grid gap-2 text-muted-foreground">{children}</div>
       </PopoverContent>
@@ -185,7 +185,7 @@ export function GraphFrame({
         className
       )}
     >
-      <div className={cn('min-w-0', fill && 'min-h-0 flex-1')}>{children}</div>
+      <div className={cn('min-w-0', fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
       {footer && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border-subtle px-4 py-2 text-cap text-muted-foreground">
           {footer}
@@ -207,6 +207,7 @@ export function GraphNodeSheet({
   children,
   footer,
   testId = 'graph-node-sheet',
+  returnFocus,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -215,10 +216,25 @@ export function GraphNodeSheet({
   children: React.ReactNode
   footer?: React.ReactNode
   testId?: string
+  /**
+   * The node or row that opened the sheet, looked up when it closes: a graph
+   * may redraw its nodes while the sheet is open, so the element that had
+   * focus then can be gone.
+   */
+  returnFocus?: () => HTMLElement | null
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent data-testid={testId}>
+      <SheetContent
+        data-testid={testId}
+        onCloseAutoFocus={(e) => {
+          const el = returnFocus?.()
+          if (el?.isConnected) {
+            e.preventDefault()
+            el.focus()
+          }
+        }}
+      >
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           {description && <SheetDescription>{description}</SheetDescription>}

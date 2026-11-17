@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { GraphFrame, GraphLegend, GraphNodeSheet, GraphNote, GraphToolbar } from '../graph-page'
 
 describe('graph page kit', () => {
@@ -73,5 +74,31 @@ describe('graph page kit', () => {
     expect(within(dialog).getByText('Detail')).toBeInTheDocument()
     fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('gives focus back to the node that opened the detail, looked up when it closes', async () => {
+    function Page() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button type="button" data-testid="node" onClick={() => setOpen(true)}>
+            Node
+          </button>
+          <GraphNodeSheet
+            open={open}
+            onOpenChange={setOpen}
+            title="billing-db"
+            returnFocus={() => document.querySelector<HTMLElement>('[data-testid="node"]')}
+          >
+            <p>Detail</p>
+          </GraphNodeSheet>
+        </>
+      )
+    }
+    render(<Page />)
+    fireEvent.click(screen.getByTestId('node'))
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('node')))
   })
 })

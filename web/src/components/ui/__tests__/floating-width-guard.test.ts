@@ -28,7 +28,7 @@ const REVIEWED: Record<string, string> = {
   'components/layout/sidebar-footer-links.tsx DropdownMenuContent': 'shell design: help menu',
   'components/profile-dropdown.tsx DropdownMenuContent': 'shell design: account menu 256',
   // Popovers: panels of text, forms and search pickers, not lists of actions
-  'app/(dashboard)/(prioritization)/attack-paths/page.tsx PopoverContent':
+  'components/graph-page/graph-page.tsx PopoverContent':
     'explanation text needs a reading measure',
   'components/layout/team-switcher.tsx PopoverContent': 'shell design: organization switcher',
   'components/notification-bell.tsx PopoverContent': 'shell design: notifications panel',

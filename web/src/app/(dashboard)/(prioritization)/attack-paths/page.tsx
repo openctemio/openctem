@@ -12,7 +12,7 @@
  */
 
 import { PossiblePathLabel } from '@/components/ui/possible-path-label'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, Crown, GitBranch, List, Network, Route } from 'lucide-react'
 import Link from '@/components/link'
@@ -144,7 +144,27 @@ export default function AttackPathsPage() {
 
   // The detail of a step opens over the page; its findings are one link away.
   const [openKey, setOpenKey] = useState<string | null>(null)
-  const openNode: (key: string) => void = setOpenKey
+  const [sheetOpen, setSheetOpen] = useState(false)
+  // Where focus was when the detail opened: the node on the graph, or the
+  // step's name in the list.
+  const openerRef = useRef<{ key: string; list: HTMLElement | null }>({ key: '', list: null })
+  // Made once: the canvas keeps its handlers while the page re-renders.
+  const [openNode] = useState(() => (key: string) => {
+    const active = document.activeElement as HTMLElement | null
+    openerRef.current = {
+      key,
+      list: active?.closest('[data-testid="attack-path-list"]') ? active : null,
+    }
+    setOpenKey(key)
+    setSheetOpen(true)
+  })
+  const returnFocus = () => {
+    const { key, list } = openerRef.current
+    if (list?.isConnected) return list
+    return document.querySelector<HTMLElement>(
+      `.react-flow__node[data-id="${CSS.escape(key)}"] [data-testid="flow-node"]`
+    )
+  }
   const openNodeData = openKey ? (byKey.get(openKey) ?? null) : null
   const legendItems = useAttackPathLegendItems()
 
@@ -425,11 +445,14 @@ export default function AttackPathsPage() {
             label={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
             footer={graphFacts(more)}
           >
-            <FlowFullscreen title={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}>
+            <FlowFullscreen
+              className="flex min-h-0 flex-1 flex-col"
+              title={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
+            >
               {(full) => (
                 <div
                   className={
-                    full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : 'flex h-full flex-col'
+                    full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : 'flex min-h-0 flex-1 flex-col'
                   }
                 >
                   {full && (
@@ -494,20 +517,20 @@ export default function AttackPathsPage() {
       </PageStack>
       {detail && (
         <AttackPathNodeSheet
+          open={sheetOpen && openNodeData !== null}
           detail={detail}
           node={openNodeData}
           through={
             openKey ? shown.filter((i) => detail.paths[i]?.nodes.includes(openKey)).length : 0
           }
           shownTotal={shown.length}
-          onOpenChange={(o) => {
-            if (!o) setOpenKey(null)
-          }}
+          onOpenChange={setSheetOpen}
+          returnFocus={returnFocus}
           onHighlight={
             view === 'canvas' && openKey
               ? () => {
                   setFocus({ kind: 'node', key: openKey })
-                  setOpenKey(null)
+                  setSheetOpen(false)
                 }
               : undefined
           }

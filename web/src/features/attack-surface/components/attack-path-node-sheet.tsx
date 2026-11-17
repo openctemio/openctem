@@ -18,7 +18,8 @@ import { assetFindingsHref, chokeRows, formatWeight, stepText } from '../lib/att
 
 export interface AttackPathNodeSheetProps {
   detail: AttackPathDetail
-  /** The step to show; null closes the sheet. */
+  open: boolean
+  /** The step to show; it stays while the sheet closes. */
   node: PathNode | null
   /** Routes shown that run through the step, and how many are shown. */
   through: number
@@ -26,15 +27,19 @@ export interface AttackPathNodeSheetProps {
   onOpenChange: (open: boolean) => void
   /** Light the routes through the step on the graph and close. */
   onHighlight?: () => void
+  /** The node or row to focus again when the sheet closes. */
+  returnFocus?: () => HTMLElement | null
 }
 
 export function AttackPathNodeSheet({
+  open,
   detail,
   node,
   through,
   shownTotal,
   onOpenChange,
   onHighlight,
+  returnFocus,
 }: AttackPathNodeSheetProps) {
   const { t } = useTranslation()
   if (!node) return null
@@ -145,7 +150,8 @@ export function AttackPathNodeSheet({
 
   return (
     <GraphNodeSheet
-      open
+      open={open}
+      returnFocus={returnFocus}
       onOpenChange={onOpenChange}
       testId="attack-path-node-sheet"
       title={node.hidden ? t('prioritization.attackPath.hidden', 'Outside your access') : node.name}
