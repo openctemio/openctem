@@ -57,4 +57,76 @@ describe('server-with-ws', () => {
     expect(out).toContain('X-Forwarded-For: 203.0.113.9\r\n')
     expect(out).toContain('X-Real-IP: 203.0.113.9\r\n')
   })
+
+  it('drops client headers the API does not need', () => {
+    const out = buildUpgradeRequest(
+      upgradeReq('/api/v1/ws', [
+        'Host',
+        'h',
+        'Upgrade',
+        'websocket',
+        'Connection',
+        'Upgrade',
+        'Sec-WebSocket-Key',
+        'k',
+        'Sec-WebSocket-Version',
+        '13',
+        'Origin',
+        'https://ctem.example.com',
+        'Cookie',
+        'auth_token=t1',
+        'User-Agent',
+        'ua',
+        'Accept-Language',
+        'vi',
+        'True-Client-IP',
+        '198.51.100.7',
+        'X-Client-IP',
+        '198.51.100.8',
+        'Forwarded',
+        'for=198.51.100.9',
+        'X-Tenant-ID',
+        'other',
+        'Authorization',
+        'Bearer x',
+      ]),
+      new URL('http://api:8080'),
+      false
+    )
+    for (const bad of [
+      '198.51.100',
+      'True-Client-IP',
+      'X-Client-IP',
+      '\r\nForwarded: ',
+      'X-Tenant-ID',
+      'Authorization',
+    ])
+      expect(out).not.toContain(bad)
+    for (const good of [
+      'Sec-WebSocket-Key: k',
+      'Sec-WebSocket-Version: 13',
+      'User-Agent: ua',
+      'Accept-Language: vi',
+      'Cookie: auth_token=t1',
+    ])
+      expect(out).toContain(good + '\r\n')
+  })
+
+  it('passes the gateway address headers on only when proxy headers are trusted', () => {
+    const req = upgradeReq('/api/v1/ws', [
+      'Host',
+      'h',
+      'X-Forwarded-For',
+      '198.51.100.7',
+      'X-Real-IP',
+      '198.51.100.7',
+    ])
+    const trusted = buildUpgradeRequest(req, new URL('http://api:8080'), true)
+    expect(trusted).toContain('X-Forwarded-For: 198.51.100.7\r\n')
+    expect(trusted).toContain('X-Real-IP: 198.51.100.7\r\n')
+    expect(trusted).not.toContain('203.0.113.9')
+    const untrusted = buildUpgradeRequest(req, new URL('http://api:8080'), false)
+    expect(untrusted).not.toContain('198.51.100.7')
+    expect(untrusted).toContain('X-Forwarded-For: 203.0.113.9\r\n')
+  })
 })
