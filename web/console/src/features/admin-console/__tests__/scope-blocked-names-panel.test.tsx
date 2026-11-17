@@ -88,10 +88,23 @@ describe('ScopeBlockedNamesPanel', () => {
     expect(screen.queryByTestId('government-rule-off-warning')).not.toBeInTheDocument()
   })
 
-  it('keeps a standing warning while the rule is off', () => {
+  it('keeps a standing warning while the rule is off, above the exceptions', () => {
     state.policy = policy({ government_rule: false })
     render(<ScopeBlockedNamesPanel canEdit />)
-    expect(screen.getByTestId('government-rule-off-warning')).toBeInTheDocument()
+    const warning = screen.getByTestId('government-rule-off-warning')
+    const list = screen.getByTestId('blocked-names-exceptions')
+    expect(warning.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('puts the exceptions list first: title row with one count and Grant, the policy after it', () => {
+    state.items = [exception]
+    render(<ScopeBlockedNamesPanel canEdit />)
+    const list = screen.getByTestId('blocked-names-exceptions')
+    expect(within(list).getByRole('heading', { name: 'Exceptions' })).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: 'Grant exception' })).toBeInTheDocument()
+    // The policy (its rule switch) follows the list.
+    const rule = screen.getByRole('switch')
+    expect(list.compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('offers no change to an administrator without the permission', () => {

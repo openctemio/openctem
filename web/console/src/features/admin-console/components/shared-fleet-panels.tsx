@@ -10,7 +10,7 @@
  * Results and findings are never shown here.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Info, ListChecks, Server } from 'lucide-react'
 import { toast } from 'sonner'
@@ -34,6 +34,7 @@ import {
   EmptyState,
   ErrorState,
   FilterSelect,
+  MetaLine,
   RelativeTime,
 } from '@/features/shared'
 import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
@@ -80,6 +81,38 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
     sensor: SharedFleetSensor
     action: SharedSensorAction
   } | null>(null)
+
+  // The row menu: the same items in a table row and on a phone card.
+  const fleetMenu = useCallback(
+    (s: SharedFleetSensor) => {
+      if (!isSuper || s.status === 'revoked') return null
+      return (
+        <DataTableRowActions
+          label={t('admin.sharedFleet.rowActions', 'Actions for the sensor {name}', {
+            name: s.name,
+          })}
+          actions={[
+            s.status === 'active'
+              ? {
+                  label: t('admin.sharedFleet.pause'),
+                  onClick: () => setActing({ sensor: s, action: 'pause' }),
+                }
+              : {
+                  label: t('admin.sharedFleet.resume'),
+                  onClick: () => setActing({ sensor: s, action: 'resume' }),
+                },
+            {
+              label: t('admin.sharedFleet.retire'),
+              onClick: () => setActing({ sensor: s, action: 'retire' }),
+              destructive: true,
+              separatorBefore: true,
+            },
+          ]}
+        />
+      )
+    },
+    [t, isSuper]
+  )
 
   const sensorColumns = useMemo<ColumnDef<SharedFleetSensor>[]>(
     () => [
@@ -191,37 +224,10 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
         header: '',
         enableSorting: false,
         meta: { kind: 'actions' },
-        cell: ({ row }) => {
-          const s = row.original
-          if (!isSuper || s.status === 'revoked') return null
-          return (
-            <DataTableRowActions
-              label={t('admin.sharedFleet.rowActions', 'Actions for the sensor {name}', {
-                name: s.name,
-              })}
-              actions={[
-                s.status === 'active'
-                  ? {
-                      label: t('admin.sharedFleet.pause'),
-                      onClick: () => setActing({ sensor: s, action: 'pause' }),
-                    }
-                  : {
-                      label: t('admin.sharedFleet.resume'),
-                      onClick: () => setActing({ sensor: s, action: 'resume' }),
-                    },
-                {
-                  label: t('admin.sharedFleet.retire'),
-                  onClick: () => setActing({ sensor: s, action: 'retire' }),
-                  destructive: true,
-                  separatorBefore: true,
-                },
-              ]}
-            />
-          )
-        },
+        cell: ({ row }) => fleetMenu(row.original),
       },
     ],
-    [t, isSuper]
+    [t, fleetMenu]
   )
 
   const actionText: Record<
@@ -298,7 +304,8 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
           showSearch={false}
           showSelectionCount={false}
           showPagination={false}
-          mobileCards
+          // A phone card with fixed slots, not the automatic label/value card.
+          mobileRow={(s) => <SharedFleetMobileCard sensor={s} actions={fleetMenu(s)} />}
           emptyState={{
             nothingYet: <EmptyState icon={Server} title={t('admin.sharedFleet.noSensors')} />,
           }}
@@ -331,6 +338,91 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
         />
       )}
     </>
+  )
+}
+
+/**
+ * A fleet sensor on a phone. Fixed slots, one fact per element, never a
+ * label/value grid:
+ *
+ *   shared-eu-1  eu                                   [...]
+ *   Active  Online                  (wraps, never cut)
+ *   Version v1.2.3   1 of 4 jobs   Seen 2 hours ago
+ *   nuclei, httpx                   (only when it has tools)
+ *
+ * An item with no value is left out instead of showing a dash.
+ */
+export function SharedFleetMobileCard({
+  sensor,
+  actions,
+}: {
+  sensor: SharedFleetSensor
+  /** The row menu, the same one the table row has. */
+  actions?: ReactNode
+}) {
+  const { t } = useTranslation()
+  const region = sensor.region || t('admin.sharedFleet.noRegion')
+  return (
+    <div data-slot="fleet-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div data-slot="fleet-card-title" className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate font-medium" title={sensor.name}>
+            {sensor.name}
+          </span>
+          <span className="shrink-0 text-cap text-muted-foreground">{region}</span>
+        </div>
+        <div data-slot="fleet-card-state" className="flex flex-wrap items-center gap-1">
+          <Badge variant={sensor.status === 'active' ? 'secondary' : 'outline'}>
+            {t(`admin.sharedFleet.status.${sensor.status}`, sensor.status)}
+          </Badge>
+          {sensor.health && (
+            <Badge variant="outline">
+              {t(`admin.sharedFleet.health.${sensor.health}`, sensor.health)}
+            </Badge>
+          )}
+        </div>
+        <MetaLine
+          className="items-center"
+          items={[
+            sensor.version ? (
+              <span key="version">
+                {t('admin.sharedFleet.card.version', 'Version {version}', {
+                  version: sensor.version,
+                })}
+              </span>
+            ) : null,
+            <span key="jobs" className="tabular-nums">
+              {sensor.max_jobs > 0
+                ? t('admin.sharedFleet.card.jobsOf', '{current} of {max} jobs', {
+                    current: sensor.current_jobs,
+                    max: sensor.max_jobs,
+                  })
+                : t('admin.sharedFleet.card.jobs', '{count, plural, one {# job} other {# jobs}}', {
+                    count: sensor.current_jobs,
+                  })}
+            </span>,
+            sensor.last_seen_at ? (
+              <span key="seen">
+                {t('admin.sharedFleet.card.seen', 'Seen')}{' '}
+                <RelativeTime date={sensor.last_seen_at} />
+              </span>
+            ) : (
+              <span key="seen">{t('admin.sharedFleet.card.neverSeen', 'Not seen yet')}</span>
+            ),
+          ]}
+        />
+        {sensor.tools.length > 0 && (
+          <p
+            data-slot="fleet-card-tools"
+            className="truncate font-mono text-code text-muted-foreground"
+            title={sensor.tools.join(', ')}
+          >
+            {sensor.tools.join(', ')}
+          </p>
+        )}
+      </div>
+      {actions && <div className="-my-1 shrink-0">{actions}</div>}
+    </div>
   )
 }
 

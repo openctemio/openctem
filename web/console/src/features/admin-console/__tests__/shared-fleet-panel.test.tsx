@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { actOnSharedSensor } from '../api/use-shared-fleet'
-import { SharedFleetPanel } from '../components/shared-fleet-panels'
+import { SharedFleetMobileCard, SharedFleetPanel } from '../components/shared-fleet-panels'
 
 const state = vi.hoisted(() => ({ role: 'readonly' as string }))
 vi.mock('../components/admin-console-shell', () => ({
@@ -67,5 +67,68 @@ describe('SharedFleetPanel', () => {
     // The same typed confirmation as before: nothing is sent until it is filled.
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(actOnSharedSensor).not.toHaveBeenCalled()
+  })
+})
+
+describe('SharedFleetMobileCard', () => {
+  const base = {
+    id: 's2',
+    name: 'shared-ap-southeast-very-long-sensor-name-01',
+    region: 'ap',
+    status: 'disabled' as const,
+    health: 'offline' as const,
+    version: '',
+    tools: [] as string[],
+    current_jobs: 0,
+    max_jobs: 0,
+    created_at: '2026-10-01T00:00:00Z',
+  }
+
+  it('shows fixed slots: name and region, the state chips on a wrapping line, one facts line', () => {
+    const { container } = render(<SharedFleetMobileCard sensor={base} />)
+    expect(container.querySelector('[data-slot="fleet-card-title"]')).toHaveTextContent(
+      `${base.name}ap`
+    )
+    const state = container.querySelector('[data-slot="fleet-card-state"]') as HTMLElement
+    // The chips wrap instead of being cut at the card edge.
+    expect(state.className).toContain('flex-wrap')
+    expect(state.className).not.toContain('overflow-hidden')
+    expect(within(state).getByText('Paused')).toBeInTheDocument()
+    expect(within(state).getByText('Offline')).toBeInTheDocument()
+    const facts = container.querySelector('[data-slot="meta-line"]') as HTMLElement
+    expect(facts).toHaveTextContent('0 jobs')
+    expect(facts).toHaveTextContent('Not seen yet')
+  })
+
+  it('leaves out an empty version and tools instead of showing a dash, and has no label/value grid', () => {
+    const { container } = render(<SharedFleetMobileCard sensor={base} />)
+    expect(container).not.toHaveTextContent('Version')
+    expect(
+      Array.from(container.querySelectorAll('span, p')).some((e) => e.textContent?.trim() === '-')
+    ).toBe(false)
+    expect(container.querySelector('[data-slot="fleet-card-tools"]')).toBeNull()
+    expect(container.querySelector('dl, dt, dd')).toBeNull()
+  })
+
+  it('shows the version, jobs against capacity, last seen and the tools when present', () => {
+    const { container } = render(
+      <SharedFleetMobileCard
+        sensor={{
+          ...base,
+          version: 'v1.2.3',
+          tools: ['nuclei', 'httpx'],
+          current_jobs: 1,
+          max_jobs: 4,
+          last_seen_at: new Date().toISOString(),
+        }}
+      />
+    )
+    const facts = container.querySelector('[data-slot="meta-line"]') as HTMLElement
+    expect(facts).toHaveTextContent('Version v1.2.3')
+    expect(facts).toHaveTextContent('1 of 4 jobs')
+    expect(facts).toHaveTextContent('Seen')
+    expect(container.querySelector('[data-slot="fleet-card-tools"]')).toHaveTextContent(
+      'nuclei, httpx'
+    )
   })
 })
