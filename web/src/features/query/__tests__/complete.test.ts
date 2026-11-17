@@ -103,6 +103,38 @@ describe('completions', () => {
     expect(quoteValue('-x')).toBe('"-x"')
     expect(quoteValue('a"b')).toBe('"a\\"b"')
   })
+  it('quotes operator characters, reserved words, brackets, backslashes and control characters', () => {
+    for (const v of [
+      'a=b',
+      'x!=y',
+      'a:b',
+      'a<b',
+      'a>b',
+      'a~b',
+      'a|b',
+      'a)b',
+      '(',
+      'a,b',
+      'or',
+      'NOT',
+      'In',
+      'and',
+    ])
+      expect(quoteValue(v)).toBe(`"${v}"`)
+    expect(quoteValue('a\\b')).toBe('"a\\\\b"')
+    expect(quoteValue('a\nb\tc')).toBe('"a b c"')
+    expect(quoteValue('a..b')).toBe('"a..b"')
+    expect(quoteValue('api.example.com')).toBe('api.example.com')
+    expect(quoteValue('CVE-2024-1234')).toBe('CVE-2024-1234')
+  })
+  it('a completed value reads back as one value token', async () => {
+    const { queryTokens } = await import('../lib/highlight')
+    for (const v of ['a=b', 'or', 'x != y', 'a) OR (b', 'say "hi"']) {
+      const toks = queryTokens(`tool=${quoteValue(v)}`)
+      expect(toks.filter((t) => t.type === 'string')).toHaveLength(1)
+      expect(toks.map((t) => t.value).join('')).toBe(`tool=${quoteValue(v)}`)
+    }
+  })
   it('caps counts at 10,000', () => {
     expect(formatCount(9999, 'en')).toBe('9,999')
     expect(formatCount(10000, 'en')).toBe('10,000')

@@ -187,11 +187,25 @@ export function localValues(
     .map((v) => ({ kind: 'value' as const, label: v, insert: v }))
 }
 
-/** Quotes a value that would not read back as one bare value. */
+/** Words the query grammar reads as keywords, so a value spelled like one is quoted. */
+const RESERVED_WORDS = new Set(['and', 'or', 'not', 'in', 'where', 'findings', 'assets', 'scans'])
+
+/**
+ * Quotes a value so it reads back as exactly one value. Only plain words made
+ * of letters, digits, `_`, `.` and `-` stay bare; operators, parentheses,
+ * commas, whitespace and reserved words are quoted, with `"` and `\` escaped
+ * (the only escapes the grammar has). A string cannot hold a control
+ * character, so those become a space.
+ */
 export function quoteValue(v: string): string {
-  return /^[^\s"(),\\]+$/.test(v) && !v.startsWith('-') && !v.includes('..')
-    ? v
-    : `"${v.replace(/[\\"]/g, '\\$&')}"`
+  const bare =
+    /^[A-Za-z0-9_.-]+$/.test(v) &&
+    !v.startsWith('-') &&
+    !v.includes('..') &&
+    !RESERVED_WORDS.has(v.toLowerCase())
+  if (bare) return v
+
+  return `"${v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/[\\"]/g, '\\$&')}"`
 }
 
 /** The text with the completion applied, and the caret after it. */
