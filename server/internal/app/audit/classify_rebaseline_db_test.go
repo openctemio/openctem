@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
 	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify/chaintest"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -25,7 +26,7 @@ func TestClassifyChain_CountsLegacyShapes(t *testing.T) {
 	svc := auditapp.NewAuditService(postgres.NewAuditRepository(db), logger.NewNop())
 	tenant, _ := seedRebaselineTenant(ctx, t, db)
 	logTenantEvents(ctx, t, svc, tenant, 6)
-	if _, err := chaintest.Resign(ctx, db.DB, tenant.String(),
+	if _, err := chaintest.Resign(ctx, testdb.OpenAdmin(t), tenant.String(),
 		chaintest.Current, chaintest.Legacy, chaintest.Pre79, chaintest.Legacy, chaintest.Current, chaintest.Pre79); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestRebaselineChainIfExplained_ReSignsAnExplainedChain(t *testing.T) {
 	svc := auditapp.NewAuditService(postgres.NewAuditRepository(db), logger.NewNop())
 	tenant, user := seedRebaselineTenant(ctx, t, db)
 	logTenantEvents(ctx, t, svc, tenant, 5)
-	if _, err := chaintest.Resign(ctx, db.DB, tenant.String(),
+	if _, err := chaintest.Resign(ctx, testdb.OpenAdmin(t), tenant.String(),
 		chaintest.Legacy, chaintest.Current, chaintest.Pre79, chaintest.Legacy, chaintest.Current); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +103,7 @@ func TestRebaselineChainIfExplained_RefusesUnexplained(t *testing.T) {
 	svc := auditapp.NewAuditService(postgres.NewAuditRepository(db), logger.NewNop())
 	tenant, user := seedRebaselineTenant(ctx, t, db)
 	logTenantEvents(ctx, t, svc, tenant, 4)
-	if _, err := chaintest.Resign(ctx, db.DB, tenant.String(),
+	if _, err := chaintest.Resign(ctx, testdb.OpenAdmin(t), tenant.String(),
 		chaintest.Legacy, chaintest.Bogus, chaintest.Current, chaintest.Current); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +132,7 @@ func TestRebaselineChainIfExplained_RefusesAChangedChain(t *testing.T) {
 	svc := auditapp.NewAuditService(postgres.NewAuditRepository(db), logger.NewNop())
 	tenant, user := seedRebaselineTenant(ctx, t, db)
 	logTenantEvents(ctx, t, svc, tenant, 3)
-	if _, err := chaintest.Resign(ctx, db.DB, tenant.String(), chaintest.Legacy); err != nil {
+	if _, err := chaintest.Resign(ctx, testdb.OpenAdmin(t), tenant.String(), chaintest.Legacy); err != nil {
 		t.Fatal(err)
 	}
 	reviewed, err := svc.ClassifyChain(ctx, tenant)

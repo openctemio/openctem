@@ -287,7 +287,7 @@ Details: [api-keys.md](./api-keys.md).
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/assets` | `assets:read` |
+| `GET /api/v1/assets` | `assets:read`; the open-findings numbers of each asset (list, detail, quick view), the `has_findings` and `finding_count` filters and the sort on the count follow the findings list's pentest member rule: a member counts a pentest finding only when on its campaign (no draft or in-review one for its client role), so neither the number, a filter nor the order reveals one; an administrator counts every finding |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
@@ -869,7 +869,7 @@ caller); the CVE ids and the filter only narrow that set. Audited.
 | `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
 | `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
 | `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
-| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+| `GET/POST /api/v1/views`, `GET/PUT/DELETE /api/v1/views/{id}` | Route: the read permission of at least one list that has views. Then the read permission of the list the view's page key names, from the page registry ([saved views](saved-views.md)): `vulnerabilities:read` for `page=vulnerabilities`, `scans:read` for `page=scans`, and so on. An unknown key is 400; without the permission a key is 403 and a view by id is 404. `share_with_org` needs `findings:views:share` (owner and administrator by default) |
 
 #### Dashboard (`/api/v1/dashboard`)
 

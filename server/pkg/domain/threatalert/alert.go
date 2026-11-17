@@ -1,6 +1,7 @@
 // Package threatalert is the emerging-threat alert: one per organization
 // and vulnerability, the unit of attention above findings. It holds the
-// affected assets in two tiers (confirmed, possibly affected), a transparent
+// affected assets in two tiers (confirmed, possibly affected), counted by
+// host (hosts.go), a transparent
 // Emerging Threat Score and the level that decides delivery (immediate,
 // daily digest, listed only).
 //
@@ -374,13 +375,18 @@ type Alert struct {
 	InKEV           bool
 	KEVRansomware   bool
 	EPSS            *float64
-	Confirmed       int
-	Possible        int
-	InternetFacing  int
-	// Critical counts the affected assets of criticality "critical" (the
+	// Confirmed, Likely, Possible and InternetFacing count hosts
+	// (HostCounts): a host that serves several ports is one. The stored
+	// values cover the whole organization; a viewer reads them over the
+	// assets in their scope.
+	Confirmed      int
+	Likely         int
+	Possible       int
+	InternetFacing int
+	// Critical counts the affected hosts of criticality "critical" (the
 	// crown jewels); Product is the product the best match names and
-	// ProductCount how many distinct products match. Like the three counts
-	// above, they are read over the viewer's in-scope assets only.
+	// ProductCount how many distinct products match. They are read over the
+	// viewer's in-scope assets only.
 	Critical       int
 	Product        string
 	ProductCount   int
@@ -400,19 +406,16 @@ type Alert struct {
 	UpdatedAt      time.Time
 }
 
-// Counts sets the asset counts from the affected assets.
+// Counts sets the host counts from the affected assets.
 func (a *Alert) Counts(assets []Asset) {
-	a.Confirmed, a.Possible, a.InternetFacing = 0, 0, 0
-	for _, x := range assets {
-		if x.Kind == MatchPossible {
-			a.Possible++
-		} else {
-			a.Confirmed++
-		}
-		if x.InternetFacing {
-			a.InternetFacing++
-		}
-	}
+	c := CountHosts(assets)
+	a.Confirmed, a.Likely, a.Possible, a.InternetFacing = c.Confirmed, c.Likely, c.Possible, c.InternetFacing
+}
+
+// HostCounts is the alert's counts as one value.
+func (a *Alert) HostCounts() HostCounts {
+	return HostCounts{Confirmed: a.Confirmed, Likely: a.Likely, Possible: a.Possible,
+		InternetFacing: a.InternetFacing, Critical: a.Critical}
 }
 
 // ErrInvalid wraps a domain validation failure.
