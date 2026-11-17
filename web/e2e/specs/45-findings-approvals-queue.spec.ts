@@ -127,6 +127,19 @@ function rowOf(page: Page, note: string): Locator {
 const announcer = (page: Page) => page.locator('[data-slot="queue-announcer"]')
 
 /**
+ * Opens the row's More menu and picks an item. The list re-reads itself (a
+ * refresh after the reload, then every 30 seconds), which can close an open
+ * menu: open it again until the item takes the click.
+ */
+async function pickFromMore(page: Page, more: Locator, item: string) {
+  await expect(async () => {
+    const entry = page.getByRole('menuitem', { name: item })
+    if (!(await entry.isVisible())) await more.click()
+    await entry.click({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
+}
+
+/**
  * Confirms a sensitive decision. The API asks for a recent sign-in: when the
  * worker's session is older than the window, the page asks for the password
  * first.
@@ -177,9 +190,18 @@ test.describe('approval requests decide real requests', () => {
       await expect(rowOf(page, toApprove.note)).toHaveCount(0)
 
       // Reject: the reason is required before the decision can be sent.
+      // By keyboard: Enter opens the dialog, Escape closes it and focus goes
+      // back to the row's Reject; Enter opens it again.
       const rejectRow = rowOf(page, toReject.note)
-      await rejectRow.locator('[data-slot="queue-reject"]').click()
+      const rejectButton = rejectRow.locator('[data-slot="queue-reject"]')
       const dialog = page.getByRole('dialog').filter({ hasText: 'Reject request' })
+      await rejectButton.focus()
+      await page.keyboard.press('Enter')
+      await expect(dialog).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(rejectButton).toBeFocused()
+      await page.keyboard.press('Enter')
       const send = dialog.getByRole('button', { name: 'Reject', exact: true })
       await expect(send).toBeDisabled()
       await dialog.getByRole('textbox').fill('E2E: the scanner was right, this is exploitable.')
@@ -214,6 +236,7 @@ test.describe('approval requests decide real requests', () => {
       await page.goto('/findings/approvals')
       const [mine] = await requestFalsePositives(page, await freeFindings(page, 1), 'own')
       await page.reload()
+      await page.waitForLoadState('networkidle')
 
       const row = rowOf(page, mine.note)
       await expect(row).toBeVisible()
@@ -228,18 +251,15 @@ test.describe('approval requests decide real requests', () => {
       const more = row.getByRole('button', { name: /^Actions for / })
 
       // Remind: once after the confirm; a second reminder within the hour is refused.
-      await more.click()
-      await page.getByRole('menuitem', { name: 'Remind approvers' }).click()
+      await pickFromMore(page, more, 'Remind approvers')
       await page.getByRole('alertdialog').getByRole('button', { name: 'Send reminder' }).click()
       await expect(announcer(page)).toHaveText(/Reminded \d+ approver/)
-      await more.click()
-      await page.getByRole('menuitem', { name: 'Remind approvers' }).click()
+      await pickFromMore(page, more, 'Remind approvers')
       await page.getByRole('alertdialog').getByRole('button', { name: 'Send reminder' }).click()
       await expect(announcer(page)).toHaveText(/already reminded in the last hour/)
 
       // Cancel: Keep request is the safe answer; Cancel request withdraws it.
-      await more.click()
-      await page.getByRole('menuitem', { name: 'Cancel request' }).click()
+      await pickFromMore(page, more, 'Cancel request')
       const cancel = page.getByRole('alertdialog')
       await expect(cancel.getByRole('button', { name: 'Keep request' })).toBeFocused()
       await cancel.getByRole('button', { name: 'Cancel request' }).click()
