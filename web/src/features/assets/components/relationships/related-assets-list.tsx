@@ -16,18 +16,20 @@
  */
 
 import * as React from 'react'
-import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  MoreHorizontal,
+  Network,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
@@ -497,8 +499,33 @@ function RelatedRow({
         </div>
       </div>
       {(onEdit || onRemove) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <ActionMenu
+          title={a.name}
+          label={t('assets.related.actions', 'Actions for {name}', { name: a.name })}
+          items={[
+            ...(onEdit
+              ? [
+                  {
+                    id: 'edit',
+                    label: t('assets.related.edit', 'Edit relationship'),
+                    icon: Pencil,
+                    onSelect: () => onEdit(item),
+                  },
+                ]
+              : []),
+            ...(onRemove
+              ? [
+                  {
+                    id: 'remove',
+                    label: t('assets.related.remove', 'Remove relationship'),
+                    icon: Trash2,
+                    destructive: true,
+                    onSelect: () => onRemove(item),
+                  },
+                ]
+              : []),
+          ]}
+          trigger={
             <Button
               variant="ghost"
               size="icon"
@@ -507,21 +534,8 @@ function RelatedRow({
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {onEdit && (
-              <DropdownMenuItem onClick={() => onEdit(item)}>
-                {t('assets.related.edit', 'Edit relationship')}
-              </DropdownMenuItem>
-            )}
-            {onRemove && onEdit && <DropdownMenuSeparator />}
-            {onRemove && (
-              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
-                {t('assets.related.remove', 'Remove relationship')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        />
       )}
     </li>
   )

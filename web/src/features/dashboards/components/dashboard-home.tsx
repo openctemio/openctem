@@ -18,19 +18,13 @@ import Link from '@/components/link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { useIsBelowSm } from '@/hooks/use-mobile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 import {
   DASHBOARDS_KEY,
   addFlowPanel,
@@ -69,14 +63,11 @@ import { metricNameKey } from '../metrics'
 import {
   DashboardFreshness,
   RefreshButton,
-  ScheduleMenuItems,
+  scheduleSubmenu,
   ScheduleSelect,
 } from './dashboard-freshness'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
-
-/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
-const ITEM = 'min-h-11 sm:min-h-8'
 
 export function DashboardSkeleton() {
   return (
@@ -125,6 +116,7 @@ export function DashboardHome() {
   const canOrgManage = can(Permission.DashboardsOrgManage)
   const { mutate } = useSWRConfig()
   const revalidate = useRevalidateAllDashboards()
+  const belowSm = useIsBelowSm()
 
   // One request opens the page: both lists and the landing dashboard's
   // figures arrive together (the server applies the landing rule to the
@@ -392,6 +384,59 @@ export function DashboardHome() {
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
+  // Customize and the schedule are toolbar controls from 640px; below it they
+  // are items of this menu.
+  const menuItems: ActionMenuEntry[] = []
+  if (dashboard) {
+    if (canCustomize && belowSm)
+      menuItems.push({
+        id: 'customize',
+        label: t('dashboards.actions.customize', 'Customize'),
+        icon: SlidersHorizontal,
+        disabledReason: customizing
+          ? t('dashboards.actions.customizing', 'Already customizing')
+          : undefined,
+        onSelect: () => setCustomizing(true),
+      })
+    if (isOrg)
+      menuItems.push({
+        id: 'duplicate',
+        label: t('dashboards.actions.duplicate', 'Duplicate to mine'),
+        icon: Copy,
+        onSelect: () => void duplicate(dashboard.id),
+      })
+    if (!isDefault && (!isOrg || canOrgManage))
+      menuItems.push({
+        id: 'default',
+        label: isOrg
+          ? t('dashboards.actions.setOrgDefault', 'Set as organization default')
+          : t('dashboards.actions.setDefault', 'Set as my default'),
+        icon: Star,
+        onSelect: () =>
+          isOrg ? setPendingOrgDefault(dashboard) : void setDefault(dashboard, false),
+      })
+    if (!isOrg || canOrgManage)
+      menuItems.push({
+        id: 'edit',
+        label: t('dashboards.actions.edit', 'Edit details'),
+        icon: Pencil,
+        href: `/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`,
+      })
+    if (canSchedule && !customizing && belowSm)
+      menuItems.push({
+        ...scheduleSubmenu(t, dashboard.refresh_schedule, schedule),
+        section: 'schedule',
+      })
+    if (!isOrg)
+      menuItems.push({
+        id: 'delete',
+        label: t('dashboards.actions.delete', 'Delete'),
+        icon: Trash2,
+        destructive: true,
+        onSelect: () => setPendingDelete(dashboard),
+      })
+  }
+
   return (
     <Main>
       <PageStack>
@@ -434,8 +479,11 @@ export function DashboardHome() {
             )}
             {dashboard && !customizing && <RefreshButton onRefresh={refresh} />}
             {dashboard && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              <ActionMenu
+                title={dashboard.name}
+                label={t('dashboards.actions.more', 'More dashboard actions')}
+                items={menuItems}
+                trigger={
                   <Button
                     variant="outline"
                     size="icon-sm"
@@ -444,70 +492,8 @@ export function DashboardHome() {
                   >
                     <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {canCustomize && (
-                    <DropdownMenuItem
-                      className={cn(ITEM, 'sm:hidden')}
-                      onSelect={() => setCustomizing(true)}
-                      disabled={customizing}
-                    >
-                      <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.customize', 'Customize')}
-                    </DropdownMenuItem>
-                  )}
-                  {isOrg && (
-                    <DropdownMenuItem className={ITEM} onSelect={() => duplicate(dashboard.id)}>
-                      <Copy className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.duplicate', 'Duplicate to mine')}
-                    </DropdownMenuItem>
-                  )}
-                  {!isDefault && (!isOrg || canOrgManage) && (
-                    <DropdownMenuItem
-                      className={ITEM}
-                      onSelect={() =>
-                        isOrg ? setPendingOrgDefault(dashboard) : setDefault(dashboard, false)
-                      }
-                    >
-                      <Star className="me-2 h-4 w-4" aria-hidden />
-                      {isOrg
-                        ? t('dashboards.actions.setOrgDefault', 'Set as organization default')
-                        : t('dashboards.actions.setDefault', 'Set as my default')}
-                    </DropdownMenuItem>
-                  )}
-                  {(!isOrg || canOrgManage) && (
-                    <DropdownMenuItem className={ITEM} asChild>
-                      <Link
-                        href={`/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`}
-                      >
-                        <Pencil className="me-2 h-4 w-4" aria-hidden />
-                        {t('dashboards.actions.edit', 'Edit details')}
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {canSchedule && !customizing && (
-                    <div className="sm:hidden">
-                      <DropdownMenuSeparator />
-                      <ScheduleMenuItems
-                        schedule={dashboard.refresh_schedule}
-                        onSchedule={schedule}
-                      />
-                    </div>
-                  )}
-                  {!isOrg && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className={cn(ITEM, 'text-destructive focus:text-destructive')}
-                        onSelect={() => setPendingDelete(dashboard)}
-                      >
-                        <Trash2 className="me-2 h-4 w-4" aria-hidden />
-                        {t('dashboards.actions.delete', 'Delete')}
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                }
+              />
             )}
           </div>
         </PageHeader>
