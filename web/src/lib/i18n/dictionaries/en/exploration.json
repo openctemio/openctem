@@ -145,6 +145,7 @@
   "exploration.toast.dismissFailed": "Could not dismiss",
   "exploration.toast.dismissed": "{count, plural, one {# step dismissed} other {# steps dismissed}}",
   "exploration.toast.someFailed": "{count, plural, one {# step was not changed: it changed meanwhile or is no longer waiting.} other {# steps were not changed: they changed meanwhile or are no longer waiting.}}",
+  "exploration.toolbarLabel": "Next step filters",
   "exploration.verdict.inconclusive": "Inconclusive",
   "exploration.verdict.proven": "Proven",
   "exploration.verdict.refuted": "Refuted",

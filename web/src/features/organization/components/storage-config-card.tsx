@@ -1,13 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useState,
+  type ReactNode,
+} from 'react'
 import { AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -15,15 +20,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SettingsSaveBar } from '@/features/shared'
+import {
+  SecretField,
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsSection,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { get, patch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCanMutate } from '@/lib/permissions'
-
-const FORM_ID = 'storage-config-form'
 
 interface StorageValues {
   provider: string
@@ -34,240 +42,301 @@ interface StorageValues {
 
 const LOCAL: StorageValues = { provider: 'local', bucket: '', region: '', endpoint: '' }
 
+/** What the page's save bar needs to know about the storage form. */
+export interface StorageFormState {
+  /** The form differs from what is stored. */
+  dirty: boolean
+  /** A required field is empty: the page's Save stays off. */
+  invalid: boolean
+  saving: boolean
+}
+
+export interface StorageConfigHandle {
+  /** Saves when dirty and valid. Resolves false when the save failed (the changes are kept). */
+  save: () => Promise<boolean>
+  discard: () => void
+}
+
+interface StorageConfigSectionProps {
+  /** Reports dirty / invalid / saving to the page, which owns the one save bar. */
+  onStateChange?: (state: StorageFormState) => void
+}
+
 /**
  * Organization › General › File storage: where uploaded evidence and
  * attachments are kept (admin only, PATCH /attachments/storage-config with a
  * recent sign-in). The stored keys are never read back: the access and
  * secret key fields are write-only and empty means "keep the stored ones".
+ *
+ * A section of the General page: it has no save button of its own. The page's
+ * save bar saves it through the handle, with the organization form.
  */
-export function StorageConfigCard() {
-  const { t } = useTranslation()
-  const canSave = useCanMutate('PATCH /api/v1/attachments/storage-config')
-  const [saved, setSaved] = useState<StorageValues>(LOCAL)
-  const [values, setValues] = useState<StorageValues>(LOCAL)
-  const [accessKey, setAccessKey] = useState('')
-  const [secretKey, setSecretKey] = useState('')
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [loadError, setLoadError] = useState<string>()
-  const [saving, setSaving] = useState(false)
+export const StorageConfigSection = forwardRef<StorageConfigHandle, StorageConfigSectionProps>(
+  function StorageConfigSection({ onStateChange }, ref) {
+    const { t } = useTranslation()
+    const canSave = useCanMutate('PATCH /api/v1/attachments/storage-config')
+    const [saved, setSaved] = useState<StorageValues>(LOCAL)
+    const [values, setValues] = useState<StorageValues>(LOCAL)
+    const [accessKey, setAccessKey] = useState('')
+    const [secretKey, setSecretKey] = useState('')
+    const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+    const [loadError, setLoadError] = useState<string>()
+    const [saving, setSaving] = useState(false)
+    // Required fields complain only after a save was tried or the field was left.
+    const [touched, setTouched] = useState(false)
 
-  const load = useCallback(() => {
-    setState('loading')
-    get('/api/v1/attachments/storage-config')
-      .then((data: unknown) => {
-        const d = (data ?? {}) as Record<string, unknown>
-        const next: StorageValues = d.configured
-          ? {
-              provider: (d.provider as string) || 'local',
-              bucket: (d.bucket as string) || '',
-              region: (d.region as string) || '',
-              endpoint: (d.endpoint as string) || '',
-            }
-          : LOCAL
-        setSaved(next)
-        setValues(next)
-        setState('ready')
-      })
-      .catch((err: unknown) => {
-        // Never fall back to "local" as if that were the stored choice.
-        setLoadError(getErrorMessage(err, ''))
-        setState('error')
-      })
-  }, [])
+    const load = useCallback(() => {
+      setState('loading')
+      get('/api/v1/attachments/storage-config')
+        .then((data: unknown) => {
+          const d = (data ?? {}) as Record<string, unknown>
+          const next: StorageValues = d.configured
+            ? {
+                provider: (d.provider as string) || 'local',
+                bucket: (d.bucket as string) || '',
+                region: (d.region as string) || '',
+                endpoint: (d.endpoint as string) || '',
+              }
+            : LOCAL
+          setSaved(next)
+          setValues(next)
+          setState('ready')
+        })
+        .catch((err: unknown) => {
+          // Never fall back to "local" as if that were the stored choice.
+          setLoadError(getErrorMessage(err, ''))
+          setState('error')
+        })
+    }, [])
 
-  useEffect(() => {
-    load()
-  }, [load])
+    useEffect(() => {
+      load()
+    }, [load])
 
-  const discard = () => {
-    setValues(saved)
-    setAccessKey('')
-    setSecretKey('')
-  }
+    const isCloud = values.provider === 's3' || values.provider === 'minio'
+    const dirty =
+      state === 'ready' &&
+      (JSON.stringify(values) !== JSON.stringify(saved) || accessKey !== '' || secretKey !== '')
+    const bucketMissing = isCloud && !values.bucket.trim()
+    const endpointMissing = values.provider === 'minio' && !values.endpoint.trim()
+    const invalid = bucketMissing || endpointMissing
 
-  const isCloud = values.provider === 's3' || values.provider === 'minio'
-  const dirty =
-    JSON.stringify(values) !== JSON.stringify(saved) || accessKey !== '' || secretKey !== ''
-  const invalid =
-    (isCloud && !values.bucket.trim()) || (values.provider === 'minio' && !values.endpoint.trim())
+    useEffect(() => {
+      onStateChange?.({ dirty, invalid, saving })
+    }, [onStateChange, dirty, invalid, saving])
 
-  const handleSave = async (e: FormEvent) => {
-    e.preventDefault()
-    if (invalid) return
-    setSaving(true)
-    try {
-      await patch('/api/v1/attachments/storage-config', {
-        ...values,
-        access_key: accessKey,
-        secret_key: secretKey,
-      })
-      toast.success(t('org.storage.saved', 'File storage saved'))
-      setSaved(values)
+    const discard = useCallback(() => {
+      setValues(saved)
       setAccessKey('')
       setSecretKey('')
-    } catch (err) {
-      toast.error(
-        getErrorMessage(err, t('org.storage.saveFailed', 'Could not save the file storage'))
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
+      setTouched(false)
+    }, [saved])
 
-  if (state === 'loading') return <Skeleton className="h-48 w-full rounded-xl" />
-  if (state === 'error') {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" aria-hidden />
-        <AlertTitle>
-          {t('org.storage.loadFailed', 'The file storage settings could not be loaded')}
-        </AlertTitle>
-        <AlertDescription>
-          {loadError && <p>{loadError}</p>}
-          <Button variant="outline" size="sm" className="mt-2" onClick={load}>
-            {t('common.retry', 'Retry')}
-          </Button>
-        </AlertDescription>
-      </Alert>
-    )
-  }
+    const save = useCallback(async (): Promise<boolean> => {
+      if (!dirty) return true
+      if (invalid) {
+        setTouched(true)
+        return false
+      }
+      setSaving(true)
+      try {
+        await patch('/api/v1/attachments/storage-config', {
+          ...values,
+          access_key: accessKey,
+          secret_key: secretKey,
+        })
+        toast.success(t('org.storage.saved', 'File storage saved'))
+        setSaved(values)
+        setAccessKey('')
+        setSecretKey('')
+        setTouched(false)
+        return true
+      } catch (err) {
+        toast.error(
+          getErrorMessage(err, t('org.storage.saveFailed', 'Could not save the file storage'))
+        )
+        return false
+      } finally {
+        setSaving(false)
+      }
+    }, [dirty, invalid, values, accessKey, secretKey, t])
 
-  const set = (k: keyof StorageValues) => (v: string) => setValues((p) => ({ ...p, [k]: v }))
-  const disabled = !canSave
+    useImperativeHandle(ref, () => ({ save, discard }), [save, discard])
 
-  return (
-    <form method="post" id={FORM_ID} onSubmit={handleSave}>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('org.storage.title', 'Storage provider')}</CardTitle>
-          <CardDescription>
+    const disabled = !canSave
+    const frame = (body: ReactNode) => (
+      <SettingsSection
+        framed
+        id="storage"
+        title={t('org.general.tab.storage', 'File storage')}
+        description={
+          <>
             {t('org.storage.desc', 'Where uploaded evidence and attachments are stored.')}
             {disabled && ` ${t('org.storage.locked', 'Only administrators can change it.')}`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="storage-provider">{t('org.storage.provider', 'Provider')}</Label>
-            <Select value={values.provider} onValueChange={set('provider')} disabled={disabled}>
-              <SelectTrigger id="storage-provider" className="w-full sm:w-[280px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="local">{t('org.storage.local', 'Local filesystem')}</SelectItem>
-                <SelectItem value="s3">Amazon S3</SelectItem>
-                <SelectItem value="minio">
-                  {t('org.storage.minio', 'MinIO (S3-compatible)')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {!isCloud && (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  'org.storage.localHelp',
-                  'Files are stored on the server disk at the default storage path.'
-                )}
-              </p>
-            )}
-          </div>
+          </>
+        }
+      >
+        {body}
+      </SettingsSection>
+    )
 
-          {isCloud && (
-            <>
-              <Separator />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="storage-bucket">{t('org.storage.bucket', 'Bucket name')}</Label>
+    if (state === 'loading') {
+      return frame(
+        <SettingsBlock>
+          <Skeleton className="h-8 w-72 max-w-full" />
+        </SettingsBlock>
+      )
+    }
+    if (state === 'error') {
+      return frame(
+        <SettingsBlock>
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden />
+            <AlertTitle>
+              {t('org.storage.loadFailed', 'The file storage settings could not be loaded')}
+            </AlertTitle>
+            <AlertDescription>
+              {loadError && <p>{loadError}</p>}
+              <Button variant="outline" className="mt-2" onClick={load}>
+                {t('common.retry', 'Retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </SettingsBlock>
+      )
+    }
+
+    const set = (k: keyof StorageValues) => (v: string) => setValues((p) => ({ ...p, [k]: v }))
+    const required = t('org.storage.required', 'Required')
+
+    return frame(
+      <SettingsBlock>
+        <SettingsFieldGrid>
+          <SettingsField
+            id="storage-provider"
+            className="max-w-sm"
+            label={t('org.storage.provider', 'Provider')}
+            hint={
+              isCloud
+                ? undefined
+                : t(
+                    'org.storage.localHelp',
+                    'Files are stored on the server disk at the default storage path.'
+                  )
+            }
+          >
+            {(control) => (
+              <Select value={values.provider} onValueChange={set('provider')} disabled={disabled}>
+                <SelectTrigger {...control} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">
+                    {t('org.storage.local', 'Local filesystem')}
+                  </SelectItem>
+                  <SelectItem value="s3">Amazon S3</SelectItem>
+                  <SelectItem value="minio">
+                    {t('org.storage.minio', 'MinIO (S3-compatible)')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </SettingsField>
+        </SettingsFieldGrid>
+
+        {isCloud && (
+          <>
+            <SettingsFieldGrid>
+              <SettingsField
+                id="storage-bucket"
+                label={t('org.storage.bucket', 'Bucket name')}
+                error={touched && bucketMissing ? required : undefined}
+              >
+                {(control) => (
                   <Input
-                    id="storage-bucket"
+                    {...control}
                     required
                     value={values.bucket}
                     onChange={(e) => set('bucket')(e.target.value)}
+                    onBlur={() => setTouched(true)}
                     placeholder="my-evidence-bucket"
                     disabled={disabled}
-                    aria-invalid={!values.bucket.trim()}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="storage-region">{t('org.storage.region', 'Region')}</Label>
+                )}
+              </SettingsField>
+              <SettingsField id="storage-region" label={t('org.storage.region', 'Region')}>
+                {(control) => (
                   <Input
-                    id="storage-region"
+                    {...control}
                     value={values.region}
                     onChange={(e) => set('region')(e.target.value)}
                     placeholder="ap-southeast-1"
                     disabled={disabled}
                   />
-                </div>
-                {values.provider === 'minio' && (
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="storage-endpoint">
-                      {t('org.storage.endpoint', 'Endpoint')}
-                    </Label>
+                )}
+              </SettingsField>
+              {values.provider === 'minio' && (
+                <SettingsField
+                  id="storage-endpoint"
+                  label={t('org.storage.endpoint', 'Endpoint')}
+                  error={touched && endpointMissing ? required : undefined}
+                >
+                  {(control) => (
                     <Input
-                      id="storage-endpoint"
+                      {...control}
                       required
                       type="url"
                       value={values.endpoint}
                       onChange={(e) => set('endpoint')(e.target.value)}
-                      placeholder="https://minio.internal:9000"
+                      onBlur={() => setTouched(true)}
+                      placeholder="https://storage.example.com:9000"
                       disabled={disabled}
-                      aria-invalid={!values.endpoint.trim()}
                     />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="storage-access-key">
-                    {t('org.storage.accessKey', 'Access key')}
-                  </Label>
-                  <Input
-                    id="storage-access-key"
+                  )}
+                </SettingsField>
+              )}
+              <SettingsField
+                id="storage-access-key"
+                label={t('org.storage.accessKey', 'Access key')}
+              >
+                {(control) => (
+                  <SecretField
+                    {...control}
+                    stored
                     value={accessKey}
                     onChange={(e) => setAccessKey(e.target.value)}
-                    type="password"
-                    autoComplete="off"
                     disabled={disabled}
-                    aria-describedby="storage-keys-help"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="storage-secret-key">
-                    {t('org.storage.secretKey', 'Secret key')}
-                  </Label>
-                  <Input
-                    id="storage-secret-key"
+                )}
+              </SettingsField>
+              <SettingsField
+                id="storage-secret-key"
+                label={t('org.storage.secretKey', 'Secret key')}
+                hint={t(
+                  'org.storage.keysHelp',
+                  'The stored keys are never shown. Leave both empty to keep them.'
+                )}
+              >
+                {(control) => (
+                  <SecretField
+                    {...control}
+                    stored
                     value={secretKey}
                     onChange={(e) => setSecretKey(e.target.value)}
-                    type="password"
-                    autoComplete="off"
                     disabled={disabled}
-                    aria-describedby="storage-keys-help"
                   />
-                </div>
-                <p id="storage-keys-help" className="text-xs text-muted-foreground sm:col-span-2">
-                  {t(
-                    'org.storage.keysHelp',
-                    'The stored keys are never shown. Leave both empty to keep them.'
-                  )}
-                </p>
-              </div>
-              <Alert>
-                <AlertCircle className="h-4 w-4" aria-hidden />
-                <AlertDescription>
-                  {t(
-                    'org.storage.switchNote',
-                    'Files already stored stay readable after a switch: each file remembers which provider holds it.'
-                  )}
-                </AlertDescription>
-              </Alert>
-            </>
-          )}
-        </CardContent>
-      </Card>
-      <SettingsSaveBar
-        dirty={dirty}
-        saving={saving}
-        form={FORM_ID}
-        saveDisabled={invalid}
-        onDiscard={discard}
-      />
-    </form>
-  )
-}
+                )}
+              </SettingsField>
+            </SettingsFieldGrid>
+            <p className="max-w-[58ch] text-dense text-muted-foreground text-pretty">
+              {t(
+                'org.storage.switchNote',
+                'Files already stored stay readable after a switch: each file remembers which provider holds it.'
+              )}
+            </p>
+          </>
+        )}
+      </SettingsBlock>
+    )
+  }
+)

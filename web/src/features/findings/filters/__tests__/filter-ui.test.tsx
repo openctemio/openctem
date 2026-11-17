@@ -447,6 +447,39 @@ describe('FilterBar', () => {
     for (const c of locked) expect(within(c).queryByRole('button')).toBeNull()
   })
 
+  it("in Query mode the open view's locked chips stay, the removable ones step aside", () => {
+    bar('epss_score_gte=0.5&fq=a%3D1', {
+      queryActive: true,
+      viewFilter: {
+        v: 1,
+        filter: {
+          all: [
+            { field: 'severity', op: 'in', value: ['critical'] },
+            { field: 'is_in_kev', op: 'eq', value: true },
+          ],
+        },
+      },
+    })
+    const chips = screen.getAllByTestId('filter-chip')
+    expect(chips).toHaveLength(2)
+    for (const c of chips) expect(c).toHaveAttribute('data-locked', 'true')
+    expect(screen.queryByTestId('filter-chip-advanced')).toBeNull()
+    expect(screen.queryByRole('button', { name: /clear filters/i })).toBeNull()
+  })
+
+  it('in Query mode a view whose conditions are a tree is still named', () => {
+    bar('', {
+      queryActive: true,
+      viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
+    })
+    expect(screen.getByText('Conditions from the saved view')).toBeInTheDocument()
+  })
+
+  it('in Query mode without a view or a context chip there is no row', () => {
+    bar('epss_score_gte=0.5', { queryActive: true })
+    expect(screen.queryByTestId('findings-filter-bar')).toBeNull()
+  })
+
   it('names a view whose conditions are a tree', () => {
     bar('', {
       viewFilter: { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } },
