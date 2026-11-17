@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorState,
   FilterSelect,
+  MetaLine,
   MetricStrip,
   RelativeTime,
   PageStack,
@@ -103,6 +104,53 @@ function SignupSummary({
         onClick: () => onKind(kind === k ? '' : k),
       }))}
     />
+  )
+}
+
+/**
+ * A sign-up event on a phone. Fixed slots, never a label/value grid; a value
+ * the event does not have is left out instead of showing a dash:
+ *
+ *   Organization created                 Open organization
+ *   11 hours ago   google
+ *   example.org   198.51.100.0/24
+ */
+export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
+  const { t } = useTranslation()
+  return (
+    <div data-slot="signup-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {t(`admin.signups.kind.${event.kind}`)}
+        </span>
+        {event.tenant_id ? (
+          <Link
+            className="shrink-0 text-meta underline-offset-4 hover:underline"
+            href={organizationHref(event.tenant_id)}
+          >
+            {t('admin.signups.openOrganization')}
+          </Link>
+        ) : null}
+      </div>
+      <MetaLine
+        items={[
+          <RelativeTime key="when" date={event.occurred_at} />,
+          event.source ? (
+            <span key="source">
+              {t(`admin.signups.source.${sourceKey(event.source)}`, event.source)}
+            </span>
+          ) : null,
+        ]}
+      />
+      <MetaLine
+        data-testid="signup-card-origin"
+        className="font-mono"
+        items={[
+          event.email_domain ? <span key="domain">{event.email_domain}</span> : null,
+          event.ip_prefix ? <span key="network">{event.ip_prefix}</span> : null,
+        ]}
+      />
+    </div>
   )
 }
 
@@ -219,7 +267,8 @@ export function SignupEventsPanel() {
         refreshingLabel={t('admin.signups.refreshing', 'Refreshing sign-ups')}
         showSearch={false}
         showSelectionCount={false}
-        mobileCards
+        // A phone card with fixed slots, not the automatic label/value card.
+        mobileRow={(e) => <SignupEventMobileCard event={e} />}
         toolbarStart={
           <FilterSelect<SignupEventKind>
             label={t('admin.signups.kindFilter')}

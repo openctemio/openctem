@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { summarize, SignupEventsPanel } from '../components/signup-events-panel'
+import {
+  SignupEventMobileCard,
+  summarize,
+  SignupEventsPanel,
+} from '../components/signup-events-panel'
 import { parseDomains, SignupAlertsForm } from '../components/signup-alerts-form'
 import type { SignupDailyCount, SignupEventList } from '../api/use-signup-events'
 
@@ -56,6 +60,50 @@ describe('parseDomains', () => {
       'example.org',
       'gmail.com',
     ])
+  })
+})
+
+describe('SignupEventMobileCard', () => {
+  it('shows the event in fixed slots, no label/value grid, the organization as a link', () => {
+    const { container } = render(
+      <SignupEventMobileCard
+        event={{
+          id: 1,
+          kind: 'organization_created',
+          source: 'self_service',
+          email_domain: 'example.org',
+          ip_prefix: '198.51.100.0/24',
+          tenant_id: 'aaaaaaaa-0000-0000-0000-000000000001',
+          occurred_at: new Date().toISOString(),
+        }}
+      />
+    )
+    expect(container.querySelector('dl, dt, dd')).toBeNull()
+    expect(screen.queryByText('Email domain')).toBeNull()
+    expect(screen.getByText('Created by a member')).toBeInTheDocument()
+    const origin = container.querySelector('[data-testid="signup-card-origin"]') as HTMLElement
+    expect(origin).toHaveTextContent('example.org')
+    expect(origin).toHaveTextContent('198.51.100.0/24')
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      '/organizations/aaaaaaaa-0000-0000-0000-000000000001'
+    )
+  })
+
+  it('leaves out a missing domain, network and organization instead of a dash', () => {
+    const { container } = render(
+      <SignupEventMobileCard
+        event={{
+          id: 2,
+          kind: 'account_created',
+          source: 'invitation',
+          occurred_at: new Date().toISOString(),
+        }}
+      />
+    )
+    expect(container.querySelector('[data-testid="signup-card-origin"]')).toBeNull()
+    expect(container).not.toHaveTextContent('\u2014')
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })
 

@@ -10,5 +10,8 @@
   and 30-day totals per kind, each tile filtering the list by that kind, the same request as the Event select).
   Before, three tall count cards put the list below the first screen of a phone. The strip keeps its labels while
   the counts load, so nothing moves when they arrive.
+- Sign-ups on a phone: an event is a card with fixed slots instead of a label/value grid: the event and its
+  organization link, then when and how, then the email domain and the network; a value the event lacks is left
+  out instead of a dash.
 - No API change: the same reads, 50 events a page, the same Open support session dialog and alert thresholds form.
 - Docs: none (layout of existing console pages; what they read and who may act are unchanged)
