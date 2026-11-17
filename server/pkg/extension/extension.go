@@ -56,7 +56,7 @@ type Extension struct {
 	// Grants builds the grant provider once at start. At most one
 	// extension of a build may set it. When it fails, the error is logged
 	// and every grant stays off: an extension can never stop the server or
-	// switch off a Community feature. A provider that also implements
+	// switch off a feature of the default build. A provider that also implements
 	// Runner runs in the background until shutdown.
 	Grants func(ctx context.Context, d Deps) (GrantProvider, error)
 	// Controllers builds the extension's background controllers at start.
@@ -119,7 +119,7 @@ func (e Extension) Validate() error {
 
 // ValidateBuild checks the extensions of one build together: each one
 // valid, names, schemas and config keys unique across the build, and at
-// most one grant provider. An empty build (Community) is valid.
+// most one grant provider. An empty build (the default build) is valid.
 func ValidateBuild(exts []Extension) error {
 	names, schemas, keys := map[string]bool{}, map[string]string{}, map[string]string{}
 	provider := ""

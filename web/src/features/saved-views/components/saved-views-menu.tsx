@@ -123,6 +123,8 @@ export function summarizeChanges(
             '{count, plural, one {# filter added} other {# filters added}}',
             { count: c.count }
           )
+        case 'query':
+          return t('confirm.savedView.change.query', 'query text changed')
         case 'search':
           return t('confirm.savedView.change.search', 'search changed')
         case 'sort':

@@ -1,0 +1,8 @@
+# Legitimate lines for .github/scripts/check-stray-text.sh: <path>|<substring of the line>
+# Test fixtures and container paths that are not local paths of ours.
+server/deploy/backup/drill.sh|/home/drill/
+server/internal/app/ingest/helpers_sanitize_path_test.go|/home/
+server/internal/app/ingest/helpers_test.go|/home/user/
+server/internal/app/ingest/processor_findings_test.go|/home/runner/
+server/internal/app/ingest/testdata/nuclei_email_extractor.jsonl|/home/
+server/pkg/domain/sensor/platform_redact_test.go|/home/runner/
