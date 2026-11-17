@@ -118,6 +118,27 @@ describe('SignupEventsPanel', () => {
     expect(within(table).getByText('example.org')).toBeInTheDocument()
   })
 
+  it('puts the list first and the counts in one strip whose tiles filter the list', async () => {
+    mocks.list.data = { data: [], total: 0, page: 1, per_page: 50, total_pages: 0 }
+    mocks.daily.data = [
+      { day: new Date().toISOString().slice(0, 10), kind: 'organization_created', count: 2 },
+    ]
+    render(<SignupEventsPanel />)
+    const table = screen.getByTestId('data-table-toolbar')
+    const strip = document.querySelector('[data-slot="metric-strip"]') as HTMLElement
+    expect(strip).not.toBeNull()
+    expect(document.querySelectorAll('[data-slot="metric-tile"]')).toHaveLength(3)
+    // The strip follows the list in document (and reading) order.
+    expect(table.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const tile = within(strip).getByRole('button', { name: /Organizations created/ })
+    expect(tile).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(tile)
+    expect(tile).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('heading', { name: 'Organizations created' })).toBeInTheDocument()
+    await userEvent.click(tile)
+    expect(screen.getByRole('heading', { name: 'All events' })).toBeInTheDocument()
+  })
+
   it('has an empty state', () => {
     mocks.list.data = { data: [], total: 0, page: 1, per_page: 50, total_pages: 0 }
     render(<SignupEventsPanel />)

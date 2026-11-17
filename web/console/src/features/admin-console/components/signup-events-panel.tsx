@@ -10,15 +10,12 @@ import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { UserPlus } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   DataTable,
   EmptyState,
   ErrorState,
   FilterSelect,
+  MetricStrip,
   RelativeTime,
   PageStack,
 } from '@/features/shared'
@@ -63,7 +60,19 @@ export function summarize(counts: SignupDailyCount[], today: string) {
   return out
 }
 
-function SignupSummary() {
+/**
+ * The 30-day counts as one compact strip under the list: the list is the
+ * page's job and comes first on every width. Each tile shows the kind's count
+ * for today with its 7- and 30-day totals, and filters the list by that kind
+ * (the same request as the Event select).
+ */
+function SignupSummary({
+  kind,
+  onKind,
+}: {
+  kind: SignupEventKind | ''
+  onKind: (kind: SignupEventKind | '') => void
+}) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSignupDaily(SUMMARY_DAYS)
   if (error) {
@@ -75,37 +84,25 @@ function SignupSummary() {
       />
     )
   }
-  // While the counts load, the cards are drawn with their labels and their
-  // sentence kept invisible: the same height at every width and language, so
-  // the list below does not move when the numbers arrive.
+  // While the counts load, the strip keeps its labels and a skeleton per value
+  // and per detail line, so nothing moves when the numbers arrive.
   const loading = isLoading || !data
   const totals = summarize(data ?? [], new Date().toISOString().slice(0, 10))
   return (
-    <div className="grid gap-4 sm:grid-cols-3" aria-busy={loading || undefined}>
-      {SIGNUP_EVENT_KINDS.map((kind) => (
-        <Card key={kind}>
-          <CardHeader className="pb-2">
-            <CardDescription>{t(`admin.signups.kind.${kind}`)}</CardDescription>
-            <CardTitle className="text-2xl tabular-nums">
-              {loading ? (
-                <Skeleton className="inline-block h-6 w-10 align-middle" />
-              ) : (
-                totals[kind].today
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent
-            className={cn('text-sm text-muted-foreground', loading && 'invisible')}
-            aria-hidden={loading || undefined}
-          >
-            {t('admin.signups.todayWeekMonth', undefined, {
-              week: totals[kind].week,
-              month: totals[kind].month,
-            })}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <MetricStrip
+      loading={loading}
+      items={SIGNUP_EVENT_KINDS.map((k) => ({
+        key: k,
+        label: t(`admin.signups.kind.${k}`),
+        value: totals[k].today,
+        detail: t('admin.signups.todayWeekMonth', undefined, {
+          week: totals[k].week,
+          month: totals[k].month,
+        }),
+        active: kind === k,
+        onClick: () => onKind(kind === k ? '' : k),
+      }))}
+    />
   )
 }
 
@@ -125,7 +122,9 @@ export function SignupEventsPanel() {
         // scrolls sideways.
         meta: { kind: 'name', pin: 'start', minWidth: 200, label: t('admin.signups.col.event') },
         cell: ({ row }) => (
-          <Badge variant="outline">{t(`admin.signups.kind.${row.original.kind}`)}</Badge>
+          <span className="block truncate font-medium">
+            {t(`admin.signups.kind.${row.original.kind}`)}
+          </span>
         ),
       },
       {
@@ -196,7 +195,6 @@ export function SignupEventsPanel() {
 
   return (
     <PageStack>
-      <SignupSummary />
       <ListTitleRow
         title={kind ? t(`admin.signups.kind.${kind}`) : t('admin.signups.allKinds')}
         count={
@@ -260,6 +258,13 @@ export function SignupEventsPanel() {
         onPaginationChange={(p) => setPage(p.pageIndex + 1)}
         pageSizeOptions={[SIGNUP_EVENTS_PER_PAGE]}
         paginationNoun={t('admin.signups.noun', 'events')}
+      />
+      <SignupSummary
+        kind={kind}
+        onKind={(k) => {
+          setKind(k)
+          setPage(1)
+        }}
       />
       <p className="text-sm text-muted-foreground">{t('admin.signups.privacyNote')}</p>
     </PageStack>
