@@ -55,7 +55,7 @@ describe('scannerUnavailableReason', () => {
     ],
   ]) as unknown as Parameters<typeof scannerUnavailableReason>[1]
 
-  it('disables a scanner no online sensor may run, with the reason', () => {
+  it('names why no online sensor may run a scanner', () => {
     expect(scannerUnavailableReason(tool({ name: 'nuclei' }), avail)).toBeNull()
     expect(scannerUnavailableReason(tool({ name: 'checkov' }), avail)).toBe('No sensor has checkov')
   })

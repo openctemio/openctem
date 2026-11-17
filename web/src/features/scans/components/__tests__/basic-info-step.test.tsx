@@ -314,17 +314,25 @@ describe('BasicInfoStep', () => {
     expect(screen.getByRole('radio', { name: 'Discover' })).toBeEnabled()
   })
 
-  it('lists workflows that cannot run last, off, under Not available', async () => {
+  // A scan runs what is supported: a blocked workflow runs its other steps,
+  // so it is offered (under "Runs in part"); only a CI-only one stays off.
+  it('offers a blocked workflow under Runs in part and keeps a CI-only one off', async () => {
+    const onChange = vi.fn()
     render(
       <BasicInfoStep
         data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: undefined }}
-        onChange={vi.fn()}
+        onChange={onChange}
       />
     )
     await userEvent.click(screen.getByRole('combobox', { name: 'Workflow' }))
-    expect(await screen.findByText('Not available')).toBeInTheDocument()
+    expect(await screen.findByText('Runs in part')).toBeInTheDocument()
+    expect(screen.getByText('Not available')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Code \/ CI/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
     const blocked = screen.getByRole('option', { name: /Network sweep/ })
-    expect(blocked).toHaveAttribute('aria-disabled', 'true')
+    expect(blocked).not.toHaveAttribute('aria-disabled', 'true')
     const options = screen.getAllByRole('option').map((o) => o.textContent ?? '')
     expect(options.findIndex((o) => o.includes('External discovery'))).toBeLessThan(
       options.findIndex((o) => o.includes('Network sweep'))
