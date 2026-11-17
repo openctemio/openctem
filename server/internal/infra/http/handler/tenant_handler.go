@@ -3705,7 +3705,7 @@ func (h *TenantHandler) ResetTenantModules(w http.ResponseWriter, r *http.Reques
 // ListModulePresets handles GET /api/v1/tenants/{tenant}/settings/modules/presets.
 // Returns the static preset catalog so the UI can render the picker.
 // Does NOT require tenant context for reads, but gated behind
-// RequireTeamAdmin so the pricing/persona copy isn't exposed to
+// RequireTeamAdmin so the persona copy isn't exposed to
 // unauthenticated probes.
 func (h *TenantHandler) ListModulePresets(w http.ResponseWriter, r *http.Request) {
 	if h.moduleService == nil {

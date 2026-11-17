@@ -131,4 +131,22 @@ describe('AttentionQueueHeader', () => {
     render(<AttentionQueueHeader reason="no_owner" count={1} />)
     expect(screen.queryByRole('tablist')).toBeNull()
   })
+
+  it('draws the queue More only when it has items, and runs the chosen one', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const { unmount } = render(<AttentionQueueHeader reason="no_owner" count={1} />)
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    unmount()
+    render(
+      <AttentionQueueHeader
+        reason="no_owner"
+        count={1}
+        moreItems={[{ id: 'select', label: 'Select', onSelect }]}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Select' }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
+  })
 })
