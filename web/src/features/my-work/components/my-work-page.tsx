@@ -244,7 +244,9 @@ export function MyWorkPage() {
           ) : undefined
         }
         // Line 2, the kit's chips row: the queue's locked rule first and how
-        // much of the queue is on screen at the end.
+        // much of the queue is on screen at the end. On a phone the row
+        // shares its line with the toolbar's start, so the note gives the
+        // locked chip its room (the title row's count and View all remain).
         toolbarBelow={
           <FilterChipsRow
             data-testid="my-work-chips"
@@ -252,7 +254,7 @@ export function MyWorkPage() {
             chips={[]}
             trailing={
               total > rows.length ? (
-                <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+                <span className="hidden text-meta whitespace-nowrap text-muted-foreground tabular-nums md:inline">
                   {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
                 </span>
               ) : undefined
