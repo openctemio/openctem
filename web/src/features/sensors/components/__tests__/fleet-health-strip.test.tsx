@@ -67,6 +67,17 @@ describe('FleetHealthStrip', () => {
     ).toBeInTheDocument()
   })
 
+  it('holds the state bar and its legend line while loading, so nothing below moves', () => {
+    renderStrip({ loading: true })
+    const skeleton = document.querySelector('[data-slot="fleet-bar-skeleton"]')
+    expect(skeleton).not.toBeNull()
+    // Same boxes as the loaded bar: a 6px bar under a 4px gap, a 16px legend line.
+    const [bar, legend] = Array.from(skeleton!.children)
+    expect(bar).toHaveClass('mt-1', 'h-1.5')
+    expect(legend).toHaveClass('mt-1.5', 'h-4')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
   it('fleet health filters to the sensors that are not connected', () => {
     const p = renderStrip({ notConnectedActive: true })
     const btn = screen.getByRole('button', { name: /Fleet health/ })

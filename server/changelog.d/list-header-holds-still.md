@@ -5,4 +5,6 @@
 - Findings shows its real toolbar and chips row over placeholder rows while the first page loads, and a placeholder of the title row's own height before that, so the list no longer jumps when the rows arrive.
 - Under Compliance, the benchmarks block sits under the chips row and above the rows instead of above the title row, and folds to its heading: the title row and the toolbar no longer move when it loads.
 - On a phone the second toolbar line keeps the chips at its start and the filter tokens at its end, beside the icon actions, whether or not a chip shows: adding the first filter no longer moves the tokens (every list).
-- Docs: web/docs/ui-style-contract.md (list state filter), web/docs/findings-list.md ("First load", phone toolbar)
+- Sensors holds the fleet bar and its legend line while the fleet loads, so the title row and the list under the health strip no longer drop when the sensors arrive.
+- On a phone a labelled toolbar end action (Export CSV on Technologies, Certificates and Exposures) is a named icon, so the filter tokens and the Clear filters button keep their room on the second line.
+- Docs: web/docs/ui-style-contract.md (list state filter, toolbar end actions), web/docs/ui/shared-kit.md (ToolbarAction), web/docs/findings-list.md ("First load", phone toolbar)

@@ -1,5 +1,6 @@
 'use client'
 
+import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { cn } from '@/lib/utils'
@@ -11,6 +12,23 @@ import {
   type ReleaseChannel,
 } from '../lib/fleet'
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
+
+/**
+ * FleetBar's place while the fleet loads: the bar and one legend line, so the
+ * strip, and the title row and list under it, do not move when it arrives.
+ */
+function FleetBarSkeleton() {
+  return (
+    <span data-slot="fleet-bar-skeleton" className="block">
+      <span className="mt-1 flex h-1.5">
+        <Skeleton className="h-full w-full rounded-full" />
+      </span>
+      <span className="mt-1.5 flex h-4 items-center">
+        <Skeleton className="h-3 w-40 max-w-full" />
+      </span>
+    </span>
+  )
+}
 
 /** The fleet's state mix as one small bar, with a legend (no colour-only meaning). */
 function FleetBar({ summary }: { summary: FleetSummary }) {
@@ -116,6 +134,7 @@ export function FleetHealthStrip({
       value: summary.canTakeJobs,
       hint: t('sensors.health.canTakeJobs', undefined, { count: summary.enabled }),
       detail: <FleetBar summary={summary} />,
+      detailLoading: <FleetBarSkeleton />,
       // Filters to the sensors that are not connected, when there are any.
       ...(notConnected > 0 || notConnectedActive
         ? { onClick: onToggleNotConnected, active: notConnectedActive }
