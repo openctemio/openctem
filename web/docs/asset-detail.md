@@ -40,7 +40,12 @@ How `/assets/[id]` is laid out, and why. The code is in
 
 ## Not on the page yet
 
-Items of the design with no data source today, left out rather than drawn empty: an attack-path count through
-the asset, the risk score breakdown, top findings, a technologies tab, a one-line summary under the name, and an
-environment property. The design's figure tiles are not used: risk score is a fact (a property), and open
-findings links to its list from the properties.
+- Header actions (Edit, Scan now, archive, out of scope, snooze): planned, with the drawer's dialogs and gates,
+  one main action chosen by the asset's state and the rest in More.
+- Parts the drawer already draws from data the page can read (technologies, findings, key facts, risk summary):
+  planned on the page with the same components.
+- Items that need API work first: an attack-path count through the asset, the risk score breakdown, a one-line
+  summary under the name, and an environment property.
+
+The design's figure tiles are not used: risk score is a fact (a property), and open findings links to its list
+from the properties.
