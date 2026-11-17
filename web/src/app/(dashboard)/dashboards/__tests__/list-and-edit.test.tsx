@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import DashboardsPage from '../page'
@@ -21,8 +21,12 @@ const mine = {
   is_default: false,
   description: '',
 }
+const list = vi.hoisted(() => ({ error: undefined as Error | undefined }))
 vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
-  useMyDashboards: () => ({ data: { data: [mine] }, isLoading: false }),
+  useMyDashboards: () =>
+    list.error
+      ? { data: undefined, error: list.error, isLoading: false, mutate: vi.fn() }
+      : { data: { data: [mine] }, isLoading: false, mutate: vi.fn() },
   useMyDashboard: () => ({ data: mine, isLoading: false }),
   useRevalidateDashboards: () => vi.fn(() => Promise.resolve()),
   createDashboard: api.create,
@@ -42,6 +46,8 @@ describe('Dashboards page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     nav.search = ''
+    list.error = undefined
+    window.localStorage.clear()
     api.create.mockResolvedValue({ id: 'new' })
   })
 
@@ -102,9 +108,26 @@ describe('Dashboards page', () => {
     await waitFor(() => expect(nav.push).toHaveBeenLastCalledWith('/'))
   })
 
-  it('Customize opens the dashboard in customize mode', async () => {
+  it('Customize (row menu) opens the dashboard in customize mode', async () => {
     render(<DashboardsPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Customize' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Actions for Executive' })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Customize' }))
     expect(nav.push).toHaveBeenCalledWith('/?customize=1')
+  })
+
+  it('lists my dashboards in one table; the name is a link that opens it', async () => {
+    render(<DashboardsPage />)
+    const table = screen.getByRole('table', { name: 'Your dashboards' })
+    const link = within(table).getByRole('link', { name: 'Executive' })
+    expect(link).toHaveAttribute('href', '/')
+    await userEvent.click(link)
+    expect(window.localStorage.getItem('openctem:dashboard-choice')).toBe('personal:d1')
+  })
+
+  it('a failed list read shows the error state with Retry, never "No dashboards yet"', () => {
+    list.error = new Error('down')
+    render(<DashboardsPage />)
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument()
+    expect(screen.queryByText(/No dashboards yet/)).toBeNull()
   })
 })

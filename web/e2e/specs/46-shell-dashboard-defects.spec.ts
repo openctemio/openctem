@@ -5,8 +5,9 @@ import { layoutDefects, seriousAxe } from '../helpers/layout'
 /**
  * Small defects from the 2026-10-29 mockup re-measure (research/236): a CVE
  * typed in the command palette opens the vulnerability page, the receipts list
- * says "No receipts yet" when no filter is set, and a saved dashboard's card
- * keeps all its actions inside the card at 1440px and 390px, in light and dark.
+ * says "No receipts yet" when no filter is set, and a saved dashboard's row on
+ * the dashboards list keeps its name and menu inside the row (a card on a
+ * phone) at 1440px and 390px, in light and dark, with no sideways scroll.
  */
 
 const VIEWPORTS = [
@@ -31,7 +32,7 @@ async function api(page: Page, method: 'POST' | 'DELETE', url: string, data?: un
 for (const vp of VIEWPORTS) {
   for (const scheme of ['light', 'dark'] as const) {
     test(
-      `dashboards gallery card keeps its actions inside at ${vp.name} in ${scheme}`,
+      `dashboards list row keeps its name and menu inside at ${vp.name} in ${scheme}`,
       { tag: ['@dashboard'] },
       async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height })
@@ -48,20 +49,28 @@ for (const vp of VIEWPORTS) {
         const id = (JSON.parse(created.body) as { id: string }).id
         try {
           await page.reload()
-          const card = page.locator('[data-slot=card]', { hasText: name })
-          await expect(card).toBeVisible({ timeout: 30_000 })
-          const more = card.getByRole('button', { name: `Actions for ${name}` })
+          // A table row from 768px, a card on a phone.
+          const row = page
+            .locator('tr', { hasText: name })
+            .or(page.locator('[data-slot=mobile-card]', { hasText: name }))
+          await expect(row).toBeVisible({ timeout: 30_000 })
+          const more = row.getByRole('button', { name: `Actions for ${name}` })
+          const link = row.getByRole('link', { name })
           await expect(more).toBeVisible()
-          const c = (await card.boundingBox())!
-          // One row of actions: Open, Customize and the menu, all inside the card.
-          let top: number | undefined
-          for (const label of ['Open', 'Customize', `Actions for ${name}`]) {
-            const b = (await card.getByRole('button', { name: label, exact: true }).boundingBox())!
-            top ??= b.y + b.height / 2
-            expect(Math.abs(b.y + b.height / 2 - top), `${label} on the first row`).toBeLessThan(2)
-            expect(b.x, `${label} left edge`).toBeGreaterThanOrEqual(c.x - 1)
-            expect(b.x + b.width, `${label} right edge`).toBeLessThanOrEqual(c.x + c.width + 1)
+          await expect(link).toHaveAttribute('href', '/')
+          const r = (await row.boundingBox())!
+          for (const [label, l] of [
+            ['name', link],
+            ['menu', more],
+          ] as const) {
+            const b = (await l.boundingBox())!
+            expect(b.x, `${label} left edge`).toBeGreaterThanOrEqual(r.x - 1)
+            expect(b.x + b.width, `${label} right edge`).toBeLessThanOrEqual(r.x + r.width + 1)
           }
+          const overflow = await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+          )
+          expect(overflow, 'sideways page scroll').toBeLessThanOrEqual(0)
           expect(await layoutDefects(page)).toEqual([])
           expect(await seriousAxe(page)).toEqual([])
         } finally {
