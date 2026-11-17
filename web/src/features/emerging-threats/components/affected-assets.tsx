@@ -76,32 +76,39 @@ function HostTitle({ row }: { row: HostRow }) {
  */
 function ServiceLinks({
   row,
-  pick,
+  link,
 }: {
   row: HostRow
-  pick: (s: EmergingThreatHostService) => { href: string; text: string } | null
+  link: (s: EmergingThreatHostService) => React.ReactNode
 }) {
   const links = row.services.flatMap((s) => {
-    const link = pick(s)
-    return link ? [{ s, ...link }] : []
+    const node = link(s)
+    return node ? [{ s, node }] : []
   })
   if (links.length === 0) return <Dash />
   const labelled = row.services.length > 1
   return (
     <ul className="flex flex-col gap-0.5">
-      {links.map(({ s, href, text }) => (
+      {links.map(({ s, node }) => (
         <li key={s.asset_id} className="flex flex-wrap items-baseline gap-x-1.5">
           {labelled && <span className="font-mono text-xs text-muted-foreground">{s.label}</span>}
-          <Link href={href} className="hover:underline">
-            {text}
-          </Link>
+          {node}
         </li>
       ))}
     </ul>
   )
 }
 
-export function AffectedAssets({ groups }: { groups: EmergingThreatAssetGroup[] }) {
+export function AffectedAssets({
+  groups,
+  error,
+  onRetry,
+}: {
+  groups: EmergingThreatAssetGroup[]
+  /** The read that brings the groups failed (the alert's detail). */
+  error?: unknown
+  onRetry?: () => void
+}) {
   const { t } = useTranslation()
 
   const rows = useMemo<HostRow[]>(
@@ -120,26 +127,24 @@ export function AffectedAssets({ groups }: { groups: EmergingThreatAssetGroup[] 
     const finding = (row: HostRow) => (
       <ServiceLinks
         row={row}
-        pick={(s) =>
-          s.finding_id
-            ? {
-                href: `/findings/${s.finding_id}`,
-                text: t(`findings.status.${s.finding_status}`, s.finding_status),
-              }
-            : null
+        link={(s) =>
+          s.finding_id ? (
+            <Link href={`/findings/${s.finding_id}`} className="hover:underline">
+              {t(`findings.status.${s.finding_status}`, s.finding_status)}
+            </Link>
+          ) : null
         }
       />
     )
     const task = (row: HostRow) => (
       <ServiceLinks
         row={row}
-        pick={(s) =>
-          s.task_id
-            ? {
-                href: `/remediation/tasks/${s.task_id}`,
-                text: t('emergingThreats.assets.openTask'),
-              }
-            : null
+        link={(s) =>
+          s.task_id ? (
+            <Link href={`/remediation/tasks/${s.task_id}`} className="hover:underline">
+              {t('emergingThreats.assets.openTask')}
+            </Link>
+          ) : null
         }
       />
     )
@@ -275,15 +280,17 @@ export function AffectedAssets({ groups }: { groups: EmergingThreatAssetGroup[] 
     )
   }
 
-  const noneConfirmed = !groups.some((g) => g.tier !== 'possible' && g.hosts.length > 0)
+  const noneConfirmed = !error && !groups.some((g) => g.tier !== 'possible' && g.hosts.length > 0)
 
   return (
     <section aria-label={t('emergingThreats.assets.title')} className="flex flex-col gap-3">
       {noneConfirmed && (
         <p className="text-sm text-muted-foreground">{t('emergingThreats.assets.noneConfirmed')}</p>
       )}
-      {rows.length > 0 && (
+      {(rows.length > 0 || !!error) && (
         <DataTable
+          error={error}
+          onRetry={onRetry}
           columns={columns}
           data={rows}
           getRowId={(r) => r.key}
