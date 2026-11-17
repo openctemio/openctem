@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 
 interface OneTimeSecretFieldProps {
@@ -22,6 +23,7 @@ interface OneTimeSecretFieldProps {
  * the input and both icon buttons carry an accessible name.
  */
 export function OneTimeSecretField({ label, value, noun = label }: OneTimeSecretFieldProps) {
+  const { t } = useTranslation()
   const inputId = useId()
   const [shown, setShown] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -35,9 +37,9 @@ export function OneTimeSecretField({ label, value, noun = label }: OneTimeSecret
   const handleCopy = async () => {
     if (await copyToClipboard(value)) {
       setCopied(true)
-      toast.success(`${noun} copied to clipboard`)
+      toast.success(t('common.secret.copied', '{noun} copied to clipboard', { noun }))
     } else {
-      toast.error(`Could not copy the ${noun}`)
+      toast.error(t('common.secret.copyFailed', 'Could not copy the {noun}', { noun }))
     }
   }
 
@@ -60,7 +62,11 @@ export function OneTimeSecretField({ label, value, noun = label }: OneTimeSecret
             variant="ghost"
             size="icon-sm"
             className="absolute end-0 top-1/2 -translate-y-1/2 px-3 py-2 hover:bg-transparent"
-            aria-label={shown ? `Hide ${noun}` : `Show ${noun}`}
+            aria-label={
+              shown
+                ? t('common.secret.hideNoun', 'Hide {noun}', { noun })
+                : t('common.secret.showNoun', 'Show {noun}', { noun })
+            }
             onClick={() => setShown((s) => !s)}
           >
             {shown ? (
@@ -74,7 +80,11 @@ export function OneTimeSecretField({ label, value, noun = label }: OneTimeSecret
           type="button"
           variant="outline"
           size="icon"
-          aria-label={copied ? `${noun} copied` : `Copy ${noun}`}
+          aria-label={
+            copied
+              ? t('common.secret.copiedNoun', '{noun} copied', { noun })
+              : t('common.secret.copyNoun', 'Copy {noun}', { noun })
+          }
           onClick={handleCopy}
         >
           {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
