@@ -44,6 +44,18 @@ export interface ListSearchFieldSlots {
   inputClassName: string
   /** The icon (and any host end controls), drawn over the input. */
   adornments: React.ReactNode
+  /** Where the editor draws its problem line, when the field sits in a `ListToolbar`. */
+  status?: ListSearchStatusSlot
+}
+
+/**
+ * The status row a list toolbar keeps under itself for its query field: the
+ * editor draws its problem line into `host` (a portal) and says when it has
+ * one to show, so the row takes its place only then.
+ */
+export interface ListSearchStatusSlot {
+  host: HTMLElement | null
+  onDrawnChange: (drawn: boolean) => void
 }
 
 /** The field's Query mode, on a list whose filter can be written as query text. */
@@ -68,6 +80,8 @@ export interface ListSearchProps {
   className?: string
   /** Query mode, where the list takes query text. */
   query?: ListSearchQuery
+  /** The toolbar's status row (set by `ListToolbar`, never by a page). */
+  statusSlot?: ListSearchStatusSlot
   /** Extra props for the input (e.g. `data-testid`, `onKeyDown`). */
   inputProps?: Omit<
     React.ComponentProps<typeof Input>,
@@ -83,6 +97,7 @@ export function ListSearch({
   filter,
   className,
   query,
+  statusSlot,
   inputProps,
 }: ListSearchProps) {
   const { t } = useTranslation()
@@ -173,6 +188,7 @@ export function ListSearch({
           {query.renderEditor({
             inputClassName: cn('ps-9 pe-(--list-search-end)', joined && 'rounded-s-none'),
             adornments: icon(Code2),
+            status: statusSlot,
           })}
         </div>
       ) : (

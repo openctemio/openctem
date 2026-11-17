@@ -17,6 +17,7 @@
 
 import { type ParseResult } from '@/features/query/api/query-api'
 import { FQ_PARAM } from '@/features/query/components/query-mode'
+import { savedViewId } from '@/features/saved-views/api/use-saved-views'
 import { isPractice, PRACTICE_PARAM, type PracticeView } from '../lib/practice'
 import { NON_FILTER_PARAMS } from './model'
 
@@ -63,6 +64,11 @@ function practiceViewOf(params: Record<string, string>): PracticeView | null {
  * The page URL with the filter replaced by a checked text filter. The text
  * owns the State lens and the Practice switch: both are written explicitly,
  * "all" when the text leaves them out.
+ *
+ * With a saved view open (`view=<id>`) the view sets the lens and the switch
+ * while the URL does not, and the text does not print them (`filterParams`
+ * is given no scope for them): what the text leaves out then stays the
+ * view's, so applying a text never widens the view's own scope.
  */
 export function applyTextFilter(
   search: URLSearchParams,
@@ -74,23 +80,25 @@ export function applyTextFilter(
     if ((KEEP.has(k) || skip.has(k)) && k !== PRACTICE_PARAM) next.append(k, v)
   })
   next.delete('page')
-  let state = 'all'
-  let practice: PracticeView = 'all'
+  const view = !!savedViewId(search.get('view'))
+  // null: not written, the open view's own applies.
+  let state: string | null = view && !search.has(STATE_PARAM) ? null : 'all'
+  let practice: PracticeView | null = view && !search.has(PRACTICE_PARAM) ? null : 'all'
   if (result.text !== '') {
     const flat = !result.advanced && result.params ? { ...result.params } : null
-    const view = flat ? practiceViewOf(flat) : null
-    if (flat && view !== null) {
+    const said = flat ? practiceViewOf(flat) : null
+    if (flat && said !== null) {
       if (flat[STATE_PARAM]) state = flat[STATE_PARAM]
       delete flat[STATE_PARAM]
       delete flat.practice
       delete flat.practice_not
-      practice = view
+      if (said !== 'all') practice = said
       for (const [k, v] of Object.entries(flat)) next.set(k, v)
     } else {
       next.set(FQ_PARAM, result.text)
     }
   }
-  next.set(STATE_PARAM, state)
-  next.set(PRACTICE_PARAM, practice)
+  if (state !== null) next.set(STATE_PARAM, state)
+  if (practice !== null) next.set(PRACTICE_PARAM, practice)
   return next
 }

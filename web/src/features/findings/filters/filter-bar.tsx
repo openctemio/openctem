@@ -32,7 +32,8 @@ interface FilterBarProps {
   onSearchChange: (next: URLSearchParams) => void
   /**
    * The search field is in Query mode: the text owns the filter, so the
-   * chips, Add filter and Clear step aside (the context chips stay).
+   * chips, Add filter and Clear step aside (the context chips and the open
+   * view's locked chips stay).
    */
   queryActive?: boolean
   /** Open the search field's Query mode (the Advanced chip's text). */
@@ -66,17 +67,9 @@ export function FilterBar({
   )
   const fromView = useMemo(() => viewFilters(viewFilter, contract), [viewFilter, contract])
 
-  const chips: ReactElement[] = [
-    ...(fq
-      ? [
-          <AdvancedChip
-            key="advanced"
-            text={fq}
-            onOpen={() => onOpenQuery?.()}
-            onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
-          />,
-        ]
-      : []),
+  // The open view's own conditions: locked, and the query text never holds
+  // them (the server applies the view under whatever the URL adds).
+  const viewChips: ReactElement[] = [
     ...(fromView.complex
       ? [
           <span
@@ -93,6 +86,19 @@ export function FilterBar({
       const field = fieldOf(f.field)
       return field ? [<FilterChip key={`view-${f.param}`} filter={f} field={field} />] : []
     }),
+  ]
+  const chips: ReactElement[] = [
+    ...(fq
+      ? [
+          <AdvancedChip
+            key="advanced"
+            text={fq}
+            onOpen={() => onOpenQuery?.()}
+            onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
+          />,
+        ]
+      : []),
+    ...viewChips,
     ...filters.flatMap((f) => {
       const field = fieldOf(f.field)
       return field
@@ -140,8 +146,10 @@ export function FilterBar({
   }
 
   if (queryActive) {
-    return leading ? (
-      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={[]} />
+    // The text owns the filters it shows. The open view's conditions are not
+    // in it, so their locked chips stay: what else applies is always said.
+    return leading || viewChips.length > 0 ? (
+      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={viewChips} />
     ) : null
   }
   return (

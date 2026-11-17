@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import { FilterChipsRow, LockedChip } from '@/features/shared/components/filter-chips-row'
 import {
   joinFilterText,
   modePageParams,
@@ -92,6 +94,52 @@ function Harness({
   )
 }
 
+/** The field in a list toolbar, as the findings, assets and scans lists draw it. */
+function ToolbarHarness({ context = false }: { context?: boolean }) {
+  const [active, setActive] = useState(true)
+  const mode = useListQueryMode({
+    entity: 'findings',
+    active,
+    onActiveChange: setActive,
+    fq: null,
+    params: 'severity=critical&state=open&practice_not=compliance',
+    onApply: (_r, on) => setActive(on),
+    testId: 'q-editor',
+  })
+  return (
+    <ListToolbar
+      search={{
+        value: '',
+        onChange: () => undefined,
+        placeholder: 'Search findings',
+        query: mode.query,
+      }}
+      start={<button type="button">State: Open</button>}
+      end={<button type="button">Views</button>}
+      below={
+        context ? (
+          <FilterChipsRow leading={<LockedChip>Asset: web-01</LockedChip>} chips={[]} />
+        ) : undefined
+      }
+    />
+  )
+}
+
+const UNKNOWN_FIELD = result({
+  valid: false,
+  problems: [
+    {
+      code: 'unknown_field',
+      message: 'unknown field "severty" on findings',
+      start: 0,
+      end: 7,
+      line: 1,
+      column: 1,
+      suggestions: ['severity'],
+    },
+  ],
+})
+
 async function settle() {
   // The editor loads on use (a lazy chunk).
   await act(async () => {
@@ -153,6 +201,19 @@ describe('the list search field Query mode', () => {
     expect(query()).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('Enter on the text already in force writes nothing (an open saved view keeps its own scope)', async () => {
+    serve({ [PRINTED.text]: PRINTED })
+    const onApply = vi.fn()
+    render(<Harness onApply={onApply} />)
+    fireEvent.click(query())
+    await settle()
+    expect(box().value).toBe(PRINTED.text)
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await settle()
+    expect(onApply).not.toHaveBeenCalled()
+    expect(query()).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('Query to Basic applies an edit not applied yet, so the switch drops nothing', async () => {
     serve({ 'kev=true': KEV })
     const onApply = vi.fn()
@@ -187,6 +248,86 @@ describe('the list search field Query mode', () => {
     expect(onApply).not.toHaveBeenCalled()
     expect(query()).toHaveAttribute('aria-pressed', 'true')
     expect(box().value).toBe('severity= AND kev=true')
+  })
+
+  it('in a toolbar the problem line is drawn in the status row under the toolbar, never in the toolbar row', async () => {
+    serve({ 'severty=high': UNKNOWN_FIELD, 'severity=high': KEV })
+    const { container } = render(<ToolbarHarness />)
+    await settle()
+    const toolbar = container.querySelector('[data-slot="list-toolbar"]')!
+    const status = container.querySelector('[data-slot="list-toolbar-status"]')!
+    // At rest the row draws no box (no gap, no height); the line in it is
+    // the field's live description, read out and not shown.
+    expect(status).not.toHaveAttribute('data-drawn')
+    expect(status.className).toBe('contents')
+    const line = () => document.getElementById(box().getAttribute('aria-describedby')!)!
+    expect(status.contains(line())).toBe(true)
+    expect(toolbar.contains(line())).toBe(false)
+    expect(line()).toHaveAttribute('aria-live', 'polite')
+    expect(line()).toHaveClass('sr-only')
+    const atRest = line()
+
+    fireEvent.change(box(), { target: { value: 'severty=high' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await settle()
+    // The problem: one line of the chips row's height under the toolbar.
+    expect(status).toHaveAttribute('data-drawn', '')
+    expect(status).toHaveClass('h-control', 'max-md:h-control-touch', 'shrink-0')
+    expect(box()).toHaveAttribute('aria-invalid', 'true')
+    // The same live region as before, so the problem is announced.
+    expect(line()).toBe(atRest)
+    expect(line()).not.toHaveClass('sr-only')
+    expect(line()).toHaveAttribute('data-drawn', '')
+    expect(toolbar.querySelector('[data-slot="query-status"]')).toBeNull()
+    // Long problems are cut on that one line, in full in the title.
+    const text = screen.getByText(/Unknown field\. Column 1\./)
+    expect(text).toHaveClass('truncate')
+    expect(text).toHaveAttribute('title', 'Unknown field. Column 1.')
+    expect(text.parentElement).toHaveClass('flex-nowrap')
+    // The fix stays a button that keeps its size, and it works.
+    const fix = screen.getByRole('button', { name: 'severity' })
+    expect(status.contains(fix)).toBe(true)
+    expect(fix).toHaveClass('shrink-0')
+    fireEvent.click(fix)
+    await settle()
+    expect(box().value).toBe('severity=high')
+    expect(status).not.toHaveAttribute('data-drawn')
+    expect(status.className).toBe('contents')
+    expect(box()).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('beside a context chip row the problem shares that row; leaving Query mode takes the status row away', async () => {
+    serve({ 'severty=high': UNKNOWN_FIELD })
+    const { container } = render(<ToolbarHarness context />)
+    await settle()
+    const below = container.querySelector('[data-slot="list-toolbar-below"]')!
+    const status = container.querySelector('[data-slot="list-toolbar-status"]')!
+    expect(below.className).not.toContain('@md/toolbar:flex-[0_0_auto]')
+    fireEvent.change(box(), { target: { value: 'severty=high' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await settle()
+    // The chips row gives the rest of its line to the problem (same line,
+    // so the list does not move); a phone gives the problem the last line.
+    expect(status).toHaveAttribute('data-drawn', '')
+    expect(status).toHaveClass(
+      'h-control',
+      'flex-[1_1_0%]',
+      '@max-md/toolbar:order-last',
+      '@max-md/toolbar:flex-[0_0_100%]'
+    )
+    expect(below).toHaveClass('@md/toolbar:flex-[0_0_auto]', '@md/toolbar:max-w-[50%]')
+    expect(below.nextElementSibling).toBe(status)
+    // A local problem (a quote left open) is drawn there too once refused.
+    fireEvent.change(box(), { target: { value: 'title="abc' } })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    await settle()
+    expect(status).toHaveAttribute('data-drawn', '')
+    expect(status.querySelector('.truncate')).toHaveAttribute('title')
+    // Escape puts the applied text back: no problem, no row.
+    fireEvent.keyDown(box(), { key: 'Escape' })
+    await settle()
+    expect(status).not.toHaveAttribute('data-drawn')
+    expect(below.className).not.toContain('@md/toolbar:flex-[0_0_auto]')
   })
 
   it('Escape puts back the applied text', async () => {

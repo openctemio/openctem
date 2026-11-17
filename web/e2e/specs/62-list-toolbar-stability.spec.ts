@@ -7,14 +7,19 @@ import { test, expect } from '../fixtures/authenticated-page'
  * control of the toolbar row and of the title row keeps its box (0 px of
  * movement, 0 px of size change) through: a filter added, five more added
  * (the chips row folds them into "+N more"), one removed, a grouping chosen,
- * a view opened, the Basic | Query mode switched, text typed in the field and
- * the filters cleared.
+ * a view opened, the Basic | Query mode switched, a text the server refuses
+ * applied in Query mode and put right again, text typed in the field and the
+ * filters cleared.
  *
  * Allowed, and only these:
  * - the table moves down once when the chips row first appears, and back up
  *   when it goes, by exactly the row's height plus its gap;
  * - in Query mode the filter tokens (Add filter, Practice, State) stay in
  *   place, inert (checked);
+ * - a refused query text says its problem in the status row under the
+ *   toolbar: the table moves down by at most that row's height plus its gap
+ *   (not at all beside a chips row that is already there), and back when the
+ *   text is put right;
  * - the title row's start (view name, count, Modified, Save view, Reset)
  *   follows the view's name and count; its buttons are checked never to
  *   disappear, and the title row's end (Refresh, Export, More) never moves;
@@ -32,6 +37,8 @@ type Snap = {
   titleStart: string[]
   listTop: number | null
   chipsRow: number | null
+  /** Height of the query field's status row while it shows a problem. */
+  statusRow: number | null
 }
 
 /** Six filters per list (URL params the list's chips show). */
@@ -90,7 +97,9 @@ async function snap(page: Page): Promise<Snap> {
     }
     const main = document.querySelector('main')!
     const toolbar = main.querySelector('[data-slot="list-toolbar"]')!
-    const region = toolbar.closest('[data-slot="list-toolbar-region"]') ?? toolbar
+    const region =
+      toolbar.closest('[data-slot="list-toolbar-region"], [data-slot="list-toolbar-frame"]') ??
+      toolbar
     const controls: Record<string, Box> = {}
     const mode = Array.from(toolbar.querySelectorAll('[data-slot="list-search-mode"]')).find(shown)
     if (mode) controls['mode switch'] = box(mode)
@@ -147,12 +156,14 @@ async function snap(page: Page): Promise<Snap> {
     const chips = Array.from(
       region.querySelectorAll('[data-slot="list-toolbar-below"], [data-slot="filter-chips-row"]')
     ).find((c) => shown(c) && c.getBoundingClientRect().height > 0)
+    const status = region.querySelector('[data-slot="list-toolbar-status"][data-drawn]')
     return {
       controls,
       titleEnd,
       titleStart,
       listTop,
       chipsRow: chips ? Math.round(chips.getBoundingClientRect().height) : null,
+      statusRow: shown(status) ? Math.round(status.getBoundingClientRect().height) : null,
     }
   })
 }
@@ -184,8 +195,18 @@ function compare(step: string, a: Snap, b: Snap) {
     const rowCame = a.chipsRow === null && b.chipsRow !== null
     const rowWent = a.chipsRow !== null && b.chipsRow === null
     const step = (b.chipsRow ?? a.chipsRow ?? 0) + 8
+    // The status row of a refused query text: one row step, or none beside a
+    // chips row that is already there.
+    const statusCame = a.statusRow === null && b.statusRow !== null
+    const statusWent = a.statusRow !== null && b.statusRow === null
+    const statusStep = (b.statusRow ?? a.statusRow ?? 0) + 8
     const delta = b.listTop - a.listTop
-    if (!((rowCame && delta === step) || (rowWent && delta === -step)))
+    if (!(
+      (rowCame && delta === step) ||
+      (rowWent && delta === -step) ||
+      (statusCame && delta === statusStep) ||
+      (statusWent && delta === -statusStep)
+    ))
       problems.push(`list top moved ${delta}`)
   }
   expect(problems, `${step}: ${JSON.stringify({ before: a, after: b })}`).toEqual([])
@@ -289,6 +310,39 @@ function headerHoldsStill(route: keyof typeof LISTS) {
         // The tokens stay, inert: the text owns the filter.
         const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
         if ((await tokens.count()) > 0) await expect(tokens.first()).toHaveAttribute('inert', '')
+
+        // A text the server refuses: its problem shows in the status row
+        // under the toolbar, one row high, and the toolbar row keeps its
+        // height; putting the text right takes the row away again.
+        const editor = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
+        const statusRow = page.locator('main [data-slot="list-toolbar-status"]')
+        const appliedText = await editor.inputValue()
+        await step('apply a text the server refuses', async () => {
+          // One character of value: no value lookup opens a list over Enter.
+          await editor.fill('no_such_field=1')
+          await editor.press('Enter')
+          await expect(statusRow).toHaveAttribute('data-drawn', '', { timeout: 20_000 })
+          await expect(editor).toHaveAttribute('aria-invalid', 'true')
+        })
+        {
+          // The problem line is the one the field is described by, inside the
+          // status row, as tall as a chips row (32, 36 on a phone).
+          const line = statusRow.locator('[data-slot="query-status"]')
+          await expect(line).toBeVisible()
+          expect(await editor.getAttribute('aria-describedby')).toBe(await line.getAttribute('id'))
+          await expect(line).toHaveAttribute('aria-live', 'polite')
+          const h = (await statusRow.boundingBox())!.height
+          expect(Math.round(h)).toBe(width < 768 ? 36 : 32)
+          const main = (await page.locator('main').boundingBox())!
+          const sb = (await statusRow.boundingBox())!
+          expect(sb.x + sb.width).toBeLessThanOrEqual(main.x + main.width + 0.5)
+        }
+        await step('put the text right', async () => {
+          await editor.fill(appliedText)
+          await expect(statusRow).not.toHaveAttribute('data-drawn', '')
+          await expect(editor).toHaveAttribute('aria-invalid', 'false')
+          await page.locator('main h1').first().click({ force: true })
+        })
         const toBasic = page.locator(
           'main [data-slot="list-search-mode-basic"]:visible, main button[data-slot="list-search-mode"]:visible'
         )
