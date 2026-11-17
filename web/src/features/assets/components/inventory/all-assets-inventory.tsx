@@ -4,8 +4,8 @@
  * Unified All-Assets inventory: ONE server-paginated table across every asset
  * type, composed like the Findings list (the reference list page — see
  * docs/ui-style-contract.md): the open view's name and count, then a single
- * toolbar row above the table, a filter panel beside it and a floating
- * bulk-action bar. The views themselves (All assets and the registry's lenses,
+ * toolbar row above the table (Add filter is its one filter entry; a phone
+ * opens every facet in a sheet) and a floating bulk-action bar. The views themselves (All assets and the registry's lenses,
  * with counts) are listed in the sidebar under Assets (research/242 D5).
  *
  * State model: the URL query string is the single source of truth. Filters are
@@ -55,11 +55,8 @@ import {
   PageStack,
   EmptyState,
   ErrorState,
-  FilterPanelSlot,
   NoAccessState,
-  openFilterPanel,
   FilterSheet,
-  useFilterPanelOpen,
   usePhoneSelectMode,
 } from '@/features/shared'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
@@ -293,8 +290,13 @@ function InventoryTableSkeleton() {
   )
 }
 
-/** Per-browser memory of the side panel (Findings uses the same shape). */
-const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
+/**
+ * The list's order while the address names none: risk, highest first, so the
+ * order a person sees is explained by a column on screen (Risk carries the
+ * sort arrow). Assets of one score follow by name.
+ */
+const DEFAULT_SORT = '-risk_score'
+const DEFAULT_SORT_REQUEST = `${DEFAULT_SORT},name`
 
 export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
   const router = useRouter()
@@ -303,7 +305,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
   const canWrite = can(Permission.AssetsWrite)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { currentTenant } = useTenant()
   // The viewer's previous visit, for "New since last visit" (research/124).
   const lastVisit = useLastVisit('inventory', currentTenant?.id)
@@ -343,11 +345,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   )
 
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
-  // The side panel, as on Findings: closed until the viewer opens it, then remembered.
-  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
 
   // Data. The headline numbers come from the tenant-wide stats endpoint.
-  const searchFilters = useMemo(() => toSearchFilters(runFilters), [runFilters])
+  const searchFilters = useMemo(
+    () => toSearchFilters({ ...runFilters, sort: runFilters.sort ?? DEFAULT_SORT_REQUEST }),
+    [runFilters]
+  )
   // The filter on screen as list parameters, for "Save filter as group" and "Add all matching".
   const filterParams = useMemo(() => buildAssetQueryParams(searchFilters), [searchFilters])
   const { assets, total, totalCapped, isFirstLoad, isLoading, isError, error, mutate } =
@@ -377,7 +380,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const [facetsWanted, setFacetsWanted] = useState(false)
   const { data: buData } = useBusinessUnits(
     undefined,
-    facetsWanted || filterSheetOpen || filtersOpen || Boolean(filters.businessUnitIds?.length)
+    facetsWanted || filterSheetOpen || Boolean(filters.businessUnitIds?.length)
   )
 
   // Typed mode: the list is one type (and maybe one sub-type).
@@ -431,10 +434,10 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
         attribute,
-        label: propertyLabel(attribute.key),
+        label: propertyLabel(attribute.key, locale),
         counts: typeStats.metadataCounts?.[attribute.key] ?? {},
       })),
-    [typeView, typeStats]
+    [typeView, typeStats, locale]
   )
   const businessUnitLabels = useMemo(() => {
     const map: Record<string, string> = {}
@@ -666,23 +669,22 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     />
   )
 
-  // On a phone the Filters button, joined to the search field, opens the facets
-  // in a sheet; from 768 Add filter (right after the field) is the one entry.
+  // One filter entry per width, and no docked panel: from 768 Add filter
+  // (right after the field) opens its picker; on a phone the Filters button,
+  // joined to the search field, opens every facet in a sheet.
   const filterToggle = {
-    open: filtersOpen,
-    onToggle: () => setFiltersOpen((o) => !o),
+    open: filterSheetOpen,
+    onToggle: () => setFilterSheetOpen(true),
     onOpenSheet: () => setFilterSheetOpen(true),
     activeCount,
     controlsId: 'asset-filters',
-    // One filter entry per width: Add filter from 768 (its last row opens
-    // the panel or the sheet), this button joined to the search on a phone.
     sheetOnly: true,
   }
 
   const chips = inventoryChips(filters, {
     groups: facetGroups,
     t,
-    propertyLabel: attributeLabel,
+    propertyLabel: (key) => attributeLabel(key, locale),
     formatDate: (iso) => {
       const d = new Date(iso)
       return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString()
@@ -987,14 +989,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </ListTitleRow>
 
         <div className="flex items-start">
-          <FilterPanelSlot
-            open={filtersOpen}
-            onClose={() => setFiltersOpen(false)}
-            id="asset-filters"
-            label={t('assets.inventoryPage.filters', 'Asset filters')}
-          >
-            {facetPanel}
-          </FilterPanelSlot>
           <div className="min-w-0 flex-1">
             {isFirstLoad && !isError ? (
               <InventoryTableSkeleton />
@@ -1029,7 +1023,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 total={total}
                 page={page}
                 pageSize={pageSize}
-                sort={filters.sort}
+                sort={filters.sort ?? DEFAULT_SORT}
                 onPageChange={(nextPage, nextSize) =>
                   setFilters({
                     ...filters,
@@ -1038,7 +1032,14 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                     page: nextSize !== pageSize ? 1 : nextPage,
                   })
                 }
-                onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
+                onSortChange={(sort) =>
+                  // The default order is not written into the address.
+                  setFilters({
+                    ...filters,
+                    sort: sort === DEFAULT_SORT ? undefined : sort,
+                    page: 1,
+                  })
+                }
                 bulk={assetsBulk}
                 selectMode={phoneSelect.selectMode}
                 resetSelectionKey={tableBulk.resetKey}
@@ -1058,12 +1059,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                     stats={scopeLabel ? typeStats : stats}
                     onChange={setFilters}
                     onOpenChange={(open) => open && setFacetsWanted(true)}
-                    onOpenPanel={() =>
-                      openFilterPanel(
-                        () => setFiltersOpen(true),
-                        () => setFilterSheetOpen(true)
-                      )
-                    }
                   />
                 }
                 toolbarEnd={
