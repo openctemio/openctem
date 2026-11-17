@@ -91,4 +91,58 @@ describe('OpenSourceLicenses', () => {
     )
     expect(await screen.findByText('No components listed')).toBeInTheDocument()
   })
+
+  it('offers Reload for a list that failed, and loads it again', async () => {
+    const user = userEvent.setup()
+    let fail = true
+    renderPage(
+      async () => apiDoc,
+      async () => {
+        if (fail) throw new Error('503')
+        return webDoc
+      }
+    )
+    expect(await screen.findByTestId('licenses-missing-web')).toBeInTheDocument()
+    fail = false
+    await user.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(await screen.findByText('3 components')).toBeInTheDocument()
+    expect(screen.queryByTestId('licenses-missing-web')).not.toBeInTheDocument()
+  })
+
+  it('a build without a generated list has nothing to reload', async () => {
+    renderPage(
+      async () => ({ generated: false, component: 'api', packages: [] }),
+      async () => webDoc
+    )
+    expect(await screen.findByTestId('licenses-missing-api')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument()
+  })
+
+  it('opens with the count of components per part when asked for the lead', async () => {
+    render(
+      <OpenSourceLicenses
+        lead
+        api={{ id: 'api', load: async () => apiDoc }}
+        web={{ id: 'web', load: async () => webDoc }}
+      />,
+      { wrapper }
+    )
+    expect(
+      await screen.findByText(
+        'This build is made of 3 open-source components: 2 in the API and 1 in the web app. The list is generated when the release is built.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('names the columns for sighted readers only; rows stay one disclosure each', async () => {
+    renderPage(
+      async () => apiDoc,
+      async () => webDoc
+    )
+    const list = await screen.findByTestId('licenses-list')
+    expect(within(list).getAllByRole('button')).toHaveLength(3)
+    const columns = document.querySelector('[data-slot="licenses-columns"]')
+    expect(columns).toHaveAttribute('aria-hidden', 'true')
+    expect(columns).toHaveTextContent('Component')
+  })
 })
