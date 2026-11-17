@@ -168,6 +168,36 @@ describe('the menu of a view with unsaved changes', () => {
     await waitFor(() => expect(onDiscard).toHaveBeenCalled())
   })
 
+  it('Save changes with a text filter stores its checked document, never the view under it', async () => {
+    const document = { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } }
+    const resolveFilter = vi.fn(() => Promise.resolve({ filter: document }))
+    const { onDiscard } = menu({
+      resolveFilter,
+      changes: [{ kind: 'query' }],
+      pageParams: { mode: 'query' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /unsaved changes/ }))
+    expect(await screen.findByText(/query text changed/)).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Save changes' }))
+    await waitFor(() => expect(updateSavedView).toHaveBeenCalled())
+    const [id, body] = vi.mocked(updateSavedView).mock.calls[0]
+    expect(id).toBe(V1)
+    expect(body.filter).toEqual(document)
+    expect(body.query).toBeUndefined()
+    expect(body.page_params).toEqual({ mode: 'query' })
+    // Then the view is opened again (Reset's path): view=<id>, its new text.
+    await waitFor(() => expect(onDiscard).toHaveBeenCalled())
+  })
+
+  it('a view someone else owns, changed by a query text, can only be saved as a new one', async () => {
+    state.views = [theirs]
+    menu({ activeId: V2, changes: [{ kind: 'query' }] })
+    await userEvent.click(screen.getByRole('button', { name: /unsaved changes/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Save changes' })).toBeNull()
+    expect(await screen.findByRole('menuitem', { name: 'Save as new view…' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: /discard/i })).toBeInTheDocument()
+  })
+
   it('a view someone else owns can only be saved as a new one', async () => {
     state.views = [theirs]
     menu({ activeId: V2 })

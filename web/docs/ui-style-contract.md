@@ -537,7 +537,11 @@ reference.
   | `masked`          | start  | 200        | asc        |
   | `select`          | center | 40         | asc        |
   | `actions`         | center | 48         | asc        |
+  | `decisions`       | end    | from page  | asc        |
   | `text`            | start  | by content | asc        |
+
+  `decisions` is a queue's last column of decision buttons (Approve, Reject,
+  More): end-aligned, as wide as the page's `width` says its buttons need.
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.

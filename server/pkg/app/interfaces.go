@@ -1,13 +1,13 @@
 // Package app defines service interfaces for the application layer.
-// These interfaces enable service wrapping for Enterprise/SaaS editions.
+// These interfaces enable service wrapping by a custom build.
 //
 // Usage:
 //
-//	// OSS Core - Direct implementation
+//	// Core - direct implementation
 //	var svc app.AssetService = ossapp.NewAssetService(repo, log)
 //
-//	// Enterprise - Wrapped with RBAC/Audit
-//	var svc app.AssetService = enterprise.NewAssetServiceWithRBAC(
+//	// Custom build - wrapped with its own checks
+//	var svc app.AssetService = myext.NewAssetServiceWithRBAC(
 //	    ossapp.NewAssetService(repo, log),
 //	    rbacService,
 //	    auditService,

@@ -116,7 +116,7 @@ func defineFlags(fs *flag.FlagSet) {
 // command-line tools (see toolFor), parses the server flags, and otherwise runs
 // the API server until it stops. It does not return normally; it exits the
 // process with the server's exit status. exts are the build's extensions
-// (none in the Community build); an invalid set stops the start.
+// (none in the default build); an invalid set stops the start.
 func Main(exts ...ext.Extension) {
 	set, err := extensionhost.New(exts)
 	if err != nil {
@@ -128,6 +128,11 @@ func Main(exts ...ext.Extension) {
 	if tool := toolFor(os.Args[0]); tool != nil {
 		tool()
 		return
+	}
+	// The diagnosis commands are words, not flags: `server doctor`,
+	// `server support-bundle` (diag_cmd.go).
+	if len(os.Args) > 1 && isDiagCommand(os.Args[1]) {
+		os.Exit(runDiagCommand(os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
 	defineFlags(fs)
@@ -143,7 +148,7 @@ func Main(exts ...ext.Extension) {
 }
 
 // buildExtensions are the extensions the build passed to Main (empty for
-// Community), set once before the server starts.
+// the default build), set once before the server starts.
 var buildExtensions *extensionhost.Set
 
 func run() int {
@@ -310,6 +315,13 @@ func run() int {
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
+	// A production server with SAML sign-in enabled and no APP_URL does not
+	// start: the SAML audience and URLs are built on APP_URL only.
+	if err := requireSAMLPublicURL(ctx, db.DB, cfg); err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
 	// ==========================================================================
 	// Services
 	// ==========================================================================
@@ -331,6 +343,9 @@ func run() int {
 	// Warn about connected Jira integrations without their own webhook
 	// secret: their inbound deliveries are refused until one is set.
 	warnJiraIntegrationsWithoutSecret(ctx, db.DB, log)
+	// Warn when the API connects as the owner of the audit tables: the
+	// database then cannot keep its credentials from changing audit history.
+	warnAPIRoleOwnsAuditLog(ctx, db.DB, log)
 
 	// Initialize auth services if local auth is supported
 	if cfg.Auth.Provider.SupportsLocal() {
@@ -573,7 +588,7 @@ func run() int {
 		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
 	}
 
-	// Routes of the build's extensions (none in the Community build): a
+	// Routes of the build's extensions (none in the default build): a
 	// route the core refuses stops the start.
 	extRoutes, err := buildExtensions.Routes(ctx, services.ExtensionHost)
 	if err != nil {
@@ -619,7 +634,7 @@ func run() int {
 	}
 
 	// A grant provider that keeps itself fresh runs on every plane until
-	// shutdown; the Community build has none.
+	// shutdown; the default build has none.
 	if r, ok := services.GrantProvider.(ext.Runner); ok {
 		go r.Run(ctx)
 	}
@@ -724,6 +739,20 @@ func run() int {
 			}
 			if n > 0 {
 				log.Info("pending commands given host keys", "count", n)
+			}
+		}()
+
+		// Host keys and host counts for emerging-threat alerts planned
+		// before an alert counted hosts. Idempotent, short batches, one
+		// replica at a time; nothing is sent again.
+		go func() {
+			n, err := postgres.BackfillThreatAlertHosts(ctx, db.DB)
+			if err != nil {
+				log.Error("emerging-threat alert host count backfill failed", "error", err, "updated", n)
+				return
+			}
+			if n > 0 {
+				log.Info("emerging-threat alerts recounted by host", "count", n)
 			}
 		}()
 	}

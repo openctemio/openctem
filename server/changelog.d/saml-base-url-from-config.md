@@ -1,0 +1,6 @@
+### Security: the SAML audience and service-provider URLs come from APP_URL only
+
+- With `APP_URL` unset, the SAML entity ID, the assertion consumer service URL and the audience, recipient and destination an assertion must carry were built from the request (`Host`, or `X-Forwarded-Host` from a trusted proxy). A sender who chose that header chose the audience the server checked, so an assertion the identity provider issued to another service provider could be accepted. They are now built on the origin of `APP_URL` and nothing of a request takes part.
+- Without `APP_URL`, production refuses SAML: sign-in and the assertion consumer service redirect to the sign-in page with `saml_failed`, and `GET /api/v1/auth/saml/{org}/metadata` answers 409 `SAML_PUBLIC_URL_UNSET`. Outside production SAML uses `http://localhost:<SERVER_PORT>` and logs a warning.
+- **Upgrade note:** a production server with SAML sign-in enabled for at least one organization and no `APP_URL` no longer starts; the error names `APP_URL` and the number of organizations. Set `APP_URL` to the public origin of the API (the value the identity provider already has in the service-provider metadata) before upgrading. Deployments that set `APP_URL` are unchanged.
+- Docs: https://docs.openctem.io/identity/sso-saml/
