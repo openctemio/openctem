@@ -31,7 +31,7 @@ import {
   QueueEmpty,
   decideByState,
   useQueueAnnouncer,
-} from '@/features/queue'
+} from '@/features/shared/components/queue'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'

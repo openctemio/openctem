@@ -21,7 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatCalendarDate } from '@/lib/format-metric'
-import { QueueReasonDialog } from '@/features/queue'
+import { QueueReasonDialog } from '@/features/shared/components/queue'
 import { useApproveStatus, useRejectApproval } from '../api/use-findings-api'
 import { approveErrorOutcome, approveResultOutcome } from '../lib/approval-policy'
 import { closureReasonLabel } from '../lib/closure'
