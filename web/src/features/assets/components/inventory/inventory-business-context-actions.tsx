@@ -45,23 +45,42 @@ import {
 import { linkInBatches } from '../link-assets-dialog'
 import type { Asset } from '../../types/asset.types'
 
-type Target = 'unit' | 'service'
+export type BusinessContextTarget = 'unit' | 'service'
+type Target = BusinessContextTarget
+
+/** Which of the two targets the viewer may add assets to (module and permission). */
+export function useBusinessContextAccess(): { canUnit: boolean; canService: boolean } {
+  const allowed = useNavItemAccess()
+  return {
+    canUnit: allowed({ module: 'business_units', permission: Permission.AssetsWrite }),
+    canService: allowed({
+      module: 'business_services',
+      permission: Permission.BusinessServicesWrite,
+    }),
+  }
+}
 
 export function InventoryBusinessContextActions({
   selected,
   onDone,
+  dialog: dialogProp,
+  onDialogChange,
 }: {
   selected: Asset[]
   onDone: () => void
+  /**
+   * Opened from elsewhere (items of a menu): the dialog follows `dialog` and
+   * the component draws no buttons of its own.
+   */
+  dialog?: BusinessContextTarget | null
+  onDialogChange?: (dialog: BusinessContextTarget | null) => void
 }) {
   const { t } = useTranslation()
-  const allowed = useNavItemAccess()
-  const canUnit = allowed({ module: 'business_units', permission: Permission.AssetsWrite })
-  const canService = allowed({
-    module: 'business_services',
-    permission: Permission.BusinessServicesWrite,
-  })
-  const [dialog, setDialog] = useState<Target | null>(null)
+  const { canUnit, canService } = useBusinessContextAccess()
+  const [ownDialog, setOwnDialog] = useState<Target | null>(null)
+  const controlled = onDialogChange !== undefined
+  const dialog = controlled ? (dialogProp ?? null) : ownDialog
+  const setDialog = controlled ? onDialogChange : setOwnDialog
   const [targetId, setTargetId] = useState('')
   const [dependency, setDependency] = useState<DependencyType>('runs_on')
   const [submitting, setSubmitting] = useState(false)
@@ -134,13 +153,13 @@ export function InventoryBusinessContextActions({
 
   return (
     <>
-      {canUnit && (
+      {!controlled && canUnit && (
         <Button variant="ghost" size="sm" onClick={() => setDialog('unit')}>
           <Building2 className="me-2 h-4 w-4" />
           {t('assets.bizctx.addToUnit', 'Add to unit')}
         </Button>
       )}
-      {canService && (
+      {!controlled && canService && (
         <Button variant="ghost" size="sm" onClick={() => setDialog('service')}>
           <Building className="me-2 h-4 w-4" />
           {t('assets.bizctx.addToService', 'Add to service')}
