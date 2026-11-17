@@ -2,15 +2,14 @@
 
 /**
  * Who may be invited and whether people from outside need an end of access
- * (api RFC-095 §4), part of the Authentication settings form (saved with its
- * one Save; owner, with a re-authentication).
+ * (api RFC-095 §4): rows of "Who may join" on the Joining tab of Settings ›
+ * Sign-in (saved with that tab's save bar; owner, with a re-authentication).
  */
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsBlock, SettingsSwitchRow } from '@/features/shared'
 
 import type { InviteesPolicy } from '../types/settings.types'
 
@@ -36,17 +35,16 @@ export function InvitationPolicyCard({
 }: InvitationPolicyCardProps) {
   const { t } = useTranslation()
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('org.invitePolicy.title')}</CardTitle>
-        <CardDescription>{t('org.invitePolicy.description')}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <>
+      <SettingsBlock id="invitations">
+        <p id="invitees-label" className="text-body font-medium">
+          {t('org.invitePolicy.title')}
+        </p>
         <RadioGroup
           value={invitees}
           onValueChange={(v) => onInviteesChange(v as InviteesPolicy)}
           disabled={disabled}
-          aria-label={t('org.invitePolicy.title')}
+          aria-labelledby="invitees-label"
           className="gap-3"
         >
           {POLICIES.map((p) => (
@@ -60,28 +58,22 @@ export function InvitationPolicyCard({
               />
               <div>
                 <Label htmlFor={`invitees-${p}`}>{t(`org.invitePolicy.${p}`)}</Label>
-                <p id={`invitees-${p}-desc`} className="text-xs text-muted-foreground">
+                <p id={`invitees-${p}-desc`} className="text-cap text-muted-foreground">
                   {t(`org.invitePolicy.${p}Hint`)}
                 </p>
               </div>
             </div>
           ))}
         </RadioGroup>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Label htmlFor="external-access-end-required">
-              {t('org.invitePolicy.endRequired')}
-            </Label>
-            <p className="text-xs text-muted-foreground">{t('org.invitePolicy.endRequiredHint')}</p>
-          </div>
-          <Switch
-            id="external-access-end-required"
-            checked={endRequired}
-            onCheckedChange={onEndRequiredChange}
-            disabled={disabled}
-          />
-        </div>
-      </CardContent>
-    </Card>
+      </SettingsBlock>
+      <SettingsSwitchRow
+        id="external-access-end-required"
+        label={t('org.invitePolicy.endRequired')}
+        hint={t('org.invitePolicy.endRequiredHint')}
+        checked={endRequired}
+        onCheckedChange={onEndRequiredChange}
+        disabled={disabled}
+      />
+    </>
   )
 }

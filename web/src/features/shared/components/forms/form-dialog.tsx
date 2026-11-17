@@ -59,7 +59,11 @@ export interface FormDialogProps {
   reason?: ReactNode
   /** The primary action removes or revokes something. */
   destructive?: boolean
-  cancelLabel?: ReactNode
+  /**
+   * The Cancel button's label. null leaves Cancel out: a result view whose
+   * one action (Done) closes the dialog; X and Escape still close it.
+   */
+  cancelLabel?: ReactNode | null
   /** A failure of the last submit, shown above the actions and announced. */
   error?: string | null
   /** The server's request id of that failure, to quote to support. */
@@ -113,7 +117,7 @@ export function FormDialog({
     >
       <DialogContent size={size} data-testid={testId}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-dialog">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <DialogForm onSubmit={submit} noValidate>
@@ -130,9 +134,11 @@ export function FormDialog({
                 )}
               </div>
             )}
-            <Button type="button" variant="ghost" onClick={requestClose} disabled={submitting}>
-              {cancelLabel ?? t('common.cancel')}
-            </Button>
+            {cancelLabel !== null && (
+              <Button type="button" variant="ghost" onClick={requestClose} disabled={submitting}>
+                {cancelLabel ?? t('common.cancel')}
+              </Button>
+            )}
             <Button
               type="submit"
               variant={destructive ? 'destructive' : 'default'}
