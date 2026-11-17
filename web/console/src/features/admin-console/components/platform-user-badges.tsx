@@ -7,8 +7,8 @@ import type { PlatformUser } from '../types'
 
 /**
  * Sign-in state of one account: blocked, locked, unverified, MFA, platform admin, erased.
- * `oneLine` keeps the marks on one line (a table row): what does not fit ends
- * at the cell edge, and the account page shows every mark.
+ * `oneLine` keeps the marks on one line in a table row (from 768px): what does
+ * not fit ends at the cell edge, and the account page shows every mark.
  */
 export function PlatformUserBadges({
   user,
@@ -37,7 +37,11 @@ export function PlatformUserBadges({
   return (
     <div
       data-slot="platform-user-badges"
-      className={cn('flex gap-1', oneLine ? 'min-w-0 overflow-hidden *:shrink-0' : 'flex-wrap')}
+      className={cn(
+        'flex flex-wrap gap-1',
+        // One line in a table row; a phone card has the room to wrap.
+        oneLine && 'md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0'
+      )}
     >
       {plain && <Badge variant="outline">{t('admin.users.badge.active', 'Active')}</Badge>}
       {user.erased && <Badge variant="outline">{t('admin.users.badge.erased', 'Erased')}</Badge>}

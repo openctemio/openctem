@@ -93,8 +93,7 @@ export default function AdminUsersPage() {
         header: t('admin.users.col.state', 'State'),
         meta: {
           kind: 'tags',
-          minWidth: 176,
-          maxWidth: 280,
+          width: 216,
           label: t('admin.users.col.state', 'State'),
         },
         cell: ({ row }) => <PlatformUserBadges user={row.original} oneLine />,
@@ -138,7 +137,8 @@ export default function AdminUsersPage() {
         header: t('admin.users.col.created', 'Created'),
         meta: {
           kind: 'date',
-          width: 128,
+          // "about 1 month ago" whole, like Last sign-in.
+          width: 152,
           hideBelow: 720,
           label: t('admin.users.col.created', 'Created'),
         },
