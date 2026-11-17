@@ -4,7 +4,8 @@
  * overdue state, the reason dialog and the status region.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 
 vi.mock('@/components/ui/action-menu', () => ({
   ActionMenu: ({
@@ -176,6 +177,79 @@ describe('QueueReasonDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(props.onOpenChange).toHaveBeenCalledWith(false)
     expect(props.onConfirm).not.toHaveBeenCalled()
+  })
+  it('gives the focus back to the control that opened it', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Reject row
+          </button>
+          <QueueReasonDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Reject request"
+            description="Give a reason."
+            reason=""
+            onReasonChange={() => {}}
+            reasonLabel="Reason for rejection"
+            confirmLabel="Reject"
+            onConfirm={() => {}}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: 'Reject row' })
+    opener.focus()
+    fireEvent.click(opener)
+    const field = await screen.findByRole('textbox', { name: 'Reason for rejection' })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+  it('finds the same control of the same item when the list drew the row anew', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      const [drawn, setDrawn] = useState(0)
+      return (
+        <>
+          <div data-queue-item="r1">
+            <button
+              key={drawn}
+              type="button"
+              data-slot="queue-reject"
+              onClick={() => {
+                setOpen(true)
+                setDrawn((n) => n + 1)
+              }}
+            >
+              Reject row {drawn}
+            </button>
+          </div>
+          <QueueReasonDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Reject request"
+            description="Give a reason."
+            reason=""
+            onReasonChange={() => {}}
+            reasonLabel="Reason for rejection"
+            confirmLabel="Reject"
+            onConfirm={() => {}}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const first = screen.getByRole('button', { name: 'Reject row 0' })
+    first.focus()
+    fireEvent.click(first)
+    const field = await screen.findByRole('textbox', { name: 'Reason for rejection' })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reject row 1' })).toHaveFocus())
   })
 })
 
