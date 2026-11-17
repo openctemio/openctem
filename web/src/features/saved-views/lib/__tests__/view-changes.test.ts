@@ -76,6 +76,21 @@ describe('viewChanges (the unsaved-changes dot)', () => {
     ])
   })
 
+  it('a query text applied in place of the view is one change, whatever params it wrote', () => {
+    expect(
+      changes('from_view=abc&mode=query&fq=a%3D1+OR+b%3D2&state=all&practice=all&q=x', {
+        queryText: true,
+      })
+    ).toEqual([{ kind: 'query' }])
+    expect(
+      kinds(changes('from_view=abc&is_in_kev=true&sort=severity', { queryText: true }))
+    ).toEqual(['query', 'sort'])
+    // Even a text that says exactly the view's flat filter: the URL no longer opens the view.
+    expect(kinds(changes('from_view=abc&severity=critical,high', { queryText: true }))).toEqual([
+      'query',
+    ])
+  })
+
   it('counts the filters added', () => {
     expect(changes('epss_score_gte=0.5&is_in_kev=true&severity=critical,high')).toEqual([
       { kind: 'filters', count: 2 },
