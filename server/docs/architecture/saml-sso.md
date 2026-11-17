@@ -118,9 +118,27 @@ owner yet gets it applied directly.
 ## SP metadata
 
 `GET /api/v1/auth/saml/{org}/metadata` (public) returns the SP metadata XML the
-admin registers with their IdP. The SP entity id / ACS URL are built on the
-configured public origin (`APP_URL`); only without it on the forwarded headers
-of a trusted proxy, then the request host — `…/api/v1/auth/saml/{org}/{metadata,acs}`.
+admin registers with their IdP. The SP entity id / ACS URL are
+`<origin>/api/v1/auth/saml/{org}/{metadata,acs}`.
+
+### The public origin comes from configuration only
+
+The origin of every SP URL, and so the audience, recipient and destination an
+assertion must carry, is the origin of `APP_URL`. Nothing of a request takes
+part: not `Host`, not `X-Forwarded-Host` or `X-Forwarded-Proto`, also not
+from a trusted proxy. A request header that chose the origin would choose the
+audience the SP checks, and an assertion the IdP issued to another service
+provider could then be replayed at the ACS.
+
+| `APP_URL` | Mode | SAML origin |
+|---|---|---|
+| set | any | the origin of `APP_URL` |
+| unset | production | none: sign-in and the ACS redirect to `/login?error=saml_failed`, the metadata route answers 409 `SAML_PUBLIC_URL_UNSET`, and the server refuses to start while any organization has SAML sign-in enabled (the error names `APP_URL` and the number of organizations) |
+| unset | any other | `http://localhost:<SERVER_PORT>`, with a warning in the log |
+
+The start-up check counts enabled rows of `saml_providers`
+(`internal/server/saml_public_url.go`); a SAML configuration enabled later on
+a production server without `APP_URL` stays refused at request time.
 
 The console downloads the same document from
 `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata` (`TenantsRead`):

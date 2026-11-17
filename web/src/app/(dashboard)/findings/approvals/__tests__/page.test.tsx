@@ -22,7 +22,10 @@ import { toast } from 'sonner'
 // ============================================
 
 // The columns the page passes to the table, so a test can render one cell.
-const captured = vi.hoisted(() => ({ columns: [] as unknown[] }))
+const captured = vi.hoisted(() => ({
+  columns: [] as unknown[],
+  mobileRow: undefined as undefined | ((row: unknown) => React.ReactNode),
+}))
 
 const mockMutate = vi.fn()
 const mockTriggerApprove = vi.fn()
@@ -105,10 +108,36 @@ vi.mock('@/features/findings/api/use-approval-batches', () => ({
   approvalBatchApi: { approve: vi.fn(), reject: vi.fn(), cancel: vi.fn() },
 }))
 
+// What the signed-in user may do; a test removes a permission to check a gate.
+const permState = vi.hoisted(() => ({ denied: new Set<string>() }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
-  Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
-  usePermissions: () => ({ can: () => true }),
+  Permission: {
+    FindingsApprove: 'findings:approve',
+    FindingsWrite: 'findings:write',
+    FindingsRead: 'findings:read',
+  },
+  usePermissions: () => ({ can: (p: string) => !permState.denied.has(p) }),
+}))
+
+// The row menu as plain buttons: what it offers is the page's decision; how a
+// menu opens is the kit's (tested there).
+vi.mock('@/components/ui/action-menu', () => ({
+  ActionMenu: ({
+    items,
+    label,
+  }: {
+    items: { id: string; label: string; onSelect?: () => void }[]
+    label: string
+  }) => (
+    <div role="group" aria-label={label}>
+      {items.map((item) => (
+        <button key={item.id} type="button" data-menu-item={item.id} onClick={item.onSelect}>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }))
 
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
@@ -195,6 +224,12 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     columns,
     emptyMessage,
     emptyDescription,
+    emptyState,
+    isLoading,
+    error,
+    onRetry,
+    errorTitle,
+    mobileRow,
     toolbarStart,
     toolbarEnd,
   }: {
@@ -203,6 +238,12 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     toolbarEnd?: React.ReactNode
     emptyMessage?: string
     emptyDescription?: string
+    emptyState?: React.ReactNode
+    isLoading?: boolean
+    error?: unknown
+    onRetry?: () => void
+    errorTitle?: string
+    mobileRow?: (row: unknown) => React.ReactNode
     columns: unknown[]
     searchPlaceholder?: string
     searchKey?: string
@@ -210,16 +251,30 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     pageSize?: number
   }) => {
     captured.columns = columns
+    captured.mobileRow = mobileRow
     return (
       <div data-testid="data-table">
         <div data-testid="toolbar">
           {toolbarStart}
           {toolbarEnd}
         </div>
-        {data.length === 0 ? (
-          <div>
-            <p>{emptyMessage}</p>
-            <p>{emptyDescription}</p>
+        {isLoading ? (
+          <div data-slot="skeleton" />
+        ) : error && data.length === 0 ? (
+          <div role="alert">
+            Failed to load {errorTitle}
+            <button type="button" onClick={onRetry}>
+              Retry
+            </button>
+          </div>
+        ) : data.length === 0 ? (
+          <div data-testid="table-empty">
+            {emptyState ?? (
+              <>
+                <p>{emptyMessage}</p>
+                <p>{emptyDescription}</p>
+              </>
+            )}
           </div>
         ) : (
           <div data-testid="table-rows">
@@ -241,7 +296,8 @@ vi.mock('@/features/shared/components/data-table/data-table-column-header', () =
 
 // Import after mocks
 import ApprovalsPage from '../page'
-import { useApprovals } from '@/features/findings/api/use-findings-api'
+import { useApprovals, remindApprovers } from '@/features/findings/api/use-findings-api'
+import { ApiClientError } from '@/lib/api/error-handler'
 
 // ============================================
 // MOCK DATA
@@ -331,24 +387,31 @@ describe('ApprovalsPage', () => {
       expect(screen.getByText('Approval requests')).toBeInTheDocument()
     })
 
-    it('renders description with counts', () => {
+    it('names the view and says its count once, in the title row', () => {
       mockHook({
         data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
       })
-      render(<ApprovalsPage />)
-      expect(screen.getByText('1 waiting for a decision')).toBeInTheDocument()
+      const { container } = render(<ApprovalsPage />)
+      expect(screen.getByRole('heading', { name: 'Pending requests' })).toBeInTheDocument()
+      const counts = container.querySelectorAll('[data-slot="list-count"]')
+      expect(counts).toHaveLength(1)
+      expect(counts[0]).toHaveTextContent('3 requests')
+      // No second count in the page header.
+      expect(screen.queryByText(/waiting for a decision/)).not.toBeInTheDocument()
     })
 
-    it('says so when nothing is waiting', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
+    it('names the view after the status lens', () => {
+      listState.status = 'rejected'
+      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: COUNTS } })
       render(<ApprovalsPage />)
-      expect(screen.getByText('Nothing is waiting for a decision')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Rejected requests' })).toBeInTheDocument()
+      listState.status = ''
     })
 
-    it('shows loading description while fetching', () => {
+    it('keeps the count slot empty while the first read is on its way', () => {
       mockHook({ isLoading: true })
-      render(<ApprovalsPage />)
-      expect(screen.getByText('Loading approvals…')).toBeInTheDocument()
+      const { container } = render(<ApprovalsPage />)
+      expect(container.querySelector('[data-slot="list-count"]')).toBeEmptyDOMElement()
     })
 
     it('has no title-case back link: the sidebar already leads to Findings', () => {
@@ -388,7 +451,17 @@ describe('ApprovalsPage', () => {
       expect(screen.getByRole('heading', { name: 'Approval requests' })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: /Group exceptions/ })).toBeInTheDocument()
       expect(screen.getByRole('alert')).toHaveTextContent(/approval requests/)
+      // The toolbar stays: the lens can still be changed.
+      expect(screen.getByTestId('toolbar')).not.toBeEmptyDOMElement()
+    })
+
+    it('a refused read says no access, with no Retry', () => {
+      mockHook({ error: Object.assign(new Error('forbidden'), { statusCode: 403 }) })
+      render(<ApprovalsPage />)
+      expect(screen.getByText(/do not have access/i)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
       expect(screen.queryByTestId('data-table')).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: /Group exceptions/ })).toBeInTheDocument()
     })
 
     it('calls mutate when retry is clicked', () => {
@@ -404,11 +477,48 @@ describe('ApprovalsPage', () => {
   // ============================================
 
   describe('empty state', () => {
-    it('shows empty message when no approvals', () => {
-      listState.status = 'all'
+    it('first run: the queue never held a request, and no way out is offered', () => {
       mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
       render(<ApprovalsPage />)
-      expect(screen.getByText('No approval requests')).toBeInTheDocument()
+      const empty = screen.getByTestId('table-empty')
+      expect(empty.querySelector('[data-kind="first-run"]')).toBeTruthy()
+      expect(empty).toHaveTextContent('No approval requests')
+      expect(within(empty).queryByRole('button')).not.toBeInTheDocument()
+    })
+
+    it('nothing waiting: decided requests exist, and Show all requests opens them', async () => {
+      mockHook({
+        data: {
+          data: [],
+          total: 0,
+          page: 1,
+          per_page: 20,
+          status_counts: { ...COUNTS, pending: 0 },
+        },
+      })
+      render(<ApprovalsPage />)
+      const empty = screen.getByTestId('table-empty')
+      expect(empty.querySelector('[data-kind="nothing-waiting"]')).toBeTruthy()
+      expect(empty).toHaveTextContent('Nothing is waiting for a decision')
+      fireEvent.click(within(empty).getByRole('button', { name: 'Show all requests' }))
+      expect(listState.setFilter).toHaveBeenCalledWith('status', 'all')
+    })
+
+    it('no match: the lens left no row', () => {
+      listState.status = 'rejected'
+      mockHook({
+        data: {
+          data: [],
+          total: 0,
+          page: 1,
+          per_page: 20,
+          status_counts: { ...COUNTS, rejected: 0 },
+        },
+      })
+      render(<ApprovalsPage />)
+      const empty = screen.getByTestId('table-empty')
+      expect(empty.querySelector('[data-kind="no-match"]')).toBeTruthy()
+      expect(empty).toHaveTextContent('No requests with the status Rejected.')
       listState.status = ''
     })
   })
@@ -443,7 +553,8 @@ describe('ApprovalsPage', () => {
       render(<ApprovalsPage />)
       expect(screen.getByRole('tab', { name: /^Finding requests\s*120$/ })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: /^Group exceptions$/ })).toBeInTheDocument()
-      expect(screen.getByText('120 waiting for a decision')).toBeInTheDocument()
+      // The title row counts the list on screen, once.
+      expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('120 requests')
     })
   })
 
@@ -511,9 +622,16 @@ describe('ApprovalsPage', () => {
     })
 
     it('explains an empty Pending list', () => {
-      mockHook({ data: { data: [], total: 0, page: 1, per_page: 20, status_counts: {} } })
+      mockHook({
+        data: {
+          data: [],
+          total: 0,
+          page: 1,
+          per_page: 20,
+          status_counts: { ...COUNTS, pending: 0 },
+        },
+      })
       render(<ApprovalsPage />)
-      expect(screen.getByText('No pending requests')).toBeInTheDocument()
       expect(
         screen.getByText(/To see decided requests, change the Status filter/)
       ).toBeInTheDocument()
@@ -809,16 +927,18 @@ describe('ApprovalsPage deciding', () => {
   it('your own request shows no decision buttons, only that it is yours', () => {
     render(<ApprovalsPage />)
     const { container } = cell('actions', { ...otherRow, requested_by: 'user-1' })
-    expect(within(container).queryByRole('button', { name: /^approve$/i })).toBeNull()
-    expect(within(container).queryByRole('button', { name: /^reject$/i })).toBeNull()
+    expect(within(container).queryByRole('button', { name: /^approve/i })).toBeNull()
+    expect(within(container).queryByRole('button', { name: /^reject/i })).toBeNull()
     expect(container).toHaveTextContent('Your request')
+    // The reason is there for assistive technology and on hover or focus.
+    expect(container).toHaveTextContent('Another approver must decide your own request.')
   })
 
   it('the actions menu is named after the finding', () => {
     render(<ApprovalsPage />)
     const { container } = cell('actions', { ...otherRow, requested_by: 'user-1' })
     expect(
-      within(container).getByRole('button', {
+      within(container).getByRole('group', {
         name: 'Actions for SQL injection in orders search',
       })
     ).toBeInTheDocument()
@@ -872,5 +992,246 @@ describe('ApprovalsPage deciding', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(mockTriggerReject).toHaveBeenCalledWith({ reason: 'Reachable from the internet' })
+  })
+})
+
+// ============================================
+// THE QUEUE'S GATES: PERMISSIONS, FOUR EYES, CONFIRMS, LIMITS
+// ============================================
+
+describe('ApprovalsPage gates', () => {
+  type Col = { id?: string; accessorKey?: string; cell?: (c: unknown) => React.ReactNode }
+  const otherRow = {
+    ...mockApprovals[0],
+    id: 'approval-o',
+    requested_by: 'user-2',
+    finding_title: 'SQL injection in orders search',
+  }
+  const ownRow = { ...otherRow, id: 'approval-mine', requested_by: 'user-1' }
+
+  function page(selfApproval = false, rows: unknown[] = [otherRow]) {
+    mockHook({
+      data: {
+        data: rows as unknown as typeof mockApprovals,
+        total: rows.length,
+        page: 1,
+        per_page: 20,
+        status_counts: COUNTS,
+        ...(selfApproval ? { self_approval_available: true } : {}),
+      } as never,
+    })
+    return render(<ApprovalsPage />)
+  }
+
+  function cell(id: string, row: unknown) {
+    const col = (captured.columns as Col[]).find((c) => c.id === id || c.accessorKey === id)
+    expect(col?.cell).toBeDefined()
+    return render(<div>{col?.cell?.({ row: { original: row } })}</div>)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    permState.denied.clear()
+    listState.view = ''
+    listState.status = ''
+  })
+
+  it('without findings:approve a request of someone else offers no decision at all', () => {
+    permState.denied.add('findings:approve')
+    page()
+    const { container } = cell('actions', otherRow)
+    expect(container.firstChild).toBeEmptyDOMElement()
+  })
+
+  it('four eyes: your own request has no Approve or Reject even with findings:approve', () => {
+    page()
+    const { container } = cell('actions', ownRow)
+    expect(within(container).queryByRole('button', { name: /^approve /i })).toBeNull()
+    expect(within(container).queryByRole('button', { name: /^reject /i })).toBeNull()
+    expect(container.querySelector('[data-slot="queue-own-request"]')).toHaveTextContent(
+      'Your request'
+    )
+  })
+
+  it('four eyes: without findings:approve "Your request" is not shown either (as before)', () => {
+    permState.denied.add('findings:approve')
+    page()
+    const { container } = cell('actions', ownRow)
+    expect(container.querySelector('[data-slot="queue-own-request"]')).toBeNull()
+    // Remind and Cancel stay: they need findings:write and the request being yours.
+    expect(within(container).getByRole('button', { name: 'Remind approvers' })).toBeInTheDocument()
+  })
+
+  it('Remind and Cancel are offered only to the requester', () => {
+    page()
+    expect(within(cell('actions', otherRow).container).queryByRole('group')).toBeNull()
+    const own = cell('actions', ownRow).container
+    expect(within(own).getByRole('button', { name: 'Remind approvers' })).toBeInTheDocument()
+    expect(within(own).getByRole('button', { name: 'Cancel request' })).toBeInTheDocument()
+  })
+
+  it('Remind and Cancel need findings:write', () => {
+    permState.denied.add('findings:write')
+    page()
+    const { container } = cell('actions', ownRow)
+    expect(within(container).queryByRole('group')).toBeNull()
+  })
+
+  it('self-approval is offered only when the API says the organization has one member', () => {
+    page(false)
+    expect(
+      within(cell('actions', ownRow).container).queryByRole('button', { name: /Approve myself/ })
+    ).toBeNull()
+    page(true)
+    expect(
+      within(cell('actions', ownRow).container).getByRole('button', { name: /Approve myself/ })
+    ).toBeInTheDocument()
+  })
+
+  it('self-approval needs findings:approve', () => {
+    permState.denied.add('findings:approve')
+    page(true)
+    expect(
+      within(cell('actions', ownRow).container).queryByRole('button', { name: /Approve myself/ })
+    ).toBeNull()
+  })
+
+  it('a decided request offers nothing', () => {
+    page()
+    const { container } = cell('actions', { ...otherRow, status: 'approved' })
+    expect(container.firstChild).toBeEmptyDOMElement()
+  })
+
+  it('Remind asks first, then sends, and says the result to screen readers', async () => {
+    vi.mocked(remindApprovers).mockResolvedValue({ reminded: 2 })
+    const user = userEvent.setup()
+    const { container: pageEl } = page()
+    const { container } = cell('actions', ownRow)
+    await user.click(within(container).getByRole('button', { name: 'Remind approvers' }))
+    expect(remindApprovers).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Approvers can be reminded once an hour.')
+    await user.click(within(dialog).getByRole('button', { name: 'Send reminder' }))
+    await waitFor(() => expect(remindApprovers).toHaveBeenCalledWith('approval-mine'))
+    await waitFor(() =>
+      expect(pageEl.querySelector('[data-slot="queue-announcer"]')).toHaveTextContent(
+        'Reminded 2 approver(s)'
+      )
+    )
+    expect(toast.success).toHaveBeenCalledWith('Reminded 2 approver(s)')
+  })
+
+  it('a second reminder within the hour is refused with the reason', async () => {
+    const tooSoon = Object.assign(new ApiClientError('conflict'), { statusCode: 409 })
+    vi.mocked(remindApprovers).mockRejectedValue(tooSoon)
+    const user = userEvent.setup()
+    const { container: pageEl } = page()
+    const { container } = cell('actions', ownRow)
+    await user.click(within(container).getByRole('button', { name: 'Remind approvers' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Send reminder' }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'The approvers were already reminded in the last hour.'
+      )
+    )
+    expect(pageEl.querySelector('[data-slot="queue-announcer"]')).toHaveTextContent(
+      'The approvers were already reminded in the last hour.'
+    )
+  })
+
+  it('Cancel request asks with a destructive confirm before anything is sent', async () => {
+    mockTriggerCancel.mockResolvedValue({})
+    const user = userEvent.setup()
+    page()
+    const { container } = cell('actions', ownRow)
+    await user.click(within(container).getByRole('button', { name: 'Cancel request' }))
+    expect(mockTriggerCancel).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Cancel this approval request?')
+    expect(within(dialog).getByRole('button', { name: 'Keep request' })).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel request' }))
+    await waitFor(() => expect(mockTriggerCancel).toHaveBeenCalled())
+    expect(toast.success).toHaveBeenCalledWith('Approval request canceled')
+  })
+
+  it('a reject needs a reason: the button is inert until one is typed', async () => {
+    const user = userEvent.setup()
+    page()
+    const { container } = cell('actions', otherRow)
+    await user.click(within(container).getByRole('button', { name: /reject/i }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Reject' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: '   ' } })
+    expect(within(dialog).getByRole('button', { name: 'Reject' })).toBeDisabled()
+    expect(mockTriggerReject).not.toHaveBeenCalled()
+  })
+
+  it('a decision is said to screen readers', async () => {
+    mockTriggerReject.mockResolvedValue({})
+    const user = userEvent.setup()
+    const { container: pageEl } = page()
+    const { container } = cell('actions', otherRow)
+    await user.click(within(container).getByRole('button', { name: /reject/i }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Reachable' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Reject' }))
+    await waitFor(() =>
+      expect(pageEl.querySelector('[data-slot="queue-announcer"]')).toHaveTextContent(
+        'Approval request rejected'
+      )
+    )
+  })
+
+  it('an AI-proposed request keeps its AI mark in the row and on the phone card', () => {
+    const aiRow = { ...otherRow, requested_by: '', requested_by_actor: 'ai_triage' }
+    page(false, [aiRow])
+    expect(
+      cell('justification', aiRow).container.querySelector('[data-testid="ai-badge"]')
+    ).toBeTruthy()
+    const card = render(<div>{captured.mobileRow?.(aiRow)}</div>).container
+    expect(card.querySelector('[data-testid="ai-badge"]')).toBeTruthy()
+  })
+
+  it('decide-by is a date, and says Overdue once it has passed', () => {
+    page()
+    const late = cell('decide_by', { ...otherRow, decide_by: '2020-01-05T00:00:00Z' }).container
+    expect(late.querySelector('[data-state="overdue"]')).toHaveTextContent(/^Overdue, /)
+    const due = cell('decide_by', { ...otherRow, decide_by: '2999-01-05T00:00:00Z' }).container
+    expect(due.querySelector('[data-state="due"]')).toHaveTextContent(/2999/)
+    // A decided request has nothing to decide by.
+    const done = cell('decide_by', {
+      ...otherRow,
+      status: 'approved',
+      decide_by: '2020-01-05T00:00:00Z',
+    })
+    expect(done.container.querySelector('[data-slot="queue-decide-by"]')).toBeNull()
+  })
+
+  it('the Status column shows on every lens but Pending, where each row would repeat it', () => {
+    page()
+    expect((captured.columns as Col[]).some((c) => c.accessorKey === 'status')).toBe(false)
+    listState.status = 'all'
+    page()
+    expect((captured.columns as Col[]).some((c) => c.accessorKey === 'status')).toBe(true)
+  })
+
+  it('the finding leads the row and the decision ends it', () => {
+    page()
+    const cols = captured.columns as Col[]
+    expect(cols[0].accessorKey).toBe('finding_id')
+    expect(cols[cols.length - 1].id).toBe('actions')
+  })
+
+  it('the phone card carries the same decision controls and the four-eyes reason in words', () => {
+    page()
+    const other = render(<div>{captured.mobileRow?.(otherRow)}</div>).container
+    expect(within(other).getByRole('button', { name: /^approve /i })).toBeInTheDocument()
+    expect(within(other).getByRole('button', { name: /^reject /i })).toBeInTheDocument()
+    const own = render(<div>{captured.mobileRow?.(ownRow)}</div>).container
+    expect(within(own).queryByRole('button', { name: /^approve /i })).toBeNull()
+    expect(own.querySelector('[data-slot="queue-own-request"]')).toHaveTextContent(
+      'Your request Another approver must decide your own request.'
+    )
   })
 })

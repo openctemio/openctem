@@ -9,18 +9,8 @@
 
 export { PRIORITY_CHART_COLORS, PRIORITY_ORDER } from '@/lib/priority-colors'
 
-/** Recharts <Tooltip> props that adapt to light/dark via theme tokens. */
-export const CHART_TOOLTIP_PROPS = {
-  contentStyle: {
-    backgroundColor: 'var(--popover)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    fontSize: 12,
-    color: 'var(--popover-foreground)',
-  },
-  labelStyle: { color: 'var(--popover-foreground)' },
-  itemStyle: { color: 'var(--popover-foreground)' },
-} as const
+/** The shared chart tooltip box (components/charts/chart-defaults.ts). */
+export { CHART_TOOLTIP_PROPS } from '@/components/charts/chart-defaults'
 
 /**
  * Health state used by the CTEM loop stage stripes and coverage bars. `none`

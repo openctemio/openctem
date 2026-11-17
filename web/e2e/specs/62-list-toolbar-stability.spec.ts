@@ -2,8 +2,9 @@ import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Nothing in a list's header jumps (owner rule): on Findings, Assets and
- * Scans, at 1440, 1024, 768 and 390 px, in English and Vietnamese, every
+ * Nothing in a list's header jumps (owner rule): on Findings, Assets,
+ * Scans, Sensors and Scan runs, at 1440, 1024, 768 and 390 px, in English
+ * and Vietnamese, every
  * control of the toolbar row and of the title row keeps its box (0 px of
  * movement, 0 px of size change) through: a filter added, five more added
  * (the chips row folds them into "+N more"), one removed, a grouping chosen,
@@ -85,11 +86,35 @@ const LISTS = {
     group: false,
     query: false,
   },
+  // No search field and no Query mode: the run list takes field filters only.
+  '/scans/runs': {
+    filters: [
+      ['kind', 'retest'],
+      ['status', 'failed'],
+      ['origin', 'all'],
+    ],
+    group: false,
+    search: false,
+  },
+  // Searched by name on the page; no query language for workflows.
+  '/scans/workflows': {
+    filters: [
+      ['retired', 'show'],
+      ['owner', 'mine'],
+    ],
+    group: false,
+    query: false,
+  },
 } as const
+
+/** A list without a search field skips the Query mode and typing steps. */
+function hasSearch(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
+  return !('search' in list) || list.search !== false
+}
 
 /** A list without a query language skips the Basic | Query steps. */
 function hasQuery(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
-  return !('query' in list) || list.query !== false
+  return hasSearch(list) && (!('query' in list) || list.query !== false)
 }
 
 async function settle(page: Page) {
@@ -249,7 +274,11 @@ function headerHoldsStill(route: keyof typeof LISTS) {
         await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
         await page.goto(route)
         await page
-          .locator('main [data-slot="list-search-input"]')
+          .locator(
+            hasSearch(list)
+              ? 'main [data-slot="list-search-input"]'
+              : 'main [data-slot="list-toolbar"]'
+          )
           .first()
           .waitFor({ state: 'visible', timeout: 45_000 })
         await settle(page)
@@ -375,12 +404,14 @@ function headerHoldsStill(route: keyof typeof LISTS) {
           })
         }
 
-        await step('type in the field', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
-        })
-        await step('clear the text', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('')
-        })
+        if (hasSearch(list)) {
+          await step('type in the field', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
+          })
+          await step('clear the text', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('')
+          })
+        }
 
         await step('clear the filters', async () => {
           const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
@@ -677,4 +708,12 @@ test.describe('Scans list header', { tag: ['@scans'] }, () => {
 test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
   headerHoldsStill('/sensors')
   saysItsCountOnce('/sensors')
+})
+test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
+  headerHoldsStill('/scans/runs')
+  saysItsCountOnce('/scans/runs')
+})
+test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
+  headerHoldsStill('/scans/workflows')
+  saysItsCountOnce('/scans/workflows')
 })

@@ -105,6 +105,14 @@ jobs:
             echo "::notice::Denylist secrets are not required here (fork or Dependabot run); the checks skip when they are unset."
           fi
 
+      # Fails when a tracked file holds stray markup or an absolute local path.
+      # Legitimate lines go in .github/stray-text-allow.txt.
+      - name: Stray text (self-test)
+        run: bash .github/scripts/check-stray-text.test.sh >/dev/null
+
+      - name: Stray text
+        run: bash .github/scripts/check-stray-text.sh
+
       - name: Customer identifiers (self-test)
         run: bash .github/scripts/check-customer-identifiers.test.sh >/dev/null
 
@@ -301,6 +309,10 @@ jobs:
       # "No AI attribution" workflow.
       - name: AI attribution check self-test
         run: bash .github/scripts/check-attribution.test.sh >/dev/null
+      # The restricted wording checker (rules come from a secret; the self-test
+      # uses made-up ones).
+      - name: Restricted wording check self-test
+        run: bash .github/scripts/check-restricted-wording.test.sh >/dev/null
       - name: Runner selection self-test
         run: bash .github/scripts/check-runners.test.sh
       - name: Runner selection
