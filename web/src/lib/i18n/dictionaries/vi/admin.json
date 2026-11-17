@@ -1970,7 +1970,7 @@
   "admin.sharedFleet.retireDesc": "Khoá của sensor mất hiệu lực ngay và không thể tiếp tục lại; hãy đăng ký một sensor mới để thay thế. Được ghi vào nhật ký kiểm toán quản trị.",
   "admin.sharedFleet.retireTitle": "Ngừng sử dụng {name}?",
   "admin.sharedFleet.retired": "Đã ngừng sử dụng {name}",
-  "admin.sharedFleet.rowActions": "Thao tác cho cảm biến {name}",
+  "admin.sharedFleet.rowActions": "Thao tác cho sensor {name}",
   "admin.sharedFleet.status.active": "Đang hoạt động",
   "admin.sharedFleet.status.disabled": "Tạm dừng",
   "admin.sharedFleet.status.revoked": "Đã ngừng sử dụng",
