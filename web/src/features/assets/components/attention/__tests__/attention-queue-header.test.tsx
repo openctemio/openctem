@@ -56,7 +56,7 @@ describe('AttentionQueueHeader', () => {
       '/assets/attention'
     )
     expect(screen.getByRole('heading', { level: 2, name: 'No owner' })).toBeInTheDocument()
-    expect(screen.getByTestId('attention-queue-count')).toHaveTextContent('549 assets')
+    expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('549 assets')
     expect(
       screen.getByText('Findings on these assets have nobody to assign to.')
     ).toBeInTheDocument()
@@ -69,7 +69,7 @@ describe('AttentionQueueHeader', () => {
   it('has no inventory link for a reason with no inventory view', () => {
     render(<AttentionQueueHeader reason="duplicates" count={3} />)
     expect(screen.queryByRole('link', { name: /open in the inventory/i })).toBeNull()
-    expect(screen.getByTestId('attention-queue-count')).toHaveTextContent('3 pairs')
+    expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('3 pairs')
   })
 
   it('opens a menu of every reason with counts, the current one checked', async () => {
