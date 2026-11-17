@@ -309,6 +309,10 @@ jobs:
       # "No AI attribution" workflow.
       - name: AI attribution check self-test
         run: bash .github/scripts/check-attribution.test.sh >/dev/null
+      # The restricted wording checker (rules come from a secret; the self-test
+      # uses made-up ones).
+      - name: Restricted wording check self-test
+        run: bash .github/scripts/check-restricted-wording.test.sh >/dev/null
       - name: Runner selection self-test
         run: bash .github/scripts/check-runners.test.sh
       - name: Runner selection
