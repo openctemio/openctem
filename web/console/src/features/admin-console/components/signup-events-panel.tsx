@@ -74,7 +74,25 @@ function SignupSummary() {
       />
     )
   }
-  if (isLoading || !data) return <Skeleton className="h-28 w-full" />
+  // The placeholder has the cards' own shape, so the list below does not move
+  // when the counts arrive.
+  if (isLoading || !data) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-3" aria-hidden="true">
+        {SIGNUP_EVENT_KINDS.map((kind) => (
+          <Card key={kind}>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-8 w-12" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-5 w-40" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
   const totals = summarize(data, new Date().toISOString().slice(0, 10))
   return (
     <div className="grid gap-4 sm:grid-cols-3">
