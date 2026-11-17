@@ -63,6 +63,9 @@ for (const list of LISTS) {
         for (let i = 0; i < count; i++) {
           const link = links.nth(i)
           const name = (await link.textContent())?.trim()
+          // A view that leads to another page (Pending approval opens the
+          // approvals inbox) is not a view of this list.
+          if (!(await link.getAttribute('href'))?.startsWith(`${list.path}?`)) continue
           await page.evaluate((y) => document.querySelector('main#content')?.scrollTo(0, y), pre)
           if (i % 2 === 0) {
             await link.click()
@@ -180,6 +183,12 @@ test.describe('on a phone with touch', () => {
           const link = views.getByRole('link').nth(i)
           const name = (await link.textContent())?.trim()
           const href = await link.getAttribute('href')
+          if (!href?.startsWith(`${list.path}?`)) {
+            // Leads to another page: not a view of this list.
+            await page.keyboard.press('Escape')
+            await expect(drawer).toBeHidden()
+            continue
+          }
           await link.tap()
           await page.waitForURL((u) => `${u.pathname}${u.search}` === href)
           await expect(drawer).toBeHidden()
