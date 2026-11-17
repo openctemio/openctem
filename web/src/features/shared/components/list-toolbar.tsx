@@ -301,7 +301,11 @@ export function ListToolbar({
             // At the row's top: a start group that grows (two lines, the
             // expanded query editor) never moves Views, Group and Display.
             'items-center self-start',
-            '@max-md/toolbar:order-last'
+            '@max-md/toolbar:order-last',
+            // On a phone the tokens' auto margin pushes both to the end: a
+            // second one here would split the free room between them, and the
+            // first chip (which takes that room) would move the tokens.
+            start && '@max-md/toolbar:ms-0'
           )}
         >
           {end}

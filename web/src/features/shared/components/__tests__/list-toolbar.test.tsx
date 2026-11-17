@@ -215,6 +215,22 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).toContain('@max-md/toolbar:flex-[0_0_auto]')
     const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
     expect(end.className).toContain('@max-md/toolbar:order-last')
+    // The end group sits right after the tokens: a second auto margin would
+    // split the free room between them, and the first chip (which takes that
+    // room) would then move the tokens.
+    expect(end.className).toContain('@max-md/toolbar:ms-0')
+  })
+
+  it('on a phone without tokens pushes the end group to the end of line 2', () => {
+    render(
+      <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
+        end={<button type="button">Views</button>}
+      />
+    )
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('ms-auto')
+    expect(end.className).not.toContain('@max-md/toolbar:ms-0')
   })
 
   it('passes its className to the outer region', () => {
