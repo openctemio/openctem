@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
 
+import { STATUS_TONE_BG } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
 
 /**
@@ -51,10 +52,11 @@ export function EntryHeader({ title, description, level = 1, className }: EntryH
 
 export type EntryTone = 'info' | 'ok' | 'warn' | 'danger'
 
+// Tints from the one status colour source; danger is the shared danger tone.
 const TONES: Record<EntryTone, { cls: string; icon: LucideIcon }> = {
-  info: { cls: 'bg-st-progress-bg', icon: Info },
-  ok: { cls: 'bg-st-resolved-bg', icon: CircleCheck },
-  warn: { cls: 'bg-st-accepted-bg', icon: TriangleAlert },
+  info: { cls: STATUS_TONE_BG.progress, icon: Info },
+  ok: { cls: STATUS_TONE_BG.resolved, icon: CircleCheck },
+  warn: { cls: STATUS_TONE_BG.accepted, icon: TriangleAlert },
   danger: { cls: 'bg-tone-danger-bg', icon: CircleAlert },
 }
 

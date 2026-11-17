@@ -57,12 +57,16 @@ export interface DesignPage {
 export const DEFAULT_THRESHOLD = { pixel: 0.1, ratio: 0.02 }
 
 export const MANIFEST: DesignPage[] = [
+  // The board's default state shows a session-ended notice above the form, so the page is
+  // opened with the same reason. References are exported from P3-Login with the owner's
+  // entry rules applied on top (2026-11-17): the primary button is 36px like every entry
+  // control, and the lockout note and the "Open your invitation" line are not shown.
   {
     id: 'sign-in',
-    route: '/login',
+    route: '/login?reason=session_expired',
     board: {
       file: 'P3-Login.dc.html',
-      sha256: '250bb8751d15540e837579ff9ad8cdb35667289b41d06eb17eecff7c96dc1a81',
+      sha256: '7e5cace55b2e0cdc89589878a3dafe1e489e4d6006fbfa3cf5819fb748ea03b5',
       crop: '.panes > section.pn:nth-of-type(1) > .ec',
     },
     page: {
@@ -76,6 +80,6 @@ export const MANIFEST: DesignPage[] = [
     // The sign-in board is the redesign (teal action, providers, notices);
     // the page moves to it in its own pull request.
     expected: 'pending',
-    layoutRoutes: ['/login?org=example-corp'],
+    layoutRoutes: ['/login', '/login?org=example-corp'],
   },
 ]
