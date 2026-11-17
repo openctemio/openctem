@@ -20,6 +20,9 @@
   Grant exception, the table, then one line on what an exception lifts); the policy card follows it. The warning
   shown while the government and military rule is off stays above both. On a phone an exception is a fixed-slot
   card (organization and state, the domain, expiry and who granted it, the reason).
+- While the release keeps shared sensors closed the page has no tabs; a link to Blocked names (`?tab=blocked`) now
+  opens on the blocked names (exceptions first) above the not-available notice and the domain-proof policy, instead
+  of under them.
 - A failed read shows in the table with Retry; each table has a name and its own empty state.
 - Nothing moves on first load: on Platform sensors nothing above the fleet waits for a read; on Platform scanning one
   placeholder stands until the shared sensors setting is read (the tabs no longer flash before the closed layout,
