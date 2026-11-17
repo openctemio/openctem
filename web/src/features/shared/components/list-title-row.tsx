@@ -20,17 +20,24 @@ import { cn } from '@/lib/utils'
  * - `label`: the full sentence for assistive technology ("26 findings"); the
  *   region is polite and atomic, so a new count is announced once.
  * - While the count is not known yet the slot stays, empty.
+ * - `failed`: the list answered but its total is not known. The slot says
+ *   "Could not count" ("Not counted" on a phone, the full sentence in its
+ *   tooltip) with Retry (`onRetry`) after it.
  */
 export function ListCount({
   total,
   capped = false,
   loading = false,
+  failed = false,
+  onRetry,
   label,
   className,
 }: {
   total: number
   capped?: boolean
   loading?: boolean
+  failed?: boolean
+  onRetry?: () => void
   /** "26 findings": read instead of the bare number. */
   label?: string
   className?: string
@@ -45,6 +52,32 @@ export function ListCount({
         second: t('common.listCount.cappedHint', 'Counted up to this number'),
       })
     : scopeHint
+  if (failed && !loading) {
+    const reason = t('common.listCount.failed', 'Could not count')
+    return (
+      <>
+        <span
+          data-slot="list-count"
+          data-state="failed"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          title={t('common.listCount.failedHint', 'The total could not be counted. Try again.')}
+          className={cn('shrink-0 text-sm text-muted-foreground', className)}
+        >
+          <span aria-hidden="true" className="md:hidden">
+            {t('common.listCount.failedShort', 'Not counted')}
+          </span>
+          <span className="max-md:sr-only">{reason}</span>
+        </span>
+        {onRetry && (
+          <Button variant="ghost" data-slot="list-count-retry" onClick={onRetry}>
+            {t('common.retry', 'Retry')}
+          </Button>
+        )}
+      </>
+    )
+  }
   return (
     <span
       data-slot="list-count"

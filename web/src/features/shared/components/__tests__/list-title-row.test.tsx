@@ -37,6 +37,28 @@ describe('ListCount', () => {
     expect(count).not.toHaveClass('bg-surface-raised')
     expect(count).not.toHaveAttribute('title')
   })
+
+  it('a total that could not be counted says so, never a number, with Retry', () => {
+    const onRetry = vi.fn()
+    render(<ListCount total={0} failed onRetry={onRetry} label="0 findings" />)
+    const count = screen.getByRole('status')
+    expect(count).toHaveAttribute('data-slot', 'list-count')
+    expect(count).toHaveAttribute('data-state', 'failed')
+    expect(count).toHaveTextContent('Could not count')
+    // The short form a phone shows; the full sentence is the tooltip.
+    expect(count).toHaveTextContent('Not counted')
+    expect(count).toHaveAttribute('title', 'The total could not be counted. Try again.')
+    expect(count).not.toHaveTextContent('0')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    // One count slot on the page, as the page-anatomy check asks.
+    expect(document.querySelectorAll('[data-slot=list-count]')).toHaveLength(1)
+  })
+
+  it('a failed count without a retry handler has no Retry', () => {
+    render(<ListCount total={0} failed />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
 })
 
 describe('ListTitleRow', () => {
