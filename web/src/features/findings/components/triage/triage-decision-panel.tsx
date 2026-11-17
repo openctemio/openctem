@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -18,9 +18,10 @@ export interface TriageDecisionState {
   canTask: boolean
   /** findings:verify and a finding a tool can re-check. */
   canRetest: boolean
-  /** Decisions Undo can walk back in this session. */
-  undoCount: number
   busy: boolean
+  /** Previous / next in the queue. */
+  canPrev: boolean
+  canNext: boolean
 }
 
 function ActionButton({
@@ -31,7 +32,6 @@ function ActionButton({
   onAction,
   disabled,
   primary,
-  wide,
   busy,
 }: {
   action: TriageAction
@@ -41,7 +41,6 @@ function ActionButton({
   onAction: (a: TriageAction) => void
   disabled?: boolean
   primary?: boolean
-  wide?: boolean
   busy?: boolean
 }) {
   return (
@@ -53,11 +52,14 @@ function ActionButton({
       aria-keyshortcuts={keyLabel === 'Esc' ? 'Escape' : keyLabel}
       data-triage-action={action}
       className={cn(
-        'h-auto min-h-control justify-start gap-2 py-1.5 text-start max-md:min-h-control-touch',
-        wide && 'col-span-2'
+        'h-auto min-h-control justify-start gap-2 py-1.5 text-start max-md:h-auto max-md:min-h-control-touch'
       )}
     >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Kbd>{keyLabel}</Kbd>}
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+      ) : (
+        <Kbd className="max-sm:hidden">{keyLabel}</Kbd>
+      )}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{label}</span>
         {hint && (
@@ -76,19 +78,23 @@ function ActionButton({
 }
 
 /**
- * The decision panel: one key per action, each a visible labelled button.
- * Decisions use the finding page's endpoints and checks; false positive and
- * risk acceptance stay requests the organization's policy decides.
+ * The decision panel: one key per action, each a visible labelled button,
+ * then Previous / Next. Decisions use the finding page's endpoints and
+ * checks; false positive and risk acceptance stay requests the
+ * organization's policy decides. Undo, the keys and Exit are in the page
+ * header; Evidence and Full page on the finding.
  */
 export function TriageDecisionPanel({
   state,
   onAction,
   assignControl,
+  className,
 }: {
   state: TriageDecisionState
   onAction: (a: TriageAction) => void
   /** The assignee picker (opened by `o`). */
   assignControl: ReactNode
+  className?: string
 }) {
   const { t } = useTranslation()
   const locked = !!state.lockedReason
@@ -96,18 +102,18 @@ export function TriageDecisionPanel({
     <aside
       role="region"
       aria-label={t('findings.triageMode.decision', 'Decision')}
-      className="space-y-3 border-t bg-card p-4 lg:border-s lg:border-t-0"
+      className={cn('space-y-3 rounded-lg border bg-card p-4', className)}
       data-testid="triage-decision"
     >
-      <p className="text-xs font-medium text-muted-foreground">
+      <h2 className="text-sm font-medium">
         {t('findings.triageMode.decideHint', 'Decide, one key per action')}
-      </p>
+      </h2>
       {state.lockedReason && (
         <p className="rounded-md border bg-muted/50 p-2 text-xs" role="note">
           {state.lockedReason}
         </p>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid gap-2">
         <ActionButton
           action="confirm"
           keyLabel="c"
@@ -117,7 +123,6 @@ export function TriageDecisionPanel({
           disabled={locked || !state.canConfirm || state.busy}
           busy={state.busy}
           primary
-          wide
         />
         <ActionButton
           action="falsePositive"
@@ -126,7 +131,6 @@ export function TriageDecisionPanel({
           hint={t('findings.triageMode.action.falsePositiveHint', 'Reason and note required')}
           onAction={onAction}
           disabled={locked || !state.canRequest || state.busy}
-          wide
         />
         <ActionButton
           action="accept"
@@ -135,9 +139,9 @@ export function TriageDecisionPanel({
           hint={t('findings.triageMode.action.acceptHint', 'Approval and an end date')}
           onAction={onAction}
           disabled={locked || !state.canRequest || state.busy}
-          wide
         />
-        <div className="col-span-2 flex items-center gap-2">
+        {/* The Assign key and its picker, each on its own line: one height per row. */}
+        <div className="grid gap-1.5">
           <ActionButton
             action="assign"
             keyLabel="o"
@@ -145,7 +149,7 @@ export function TriageDecisionPanel({
             onAction={onAction}
             disabled={locked || !state.canAssign || state.busy}
           />
-          <div className="min-w-0 flex-1" data-testid="triage-assign">
+          <div className="min-w-0" data-testid="triage-assign">
             {assignControl}
           </div>
         </div>
@@ -170,34 +174,32 @@ export function TriageDecisionPanel({
           onAction={onAction}
           disabled={state.busy}
         />
-        <ActionButton
-          action="undo"
-          keyLabel="u"
-          label={t('findings.triageMode.action.undo', 'Undo last')}
-          hint={t('findings.triageMode.action.undoHint', '{count} to undo', {
-            count: state.undoCount,
-          })}
-          onAction={onAction}
-          disabled={state.undoCount === 0 || state.busy}
-        />
-        <ActionButton
-          action="evidence"
-          keyLabel="e"
-          label={t('findings.triageMode.action.evidence', 'Evidence')}
-          onAction={onAction}
-        />
-        <ActionButton
-          action="openPage"
-          keyLabel="Enter"
-          label={t('findings.triageMode.action.openPage', 'Full page')}
-          onAction={onAction}
-        />
-        <ActionButton
-          action="help"
-          keyLabel="?"
-          label={t('findings.triageMode.action.help', 'All keys')}
-          onAction={onAction}
-        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onAction('prev')}
+          disabled={!state.canPrev}
+          aria-keyshortcuts="k"
+          data-triage-action="prev"
+        >
+          <ChevronLeft className="rtl:rotate-180" aria-hidden />
+          {t('findings.triageMode.action.prev', 'Previous')}
+          <Kbd className="max-sm:hidden">k</Kbd>
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onAction('next')}
+          disabled={!state.canNext}
+          aria-keyshortcuts="j"
+          data-triage-action="next"
+        >
+          {t('findings.triageMode.action.next', 'Next')}
+          <Kbd className="max-sm:hidden">j</Kbd>
+          <ChevronRight className="rtl:rotate-180" aria-hidden />
+        </Button>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         {t(

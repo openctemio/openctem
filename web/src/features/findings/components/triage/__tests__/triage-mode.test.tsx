@@ -7,7 +7,16 @@
  * list, and moving on costs one read.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  within,
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 
 // Moving between findings renders the whole page: allow for a loaded runner.
 configure({ asyncUtilTimeout: 4000 })
@@ -17,6 +26,7 @@ const routerPush = vi.fn()
 const routerBack = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: routerPush, back: routerBack, replace: vi.fn() }),
+  usePathname: () => '/findings/triage',
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 vi.mock('@/context/i18n-provider', () => ({
@@ -514,5 +524,79 @@ describe('TriageMode decisions, part 2', () => {
     await screen.findByRole('dialog', { name: 'request false_positive' })
     expect(screen.getByTestId('prefill')).toHaveTextContent('Test host only.')
     expect(writeFindingStatus).not.toHaveBeenCalled()
+  })
+
+  it('lays the page out as on its boards: header actions, the finding, then its decision', async () => {
+    seed(3)
+    await ready()
+    expect(screen.getByRole('heading', { level: 1, name: 'Triage' })).toBeInTheDocument()
+    const header = screen.getByTestId('triage-header-actions')
+    for (const name of [/^Undo last/, /^All keys$/, /^Exit$/]) {
+      expect(within(header).getByRole('button', { name })).toBeVisible()
+    }
+    const finding = screen.getByRole('article')
+    expect(within(finding).getByRole('button', { name: /^Evidence$/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(within(finding).getByRole('button', { name: /^Full page$/ })).toBeVisible()
+    const region = screen.getByRole('region', { name: 'Decision' })
+    expect(within(region).getByRole('button', { name: /^Previous/ })).toBeDisabled()
+    expect(within(region).getByRole('button', { name: /^Next/ })).toBeEnabled()
+    // The finding comes before its decision in reading order (the phone shows them in that order).
+    expect(finding.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Confirm is the one filled button.
+    const filled = screen
+      .getAllByRole('button')
+      .filter((b) => b.getAttribute('data-variant') === 'default')
+    expect(filled.map((b) => b.getAttribute('data-triage-action'))).toEqual(['confirm'])
+  })
+
+  it('the buttons do what their keys do: Evidence, Next, Previous', async () => {
+    seed(3)
+    await ready()
+    const evidence = screen.getByRole('button', { name: /^Evidence$/ })
+    fireEvent.click(evidence)
+    expect(evidence).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    fireEvent.click(screen.getByRole('button', { name: /^Previous/ }))
+    await screen.findByRole('heading', { name: 'Finding 1' })
+    expect(writeFindingStatus).not.toHaveBeenCalled()
+  })
+
+  it('says every decision, refusal and undo in one status region', async () => {
+    seed(3)
+    await ready()
+    const said = () => document.querySelector('[data-slot="queue-announcer"]')?.textContent ?? ''
+    press('c')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    expect(said()).toMatch(/^Confirmed: Finding 1\s?$/)
+    press('s')
+    await screen.findByRole('heading', { name: 'Finding 3' })
+    expect(said()).toMatch(/^Skipped: Finding 2\s?$/)
+    press('u')
+    await screen.findByRole('heading', { name: 'Finding 2' })
+    expect(said()).toMatch(/^Undone: Finding 2\s?$/)
+    // A refusal: the lifecycle does not allow acceptance from new (the toast's sentence).
+    press('a')
+    const { toast } = await import('sonner')
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    const refusal = vi.mocked(toast.error).mock.calls.at(-1)?.[0]
+    expect(said().trim()).toBe(String(refusal).trim())
+    expect(
+      screen.getAllByRole('status').filter((n) => n.dataset.slot === 'queue-announcer')
+    ).toHaveLength(1)
+  })
+
+  it('a queue that cannot be read shows its error and Retry only: no decision, no empty queue', async () => {
+    fetchTriageWindow.mockRejectedValue(new Error('internal error'))
+    render(<TriageMode />)
+    expect(await screen.findByRole('button', { name: /Retry/ })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Decision' })).toBeNull()
+    expect(screen.queryByTestId('triage-queue')).toBeNull()
+    expect(
+      screen.getAllByRole('button').filter((b) => b.getAttribute('data-variant') === 'default')
+    ).toHaveLength(0)
   })
 })

@@ -133,8 +133,6 @@
   "features/findings/components/detail/validation-evidence-panel.tsx": 6,
   "features/findings/components/finding-status-badge.tsx": 1,
   "features/findings/components/mark-fixed-dialog.tsx": 1,
-  "features/findings/components/triage/triage-mode.tsx": 1,
-  "features/findings/components/triage/triage-top-bar.tsx": 1,
   "features/import-mappings/components/sample-pane.tsx": 5,
   "features/import-mappings/components/save-dialogs.tsx": 1,
   "features/integrations/components/routing-rules-dialog.tsx": 22,

@@ -39,7 +39,7 @@ export function TriageAiCard({
   return (
     <section
       aria-labelledby="triage-ai-title"
-      className="space-y-2 rounded-lg border bg-card p-4"
+      className="space-y-2 rounded-md bg-muted/50 p-4"
       data-testid="triage-ai-card"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
