@@ -278,12 +278,55 @@ Attack paths, Exposure chains and Exploration use `src/components/graph-page`:
 
 The scan workflow editor keeps its own editing layout (palette and step settings beside the canvas).
 
+### Detail pages
+
+A record's own page (a finding, an asset, a scan) is built from the detail
+kit in `src/features/shared/components/detail/`; `/findings/[id]` is the
+reference.
+
+1. **`DetailPageHeader`** is the page's `page-header` block and its only
+   `<h1>`. Above the title: the record's type and identifiers as chips, and
+   `DetailPosition` ("2 of 27" with previous and next) when the record was
+   opened from a list. Beside the title: `[More] [secondary] [primary]`, one
+   primary action for the record's current state, at most two outline
+   buttons, everything else in the More menu (`ActionMenu` entries, a sheet
+   on a phone). Below 768 px the first line is the way back to the parent
+   list ("‹ Findings") with the position at its end, the primary action
+   leads the action row and takes the free width, and More closes it.
+   Status, owner and dates are never in the header.
+2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
+   counts in `TabsCount`.
+3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
+   `PropertyRow` label and value pairs (a `dl`), separated by a rule, no
+   card. The value takes text, links, chips or a control (a status or
+   assignee picker). The list follows its own width: one column in a rail,
+   two columns when it sits under the header on a narrower page. Below
+   768 px every row is a 44 px line with the value at its end, and
+   `PropertyFold` keeps the rows after the first group one tap away. A row
+   with an empty value renders nothing.
+   Read-only facts inside a panel (a source record, a score table) keep
+   `KeyValueList` from `text-layout`; `PropertyList` is for the record's own
+   properties, where a value can be a control.
+4. **`DetailSectionList` / `DetailSectionBlock`** are the blocks of a tab
+   panel: a section named by its `<h2>` (`text-section`), an optional count
+   and mark after the title, controls at the end of the title row, one rule
+   between blocks. The same title row heads a table or list inside the
+   panel. `DetailFold` is a closed-by-default line ("Show output", "How
+   this was scored") with a short note saying what it holds.
+5. A detail opens over its list as a drawer (`DetailSheet`); a page never
+   keeps a permanent side panel beside a list. The drawer and the page
+   render the same section components.
+6. Text that came from a scanner or a target is rendered by
+   `UntrustedTextBlock` / `ScannerText`; a masked value keeps its Show
+   control (permission, step-up, timed, audited) and is never removed.
+   Anything an AI produced or changed carries `AIBadge`.
+
 ## 2. Headline numbers
 
 - **One `<MetricStrip>`** per page, at most **5** tiles, and only where every
   tile is a link to the list it counts (`href`, overview pages) or a one-click
   filter of the list below (`onClick` + `active`, list pages). Never for facts
-  (use `KeyValueList`), configuration inventories, or inside a card.
+  (use `PropertyList`), configuration inventories, or inside a card.
 - States that are usually zero or rarely acted on (canceled, blocked, timed
   out) are not tiles: they stay values of the list's status filter.
 - A zero is a muted `0`, never hidden; an error is `—` with the reason as the

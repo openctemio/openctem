@@ -4,12 +4,12 @@ import { render, screen } from '@testing-library/react'
 let data: unknown
 vi.mock('../api/use-security-overview', () => ({ useSecurityOverview: () => ({ data }) }))
 
-import { SecurityScoreCard } from '../components/security-score-card'
+import { SettingsAttention } from '../components/settings-attention'
 
-describe('SecurityScoreCard', () => {
+describe('SettingsAttention', () => {
   it('renders nothing for someone who cannot read the overview', () => {
     data = { score: 50, counts: { risk: 1, warn: 0 }, checks: [] }
-    const { container } = render(<SecurityScoreCard enabled={false} />)
+    const { container } = render(<SettingsAttention enabled={false} />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -46,12 +46,14 @@ describe('SecurityScoreCard', () => {
         },
       ],
     }
-    render(<SecurityScoreCard enabled />)
-    expect(screen.getByText('72')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar', { name: /72 out of 100/ })).toBeInTheDocument()
-    const items = screen.getAllByRole('listitem')
-    expect(items).toHaveLength(3)
-    expect(items[0]).toHaveTextContent('Risk')
+    render(<SettingsAttention enabled />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Needs attention' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/72 out of 100/)).toHaveTextContent('Security score 72 / 100')
+    const rows = Array.from(document.querySelectorAll('[data-slot="settings-row"]'))
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('Risk')
+    // The fix link names its check, so three "Open the setting" links differ for a screen reader.
+    expect(screen.getAllByRole('link', { name: /^Open the setting: / })).toHaveLength(2)
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).not.toContain(
       '//evil.example'
     )
@@ -59,5 +61,11 @@ describe('SecurityScoreCard', () => {
       'href',
       '/settings/security'
     )
+  })
+
+  it('says so when nothing needs attention', () => {
+    data = { score: 100, counts: { risk: 0, warn: 0 }, checks: [] }
+    render(<SettingsAttention enabled />)
+    expect(screen.getByText('Nothing needs attention right now.')).toBeInTheDocument()
   })
 })
