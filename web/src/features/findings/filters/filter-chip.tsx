@@ -1,16 +1,41 @@
 'use client'
 
+import { cloneElement, useState, type ReactElement } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import { toDisplayText } from '@/lib/untrusted-text'
-import type { ActiveFilter, FieldContract } from './model'
+import { FieldEditor } from './field-editor'
+import {
+  isEditableField,
+  type ActiveFilter,
+  type FieldContract,
+  type FilterContract,
+  type FilterOp,
+} from './model'
 import { useFilterLabels } from './use-filter-labels'
+
+/** What a chip needs to edit its filter in place. */
+export interface FilterChipEdit {
+  /**
+   * The filter contract, once loaded: the editor takes the field's operators
+   * and values from it, never from the page's own list of fields.
+   */
+  contract: FilterContract | undefined
+  contractFailed: boolean
+  /** An editor opened or closed (the page loads the contract while one is open). */
+  onOpenChange?: (open: boolean) => void
+  /** Replace `filter` with this operator and these values on `field`. */
+  onApply: (filter: ActiveFilter, field: FieldContract, op: FilterOp, values: string[]) => void
+}
 
 interface FilterChipProps {
   filter: ActiveFilter
   field: FieldContract
   /** Removes the filter; absent on a locked chip. */
   onRemove?: (filter: ActiveFilter) => void
+  /** Lets the chip's text open the filter's editor; never used by a locked chip. */
+  edit?: FilterChipEdit
 }
 
 /** The sentence a chip reads: "Severity is Critical, High". */
@@ -44,13 +69,72 @@ export function useChipText() {
 
 /**
  * One active filter. A chip that comes from the open saved view shows a lock
- * and has no remove button: you switch or edit the view instead.
+ * and has no remove button: you switch or edit the view instead. Any other
+ * chip of a field Add filter offers is edited from its text: it opens the
+ * editor Add filter shows for the field, on the chip's operator and values,
+ * anchored to the chip (a bottom sheet on a phone). Applying replaces the
+ * filter; Escape or a click outside changes nothing.
  */
-export function FilterChip({ filter, field, onRemove }: FilterChipProps) {
+export function FilterChip({ filter, field, onRemove, edit }: FilterChipProps) {
   const { t } = useTranslation()
+  const labels = useFilterLabels()
   const text = useChipText()(filter, field)
+  const [open, setOpenState] = useState(false)
+  const editable = !!edit && !filter.locked && isEditableField(field)
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    edit?.onOpenChange?.(next)
+  }
+  // The field as the contract describes it to this viewer.
+  const loaded = edit?.contract?.fields.find((f) => f.name === field.name)
+  // Kept while the editor closes: the page lets go of the contract then.
+  const [kept, setKept] = useState(loaded)
+  if (loaded && loaded !== kept) setKept(loaded)
+  const described = loaded ?? (open ? undefined : kept)
+
+  const editWith = (button: ReactElement) => (
+    <ResponsivePopover
+      open={open}
+      onOpenChange={setOpen}
+      title={t('findings.filter.editTitle', 'Edit {field} filter', {
+        field: labels.fieldLabel(field.name),
+      })}
+      className="w-80"
+      // The page finds the chip again by its param, to hand focus back.
+      trigger={cloneElement(button as ReactElement<Record<string, unknown>>, {
+        'data-filter-param': filter.param,
+      })}
+    >
+      {described && edit ? (
+        <FieldEditor
+          field={described}
+          labels={labels}
+          initial={{ op: filter.op, values: filter.values }}
+          onApply={(op, values) => {
+            setOpen(false)
+            edit.onApply(filter, described, op, values)
+          }}
+        />
+      ) : edit?.contractFailed ? (
+        <p className="px-3 py-4 text-sm text-destructive" role="alert">
+          {t('findings.filter.loadFailed', 'The filters could not be loaded.')}
+        </p>
+      ) : edit?.contract ? (
+        <p className="px-3 py-4 text-sm text-muted-foreground" role="alert">
+          {t('findings.filter.notEditable', 'This filter cannot be changed here.')}
+        </p>
+      ) : (
+        <p className="px-3 py-4 text-sm text-muted-foreground" role="status">
+          {t('findings.filter.loading', 'Loading filters…')}
+        </p>
+      )}
+    </ResponsivePopover>
+  )
+
   return (
     <RemovableFilterChip
+      editWith={editable ? editWith : undefined}
+      editLabel={t('findings.filter.edit', 'Edit filter {filter}', { filter: text })}
       text={text}
       locked={Boolean(filter.locked)}
       lockedHint={t(
