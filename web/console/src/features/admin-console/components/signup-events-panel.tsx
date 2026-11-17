@@ -128,7 +128,7 @@ export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
             className="shrink-0 text-meta underline-offset-4 hover:underline"
             href={organizationHref(event.tenant_id)}
           >
-            {t('admin.signups.openOrganization')}
+            {t('admin.signups.card.openOrganization', 'Open organization')}
           </Link>
         ) : null}
       </div>

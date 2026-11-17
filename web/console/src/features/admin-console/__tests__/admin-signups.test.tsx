@@ -84,7 +84,7 @@ describe('SignupEventMobileCard', () => {
     const origin = container.querySelector('[data-testid="signup-card-origin"]') as HTMLElement
     expect(origin).toHaveTextContent('example.org')
     expect(origin).toHaveTextContent('198.51.100.0/24')
-    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open organization' })).toHaveAttribute(
       'href',
       '/organizations/aaaaaaaa-0000-0000-0000-000000000001'
     )

@@ -2084,6 +2084,7 @@
   "admin.signupAlerts.zeroOff": "0 turns a count off.",
   "admin.signups.allKinds": "All events",
   "admin.signups.caption": "Sign-up events",
+  "admin.signups.card.openOrganization": "Open organization",
   "admin.signups.col.domain": "Email domain",
   "admin.signups.col.event": "Event",
   "admin.signups.col.network": "Network",

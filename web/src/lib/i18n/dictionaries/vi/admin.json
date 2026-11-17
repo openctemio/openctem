@@ -2084,6 +2084,7 @@
   "admin.signupAlerts.zeroOff": "0 là tắt ngưỡng đó.",
   "admin.signups.allKinds": "Tất cả sự kiện",
   "admin.signups.caption": "Sự kiện đăng ký",
+  "admin.signups.card.openOrganization": "Mở tổ chức",
   "admin.signups.col.domain": "Tên miền email",
   "admin.signups.col.event": "Sự kiện",
   "admin.signups.col.network": "Mạng",
