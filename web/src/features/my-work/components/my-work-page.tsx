@@ -226,32 +226,30 @@ export function MyWorkPage() {
         isLoading={(views.isLoading || findingRows.isLoading) && !findingRows.data}
         error={views.error ?? findingRows.error}
         onRetry={refresh}
-        // Line 2 of the toolbar, the kit's chips row: the queue's locked rule
-        // first (its own line on a phone), its one filter token (due in 72
-        // hours), and how much of the queue is on screen at the end.
+        // The queue's one filter token (due in 72 hours) is the toolbar's
+        // start: a toggle at the row's control height (the kit button,
+        // pressed while the queue shows only what falls due).
+        toolbarStart={
+          which === 'assigned' && dueSoonCount !== undefined ? (
+            <Button
+              size="sm"
+              variant={dueSoon ? 'secondary' : 'outline'}
+              aria-pressed={dueSoon}
+              onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
+            >
+              <Timer className="me-2 size-4" aria-hidden="true" />
+              {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+              <span className="ms-2 tabular-nums">{dueSoonCount}</span>
+            </Button>
+          ) : undefined
+        }
+        // Line 2, the kit's chips row: the queue's locked rule first and how
+        // much of the queue is on screen at the end.
         toolbarBelow={
           <FilterChipsRow
             data-testid="my-work-chips"
             leading={lockedChip(which)}
-            chips={
-              which === 'assigned' && dueSoonCount !== undefined
-                ? [
-                    // A toggle at the row's control height (the kit button,
-                    // pressed while the queue shows only what falls due).
-                    <Button
-                      key="due"
-                      size="sm"
-                      variant={dueSoon ? 'secondary' : 'outline'}
-                      aria-pressed={dueSoon}
-                      onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-                    >
-                      <Timer className="me-2 size-4" aria-hidden="true" />
-                      {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                      <span className="ms-2 tabular-nums">{dueSoonCount}</span>
-                    </Button>,
-                  ]
-                : []
-            }
+            chips={[]}
             trailing={
               total > rows.length ? (
                 <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">

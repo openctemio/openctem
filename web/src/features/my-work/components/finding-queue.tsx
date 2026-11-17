@@ -36,6 +36,7 @@ export function FindingQueue({
   isLoading,
   error,
   onRetry,
+  toolbarStart,
   toolbarBelow,
   toolbarEnd,
   empty,
@@ -46,7 +47,9 @@ export function FindingQueue({
   isLoading: boolean
   error: unknown
   onRetry: () => void
-  /** The queue's locked rule and its filter tokens: the line under the toolbar. */
+  /** The queue's filter token: the toolbar's start. */
+  toolbarStart?: ReactNode
+  /** The queue's locked rule and how much is on screen: the line under the toolbar. */
   toolbarBelow?: ReactNode
   toolbarEnd?: ReactNode
   empty: ReactNode
@@ -206,6 +209,7 @@ export function FindingQueue({
       pageSize={QUEUE_SIZE}
       getRowId={(f) => f.id}
       onRowClick={(f) => router.push(`/findings/${encodeURIComponent(f.id)}`)}
+      toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       toolbarBelow={toolbarBelow}
       mobileRow={mobileRow}
