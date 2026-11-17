@@ -1295,7 +1295,7 @@ export function DataTable<TData, TValue>({
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-[200px]">
+              <DropdownMenuContent>
                 <DropdownMenuLabel className="text-xs text-muted-foreground">
                   {t('common.table.density', 'Density')}
                 </DropdownMenuLabel>

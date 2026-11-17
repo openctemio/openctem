@@ -270,7 +270,7 @@ export function FilterChipsRow({
               {t('common.filterChips.more', '+{count} more', { count: hidden.length })}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-auto max-w-sm p-2">
+          <PopoverContent className="w-auto max-w-sm p-2">
             <ul
               aria-label={t('common.filterChips.moreLabel', 'More filters')}
               className="flex flex-col items-start gap-1.5"
