@@ -8,7 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
 	"github.com/openctemio/openctem/server/internal/infra/redis"
 	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -155,30 +156,32 @@ func diagDeps(offline bool) (diag.Deps, func()) {
 	}
 }
 
-// servedCertExpiry connects to hostPort, completes a TLS handshake and
-// returns when the served certificate expires. It sends no request and
-// trusts nothing it reads: the certificate is not verified because only its
-// expiry date is used (an installation with a private CA must be checkable
-// too).
+// servedCertExpiry sends one HEAD request to the installation's own public
+// origin (APP_URL, the operator's setting) with a normal, verifying TLS
+// handshake, and returns when the served certificate expires. The client is
+// the one the Health page probes the platform's own components with: no
+// proxy, no redirects, a short timeout. When verification fails (an expired
+// certificate, or one of a private CA this host does not trust) the
+// connection is refused as always, and the expiry is read from the
+// certificate the refusal carries: nothing is trusted for it.
 func servedCertExpiry(ctx context.Context, hostPort string) (time.Time, error) {
-	host, _, err := net.SplitHostPort(hostPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://"+hostPort+"/", nil)
 	if err != nil {
 		return time.Time{}, err
 	}
-	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: 5 * time.Second},
-		Config:    &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}, //nolint:gosec // G402: reads the expiry date only; nothing is sent or trusted
+	resp, err := httpsec.InternalProbeClient(5 * time.Second).Do(req)
+	var refused *tls.CertificateVerificationError
+	if errors.As(err, &refused) && len(refused.UnverifiedCertificates) > 0 {
+		return refused.UnverifiedCertificates[0].NotAfter, nil
 	}
-	conn, err := dialer.DialContext(ctx, "tcp", hostPort)
 	if err != nil {
 		return time.Time{}, err
 	}
-	defer func() { _ = conn.Close() }()
-	tc, ok := conn.(*tls.Conn)
-	if !ok || len(tc.ConnectionState().PeerCertificates) == 0 {
+	defer func() { _ = resp.Body.Close() }()
+	if resp.TLS == nil || len(resp.TLS.PeerCertificates) == 0 {
 		return time.Time{}, errors.New("no certificate presented")
 	}
-	return tc.ConnectionState().PeerCertificates[0].NotAfter, nil
+	return resp.TLS.PeerCertificates[0].NotAfter, nil
 }
 
 type bundleOptions struct {
