@@ -109,7 +109,12 @@ async function memberPage(browser: Browser): Promise<Page | null> {
   const email = process.env.E2E_LIMITED_EMAIL
   const password = process.env.E2E_LIMITED_PASSWORD
   if (!cfg.ok || !email || !password) return null
-  const context = await browser.newContext({ baseURL: cfg.config.baseURL })
+  // An empty session: a new context otherwise starts from the worker's saved
+  // (owner) session, and /login sends it straight to the dashboard.
+  const context = await browser.newContext({
+    baseURL: cfg.config.baseURL,
+    storageState: { cookies: [], origins: [] },
+  })
   const page = await context.newPage()
   await loginAs(page, { ...cfg.config, userEmail: email, userPassword: password })
   return page
