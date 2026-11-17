@@ -2,9 +2,11 @@
 
 - Console > Content catalog: "Publish a package" and "Import a bundle" are the page's own actions in its header (the
   same conditions: shown to a super admin, Import disabled without trust roots, and disabled until the trust state
-  is read); the Trust card keeps the read-only trust state.
-- Nothing moves on first load: the header actions are drawn from the first frame and the package list comes once
-  the trust state above it is read, so its title row and toolbar are drawn where they stay (they dropped 148 px).
+  is read).
+- The package list comes first on every width, from the first frame; the trust notice and the read-only Trust card
+  follow it. While the catalog is out of date the list's title row carries an "Out of date" link down to them.
+  Nothing moves on first load (the list dropped 148 px when the trust state arrived above it; on a phone it started
+  below the first screen).
 - The package list has a title row with the type view and the count once; the search and the type select are the
   table's own toolbar; rows are on one line (the title, then the package id) and the package stays in view while the
   table scrolls sideways; Source steps aside on a narrow table. A failed read shows in the table with Retry while the

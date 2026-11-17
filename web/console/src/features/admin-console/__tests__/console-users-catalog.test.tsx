@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   role: 'ops_admin' as string,
   usersCalls: [] as unknown[][],
   revoke: vi.fn(),
+  stale: false,
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -64,7 +65,8 @@ vi.mock('../api/use-content-catalog', async (orig) => ({
       index_sequence: 10,
       index_expired: false,
       revocations_sequence: 1,
-      revocations_stale: false,
+      revocations_stale: mocks.stale,
+      imported_at: '2026-11-01T00:00:00Z',
     },
     mutate: vi.fn(),
   }),
@@ -175,6 +177,27 @@ describe('Content catalog', () => {
     expect(within(header!).getByRole('button', { name: /Publish a package/ })).toBeInTheDocument()
     const table = screen.getByRole('table', { name: 'Catalog packages' })
     expect(within(table).getAllByText('openctem/sensor').length).toBeGreaterThan(0)
+  })
+
+  it('puts the list first and the trust state after it, with a marker when it is out of date', () => {
+    mocks.stale = true
+    try {
+      render(<CatalogPage />)
+      const table = screen.getByRole('table', { name: 'Catalog packages' })
+      const trust = document.getElementById('catalog-trust')!
+      expect(trust).not.toBeNull()
+      expect(table.compareDocumentPosition(trust) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const marker = screen.getByRole('link', { name: 'Out of date' })
+      expect(marker).toHaveAttribute('href', '#catalog-trust')
+      expect(within(trust).getByText('The catalog is out of date')).toBeInTheDocument()
+    } finally {
+      mocks.stale = false
+    }
+  })
+
+  it('shows no marker while the catalog is current', () => {
+    render(<CatalogPage />)
+    expect(screen.queryByRole('link', { name: 'Out of date' })).not.toBeInTheDocument()
   })
 
   it('offers no change to an operations administrator', () => {

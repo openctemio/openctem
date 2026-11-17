@@ -28,7 +28,7 @@ import { ListCount, ListTitleRow } from '@/features/shared/components/list-title
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { TrustBanner } from '@/features/content-catalog/components/trust-banner'
-import { CONTENT_TYPES } from '@/features/content-catalog/lib'
+import { CONTENT_TYPES, trustBanner } from '@/features/content-catalog/lib'
 import {
   useCatalogPackages,
   useCatalogTrust,
@@ -149,6 +149,7 @@ export default function ContentCatalogPage() {
   )
 
   const tr = trust.data
+  const stale = trustBanner(tr)?.tone === 'warning'
   const total = pkgs.data?.total ?? 0
   return (
     <Main>
@@ -179,169 +180,178 @@ export default function ContentCatalogPage() {
             </>
           )}
         </PageHeader>
-        {trust.error ? (
-          <ErrorState
-            title={t('admin.catalog.trustError', 'the catalog trust state')}
-            error={trust.error}
-            onRetry={() => void trust.mutate()}
-          />
-        ) : !tr ? (
-          <Skeleton className="h-32 w-full" />
-        ) : (
-          <>
-            <TrustBanner trust={tr} />
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {t('admin.catalog.trustTitle', 'Trust')}
-                </CardTitle>
-                <CardDescription>
-                  {t(
-                    'admin.catalog.rootsReadOnly',
-                    'Trust roots: {n}. They are set on the server (CONTENT_TRUST_ROOT_KEY_IDS) and cannot be changed from this console: a stolen console session must not be able to trust new content.',
-                    { n: tr.roots_configured }
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('admin.catalog.keyset', 'Key set version')}
-                    </dt>
-                    <dd className="font-mono">{tr.keyset_version || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('admin.catalog.index', 'Signed index')}
-                    </dt>
-                    <dd className="font-mono">
-                      {tr.index_sequence || '—'}
-                      {tr.index_expires_at && (
-                        <span className="ms-2 font-sans text-xs text-muted-foreground">
-                          {tr.index_expired
-                            ? t('admin.catalog.expired', 'expired')
-                            : t('admin.catalog.expires', 'expires')}{' '}
-                          <RelativeTime date={tr.index_expires_at} />
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('admin.catalog.revocations', 'Revocation list')}
-                    </dt>
-                    <dd className="font-mono">
-                      {tr.revocations_sequence || '—'}
-                      {tr.revocations_stale && (
-                        <Badge variant="destructive" className="ms-2">
-                          {t('admin.catalog.stale', 'Out of date')}
-                        </Badge>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('admin.catalog.importedAt', 'Last import')}
-                    </dt>
-                    <dd>
-                      {tr.imported_at ? (
-                        <RelativeTime date={tr.imported_at} />
-                      ) : (
-                        t('admin.catalog.never', 'Never')
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </CardContent>
-            </Card>
-          </>
-        )}
+        {/* The list is the page's job: it comes first, from the first frame. The
+            trust state follows it; a stale catalog keeps a marker in the title
+            row that leads down to it. */}
+        <ListTitleRow
+          title={
+            list.filters.type
+              ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
+              : t('admin.catalog.viewAll', 'All packages')
+          }
+          count={
+            <ListCount
+              total={total}
+              loading={!pkgs.data && !pkgs.error}
+              label={t(
+                'admin.catalog.total',
+                '{count, plural, one {# package} other {# packages}}',
+                {
+                  count: total,
+                }
+              )}
+            />
+          }
+          start={
+            stale ? (
+              <a
+                href="#catalog-trust"
+                className="shrink-0 text-body text-destructive underline-offset-4 hover:underline"
+              >
+                {t('admin.catalog.stale', 'Out of date')}
+              </a>
+            ) : null
+          }
+        />
+        <DataTable
+          columns={columns}
+          data={pkgs.data?.data ?? []}
+          caption={t('admin.catalog.caption', 'Catalog packages')}
+          getRowId={(p) => p.latest.package_id}
+          error={pkgs.error}
+          onRetry={() => void pkgs.mutate()}
+          errorTitle={t('admin.catalog.packagesError', 'the catalog packages')}
+          // The first read: skeleton rows under a toolbar that stays mounted.
+          isLoading={pkgs.isLoading && !pkgs.data}
+          isRefreshing={pkgs.isValidating && !!pkgs.data}
+          refreshingLabel={t('admin.catalog.refreshing', 'Refreshing packages')}
+          showSearch={false}
+          search={{
+            value: list.q,
+            onChange: list.setSearch,
+            placeholder: t('admin.catalog.search', 'Search package id or title…'),
+            label: t('admin.catalog.searchLabel', 'Search packages'),
+          }}
+          toolbarStart={
+            <FilterSelect
+              label={t('admin.catalog.typeFilter', 'Package type')}
+              value={list.filters.type}
+              foldLabel
+              allLabel={t('admin.catalog.allTypes', 'All types')}
+              options={CONTENT_TYPES.map((ty) => ({
+                value: ty,
+                label: t(`contentCatalog.type.${ty}`, ty),
+              }))}
+              onChange={(v) => list.setFilter('type', v)}
+            />
+          }
+          showSelectionCount={false}
+          mobileCards
+          onRowClick={(p) => setOpen(p.latest.package_id)}
+          isFiltered={!!(q || list.filters.type)}
+          onClearFilters={list.reset}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={Package}
+                title={t(
+                  'admin.catalog.empty',
+                  'No package in the catalog yet: import a signed bundle.'
+                )}
+              />
+            ),
+            noMatch: {
+              title: t('admin.catalog.noMatch', 'No package matches these filters'),
+            },
+          }}
+          manualPagination
+          pageCount={Math.max(1, Math.ceil(total / list.perPage))}
+          rowCount={total}
+          pagination={list.pagination}
+          onPaginationChange={list.setPagination}
+          paginationNoun={t('admin.catalog.noun', 'packages')}
+        />
 
-        {/* The list comes once the trust state above it has its final height,
-            so its title row and toolbar are drawn where they stay. */}
-        {(tr || trust.error) && (
-          <>
-            <ListTitleRow
-              title={
-                list.filters.type
-                  ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
-                  : t('admin.catalog.viewAll', 'All packages')
-              }
-              count={
-                <ListCount
-                  total={total}
-                  loading={!pkgs.data && !pkgs.error}
-                  label={t(
-                    'admin.catalog.total',
-                    '{count, plural, one {# package} other {# packages}}',
-                    {
-                      count: total,
-                    }
-                  )}
-                />
-              }
+        <section id="catalog-trust" className="flex min-w-0 flex-col gap-4 scroll-mt-4">
+          {trust.error ? (
+            <ErrorState
+              title={t('admin.catalog.trustError', 'the catalog trust state')}
+              error={trust.error}
+              onRetry={() => void trust.mutate()}
             />
-            <DataTable
-              columns={columns}
-              data={pkgs.data?.data ?? []}
-              caption={t('admin.catalog.caption', 'Catalog packages')}
-              getRowId={(p) => p.latest.package_id}
-              error={pkgs.error}
-              onRetry={() => void pkgs.mutate()}
-              errorTitle={t('admin.catalog.packagesError', 'the catalog packages')}
-              // The first read: skeleton rows under a toolbar that stays mounted.
-              isLoading={pkgs.isLoading && !pkgs.data}
-              isRefreshing={pkgs.isValidating && !!pkgs.data}
-              refreshingLabel={t('admin.catalog.refreshing', 'Refreshing packages')}
-              showSearch={false}
-              search={{
-                value: list.q,
-                onChange: list.setSearch,
-                placeholder: t('admin.catalog.search', 'Search package id or title…'),
-                label: t('admin.catalog.searchLabel', 'Search packages'),
-              }}
-              toolbarStart={
-                <FilterSelect
-                  label={t('admin.catalog.typeFilter', 'Package type')}
-                  value={list.filters.type}
-                  foldLabel
-                  allLabel={t('admin.catalog.allTypes', 'All types')}
-                  options={CONTENT_TYPES.map((ty) => ({
-                    value: ty,
-                    label: t(`contentCatalog.type.${ty}`, ty),
-                  }))}
-                  onChange={(v) => list.setFilter('type', v)}
-                />
-              }
-              showSelectionCount={false}
-              mobileCards
-              onRowClick={(p) => setOpen(p.latest.package_id)}
-              isFiltered={!!(q || list.filters.type)}
-              onClearFilters={list.reset}
-              emptyState={{
-                nothingYet: (
-                  <EmptyState
-                    icon={Package}
-                    title={t(
-                      'admin.catalog.empty',
-                      'No package in the catalog yet: import a signed bundle.'
+          ) : !tr ? (
+            <Skeleton className="h-32 w-full" />
+          ) : (
+            <>
+              <TrustBanner trust={tr} />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {t('admin.catalog.trustTitle', 'Trust')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t(
+                      'admin.catalog.rootsReadOnly',
+                      'Trust roots: {n}. They are set on the server (CONTENT_TRUST_ROOT_KEY_IDS) and cannot be changed from this console: a stolen console session must not be able to trust new content.',
+                      { n: tr.roots_configured }
                     )}
-                  />
-                ),
-                noMatch: {
-                  title: t('admin.catalog.noMatch', 'No package matches these filters'),
-                },
-              }}
-              manualPagination
-              pageCount={Math.max(1, Math.ceil(total / list.perPage))}
-              rowCount={total}
-              pagination={list.pagination}
-              onPaginationChange={list.setPagination}
-              paginationNoun={t('admin.catalog.noun', 'packages')}
-            />
-          </>
-        )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {t('admin.catalog.keyset', 'Key set version')}
+                      </dt>
+                      <dd className="font-mono">{tr.keyset_version || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {t('admin.catalog.index', 'Signed index')}
+                      </dt>
+                      <dd className="font-mono">
+                        {tr.index_sequence || '—'}
+                        {tr.index_expires_at && (
+                          <span className="ms-2 font-sans text-xs text-muted-foreground">
+                            {tr.index_expired
+                              ? t('admin.catalog.expired', 'expired')
+                              : t('admin.catalog.expires', 'expires')}{' '}
+                            <RelativeTime date={tr.index_expires_at} />
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {t('admin.catalog.revocations', 'Revocation list')}
+                      </dt>
+                      <dd className="font-mono">
+                        {tr.revocations_sequence || '—'}
+                        {tr.revocations_stale && (
+                          <Badge variant="destructive" className="ms-2">
+                            {t('admin.catalog.stale', 'Out of date')}
+                          </Badge>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {t('admin.catalog.importedAt', 'Last import')}
+                      </dt>
+                      <dd>
+                        {tr.imported_at ? (
+                          <RelativeTime date={tr.imported_at} />
+                        ) : (
+                          t('admin.catalog.never', 'Never')
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </section>
 
         <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
           <SheetContent className="w-full sm:max-w-lg">
