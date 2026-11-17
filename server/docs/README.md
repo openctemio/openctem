@@ -102,6 +102,7 @@ because they change with it:
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
 - [Upgrading to CTIS 2.0](operations/ctis-2-upgrade.md)
 - [Monitoring and alerting](operations/monitoring.md)
+- [Diagnose and get support](operations/diagnose-and-get-support.md): `server doctor` (what is wrong and how to fix it) and `server support-bundle` (an archive without your data, to send to whoever helps you)
 - [Hotfix and incident response](operations/hotfix-and-incident-response.md): severity, containment, hotfix release, deploy, rollback, disclosure
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
 - [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)
