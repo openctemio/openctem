@@ -2,15 +2,18 @@
 
 /**
  * The finding page's header: what it is (type, CVE / CWE, title) and what you
- * can do with it. Status, severity, assignee and dates live in the properties
- * rail (finding-properties.tsx), not here, so the header stays one short block.
+ * can do with it, on the shared `DetailPageHeader`. Status, severity, assignee,
+ * who found it and the dates are rows of the properties list
+ * (finding-properties.tsx), not here.
  *
- *   [KEV] [SCA] [CVE-2024-21538 ↗] [CWE-1333]   (KEV only when CISA lists the CVE)
- *   cross-spawn ReDoS vulnerability
- *   [Re-verify] [Add to task] [AI triage] [⋯]
+ *   [KEV] [Vulnerability] [CVE-2024-21538] [CWE-1333]          ‹ 2 of 27 ›
+ *   cross-spawn ReDoS vulnerability      [More] [Re-verify] [AI triage] [main action]
  *
+ * One main action chosen by the finding's state (finding-main-action.tsx: Open
+ * the original, Retest now, Mark fix applied, otherwise Add to task), two
+ * secondary ones, the rest in More.
  * Verifying a fix is the Retest section's job (RFC-039): it re-runs the check
- * that found the issue. The old whole-asset "verification scan" is retired.
+ * that found the issue.
  */
 
 import { CveLink } from '@/features/vulnerabilities/components/cve-link'
@@ -27,10 +30,9 @@ import {
   FileText,
   KeyRound,
   Settings2,
+  Hash,
   Link2,
   Loader2,
-  MoreHorizontal,
-  ListPlus,
   ShieldCheck,
   Ticket,
 } from 'lucide-react'
@@ -41,22 +43,23 @@ import { Badge } from '@/components/ui/badge'
 import { BranchOnlyBadge } from '../branch-only-badge'
 import { ExploitSignals } from '../exploit-signals'
 import { Button } from '@/components/ui/button'
-import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import type { ActionMenuEntry } from '@/components/ui/action-menu'
+import { DetailPageHeader } from '@/features/shared/components/detail'
+import { useFindingPosition } from './finding-position'
 import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
-import { useCanMutate } from '@/lib/permissions'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
+import type { TransitionDecision } from '../../api/use-finding-transitions'
+import { FindingMainAction } from './finding-main-action'
 import { Tag } from '@/components/ui/tag'
 import { CreateTicketDialog } from '../create-ticket-dialog'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 import { MarkDuplicateDialog } from '../mark-duplicate-dialog'
-import { findingSourceText, findingTypeText, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { findingTypeText, HUMAN_SOURCES } from '../../lib/finding-detail'
 import { shareableLink } from '@/lib/org-link'
 
 /** The icon of each finding type: shape, not colour, names the kind. */
@@ -74,9 +77,16 @@ interface FindingHeaderProps {
   /** The live status (from the triage state). */
   status: FindingStatus
   onTriageCompleted?: () => void
+  /** The page's status move, for the "Mark fix applied" main action. */
+  onStatusMove?: (status: FindingStatus, move?: TransitionDecision) => void
 }
 
-export function FindingHeader({ finding, status, onTriageCompleted }: FindingHeaderProps) {
+export function FindingHeader({
+  finding,
+  status,
+  onTriageCompleted,
+  onStatusMove,
+}: FindingHeaderProps) {
   const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const { hasPermission } = usePermissions()
@@ -84,11 +94,6 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   // Re-verify dispatches the reachability check (POST /validate): findings:verify.
   const canVerify = hasPermission('findings:verify')
   const canCreateTicket = useCanCreateTicket()
-  // Adding to a task needs the task write permission and the remediation module.
-  const canCreateTask = useCanMutate('POST /api/v1/remediation/tasks')
-  const remediationEnabled = useModuleEnabled('remediation')
-  const canAddToTask = canCreateTask && remediationEnabled
-  const [taskOpen, setTaskOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [reverifyOpen, setReverifyOpen] = useState(false)
@@ -135,146 +140,127 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
 
   const TypeIcon = TYPE_ICON[finding.findingType ?? 'vulnerability'] ?? Bug
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
+  const position = useFindingPosition(finding.id)
 
-  const menuItems: ActionMenuEntry[] = [
+  const copy = async (text: string, done: string) => {
+    const ok = await copyToClipboard(text)
+    if (ok) toast.success(done)
+    else toast.error(t('common.copyFailed', 'Could not copy'))
+  }
+  const menu: ActionMenuEntry[] = [
     {
       id: 'copy-link',
       label: t('findings.header.copyLink', 'Copy link'),
       icon: Link2,
-      onSelect: async () => {
-        const ok = await copyToClipboard(shareableLink(`/findings/${finding.id}`))
-        if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
-        else toast.error(t('common.copyFailed', 'Could not copy'))
-      },
+      onSelect: () =>
+        void copy(
+          shareableLink(`/findings/${finding.id}`),
+          t('findings.header.linkCopied', 'Link copied')
+        ),
     },
-    ...(canCreateTicket
-      ? [
-          {
-            id: 'ticket',
-            label: t('findings.header.createTicket', 'Create ticket'),
-            icon: Ticket,
-            onSelect: () => setTicketOpen(true),
-          },
-        ]
-      : []),
-    ...(canMarkDuplicate
-      ? [
-          {
-            id: 'duplicate',
-            label: t('findings.header.markDuplicate', 'Mark as duplicate'),
-            icon: Copy,
-            onSelect: () => setDuplicateOpen(true),
-          },
-        ]
-      : []),
+    {
+      id: 'copy-id',
+      label: t('findings.drawer.copyId', 'Copy finding ID'),
+      icon: Hash,
+      onSelect: () => void copy(finding.id, t('findings.header.idCopied', 'Finding ID copied')),
+    },
   ]
+  if (canCreateTicket) {
+    menu.push({
+      id: 'create-ticket',
+      label: t('findings.header.createTicket', 'Create ticket'),
+      icon: Ticket,
+      section: 'track',
+      onSelect: () => setTicketOpen(true),
+    })
+  }
+  if (canMarkDuplicate) {
+    menu.push({
+      id: 'mark-duplicate',
+      label: t('findings.header.markDuplicate', 'Mark as duplicate'),
+      icon: Copy,
+      section: 'track',
+      onSelect: () => setDuplicateOpen(true),
+    })
+  }
 
   return (
-    <header className="min-w-0" data-slot="finding-header">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {finding.isInKev && (
-          <ExploitSignals
-            isInKev
-            kevDueDate={finding.kevDueDate}
-            kevRansomware={finding.kevRansomware}
-          />
-        )}
-        {/* What it is (a configuration check, a vulnerability), then who found it. */}
-        <Tag
-          icon={TypeIcon}
-          label={findingTypeText(t, finding.findingType)}
-          className="font-semibold"
-        />
-        <span className="text-xs text-muted-foreground" data-slot="finding-found-by">
-          {finding.toolName
-            ? t('findings.header.foundByTool', 'Found by {source} ({tool})', {
-                source: findingSourceText(t, finding.source),
-                tool: finding.toolName,
-              })
-            : t('findings.header.foundBy', 'Found by {source}', {
-                source: findingSourceText(t, finding.source),
-              })}
-        </span>
-        {finding.branchOnly && <BranchOnlyBadge />}
-        {finding.cve && (
-          <Badge variant="outline" className="text-xs">
-            <CveLink id={finding.cve} />
-          </Badge>
-        )}
-        {duplicateOfHref && (
-          <Badge variant="secondary" asChild className="text-xs">
-            <Link href={duplicateOfHref} data-slot="duplicate-of">
-              <Copy className="h-3 w-3" aria-hidden />
-              {t('findings.header.duplicateOf', 'Duplicate of another finding')}
-            </Link>
-          </Badge>
-        )}
-        {finding.cwe && cweNum && (
-          <Badge variant="outline" asChild className="font-mono text-xs">
-            <a
-              href={`https://cwe.mitre.org/data/definitions/${encodeURIComponent(cweNum)}.html`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
-            >
-              {finding.cwe}
-              <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
-          </Badge>
-        )}
-      </div>
-
-      <h1 className="mt-2 text-xl leading-snug font-semibold tracking-tight break-words sm:text-2xl">
-        {finding.title}
-      </h1>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!isHuman && canVerify && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setReverifyOpen(true)}
-            disabled={reverifying}
-            title={t(
-              'findings.header.reverifyTitle',
-              'Re-run a safe check to confirm the finding is still present'
+    <>
+      <DetailPageHeader
+        title={finding.title}
+        parent={{ href: position.listHref, label: position.listLabel }}
+        position={position.control}
+        menu={menu}
+        chips={
+          <>
+            {finding.isInKev && (
+              <ExploitSignals
+                isInKev
+                kevDueDate={finding.kevDueDate}
+                kevRansomware={finding.kevRansomware}
+              />
             )}
-          >
-            {reverifying ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <ShieldCheck className="h-3.5 w-3.5" />
+            <Tag icon={TypeIcon} label={findingTypeText(t, finding.findingType)} />
+            {finding.branchOnly && <BranchOnlyBadge />}
+            {finding.cve && (
+              <Badge variant="outline">
+                <CveLink id={finding.cve} />
+              </Badge>
             )}
-            {t('findings.header.reverify', 'Re-verify')}
-          </Button>
-        )}
-        {canAddToTask && (
-          <Button variant="outline" size="sm" onClick={() => setTaskOpen(true)}>
-            <ListPlus className="h-3.5 w-3.5" aria-hidden />
-            {t('remediationClaim.add.addToTask', 'Add to task')}
-          </Button>
-        )}
-        <AITriageButton
-          findingId={finding.id}
-          variant="ai"
-          size="sm"
-          onTriageCompleted={onTriageCompleted}
-        />
-        <ActionMenu
-          title={finding.title}
-          label={t('findings.header.moreActions', 'More actions')}
-          items={menuItems}
-          trigger={
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t('findings.header.moreActions', 'More actions')}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          }
-        />
-      </div>
+            {duplicateOfHref && (
+              <Badge variant="secondary" asChild>
+                <Link href={duplicateOfHref} data-slot="duplicate-of">
+                  <Copy aria-hidden />
+                  {t('findings.header.duplicateOf', 'Duplicate of another finding')}
+                </Link>
+              </Badge>
+            )}
+            {finding.cwe && cweNum && (
+              <Badge variant="outline" asChild>
+                <a
+                  href={`https://cwe.mitre.org/data/definitions/${encodeURIComponent(cweNum)}.html`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })} ${t('common.opensNewTab', '(opens in a new tab)')}`}
+                >
+                  <span className="font-mono">{finding.cwe}</span>
+                  <ExternalLink aria-hidden />
+                </a>
+              </Badge>
+            )}
+          </>
+        }
+        secondary={
+          <>
+            {!isHuman && canVerify && (
+              <Button
+                variant="outline"
+                onClick={() => setReverifyOpen(true)}
+                disabled={reverifying}
+                title={t(
+                  'findings.header.reverifyTitle',
+                  'Re-run a safe check to confirm the finding is still present'
+                )}
+              >
+                {reverifying ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <ShieldCheck aria-hidden />
+                )}
+                {t('findings.header.reverify', 'Re-verify')}
+              </Button>
+            )}
+            <AITriageButton
+              findingId={finding.id}
+              variant="outline"
+              onTriageCompleted={onTriageCompleted}
+            />
+          </>
+        }
+        primary={
+          <FindingMainAction finding={finding} status={status} onStatusMove={onStatusMove} />
+        }
+      />
 
       <ConfirmDialog
         open={reverifyOpen}
@@ -300,16 +286,6 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         />
       )}
 
-      {canAddToTask && taskOpen && (
-        <AddFindingsToTaskDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setTaskOpen(false)
-          }}
-          findings={[{ id: finding.id, title: finding.title }]}
-        />
-      )}
-
       {canCreateTicket && (
         <CreateTicketDialog
           findingId={finding.id}
@@ -318,6 +294,6 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           onOpenChange={setTicketOpen}
         />
       )}
-    </header>
+    </>
   )
 }

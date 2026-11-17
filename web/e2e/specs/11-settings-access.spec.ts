@@ -28,7 +28,7 @@ test(
     await expect(page.getByText(/SSO is configured by your platform administrator/)).toBeVisible({
       timeout: 30_000,
     })
-    expect(new URL(page.url()).pathname).toBe('/settings/authentication')
+    expect(new URL(page.url()).pathname).toBe('/settings/sign-in')
   }
 )
 

@@ -609,17 +609,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Settings - Organization (Core feature, no module required)
   // Team management is always available, controlled by RBAC only
   // ========================================
-  // Organization › General and Security › Authentication. Viewing needs
+  // Organization › General and Access & security › Sign-in. Viewing needs
   // team:update; saving the security settings is owner-only in the API and
-  // the page.
+  // the page. Sign-in also holds the verified domains, trusted organizations
+  // (owners and admins read, owners change) and the SSO changes an owner
+  // decides (RequireTeamOwner in the API; admins see an "owners only" note).
   '/settings/general': {
     permission: Permission.TeamUpdate,
   },
-  '/settings/authentication': {
-    permission: Permission.TeamUpdate,
-  },
-  // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
-  '/settings/sso-approvals': {
+  '/settings/sign-in': {
     permission: Permission.TeamUpdate,
   },
   // Owners and admins see support access; granting is owner only (api RFC-063).
@@ -628,14 +626,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   // Owners and admins read the security overview (api: RequireAdmin).
   '/settings/security': {
-    permission: Permission.TeamUpdate,
-  },
-  // Owners and admins read domain policies; changes are owner only (api RFC-104).
-  '/settings/domains': {
-    permission: Permission.TeamUpdate,
-  },
-  // Owners and admins read trusts; changes are owner only (api RFC-058).
-  '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
   },
   '/settings/modules': {
