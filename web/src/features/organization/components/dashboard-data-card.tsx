@@ -14,6 +14,7 @@ import { get, post } from '@/lib/api/client'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
 import { useCanMutate } from '@/lib/permissions'
+import { useNearViewport } from '@/hooks/use-near-viewport'
 
 /** GET /api/v1/dashboard-data/ (and the console's per-organization copy). */
 export interface DashboardDataStatus {
@@ -29,6 +30,7 @@ export interface DashboardDataStatus {
 
 const STATUS_PATH = '/api/v1/dashboard-data/'
 const REBUILD_PATH = '/api/v1/dashboard-data/rebuild'
+const SECTION_ID = 'dashboard-data'
 
 /**
  * Organization › General › Dashboard data: when the organization's dashboard
@@ -57,9 +59,12 @@ export function DashboardDataCard() {
       })
   }, [])
 
+  // The section sits below the fold of General: it reads its state when it
+  // comes near the viewport (a link to it scrolls it there), not on the load.
+  const near = useNearViewport(SECTION_ID)
   useEffect(() => {
-    load()
-  }, [load])
+    if (near) load()
+  }, [near, load])
 
   const rebuild = async () => {
     setBusy(true)
@@ -84,11 +89,7 @@ export function DashboardDataCard() {
   }
 
   const section = (body: ReactNode) => (
-    <SettingsSection
-      framed
-      id="dashboard-data"
-      title={t('org.dashboardData.title', 'Dashboard data')}
-    >
+    <SettingsSection framed id={SECTION_ID} title={t('org.dashboardData.title', 'Dashboard data')}>
       {body}
     </SettingsSection>
   )
