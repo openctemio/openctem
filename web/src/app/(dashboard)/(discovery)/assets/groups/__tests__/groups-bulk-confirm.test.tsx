@@ -104,10 +104,17 @@ async function selectAll() {
   await userEvent.click(boxes[0])
 }
 
+/** Delete is under the bar's More, in the destructive group. */
+async function openBulkDelete() {
+  const bar = await screen.findByRole('toolbar', { name: 'Actions for selected rows' })
+  await userEvent.click(within(bar).getByRole('button', { name: 'More actions' }))
+  return screen.findByRole('menuitem', { name: 'Delete' })
+}
+
 describe('asset group bulk confirmations', () => {
   it('bulk delete asks for the count, names the groups and does not delete before it', async () => {
     await selectAll()
-    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await userEvent.click(await openBulkDelete())
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('payments')).toBeInTheDocument()
     expect(within(dialog).getByText('billing')).toBeInTheDocument()
@@ -121,13 +128,13 @@ describe('asset group bulk confirmations', () => {
 
   it('bulk delete is styled as destructive', async () => {
     await selectAll()
-    const bar = await screen.findByRole('button', { name: 'Delete' })
-    expect(bar.className).toContain('destructive')
+    const item = await openBulkDelete()
+    expect(item.className).toContain('destructive')
   })
 
   it('a bulk criticality change waits for the confirmation', async () => {
     await selectAll()
-    const bar = await screen.findByRole('toolbar')
+    const bar = await screen.findByRole('toolbar', { name: 'Actions for selected rows' })
     await userEvent.click(within(bar).getByRole('button', { name: /^criticality$/i }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /critical/i }))
     expect(state.bulkUpdate).not.toHaveBeenCalled()
