@@ -16,7 +16,8 @@
  *   overview, audit log, support access);
  * - Findings & assets: how findings are handled, then Risk and threats
  *   (scoring, matching, alerts, licenses), then Assets;
- * - Scanning: what scans may do, then Tools, Sensors and Scanner content;
+ * - Scanning: what scans may do, then Tools, Sensors, Detection content (the
+ *   catalog and the rules, templates and wordlists drawn from it) and Scanner content;
  * - Integrations.
  * A long group is split by `section` sub-headings. URLs never move with the
  * grouping, so a regrouping needs no redirect.
@@ -888,7 +889,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Signed content packages from the catalog (api RFC-099): read with
         // content:read; installs and approvals need content:install.
         id: 'content',
-        section: 'content',
+        section: 'detection',
         title: 'Content catalog',
         description: 'Signed rules, templates and other packages: install, update and approve.',
         url: '/settings/content',
@@ -898,7 +899,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scanner-templates',
-        section: 'content',
+        section: 'detection',
         title: 'Scanner templates',
         description: 'Custom Nuclei, Semgrep and Betterleaks templates.',
         url: '/settings/scanning/templates',
@@ -911,7 +912,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Organization detection rules (api docs/architecture/rule-packs.md):
         // read with scans:content:read; changes need scans:content:write.
         id: 'detectionRules',
-        section: 'content',
+        section: 'detection',
         title: 'Detection rules',
         description: 'Rules that name technologies and find exposed secrets in scan results.',
         url: '/settings/scanning/detection-rules',
@@ -923,7 +924,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Organization wordlists (api docs/architecture/wordlists.md): read
         // with scans:content:read; changes need scans:content:write.
         id: 'wordlists',
-        section: 'content',
+        section: 'detection',
         title: 'Wordlists',
         description: 'Words subdomain discovery tries under your domains.',
         url: '/settings/scanning/wordlists',

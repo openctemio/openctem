@@ -18,6 +18,13 @@ interface PageHeaderProps {
    * own row under the title, so the switcher sits in the same place on every view.
    */
   viewSwitcher?: ReactNode
+  /**
+   * A control on the title's line, right after the title text and outside
+   * the h1 (e.g. a chevron button that switches between dashboards, so the
+   * name is the switcher). Same line on a phone; the phone bar still repeats
+   * the plain title.
+   */
+  titleAction?: ReactNode
 }
 
 /**
@@ -39,6 +46,7 @@ export function PageHeader({
   className,
   actionsClassName,
   viewSwitcher,
+  titleAction,
 }: PageHeaderProps) {
   // Below 768 px the phone bar repeats the title once it has scrolled away.
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -54,9 +62,24 @@ export function PageHeader({
       {/* basis-60: on a phone the title and a couple of icon actions share a
           row; wider actions wrap onto their own line instead of squeezing. */}
       <div className="min-w-0 flex-1 basis-60">
-        <h1 id={PAGE_TITLE_ID} ref={titleRef} className="text-page tracking-tight text-balance">
-          {title}
-        </h1>
+        {titleAction ? (
+          <div data-slot="page-header-title-line" className="flex min-w-0 items-center gap-1">
+            <h1
+              id={PAGE_TITLE_ID}
+              ref={titleRef}
+              className="min-w-0 text-page tracking-tight text-balance"
+            >
+              {title}
+            </h1>
+            <div data-slot="page-header-title-action" className="flex shrink-0 items-center">
+              {titleAction}
+            </div>
+          </div>
+        ) : (
+          <h1 id={PAGE_TITLE_ID} ref={titleRef} className="text-page tracking-tight text-balance">
+            {title}
+          </h1>
+        )}
         {description && (
           <div className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
             {description}

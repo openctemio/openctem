@@ -977,11 +977,13 @@ function FindingsContent() {
     [searchParams]
   )
   const [pickerOpen, setPickerOpen] = useState(false)
+  // A chip's editor is open: it needs the contract as Add filter does.
+  const [chipEditorOpen, setChipEditorOpen] = useState(false)
   const {
     contract: loadedContract,
     isLoading: contractLoading,
     error: contractError,
-  } = useFindingFilterContract(pickerOpen || unownedParams.length > 0)
+  } = useFindingFilterContract(pickerOpen || chipEditorOpen || unownedParams.length > 0)
   const filterContract = useMemo(() => withOwnedFields(loadedContract), [loadedContract])
   const unknownParams = useMemo(
     () =>
@@ -2745,6 +2747,11 @@ function FindingsContent() {
       onSearchChange={replaceUrlSearch}
       queryActive={queryMode.active}
       onOpenQuery={() => queryMode.setActive(true)}
+      edit={{
+        contract: loadedContract,
+        contractFailed: !!contractError,
+        onOpenChange: setChipEditorOpen,
+      }}
     />
   )
 

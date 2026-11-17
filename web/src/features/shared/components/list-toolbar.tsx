@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
-import { ListSearch, type ListSearchProps } from './list-search'
+import { ListSearch, type ListSearchProps, type ListSearchStatusSlot } from './list-search'
 import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
 
 /**
@@ -27,6 +27,15 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  *   one line with a locked chip first, the chips (the rest folded into "+N
  *   more"), Add filter and Clear right after them, the count at the end. On a
  *   phone the locked chip takes a line of its own above the rest.
+ * - the status row: on a list whose search takes query text, the line under
+ *   the toolbar where the query field says what is wrong with a refused text
+ *   (its problem, the column, its fixes). The toolbar owns it and hands it to
+ *   the field (`ListSearchStatusSlot`), so the toolbar row keeps its height
+ *   whatever the text's state. It takes room only while there is a problem:
+ *   one line of the chips row's height, beside the chips row when one shows
+ *   (the list does not move), a row of its own otherwise (the list moves by
+ *   that row and the gap, as for the first chip). On a phone it is a line of
+ *   its own under the actions.
  *
  * Gaps are the toolbar's (8px between controls, 8px to the chips row); a slot
  * adds no margins of its own. The start group asks for at least 12rem; when it
@@ -183,7 +192,23 @@ export function ListToolbar({
   const ref = React.useRef<HTMLDivElement>(null)
   useListShortcuts(ref)
 
-  const lead = search ? <ListSearch {...search} filter={filter} /> : filter
+  // The status row of the query field: the editor draws its problem line
+  // into it and says when it has one.
+  const hasQuery = !!search?.query
+  const queryActive = !!search?.query?.active
+  const [statusHost, setStatusHost] = React.useState<HTMLDivElement | null>(null)
+  const [statusDrawn, setStatusDrawn] = React.useState(false)
+  const statusSlot = React.useMemo<ListSearchStatusSlot>(
+    () => ({ host: statusHost, onDrawnChange: setStatusDrawn }),
+    [statusHost]
+  )
+  const statusShown = queryActive && statusDrawn
+
+  const lead = search ? (
+    <ListSearch {...search} filter={filter} statusSlot={hasQuery ? statusSlot : undefined} />
+  ) : (
+    filter
+  )
   const tokensRef = React.useRef<HTMLDivElement>(null)
   useTabStripScroll(tokensRef, !!start)
   const startRef = React.useRef<HTMLDivElement>(null)
@@ -220,7 +245,7 @@ export function ListToolbar({
           className={cn(
             'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:contents',
             // Top: every control is one height, and a taller field (the
-            // expanded query editor, a problem line) moves no token.
+            // expanded query editor) moves no token.
             'items-start'
           )}
         >
@@ -285,7 +310,38 @@ export function ListToolbar({
     </div>
   )
 
-  if (!below) return toolbar
+  // Mounted while the field is in Query mode. At rest it draws no box (the
+  // line in it is read out, not shown), so it adds no gap; with a problem it
+  // is one line of the chips row's height.
+  const status = queryActive ? (
+    <div
+      ref={setStatusHost}
+      data-slot="list-toolbar-status"
+      data-drawn={statusShown ? '' : undefined}
+      className={
+        statusShown
+          ? cn(
+              'flex h-control min-w-0 items-center max-md:h-control-touch',
+              below
+                ? // Beside the chips row; a phone gives it the last line.
+                  'flex-[1_1_0%] @max-md/toolbar:order-last @max-md/toolbar:flex-[0_0_100%]'
+                : 'shrink-0'
+            )
+          : 'contents'
+      }
+    />
+  ) : null
+
+  if (!below) {
+    if (!hasQuery) return toolbar
+    // A query list without a chips row: the toolbar, then its status row.
+    return (
+      <div data-slot="list-toolbar-frame" className="flex min-w-0 flex-col gap-2">
+        {toolbar}
+        {status}
+      </div>
+    )
+  }
   return (
     // The region is a size container under the same name, so the toolbar's
     // controls answer by the same width when the toolbar box is lent out.
@@ -298,12 +354,20 @@ export function ListToolbar({
       <div
         data-testid="data-table-toolbar-below"
         data-slot="list-toolbar-below"
-        // Hidden while it holds nothing to show: an empty row, or a chips row
-        // whose only (leading) chip renders nothing.
-        className="flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden @max-md/toolbar:min-w-0 @max-md/toolbar:flex-[1_1_0%]"
+        className={cn(
+          // Hidden while it holds nothing to show: an empty row, or a chips row
+          // whose only (leading) chip renders nothing.
+          'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden @max-md/toolbar:min-w-0 @max-md/toolbar:flex-[1_1_0%]',
+          // With a problem shown the row is as wide as what it holds (the
+          // leading chip, at most half the line as before) and the problem
+          // takes the rest of the line: the list does not move.
+          statusShown &&
+            '@md/toolbar:max-w-[50%] @md/toolbar:flex-[0_0_auto] @md/toolbar:[&_[data-slot=filter-chips-leading]]:max-w-full'
+        )}
       >
         {below}
       </div>
+      {status}
     </div>
   )
 }

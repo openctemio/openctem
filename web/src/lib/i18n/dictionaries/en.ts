@@ -31,6 +31,7 @@ import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_errors from './en/errors.json'
 import en_labels from './en/labels.json'
+import en_legal from './en/legal.json'
 import en_repositories from './en/repositories.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
@@ -137,6 +138,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   common: en_common,
   errors: en_errors,
   labels: en_labels,
+  legal: en_legal,
   repositories: en_repositories,
   dashboardMetrics: en_dashboardMetrics,
   dashboardKit: en_dashboardKit,
