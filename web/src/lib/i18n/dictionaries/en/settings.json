@@ -1173,6 +1173,7 @@
   "settings.section.api-access": "API access",
   "settings.section.assets": "Assets",
   "settings.section.content": "Scanner content",
+  "settings.section.detection": "Detection content",
   "settings.section.oversight": "Oversight",
   "settings.section.risk": "Risk and threats",
   "settings.section.sensors": "Sensors",

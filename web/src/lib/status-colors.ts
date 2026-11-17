@@ -45,6 +45,20 @@ export const STATUS_TONE_TEXT: Record<StatusTone, string> = {
 }
 
 /**
+ * The tint alone, for a notice that keeps ink text on it (an entry page's
+ * banner): the tone's colour is the surface, the words stay foreground.
+ */
+export const STATUS_TONE_BG: Record<StatusTone, string> = {
+  triage: 'bg-st-triage-bg',
+  open: 'bg-st-open-bg',
+  progress: 'bg-st-progress-bg',
+  waiting: 'bg-st-waiting-bg',
+  resolved: 'bg-st-resolved-bg',
+  accepted: 'bg-st-accepted-bg',
+  closed: 'bg-st-closed-bg',
+}
+
+/**
  * Solid fill of a tone, for a segment of a stacked status bar or its legend
  * swatch (the tone's text colour as a background, so it holds AA against the
  * card in both themes). The segment's text label is always beside it.

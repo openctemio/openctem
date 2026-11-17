@@ -3,8 +3,8 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 /**
  * Nothing in a list's header jumps (owner rule): on Findings, Assets,
- * Scans and Scan runs, at 1440, 1024, 768 and 390 px, in English and
- * Vietnamese, every
+ * Scans, Sensors and Scan runs, at 1440, 1024, 768 and 390 px, in English
+ * and Vietnamese, every
  * control of the toolbar row and of the title row keeps its box (0 px of
  * movement, 0 px of size change) through: a filter added, five more added
  * (the chips row folds them into "+N more"), one removed, a grouping chosen,
@@ -73,6 +73,19 @@ const LISTS = {
     ],
     group: false,
   },
+  // Searched on the page; no query language for sensors.
+  '/sensors': {
+    filters: [
+      ['state', 'online'],
+      ['role', 'scanner'],
+      ['version', 'latest'],
+      ['policy', 'enforced'],
+      ['attention', '1'],
+      ['exec', 'daemon'],
+    ],
+    group: false,
+    query: false,
+  },
   // No search field and no Query mode: the run list takes field filters only.
   '/scans/runs': {
     filters: [
@@ -88,6 +101,11 @@ const LISTS = {
 /** A list without a search field skips the Query mode and typing steps. */
 function hasSearch(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
   return !('search' in list) || list.search !== false
+}
+
+/** A list without a query language skips the Basic | Query steps. */
+function hasQuery(list: (typeof LISTS)[keyof typeof LISTS]): boolean {
+  return hasSearch(list) && (!('query' in list) || list.query !== false)
 }
 
 async function settle(page: Page) {
@@ -316,7 +334,7 @@ function headerHoldsStill(route: keyof typeof LISTS) {
           }
         }
 
-        if (hasSearch(list)) {
+        if (hasQuery(list)) {
           // Basic | Query and back.
           const toQuery = page.locator(
             'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
@@ -375,7 +393,9 @@ function headerHoldsStill(route: keyof typeof LISTS) {
               .locator('main [data-slot="list-search-input"]')
               .waitFor({ state: 'visible', timeout: 20_000 })
           })
+        }
 
+        if (hasSearch(list)) {
           await step('type in the field', async () => {
             await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
           })
@@ -675,6 +695,10 @@ test.describe('Assets list header', { tag: ['@assets'] }, () => {
 test.describe('Scans list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans')
   saysItsCountOnce('/scans')
+})
+test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
+  headerHoldsStill('/sensors')
+  saysItsCountOnce('/sensors')
 })
 test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/runs')
