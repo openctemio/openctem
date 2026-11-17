@@ -5,21 +5,13 @@
  * intensity (in plain words, and whether this scan needs an approval), against
  * how many targets, when (with the next runs from the API), about how many
  * jobs, and what still has to be fixed before it can be created, each problem
- * a link to its step. Desktop: a sticky column beside the step. Phone and
- * tablet: a one-line bar above the footer that opens it. Every figure comes
+ * a link to its step. The wizard shows one line of it in the footer; that line
+ * opens the whole summary above the footer. Every figure comes
  * from the form or the server's answers; nothing is decided here.
  * Design: research/418.
  */
 
-import { useState } from 'react'
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronUp,
-  CircleSlash,
-  Clock,
-  ShieldCheck,
-} from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleSlash, Clock, ShieldCheck } from 'lucide-react'
 import {
   stepFix,
   stepReason,
@@ -266,36 +258,4 @@ export function summaryLine(
     scheduleSummary(facts.data, t),
     t(`scans.intensity.${facts.data.intensity}`),
   ].join(', ')
-}
-
-/** Phone and tablet: a bar above the footer that opens the summary. */
-export function ScanSummaryBar({ line, children }: { line: string; children: React.ReactNode }) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="w-full min-w-0 border-b pb-1 lg:hidden" data-testid="summary-bar">
-      <button
-        type="button"
-        className="flex min-h-11 w-full min-w-0 items-center gap-2 text-start text-sm"
-        aria-expanded={open}
-        aria-controls="scan-summary-sheet"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="shrink-0 font-medium">{t('scans.summaryPanel.title')}</span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">{line}</span>
-        <ChevronUp
-          className={cn('h-4 w-4 shrink-0 transition-transform', !open && 'rotate-180')}
-          aria-hidden
-        />
-      </button>
-      {open && (
-        <div
-          id="scan-summary-sheet"
-          className="max-h-[45dvh] overflow-y-auto overscroll-contain pb-3"
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  )
 }

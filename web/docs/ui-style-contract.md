@@ -789,6 +789,38 @@ load.
   - The step-up dialog says the action continues right away once the identity
     is confirmed; it never describes the act.
 
+### Forms, wizards and form dialogs
+
+The shared pieces are in `src/features/shared/components/forms/`.
+
+- **Form layout.** One column (`FormStack`; a page form is capped at 45rem with `page`), 16 px between fields,
+  short fields side by side in a `FormRow`, a `FormSection` (line above, 14/20 600 title) for a named group. A
+  `FormField` puts the label (13/20 500) above its control, help (12/16 muted) under it and the error (12/16 500,
+  danger text, with an icon) under the field it belongs to. A field is required unless it says "Optional" after
+  its label; there is no asterisk. `FormField` gives the control its id and ties label, help and error to it
+  (`aria-describedby`, `aria-invalid`, `aria-required`); the error is a live `role="alert"`. A group of controls
+  (radio cards, checkboxes) is `FormField group`: a fieldset named by its legend. The react-hook-form kit
+  (`components/ui/form.tsx`) has the same type and gaps.
+- **Wizard.** `WizardFrame` is a dialog (`xl`, 56rem; a full-height sheet on a phone) with ONE height for every
+  step, so the header, the step strip and the footer never move while a person goes through the steps. The strip
+  (`WizardSteps`) is a navigation landmark with an ordered list of buttons, drawn as the tab strip: every step
+  opens at any time, the current one has `aria-current="step"`, and each shows its state in one fixed 20 px box
+  (its number, a check when complete, a warning when it has problems; more than one problem adds a count badge
+  that takes no room), with the state in the accessible name ("Targets, 2 problems"). On a phone the strip
+  scrolls sideways and keeps the current step in view. The footer is one row: the summary line at the start (it
+  opens the whole summary above the row), then Back (ghost), Next (primary) and, on the last step, the primary
+  action; on a phone the summary has its own line and the buttons share one row. While the primary action is
+  disabled the footer names the first problem with a link to its step. Ctrl/Cmd+Enter runs the primary action or
+  goes to the first problem; a step change moves focus to the step's heading ("Step 2 of 5: Targets").
+- **Form dialog.** `FormDialog` is the frame of a create or edit dialog: title, optional description, a body that
+  scrolls, and a footer with Cancel (ghost) and one primary action (a verb). It is a form: Enter submits. A failed
+  submit shows above the actions as an alert; the reason for a disabled primary action is read with the button.
+  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors).
+- **Leaving with unsaved changes.** A dialog form asks before it closes (`dirty` on `FormDialog`, or
+  `useDiscardPrompt`): Keep editing, Discard, and Keep as draft where the form keeps a draft. A page form renders
+  `LeaveGuard`: the browser asks on reload or close, and an in-app link is held until the person chooses. A
+  settings form gets the same from `SettingsSaveBar`.
+
 ### Floating surfaces
 
 Every anchored surface (menu, popover, select list, tooltip, date picker) gets
