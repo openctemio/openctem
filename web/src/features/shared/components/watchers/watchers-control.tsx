@@ -83,8 +83,9 @@ export function WatchersControl({
   return (
     <>
       <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
-        {/* In a narrow rail the toggle wraps under the summary. */}
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-md:justify-end">
+        {/* One line: the summary truncates, the toggle is an icon button named
+            by its action (pressed while you watch). */}
+        <span className="flex min-w-0 items-center gap-2 max-md:justify-end">
           <Button
             ref={summaryRef}
             type="button"
@@ -106,9 +107,13 @@ export function WatchersControl({
           </Button>
           <Button
             type="button"
+            size="icon"
             variant={watching ? 'secondary' : 'outline'}
+            className="shrink-0"
             disabled={busy}
             aria-label={toggleLabel}
+            aria-pressed={watching}
+            title={toggleLabel}
             onClick={() => void setWatching(!watching)}
             data-testid="watch-toggle"
           >
@@ -119,9 +124,6 @@ export function WatchersControl({
             ) : (
               <BellOff className="size-4" aria-hidden />
             )}
-            {watching
-              ? t('findings.people.watching', 'Watching')
-              : t('findings.people.watch', 'Watch')}
           </Button>
         </span>
       </PropertyRow>

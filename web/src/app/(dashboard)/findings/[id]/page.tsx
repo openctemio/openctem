@@ -322,6 +322,7 @@ export default function FindingDetailPage() {
             finding={finding}
             status={triage.status}
             onTriageCompleted={handleTriageCompleted}
+            onStatusMove={triage.changeStatus}
           />
           <Tabs value={tab} onValueChange={(v) => setTab(v)} className={GRID}>
             <aside

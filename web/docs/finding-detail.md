@@ -110,7 +110,7 @@ The page is built from the detail kit (`docs/ui-style-contract.md`, "Detail page
 Findings > CVE-2024-21538                          (top bar breadcrumb)
 
 [Vulnerability] [CVE-2024-21538] [CWE-1333]                        <  2 of 27  >
-cross-spawn ReDoS vulnerability          [...] [Re-verify] [AI triage] [Add to task]
+cross-spawn ReDoS vulnerability          [...] [Re-verify] [AI triage] [main action]
 Overview | Evidence 4 | Validation 2 | Remediation | Related | Details
 ------------------------------------------------------------------------------
 [!] SLA overdue by 143 days                          Status     [New v]
@@ -120,7 +120,7 @@ Why it matters                                       Priority   P1
   Exploitation   Exposure          Impact                       143 days overdue
   > How this was scored                              People
 Fix                          Remediation plan        Assignee   [Unassigned v]
-  Upgrade cross-spawn 7.0.3 to 7.0.5                 Watchers   2 watching
+  Upgrade cross-spawn 7.0.3 to 7.0.5                 Watchers   2 watching  [bell]
 Scanner output                                       ---------------------------
   > Show output                                      Asset      demo-web-storefront
 Proof of fix                                         Found by   SCA, npm-audit
@@ -131,8 +131,23 @@ Proof of fix                                         Found by   SCA, npm-audit
 
 - **Header** (`FindingHeader` on `DetailPageHeader`): type and identifier chips, the place in the list the
   finding was opened from ("2 of 27" links back to that list; previous and next, also `k` and `j`), the title,
-  one main action (Add to task), two secondary ones (Re-verify, AI triage) and a More menu (Copy link, Copy
-  finding ID, Create ticket, Mark as duplicate). Who found it is said once, in the properties.
+  one main action, two secondary ones (Re-verify, AI triage) and a More menu (Copy link, Copy finding ID,
+  Create ticket, Mark as duplicate). Who found it is said once, in the properties.
+- **Main action** (`FindingMainAction`), chosen by the finding's state; when the state's action is not
+  available to the viewer, the next row applies:
+
+  | State                             | Main action       | Gate (the same as elsewhere on the page)                                   |
+  | --------------------------------- | ----------------- | -------------------------------------------------------------------------- |
+  | Duplicate of another finding      | Open the original | none (a link)                                                              |
+  | Fix applied, and a retest can run | Retest now        | `findings:verify` and the server's `can_retest` (the Proof of fix section) |
+  | In progress                       | Mark fix applied  | status permission, not a people-written finding, the lifecycle's move      |
+  | Any other state                   | Add to task       | task write permission and the remediation module                           |
+
+  Mark fix applied asks the lifecycle for the move when clicked (as the status menu does) and then takes the
+  status menu's path: the note dialog, the organization's move fields, approvals and Undo are unchanged.
+
+- **Watchers** row: the summary ("2 watching") opens the manage sheet; your own Watch toggle is an icon button
+  named by its action ("Watch this finding", "Stop watching this finding"), pressed while you watch.
 - **Tabs**, right under the header, kept in the URL (`?tab=`): Overview (why it matters, the fix, the scanner
   output, proof of fix), Evidence, Validation (only when there is a result or a reachability check to run),
   Remediation, Data flow (`attack-path`, only with a data flow), Pentest details (findings people wrote),

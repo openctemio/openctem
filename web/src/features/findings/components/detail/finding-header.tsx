@@ -7,9 +7,11 @@
  * (finding-properties.tsx), not here.
  *
  *   [KEV] [Vulnerability] [CVE-2024-21538] [CWE-1333]          ‹ 2 of 27 ›
- *   cross-spawn ReDoS vulnerability      [More] [Re-verify] [AI triage] [Add to task]
+ *   cross-spawn ReDoS vulnerability      [More] [Re-verify] [AI triage] [main action]
  *
- * One main action (Add to task), two secondary ones, the rest in More.
+ * One main action chosen by the finding's state (finding-main-action.tsx: Open
+ * the original, Retest now, Mark fix applied, otherwise Add to task), two
+ * secondary ones, the rest in More.
  * Verifying a fix is the Retest section's job (RFC-039): it re-runs the check
  * that found the issue.
  */
@@ -31,7 +33,6 @@ import {
   Hash,
   Link2,
   Loader2,
-  ListPlus,
   ShieldCheck,
   Ticket,
 } from 'lucide-react'
@@ -49,12 +50,11 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { safeHref } from '@/lib/safe-href'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
-import { useCanMutate } from '@/lib/permissions'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
+import type { TransitionDecision } from '../../api/use-finding-transitions'
+import { FindingMainAction } from './finding-main-action'
 import { Tag } from '@/components/ui/tag'
 import { CreateTicketDialog } from '../create-ticket-dialog'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
@@ -77,9 +77,16 @@ interface FindingHeaderProps {
   /** The live status (from the triage state). */
   status: FindingStatus
   onTriageCompleted?: () => void
+  /** The page's status move, for the "Mark fix applied" main action. */
+  onStatusMove?: (status: FindingStatus, move?: TransitionDecision) => void
 }
 
-export function FindingHeader({ finding, status, onTriageCompleted }: FindingHeaderProps) {
+export function FindingHeader({
+  finding,
+  status,
+  onTriageCompleted,
+  onStatusMove,
+}: FindingHeaderProps) {
   const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const { hasPermission } = usePermissions()
@@ -87,11 +94,6 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   // Re-verify dispatches the reachability check (POST /validate): findings:verify.
   const canVerify = hasPermission('findings:verify')
   const canCreateTicket = useCanCreateTicket()
-  // Adding to a task needs the task write permission and the remediation module.
-  const canCreateTask = useCanMutate('POST /api/v1/remediation/tasks')
-  const remediationEnabled = useModuleEnabled('remediation')
-  const canAddToTask = canCreateTask && remediationEnabled
-  const [taskOpen, setTaskOpen] = useState(false)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [reverifyOpen, setReverifyOpen] = useState(false)
@@ -256,12 +258,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           </>
         }
         primary={
-          canAddToTask ? (
-            <Button onClick={() => setTaskOpen(true)}>
-              <ListPlus aria-hidden />
-              {t('remediationClaim.add.addToTask', 'Add to task')}
-            </Button>
-          ) : undefined
+          <FindingMainAction finding={finding} status={status} onStatusMove={onStatusMove} />
         }
       />
 
@@ -286,16 +283,6 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           open={duplicateOpen}
           onOpenChange={setDuplicateOpen}
           onMarked={(canonicalId) => router.push(`/findings/${encodeURIComponent(canonicalId)}`)}
-        />
-      )}
-
-      {canAddToTask && taskOpen && (
-        <AddFindingsToTaskDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setTaskOpen(false)
-          }}
-          findings={[{ id: finding.id, title: finding.title }]}
         />
       )}
 
