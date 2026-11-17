@@ -678,9 +678,10 @@ queues). It is a list in everything a list has (title row with the view name and
 (exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
 and no page rebuilds:
 
-- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve, Reject) and one More
-  for everything else, in the row's last column and on the phone card. The buttons are named after the item
-  ("Approve {name}"). Without the permission there is no decision control. New decisions and bulk decisions
+- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve and Reject, or the
+  page's own labels) and one More for everything else, in the row's last column and on the phone card. Each
+  button is announced by its own visible label and the item ("Approve {name}", "Merge {name}"); a page passes a
+  whole accessible name where that does not read well ("Keep {name} separate"). Without the permission there is no decision control. New decisions and bulk decisions
   are not added by a page: they need their own design with gates, confirm and audit.
 - **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
   stands in their place, with the reason on hover and focus in a table row and written out on a card. The
