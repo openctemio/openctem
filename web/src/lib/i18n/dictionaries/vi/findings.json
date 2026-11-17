@@ -179,6 +179,7 @@
   "findings.assigneeSelect.search": "Tìm kiếm thành viên...",
   "findings.assigneeSelect.teamMembers": "Thành viên nhóm",
   "findings.assigneeSelect.teamMembersTotal": "Thành viên nhóm (tổng {total})",
+  "findings.assigneeSelect.title": "Chọn người",
   "findings.assigneeSelect.typeToSearch": "Nhập để tìm thêm thành viên",
   "findings.assigneeSelect.unassign": "Bỏ giao",
   "findings.assigneeSelect.unknown": "Không rõ",

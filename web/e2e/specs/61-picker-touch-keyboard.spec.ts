@@ -1,49 +1,69 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
+import { openFindingsPhoneSelect } from '../helpers/table'
 
 /**
  * A picker never opens the on-screen keyboard by itself on a touch screen
- * (owner report 2026-11-15, /findings at 390 px: Add filter focused its search
+ * (owner report 2026-11-15, /findings at 390 px: a picker focused its search
  * field on open, the keyboard covered half the screen and the field scrolled
  * out of view).
  *
- * At 375 and 390 px with touch (en and vi): Add filter opens as a bottom
- * sheet whose search field is pinned at its top and on screen, the focus is
- * on the option list (not the field) and the rows are at least 44 px. Then
- * the user taps the field and the keyboard opens: emulated as the visible
- * viewport shrinking to 420 px (iOS Safari keeps the layout viewport, so
- * `innerHeight` does not change), once in place and once panned down by
- * 120 px. The sheet follows the visible part: the field and at least 3 rows
- * stay inside it. At 1440 px with a mouse the field has focus on open, as
- * before.
+ * The picker a phone reaches on /findings is the assignee picker: Select mode,
+ * one card, then "Assign to…" in the bulk bar. At 375 and 390 px with touch
+ * (en and vi) it opens as a bottom sheet whose search field is pinned at its
+ * top and on screen, the focus is on the member list (not the field) and the
+ * rows are at least 44 px. Then the user taps the field and the keyboard
+ * opens: emulated as the visible viewport shrinking to 420 px (iOS Safari
+ * keeps the layout viewport, so `innerHeight` does not change), once in place
+ * and once panned down by 120 px. The sheet follows the visible part: the
+ * field and the first rows stay inside it. At 1440 px with a mouse the picker
+ * is an anchored popover and the field has focus on open, as before.
  */
 
 const LABEL = {
-  en: { add: 'Add filter', search: 'Search fields…' },
-  vi: { add: 'Thêm bộ lọc', search: 'Tìm trường…' },
+  en: { assign: 'Assign to…', title: 'Select a person', search: 'Search members...' },
+  vi: { assign: 'Giao cho…', title: 'Chọn người', search: 'Tìm kiếm thành viên...' },
 } as const
 
 const KEYBOARD_UP_HEIGHT = 420
 
-async function openAddFilter(page: Page, locale: 'en' | 'vi', baseURL: string) {
+/** Selects one finding and opens the bulk bar's assignee picker. */
+async function openAssigneePicker(
+  page: Page,
+  locale: 'en' | 'vi',
+  baseURL: string,
+  phone: boolean
+) {
   await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL }])
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/findings')
   const l = LABEL[locale]
-  const trigger = page.getByRole('button', { name: l.add, exact: true }).first()
-  await expect(trigger).toBeVisible({ timeout: 45_000 })
+  if (phone) {
+    const card = page.getByTestId('finding-phone-card').first()
+    await expect(card).toBeVisible({ timeout: 45_000 })
+    // Select mode from the list's More (title row), then the first card.
+    await openFindingsPhoneSelect(page)
+    await card.getByRole('checkbox').check()
+  } else {
+    const row = page.getByRole('row').nth(1)
+    await expect(row).toBeVisible({ timeout: 45_000 })
+    await row.getByRole('checkbox').check()
+  }
+  const bar = page.locator('[data-slot="bulk-action-bar"]')
+  await expect(bar).toBeVisible()
+  const trigger = bar.getByRole('button', { name: l.assign })
   await trigger.click()
-  const sheet = page.getByRole('dialog', { name: l.add })
-  await expect(sheet.getByRole('option').first()).toBeVisible({ timeout: 20_000 })
+  const picker = page.getByRole('dialog', { name: l.title })
+  await expect(picker.getByRole('option').first()).toBeVisible({ timeout: 20_000 })
   // Measure once the open animation has finished.
   await expect
     .poll(() =>
-      sheet.evaluate(
+      picker.evaluate(
         (el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length
       )
     )
     .toBe(0)
-  return { sheet, field: sheet.getByPlaceholder(l.search) }
+  return { picker, trigger, field: picker.getByPlaceholder(l.search) }
 }
 
 /** Emulates the keyboard: the visible viewport shrinks (and may pan); the layout viewport stays. */
@@ -91,11 +111,8 @@ test.describe('touch', () => {
 
   for (const locale of ['en', 'vi'] as const) {
     for (const width of [375, 390] as const) {
-      // A phone has no Add filter (its one filter entry is the Filters button
-      // joined to the search field): these cases move to the next picker that
-      // opens as a sheet on a phone (the assignee picker).
-      test.fixme(
-        `Add filter opens without the keyboard and follows it once tapped at ${width}px (${locale})`,
+      test(
+        `The assignee picker opens without the keyboard and follows it once tapped at ${width}px (${locale})`,
         { tag: ['@findings', '@phone'] },
         async ({ page, baseURL }) => {
           await page.setViewportSize({ width, height: 844 })
@@ -104,7 +121,8 @@ test.describe('touch', () => {
           )
           expect(touch, 'touch emulation').toBe(true)
 
-          const { sheet, field } = await openAddFilter(page, locale, baseURL!)
+          const { picker: sheet, field } = await openAssigneePicker(page, locale, baseURL!, true)
+          await expect(sheet).toHaveAttribute('data-slot', 'responsive-popover-sheet')
 
           // No keyboard on open: the option list has focus, not the field.
           await expect
@@ -141,7 +159,7 @@ test.describe('touch', () => {
           const heights = await sheet
             .locator('[data-slot="command-item"]')
             .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))
-          expect(heights.length).toBeGreaterThan(3)
+          expect(heights.length).toBeGreaterThan(0)
           for (const h of heights) expect(Math.round(h)).toBeGreaterThanOrEqual(44)
 
           // The user taps the field; the keyboard opens.
@@ -163,8 +181,16 @@ test.describe('touch', () => {
               band.top
             )
             expect(m.fieldBottom, 'field above the keyboard').toBeLessThanOrEqual(band.bottom)
-            expect(m.rows, 'rows visible above the keyboard').toBeGreaterThanOrEqual(3)
+            // The member list is as long as the organization: up to 3 rows.
+            expect(m.rows, 'rows visible above the keyboard').toBeGreaterThanOrEqual(
+              Math.min(3, heights.length)
+            )
           }
+
+          // Closing returns to the bar; the selection stays.
+          await page.keyboard.press('Escape')
+          await expect(sheet).toBeHidden()
+          await expect(page.locator('[data-slot="bulk-action-bar"]')).toBeVisible()
         }
       )
     }
@@ -173,12 +199,15 @@ test.describe('touch', () => {
 
 for (const locale of ['en', 'vi'] as const) {
   test(
-    `Add filter focuses its search field on open with a mouse at 1440px (${locale})`,
+    `The assignee picker is an anchored popover with its search field focused with a mouse at 1440px (${locale})`,
     { tag: ['@findings'] },
     async ({ page, baseURL }) => {
       await page.setViewportSize({ width: 1440, height: 900 })
-      const { field } = await openAddFilter(page, locale, baseURL!)
+      const { picker, field } = await openAssigneePicker(page, locale, baseURL!, false)
       await expect(field).toBeFocused()
+      await expect(page.locator('[data-slot="responsive-popover-sheet"]')).toHaveCount(0)
+      const width = await picker.evaluate((el) => Math.round(el.getBoundingClientRect().width))
+      expect(width, 'the popover keeps its 224 px').toBe(224)
     }
   )
 }
