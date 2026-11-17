@@ -8,6 +8,7 @@
  * the explanation card. Counts in the menu are requested only while it is open.
  */
 
+import { ListCount } from '@/features/shared/components/list-title-row'
 import { ArrowRight, ChevronDown, ChevronLeft, MoreHorizontal } from 'lucide-react'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useRouter } from 'next/navigation'
@@ -86,7 +87,9 @@ export function AttentionQueueHeader({
               <button
                 type="button"
                 title={t('assets.attention.switch', 'Switch reason')}
-                className="-ms-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                // The row's control height (32, 36 on a phone): the inventory
+                // link and the More share its line.
+                className="-ms-1 inline-flex h-control items-center gap-1.5 rounded-md px-1 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-md:h-control-touch"
               >
                 {t(current.labelKey, current.label)}
                 <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
@@ -120,11 +123,16 @@ export function AttentionQueueHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {count !== undefined && (
-          <span className="text-sm text-muted-foreground" data-testid="attention-queue-count">
-            {count.toLocaleString()} {t(current.unitKey, current.unit, { count })}
-          </span>
-        )}
+        {/* The queue's one count, as every list says it. */}
+        <ListCount
+          total={count ?? 0}
+          loading={count === undefined}
+          label={
+            count === undefined
+              ? undefined
+              : `${count.toLocaleString()} ${t(current.unitKey, current.unit, { count })}`
+          }
+        />
         {href && (
           <Button asChild variant="outline" size="sm" className="ms-auto">
             <Link href={href}>
