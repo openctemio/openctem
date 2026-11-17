@@ -50,6 +50,15 @@ export function modePageParams(active: boolean): Record<string, string> {
   return { [MODE_PARAM]: active ? QUERY_MODE : 'basic' }
 }
 
+/**
+ * The URL param of the saved view a list was derived from: set (in place of
+ * `view=<id>`) once a query text other than the view's own is applied. The
+ * list is then driven by the URL alone, so the view's conditions never apply
+ * a second time; the page still names the view, as changed. Page state, never
+ * a filter.
+ */
+export const FROM_VIEW_PARAM = 'from_view'
+
 /** Whether a saved view opens in Query mode. */
 export function viewOpensInQueryMode(view: { page_params?: Record<string, string> }): boolean {
   return view.page_params?.[MODE_PARAM] === QUERY_MODE
@@ -59,31 +68,39 @@ export function viewOpensInQueryMode(view: { page_params?: Record<string, string
  * The text of the current filter: the page's flat list params printed by the
  * server, with fq (a filter chips cannot show) ANDed after them, or null
  * while it is being read or while `active` is off. `params` is the filter part
- * of the list query, in the API's own names.
+ * of the list query, in the API's own names. `base` is the filter document of
+ * the open saved view: the server prints it too, first, so the field shows the
+ * view's own conditions as text (one request when the mode opens or the view
+ * changes, none while typing).
  */
 export function useFilterText(
   entity: QueryEntity,
   fq: string | null,
   params: string,
-  active: boolean
+  active: boolean,
+  base?: Record<string, unknown> | null
 ) {
   const [text, setText] = useState<string | null>(null)
+  // The document by value: a refetched view with the same filter prints nothing again.
+  const baseKey = base ? JSON.stringify(base) : ''
   useEffect(() => {
     if (!active) {
       setText(null)
       return
     }
     let cancelled = false
-    if (params === '') {
+    if (params === '' && baseKey === '') {
       setText(fq ?? '')
       return
     }
-    queryApi
-      .parse({ entity, params })
-      .then((r) => {
-        if (cancelled) return
-        const printed = r.valid ? r.text : ''
-        setText(joinFilterText(printed, fq))
+    const print = (req: { params: string } | { document: Record<string, unknown> }) =>
+      queryApi.parse({ entity, ...req }).then((r) => (r.valid ? r.text : ''))
+    Promise.all([
+      baseKey === '' ? '' : print({ document: JSON.parse(baseKey) as Record<string, unknown> }),
+      params === '' ? '' : print({ params }),
+    ])
+      .then(([view, printed]) => {
+        if (!cancelled) setText(joinFilterText(joinViewText(view, printed), fq))
       })
       .catch(() => {
         // Without the printer the text would drop the params: say nothing
@@ -93,8 +110,19 @@ export function useFilterText(
     return () => {
       cancelled = true
     }
-  }, [entity, active, fq, params])
+  }, [entity, active, fq, params, baseKey])
   return text
+}
+
+/**
+ * A saved view's own text and the text of what the URL adds: the view's text
+ * as it is when nothing is added, otherwise grouped so an OR in it keeps its
+ * meaning beside the added conditions.
+ */
+export function joinViewText(view: string, printed: string): string {
+  if (!view) return printed
+  if (!printed) return view
+  return `(${view}) ${printed}`
 }
 
 /** Printed params and an fq text as one filter (both apply, as on the list). */
@@ -114,6 +142,11 @@ export interface ListQueryModeOptions {
   fq: string | null
   /** The filter as the list's params (API names), for the server's printer. */
   params: string
+  /**
+   * The open saved view's filter document (`view=<id>` in the URL): its text
+   * leads the field, so the text is the whole filter the person sees.
+   */
+  base?: Record<string, unknown> | null
   /**
    * Write a checked text back to the page, with the mode the field is left
    * in, in one URL write (Enter keeps Query mode; switching to Basic with an
@@ -148,6 +181,9 @@ export interface ListQueryModeOptions {
  *   its problem shown.
  * - The mode is the page's, kept in its URL (`mode=query`): a shared link,
  *   a reload or a saved view opens in the mode it was left in.
+ * - With a saved view open (`base`) the field shows the view's own text. The
+ *   URL stays `view=<id>` until another text is applied; the page then writes
+ *   the whole text to the URL and keeps the view as `from_view=<id>`.
  */
 export function useListQueryMode(opts: ListQueryModeOptions): {
   active: boolean
@@ -160,7 +196,7 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
   const { t } = useTranslation()
   const { entity, fq, params, active, resultCount, preferFields, recentScope, ariaLabel, testId } =
     opts
-  const applied = useFilterText(entity, fq, params, active)
+  const applied = useFilterText(entity, fq, params, active, opts.base)
   const [draft, setDraftState] = useState<string | null>(null)
   // The server's refusal of a text the mode switch tried to apply, or of a
   // link's text, shown in the editor until the text changes.
