@@ -15,21 +15,13 @@ import { useCallback, useState } from 'react'
 import { Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { formatCalendarDate } from '@/lib/format-metric'
+import { QueueReasonDialog } from '@/features/shared/components/queue'
 import { useApproveStatus, useRejectApproval } from '../api/use-findings-api'
 import { approveErrorOutcome, approveResultOutcome } from '../lib/approval-policy'
 import { closureReasonLabel } from '../lib/closure'
@@ -52,8 +44,15 @@ const REASON_MAX = 2000
  * the server recorded, and after a refusal that changed what the list should
  * show (the request was decided elsewhere, or the policy now refuses it).
  */
-export function useApprovalDecision({ onDecided }: { onDecided: () => unknown }) {
-  const { t } = useTranslation()
+export function useApprovalDecision({
+  onDecided,
+  announce,
+}: {
+  onDecided: () => unknown
+  /** Says each outcome to assistive technology (the queue's status region). */
+  announce?: (text: string) => void
+}) {
+  const { t, locale } = useTranslation()
   const [target, setTarget] = useState<ApiApproval | null>(null)
   const [mode, setMode] = useState<'approve' | 'reject' | null>(null)
   const [reason, setReason] = useState('')
@@ -83,6 +82,7 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
       // client, which retries once; a cancelled prompt ends up below.
       const outcome = approveResultOutcome(await triggerApprove())
       if (outcome.kind === 'recorded') {
+        announce?.(t('findings.approvals.toast.signed', 'Your approval is recorded'))
         toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
           description: t(
             'findings.approvals.toast.signedDesc',
@@ -91,6 +91,7 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
           ),
         })
       } else {
+        announce?.(t('findings.approvals.toast.approved', 'Approval request approved'))
         toast.success(t('findings.approvals.toast.approved', 'Approval request approved'), {
           description: t(
             'findings.approvals.toast.approvedDesc',
@@ -102,14 +103,15 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
       await onDecided()
     } catch (err) {
       const outcome = approveErrorOutcome(t, err)
-      toast.error(
+      const message =
         outcome.kind === 'refused'
           ? outcome.message
           : getErrorMessage(
               err,
               t('findings.approvals.toast.approveFailed', 'Failed to approve request')
             )
-      )
+      announce?.(message)
+      toast.error(message)
       if (outcome.kind === 'refused') await onDecided()
     } finally {
       setBusyId(null)
@@ -124,6 +126,7 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
     setRejectError(null)
     try {
       await triggerReject({ reason: reason.trim() })
+      announce?.(t('findings.approvals.toast.rejected', 'Approval request rejected'))
       toast.success(t('findings.approvals.toast.rejected', 'Approval request rejected'))
       setReason('')
       setTarget(null)
@@ -144,6 +147,14 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
     target && (target.approvals_required ?? 0) - (target.approvals_collected ?? 0) > 1
       ? (target.approvals_required ?? 0) - (target.approvals_collected ?? 0) - 1
       : 0
+
+  // The end of an accepted risk: part of what is decided, so both dialogs say it.
+  const acceptanceEnd = target?.expires_at ? (
+    <p className="text-sm">
+      {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
+      {formatCalendarDate(target.expires_at, locale)}
+    </p>
+  ) : null
 
   const dialogs = (
     <>
@@ -195,75 +206,48 @@ export function useApprovalDecision({ onDecided }: { onDecided: () => unknown })
                 {closureReasonLabel(t, target.closure_reason)}
               </p>
             )}
+            {acceptanceEnd}
             <AIProposalBadge approval={target} withHint />
           </div>
         )}
       </ConfirmDialog>
 
-      <Dialog open={mode === 'reject'} onOpenChange={(open) => !open && close()}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{t('findings.approvals.rejectTitle', 'Reject request')}</DialogTitle>
-            <DialogDescription>
-              {t('findings.approvals.rejectDesc', 'Give a reason for rejecting this request.')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="grid gap-4">
-            {target && (
-              <div className="grid gap-3 rounded-lg border bg-muted/50 p-3">
-                <ApprovalFindingSummary
-                  findingId={target.finding_id}
-                  findingTitle={target.finding_title}
-                  justification={target.justification}
-                />
-                <p className="text-sm font-medium">
-                  {t('findings.approvals.requestedLabel', 'Requested:')}{' '}
-                  {requestedStatusLabel(t, target.requested_status)}
-                </p>
-              </div>
-            )}
-            <div className="grid gap-2">
-              <Textarea
-                placeholder={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={3}
-                maxLength={REASON_MAX}
-                aria-label={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
-                aria-invalid={rejectError ? true : undefined}
-                aria-describedby={rejectError ? 'approval-reject-error' : undefined}
+      <QueueReasonDialog
+        open={mode === 'reject'}
+        onOpenChange={(open) => !open && close()}
+        title={t('findings.approvals.rejectTitle', 'Reject request')}
+        description={t(
+          'findings.approvals.rejectDesc',
+          'Give a reason for rejecting this request.'
+        )}
+        summary={
+          target && (
+            <div className="grid gap-3 rounded-lg border bg-muted/50 p-3">
+              <ApprovalFindingSummary
+                findingId={target.finding_id}
+                findingTitle={target.finding_title}
+                justification={target.justification}
               />
-              {rejectError && (
-                <p id="approval-reject-error" role="alert" className="text-sm text-destructive">
-                  {rejectError}
-                </p>
-              )}
-              <p className="text-end text-xs text-muted-foreground">
-                {reason.length}/{REASON_MAX}
+              <p className="text-sm font-medium">
+                {t('findings.approvals.requestedLabel', 'Requested:')}{' '}
+                {requestedStatusLabel(t, target.requested_status)}
               </p>
+              {acceptanceEnd}
+              <AIProposalBadge approval={target} withHint />
             </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={close} disabled={isRejecting}>
-              {t('findings.approvals.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmReject}
-              disabled={isRejecting || !reason.trim()}
-            >
-              {isRejecting ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  {t('findings.approvals.rejecting', 'Rejecting…')}
-                </>
-              ) : (
-                t('findings.approvals.action.reject', 'Reject')
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )
+        }
+        reason={reason}
+        onReasonChange={setReason}
+        reasonLabel={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
+        maxLength={REASON_MAX}
+        error={rejectError}
+        busy={isRejecting}
+        confirmLabel={t('findings.approvals.action.reject', 'Reject')}
+        busyLabel={t('findings.approvals.rejecting', 'Rejecting…')}
+        cancelLabel={t('findings.approvals.cancel', 'Cancel')}
+        onConfirm={confirmReject}
+      />
     </>
   )
 

@@ -17,6 +17,7 @@ const FILES = [
   'components/layout/findings-quick-views.tsx',
   'features/findings/filters/filter-chip.tsx',
   'features/findings/filters/add-filter-popover.tsx',
+  'features/findings/filters/field-editor.tsx',
   'features/findings/filters/filter-bar.tsx',
   'features/findings/filters/use-filter-labels.ts',
   'features/shared/components/data-table/data-table.tsx',

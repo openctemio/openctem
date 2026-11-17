@@ -9,6 +9,8 @@
  *
  *   - `DetailFieldGrid` + `DetailField`: a drawer's fields, label above value
  *   - `KeyValueList`: label beside value (a details list, a dense row)
+ *   - `PropertyList` + `PropertyRow`: a record's properties, a value can be a
+ *     control (features/shared/components/detail)
  *   - `MetaLine` + `MetaItem`: a line of short "label value" facts
  *
  * Only `features/shared/components` writes `<dt>`. The files listed below
@@ -38,8 +40,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/findings/components/approval-policy-form.tsx',
   'features/findings/components/detail/finding-evidence-items.tsx',
   'features/findings/components/detail/finding-fix-card.tsx',
-  'features/findings/components/detail/finding-people.tsx',
-  'features/findings/components/detail/finding-properties.tsx',
   'features/findings/components/detail/source-data-section.tsx',
   'features/findings/components/group-exceptions-panel.tsx',
   'features/findings/components/triage/triage-finding-view.tsx',
@@ -55,7 +55,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/remediation/components/campaign-detail.tsx',
   'features/remediation-hub/components/query-preview-panel.tsx',
   'features/remediation-hub/components/task-detail.tsx',
-  'features/remediation-hub/components/task-people.tsx',
   'features/scans/components/new-scan/review-step.tsx',
   'features/scans/components/run-task-logs-dialog.tsx',
   'features/security-overview/components/security-overview.tsx',

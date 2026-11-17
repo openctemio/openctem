@@ -31,6 +31,7 @@ import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_errors from './vi/errors.json'
 import vi_labels from './vi/labels.json'
+import vi_legal from './vi/legal.json'
 import vi_repositories from './vi/repositories.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
@@ -100,6 +101,7 @@ import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
 import vi_queryFields from './vi/queryFields.json'
 import vi_queryInput from './vi/queryInput.json'
+import vi_queue from './vi/queue.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 import vi_threatModel from './vi/threatModel.json'
@@ -137,6 +139,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   common: vi_common,
   errors: vi_errors,
   labels: vi_labels,
+  legal: vi_legal,
   repositories: vi_repositories,
   dashboardMetrics: vi_dashboardMetrics,
   dashboardKit: vi_dashboardKit,
@@ -206,6 +209,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationCampaigns: vi_remediationCampaigns,
   queryFields: vi_queryFields,
   queryInput: vi_queryInput,
+  queue: vi_queue,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
   threatModel: vi_threatModel,

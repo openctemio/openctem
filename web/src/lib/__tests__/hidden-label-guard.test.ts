@@ -16,10 +16,7 @@ import { describe, expect, it } from 'vitest'
 
 const SRC_ROOT = path.resolve(__dirname, '../..')
 
-const REVIEWED = new Set([
-  'components/notification-bell.tsx',
-  'features/scans/components/scan-runs-tab.tsx',
-])
+const REVIEWED = new Set(['components/notification-bell.tsx'])
 
 function tsxFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

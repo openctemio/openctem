@@ -37,6 +37,11 @@ import {
 } from '@/components/ui/sheet'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
+import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { accessStateOf } from '@/lib/api/access-state'
+import { QueueDecideBy } from '@/features/shared/components/queue'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
@@ -157,8 +162,8 @@ export function GroupExceptionsPanel({
   toolbarStart,
   toolbarEnd,
 }: GroupExceptionsPanelProps) {
-  const { t, locale } = useTranslation()
-  const { data, isLoading, mutate } = useApprovalBatches(
+  const { t } = useTranslation()
+  const { data, isLoading, isValidating, error, mutate } = useApprovalBatches(
     pagination.pageIndex + 1,
     pagination.pageSize,
     status
@@ -166,28 +171,52 @@ export function GroupExceptionsPanel({
   const rows = useMemo(() => data?.data ?? [], [data?.data])
   const pageCount = data ? Math.max(1, Math.ceil(data.total / pagination.pageSize)) : 1
 
-  const columns = useMemo<ColumnDef<ApprovalBatch>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<ApprovalBatch>[]>(() => {
+    const label = {
+      source: t('findingApprovals.group.col.source', 'Asked from'),
+      status: t('findings.approvals.col.status', 'Status'),
+      kind: t('findings.approvals.col.requestedStatus', 'Requested status'),
+      tier: t('findings.approvals.col.tier', 'Approval'),
+      members: t('findingApprovals.group.col.members', 'Findings'),
+      decideBy: t('findings.approvals.col.decideBy', 'Decide by'),
+      actions: t('findingApprovals.group.col.actions', 'Open'),
+    }
+    const meta = (m: DataTableColumnMeta) => m
+    return [
       {
-        id: 'status',
-        header: t('findings.approvals.col.status', 'Status'),
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-      {
+        // The row's name: the task or selection the exception was asked from.
         id: 'task',
-        header: t('findingApprovals.group.col.source', 'Asked from'),
+        meta: meta({ kind: 'name', pin: 'start', label: label.source }),
+        header: label.source,
+        enableHiding: false,
         cell: ({ row }) => (
           <Link
             href={batchSourceHref(row.original)}
-            className="line-clamp-2 max-w-[280px] font-medium hover:underline"
+            className="block truncate text-sm font-medium hover:underline"
+            title={batchSourceTitle(row.original, t)}
           >
             {batchSourceTitle(row.original, t)}
           </Link>
         ),
       },
       {
+        id: 'status',
+        meta: meta({ kind: 'status', label: label.status }),
+        header: label.status,
+        cell: ({ row }) => (
+          <ApprovalStatusLozenge
+            status={row.original.status}
+            label={t(
+              `findings.approvals.status.${row.original.status}`,
+              STATUS_FALLBACK[row.original.status] ?? row.original.status
+            )}
+          />
+        ),
+      },
+      {
         id: 'kind',
-        header: t('findings.approvals.col.requestedStatus', 'Requested status'),
+        meta: meta({ kind: 'text', width: 160, label: label.kind }),
+        header: label.kind,
         cell: ({ row }) => (
           <span className="text-sm whitespace-nowrap">
             {kindLabel(t, row.original.requested_status)}
@@ -196,35 +225,48 @@ export function GroupExceptionsPanel({
       },
       {
         id: 'tier',
-        header: t('findings.approvals.col.tier', 'Approval'),
-        cell: ({ row }) => <ApprovalTierCell approval={row.original} showSingleProgress />,
+        meta: meta({ kind: 'text', width: 200, hideBelow: 880, label: label.tier }),
+        header: label.tier,
+        cell: ({ row }) => <ApprovalTierCell approval={row.original} showSingleProgress inline />,
       },
       {
         id: 'members',
-        header: t('findingApprovals.group.col.members', 'Findings'),
-        cell: ({ row }) => <span className="font-mono text-sm">{row.original.member_count}</span>,
+        meta: meta({ kind: 'number', label: label.members }),
+        header: label.members,
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums">{row.original.member_count}</span>
+        ),
       },
       {
         id: 'decide_by',
-        header: t('findings.approvals.col.decideBy', 'Decide by'),
+        meta: meta({ kind: 'due', label: label.decideBy }),
+        header: label.decideBy,
         cell: ({ row }) => (
-          <span className="text-sm whitespace-nowrap text-muted-foreground">
-            {row.original.status === 'pending' ? ago(row.original.decide_by, locale) : '-'}
-          </span>
+          <QueueDecideBy
+            value={row.original.status === 'pending' ? row.original.decide_by : undefined}
+          />
         ),
       },
       {
         id: 'actions',
+        meta: meta({ kind: 'actions', width: 96, label: label.actions }),
+        header: () => <span className="sr-only">{label.actions}</span>,
         enableHiding: false,
         cell: ({ row }) => (
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(row.original.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(row.original.id)}
+            aria-label={t('findingApprovals.group.viewNamed', 'View {name}', {
+              name: batchSourceTitle(row.original, t),
+            })}
+          >
             {t('findingApprovals.group.view', 'View')}
           </Button>
         ),
       },
-    ],
-    [onOpenChange, t]
-  )
+    ]
+  }, [onOpenChange, t])
 
   const decided = useCallback(async () => {
     await Promise.all([mutate(), onDecided?.()])
@@ -232,19 +274,25 @@ export function GroupExceptionsPanel({
 
   return (
     <>
-      {isLoading && !data ? (
-        <Skeleton className="h-40 w-full" />
+      {!data && accessStateOf(error) === 'no_access' ? (
+        <NoAccessState title={t('findingApprovals.group.subject', 'group exceptions')} />
       ) : (
         <DataTable
           columns={columns}
           data={rows}
+          caption={t('findingApprovals.group.viewGroups', 'Group exceptions')}
+          isLoading={isLoading && !data}
+          isRefreshing={isValidating && !!data}
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('findingApprovals.group.subject', 'group exceptions')}
+          paginationNoun={t('findingApprovals.group.paginationNoun', 'group exceptions')}
           manualPagination
           pageCount={pageCount}
           rowCount={data?.total ?? 0}
           pagination={pagination}
           onPaginationChange={onPaginationChange}
           getRowId={(row) => row.id}
-          showColumnToggle={false}
           showSearch={false}
           toolbarStart={toolbarStart}
           toolbarEnd={toolbarEnd}

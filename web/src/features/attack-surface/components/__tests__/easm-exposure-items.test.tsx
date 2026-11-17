@@ -7,7 +7,7 @@
  * nothing is fetched without the read permissions.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -149,6 +149,17 @@ describe('EASMExposureItems', () => {
     expect(await screen.findByText('2 High')).toBeInTheDocument()
     await userEvent.click(screen.getByText('2 High'))
     await waitFor(() => expect(calls().some((u) => u.includes(`asset_id=${ASSET}`))).toBe(true))
+  })
+
+  it('shows Export as a named icon on a narrow toolbar, so the phone line keeps room', async () => {
+    wrap(<EASMExposureItems />)
+    await screen.findByText('Open port 6379')
+    const exportButton = screen.getByRole('button', { name: 'Export CSV' })
+    // The label is read out at every width and shown from a 42rem toolbar.
+    const label = within(exportButton).getByText('Export CSV')
+    expect(label).toHaveClass('sr-only', '@2xl/toolbar:not-sr-only')
+    // Below that the button is a square.
+    expect(exportButton.className).toContain('@max-2xl/toolbar:aspect-square')
   })
 
   it('opens the severity dialog from the severity cell only with the permission', async () => {

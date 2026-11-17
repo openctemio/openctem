@@ -143,8 +143,12 @@ describe('VulnerabilitiesList', () => {
     // Feed text renders as text.
     expect(screen.getAllByText('Backdoor in xz <script>alert(1)</script>')[0]).toBeInTheDocument()
     expect(document.querySelector('script')).toBeNull()
-    expect(screen.getAllByText('Weaponized')[0]).toBeInTheDocument()
-    expect(screen.getAllByText('2 past SLA')[0]).toBeInTheDocument()
+    // One line per row: Known exploited and the emerging threat lead and
+    // always show (the KEV chip gives up its qualifiers to make room); the
+    // rest are counted with their words in the tooltip and the accessible name.
+    expect(
+      screen.getByLabelText('and Ransomware, Past due, Weaponized, 2 past SLA')
+    ).toHaveTextContent('+4')
     expect(screen.getAllByRole('link', { name: 'Emerging threat' })[0]).toHaveAttribute(
       'href',
       '/emerging-threats/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
@@ -212,6 +216,78 @@ describe('VulnerabilitiesList', () => {
       'href',
       '/exposures/vulnerabilities?tab=catalog'
     )
+  })
+
+  it('names the view, counts once, and offers Save view and Reset once the list is changed', async () => {
+    api.get.mockResolvedValue(page([item()]))
+    renderList()
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'All vulnerabilities' })
+    ).toBeVisible()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /Known exploited/ }))
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="list-modified"]')).not.toBeNull()
+    )
+    expect(screen.getByRole('button', { name: 'Save view' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    await waitFor(() => expect(window.location.search).toBe(''))
+    expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
+  })
+
+  it('never counts an emerging threat or KEV behind the "+N"', async () => {
+    api.get.mockResolvedValue(
+      page([
+        item({ cve_id: 'CVE-2024-0001', exploit_maturity: 'functional' }),
+        item({ cve_id: 'CVE-2024-0002', kev_ransomware: false, kev_due_date: undefined }),
+      ])
+    )
+    renderList()
+    await screen.findAllByRole('link', { name: 'Vulnerability page for CVE-2024-0001' })
+    const rows = screen.getAllByRole('row').slice(1)
+    for (const row of rows) {
+      const more = row.querySelector('[aria-label^="and "]')
+      expect(more?.getAttribute('aria-label')).not.toMatch(/Emerging threat|Known exploited/)
+      expect(within(row).getByRole('link', { name: 'Emerging threat' })).toBeInTheDocument()
+    }
+  })
+
+  it('links an emerging threat from its chip when the chip is on the line', async () => {
+    api.get.mockResolvedValue(page([item({ kev: false, kev_due_date: undefined })]))
+    renderList()
+    expect((await screen.findAllByRole('link', { name: 'Emerging threat' }))[0]).toHaveAttribute(
+      'href',
+      '/emerging-threats/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+    )
+    // The chip that leads the line shows; the others are counted.
+    expect(screen.getByLabelText('and Weaponized, 2 past SLA')).toHaveTextContent('+2')
+  })
+
+  it('keeps every cell on one line and gives each column a kind', async () => {
+    api.get.mockResolvedValue(page([item()]))
+    renderList()
+    await screen.findAllByRole('link', { name: 'Vulnerability page for CVE-2024-3094' })
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent?.trim())
+    expect(headers).toEqual([
+      'CVE',
+      'Vulnerability',
+      'Exploitation',
+      'Priority',
+      'Severity',
+      'EPSS',
+      'Assets',
+      'Fix',
+      'Remediation',
+      'Last seen',
+    ])
+    // The reach reads on one line: the count, then how many face the internet.
+    expect(screen.getByText('4 internet-facing')).toHaveClass('sr-only')
+    // No filter panel beside the table: Add filter holds the facets.
+    expect(screen.getByRole('button', { name: /Add filter/ })).toBeInTheDocument()
+    expect(document.querySelector('aside')).toBeNull()
   })
 
   it('shows the error in place with a retry', async () => {

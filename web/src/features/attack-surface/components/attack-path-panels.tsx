@@ -8,6 +8,7 @@ import { Counter } from '@/components/ui/counter'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { GraphLegendList, type GraphLegendItem } from '@/components/graph-page/graph-page'
 import type { AttackPathDetail, PathNode } from '../hooks/use-attack-path-detail'
 import {
   assetFindingsHref,
@@ -266,11 +267,14 @@ export function AttackPathList({
   shown,
   selected,
   onSelect,
+  onOpenNode,
 }: {
   detail: AttackPathDetail
   shown: number[]
   selected: number
   onSelect: (index: number) => void
+  /** Opens the detail of a step over the page. */
+  onOpenNode?: (key: string) => void
 }) {
   const { t } = useTranslation()
   const labels = useAttackPathLabels()
@@ -325,11 +329,28 @@ export function AttackPathList({
                       {n.isCrownJewel && <Crown className="size-3.5" aria-hidden />}
                     </div>
                     <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                      <span
-                        className={cn('font-semibold break-all', n.hidden && 'font-normal italic')}
-                      >
-                        {n.hidden ? labels.hiddenTitle : n.name}
-                      </span>
+                      {onOpenNode ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenNode(k)}
+                          data-testid="list-step-open"
+                          className={cn(
+                            'rounded text-start font-semibold break-all outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
+                            n.hidden && 'font-normal italic'
+                          )}
+                        >
+                          {n.hidden ? labels.hiddenTitle : n.name}
+                        </button>
+                      ) : (
+                        <span
+                          className={cn(
+                            'font-semibold break-all',
+                            n.hidden && 'font-normal italic'
+                          )}
+                        >
+                          {n.hidden ? labels.hiddenTitle : n.name}
+                        </span>
+                      )}
                       {!n.hidden && <FindingsLink node={n} className="text-xs" />}
                     </div>
                     {i === 0 && stepText(n) && (
@@ -380,10 +401,10 @@ export function AttackPathList({
   )
 }
 
-/** The legend: the kind dots, the KEV chip and the edge states, in the shared label language. */
-export function AttackPathLegend() {
+/** The legend's marks: the kind dots, the edge states and the KEV chip, in the shared label language. */
+export function useAttackPathLegendItems(): GraphLegendItem[] {
   const { t } = useTranslation()
-  const items: { key: string; mark: React.ReactNode; label: string }[] = [
+  return [
     {
       key: 'entry',
       mark: <span className={cn('size-2 rounded-sm', ROLE_DOT.entry)} />,
@@ -414,25 +435,22 @@ export function AttackPathLegend() {
       mark: <span className="h-1 w-5 rounded bg-border-strong" />,
       label: t('prioritization.attackPath.legendWidth', 'Thicker line, likelier step'),
     },
+    {
+      key: 'kev',
+      mark: <KevBadge />,
+      label: t('prioritization.attackPath.legendKev', 'Known exploited step'),
+    },
   ]
+}
+
+/** The legend in one wrapping line: over the graph when it fills the screen. */
+export function AttackPathLegend() {
+  const items = useAttackPathLegendItems()
   return (
-    <ul
-      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
-      aria-label={t('prioritization.attackPath.legend', 'Legend')}
-      data-testid="attack-path-legend"
-    >
-      {items.map((i) => (
-        <li key={i.key} className="flex items-center gap-1.5">
-          <span aria-hidden className="flex items-center">
-            {i.mark}
-          </span>
-          {i.label}
-        </li>
-      ))}
-      <li className="flex items-center gap-1.5">
-        <KevBadge />
-        <span>{t('prioritization.attackPath.legendKev', 'Known exploited step')}</span>
-      </li>
-    </ul>
+    <GraphLegendList
+      items={items}
+      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-cap"
+      testId="attack-path-legend"
+    />
   )
 }

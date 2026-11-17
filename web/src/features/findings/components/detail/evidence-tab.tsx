@@ -63,6 +63,8 @@ import { useTranslation } from '@/context/i18n-provider'
 interface EvidenceTabProps {
   evidence: Evidence[]
   finding?: FindingDetail // Optional: for stack traces and related locations
+  /** `false` when the page shows validation results in their own tab. */
+  validation?: boolean
 }
 
 const EVIDENCE_ICONS: Record<EvidenceType, React.ReactNode> = {
@@ -130,7 +132,7 @@ function RepositoryLink({
   )
 }
 
-export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
+export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTabProps) {
   const { t, locale } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
@@ -423,7 +425,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
       {/* Validation (CTEM Stage-4): re-check + evidence timeline */}
       {finding?.id && (
         <>
-          <ValidationEvidencePanel findingId={finding.id} />
+          {validation && <ValidationEvidencePanel findingId={finding.id} />}
           {showComplianceCard && <ComplianceMappingCard findingId={finding.id} />}
           <Separator />
         </>

@@ -204,6 +204,41 @@ the phone top bar (the account menu, notifications), which keeps the bar's
 | 2026-11-15 | Popups keep 16 px from every screen edge (phone top-bar sheets keep the bar's 8 px, as the shell package set them)                                                    | Owner                                                         |
 | 2026-11-15 | On a touch screen no popup focuses a text field on open (typing surfaces listed once); a picker sheet follows the visible viewport when the keyboard opens            | Owner                                                         |
 
+## Entry pages
+
+Pages without the app shell (sign-in, sign-up, password and e-mail links,
+two-factor, organization choice, onboarding, invitations, application consent)
+are built from `src/components/entry`, never from `Card` or a hand-rolled
+wrapper:
+
+- **`EntryFrame`** (the route group's layout): the brand, `<main>` in one
+  column of `max-w-entry` (440px; `max-w-entry-wide`, 640px, for a page that
+  lists things), then one footer line with the legal links that are
+  configured, the "powered by" notice and the Language menu. It sets
+  `data-control-scale="entry"`: every control is 36px.
+- **`EntryCard`**: the surface (border, radius 8, padding 24, 14px between
+  blocks). Below 640px the card is the screen: no border, no padding.
+- **`EntryHeader`**: the page's only `<h1>` (`text-page`) and one muted line;
+  `level={2}` for a second card or a step under a page title.
+- **`EntryBanner`** (`info`, `ok`, `warn`, `danger`): ink on the status tint.
+  `danger` and `warn` are `role="alert"`, `info` and `ok` are `role="status"`;
+  a page passes `role` when the message must interrupt.
+  Sign-in failures (a refused password, a locked or suspended account, the
+  security check, a provider that could not start, an expired two-factor
+  challenge) and the reason a session ended are one `EntryBanner` above the
+  form: `role="alert"`, referenced by the form's `aria-describedby`, kept until
+  the next attempt starts. Never a toast. The texts are the API code's message
+  exactly as before; only where they are drawn is the entry page's.
+- **`EntryDivider`**, **`EntryActions`** (stacked full-width, or `row` for a
+  choice), **`EntryLine`** (centred secondary line), **`EntryNote`** (small
+  print).
+- One primary action per card, the teal fill (`<Button variant="signal">`):
+  an entry page is one call to action. `signal` is for entry pages only; an
+  app page's primary action stays the kit default (ink). Fields and buttons are the kit's and
+  take no size, padding or text class from the page. Links are `TextLink`.
+- Entry pages change how a flow looks, never what it does: no request,
+  redirect, cookie, message text or autofill attribute changes with a restyle.
+
 ## 1. Page anatomy
 
 Every page, top to bottom:
@@ -224,6 +259,9 @@ Every page, top to bottom:
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
+   - `titleAction`: one control on the title's own line, right after the title
+     text and outside the h1, when the title itself is a choice (a chevron that
+     switches between dashboards). Not a place for the page's actions.
 4. **One tab row per page**, right under the header, no margins on it.
    - **Section tabs** when the sub-views are routes: the shared
      `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
@@ -254,16 +292,88 @@ Every page, top to bottom:
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
 
+**Static reading pages** (legal documents, Open-source licenses) use the
+frame in `src/components/static-page`. A page outside the app shell is one
+`StaticPage`: the brand and Sign in on top, the sibling documents as route
+tabs, the table of contents of the open document (beside the text from 768px,
+above it below; it holds Print) and one `StaticArticle`, at most 720px wide:
+the title is the page's only `<h1>` (`text-page`), each `StaticSection` an
+`<h2>` (`text-section`) with its anchor, body text `text-body` on a 24px
+line. Controls take the entry scale (36). A static page inside the app shell
+keeps `Main` > `PageStack` > `PageHeader` and opens with a `StaticLead`
+(16/24, at most 720px wide). The frame takes its words from the caller, so a
+legal page stays server-rendered.
+
 Checked in a browser on every route at 1440px and 390px by
 `e2e/specs/31-page-rhythm.spec.ts` (gaps from bounding boxes, one tab row,
 tab icons, strip rules, chips, empty pagination, name column width).
+
+### Graph pages
+
+Attack paths, Exposure chains and Exploration use `src/components/graph-page`:
+
+- **Order**: the title row (`PageHeader`, with the Graph | List view switch and the page's primary action), one
+  `GraphToolbar` (filters at the start; `GraphLegend`, `GraphNote` and other canvas actions at the end), then the
+  graph in a `GraphFrame` that takes the rest of the window (never under 24rem, 30rem from 768 px). Cards that
+  belong to the page (choke points, the score of a path) go under the graph, never beside it.
+- **Detail**: the detail of a node opens over the page in `GraphNodeSheet` (click, or Enter on the focused
+  node). Its `action` (the node's main way on, e.g. "View findings") is the first thing in it and has focus,
+  so Enter twice follows it. Esc closes it and focus returns to the node. No panel stands beside a graph.
+- **Keyboard and screen readers**: the canvas is one tab stop, the arrow keys follow the edges, and every page
+  keeps the same content as a list or table (the List view, the default below 768 px).
+- **Legend**: every mark drawn on the graph is in the legend; a legend never lists a mark the graph does not draw.
+
+The scan workflow editor keeps its own editing layout (palette and step settings beside the canvas).
+
+### Detail pages
+
+A record's own page (a finding, an asset, a scan) is built from the detail
+kit in `src/features/shared/components/detail/`; `/findings/[id]` is the
+reference.
+
+1. **`DetailPageHeader`** is the page's `page-header` block and its only
+   `<h1>`. Above the title: the record's type and identifiers as chips, and
+   `DetailPosition` ("2 of 27" with previous and next) when the record was
+   opened from a list. Beside the title: `[More] [secondary] [primary]`, one
+   primary action for the record's current state, at most two outline
+   buttons, everything else in the More menu (`ActionMenu` entries, a sheet
+   on a phone). Below 768 px the first line is the way back to the parent
+   list ("‹ Findings") with the position at its end, the primary action
+   leads the action row and takes the free width, and More closes it.
+   Status, owner and dates are never in the header.
+2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
+   counts in `TabsCount`.
+3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
+   `PropertyRow` label and value pairs (a `dl`), separated by a rule, no
+   card. The value takes text, links, chips or a control (a status or
+   assignee picker). The list follows its own width: one column in a rail,
+   two columns when it sits under the header on a narrower page. Below
+   768 px every row is a 44 px line with the value at its end, and
+   `PropertyFold` keeps the rows after the first group one tap away. A row
+   with an empty value renders nothing.
+   Read-only facts inside a panel (a source record, a score table) keep
+   `KeyValueList` from `text-layout`; `PropertyList` is for the record's own
+   properties, where a value can be a control.
+4. **`DetailSectionList` / `DetailSectionBlock`** are the blocks of a tab
+   panel: a section named by its `<h2>` (`text-section`), an optional count
+   and mark after the title, controls at the end of the title row, one rule
+   between blocks. The same title row heads a table or list inside the
+   panel. `DetailFold` is a closed-by-default line ("Show output", "How
+   this was scored") with a short note saying what it holds.
+5. A detail opens over its list as a drawer (`DetailSheet`); a page never
+   keeps a permanent side panel beside a list. The drawer and the page
+   render the same section components.
+6. Text that came from a scanner or a target is rendered by
+   `UntrustedTextBlock` / `ScannerText`; a masked value keeps its Show
+   control (permission, step-up, timed, audited) and is never removed.
+   Anything an AI produced or changed carries `AIBadge`.
 
 ## 2. Headline numbers
 
 - **One `<MetricStrip>`** per page, at most **5** tiles, and only where every
   tile is a link to the list it counts (`href`, overview pages) or a one-click
   filter of the list below (`onClick` + `active`, list pages). Never for facts
-  (use `KeyValueList`), configuration inventories, or inside a card.
+  (use `PropertyList`), configuration inventories, or inside a card.
 - States that are usually zero or rarely acted on (canceled, blocked, timed
   out) are not tiles: they stay values of the list's status filter.
 - A zero is a muted `0`, never hidden; an error is `—` with the reason as the
@@ -375,9 +485,21 @@ tab icons, strip rules, chips, empty pagination, name column width).
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
     "All";
+  - an on/off filter ("Primary assets", "Internet-facing only") is
+    `<FilterToggle>` from `@/features/shared` in `toolbarStart`: a token of the
+    toolbar's height with `aria-pressed`, filled while on, one box in both
+    states (Button variant `toggle`: the border stays, so turning it on moves
+    nothing), an optional `shortLabel` for a phone and `disabledReason`; never
+    a `Switch` with a label, and never a Button that swaps `outline` for
+    `secondary` (they differ by the border);
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
+  - on a phone the end actions take at most about 40% of the toolbar's second
+    line: a list whose end actions would need more shows them as icons
+    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
+    a tooltip with the same name), so the filter tokens neither shrink nor
+    wrap to a third line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -427,7 +549,11 @@ tab icons, strip rules, chips, empty pagination, name column width).
   | `masked`          | start  | 200        | asc        |
   | `select`          | center | 40         | asc        |
   | `actions`         | center | 48         | asc        |
+  | `decisions`       | end    | from page  | asc        |
   | `text`            | start  | by content | asc        |
+
+  `decisions` is a queue's last column of decision buttons (Approve, Reject,
+  More): end-aligned, as wide as the page's `width` says its buttons need.
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.
@@ -543,6 +669,37 @@ Do not: render groups as separate cards or separate tables, put a chart or a
 progress card per group, colour a zero, repeat the group's own value in a
 column of every row when it can be hidden, or fetch every group's rows on page
 load.
+
+### Queues
+
+A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
+queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
+`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue`
+(exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
+and no page rebuilds:
+
+- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve and Reject, or the
+  page's own labels) and one More for everything else, in the row's last column and on the phone card. Each
+  button is announced by its own visible label and the item ("Approve {name}", "Merge {name}"); a page passes a
+  whole accessible name where that does not read well ("Keep {name} separate"). Without the permission there is no decision control. New decisions and bulk decisions
+  are not added by a page: they need their own design with gates, confirm and audit.
+- **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
+  stands in their place, with the reason on hover and focus in a table row and written out on a card. The
+  server is the authority; the list only says so.
+- **Reason dialog** (`QueueReasonDialog`): Reject, and any decision the queue asks a reason for. It shows
+  what is decided, one required reason field with its length, and keeps the typed reason when the save fails.
+- **Decide by** (`QueueDecideBy`): a calendar date (the exact time on hover); once it has passed, "Overdue"
+  with the date in the danger tone. A closed request shows a dash.
+- **Confirm and step-up** stay where the flow has them (a destructive confirm on Cancel request, a
+  confirmation before a reminder, re-authentication on Approve). An undo toast only where the server can undo.
+- **Announcements** (`useQueueAnnouncer`): every outcome (decided, refused, reminded, canceled) is written to
+  one polite status region, beside the toast.
+- **Empty** (`QueueEmpty`): first run (the queue never held a request), nothing waiting (decided requests
+  exist; offers the way to them), no match (the lens left no row).
+- **Phone** (`QueueCard`): fixed slots in one order: title, state marks, who asked and by when, the reason
+  (two lines), the decision controls on their own row.
+- A column whose value is the same on every row of the current lens (Status under Pending) is left out on
+  that lens. Anything an AI proposed keeps its AI mark in the row, on the card and in the dialogs.
 
 ## 4. Cards and sections
 
@@ -679,6 +836,25 @@ Every settings page is built from the same parts (`@/features/shared`):
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
   `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+
+### Charts
+
+- One chart library (recharts, loaded on demand through
+  `src/components/charts`), and one set of defaults in
+  `src/components/charts/chart-defaults.ts`: `CHART_AXIS` (tick labels 12 px
+  in the muted ink, no axis line, no tick marks), `CHART_GRID` (horizontal
+  dashed guides in the border colour), `CHART_BAR_CURSOR` / `CHART_LINE_CURSOR`
+  (hover), `CHART_REFERENCE` (+ label) for markers and targets,
+  `CHART_TOOLTIP_PROPS` and `CHART_HEIGHT`. A chart spreads these; it does not
+  write its own axis, grid or tooltip colours.
+- Series colours come from the `--viz-*` tokens by meaning: severity,
+  priority, the eight categories, new against fixed, the sequential ramp.
+  Teal (the action colour) never encodes data.
+- Colour never carries the meaning alone: a series has its name in the legend
+  or beside its mark, a state has an icon or a word, a not-prioritised part is
+  hatched.
+- Every chart has a one-sentence summary as its accessible name and a data
+  table (a table view, or a visually hidden table).
 
 ## 7. States
 
@@ -1029,7 +1205,8 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   with `typingSurface`. `touch-focus-guard.test.ts` lists every opt-in, every
   raw `<input autoFocus>` and every `onOpenAutoFocus` that moves focus
   itself; a new one fails until it is reviewed.
-- A picker with a search field on a phone (`ResponsivePopover`): the field is
+- A picker with a search field on a phone (`ResponsivePopover`, used by Add
+  filter and by the assignee picker `AssigneeSelect`): the field is
   pinned at the top of the sheet, the list scrolls under it with sticky group
   headings, rows 44. When the keyboard opens the sheet sits on it and is never
   taller than the visible part of the screen (`--modal-kb`, `--modal-vvh` from

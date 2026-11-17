@@ -2,7 +2,7 @@
 // hand it, built by the core's own implementations (the scoped Store, the
 // declared-keys Settings, the administrators' audit chain), on a test
 // database. An extension's tests import this package and pkg/extension
-// only. See docs/development/editions.md.
+// only. See docs/development/extensions.md.
 package extensiontest
 
 import (

@@ -1,0 +1,9 @@
+{
+  "queue.decideBy.overdue": "Quá hạn, {date}",
+  "queue.decision.actionNamed": "{action} {name}",
+  "queue.decision.approve": "Duyệt",
+  "queue.decision.own": "Yêu cầu của bạn",
+  "queue.decision.ownReason": "Người khác quyết định yêu cầu do bạn tạo.",
+  "queue.decision.reject": "Từ chối",
+  "queue.reason.cancel": "Hủy"
+}

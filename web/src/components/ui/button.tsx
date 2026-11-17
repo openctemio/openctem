@@ -14,11 +14,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
+        // The one primary call to action of an entry page (sign in, continue):
+        // the teal fill. Entry pages only: app pages keep `default` (ink).
+        signal: 'bg-signal text-signal-ink shadow-xs hover:bg-signal-hover',
         destructive:
           'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
           'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
         secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
+        // An on/off button (`aria-pressed`): the outline box in both states,
+        // filled while pressed. The border stays, so pressing it never
+        // changes its width (outline and secondary differ by the border).
+        toggle:
+          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80 dark:aria-pressed:bg-secondary dark:aria-pressed:hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
         // A standalone link: plain at rest, underlined on hover and focus.
         link: 'text-signal-text underline-offset-4 hover:underline focus-visible:underline',

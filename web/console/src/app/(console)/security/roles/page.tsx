@@ -2,12 +2,11 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ShieldAlert, X } from 'lucide-react'
+import { KeyRound, ShieldAlert, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -16,7 +15,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable, ErrorState, PageHeader, PageStack, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  DataTableRowActions,
+  EmptyState,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   assignPlatformRole,
@@ -58,22 +65,37 @@ export default function AdminRolesPage() {
     [t, roles]
   )
   const additional = useMemo(() => roles.filter((r) => !r.base), [roles])
+  const holders = useMemo(() => assignments.data?.data ?? [], [assignments.data])
 
   const roleColumns = useMemo<ColumnDef<PlatformRoleInfo>[]>(
     () => [
       {
         accessorKey: 'name',
         header: t('admin.roles.col.role', 'Role'),
-        cell: ({ row }) => (
-          <StackedCell
-            primary={t(`admin.platformRole.${row.original.key}`, row.original.name)}
-            secondary={t(`admin.platformRoleDesc.${row.original.key}`, row.original.description)}
-          />
-        ),
+        // The role is the row's name, its description beside it on one line.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.roles.col.role', 'Role'),
+        },
+        cell: ({ row }) => {
+          const name = t(`admin.platformRole.${row.original.key}`, row.original.name)
+          const desc = t(`admin.platformRoleDesc.${row.original.key}`, row.original.description)
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="shrink-0 font-medium">{name}</span>
+              <span className="truncate text-muted-foreground" title={desc}>
+                {desc}
+              </span>
+            </div>
+          )
+        },
       },
       {
         id: 'kind',
         header: t('admin.roles.col.kind', 'Kind'),
+        meta: { kind: 'status', width: 128, label: t('admin.roles.col.kind', 'Kind') },
         cell: ({ row }) => (
           <Badge variant="outline">
             {row.original.base
@@ -85,17 +107,27 @@ export default function AdminRolesPage() {
       {
         id: 'permissions',
         header: t('admin.roles.col.permissions', 'Permissions'),
+        meta: {
+          kind: 'number',
+          width: 96,
+          label: t('admin.roles.col.permissions', 'Permissions'),
+        },
         cell: ({ row }) => (
-          <span className="text-muted-foreground text-sm">
-            {t('admin.roles.permissionCount', '{n} permissions', {
+          <span
+            className="tabular-nums"
+            title={t('admin.roles.permissionCount', '{n} permissions', {
               n: row.original.permissions.length,
             })}
+          >
+            {row.original.permissions.length}
           </span>
         ),
       },
       {
         accessorKey: 'holders',
         header: t('admin.roles.col.holders', 'Holders'),
+        meta: { kind: 'number', width: 96, label: t('admin.roles.col.holders', 'Holders') },
+        cell: ({ row }) => <span className="tabular-nums">{row.original.holders}</span>,
       },
     ],
     [t]
@@ -106,26 +138,53 @@ export default function AdminRolesPage() {
       {
         accessorKey: 'email',
         header: t('admin.roles.col.admin', 'Administrator'),
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <StackedCell
-              primary={row.original.name || row.original.email}
-              secondary={row.original.email}
-            />
-            {row.original.break_glass && (
-              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
-            )}
-            {!row.original.active && (
-              <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
-            )}
-          </div>
-        ),
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.roles.col.admin', 'Administrator'),
+        },
+        cell: ({ row }) => {
+          const a = row.original
+          const name = toDisplayText(a.name || a.email)
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate font-medium" title={name}>
+                {name}
+              </span>
+              {a.name && a.name !== a.email && (
+                <span className="truncate text-muted-foreground" title={toDisplayText(a.email)}>
+                  {toDisplayText(a.email)}
+                </span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        id: 'state',
+        header: t('admin.roles.col.state', 'State'),
+        meta: { kind: 'tags', width: 176, label: t('admin.roles.col.state', 'State') },
+        cell: ({ row }) =>
+          row.original.break_glass || !row.original.active ? (
+            <div className="flex flex-wrap gap-1 md:flex-nowrap md:*:shrink-0">
+              {row.original.break_glass && (
+                <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
+              )}
+              {!row.original.active && (
+                <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
+              )}
+            </div>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
       },
       {
         id: 'roles',
         header: t('admin.roles.col.roles', 'Roles'),
+        meta: { kind: 'tags', minWidth: 240, label: t('admin.roles.col.roles', 'Roles') },
         cell: ({ row }) => (
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
             {row.original.roles.map((key) => {
               const removable =
                 canAssign &&
@@ -155,18 +214,24 @@ export default function AdminRolesPage() {
       {
         id: 'actions',
         header: '',
+        meta: { kind: 'actions' },
+        // Giving a role is the row's one action: it stays behind the row's menu.
         cell: ({ row }) =>
           canAssign && row.original.admin_id !== me.id && row.original.active ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setNewRole('')
-                setChange({ kind: 'assign', target: row.original })
-              }}
-            >
-              {t('admin.roles.giveRole', 'Give a role')}
-            </Button>
+            <DataTableRowActions
+              label={t('admin.roles.rowActions', 'Actions for the administrator {email}', {
+                email: toDisplayText(row.original.email),
+              })}
+              actions={[
+                {
+                  label: t('admin.roles.giveRole', 'Give a role'),
+                  onClick: () => {
+                    setNewRole('')
+                    setChange({ kind: 'assign', target: row.original })
+                  },
+                },
+              ]}
+            />
           ) : null,
       },
     ],
@@ -200,45 +265,75 @@ export default function AdminRolesPage() {
             </AlertDescription>
           </Alert>
         )}
-        {catalog.error ? (
-          <ErrorState
-            title={t('admin.roles.title', 'roles')}
-            error={catalog.error}
-            onRetry={() => void catalog.mutate()}
-          />
-        ) : (
-          <DataTable
-            columns={roleColumns}
-            data={catalog.data?.roles ?? []}
-            getRowId={(r) => r.key}
-            isLoading={catalog.isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            emptyMessage={t('admin.roles.empty', 'No roles')}
-          />
-        )}
-        {canSeeHolders &&
-          (assignments.error ? (
-            <ErrorState
-              title={t('admin.roles.holdersTitle', 'role holders')}
-              error={assignments.error}
-              onRetry={() => void assignments.mutate()}
+        <ListTitleRow
+          title={t('admin.roles.viewRoles', 'Platform roles')}
+          count={
+            <ListCount
+              total={roles.length}
+              loading={!catalog.data && !catalog.error}
+              label={t('admin.roles.total', '{count, plural, one {# role} other {# roles}}', {
+                count: roles.length,
+              })}
             />
-          ) : (
+          }
+        />
+        <DataTable
+          columns={roleColumns}
+          data={roles}
+          caption={t('admin.roles.viewRoles', 'Platform roles')}
+          getRowId={(r) => r.key}
+          error={catalog.error}
+          onRetry={() => void catalog.mutate()}
+          errorTitle={t('admin.roles.title', 'roles')}
+          isLoading={catalog.isLoading && !catalog.data}
+          showSearch={false}
+          showSelectionCount={false}
+          mobileCards
+          paginationNoun={t('admin.roles.noun', 'roles')}
+          emptyState={{
+            nothingYet: <EmptyState icon={KeyRound} title={t('admin.roles.empty', 'No roles')} />,
+          }}
+        />
+        {canSeeHolders && (
+          <>
+            <ListTitleRow
+              title={t('admin.roles.viewHolders', 'Who holds them')}
+              count={
+                <ListCount
+                  total={holders.length}
+                  loading={!assignments.data && !assignments.error}
+                  label={t(
+                    'admin.roles.holdersTotal',
+                    '{count, plural, one {# administrator} other {# administrators}}',
+                    { count: holders.length }
+                  )}
+                />
+              }
+            />
             <DataTable
               columns={holderColumns}
-              data={assignments.data?.data ?? []}
+              data={holders}
+              caption={t('admin.roles.viewHolders', 'Who holds them')}
               getRowId={(a) => a.admin_id}
-              isLoading={assignments.isLoading}
+              error={assignments.error}
+              onRetry={() => void assignments.mutate()}
+              errorTitle={t('admin.roles.holdersTitle', 'role holders')}
+              isLoading={assignments.isLoading && !assignments.data}
               showSearch={false}
-              showColumnToggle={false}
               showSelectionCount={false}
               mobileCards
-              emptyMessage={t('admin.roles.noHolders', 'No administrators')}
+              paginationNoun={t('admin.roles.holdersNoun', 'administrators')}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState
+                    icon={UserRound}
+                    title={t('admin.roles.noHolders', 'No administrators')}
+                  />
+                ),
+              }}
             />
-          ))}
+          </>
+        )}
         {change && (
           <AdminConfirmDialog
             open

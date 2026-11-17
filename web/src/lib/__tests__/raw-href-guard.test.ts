@@ -42,10 +42,16 @@ const SAFE_CALLS = new Set([
   // Route builders: each returns a fixed same-origin prefix, or a fixed
   // https://attack.mitre.org prefix, with the data only in the path/query.
   'assetDetailHref',
+  // features/asset-groups/lib/group-link.ts: /assets/groups/ with the id
+  // URI-encoded as one path segment.
+  'assetGroupHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/components/lib/links.ts: `/components/` with the id URI-encoded
+  // as one path segment.
+  'componentHref',
   // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
   // filters as URLSearchParams values.
   'cveFindingsHref',
@@ -97,8 +103,6 @@ const REVIEWED = new Set([
   'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={typeHref(item.type)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).
   'features/shared/components/stats-card.tsx|Link|href={href}',
-  // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
-  'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // EDGE_FIX_HREFS is a build-time table of same-origin settings routes (features/scans/lib/edge-gap.ts).
   'features/scans/components/edge-gap-fixes.tsx|Link|href={EDGE_FIX_HREFS[fix]}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.

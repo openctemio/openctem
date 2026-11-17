@@ -110,14 +110,13 @@ export function DeleteOrganizationItem() {
         )}
         action={
           <Button
-            variant="destructive"
-            size="sm"
+            variant="ghost"
             onClick={() => {
               loadTenants()
               setOpen(true)
             }}
           >
-            <Trash2 className="h-4 w-4" aria-hidden />
+            <Trash2 className="text-destructive" aria-hidden />
             {t('org.danger.deleteAction', 'Delete organization')}
           </Button>
         }

@@ -121,14 +121,14 @@ describe('settings nav config', () => {
       organization: [undefined],
       access: [undefined, 'api-access', 'sign-in', 'oversight'],
       findings: [undefined, 'risk', 'assets'],
-      scanning: [undefined, 'tools', 'sensors', 'content'],
+      scanning: [undefined, 'tools', 'sensors', 'detection', 'content'],
       integrations: [undefined],
     })
   })
 
   // Items research 369 moved: each sits with the task it serves.
   it.each([
-    ['sso-approvals', 'access', 'sign-in'],
+    ['sign-in', 'access', 'sign-in'],
     ['audit-log', 'access', 'oversight'],
     ['mcp', 'access', 'api-access'],
     ['service-accounts', 'access', 'api-access'],
@@ -137,6 +137,11 @@ describe('settings nav config', () => {
     ['license-policy', 'findings', 'risk'],
     ['sensor-products', 'scanning', 'sensors'],
     ['proxies', 'scanning', 'sensors'],
+    // The catalog first, then what is drawn from it (research/504: these four had no visible place).
+    ['content', 'scanning', 'detection'],
+    ['scanner-templates', 'scanning', 'detection'],
+    ['detectionRules', 'scanning', 'detection'],
+    ['wordlists', 'scanning', 'detection'],
   ])('%s is in %s > %s', (id, groupId, section) => {
     const group = settingsNav.find((g) => g.items.some((i) => i.id === id))
     expect(group?.id).toBe(groupId)
