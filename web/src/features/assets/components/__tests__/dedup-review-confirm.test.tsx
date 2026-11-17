@@ -14,7 +14,11 @@ vi.mock('../assets-section-tabs', () => ({
 vi.mock('../attention/attention-queue-header', () => ({ AttentionQueueHeader: () => null }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: () => true }),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1' }, isLoading: false }),
 }))
 vi.mock('../../api/use-asset-dedup', () => ({
   useDedupReviews: () => ({
@@ -53,10 +57,24 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
+/** The two decisions are in the row's menu. */
+async function openRowMenu() {
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for web-01.acme.example' }))
+}
+
 describe('Duplicate review', () => {
+  it('shows a review on one line: identity and type, reason, what stays and what merges', () => {
+    render(<DedupReviewPage />)
+    expect(screen.getByText('web-01.acme.example')).toBeInTheDocument()
+    expect(screen.getByText('WEB-01, web-01.local')).toBeInTheDocument()
+    expect(screen.getByText('2 assets, 2 findings')).toBeInTheDocument()
+    expect(screen.getByText('3 findings')).toBeInTheDocument()
+  })
+
   it('merging deletes the duplicates, so it asks first and names them', async () => {
     render(<DedupReviewPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Merge' }))
+    await openRowMenu()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Merge' }))
     expect(approveDedupReview).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Merge 2 assets into web-01?')
@@ -71,7 +89,8 @@ describe('Duplicate review', () => {
 
   it('keeping them separate changes no asset and needs no confirmation', async () => {
     render(<DedupReviewPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Keep separate' }))
+    await openRowMenu()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Keep separate' }))
     await waitFor(() => expect(rejectDedupReview).toHaveBeenCalledWith('r1'))
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })

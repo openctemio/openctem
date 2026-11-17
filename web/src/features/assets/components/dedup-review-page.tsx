@@ -1,25 +1,23 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   DataTable,
   DataTableColumnHeader,
+  DataTableRowActions,
   EmptyState,
   PageHeader,
   RelativeTime,
-  StackedCell,
   PageStack,
 } from '@/features/shared'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Can, Permission } from '@/lib/permissions'
-import { GitMerge, Check, X, CopyCheck } from 'lucide-react'
+import { Permission } from '@/lib/permissions'
+import { accessStateOf } from '@/lib/api/access-state'
+import { Check, CopyCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useDedupReviews,
@@ -31,6 +29,27 @@ import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 import { AssetsSectionTabs } from './assets-section-tabs'
 import { AttentionQueueHeader } from './attention/attention-queue-header'
 
+/** The order at rest: newest flag first, shown by the arrow on Flagged. */
+const DEFAULT_SORTING: SortingState = [{ id: 'created_at', desc: true }]
+
+/** "2 assets, 5 findings": what a merge moves, in words. */
+function useCountWords() {
+  const { t } = useTranslation()
+  return useMemo(
+    () => ({
+      findings: (n: number) =>
+        n === 1
+          ? t('assets.dedup.findingOne', '1 finding')
+          : t('assets.dedup.findingMany', '{count} findings', { count: n }),
+      assets: (n: number) =>
+        n === 1
+          ? t('assets.dedup.assetOne', '1 asset')
+          : t('assets.dedup.assetMany', '{count} assets', { count: n }),
+    }),
+    [t]
+  )
+}
+
 // DedupReviewPage surfaces the identity/dedup flow that was previously
 // invisible: the correlator enqueues a pending review when several assets share
 // identity, and an operator approves (merge) or rejects (keep separate). The
@@ -41,8 +60,10 @@ export function DedupReviewPage() {
   // Merging deletes the duplicates, so it asks first; keeping them separate does not.
   const [pendingMerge, setPendingMerge] = useState<DedupReview | null>(null)
   const { t } = useTranslation()
+  const words = useCountWords()
+  const [sorting, setSorting] = useState<SortingState>(DEFAULT_SORTING)
 
-  const reviews = data?.data ?? []
+  const reviews = useMemo(() => data?.data ?? [], [data])
 
   // useCallback so the columns memo can depend on it; mutate is stable (SWR).
   const act = useCallback(
@@ -71,89 +92,110 @@ export function DedupReviewPage() {
     [mutate, t]
   )
 
+  // One line per row: the identity with its type, the reason, what the flag
+  // rests on, the asset that stays and the assets that merge into it. The two
+  // decisions are in the row's menu.
   const columns = useMemo<ColumnDef<DedupReview>[]>(
     () => [
       {
         accessorKey: 'normalized_name',
+        meta: { kind: 'name', pin: 'start', label: t('assets.dedup.identity', 'Identity') },
+        enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.dedup.identity', 'Identity')} />
         ),
         cell: ({ row }) => (
-          <div>
-            <div className="font-medium">{row.original.normalized_name}</div>
-            <Badge variant="outline" className="mt-1">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="truncate font-medium" title={row.original.normalized_name}>
+              {row.original.normalized_name}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
               {row.original.asset_type}
-            </Badge>
-          </div>
+            </span>
+          </span>
         ),
       },
       {
         id: 'reason',
         accessorFn: (r) => dedupReasonLabel(r.reason),
+        meta: { kind: 'text', width: 168, label: t('assets.dedup.reason', 'Reason') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.dedup.reason', 'Reason')} />
         ),
+        cell: ({ row }) => (
+          <span className="block truncate text-sm">{dedupReasonLabel(row.original.reason)}</span>
+        ),
+      },
+      {
+        id: 'evidence',
+        accessorFn: (r) => describeEvidence(r.evidence) ?? '',
+        meta: {
+          kind: 'text',
+          minWidth: 160,
+          maxWidth: 280,
+          hideBelow: 1000,
+          label: t('assets.dedup.evidence', 'Evidence'),
+        },
+        enableSorting: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.dedup.evidence', 'Evidence')} />
+        ),
         cell: ({ row }) => {
           const evidence = describeEvidence(row.original.evidence)
-          return (
-            <div className="min-w-0">
-              <div className="text-sm">{dedupReasonLabel(row.original.reason)}</div>
-              {evidence && (
-                <div className="mt-0.5 break-words text-xs text-muted-foreground">{evidence}</div>
-              )}
-            </div>
-          )
+          return evidence ? (
+            <span className="block truncate text-sm text-muted-foreground" title={evidence}>
+              {evidence}
+            </span>
+          ) : null
         },
       },
       {
         accessorKey: 'keep_asset_name',
+        meta: { kind: 'asset', label: t('assets.dedup.keep', 'Keep') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.dedup.keep', 'Keep')} />
         ),
         cell: ({ row }) => (
-          <StackedCell
-            primary={row.original.keep_asset_name}
-            secondary={
-              row.original.keep_finding_count === 1
-                ? t('assets.dedup.findingOne', '1 finding')
-                : t('assets.dedup.findingMany', '{count} findings', {
-                    count: row.original.keep_finding_count,
-                  })
-            }
-          />
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="truncate" title={row.original.keep_asset_name}>
+              {row.original.keep_asset_name}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {words.findings(row.original.keep_finding_count)}
+            </span>
+          </span>
         ),
       },
       {
         id: 'merge',
+        meta: {
+          kind: 'text',
+          minWidth: 220,
+          maxWidth: 360,
+          label: t('assets.dedup.mergeInto', 'Merge into it'),
+        },
         header: t('assets.dedup.mergeInto', 'Merge into it'),
         enableSorting: false,
-        cell: ({ row }) => (
-          <div>
-            <div className="flex flex-wrap gap-1">
-              {row.original.merge_asset_names.map((name, i) => (
-                <Badge key={i} variant="secondary">
-                  {name}
-                </Badge>
-              ))}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {row.original.merge_asset_ids.length === 1
-                ? t('assets.dedup.assetOne', '1 asset')
-                : t('assets.dedup.assetMany', '{count} assets', {
-                    count: row.original.merge_asset_ids.length,
-                  })}
-              ,{' '}
-              {row.original.merge_finding_count === 1
-                ? t('assets.dedup.findingOne', '1 finding')
-                : t('assets.dedup.findingMany', '{count} findings', {
-                    count: row.original.merge_finding_count,
-                  })}
-            </div>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const names = row.original.merge_asset_names.join(', ')
+          return (
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate" title={names}>
+                {names}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {t('assets.dedup.mergeCounts', '{assets}, {findings}', {
+                  assets: words.assets(row.original.merge_asset_ids.length),
+                  findings: words.findings(row.original.merge_finding_count),
+                })}
+              </span>
+            </span>
+          )
+        },
       },
       {
         accessorKey: 'created_at',
+        meta: { kind: 'datetime-recent', label: t('assets.dedup.flagged', 'Flagged') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.dedup.flagged', 'Flagged')} />
         ),
@@ -161,36 +203,45 @@ export function DedupReviewPage() {
       },
       {
         id: 'actions',
-        header: () => <div className="text-end">{t('components.col.actions', 'Actions')}</div>,
+        meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => (
-          <Can permission={Permission.AssetsDelete}>
-            <div className="flex justify-end gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busyId === row.original.id}
-                onClick={() => act(row.original.id, 'reject')}
-              >
-                <X className="me-1 h-3.5 w-3.5" />
-                {t('assets.dedup.keepSeparate', 'Keep separate')}
-              </Button>
-              <Button
-                size="sm"
-                disabled={busyId === row.original.id}
-                onClick={() => setPendingMerge(row.original)}
-              >
-                <GitMerge className="me-1 h-3.5 w-3.5" />
-                {t('assets.dedup.merge', 'Merge')}
-              </Button>
-            </div>
-          </Can>
-        ),
+        cell: ({ row }) => {
+          const busy =
+            busyId === row.original.id
+              ? t('assets.dedup.busy', 'This review is being decided')
+              : undefined
+          return (
+            <DataTableRowActions
+              title={row.original.normalized_name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.normalized_name,
+              })}
+              actions={[
+                {
+                  label: t('assets.dedup.merge', 'Merge'),
+                  onClick: () => setPendingMerge(row.original),
+                  permission: Permission.AssetsDelete,
+                  disabled: !!busy,
+                  disabledReason: busy,
+                },
+                {
+                  label: t('assets.dedup.keepSeparate', 'Keep separate'),
+                  onClick: () => void act(row.original.id, 'reject'),
+                  permission: Permission.AssetsDelete,
+                  disabled: !!busy,
+                  disabledReason: busy,
+                },
+              ]}
+            />
+          )
+        },
       },
     ],
-    [busyId, act, t]
+    [busyId, act, t, words]
   )
+
+  const noAccess = !!error && accessStateOf(error) === 'no_access'
 
   return (
     <Main>
@@ -202,32 +253,35 @@ export function DedupReviewPage() {
           count={isLoading ? undefined : (data?.total ?? reviews.length)}
         />
 
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))}
-          </div>
-        ) : error ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              {t('assets.dedup.loadFailed', 'Failed to load duplicate reviews.')}
-            </CardContent>
-          </Card>
-        ) : reviews.length === 0 ? (
-          <EmptyState
-            icon={CopyCheck}
-            title={t('assets.dedup.empty', 'No duplicates to review')}
-            description={t(
-              'assets.dedup.emptyHint',
-              "The correlator hasn't flagged any assets as likely duplicates."
-            )}
-          />
+        {noAccess ? (
+          <NoAccessState title={t('assets.dedup.subject', 'the duplicate reviews')} />
         ) : (
+          // Loading, a failed read and the empty queue are states of the table.
           <DataTable
             columns={columns}
             data={reviews}
+            caption={t('assets.attention.tab.duplicates', 'Possible duplicates')}
+            isLoading={isLoading && reviews.length === 0}
+            error={error && reviews.length === 0 ? error : undefined}
+            onRetry={() => void mutate()}
+            errorTitle={t('assets.dedup.errorTitle', 'duplicate reviews')}
+            getRowId={(r) => r.id}
             searchPlaceholder={t('assets.dedup.search', 'Search reviews…')}
+            sorting={sorting}
+            onSortingChange={setSorting}
+            paginationNoun={t('assets.dedup.noun', 'reviews')}
+            emptyState={{
+              nothingYet: (
+                <EmptyState
+                  icon={CopyCheck}
+                  title={t('assets.dedup.empty', 'No duplicates to review')}
+                  description={t(
+                    'assets.dedup.emptyHint',
+                    "The correlator hasn't flagged any assets as likely duplicates."
+                  )}
+                />
+              ),
+            }}
           />
         )}
 

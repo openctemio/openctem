@@ -8,6 +8,7 @@
  * the explanation card. Counts in the menu are requested only while it is open.
  */
 
+import { ListCount } from '@/features/shared/components/list-title-row'
 import { ArrowRight, ChevronDown, ChevronLeft } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
@@ -109,11 +110,16 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {count !== undefined && (
-          <span className="text-sm text-muted-foreground" data-testid="attention-queue-count">
-            {count.toLocaleString()} {t(current.unitKey, current.unit, { count })}
-          </span>
-        )}
+        {/* The queue's one count, as every list says it. */}
+        <ListCount
+          total={count ?? 0}
+          loading={count === undefined}
+          label={
+            count === undefined
+              ? undefined
+              : `${count.toLocaleString()} ${t(current.unitKey, current.unit, { count })}`
+          }
+        />
         {href && (
           <Button asChild variant="outline" size="sm" className="ms-auto">
             <Link href={href}>
