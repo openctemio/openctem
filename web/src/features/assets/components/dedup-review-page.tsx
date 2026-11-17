@@ -287,7 +287,8 @@ export function DedupReviewPage() {
         <AssetsSectionTabs />
         <AttentionQueueHeader
           reason="duplicates"
-          count={isLoading ? undefined : (data?.total ?? reviews.length)}
+          // No count while loading or after a failed read: 0 would be a claim.
+          count={isLoading || error ? undefined : (data?.total ?? reviews.length)}
         />
 
         {noAccess ? (
@@ -333,9 +334,7 @@ export function DedupReviewPage() {
                     </span>
                   </span>
                 }
-                marks={
-                  <span className="text-xs font-medium">{reasonText(review.reason)}</span>
-                }
+                marks={<span className="text-xs font-medium">{reasonText(review.reason)}</span>}
                 meta={
                   <>
                     <span className="min-w-0 truncate">
