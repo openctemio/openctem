@@ -382,7 +382,8 @@ export default function AssetGroupsPage() {
       meta: {
         kind: 'name',
         pin: 'start',
-        minWidth: 200,
+        // The other columns' floors leave 180 at a 1024 screen (frame 700).
+        minWidth: 180,
         label: t('assetGroups.col.name', 'Name'),
       },
       header: ({ column }) => (
@@ -391,8 +392,9 @@ export default function AssetGroupsPage() {
       cell: ({ row }) => {
         const group = row.original
         return (
-          // The link shrinks with its cell and ends in an ellipsis.
-          <div data-slot="group-name-cell" className="flex min-w-0 items-center">
+          // No width of its own (w-0): the name never widens its column past
+          // the frame, and the link ends in an ellipsis inside it.
+          <div data-slot="group-name-cell" className="flex w-0 min-w-full items-center">
             <RowNameLink
               href={assetGroupHref(group.id)}
               onOpen={() => setViewGroup(group)}
@@ -857,10 +859,7 @@ export default function AssetGroupsPage() {
         <PageStack>
           <PageHeader
             title={t('assetGroups.title', 'Asset groups')}
-            description={t(
-              'assetGroups.description',
-              'Organize and monitor assets by logical group.'
-            )}
+            description={t('assetGroups.description', 'Organize and monitor assets by group.')}
           >
             <Can permission={Permission.AssetGroupsWrite} mode="disable">
               <Button
@@ -880,7 +879,7 @@ export default function AssetGroupsPage() {
 
           {/* On a phone the list starts sooner: both numbers are reachable there
               (the count in the title row, Criticality in the Filters sheet). */}
-          {!isPhone && <MetricStrip loading={statsLoading} items={metrics} />}
+          <MetricStrip loading={statsLoading} items={metrics} className="max-md:hidden" />
 
           {/* The list's title row: its name and its one count (the groups the
               list shows, filters and search applied), then the list's actions. */}

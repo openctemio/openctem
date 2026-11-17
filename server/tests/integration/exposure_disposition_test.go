@@ -13,6 +13,7 @@ import (
 	exposureapp "github.com/openctemio/openctem/server/internal/app/exposure"
 	"github.com/openctemio/openctem/server/internal/app/integration"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
 	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -79,6 +80,35 @@ func (f *dispositionFixture) exec(t *testing.T, q string, args ...any) {
 	t.Helper()
 	if _, err := f.db.Exec(q, args...); err != nil {
 		t.Fatalf("%v\n%s", err, q)
+	}
+}
+
+// purgeAudit removes a tenant's audit rows of the given actions, and their
+// chain rows. Only retention may delete audit rows (migration
+// audit_chain_owner_only), so it runs as the superuser with triggers off.
+func (f *dispositionFixture) purgeAudit(t *testing.T, tenant shared.ID, actions []string) {
+	t.Helper()
+	tx, err := testdb.OpenAdmin(t).BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, q := range []string{
+		`SET LOCAL session_replication_role = replica`,
+		`DELETE FROM audit_log_chain WHERE audit_log_id IN
+			(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2))`,
+		`DELETE FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2)`,
+	} {
+		var args []any
+		if strings.Contains(q, "$1") {
+			args = []any{tenant.String(), pq.Array(actions)}
+		}
+		if _, err := tx.ExecContext(context.Background(), q, args...); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -432,10 +462,7 @@ func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
 		if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
 			t.Fatalf("request: %v", err)
 		}
-		f.exec(t, `DELETE FROM audit_log_chain WHERE audit_log_id IN
-			(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2))`, f.solo.String(), pq.Array(actions))
-		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2)`, f.solo.String(),
-			pq.Array(actions))
+		f.purgeAudit(t, f.solo, actions)
 		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
 			VALUES (gen_random_uuid(), $1, $2, 'role', 'x', 'success', 'medium', 'changed', now() - interval '1 hour')`, f.solo.String(), action)
 		_, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810")
@@ -443,9 +470,7 @@ func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
 			t.Fatalf("%d: 1 hour after %s: %v, want ErrDispositionSelfApprovalAfterRemoval", i, action, err)
 		}
 		// Audit rows cannot be updated: replace the row with one eight days old.
-		f.exec(t, `DELETE FROM audit_log_chain WHERE audit_log_id IN
-			(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = $2)`, f.solo.String(), action)
-		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = $2`, f.solo.String(), action)
+		f.purgeAudit(t, f.solo, []string{action})
 		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
 			VALUES (gen_random_uuid(), $1, $2, 'role', 'x', 'success', 'medium', 'changed', now() - interval '8 days')`, f.solo.String(), action)
 		if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {

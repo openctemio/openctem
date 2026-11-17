@@ -10,18 +10,18 @@ import (
 
 // Grants: things that are off unless granted, the other half of the
 // entitlement answer next to limits and denies
-// (docs/development/editions.md, RFC-145). The open core defines only the
+// (docs/development/extensions.md, RFC-145). The core defines only the
 // shape of the answer and asks it through entitlement.Service; it holds no
-// grant keys, no license code and no license storage. A build's extension
-// may register one GrantProvider; the Community build has none, so every
+// grant keys and no provider. A build's extension
+// may register one GrantProvider; the default build has none, so every
 // grant is GrantNone and nothing changes. RFC-145 lists the guarantees every
 // provider keeps.
 //
-// A grant only ever adds: no Community feature, limit or security control
-// depends on one, and sign-in, SSO, MFA and audit are never grants.
+// A grant only ever adds: no feature, limit or security control of the
+// default build depends on one, and sign-in, SSO, MFA and audit are never grants.
 
 // GrantKey names something that is off unless granted. The keys are defined
-// by the extension that checks them, never by Community code.
+// by the extension that checks them, never by the core.
 type GrantKey string
 
 // GrantStatus is the state of one grant key for an organization.
@@ -29,7 +29,7 @@ type GrantStatus string
 
 // Grant states, from least to most granting.
 const (
-	// GrantNone: never granted (always, in the Community build).
+	// GrantNone: never granted (always, in the default build).
 	GrantNone GrantStatus = "none"
 	// GrantExpired: was granted and has ended. No new data; settings stay
 	// read-only until ReadOnlyUntil; data is kept.
@@ -88,7 +88,7 @@ type Notice struct {
 	Until time.Time
 }
 
-// GrantProvider answers for grant keys. The Community build has none
+// GrantProvider answers for grant keys. The default build has none
 // (entitlement.Service then answers GrantNone for every key and no notices).
 //
 // Grant returns the state of key for the organization; an unknown key is

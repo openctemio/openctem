@@ -754,5 +754,3 @@ its key, import again and save (an owner approves); the expiry alerts warn 30,
   `internal/app/auth/domainverify/service.go`, `internal/config/config.go`,
   `internal/infra/http/routes/auth.go`,
   per-request enforce-SSO: `internal/infra/http/middleware/sso_enforcement.go`
-</content>
-</invoke>

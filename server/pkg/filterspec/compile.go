@@ -315,12 +315,26 @@ type compiler struct {
 // render substitutes the template tokens: ArgToken with argPH, TenantToken
 // with the tenant placeholder, UserToken with the acting user (bound once
 // per compile; the zero UUID for a caller without a user, which matches no
-// row, so a user-relative rule fails closed).
+// row, so a user-relative rule fails closed), and MemberToken with TRUE or
+// FALSE (whether the member visibility rule applies to the actor).
 func (c *compiler) render(tpl, argPH string) string {
 	if strings.Contains(tpl, UserToken) && c.userPH == "" {
 		c.userPH = c.bind(c.actor.userID.String()) + "::uuid"
 	}
-	return strings.NewReplacer(ArgToken, argPH, TenantToken, c.tenantPH, UserToken, c.userPH).Replace(tpl)
+	member := "FALSE"
+	if c.actor.member() {
+		member = "TRUE"
+	}
+	return strings.NewReplacer(ArgToken, argPH, TenantToken, c.tenantPH, UserToken, c.userPH, MemberToken, member).Replace(tpl)
+}
+
+// renderExpr renders the tokens of a field's SQL or SortSQL; an expression
+// without a token is returned as is.
+func (c *compiler) renderExpr(expr string) string {
+	if !strings.Contains(expr, "{") {
+		return expr
+	}
+	return c.render(expr, "")
 }
 
 func (c *compiler) bind(v any) string {
@@ -407,7 +421,7 @@ func (c *compiler) leaf(l *Leaf) string {
 		}
 		return c.template(f, l, tpl)
 	}
-	col := f.SQL
+	col := c.renderExpr(f.SQL)
 	switch l.Op {
 	case OpEq:
 		return "(" + col + " = " + c.bindValue(f, l.Values[0]) + ")"
@@ -638,6 +652,7 @@ func (c *compiler) orderBy(keys []SortKey) string {
 		if expr == "" {
 			expr = f.SQL
 		}
+		expr = c.renderExpr(expr)
 		// Postgres defaults (ASC NULLS LAST, DESC NULLS FIRST) so the order
 		// matches the sort indexes of non-null columns; a nullable field
 		// sorted descending keeps its unset rows last ("highest CVSS first"
