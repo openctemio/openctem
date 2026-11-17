@@ -348,7 +348,7 @@ type Handlers struct {
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
 	// ExtensionRoutes are the routes of the build's extensions (none in the
-	// Community build); Grants enforces their grant keys.
+	// default build); Grants enforces their grant keys.
 	ExtensionRoutes []extensionhost.Route
 	Grants          GrantChecker
 	// EntryChecker applies the URL organization's entry requirements on

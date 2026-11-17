@@ -124,7 +124,7 @@ The breakdown is stored with the alert and shown ("why am I seeing this").
 
 | Channel | Content |
 |---|---|
-| Notification integrations (outbox), event `emerging_threat` | vulnerability id, product, why now, counts of confirmed / possibly affected / internet-facing assets, a link. Asset names only when the organization turns them on (at most 5) |
+| Notification integrations (outbox), event `emerging_threat` | vulnerability id, product, why now, counts of confirmed / likely / possibly affected / internet-facing hosts (a host that serves several ports is one; architecture doc, "Counting hosts"), a link. Host names only when the organization turns them on (at most 5) |
 | Notification integrations, event `emerging_threat_digest` | counts by level, top 5 vulnerability ids, a link |
 | In-app | administrators |
 | E-mail | each member whose `email_digest` preference is `daily` (every digest) or `weekly` (Mondays, the last 7 days), counted within their data scope; muting the digest notification type opts out |

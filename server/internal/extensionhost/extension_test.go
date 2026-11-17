@@ -37,13 +37,13 @@ func (stubProvider) Grant(_ context.Context, _ shared.ID, k limits.GrantKey) (li
 }
 func (stubProvider) Notices(context.Context) ([]limits.Notice, error) { return nil, nil }
 
-// The Community build gets the core defaults for every seam.
-func TestCommunityDefaults(t *testing.T) {
+// The default build gets the core defaults for every seam.
+func TestDefaultBuildDefaults(t *testing.T) {
 	ctx := context.Background()
 	for _, s := range []*Set{nil, build(t)} {
 		h := Host{Log: logger.NewNop()}
 		if !s.Empty() || len(s.Info()) != 0 || s.Declares("ANY") {
-			t.Fatal("Community build has an extension")
+			t.Fatal("default build has an extension")
 		}
 		if p := s.Grants(ctx, h); p != nil {
 			t.Fatalf("grant provider: %T", p)
@@ -88,7 +88,7 @@ func TestGrants(t *testing.T) {
 }
 
 // A failing provider leaves every grant off and never stops the server.
-func TestGrantsFailureKeepsCommunity(t *testing.T) {
+func TestGrantsFailureKeepsDefaultBuild(t *testing.T) {
 	s := build(t, ext.Extension{Grants: func(context.Context, ext.Deps) (ext.GrantProvider, error) {
 		return nil, errors.New("grant store unreadable")
 	}})

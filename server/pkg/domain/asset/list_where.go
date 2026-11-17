@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -21,7 +22,7 @@ import (
 const CountCap = 10000
 
 // ErrQueryTimeout: a list or count ran past its statement timeout.
-var ErrQueryTimeout = errors.New("the assets query took too long")
+var ErrQueryTimeout = fmt.Errorf("%w: the assets query took too long", shared.ErrQueryTimeout)
 
 // ErrBadCursor is a cursor that does not decode.
 var ErrBadCursor = errors.New("invalid cursor")
