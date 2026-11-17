@@ -10,11 +10,20 @@ const workflowRunsCalls: Array<Record<string, unknown> | undefined> = []
 let runsResponse: unknown
 let canReadScanRuns = true
 let statsTotal = 40
+let runsError: unknown
+const runsMutate = vi.fn()
+const statsMutate = vi.fn()
 
 vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanRuns: (filters?: Record<string, unknown>) => {
     workflowRunsCalls.push(filters)
-    return { data: runsResponse, isLoading: false, error: undefined }
+    return {
+      data: runsResponse,
+      isLoading: false,
+      isValidating: false,
+      error: runsError,
+      mutate: runsMutate,
+    }
   },
   useScanManagementStats: () => ({
     data: {
@@ -29,6 +38,8 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
       },
     },
     isLoading: false,
+    isValidating: false,
+    mutate: statsMutate,
   }),
 }))
 const exportGet = vi.fn()
@@ -96,6 +107,9 @@ describe('ScanRunsTab', () => {
     workflowRunsCalls.length = 0
     canReadScanRuns = true
     statsTotal = 40
+    runsError = undefined
+    runsMutate.mockClear()
+    statsMutate.mockClear()
     resetUrl()
     runsResponse = {
       data: [
@@ -180,10 +194,10 @@ describe('ScanRunsTab', () => {
   it('sorts on the server from a column header and returns to page 1', async () => {
     urlState.page = '2'
     render(<ScanRunsTab />)
-    // One click on the header's sort button: the list starts newest first,
-    // so the click reverses it to oldest first.
+    // One click on the header's sort button: a date column sorts newest
+    // first on its first click.
     await userEvent.click(screen.getByRole('button', { name: /^Started/ }))
-    expect(urlState.sort).toBe('started_at')
+    expect(urlState.sort).toBe('-started_at')
     expect(urlState.page).toBeUndefined()
   })
 
@@ -378,8 +392,109 @@ describe('ScanRunsTab', () => {
   it('explains the missing permission instead of showing an empty table', () => {
     canReadScanRuns = false
     render(<ScanRunsTab />)
-    expect(screen.getByText(/needs the "View scans" permission/)).toBeInTheDocument()
+    expect(screen.getByText('You do not have access to the run list')).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('shows the no-access notice when the server refuses the read', () => {
+    runsResponse = undefined
+    runsError = { statusCode: 403, code: 'FORBIDDEN' }
+    render(<ScanRunsTab />)
+    expect(screen.getByText('You do not have access to the run list')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('keeps the toolbar and offers Retry when the read fails', async () => {
+    runsResponse = undefined
+    runsError = { statusCode: 500 }
+    render(<ScanRunsTab />)
+    expect(screen.getByRole('button', { name: 'Origin: People' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /retry|try again/i }))
+    expect(runsMutate).toHaveBeenCalled()
+  })
+
+  it('names the view after its origin and says the count once', async () => {
+    const user = userEvent.setup()
+    render(<ScanRunsTab />)
+    expect(screen.getByRole('heading', { name: 'Runs started by people' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('40 runs')
+    await user.click(screen.getByRole('button', { name: 'Origin: People' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'All' }))
+    expect(screen.getByRole('heading', { name: 'All runs' })).toBeInTheDocument()
+  })
+
+  it('refreshes the list and its counts from the title row', async () => {
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(runsMutate).toHaveBeenCalled()
+    expect(statsMutate).toHaveBeenCalled()
+  })
+
+  it('has no search field and no query switch: the run list takes field filters only', () => {
+    render(<ScanRunsTab />)
+    expect(document.querySelector('[data-slot="list-search-input"]')).toBeNull()
+    expect(document.querySelector('[data-slot="list-search-mode"]')).toBeNull()
+  })
+
+  it('sets the kind from Add filter and shows it as a chip that clears on its own', async () => {
+    const user = userEvent.setup()
+    render(<ScanRunsTab />)
+    await user.click(screen.getByRole('button', { name: /add filter/i }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Retests' }))
+    expect(urlState.kind).toBe('retest')
+    await user.keyboard('{Escape}')
+    const chips = screen.getByTestId('runs-filter-chips')
+    expect(within(chips).getByText('Kind: Retests')).toBeInTheDocument()
+    await user.click(within(chips).getByRole('button', { name: 'Remove filter Kind: Retests' }))
+    expect(urlState.kind).toBeUndefined()
+    expect(screen.queryByTestId('runs-filter-chips')).toBeNull()
+  })
+
+  it('shows the scan a link named as a chip, and Clear filters with two chips', async () => {
+    urlState.scan_id = 's1'
+    urlState.kind = 'scan'
+    urlState.status = 'failed'
+    render(<ScanRunsTab />)
+    const chips = screen.getByTestId('runs-filter-chips')
+    expect(within(chips).getByText('Scan: Daily external recon')).toBeInTheDocument()
+    expect(within(chips).getByText('Kind: Scans')).toBeInTheDocument()
+    await userEvent.click(within(chips).getByRole('button', { name: 'Clear filters' }))
+    // The chips go; the Status select is the toolbar's own and stays.
+    expect(window.location.search).toBe('?status=failed')
+  })
+
+  it('offers Clear filters on an empty filtered list, and resets every filter', async () => {
+    urlState.status = 'blocked'
+    urlState.origin = 'system'
+    runsResponse = { data: [], total: 0, page: 1, per_page: 25, total_pages: 0 }
+    render(<ScanRunsTab />)
+    expect(screen.getByText('No runs match these filters')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(window.location.search).toBe('')
+  })
+
+  it('keeps every row on one line: a kind, a label and a width on every column', () => {
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    const headers = within(table).getAllByRole('columnheader')
+    expect(headers.map((h) => h.textContent?.trim())).toEqual([
+      'Scan',
+      'Status',
+      'Tasks',
+      'Findings',
+      'Duration',
+      'Intensity',
+      'Started',
+      'Triggered by',
+    ])
+    // No checkbox column (the run list has no bulk action) and no row menu.
+    expect(within(table).queryByRole('checkbox')).toBeNull()
+    // The run's message is cut to its column and whole in the hover text.
+    expect(within(table).getByText('no sensor online').closest('[title]')).toHaveAttribute(
+      'title',
+      'no sensor online'
+    )
   })
 })
 

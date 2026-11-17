@@ -4,7 +4,8 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * Nothing in a list's header jumps (owner rule): on every list with the shared
  * title row and toolbar (Findings, Assets, Scans, Vulnerabilities, Emerging
- * threats and the attack surface's Exposures, Technologies and Certificates),
+ * threats, the attack surface's Exposures, Technologies and Certificates, Sensors
+ * and Scan runs),
  * at 1440, 1280, 1024, 768 and 390 px, in English and Vietnamese, every
  * control of the toolbar row and of the title row keeps its box (0 px of
  * movement, 0 px of size change) through:
@@ -64,6 +65,8 @@ type ListSpec = {
   group?: boolean
   /** The search has the Basic | Query switch. */
   query?: boolean
+  /** The toolbar has a search field (default); `false` skips the typing steps. */
+  search?: boolean
   /** Every width in both languages (the others: Vietnamese at 1440 and 390). */
   core?: boolean
   /** The list's own requests, held back for the first-load check. */
@@ -194,6 +197,17 @@ const LISTS = {
     group: false,
     query: false,
     data: /\/api\/v1\/sensors/,
+  },
+  // No search field and no Query mode: the run list takes field filters only.
+  '/scans/runs': {
+    filters: [
+      ['kind', 'retest'],
+      ['status', 'failed'],
+      ['origin', 'all'],
+    ],
+    group: false,
+    search: false,
+    data: /\/api\/v1\/scan/,
   },
 } as const satisfies Record<string, ListSpec>
 
@@ -386,7 +400,14 @@ type FirstPaint = { title: Box | null; titleEnd: Box[]; header: Snap | null }
  * boxes of its end buttons and, where the toolbar is drawn already, the
  * whole snapshot.
  */
-async function firstPaint(page: Page): Promise<FirstPaint> {
+/** What shows once a list's toolbar is drawn: its search field, or the toolbar without one. */
+function toolbarShown(list: ListSpec): string {
+  return list.search === false
+    ? 'main [data-slot="list-toolbar"]'
+    : 'main [data-slot="list-toolbar"] [data-slot="list-search-input"]'
+}
+
+async function firstPaint(page: Page, shownSelector: string): Promise<FirstPaint> {
   const frame = await page.evaluate(() => {
     const box = (el: Element) => {
       const r = el.getBoundingClientRect()
@@ -406,7 +427,7 @@ async function firstPaint(page: Page): Promise<FirstPaint> {
     }
   })
   const drawn = await page
-    .locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]')
+    .locator(shownSelector)
     .first()
     .isVisible()
     .catch(() => false)
@@ -485,9 +506,14 @@ async function createSavedView(page: Page, spec: { page: string; query: string }
  * once it has loaded (a list that shows only after it has held a row draws
  * its toolbar while it loads, then its empty page).
  */
-async function openList(page: Page, path: string, timeout = 45_000) {
+async function openList(
+  page: Page,
+  path: string,
+  timeout = 45_000,
+  shownSelector = 'main [data-slot="list-search-input"]'
+) {
   await page.goto(path)
-  const input = page.locator('main [data-slot="list-search-input"]').first()
+  const input = page.locator(shownSelector).first()
   const drawn = await input.waitFor({ state: 'visible', timeout }).then(
     () => true,
     () => false
@@ -544,8 +570,8 @@ export function headerHoldsStill(route: Route) {
             .first()
             .waitFor({ state: 'visible', timeout: 45_000 })
             .catch(() => undefined)
-          const painted = await firstPaint(page)
-          const input = page.locator('main [data-slot="list-search-input"]').first()
+          const painted = await firstPaint(page, toolbarShown(list))
+          const input = page.locator(toolbarShown(list)).first()
           const drawn = await input
             .waitFor({ state: 'visible', timeout: list.optional ? 15_000 : 45_000 })
             .then(
@@ -560,7 +586,7 @@ export function headerHoldsStill(route: Route) {
           compareFirstPaint(
             `${route} ${width} ${locale}: first load`,
             painted,
-            await firstPaint(page)
+            await firstPaint(page, toolbarShown(list))
           )
 
           const params = await urlParams(page)
@@ -708,12 +734,14 @@ export function headerHoldsStill(route: Route) {
             })
           }
 
-          await step('type in the field', async () => {
-            await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
-          })
-          await step('clear the text', async () => {
-            await page.locator('main [data-slot="list-search-input"]').fill('')
-          })
+          if (list.search !== false) {
+            await step('type in the field', async () => {
+              await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
+            })
+            await step('clear the text', async () => {
+              await page.locator('main [data-slot="list-search-input"]').fill('')
+            })
+          }
 
           await step('clear the filters', async () => {
             const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
@@ -835,7 +863,7 @@ export function pagingHoldsStill(route: Route) {
       test.setTimeout(120_000)
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-      const shown = await openList(page, route, list.optional ? 15_000 : 45_000)
+      const shown = await openList(page, route, list.optional ? 15_000 : 45_000, toolbarShown(list))
       test.skip(!!list.optional && !shown, NO_LIST)
       expect(shown, 'the list toolbar shows').toBe(true)
       await settle(page)
@@ -1019,7 +1047,12 @@ export function saysItsCountOnce(route: Route) {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
       for (const qs of ['', `?${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`]) {
-        const shown = await openList(page, `${route}${qs}`, list.optional ? 15_000 : 45_000)
+        const shown = await openList(
+          page,
+          `${route}${qs}`,
+          list.optional ? 15_000 : 45_000,
+          toolbarShown(list)
+        )
         test.skip(!!list.optional && !shown, NO_LIST)
         await expect(page.locator('main [data-slot="list-count"]:visible')).toHaveText(/\d/, {
           timeout: 45_000,
@@ -1173,12 +1206,16 @@ export function benchmarksNeverMoveTheHeader() {
         page.locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]').first()
       ).toBeVisible({ timeout: 45_000 })
       await settle(page)
-      const before = await firstPaint(page)
+      const before = await firstPaint(page, toolbarShown(LISTS['/findings']))
       release()
       const panel = page.locator('main [data-testid="compliance-benchmarks-panel"]')
       await expect(panel).toBeVisible({ timeout: 20_000 })
       await settle(page)
-      compareFirstPaint('benchmarks arrive', before, await firstPaint(page))
+      compareFirstPaint(
+        'benchmarks arrive',
+        before,
+        await firstPaint(page, toolbarShown(LISTS['/findings']))
+      )
       // Placement: under the toolbar (and its chips row), above the rows.
       const order = await page.evaluate(() => {
         const top = (sel: string) =>
@@ -1190,11 +1227,15 @@ export function benchmarksNeverMoveTheHeader() {
       expect(order.blockTop, JSON.stringify(order)).not.toBeNull()
       expect(order.blockTop!).toBeGreaterThanOrEqual(order.barBottom!)
       // Folding it moves nothing above it either.
-      const folded = await firstPaint(page)
+      const folded = await firstPaint(page, toolbarShown(LISTS['/findings']))
       await page.locator('main [data-slot="compliance-benchmarks-fold"]').click()
       await expect(panel).toBeHidden()
       await settle(page)
-      compareFirstPaint('benchmarks fold', folded, await firstPaint(page))
+      compareFirstPaint(
+        'benchmarks fold',
+        folded,
+        await firstPaint(page, toolbarShown(LISTS['/findings']))
+      )
       await page.evaluate(() =>
         window.localStorage.removeItem('findings.complianceBenchmarks.folded')
       )

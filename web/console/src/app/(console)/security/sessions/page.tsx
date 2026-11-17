@@ -2,19 +2,19 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { LogOut, Siren } from 'lucide-react'
+import { MonitorSmartphone, Siren } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   DataTable,
-  ErrorState,
+  DataTableRowActions,
+  EmptyState,
   PageHeader,
   PageStack,
   RelativeTime,
-  StackedCell,
 } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   endAdminSession,
@@ -35,29 +35,48 @@ export default function AdminSessionsPage() {
   const isSuper = adminHas(admin, 'platform.admins.read')
   const { data, error, isLoading, mutate } = useAdminSessions(isSuper)
   const [ending, setEnding] = useState<AdminConsoleSession | null>(null)
+  const sessions = useMemo(() => data?.data ?? [], [data])
 
   const columns = useMemo<ColumnDef<AdminConsoleSession>[]>(
     () => [
       {
         accessorKey: 'admin_email',
         header: t('admin.sessions.col.admin', 'Administrator'),
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <StackedCell
-              primary={row.original.admin_name || row.original.admin_email}
-              secondary={row.original.admin_email}
-            />
-            {row.original.current && (
-              <Badge variant="secondary">{t('admin.sessions.current', 'This session')}</Badge>
-            )}
-          </div>
-        ),
+        // The administrator is the row's name: it stays in view while the
+        // table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.sessions.col.admin', 'Administrator'),
+        },
+        cell: ({ row }) => {
+          const s = row.original
+          return (
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium" title={s.admin_name || s.admin_email}>
+                {s.admin_name || s.admin_email}
+              </span>
+              {s.admin_name && s.admin_name !== s.admin_email && (
+                <span className="truncate text-muted-foreground" title={s.admin_email}>
+                  {s.admin_email}
+                </span>
+              )}
+              {s.current && (
+                <Badge variant="secondary" className="shrink-0">
+                  {t('admin.sessions.current', 'This session')}
+                </Badge>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'admin_role',
         header: t('admin.sessions.col.role', 'Role'),
+        meta: { kind: 'tags', width: 176, label: t('admin.sessions.col.role', 'Role') },
         cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
             <Badge variant="outline">
               {t(
                 `admin.role.${row.original.admin_role}`,
@@ -76,8 +95,14 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'auth_method',
         header: t('admin.sessions.col.method', 'Signed in with'),
+        meta: {
+          kind: 'text',
+          width: 184,
+          hideBelow: 1100,
+          label: t('admin.sessions.col.method', 'Signed in with'),
+        },
         cell: ({ row }) => (
-          <span className="text-sm">
+          <span className="block truncate">
             {row.original.auth_method === 'idp'
               ? t('admin.sessions.idp', 'Identity provider')
               : t('admin.sessions.methodLocal', 'Password + authenticator')}
@@ -87,8 +112,14 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'ip_address',
         header: t('admin.sessions.col.ip', 'IP address'),
+        meta: {
+          kind: 'text',
+          width: 144,
+          hideBelow: 760,
+          label: t('admin.sessions.col.ip', 'IP address'),
+        },
         cell: ({ row }) => (
-          <span className="text-sm tabular-nums" title={row.original.user_agent}>
+          <span className="block truncate tabular-nums" title={row.original.user_agent}>
             {row.original.ip_address || '-'}
           </span>
         ),
@@ -96,29 +127,43 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'created_at',
         header: t('admin.sessions.col.started', 'Started'),
-        cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+        meta: {
+          kind: 'date',
+          width: 152,
+          hideBelow: 1000,
+          label: t('admin.sessions.col.started', 'Started'),
+        },
+        cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
       },
       {
         accessorKey: 'last_seen_at',
         header: t('admin.sessions.col.lastSeen', 'Last seen'),
-        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} className="text-sm" />,
+        meta: {
+          kind: 'datetime-recent',
+          width: 152,
+          label: t('admin.sessions.col.lastSeen', 'Last seen'),
+        },
+        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
       },
       {
         id: 'actions',
         header: '',
+        meta: { kind: 'actions' },
+        // The one action ends a session: it stays behind the row's menu.
         cell: ({ row }) =>
           row.original.current ? null : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={(e) => {
-                e.stopPropagation()
-                setEnding(row.original)
-              }}
-            >
-              <LogOut className="me-1 size-4" />
-              {t('admin.sessions.end', 'End')}
-            </Button>
+            <DataTableRowActions
+              label={t('admin.sessions.rowActions', 'Actions for the session of {admin}', {
+                admin: row.original.admin_email,
+              })}
+              actions={[
+                {
+                  label: t('admin.sessions.endConfirm', 'End session'),
+                  onClick: () => setEnding(row.original),
+                  destructive: true,
+                },
+              ]}
+            />
           ),
       },
     ],
@@ -137,24 +182,45 @@ export default function AdminSessionsPage() {
         />
         {!isSuper ? (
           <RoleRequiredNotice needed="super_admin" variant="page" />
-        ) : error ? (
-          <ErrorState
-            title={t('admin.securitySessionsPage.sessions', 'sessions')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
         ) : (
-          <DataTable
-            columns={columns}
-            data={data?.data ?? []}
-            getRowId={(s) => s.id}
-            isLoading={isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            emptyMessage={t('admin.sessions.empty', 'No open session')}
-          />
+          <>
+            <ListTitleRow
+              title={t('admin.sessions.viewAll', 'Open sessions')}
+              count={
+                <ListCount
+                  total={sessions.length}
+                  loading={!data}
+                  label={t(
+                    'admin.sessions.total',
+                    '{count, plural, one {# session} other {# sessions}}',
+                    { count: sessions.length }
+                  )}
+                />
+              }
+            />
+            <DataTable
+              columns={columns}
+              data={sessions}
+              caption={t('admin.nav.sessions', 'Sessions')}
+              getRowId={(s) => s.id}
+              error={error}
+              onRetry={() => void mutate()}
+              errorTitle={t('admin.securitySessionsPage.sessions', 'sessions')}
+              isLoading={isLoading && !data}
+              showSearch={false}
+              showSelectionCount={false}
+              mobileCards
+              paginationNoun={t('admin.sessions.noun', 'sessions')}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState
+                    icon={MonitorSmartphone}
+                    title={t('admin.sessions.empty', 'No open session')}
+                  />
+                ),
+              }}
+            />
+          </>
         )}
         {ending && (
           <AdminConfirmDialog
