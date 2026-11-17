@@ -151,6 +151,39 @@ test(
   }
 )
 
+for (const locale of ['en', 'vi'] as const) {
+  test(
+    `768px ${locale}: the toolbar keeps one row, the order moves into Add filter`,
+    { tag: ['@vulnerabilities'] },
+    async ({ page, baseURL }) => {
+      await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
+      await page.setViewportSize({ width: 768, height: 900 })
+      const row = await openList(page, '?state=all')
+      test.skip(!row, `no seeded finding of ${CVE}`)
+      const toolbar = page.locator('main [data-slot="list-toolbar"]:visible').first()
+      const centres = await toolbar
+        .locator(
+          '[data-slot="list-search-input"], [data-slot="add-filter"], [data-slot="filter-select"]'
+        )
+        .evaluateAll((els) =>
+          els
+            .filter((e) => (e as HTMLElement).offsetParent !== null)
+            .map((e) => {
+              const r = e.getBoundingClientRect()
+              return r.top + r.height / 2
+            })
+        )
+      // Search, Add filter and the findings state select: one row.
+      expect(centres.length).toBeGreaterThanOrEqual(3)
+      expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(2)
+      await toolbar.locator('[data-slot="add-filter"]').click()
+      await expect(
+        page.locator('[data-slot="add-filter-panel"] [data-slot="sort-fold"]')
+      ).toBeVisible()
+    }
+  )
+}
+
 test(
   'phone width: a card per row, no horizontal scroll @phone',
   { tag: ['@vulnerabilities'] },
@@ -177,8 +210,11 @@ test(
     const bar = page.getByRole('toolbar', { name: /selected rows/i })
     await expect(bar).toBeVisible()
 
+    // Two direct actions (Create task, Accept risk); Retest and Export are
+    // under the bar's More.
     const download = page.waitForEvent('download')
-    await bar.getByRole('button', { name: 'Export' }).click()
+    await bar.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Export' }).click()
     const file = await download
     const csv = await file.createReadStream().then(
       (stream) =>
@@ -196,7 +232,8 @@ test(
         r.url().includes('/api/v1/vulnerability-exposures/retests') &&
         r.request().method() === 'POST'
     )
-    await bar.getByRole('button', { name: 'Retest' }).click()
+    await bar.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Retest' }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Retest' }).click()
     expect((await retest).status()).toBe(202)
   }
