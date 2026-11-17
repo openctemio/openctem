@@ -526,7 +526,7 @@ function headerHoldsStill(route: Route) {
           const release = await holdBack(page, list.data)
           await page.goto(route)
           await page
-            .locator('main [data-slot="list-title-row"], main [data-slot="list-toolbar"]')
+            .locator('main [data-slot="list-title-row"], main [data-slot="list-toolbar-region"]')
             .first()
             .waitFor({ state: 'visible', timeout: 45_000 })
             .catch(() => undefined)
@@ -1169,7 +1169,7 @@ function benchmarksNeverMoveTheHeader() {
       const order = await page.evaluate(() => {
         const top = (sel: string) =>
           document.querySelector(`main ${sel}`)?.getBoundingClientRect() ?? null
-        const bar = top('[data-slot="list-toolbar"]')
+        const bar = top('[data-slot="list-toolbar-region"]')
         const block = top('[data-slot="table-before-rows"]')
         return { barBottom: bar?.bottom ?? null, blockTop: block?.top ?? null }
       })
