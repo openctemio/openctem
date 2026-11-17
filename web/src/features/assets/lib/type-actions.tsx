@@ -35,6 +35,8 @@ export interface AssetAction {
   /** Every one is needed. */
   permissions: PermissionString[]
   run: (asset: Asset) => Promise<void> | void
+  /** Why the action does not apply to this asset (the menu dims it with this reason). */
+  unavailable?: (asset: Asset) => string | undefined
 }
 
 export interface BulkAssetAction {
@@ -111,6 +113,13 @@ function typeActions(type: string, t: Translate): AssetAction[] {
       icon: RefreshCw,
       permissions: [Permission.AssetsWrite],
       run: (a) => syncRepository(a, t),
+      unavailable: (a) =>
+        canSync(a)
+          ? undefined
+          : t(
+              'assets.actions.syncManualReason',
+              'Added by hand: connect a source-code integration to sync it'
+            ),
     },
   ]
 }

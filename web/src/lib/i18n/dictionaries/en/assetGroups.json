@@ -119,6 +119,7 @@
   "assetGroups.facet.riskScore": "Risk score",
   "assetGroups.filterActions.add": "Add to group",
   "assetGroups.filterActions.addAll": "Add all {count} matching to group",
+  "assetGroups.filterActions.addAllShort": "Add all matching to group",
   "assetGroups.filterActions.addDesc": "Every asset this filter matches that you can see is added, across all pages. They stay in the group when they stop matching.",
   "assetGroups.filterActions.addFailed": "The assets could not be added",
   "assetGroups.filterActions.addTitle": "Add all {count} matching to a group",
