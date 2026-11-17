@@ -498,10 +498,10 @@ reference.
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
   - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a list whose end actions would need more shows them as icons
-    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
-    a tooltip with the same name), so the filter tokens neither shrink nor
-    wrap to a third line.
+    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+    `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
+    tooltip below it, so the filter tokens neither shrink nor wrap to a third
+    line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
