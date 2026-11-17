@@ -1,6 +1,9 @@
 {
   "dashboardKit.action.clearFilters": "Clear filters",
+  "dashboardKit.action.closeDefinition": "Close how this is counted",
   "dashboardKit.action.definition": "How this is counted",
+  "dashboardKit.action.menu": "Actions for {title}",
+  "dashboardKit.action.openList": "Open list",
   "dashboardKit.action.openSettings": "Open settings",
   "dashboardKit.action.retry": "Retry",
   "dashboardKit.action.showChart": "Show chart",
@@ -257,6 +260,7 @@
   "dashboardKit.stat.ofOpen": "of {den} open",
   "dashboardKit.stat.ofTotal": "{num} of {den}",
   "dashboardKit.state.error": "Couldn't load these figures",
+  "dashboardKit.state.errorHint": "The other widgets are not affected.",
   "dashboardKit.state.loading": "Loading",
   "dashboardKit.state.moduleOff": "This feature is turned off",
   "dashboardKit.state.moduleOffHint": "An organization administrator can turn it on in Settings.",

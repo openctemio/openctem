@@ -17,6 +17,7 @@ import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { deltaTone, targetStatus, type DeltaTone, type TargetStatus } from './compare'
 import type { MetricTarget, Polarity, SeriesPoint } from './types'
+import { useWidgetFrame } from './widget-frame-context'
 
 /** True when the person asked the system for reduced motion: charts then do not animate. */
 export function usePrefersReducedMotion(): boolean {
@@ -263,25 +264,35 @@ export function ChartOrTable({
   defaultView?: 'chart' | 'table'
 }) {
   const { t } = useTranslation()
-  const [view, setView] = useState<'chart' | 'table'>(defaultView)
+  // Inside a widget frame the switch is an item of the frame's menu; a
+  // visualization drawn on its own keeps the button.
+  const frame = useWidgetFrame()
+  const registerViews = frame?.registerViews
+  useEffect(() => registerViews?.(defaultView), [registerViews, defaultView])
+  const [own, setOwn] = useState<'chart' | 'table'>(defaultView)
+  const view = frame ? (frame.view ?? defaultView) : own
   const toTable = view === 'chart'
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className={cn('flex items-center gap-2', lead ? 'justify-between' : 'justify-end')}>
-        {lead}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground pointer-coarse:h-11"
-          aria-pressed={!toTable}
-          onClick={() => setView(toTable ? 'table' : 'chart')}
-        >
-          {toTable ? <Table2 aria-hidden /> : <BarChart3 aria-hidden />}
-          {toTable
-            ? t('dashboardKit.action.showTable', 'Show table')
-            : t('dashboardKit.action.showChart', 'Show chart')}
-        </Button>
-      </div>
+      {(lead || !frame) && (
+        <div className={cn('flex items-center gap-2', lead ? 'justify-between' : 'justify-end')}>
+          {lead}
+          {!frame && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground pointer-coarse:h-11"
+              aria-pressed={!toTable}
+              onClick={() => setOwn(toTable ? 'table' : 'chart')}
+            >
+              {toTable ? <Table2 aria-hidden /> : <BarChart3 aria-hidden />}
+              {toTable
+                ? t('dashboardKit.action.showTable', 'Show table')
+                : t('dashboardKit.action.showChart', 'Show chart')}
+            </Button>
+          )}
+        </div>
+      )}
       {view === 'chart' ? (
         <div className="min-h-0 flex-1" role="figure" aria-label={summary}>
           {summary && (

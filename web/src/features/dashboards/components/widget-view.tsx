@@ -192,6 +192,8 @@ export interface WidgetViewProps {
   bare?: boolean
   /** Whose numbers the dashboard shows (the exposure flow names it). */
   scope?: 'organization' | 'personal'
+  /** False for a preview that cannot be operated (the editor's own card has the menu). */
+  menu?: boolean
 }
 
 export function WidgetView({
@@ -206,6 +208,7 @@ export function WidgetView({
   className,
   bare = false,
   scope,
+  menu,
 }: WidgetViewProps) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissionsSafe()
@@ -221,7 +224,7 @@ export function WidgetView({
 
   if (spec?.data.kind === 'note') {
     return (
-      <WidgetFrame title={title} state="ready" actions={actions} className={className}>
+      <WidgetFrame title={title} state="ready" actions={actions} className={className} menu={menu}>
         <MarkdownPreview content={spec.data.text ?? ''} className="text-sm" />
       </WidgetFrame>
     )
@@ -266,6 +269,8 @@ export function WidgetView({
       emptyAction={emptyAction}
       count={count}
       onRetry={model.state === 'error' ? onRetry : undefined}
+      listHref={model.drill}
+      menu={menu}
       actions={actions}
       className={className}
     >
