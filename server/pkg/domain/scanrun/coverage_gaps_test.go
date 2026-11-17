@@ -108,13 +108,13 @@ func TestParseCoverageGaps_EdgeAndVendor(t *testing.T) {
 	}
 }
 
-// host_busy is accepted: a closed-enum value, kept as sent.
-func TestParseCoverageGaps_HostBusy(t *testing.T) {
-	if got, _, ok := NormalizeGapReason(GapReasonHostBusy, ""); !ok || got != GapReasonHostBusy {
-		t.Fatalf("NormalizeGapReason(host_busy) = %q, %v", got, ok)
+// slots_full is accepted: a closed-enum value, kept as sent.
+func TestParseCoverageGaps_SlotsFull(t *testing.T) {
+	if got, _, ok := NormalizeGapReason(GapReasonSlotsFull, ""); !ok || got != GapReasonSlotsFull {
+		t.Fatalf("NormalizeGapReason(slots_full) = %q, %v", got, ok)
 	}
-	gaps, total := ParseCoverageGaps(json.RawMessage(`[{"host":"a.example.com","reason":"host_busy","detail":"limit full"}]`), 1)
-	if total != 1 || len(gaps) != 1 || gaps[0].Reason != GapReasonHostBusy {
+	gaps, total := ParseCoverageGaps(json.RawMessage(`[{"host":"a.example.com","reason":"slots_full","detail":"limit full"}]`), 1)
+	if total != 1 || len(gaps) != 1 || gaps[0].Reason != GapReasonSlotsFull {
 		t.Fatalf("gaps %+v total %d", gaps, total)
 	}
 }
