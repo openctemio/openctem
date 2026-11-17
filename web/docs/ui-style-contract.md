@@ -204,6 +204,34 @@ the phone top bar (the account menu, notifications), which keeps the bar's
 | 2026-11-15 | Popups keep 16 px from every screen edge (phone top-bar sheets keep the bar's 8 px, as the shell package set them)                                                    | Owner                                                         |
 | 2026-11-15 | On a touch screen no popup focuses a text field on open (typing surfaces listed once); a picker sheet follows the visible viewport when the keyboard opens            | Owner                                                         |
 
+## Entry pages
+
+Pages without the app shell (sign-in, sign-up, password and e-mail links,
+two-factor, organization choice, onboarding, invitations, application consent)
+are built from `src/components/entry`, never from `Card` or a hand-rolled
+wrapper:
+
+- **`EntryFrame`** (the route group's layout): the brand, `<main>` in one
+  column of `max-w-entry` (440px; `max-w-entry-wide`, 640px, for a page that
+  lists things), then one footer line with the legal links that are
+  configured, the "powered by" notice and the Language menu. It sets
+  `data-control-scale="entry"`: every control is 36px.
+- **`EntryCard`**: the surface (border, radius 8, padding 24, 14px between
+  blocks). Below 640px the card is the screen: no border, no padding.
+- **`EntryHeader`**: the page's only `<h1>` (`text-page`) and one muted line;
+  `level={2}` for a second card or a step under a page title.
+- **`EntryBanner`** (`info`, `ok`, `warn`, `danger`): ink on the status tint.
+  `danger` and `warn` are `role="alert"`, `info` and `ok` are `role="status"`;
+  a page passes `role` when the message must interrupt.
+- **`EntryDivider`**, **`EntryActions`** (stacked full-width, or `row` for a
+  choice), **`EntryLine`** (centred secondary line), **`EntryNote`** (small
+  print).
+- One primary action per card, the teal fill (`<Button variant="signal">`):
+  an entry page is one call to action. Fields and buttons are the kit's and
+  take no size, padding or text class from the page. Links are `TextLink`.
+- Entry pages change how a flow looks, never what it does: no request,
+  redirect, cookie, message or autofill attribute changes with a restyle.
+
 ## 1. Page anatomy
 
 Every page, top to bottom:

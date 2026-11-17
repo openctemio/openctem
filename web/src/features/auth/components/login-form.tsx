@@ -11,9 +11,8 @@
 import { useEffect, useEffectEvent, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { KeyRound, Loader2, LogIn } from 'lucide-react'
+import { KeyRound, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
@@ -28,7 +27,8 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { EntryBanner, EntryDivider } from '@/components/entry'
+import { TextLink } from '@/components/ui/text-link'
 import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
@@ -385,9 +385,10 @@ export function LoginForm({
 
   if (mfaPurpose) {
     return (
-      <div className={cn('grid gap-3', className)}>
+      <div className={cn('flex flex-col gap-3.5', className)}>
         {pendingDeletionDialog}
         <MfaStep
+          headingLevel={1}
           purpose={mfaPurpose}
           orgs={mfaOrgs}
           onDone={handleLoginResult}
@@ -406,29 +407,33 @@ export function LoginForm({
       <form
         method="post"
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn('flex flex-col gap-3.5', className)}
         {...props}
       >
         {accountExists && (
-          <Alert role="alert" data-testid="login-account-exists">
-            <AlertTitle>{t('auth.accountExists.title')}</AlertTitle>
-            <AlertDescription>
-              <p>{errorMessage}</p>
-              <Link href="/forgot-password" className="font-medium underline underline-offset-4">
-                {t('auth.accountExists.resetPassword')}
-              </Link>
-            </AlertDescription>
-          </Alert>
+          <EntryBanner
+            tone="warn"
+            role="alert"
+            data-testid="login-account-exists"
+            title={t('auth.accountExists.title')}
+          >
+            <p>{errorMessage}</p>
+            <TextLink href="/forgot-password" variant="inline">
+              {t('auth.accountExists.resetPassword')}
+            </TextLink>
+          </EntryBanner>
         )}
 
         {useOrgSso && (
-          <Alert role="alert" data-testid="login-use-org-sso">
-            <AlertTitle>{t('auth.useOrgSso.title')}</AlertTitle>
-            <AlertDescription>
-              <p>{errorMessage}</p>
-              <p>{t('auth.useOrgSso.hint')}</p>
-            </AlertDescription>
-          </Alert>
+          <EntryBanner
+            tone="info"
+            role="alert"
+            data-testid="login-use-org-sso"
+            title={t('auth.useOrgSso.title')}
+          >
+            <p>{errorMessage}</p>
+            <p>{t('auth.useOrgSso.hint')}</p>
+          </EntryBanner>
         )}
 
         {/* Email Field */}
@@ -457,8 +462,13 @@ export function LoginForm({
           control={form.control}
           name="password"
           render={({ field }) => (
-            <FormItem className="relative">
-              <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
+            <FormItem>
+              <div className="flex items-baseline justify-between gap-2">
+                <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
+                <TextLink href="/forgot-password" variant="inline" className="text-dense">
+                  {t('auth.login.forgotPassword', 'Forgot password?')}
+                </TextLink>
+              </div>
               <FormControl>
                 <PasswordInput
                   placeholder={t('auth.login.passwordPlaceholder', 'Enter your password')}
@@ -468,14 +478,6 @@ export function LoginForm({
                 />
               </FormControl>
               <FormMessage />
-
-              {/* Forgot Password Link */}
-              <Link
-                href="/forgot-password"
-                className="text-muted-foreground absolute end-0 -top-0.5 text-sm font-medium hover:opacity-75 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-              >
-                {t('auth.login.forgotPassword', 'Forgot password?')}
-              </Link>
             </FormItem>
           )}
         />
@@ -491,8 +493,8 @@ export function LoginForm({
         {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
 
         {/* Submit Button */}
-        <Button className="mt-2" disabled={isLoading} type="submit">
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+        <Button variant="signal" disabled={isLoading} type="submit">
+          {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
           {t('auth.login.submit', 'Sign in')}
         </Button>
 
@@ -501,23 +503,9 @@ export function LoginForm({
             block including the "or continue with" divider is hidden. */}
         {showSocialLogin && enabledSocialProviders.length > 0 && (
           <>
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.login.orContinueWith', 'Or continue with')}
-                </span>
-              </div>
-            </div>
+            <EntryDivider>{t('auth.login.orContinueWith', 'Or continue with')}</EntryDivider>
 
-            <div
-              className="grid gap-2"
-              style={{
-                gridTemplateColumns: `repeat(${enabledSocialProviders.length}, minmax(0, 1fr))`,
-              }}
-            >
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
               {enabledSocialProviders.map((provider) => (
                 <Button
                   key={provider.id}
@@ -525,14 +513,13 @@ export function LoginForm({
                   type="button"
                   disabled={isLoading}
                   onClick={() => handleSocialLogin(provider.id)}
-                  className="relative"
                 >
                   {loadingProvider === provider.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 aria-hidden className="size-4 animate-spin" />
                   ) : (
-                    <provider.icon className="h-4 w-4" />
+                    <provider.icon className="size-4" />
                   )}
-                  <span className="sr-only">{provider.name}</span>
+                  <span>{provider.name}</span>
                 </Button>
               ))}
             </div>
@@ -542,16 +529,7 @@ export function LoginForm({
         {/* SSO Providers (when ?org= parameter is present) */}
         {ssoOrg && ssoProviders && ssoProviders.length > 0 && (
           <>
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.login.ssoSection', 'Organization SSO')}
-                </span>
-              </div>
-            </div>
+            <EntryDivider>{t('auth.login.ssoSection', 'Organization SSO')}</EntryDivider>
 
             <div className="grid gap-2">
               {ssoProviders.map((provider) => {
@@ -571,9 +549,9 @@ export function LoginForm({
                     title={label}
                   >
                     {loadingSSOProvider === provider.provider ? (
-                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                      <Loader2 aria-hidden className="size-4 animate-spin" />
                     ) : (
-                      <KeyRound className="me-2 h-4 w-4" />
+                      <KeyRound aria-hidden className="size-4" />
                     )}
                     <span className="truncate">{label}</span>
                   </Button>
