@@ -657,6 +657,11 @@
   /* max-w-settings: the settings column (SettingsPage). */
   --container-settings: var(--settings-col);
 
+  /* Entry pages (no app shell): the width of the one card (max-w-entry) and
+     of an entry page that lists things (max-w-entry-wide). */
+  --container-entry: 27.5rem;
+  --container-entry-wide: 40rem;
+
   /* Control and row heights: h-control, h-control-sm, h-control-seg,
      h-control-xs, h-control-entry, h-control-touch, h-control-field,
      h-control-dense (28 in a dense place, 32 elsewhere), h-row

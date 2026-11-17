@@ -241,6 +241,35 @@ describe('LoginForm two-factor step', () => {
     const user = await signIn()
     await user.type(await screen.findByLabelText('Authentication code'), '123456')
     expect(await screen.findByLabelText('Password')).toBeInTheDocument()
+    // The text the page has always shown for MFA_CHALLENGE_INVALID (the catalog's, not the API's).
+    expect(screen.getByTestId('login-notice')).toHaveTextContent(
+      'Your sign-in verification expired. Sign in again.'
+    )
+  })
+
+  // The refusal is drawn in the card above the form (persistent, an alert the
+  // form points to) with the text the page always gave it; a new attempt
+  // takes it away until its own answer comes.
+  it('shows a refused sign-in in the card and clears it on the next attempt', async () => {
+    // The second attempt is held open so its in-flight state can be seen; it is
+    // answered at the end, since React keeps later transitions waiting on it.
+    let answer: (v: unknown) => void = () => {}
+    loginAction
+      .mockResolvedValueOnce({ success: false, code: 'ORGANIZATION_SUSPENDED', error: 'x' })
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const user = await signIn()
+    const notice = await screen.findByTestId('login-notice')
+    expect(notice).toHaveAttribute('role', 'alert')
+    expect(notice).toHaveTextContent('This organization is suspended. Contact support.')
+    expect(notice.closest('form')).toHaveAttribute('aria-describedby', notice.id)
+    expect(toast.error).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => expect(screen.queryByTestId('login-notice')).not.toBeInTheDocument())
+    expect(loginAction).toHaveBeenCalledTimes(2)
+    answer({ success: false, code: 'ORGANIZATION_SUSPENDED', error: 'x' })
+    expect(await screen.findByTestId('login-notice')).toHaveTextContent(
+      'This organization is suspended. Contact support.'
+    )
   })
 
   it('forced enrollment: QR, code, recovery codes, then continue', async () => {
@@ -305,25 +334,34 @@ describe('LoginForm ?error= message', () => {
   it('shows the message of a known code', () => {
     withParams('error=callback_failed')
     render(<LoginForm />)
-    expect(toast.error).toHaveBeenCalledWith(
+    const notice = screen.getByTestId('login-notice')
+    expect(notice).toHaveAttribute('role', 'alert')
+    expect(notice).toHaveTextContent(
       'Sign-in could not be completed. Try again, or contact your administrator.'
     )
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
-  it('announces why the session ended once, and not again on a re-render', () => {
+  it('says why the session ended in the card, once, tied to the form', () => {
     vi.mocked(toast.info).mockClear()
     withParams('reason=mfa_required')
-    const { rerender } = render(<LoginForm />)
-    expect(toast.info).toHaveBeenCalledTimes(1)
+    const { rerender, container } = render(<LoginForm />)
     rerender(<LoginForm />)
-    expect(toast.info).toHaveBeenCalledTimes(1)
+    const notices = screen.getAllByTestId('login-notice')
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toHaveAttribute('role', 'alert')
+    expect(notices[0]).toHaveTextContent(
+      'An organization you belong to requires two-factor authentication. Sign in to set it up.'
+    )
+    expect(container.querySelector('form')).toHaveAttribute('aria-describedby', notices[0].id)
+    expect(toast.info).not.toHaveBeenCalled()
   })
 
   it('never shows attacker-chosen text', () => {
     withParams('error=' + encodeURIComponent('Account locked. Call +1 555 0100 now'))
     render(<LoginForm />)
-    expect(toast.error).toHaveBeenCalledTimes(1)
-    expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
+    expect(screen.getByTestId('login-notice')).toHaveTextContent(/^Sign-in failed\. Try again\.$/)
+    expect(screen.queryByText(/555 0100/)).not.toBeInTheDocument()
   })
 
   // Google sign-in for an address that already has a password account (prod
