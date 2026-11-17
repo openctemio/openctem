@@ -355,7 +355,7 @@ var plainValueRE = regexp.MustCompile(`^[A-Za-z0-9_.+-]{1,32}$`)
 // is registered, is not a secret, is of a type or name on the allow-list, and
 // the value is a short plain word or number.
 func shownValue(v config.EnvVar, value string) bool {
-	if v.Secret || !(shownTypes[v.Type] || shownStrings[v.Name]) {
+	if v.Secret || (!shownTypes[v.Type] && !shownStrings[v.Name]) {
 		return false
 	}
 	return plainValueRE.MatchString(value)
@@ -642,93 +642,127 @@ func safeWord(v string, red *redact.Redactor) string {
 // result is cut to a fixed length. A statement cut off inside a literal (the
 // server truncates long statements) loses everything from that literal on.
 func QueryShape(q string) string {
-	var b strings.Builder
-	n := len(q)
-	i := 0
-	prevWord := false
-	for i < n && b.Len() < maxShapeLen {
-		c := q[i]
-		switch {
-		case c == '\'':
-			// An E'...' literal has backslash escapes; a plain one does not.
-			escapes := i > 0 && (q[i-1] == 'E' || q[i-1] == 'e') && (i < 2 || !isIdentStart(q[i-2]))
-			end, ok := endOfString(q, i, escapes)
-			b.WriteByte('?')
-			if !ok {
-				return strings.TrimSpace(b.String())
-			}
-			i = end
-			prevWord = false
-		case c == '$' && i+1 < n && (q[i+1] == '$' || isIdentStart(q[i+1])):
-			tagEnd := strings.IndexByte(q[i+1:], '$')
-			if tagEnd < 0 || !isTag(q[i+1:i+1+tagEnd]) {
-				b.WriteByte(c)
-				i++
-				continue
-			}
-			tag := q[i : i+tagEnd+2]
-			closing := strings.Index(q[i+len(tag):], tag)
-			b.WriteByte('?')
-			if closing < 0 {
-				return strings.TrimSpace(b.String())
-			}
-			i += len(tag) + closing + len(tag)
-			prevWord = false
-		case c == '-' && i+1 < n && q[i+1] == '-':
-			nl := strings.IndexByte(q[i:], '\n')
-			if nl < 0 {
-				return strings.TrimSpace(b.String())
-			}
-			i += nl
-		case c == '/' && i+1 < n && q[i+1] == '*':
-			end := strings.Index(q[i+2:], "*/")
-			if end < 0 {
-				return strings.TrimSpace(b.String())
-			}
-			i += end + 4
-			if t := b.String(); len(t) > 0 && t[len(t)-1] != ' ' {
-				b.WriteByte(' ')
-			}
-		case c == '"':
-			// A quoted identifier is schema, not data, unless it is not a
-			// plain name.
-			end := strings.IndexByte(q[i+1:], '"')
-			if end < 0 {
-				return strings.TrimSpace(b.String())
-			}
-			name := q[i+1 : i+1+end]
-			if schemaNameRE.MatchString(name) {
-				b.WriteString(`"` + name + `"`)
-			} else {
-				b.WriteString(`"?"`)
-			}
-			i += end + 2
-			prevWord = false
-		case c >= '0' && c <= '9' && !prevWord:
-			for i < n && (q[i] == '.' || q[i] == 'e' || q[i] == 'E' || q[i] == 'x' || (q[i] >= '0' && q[i] <= '9') || (q[i] >= 'a' && q[i] <= 'f') || (q[i] >= 'A' && q[i] <= 'F')) {
-				i++
-			}
-			b.WriteByte('?')
-		case c == ' ' || c == '\n' || c == '\t' || c == '\r':
-			if s := b.String(); len(s) > 0 && s[len(s)-1] != ' ' {
-				b.WriteByte(' ')
-			}
-			i++
-			prevWord = false
-		default:
-			// Only ASCII passes: a statement's own words are ASCII, and
-			// anything else is data that slipped through.
-			if c < 0x20 || c > 0x7e {
-				b.WriteByte('?')
-			} else {
-				b.WriteByte(c)
-			}
-			// "$1" and "t1": a digit after one of these belongs to the word.
-			prevWord = isIdentStart(c) || (c >= '0' && c <= '9') || c == '$'
-			i++
-		}
+	sh := shaper{q: q}
+	for sh.i < len(q) && sh.b.Len() < maxShapeLen && sh.step() {
 	}
-	return strings.TrimSpace(b.String())
+	return strings.TrimSpace(sh.b.String())
+}
+
+// shaper walks a statement for QueryShape. prevWord says the last byte
+// written belongs to a word, so a digit after it is part of that word ("t1",
+// "$1") and not a number.
+type shaper struct {
+	q        string
+	i        int
+	b        strings.Builder
+	prevWord bool
+}
+
+// step consumes one token and reports whether to go on (false: the rest of
+// the statement is inside something that never closes).
+func (sh *shaper) step() bool {
+	q, i, n := sh.q, sh.i, len(sh.q)
+	c := q[i]
+	switch {
+	case c == '\'':
+		return sh.literal()
+	case c == '$' && i+1 < n && (q[i+1] == '$' || isIdentStart(q[i+1])):
+		return sh.dollar()
+	case c == '-' && i+1 < n && q[i+1] == '-':
+		nl := strings.IndexByte(q[i:], '\n')
+		if nl < 0 {
+			return false
+		}
+		sh.i += nl
+	case c == '/' && i+1 < n && q[i+1] == '*':
+		end := strings.Index(q[i+2:], "*/")
+		if end < 0 {
+			return false
+		}
+		sh.i += end + 4
+		sh.space()
+	case c == '"':
+		return sh.quotedIdent()
+	case c >= '0' && c <= '9' && !sh.prevWord:
+		for sh.i < n && isNumberByte(q[sh.i]) {
+			sh.i++
+		}
+		sh.b.WriteByte('?')
+	case c == ' ' || c == '\n' || c == '\t' || c == '\r':
+		sh.space()
+		sh.i++
+		sh.prevWord = false
+	default:
+		// Only ASCII passes: a statement's own words are ASCII, and
+		// anything else is data that slipped through.
+		if c < 0x20 || c > 0x7e {
+			sh.b.WriteByte('?')
+		} else {
+			sh.b.WriteByte(c)
+		}
+		sh.prevWord = isIdentStart(c) || (c >= '0' && c <= '9') || c == '$'
+		sh.i++
+	}
+	return true
+}
+
+func (sh *shaper) space() {
+	if t := sh.b.String(); len(t) > 0 && t[len(t)-1] != ' ' {
+		sh.b.WriteByte(' ')
+	}
+}
+
+// literal replaces a string literal. An E'...' literal has backslash
+// escapes; a plain one does not.
+func (sh *shaper) literal() bool {
+	q, i := sh.q, sh.i
+	escapes := i > 0 && (q[i-1] == 'E' || q[i-1] == 'e') && (i < 2 || !isIdentStart(q[i-2]))
+	end, ok := endOfString(q, i, escapes)
+	sh.b.WriteByte('?')
+	sh.i, sh.prevWord = end, false
+	return ok
+}
+
+// dollar replaces a dollar-quoted body ($$...$$, $tag$...$tag$); a "$name"
+// that opens no body is copied.
+func (sh *shaper) dollar() bool {
+	q, i := sh.q, sh.i
+	tagEnd := strings.IndexByte(q[i+1:], '$')
+	if tagEnd < 0 || !isTag(q[i+1:i+1+tagEnd]) {
+		sh.b.WriteByte('$')
+		sh.i++
+		sh.prevWord = true
+		return true
+	}
+	tag := q[i : i+tagEnd+2]
+	closing := strings.Index(q[i+len(tag):], tag)
+	sh.b.WriteByte('?')
+	if closing < 0 {
+		return false
+	}
+	sh.i, sh.prevWord = i+len(tag)+closing+len(tag), false
+	return true
+}
+
+// quotedIdent copies a quoted identifier that is a plain name (schema, not
+// data) and replaces any other.
+func (sh *shaper) quotedIdent() bool {
+	q, i := sh.q, sh.i
+	end := strings.IndexByte(q[i+1:], '"')
+	if end < 0 {
+		return false
+	}
+	if name := q[i+1 : i+1+end]; schemaNameRE.MatchString(name) {
+		sh.b.WriteString(`"` + name + `"`)
+	} else {
+		sh.b.WriteString(`"?"`)
+	}
+	sh.i, sh.prevWord = i+end+2, false
+	return true
+}
+
+func isNumberByte(c byte) bool {
+	return c == '.' || c == 'x' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 // endOfString returns the index after the closing quote of the literal that
@@ -758,7 +792,7 @@ func isIdentStart(c byte) bool {
 
 func isTag(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if !isIdentStart(s[i]) && !(i > 0 && s[i] >= '0' && s[i] <= '9') {
+		if !isIdentStart(s[i]) && (i == 0 || s[i] < '0' || s[i] > '9') {
 			return false
 		}
 	}

@@ -85,7 +85,7 @@ func seedInstallation(t *testing.T, db *sql.DB) {
 	t.Helper()
 	exec := func(q string, args ...any) {
 		t.Helper()
-		if _, err := db.Exec(q, args...); err != nil {
+		if _, err := db.ExecContext(context.Background(), q, args...); err != nil {
 			t.Fatalf("seed: %v\n%s", err, q)
 		}
 	}
@@ -118,18 +118,18 @@ func recordMigrations(t *testing.T, db *sql.DB, migs []migrate.Migration) {
 		`TRUNCATE schema_migrations, schema_migrations_applied`,
 	}
 	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
+		if _, err := db.ExecContext(context.Background(), s); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var highest int64
 	for _, m := range migs {
-		if _, err := db.Exec(`INSERT INTO schema_migrations_applied (version, name) VALUES ($1, $2)`, m.Version, m.Name); err != nil {
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO schema_migrations_applied (version, name) VALUES ($1, $2)`, m.Version, m.Name); err != nil {
 			t.Fatal(err)
 		}
 		highest = max(highest, m.Version)
 	}
-	if _, err := db.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES ($1, false)`, highest); err != nil {
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO schema_migrations (version, dirty) VALUES ($1, false)`, highest); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -162,7 +162,7 @@ func TestBundle_SeededInstallationLeaksNothing(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%pg_sleep(60)%' AND state = 'active' AND pid <> pg_backend_pid()`).Scan(&n); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity WHERE query LIKE '%pg_sleep(60)%' AND state = 'active' AND pid <> pg_backend_pid()`).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		if n > 0 {
@@ -340,13 +340,13 @@ func TestBundle_SeededInstallationLeaksNothing(t *testing.T) {
 	}
 
 	// 4. Pending and dirty migrations are failures with a fix.
-	if _, err := db.Exec(`DELETE FROM schema_migrations_applied WHERE version = $1`, migs[len(migs)-1].Version); err != nil {
+	if _, err := db.ExecContext(ctx, `DELETE FROM schema_migrations_applied WHERE version = $1`, migs[len(migs)-1].Version); err != nil {
 		t.Fatal(err)
 	}
 	if c := deps.checkMigrations(ctx); c.Status != StatusFail || !strings.Contains(c.Summary, "1 of its") || c.Fix == "" {
 		t.Errorf("one pending migration: %+v", c)
 	}
-	if _, err := db.Exec(`UPDATE schema_migrations SET dirty = true`); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE schema_migrations SET dirty = true`); err != nil {
 		t.Fatal(err)
 	}
 	if c := deps.checkMigrations(ctx); c.Status != StatusFail || !strings.Contains(c.Summary, "dirty") {
@@ -358,18 +358,19 @@ func TestBundle_SeededInstallationLeaksNothing(t *testing.T) {
 // statistic runs in refuses writes and cuts long statements.
 func TestReadOnly_NothingCanBeWritten(t *testing.T) {
 	db := testdb.EmptyDatabase(t, "diag_ro")
-	if _, err := db.Exec(`CREATE TABLE probe (n int)`); err != nil {
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `CREATE TABLE probe (n int)`); err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
 	for _, stmt := range []string{
 		`INSERT INTO probe VALUES (1)`, `UPDATE probe SET n = 2`, `DELETE FROM probe`, `TRUNCATE probe`,
 		`CREATE TABLE other (n int)`, `DROP TABLE probe`, `SET TRANSACTION READ WRITE`,
 	} {
 		err := ReadOnly(ctx, db, time.Second, func(q Querier) error {
-			rows, err := q.QueryContext(ctx, stmt)
-			if err == nil {
-				_ = rows.Close()
+			var discard any
+			err := q.QueryRowContext(ctx, stmt).Scan(&discard)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
 			}
 			return err
 		})
@@ -378,7 +379,7 @@ func TestReadOnly_NothingCanBeWritten(t *testing.T) {
 		}
 	}
 	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM probe`).Scan(&n); err != nil || n != 0 {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM probe`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("probe has %d rows (%v), want the empty table untouched", n, err)
 	}
 

@@ -179,8 +179,9 @@ func (r *Redactor) rest(s string, hosts bool) string {
 	// bearer tokens, key=value secrets, well-known token formats): the
 	// platform's one secret finder.
 	s = r.replaceSpans(s, func(s string) []span {
-		var out []span
-		for _, f := range safetext.FindSecrets(s) {
+		found := safetext.FindSecrets(s)
+		out := make([]span, 0, len(found))
+		for _, f := range found {
 			out = append(out, span{f.Start, f.End, r.Mark(KindSecret, s[f.Start:f.End])})
 		}
 		return out
