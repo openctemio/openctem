@@ -1,31 +1,48 @@
-# Editions: where paid-feature code goes
+# Extensions: where extension code goes
 
-This repository is the open core and the only place product code is written.
-Paid features live in a separate extension repository; the Enterprise build
-is one custom build of OpenCTEM: its own Go module that imports this core's
-public packages and its extension, and calls `server.Main()`. The Community
-build never contains extension code.
+OpenCTEM can be built with extensions: code written against the public
+extension API and compiled into a build. A build with extensions is its own Go
+module that imports this core's public packages and its extensions, and calls
+`server.Main()` ([extension API](extension-api.md)). The default build, the
+images built from this repository, contains no extension.
 
-**Rule: paid-feature code is written only in its extension repository. The
-core gets generic extension points and the grant seam only.** Never push
+**Rule: an extension's code is written in the extension's own repository. This
+repository gets generic extension points and the grant seam only.** Never push
 extension code here, not even to a branch.
 
-## What lands here for a paid feature
+## Extension points and grants
 
-1. An entitlement key, registered in [`pkg/domain/limits`](../../pkg/domain/limits/registry.go)
+An extension point is a named, documented seam in the core with a default that
+does nothing. A grant is something that is off unless a build's grant provider
+grants it; the default build has no provider, so nothing is granted and nothing
+depends on a grant. Anyone can use both to add an optional module to their own
+build.
+
+What lands here when an optional module needs something from the core:
+
+1. A key, registered in [`pkg/domain/limits`](../../pkg/domain/limits/registry.go)
    with a description. `tests/unit/entitlement_keys_test.go` fails on a key
    without one, on a key built from a string literal, and on an unknown key.
-2. A generic extension point (an interface with a Community default that does
-   nothing), consulted through the entitlement service
-   ([limits and feature denies](../architecture/limits.md)). Checking a plan,
-   tier or edition by name is refused by the same test file.
-3. Tests that Community behaviour is unchanged.
+2. A generic extension point (an interface whose default does nothing),
+   consulted through the entitlement service
+   ([limits and feature denies](../architecture/limits.md)). The core asks
+   only that service; the same test file refuses a check of anything else by
+   name.
+3. Tests that the default build's behaviour is unchanged.
+
+Guard rails that hold for every extension point and every grant:
+
+- a grant only adds: it never yields a limit or a deny, and a failing provider
+  leaves grants off without changing anything else;
+- sign-in, SSO, MFA, audit and security controls are never behind a grant;
+- the default build renders nothing for an absent module: no locked items and
+  no placeholders.
 
 ## Extension-point locations (maintainer review via CODEOWNERS)
 
 | Path | Role |
 |---|---|
-| `server/pkg/extension/` | the public back-end extension API (created with its first point) |
+| `server/pkg/extension/` | the public back-end extension API |
 | `server/pkg/server/` | `Main()`, the entry point a custom build calls from its own Go module |
 | `server/pkg/domain/limits/` | limit keys and their descriptions, and the grant seam |
 | `web/src/lib/extension/`, `web/src/extension-default/` | the public web extension API and the empty modules the `@extension/*` alias resolves to in the default build |
@@ -37,7 +54,7 @@ A build with extensions is its own Go module: it requires
 and its dependencies stay in its own `go.mod`. Nothing of an extension's Go
 code is ever placed in a checkout of this repository.
 
-## The edition fence
+## The core boundary check
 
 `.github/scripts/check-edition-fence.sh` runs in CI (check **Edition fence**,
 workflow `edition-fence.yml`) and in `.githooks/pre-commit`. It reads the git
@@ -62,8 +79,8 @@ hand: `bash .github/scripts/check-edition-fence.sh`; its tests:
 
 ## Extension data in the database
 
-An extension keeps its tables in its own schema. The core is written so that a
-Community build runs unchanged on a database that also holds such a schema (a
+An extension keeps its tables in its own schema. The core is written so that
+the default build runs unchanged on a database that also holds such a schema (a
 rollback, or a restored backup): every core probe of the catalog is limited to
 the core schema, and nothing in the core reads another schema
 (`internal/migrate/extension_schema_db_test.go` proves migrate up and down, the
@@ -79,6 +96,6 @@ under the new key (`TestRekey_SweepCoversExtensionSchemas`).
 
 ## Extension-point checklist
 
-The pull request template carries the list: named by function with a
-Community default and a first user, covered by the example extension and a
-contract test, never gated by plan, tier, edition or brand name.
+The pull request template carries the list: named by function with a default
+that keeps today's behaviour and a first user, covered by the example
+extension and a contract test, gated only through a grant.
