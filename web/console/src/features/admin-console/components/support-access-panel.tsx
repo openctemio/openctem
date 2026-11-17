@@ -303,7 +303,7 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
                   ))}
                 </div>
                 <p className="text-sm break-words">{g.reason}</p>
-                <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                <p className="flex flex-wrap gap-x-3 text-cap text-muted-foreground">
                   <span>
                     {t('admin.support.until', 'Until {time}', {
                       time: formatSupportTime(g.expires_at, locale),

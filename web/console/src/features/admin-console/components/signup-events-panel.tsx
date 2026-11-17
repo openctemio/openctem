@@ -136,7 +136,7 @@ export function SignupEventsPanel() {
         header: t('admin.signups.col.domain'),
         meta: { kind: 'text', width: 200, label: t('admin.signups.col.domain') },
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs" title={row.original.email_domain}>
+          <span className="block truncate font-mono text-code" title={row.original.email_domain}>
             {row.original.email_domain || '—'}
           </span>
         ),
@@ -151,7 +151,9 @@ export function SignupEventsPanel() {
           label: t('admin.signups.col.network'),
         },
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-xs">{row.original.ip_prefix || '—'}</span>
+          <span className="block truncate font-mono text-code">
+            {row.original.ip_prefix || '—'}
+          </span>
         ),
       },
       {
