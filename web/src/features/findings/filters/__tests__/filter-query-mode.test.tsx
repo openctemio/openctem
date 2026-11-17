@@ -126,6 +126,48 @@ describe('the findings Query mode and the URL', () => {
     expect(next.get('state')).toBe('all')
   })
 
+  describe('with a saved view open', () => {
+    const VIEW = 'view=0b0e7a52-6c1f-4f0e-9d0a-1c2b3d4e5f60'
+
+    it("a text that leaves state and practice out keeps the view's own (nothing written)", () => {
+      const next = applyTextFilter(
+        new URLSearchParams(`${VIEW}&mode=query`),
+        skip,
+        RECORDED.kevOnly
+      )
+      expect(next.toString()).toBe(`${VIEW}&mode=query&is_in_kev=true`)
+    })
+
+    it('a text that says them writes them on top of the view', () => {
+      const next = applyTextFilter(new URLSearchParams(VIEW), skip, RECORDED.printed)
+      expect(next.get('state')).toBe('open')
+      expect(next.get('practice')).toBe('vulnerabilities')
+      expect(next.get('view')).toBe(VIEW.slice(5))
+    })
+
+    it("a lens or a practice the URL set on top of the view is still the text's to drop", () => {
+      const next = applyTextFilter(
+        new URLSearchParams(`${VIEW}&state=open&practice=cloud`),
+        skip,
+        RECORDED.kevOnly
+      )
+      expect(next.get('state')).toBe('all')
+      expect(next.get('practice')).toBe('all')
+    })
+
+    it('an empty text goes back to the view alone', () => {
+      expect(
+        applyTextFilter(new URLSearchParams(`${VIEW}&severity=low`), skip, result({})).toString()
+      ).toBe(VIEW)
+    })
+
+    it('view=verify (the queue, not a saved view) keeps the plain rule', () => {
+      const next = applyTextFilter(new URLSearchParams('view=verify'), skip, RECORDED.kevOnly)
+      expect(next.get('state')).toBe('all')
+      expect(next.get('practice')).toBe('all')
+    })
+  })
+
   it('an empty text clears the filter, state and practice included', () => {
     expect(
       applyTextFilter(new URLSearchParams('severity=low&sort=x'), skip, result({})).toString()

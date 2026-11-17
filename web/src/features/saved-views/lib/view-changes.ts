@@ -61,6 +61,9 @@ export function viewChanges(input: ViewChangeInput): ViewChange[] {
     if (have && sameList(have, values)) continue
     added += 1
   }
+  // A filter chips cannot show (query text applied on top of the view) is
+  // one more filter, though the chips row draws it by itself.
+  if ((search.get('fq') ?? '').trim() !== '') added += 1
   if (added > 0) changes.push({ kind: 'filters', count: added })
 
   const doc = view.filter as { q?: unknown; sort?: unknown }
