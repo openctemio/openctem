@@ -310,6 +310,13 @@ func run() int {
 	repos.InitIntegrationExtensions(db)
 	log.Info("repositories initialized")
 
+	// A production server with SAML sign-in enabled and no APP_URL does not
+	// start: the SAML audience and URLs are built on APP_URL only.
+	if err := requireSAMLPublicURL(ctx, db.DB, cfg); err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
 	// ==========================================================================
 	// Services
 	// ==========================================================================
