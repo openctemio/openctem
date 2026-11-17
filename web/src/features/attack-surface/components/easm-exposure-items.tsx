@@ -37,6 +37,7 @@ import {
   EmptyState,
   ErrorState,
   FilterSelect,
+  FilterToggle,
   MetricStrip,
   RelativeTime,
   SeverityBadge,
@@ -691,15 +692,12 @@ export function EASMExposureItems() {
         options={monitoringOptions}
         onChange={(v) => setFilter('monitoring', v)}
       />
-      <Button
-        variant={filters.primaryOnly ? 'secondary' : 'outline'}
-        size="sm"
-        aria-pressed={!!filters.primaryOnly}
-        onClick={() => setFilter('primary', filters.primaryOnly ? '' : 'true')}
-      >
-        <Star className="me-2 h-4 w-4" aria-hidden />
-        {t('attackSurface.exposures.filter.primary', 'Primary assets')}
-      </Button>
+      <FilterToggle
+        label={t('attackSurface.exposures.filter.primary', 'Primary assets')}
+        icon={Star}
+        pressed={!!filters.primaryOnly}
+        onPressedChange={(on) => setFilter('primary', on ? 'true' : '')}
+      />
     </>
   )
   const toolbarEnd = (
