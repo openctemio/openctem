@@ -2120,6 +2120,7 @@
   "scans.runZoneSplit.refused": "Not started",
   "scans.runZoneSplit.targets": "{count} target(s)",
   "scans.runZoneSplit.title": "Scan zones",
+  "scans.runs.card.findings": "{count, plural, one {# finding} other {# findings}}",
   "scans.runs.colDuration": "Duration",
   "scans.runs.colFindings": "Findings",
   "scans.runs.colScan": "Scan",
