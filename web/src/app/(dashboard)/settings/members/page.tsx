@@ -3,13 +3,11 @@
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Main } from '@/components/layout'
 import {
-  PageHeader,
+  SettingsPage,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
-  MetricStrip,
   DetailCallout,
   DetailCopyId,
   DetailField,
@@ -18,12 +16,12 @@ import {
   DetailSheet,
   DetailStat,
   DetailStatGrid,
-  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { HealthStatus } from '@/components/ui/health-status'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
@@ -48,6 +46,7 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
+import { useJoinRequests } from '@/features/organization/api/use-domain-signup'
 import type { RowAction } from '@/features/shared/components/data-table-row-actions'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
@@ -163,16 +162,10 @@ const roleFilters: { value: RoleFilter; key: string; en: string }[] = [
   { value: 'viewer', key: 'org.role.viewer', en: 'Viewer' },
 ]
 
-// Helper functions
-const getInitials = (name: string) => {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-}
+// The lists of the page, one tab each; the tab is in the URL (`?tab=`).
+type MemberTab = 'members' | 'invitations' | 'requests'
 
+// Helper functions
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -220,18 +213,11 @@ function MemberStatusBadge({ status, pendingSetup }: { status: string; pendingSe
     ? t(MEMBER_STATUS_KEY[status].key, MEMBER_STATUS_KEY[status].en)
     : (STATUS_DISPLAY[status as keyof typeof STATUS_DISPLAY]?.label ?? status)
   return (
-    <Badge
-      variant={status === 'active' ? 'secondary' : 'outline'}
-      className={
-        status === 'suspended'
-          ? 'border-destructive/40 text-destructive'
-          : status === 'offboarded'
-            ? 'text-muted-foreground'
-            : undefined
-      }
-    >
-      {label}
-    </Badge>
+    <HealthStatus
+      state={status === 'active' ? 'ok' : status === 'suspended' ? 'paused' : 'off'}
+      label={label}
+      value={status}
+    />
   )
 }
 
@@ -636,6 +622,7 @@ export default function UsersPage() {
     ? (roleParam as RoleFilter)
     : 'all'
   const debouncedSearch = useSearchQuery(searchQuery).term
+  const [tabParam, setTabParam] = useUrlFilter('tab', 'members')
 
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the
@@ -801,40 +788,49 @@ export default function UsersPage() {
   const columns: ColumnDef<MemberWithUser>[] = [
     {
       accessorKey: 'name',
+      meta: { kind: 'name', label: t('org.membersPage.col.user', 'User') },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.user', 'User')} />
       ),
       cell: ({ row }) => (
         <div
           className={cn(
-            'flex items-center gap-3',
+            'flex min-w-0 items-center gap-2',
             isDeactivated(row.original.status) && 'opacity-60'
           )}
         >
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs">{getInitials(row.original.name)}</AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium">
-              {row.original.name}
-              {isDeactivated(row.original.status) && (
-                <span className="text-muted-foreground ms-1 text-xs font-normal">
-                  {t('org.membersPage.deactivated', '(deactivated)')}
-                </span>
-              )}
-            </p>
-            <p className="text-muted-foreground text-xs">{row.original.email}</p>
-            <MemberBadges
-              member={row.original}
-              ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
-              className="mt-1"
-            />
-          </div>
+          <button
+            type="button"
+            className="min-w-0 shrink truncate text-start font-medium underline-offset-3 hover:underline focus-visible:underline focus-visible:outline-none"
+            title={`${row.original.name} ${row.original.email}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedMember(row.original)
+            }}
+          >
+            {row.original.name || row.original.email}
+          </button>
+          {isDeactivated(row.original.status) && (
+            <span className="shrink-0 text-cap text-muted-foreground">
+              {t('org.membersPage.deactivated', '(deactivated)')}
+            </span>
+          )}
+          <MemberBadges
+            member={row.original}
+            ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
+            className="shrink-0"
+          />
+          {row.original.name && (
+            <span className="min-w-0 flex-1 truncate text-cap text-muted-foreground">
+              {row.original.email}
+            </span>
+          )}
         </div>
       ),
     },
     {
       accessorKey: 'role',
+      meta: { kind: 'tags', label: t('org.membersPage.col.roles', 'Roles') },
       header: t('org.membersPage.col.roles', 'Roles'),
       enableSorting: false,
       cell: ({ row }) => {
@@ -843,6 +839,7 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'joined_at',
+      meta: { kind: 'date', label: t('org.membersPage.col.joined', 'Joined'), hideBelow: 1100 },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.joined', 'Joined')} />
       ),
@@ -852,6 +849,7 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'last_login_at',
+      meta: { kind: 'date', label: t('org.membersPage.col.lastActive', 'Last active') },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -866,6 +864,7 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'status',
+      meta: { kind: 'status', label: t('org.membersPage.col.status', 'Status'), width: 160 },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.status', 'Status')} />
       ),
@@ -890,7 +889,8 @@ export default function UsersPage() {
       ? [
           {
             id: 'mfa',
-            header: '2FA',
+            meta: { kind: 'status', label: t('org.membersPage.col.twoFactor', 'Two-factor') },
+            header: t('org.membersPage.col.twoFactor', 'Two-factor'),
             enableSorting: false,
             cell: ({ row }) => <MemberMfaBadge status={row.original.mfa_status} />,
           } satisfies ColumnDef<MemberWithUser>,
@@ -898,6 +898,7 @@ export default function UsersPage() {
       : []),
     {
       id: 'actions',
+      meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -1230,6 +1231,7 @@ export default function UsersPage() {
   const invitationColumns: ColumnDef<Invitation>[] = [
     {
       accessorKey: 'email',
+      meta: { kind: 'name', label: t('org.membersPage.col.email', 'Email') },
       header: t('org.membersPage.col.email', 'Email'),
       enableSorting: false,
       cell: ({ row }) => (
@@ -1255,6 +1257,7 @@ export default function UsersPage() {
     },
     {
       id: 'roles',
+      meta: { kind: 'tags', label: t('org.membersPage.col.roles', 'Roles') },
       header: t('org.membersPage.col.roles', 'Roles'),
       enableSorting: false,
       cell: ({ row }) => {
@@ -1301,6 +1304,7 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'expires_at',
+      meta: { kind: 'date', label: t('org.membersPage.col.expires', 'Expires') },
       header: t('org.membersPage.col.expires', 'Expires'),
       enableSorting: false,
       cell: ({ row }) => {
@@ -1328,6 +1332,7 @@ export default function UsersPage() {
     },
     {
       id: 'actions',
+      meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
@@ -1381,8 +1386,23 @@ export default function UsersPage() {
     },
   ]
 
-  const toggleStatus = (next: StatusFilter) =>
-    setStatusFilter(statusFilter === next ? 'current' : next)
+  // The organization-wide counts (the old metric strip) ride on the Status options.
+  const withCount = (label: string, count: number | undefined) =>
+    memberStats && count !== undefined
+      ? t('org.membersPage.filter.withCount', '{label} ({count})', { label, count })
+      : label
+
+  // Join requests: the same read the card makes (one request, shared), for the tab count.
+  const canManageRequests = isAtLeast('admin')
+  const { requests: joinRequests } = useJoinRequests(canManageRequests)
+  const tabs: MemberTab[] = [
+    'members',
+    ...(canSeeInvitations ? (['invitations'] as const) : []),
+    ...(canManageRequests ? (['requests'] as const) : []),
+  ]
+  const activeTab: MemberTab = tabs.includes(tabParam as MemberTab)
+    ? (tabParam as MemberTab)
+    : 'members'
 
   // The list filters are the shared filter token (research/249 R21): it
   // reads "Status: Current members" at its natural width instead of a
@@ -1396,7 +1416,13 @@ export default function UsersPage() {
         allLabel={t('org.membersPage.filter.current', 'Current members')}
         options={statusFilters
           .filter((f) => f.value !== 'current')
-          .map((f) => ({ value: f.value, label: t(f.key, f.en) }))}
+          .map((f) => ({
+            value: f.value,
+            label: withCount(
+              t(f.key, f.en),
+              f.value === 'all' ? statusCounts.all : statusCounts[f.value]
+            ),
+          }))}
         onChange={(v) => setStatusFilter(v || 'current')}
       />
       <FilterSelect
@@ -1424,48 +1450,32 @@ export default function UsersPage() {
 
   return (
     <MemberRolesContext.Provider value={memberRolesMap}>
-      <Main>
-        <PageStack>
-          <PageHeader
-            title={t('org.membersPage.title', 'Members')}
-            description={t(
-              'org.membersPage.description',
-              'People in this organization, their roles and pending invitations.'
-            )}
-          >
+      <SettingsPage
+        wide
+        title={t('org.membersPage.title', 'Members')}
+        description={t(
+          'org.membersPage.description',
+          'People in this organization, their roles and pending invitations.'
+        )}
+        actions={
+          <>
             {/* Accounts are created by owners/admins (no self-registration);
               inviting someone who already has an account stays available. */}
-            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
-              <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
-                <Send className="me-2 h-4 w-4" />
-                {t('org.membersPage.inviteUser', 'Invite user')}
-              </Button>
-            </Can>
             <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
-              <Button size="sm" onClick={() => setAddUserOpen(true)}>
-                <UserPlus className="me-2 h-4 w-4" />
+              <Button variant="outline" onClick={() => setAddUserOpen(true)}>
+                <UserPlus aria-hidden />
                 {t('org.membersPage.addUser', 'Add user')}
               </Button>
             </Can>
-          </PageHeader>
-
-          <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
-
-          {emailUnavailable && canSeeInvitations && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertTitle>
-                {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'org.membersPage.noEmailBody',
-                  'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
+            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
+              <Button onClick={() => setInviteDialogOpen(true)}>
+                <Send aria-hidden />
+                {t('org.membersPage.inviteUser', 'Invite user')}
+              </Button>
+            </Can>
+          </>
+        }
+        banners={
           <OwnershipTransferBanner
             transfer={pendingTransfer}
             onChanged={() => {
@@ -1473,130 +1483,129 @@ export default function UsersPage() {
               refreshData()
             }}
           />
-
-          {membersError && !membersLoading ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
-              </AlertTitle>
-              <AlertDescription>
-                <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('common.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              <MetricStrip
-                loading={membersLoading}
-                items={[
-                  {
-                    key: 'current',
-                    label: t('org.membersPage.metric.members', 'Members'),
-                    value: statusCounts.current,
-                    onClick: () => setStatusFilter('current'),
-                    active: statusFilter === 'current',
-                  },
-                  {
-                    key: 'active',
-                    label: t('org.membersPage.filter.active', 'Active'),
-                    value: statusCounts.active,
-                    onClick: () => toggleStatus('active'),
-                    active: statusFilter === 'active',
-                  },
-                  {
-                    key: 'suspended',
-                    label: t('org.membersPage.filter.suspended', 'Disabled'),
-                    value: statusCounts.suspended,
-                    onClick: () => toggleStatus('suspended'),
-                    active: statusFilter === 'suspended',
-                  },
-                  {
-                    key: 'offboarded',
-                    label: t('org.membersPage.filter.offboarded', 'Offboarded'),
-                    value: statusCounts.offboarded,
-                    onClick: () => toggleStatus('offboarded'),
-                    active: statusFilter === 'offboarded',
-                  },
-                  ...(canSeeInvitations
-                    ? [
-                        {
-                          key: 'invites',
-                          label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
-                          value: invitations.length,
-                          onClick: () =>
-                            document
-                              .getElementById('pending-invitations')
-                              ?.scrollIntoView({ behavior: 'smooth' }),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-
-              <div>
-                {membersLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-9 w-full max-w-sm" />
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : (
-                  /*
-                  No selection column: the old bulk "Resend / Deactivate /
-                  Delete" actions fired toasts without calling any API. Per-row
-                  actions are the supported way to disable / offboard a member.
-                */
-                  <DataTable
-                    columns={columns}
-                    data={members}
-                    getRowId={(m) => m.id}
-                    manualPagination
-                    rowCount={membersTotal}
-                    pagination={pagination}
-                    onPaginationChange={setPagination}
-                    pageSizeOptions={MEMBER_PAGE_SIZES}
-                    paginationNoun={t('org.membersPage.noun', 'members')}
-                    showSearch={false}
-                    search={{
-                      value: searchQuery,
-                      onChange: setSearchQuery,
-                      placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
-                      label: t('org.membersPage.searchLabel', 'Search members'),
-                    }}
-                    showColumnToggle={false}
-                    toolbarStart={toolbarStart}
-                    onRowClick={(m) => setSelectedMember(m)}
-                    emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
-                  />
-                )}
-              </div>
-
-              {/* Pending Invitations Section */}
-              {invitations.length > 0 && (
-                <section id="pending-invitations" className="scroll-mt-4">
-                  <h2 className="mb-3 text-base font-semibold">
-                    {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
-                  </h2>
-                  <DataTable
-                    columns={invitationColumns}
-                    data={invitations}
-                    getRowId={(inv) => inv.id}
-                    showSearch={false}
-                    showColumnToggle={false}
-                    showPagination={invitations.length > 10}
-                    emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
-                  />
-                </section>
+        }
+      >
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setTabParam(v === 'members' ? '' : v)}
+          className="gap-section"
+        >
+          {tabs.length > 1 && (
+            <TabsList aria-label={t('org.membersPage.tabs.label', 'Member lists')}>
+              <TabsTrigger value="members">
+                {t('org.membersPage.tabs.members', 'Current members')}
+                <TabsCount value={memberStats ? statusCounts.current : null} />
+              </TabsTrigger>
+              {canSeeInvitations && (
+                <TabsTrigger value="invitations">
+                  {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
+                  <TabsCount value={invitations.length} />
+                </TabsTrigger>
               )}
-            </>
+              {canManageRequests && (
+                <TabsTrigger value="requests">
+                  {t('org.membersPage.tabs.requests', 'Requests to join')}
+                  <TabsCount value={joinRequests.length} />
+                </TabsTrigger>
+              )}
+            </TabsList>
           )}
-        </PageStack>
-      </Main>
+
+          <TabsContent value="members">
+            {membersError && !membersLoading ? (
+              <Alert variant="destructive">
+                <AlertCircle aria-hidden />
+                <AlertTitle>
+                  {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
+                </AlertTitle>
+                <AlertDescription>
+                  <p>
+                    {t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}
+                  </p>
+                  <Button variant="outline" className="mt-2" onClick={refreshData}>
+                    <RefreshCw aria-hidden />
+                    {t('common.retry', 'Retry')}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : membersLoading ? (
+              <div className="space-y-2" aria-busy="true">
+                <Skeleton className="h-8 w-full max-w-sm" />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : (
+              /*
+                No selection column: the old bulk "Resend / Deactivate /
+                Delete" actions fired toasts without calling any API. Per-row
+                actions are the supported way to disable / offboard a member.
+              */
+              <DataTable
+                columns={columns}
+                data={members}
+                getRowId={(m) => m.id}
+                manualPagination
+                rowCount={membersTotal}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                pageSizeOptions={MEMBER_PAGE_SIZES}
+                paginationNoun={t('org.membersPage.noun', 'members')}
+                showSearch={false}
+                search={{
+                  value: searchQuery,
+                  onChange: setSearchQuery,
+                  placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
+                  label: t('org.membersPage.searchLabel', 'Search members'),
+                }}
+                toolbarStart={toolbarStart}
+                onRowClick={(m) => setSelectedMember(m)}
+                emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
+              />
+            )}
+          </TabsContent>
+
+          {canSeeInvitations && (
+            <TabsContent value="invitations" className="flex flex-col gap-section">
+              {emailUnavailable && (
+                <Alert>
+                  <Info aria-hidden />
+                  <AlertTitle>
+                    {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'org.membersPage.noEmailBody',
+                      'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <DataTable
+                columns={invitationColumns}
+                data={invitations}
+                getRowId={(inv) => inv.id}
+                showSearch={false}
+                showColumnToggle={false}
+                showPagination={invitations.length > 10}
+                emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
+              />
+            </TabsContent>
+          )}
+
+          {canManageRequests && (
+            <TabsContent value="requests">
+              {joinRequests.length === 0 ? (
+                <p className="text-body text-muted-foreground">
+                  {t('org.membersPage.noRequests', 'Nobody is waiting to join.')}
+                </p>
+              ) : (
+                <JoinRequestsCard canManage={canManageRequests} onChanged={refreshData} />
+              )}
+            </TabsContent>
+          )}
+        </Tabs>
+      </SettingsPage>
 
       {/* User Details Sheet */}
       {selectedMember &&
