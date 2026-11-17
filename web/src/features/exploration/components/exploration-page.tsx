@@ -15,6 +15,7 @@ import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GraphToolbar } from '@/components/graph-page/graph-page'
 import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton } from '@/features/dashboards/components/dashboard-freshness'
 import {
@@ -240,7 +241,7 @@ export function ExplorationPage() {
         )}
       />
       <StatusLine />
-      <div className="flex flex-wrap items-center gap-3">
+      <GraphToolbar label={t('exploration.toolbarLabel', 'Next step filters')}>
         <FilterSelect<LeadGroup>
           label={t('exploration.groups.label', 'Steps')}
           value={group}
@@ -254,7 +255,7 @@ export function ExplorationPage() {
           ]}
         />
         {assetId && (
-          <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-sm">
+          <span className="inline-flex h-control items-center gap-1 rounded-md border px-2 text-dense">
             {t('exploration.assetFilter', 'Asset: {name}', { name: nameFor(assetId) })}
             <button
               type="button"
@@ -266,7 +267,7 @@ export function ExplorationPage() {
             </button>
           </span>
         )}
-      </div>
+      </GraphToolbar>
 
       {isLoading ? (
         <div className="space-y-2">
