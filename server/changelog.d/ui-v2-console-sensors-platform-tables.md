@@ -9,5 +9,10 @@
   Blocked names: the Exceptions table gets column kinds and widths, one-line rows, and Extend and Revoke in the
   row's menu (the same dialogs).
 - A failed read shows in the table with Retry; each table has a name and its own empty state.
+- Nothing moves on first load: on Platform sensors the note on shared scanning in this release sits below the fleet
+  table (it appears once the setting is read and pushed the table down by 64 px); on Platform scanning one
+  placeholder stands until the shared sensors setting is read (the tabs no longer flash before the closed layout,
+  so the two queue reads they made are gone), and the blocked names come once the domain-proof card above is read
+  (the Exceptions table moved 449 px).
 - No API change: the same reads, page size and dialogs.
 - Docs: none (layout of existing console tables; what they read and who may act are unchanged)
