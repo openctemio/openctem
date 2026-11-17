@@ -26,6 +26,7 @@ export type ColumnKind =
   | 'masked'
   | 'select'
   | 'actions'
+  | 'decisions'
   | 'text'
 
 export interface DataTableColumnMeta {
@@ -88,6 +89,9 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   masked: { align: 'start', width: 200, sortFirst: 'asc' },
   select: { align: 'center', width: 40, sortFirst: 'asc' },
   actions: { align: 'center', width: 48, sortFirst: 'asc' },
+  // A queue's decision buttons (Approve, Reject, More): end-aligned, as wide
+  // as the page's buttons need (`width` from the page).
+  decisions: { align: 'end', sortFirst: 'asc' },
   text: { align: 'start', sortFirst: 'asc' },
 }
 
