@@ -19,7 +19,6 @@
   "src/app/(dashboard)/(discovery)/assets/changes/page.tsx": 6,
   "src/app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx": 19,
   "src/app/(dashboard)/(discovery)/assets/groups/page.tsx": 17,
-  "src/app/(dashboard)/(discovery)/assets/suggestions/page.tsx": 6,
   "src/app/(dashboard)/(discovery)/credentials/page.tsx": 15,
   "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 6,
   "src/app/(dashboard)/(discovery)/scans/workflows/page.tsx": 5,

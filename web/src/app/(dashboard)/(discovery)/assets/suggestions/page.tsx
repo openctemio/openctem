@@ -1,32 +1,32 @@
 'use client'
 
+/**
+ * Assets › Needs attention › Relationships: the relationship suggestions queue.
+ * Each row proposes one relationship between two assets; a reviewer approves
+ * it (the relationship is created) or dismisses it, in the row. The type can
+ * be changed from the row's More before approving. Every write is the API's
+ * own call behind assets:write, as before.
+ */
+
+import { useCallback, useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { ArrowRight, CheckCheck, Loader2, MoreHorizontal, Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
+import { Main } from '@/components/layout'
+import { DataTable, PageHeader, PageStack, usePhoneSelectMode } from '@/features/shared'
+import type {
+  DataTableBulk,
+  DataTableSelection,
+} from '@/features/shared/components/data-table/data-table-selection'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { Button } from '@/components/ui/button'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
 import { AttentionQueueHeader } from '@/features/assets/components/attention/attention-queue-header'
-import { useTranslation } from '@/context/i18n-provider'
-import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
-import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, DataTable, BulkActionBar, PageStack } from '@/features/shared'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ArrowRight, Check, CheckCheck, RefreshCw, Sparkles, X, Link2 } from 'lucide-react'
-import { toast } from 'sonner'
-import { useSearchQuery } from '@/hooks/use-search-query'
-import { useUrlFilter } from '@/hooks/use-url-param'
-import { useListParams } from '@/hooks/use-list-params'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { Permission, usePermissions } from '@/lib/permissions'
+import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
+import { relationVerbFallback, relationVerbKey } from '@/features/assets/lib/relationship-verbs'
+import { QueueCard, QueueDecisionActions, QueueEmpty, useQueueAnnouncer } from '@/features/queue'
 import {
   useRelationshipSuggestions,
   useApproveSuggestion,
@@ -37,86 +37,88 @@ import {
   useApproveBatchSuggestions,
   type RelationshipSuggestion,
 } from '@/features/relationships/api/use-relationship-suggestions'
+import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useListParams } from '@/hooks/use-list-params'
+import { accessStateOf } from '@/lib/api/access-state'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { Permission, usePermissions } from '@/lib/permissions'
 
-const TYPE_LABELS: Record<string, string> = {
-  contains: 'Contains',
-  resolves_to: 'Resolves to',
-  cname_of: 'CNAME of',
-  runs_on: 'Runs on',
-  deployed_to: 'Deployed to',
-  depends_on: 'Depends on',
-  exposes: 'Exposes',
-  sends_data_to: 'Sends data to',
-  stores_data_in: 'Stores data in',
-  authenticates_to: 'Authenticates to',
-  granted_to: 'Granted to',
-  has_access_to: 'Has access to',
-  load_balances: 'Load balances',
-  protected_by: 'Protected by',
-  monitors: 'Monitors',
-  manages: 'Manages',
-  peer_of: 'Peer of',
-  replicates_to: 'Replicates to',
+/** The types a suggestion can be changed to (the same list as before). */
+const SUGGESTION_TYPES = [
+  'contains',
+  'resolves_to',
+  'cname_of',
+  'runs_on',
+  'deployed_to',
+  'depends_on',
+  'exposes',
+  'sends_data_to',
+  'stores_data_in',
+  'authenticates_to',
+  'granted_to',
+  'has_access_to',
+  'load_balances',
+  'protected_by',
+  'monitors',
+  'manages',
+  'peer_of',
+  'replicates_to',
+] as const
+
+const WIDTH = {
+  sourceMin: 200,
+  // "Alias (CNAME) of" / "Phân giải tới" whole, with the arrow.
+  relationship: 184,
+  reasonMin: 160,
+  reasonMax: 320,
+  // "Confidence" / "Độ tin cậy" whole.
+  confidence: 104,
+  // Approve + Dismiss + More in en and vi, and the cell padding.
+  decisions: 236,
+} as const
+
+type T = ReturnType<typeof useTranslation>['t']
+
+/** The verb of a relationship, read from its source ("Resolves to"). */
+function verbOf(t: T, type: string): string {
+  return t(relationVerbKey(type, 'outgoing'), relationVerbFallback(type, 'outgoing'))
 }
 
-const ALL_RELATIONSHIP_TYPES = Object.keys(TYPE_LABELS)
-const PAGE_SIZES = [10, 20, 30, 50, 100]
-
-function AssetCell({ type, name, id }: { type: string; name: string; id: string }) {
+/** An asset in a row: its name (cut inside the cell), then its type. */
+function AssetCell({ t, type, name, id }: { t: T; type: string; name: string; id: string }) {
+  const shown = name || id.slice(0, 8)
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <Badge variant="outline" className="shrink-0 text-xs">
-        {type}
-      </Badge>
-      <span className="max-w-[200px] truncate font-medium" title={name}>
-        {name || id.slice(0, 8)}
+    // No width of its own (w-0): a long name never widens the table.
+    <span className="flex w-0 min-w-full items-baseline gap-2">
+      <span className="truncate font-medium" title={shown} dir="auto">
+        {shown}
       </span>
-    </div>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {t(`assets.typeLabel.${type}`, getAssetTypeLabel(type))}
+      </span>
+    </span>
   )
 }
 
 export default function RelationshipSuggestionsPage() {
   const { t } = useTranslation()
-  // Search and page live in the URL so a review queue position can be linked to.
-  const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const list = useListParams({ pageSizes: PAGE_SIZES })
-  const { page, setPage } = list
-  const [searchValue, setSearchValue] = useState(searchParam)
-  const debouncedSearch = useSearchQuery(searchValue).term
-  // Only the debounced input triggers a URL write. The URL value is read as an
-  // effect event (latest value, not a dependency), so a URL change such as Back
-  // does not write the stale debounced text over it.
-  const commitSearch = useEffectEvent((next: string) => {
-    if (next !== searchParam) {
-      setSearchParam(next)
-      setPage(1)
-    }
-  })
-  useEffect(() => {
-    commitSearch(debouncedSearch)
-  }, [debouncedSearch])
+  const isPhone = useIsMobile()
+  // Search, page and size live in the address, so a queue position can be
+  // linked to; the search reaches the request once it settles.
+  const list = useListParams()
+  const { page, perPage, searchTerm } = list
 
-  const [selected, setSelected] = useState<string[]>([])
-  const [selectionEpoch, setSelectionEpoch] = useState(0)
-  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
-  const [confirmAll, setConfirmAll] = useState(false)
-  const [confirmSelected, setConfirmSelected] = useState(false)
-  const clearSelection = useCallback(() => {
-    setSelected([])
-    setSelectionEpoch((n) => n + 1)
-  }, [])
-  const [editingType, setEditingType] = useState<string | null>(null)
   // Reviewing (scan, approve, dismiss, change the type) needs assets:write,
   // the permission the API checks; readers see the queue only.
   const { can } = usePermissions()
   const canReview = can(Permission.AssetsWrite)
 
-  const pageSize = list.perPage
   const { data, error, isLoading, isValidating, mutate } = useRelationshipSuggestions(
     'pending',
     page,
-    pageSize,
-    searchParam || undefined
+    perPage,
+    searchTerm || undefined
   )
   const { trigger: approve, isMutating: isApproving } = useApproveSuggestion()
   const { trigger: dismiss, isMutating: isDismissing } = useDismissSuggestion()
@@ -128,104 +130,196 @@ export default function RelationshipSuggestionsPage() {
   const suggestions = useMemo(() => data?.data ?? [], [data])
   const total = data?.total ?? 0
   const isMutating = isApproving || isDismissing || isApprovingAll || isBatchApproving
+  const firstLoad = isLoading && !data
+  const noAccess = !!error && accessStateOf(error) === 'no_access'
+
+  // Every outcome is also said to assistive technology (one status region).
+  const { announce, region } = useQueueAnnouncer()
+  const say = useCallback(
+    (ok: boolean, text: string) => {
+      if (ok) toast.success(text)
+      else toast.error(text)
+      announce(text)
+    },
+    [announce]
+  )
+
+  const [selected, setSelected] = useState<RelationshipSuggestion[]>([])
+  const [selectionEpoch, setSelectionEpoch] = useState(0)
+  const [confirmAll, setConfirmAll] = useState(false)
+  const [confirmSelected, setConfirmSelected] = useState(false)
+  const clearSelection = useCallback(() => {
+    setSelected([])
+    setSelectionEpoch((n) => n + 1)
+  }, [])
+  const onSelectionChange = useCallback(
+    (selection: DataTableSelection<RelationshipSuggestion> | null) =>
+      setSelected(selection?.kind === 'ids' ? selection.rows : []),
+    []
+  )
+
+  const rowName = useCallback(
+    (s: RelationshipSuggestion) =>
+      t('assets.suggestions.rowName', '{source} to {target}', {
+        source: s.source_asset_name || s.source_asset_id.slice(0, 8),
+        target: s.target_asset_name || s.target_asset_id.slice(0, 8),
+      }),
+    [t]
+  )
 
   const handleApprove = useCallback(
     async (id: string) => {
       try {
         await approve(id)
-        toast.success('Relationship created')
+        say(true, t('assets.suggestions.toast.approved', 'Relationship created'))
         clearSelection()
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to approve'))
+        say(
+          false,
+          getErrorMessage(err, t('assets.suggestions.toast.approveFailed', 'Failed to approve'))
+        )
       }
     },
-    [approve, clearSelection]
+    [approve, clearSelection, say, t]
   )
 
   const handleDismiss = useCallback(
     async (id: string) => {
       try {
         await dismiss(id)
-        toast.success('Suggestion dismissed')
+        say(true, t('assets.suggestions.toast.dismissed', 'Suggestion dismissed'))
         clearSelection()
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to dismiss'))
+        say(
+          false,
+          getErrorMessage(err, t('assets.suggestions.toast.dismissFailed', 'Failed to dismiss'))
+        )
       }
     },
-    [dismiss, clearSelection]
+    [dismiss, clearSelection, say, t]
+  )
+
+  const handleUpdateType = useCallback(
+    async (id: string, type: string) => {
+      try {
+        await updateType({ id, relationship_type: type })
+        say(
+          true,
+          t('assets.suggestions.toast.typeChanged', 'Changed to {type}', { type: verbOf(t, type) })
+        )
+      } catch (err) {
+        say(
+          false,
+          getErrorMessage(err, t('assets.suggestions.toast.typeFailed', 'Failed to update type'))
+        )
+      }
+    },
+    [updateType, say, t]
   )
 
   const handleApproveSelected = async () => {
-    const ids = [...selected]
+    const ids = selected.map((s) => s.id)
     try {
       const result = await approveBatch(ids)
-      toast.success(`${result?.count ?? ids.length} relationships created`)
+      say(
+        true,
+        t('assets.suggestions.toast.approvedMany', '{count} relationships created', {
+          count: result?.count ?? ids.length,
+        })
+      )
       clearSelection()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve selected'))
+      say(
+        false,
+        getErrorMessage(
+          err,
+          t('assets.suggestions.toast.approveSelectedFailed', 'Failed to approve selected')
+        )
+      )
     }
   }
 
   const handleApproveAll = async () => {
     try {
       await approveAll()
-      toast.success('All relationships created')
+      say(true, t('assets.suggestions.toast.approvedAll', 'All relationships created'))
       clearSelection()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve all'))
+      say(
+        false,
+        getErrorMessage(
+          err,
+          t('assets.suggestions.toast.approveAllFailed', 'Failed to approve all')
+        )
+      )
     }
   }
 
   const handleGenerate = async () => {
     try {
       await generate()
-      toast.success('Suggestions generated')
+      say(true, t('assets.suggestions.toast.generated', 'Suggestions generated'))
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to generate'))
+      say(
+        false,
+        getErrorMessage(err, t('assets.suggestions.toast.generateFailed', 'Failed to generate'))
+      )
     }
   }
 
-  const handleUpdateType = useCallback(
-    async (id: string, newType: string) => {
-      setEditingType(null)
-      try {
-        await updateType({ id, relationship_type: newType })
-        toast.success(`Changed to ${TYPE_LABELS[newType] || newType}`)
-      } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to update type'))
-      }
+  /** Approve and Dismiss in the row; the type change is in its More. */
+  const decisions = useCallback(
+    (s: RelationshipSuggestion, layout: 'row' | 'card' = 'row') => {
+      const current = t('assets.suggestions.currentType', 'The current type')
+      const menu: ActionMenuEntry[] = [
+        {
+          kind: 'sub',
+          id: 'change-type',
+          label: t('assets.suggestions.changeType', 'Change relationship type'),
+          items: SUGGESTION_TYPES.map((type) => ({
+            id: `type-${type}`,
+            label: verbOf(t, type),
+            disabledReason: type === s.relationship_type ? current : undefined,
+            onSelect: () => void handleUpdateType(s.id, type),
+          })),
+        },
+      ]
+      return (
+        <QueueDecisionActions
+          name={rowName(s)}
+          layout={layout}
+          canDecide={canReview}
+          busy={isMutating}
+          onApprove={() => void handleApprove(s.id)}
+          onReject={() => void handleDismiss(s.id)}
+          approveLabel={t('assets.suggestions.approve', 'Approve')}
+          rejectLabel={t('assets.suggestions.dismiss', 'Dismiss')}
+          menu={canReview ? menu : undefined}
+        />
+      )
     },
-    [updateType]
+    [canReview, handleApprove, handleDismiss, handleUpdateType, isMutating, rowName, t]
   )
 
   const columns = useMemo<ColumnDef<RelationshipSuggestion>[]>(() => {
+    const label = {
+      source: t('assets.suggestions.col.source', 'Source'),
+      relationship: t('assets.suggestions.col.relationship', 'Relationship'),
+      target: t('assets.suggestions.col.target', 'Target'),
+      reason: t('assets.suggestions.col.reason', 'Reason'),
+      confidence: t('assets.suggestions.col.confidence', 'Confidence'),
+      actions: t('components.col.actions', 'Actions'),
+    }
     const all: ColumnDef<RelationshipSuggestion>[] = [
       {
-        id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all on this page"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={`Select ${row.original.source_asset_name}`}
-          />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
-      {
         id: 'source',
-        header: 'Source',
+        meta: { kind: 'name', pin: 'start', minWidth: WIDTH.sourceMin, label: label.source },
+        header: label.source,
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
           <AssetCell
+            t={t}
             type={row.original.source_asset_type}
             name={row.original.source_asset_name}
             id={row.original.source_asset_id}
@@ -234,63 +328,27 @@ export default function RelationshipSuggestionsPage() {
       },
       {
         id: 'relationship',
-        header: 'Relationship',
+        meta: { kind: 'text', width: WIDTH.relationship, label: label.relationship },
+        header: label.relationship,
         enableSorting: false,
-        cell: ({ row }) => {
-          const s = row.original
-          if (!canReview) {
-            return (
-              <div className="flex items-center gap-1">
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <Badge variant="secondary" className="text-xs">
-                  {TYPE_LABELS[s.relationship_type] || s.relationship_type}
-                </Badge>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </div>
-            )
-          }
-          return editingType === s.id ? (
-            <Select
-              defaultValue={s.relationship_type}
-              onValueChange={(val) => handleUpdateType(s.id, val)}
-              onOpenChange={(open) => {
-                if (!open) setEditingType(null)
-              }}
-            >
-              <SelectTrigger className="h-7 w-[150px] text-xs" aria-label="Relationship type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ALL_RELATIONSHIP_TYPES.map((t) => (
-                  <SelectItem key={t} value={t} className="text-xs">
-                    {TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <div className="flex items-center gap-1">
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <Badge asChild variant="secondary" className="cursor-pointer text-xs">
-                <button
-                  type="button"
-                  onClick={() => setEditingType(s.id)}
-                  title="Change relationship type"
-                >
-                  {TYPE_LABELS[s.relationship_type] || s.relationship_type}
-                </button>
-              </Badge>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            </div>
-          )
-        },
+        cell: ({ row }) => (
+          <span className="flex min-w-0 items-center gap-1.5 text-sm">
+            <ArrowRight
+              className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180"
+              aria-hidden
+            />
+            <span className="truncate">{verbOf(t, row.original.relationship_type)}</span>
+          </span>
+        ),
       },
       {
         id: 'target',
-        header: 'Target',
+        meta: { kind: 'asset', label: label.target },
+        header: label.target,
         enableSorting: false,
         cell: ({ row }) => (
           <AssetCell
+            t={t}
             type={row.original.target_asset_type}
             name={row.original.target_asset_name}
             id={row.original.target_asset_id}
@@ -299,11 +357,19 @@ export default function RelationshipSuggestionsPage() {
       },
       {
         accessorKey: 'reason',
-        header: 'Reason',
+        meta: {
+          kind: 'text',
+          minWidth: WIDTH.reasonMin,
+          maxWidth: WIDTH.reasonMax,
+          // Dropped first: a 1440 screen (frame 1116) holds the rest whole.
+          hideBelow: 1200,
+          label: label.reason,
+        },
+        header: label.reason,
         enableSorting: false,
         cell: ({ row }) => (
           <span
-            className="block max-w-[240px] truncate text-xs text-muted-foreground"
+            className="block w-0 min-w-full truncate text-sm text-muted-foreground"
             title={row.original.reason}
           >
             {row.original.reason}
@@ -312,7 +378,14 @@ export default function RelationshipSuggestionsPage() {
       },
       {
         accessorKey: 'confidence',
-        header: 'Confidence',
+        meta: {
+          kind: 'number',
+          width: WIDTH.confidence,
+          // Then this one: a 1280 screen (frame 956).
+          hideBelow: 1000,
+          label: label.confidence,
+        },
+        header: label.confidence,
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm tabular-nums">{Math.round(row.original.confidence * 100)}%</span>
@@ -320,128 +393,209 @@ export default function RelationshipSuggestionsPage() {
       },
       {
         id: 'actions',
+        meta: { kind: 'actions', width: WIDTH.decisions, label: label.actions },
+        header: () => <span className="sr-only">{label.actions}</span>,
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7"
-              onClick={() => handleApprove(row.original.id)}
-              disabled={isMutating}
-            >
-              <Check className="me-1 h-3.5 w-3.5" />
-              Approve
-            </Button>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => handleDismiss(row.original.id)}
-                  disabled={isMutating}
-                  aria-label="Dismiss suggestion"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Dismiss</TooltipContent>
-            </Tooltip>
-          </div>
-        ),
+        cell: ({ row }) => decisions(row.original),
       },
     ]
-    return canReview ? all : all.filter((c) => c.id !== 'select' && c.id !== 'actions')
-  }, [canReview, editingType, handleApprove, handleDismiss, handleUpdateType, isMutating])
+    // Readers see the queue without the decision column.
+    return canReview ? all : all.filter((c) => c.id !== 'actions')
+  }, [canReview, decisions, t])
 
-  return (
-    <Main>
-      <PageStack>
-        <PageHeader title={t('assets.overview.title', 'Assets')}>
-          {canReview && (
-            <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
-              {isGenerating ? (
-                <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="me-2 h-4 w-4" />
-              )}
-              Scan
-            </Button>
-          )}
-          {canReview && total > 0 && (
-            <Button size="sm" disabled={isApprovingAll} onClick={() => setConfirmAll(true)}>
-              <CheckCheck className="me-2 h-4 w-4" />
-              {t('assets.suggestions.approveAll', 'Approve all ({count})', { count: total })}
-            </Button>
-          )}
-        </PageHeader>
-        <AssetsSectionTabs />
-        <AttentionQueueHeader reason="relationships" count={isLoading ? undefined : total} />
-
-        {isLoading || (isValidating && !data) ? (
-          <div className="space-y-2 rounded-xl border p-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : suggestions.length === 0 && !searchParam && !error ? (
-          <EmptyState
-            icon={Link2}
-            title="No pending suggestions"
-            description={
-              canReview
-                ? 'Run a scan to detect new connections between assets.'
-                : 'No relationships are waiting for review.'
-            }
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={suggestions}
-            error={error}
-            onRetry={() => void mutate()}
-            errorTitle={t('assets.suggestions.errorTitle', 'suggestions')}
-            showSearch={false}
-            search={{
-              value: searchValue,
-              onChange: setSearchValue,
-              placeholder: t('assets.suggestions.search.placeholder', 'Search by asset name…'),
-              label: t('assets.suggestions.search.label', 'Search suggestions'),
-            }}
-            getRowId={(s) => s.id}
-            manualPagination
-            rowCount={total}
-            pagination={{ pageIndex: page - 1, pageSize }}
-            onPaginationChange={list.setPagination}
-            pageSizeOptions={PAGE_SIZES}
-            onSelectionChange={(rows) => {
-              setSelected(rows.map((r) => r.id))
-              setSelectedLabels(rows.map((r) => `${r.source_asset_name} → ${r.target_asset_name}`))
-            }}
-            resetSelectionKey={selectionEpoch}
-            showSelectionCount={false}
-            emptyMessage="No matching suggestions"
-            emptyDescription="Try a different search term."
-          />
-        )}
-
-        <BulkActionBar
-          count={canReview ? selected.length : 0}
-          onClear={clearSelection}
-          noun="selected"
-        >
+  // No checkbox column unless the user may approve several at once.
+  const bulk: DataTableBulk<RelationshipSuggestion> | undefined = canReview
+    ? {
+        rowLabel: rowName,
+        noun: t('assets.suggestions.bulk.noun', 'suggestions selected'),
+        onSelectionChange,
+        actions: (
           <Button
             variant="ghost"
             size="sm"
             disabled={isBatchApproving}
             onClick={() => setConfirmSelected(true)}
           >
-            <Check className="me-2 h-4 w-4" />
             {t('assets.suggestions.approve', 'Approve')}
           </Button>
-        </BulkActionBar>
+        ),
+      }
+    : undefined
+  // Phone cards have no header checkbox: "Select" is in the queue's More.
+  const phoneSelect = usePhoneSelectMode(isPhone && !!bulk)
+
+  // On a phone the header is one More (its buttons would take a row of
+  // their own above the queue): Select, Scan and Approve all.
+  const phoneItems: ActionMenuEntry[] =
+    canReview && isPhone
+      ? [
+          {
+            id: 'scan',
+            label: t('assets.suggestions.scan', 'Scan'),
+            disabledReason: isGenerating
+              ? t('assets.suggestions.scanning', 'Scanning for suggestions')
+              : undefined,
+            onSelect: () => void handleGenerate(),
+          },
+          ...(total > 0
+            ? [
+                {
+                  id: 'approve-all',
+                  label: t('assets.suggestions.approveAllShort', 'Approve all'),
+                  onSelect: () => setConfirmAll(true),
+                },
+              ]
+            : []),
+        ]
+      : []
+  const moreItems = [...(phoneSelect.item ? [phoneSelect.item] : []), ...phoneItems]
+
+  return (
+    <Main>
+      <PageStack>
+        <PageHeader title={t('assets.overview.title', 'Assets')}>
+          {canReview && !isPhone && (
+            <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
+              {isGenerating ? (
+                <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="me-2 h-4 w-4" aria-hidden />
+              )}
+              {t('assets.suggestions.scan', 'Scan')}
+            </Button>
+          )}
+          {moreItems.length > 0 && (
+            <ActionMenu
+              title={t('assets.attention.tab.relationships', 'Relationships')}
+              label={t('common.actionMenu.label', 'Actions for {name}', {
+                name: t('assets.attention.tab.relationships', 'Relationships'),
+              })}
+              items={moreItems}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </Button>
+              }
+            />
+          )}
+          {canReview && !isPhone && total > 0 && (
+            <Button size="sm" disabled={isApprovingAll} onClick={() => setConfirmAll(true)}>
+              <CheckCheck className="me-2 h-4 w-4" aria-hidden />
+              {t('assets.suggestions.approveAllShort', 'Approve all')}
+            </Button>
+          )}
+        </PageHeader>
+        <AssetsSectionTabs />
+        <AttentionQueueHeader
+          reason="relationships"
+          count={firstLoad || error ? undefined : total}
+        />
+
+        {noAccess ? (
+          <NoAccessState title={t('assets.suggestions.subject', 'the relationship suggestions')} />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={suggestions}
+            caption={t('assets.attention.tab.relationships', 'Relationships')}
+            // The first read: skeleton rows under a toolbar that stays.
+            isLoading={firstLoad}
+            isRefreshing={isValidating && !!data}
+            refreshingLabel={t('assets.suggestions.refreshing', 'Refreshing suggestions')}
+            // A failed read keeps the search, so it can still be changed.
+            error={error && !data ? error : undefined}
+            onRetry={() => void mutate()}
+            errorTitle={t('assets.suggestions.errorTitle', 'suggestions')}
+            showSearch={false}
+            search={{
+              value: list.q,
+              onChange: list.setSearch,
+              placeholder: t('assets.suggestions.search.placeholder', 'Search by asset name…'),
+              label: t('assets.suggestions.search.label', 'Search suggestions'),
+            }}
+            getRowId={(s) => s.id}
+            manualPagination
+            rowCount={total}
+            pagination={list.pagination}
+            onPaginationChange={list.setPagination}
+            paginationNoun={t('assets.suggestions.noun', 'suggestions')}
+            pinActions
+            bulk={bulk}
+            selectMode={phoneSelect.selectMode}
+            resetSelectionKey={selectionEpoch}
+            showSelectionCount={false}
+            isFiltered={!!list.q}
+            onClearFilters={() => list.setSearch('')}
+            emptyState={{
+              nothingYet: (
+                <QueueEmpty
+                  kind="nothing-waiting"
+                  title={t('assets.suggestions.empty.title', 'No pending suggestions')}
+                  hint={
+                    canReview
+                      ? t(
+                          'assets.suggestions.empty.hintReviewer',
+                          'Run a scan to detect new connections between assets.'
+                        )
+                      : t(
+                          'assets.suggestions.empty.hintReader',
+                          'No relationships are waiting for review.'
+                        )
+                  }
+                />
+              ),
+              noMatch: {
+                title: t('assets.suggestions.empty.noMatch', 'No matching suggestions'),
+                hint: t('assets.suggestions.empty.noMatchHint', 'Try a different search term.'),
+              },
+            }}
+            mobileRow={(s) => (
+              <QueueCard
+                data-testid="suggestion-phone-card"
+                title={
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <AssetCell
+                      t={t}
+                      type={s.source_asset_type}
+                      name={s.source_asset_name}
+                      id={s.source_asset_id}
+                    />
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <ArrowRight className="size-3 shrink-0 rtl:rotate-180" aria-hidden />
+                      {verbOf(t, s.relationship_type)}
+                    </span>
+                    <AssetCell
+                      t={t}
+                      type={s.target_asset_type}
+                      name={s.target_asset_name}
+                      id={s.target_asset_id}
+                    />
+                  </span>
+                }
+                meta={
+                  <span className="tabular-nums">
+                    {t('assets.suggestions.confidenceValue', 'Confidence {value}%', {
+                      value: Math.round(s.confidence * 100),
+                    })}
+                  </span>
+                }
+                reason={
+                  s.reason ? (
+                    <span className="line-clamp-2 text-xs text-muted-foreground">{s.reason}</span>
+                  ) : undefined
+                }
+                actions={decisions(s, 'card')}
+              />
+            )}
+          />
+        )}
+
+        {region}
         <ConfirmDialog
           open={confirmAll}
           onOpenChange={setConfirmAll}
@@ -485,7 +639,7 @@ export default function RelationshipSuggestionsPage() {
             setConfirmSelected(false)
           }}
         >
-          <ConfirmSample names={selectedLabels} total={selected.length} />
+          <ConfirmSample names={selected.map(rowName)} total={selected.length} />
         </ConfirmDialog>
       </PageStack>
     </Main>
