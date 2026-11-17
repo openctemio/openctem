@@ -1,15 +1,29 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route as PlaywrightRoute } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Nothing in a list's header jumps (owner rule): on Findings, Assets and
- * Scans, at 1440, 1024, 768 and 390 px, in English and Vietnamese, every
+ * Nothing in a list's header jumps (owner rule): on every list with the shared
+ * title row and toolbar (Findings, Assets, Scans, Vulnerabilities, Emerging
+ * threats and the attack surface's Exposures, Technologies and Certificates),
+ * at 1440, 1280, 1024, 768 and 390 px, in English and Vietnamese, every
  * control of the toolbar row and of the title row keeps its box (0 px of
- * movement, 0 px of size change) through: a filter added, five more added
- * (the chips row folds them into "+N more"), one removed, a grouping chosen,
- * a view opened, the Basic | Query mode switched, a text the server refuses
- * applied in Query mode and put right again, text typed in the field and the
- * filters cleared.
+ * movement, 0 px of size change) through:
+ * - the first load (the boxes as first painted against the boxes once the
+ *   rows and the count have arrived; the list's requests are held back, the
+ *   way a slow network does);
+ * - a filter added, five more added (the chips row folds them into
+ *   "+N more"), one removed, a grouping chosen;
+ * - a quick view, a built-in view and a saved view opened, the saved view
+ *   closed;
+ * - the Basic | Query mode switched, a text the server refuses applied in
+ *   Query mode and put right again, text typed in the field, the filters
+ *   cleared;
+ * - each value of the list's fixed scopes in turn (Findings: Practice and
+ *   State);
+ * - a column sorted, the density changed, a row selected (the bulk bar is an
+ *   overlay), the row's drawer opened and closed;
+ * - the second page opened (a test of its own: it needs more rows than one
+ *   page holds, and is skipped when the seed has fewer).
  *
  * Allowed, and only these:
  * - the table moves down once when the chips row first appears, and back up
@@ -28,6 +42,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   with the last, in the row's start group: they move nothing else.
  *
  * Measured after the page settles (network idle, reduced motion, two frames).
+ * Core lists run every width in both languages; the others run every width
+ * in English and the widest and the phone width in Vietnamese.
  */
 
 type Box = { x: number; y: number; w: number; h: number }
@@ -41,7 +57,29 @@ type Snap = {
   statusRow: number | null
 }
 
-/** Six filters per list (URL params the list's chips show). */
+type ListSpec = {
+  /** Up to six filters (URL params the list's chips show). */
+  filters: readonly (readonly [string, string])[]
+  /** The list groups from its toolbar. */
+  group?: boolean
+  /** The search has the Basic | Query switch. */
+  query?: boolean
+  /** Every width in both languages (the others: Vietnamese at 1440 and 390). */
+  core?: boolean
+  /** The list's own requests, held back for the first-load check. */
+  data: RegExp
+  /** Fixed scopes of the toolbar (URL params): every value in turn, then the default again. */
+  scopes?: readonly { name: string; param: string; values: readonly string[] }[]
+  /** The Views menu keeps saved views of this page; `query` is the view the test saves. */
+  savedViews?: { page: string; query: string }
+  /** Selecting a row shows the shared bulk bar. */
+  bulkBar?: boolean
+  /** A row opens an overlay on the list (not another page). */
+  drawer?: boolean
+  /** The list shows only once it has ever held a row (skipped on a seed without one). */
+  optional?: boolean
+}
+
 const LISTS = {
   '/findings': {
     filters: [
@@ -53,6 +91,20 @@ const LISTS = {
       ['asset_crown_jewel', 'true'],
     ],
     group: true,
+    query: true,
+    core: true,
+    data: /\/api\/v1\/findings/,
+    scopes: [
+      {
+        name: 'Practice',
+        param: 'practice',
+        values: ['compliance', 'aspm', 'infra', 'external', 'cloud', 'offensive', 'all'],
+      },
+      { name: 'State', param: 'state', values: ['fixed', 'dispositioned', 'closed', 'all'] },
+    ],
+    savedViews: { page: 'findings', query: 'severity=critical&state=all' },
+    bulkBar: true,
+    drawer: true,
   },
   '/assets': {
     filters: [
@@ -63,16 +115,77 @@ const LISTS = {
       ['internet_facing', 'true'],
       ['is_crown_jewel', 'true'],
     ],
-    group: false,
+    query: true,
+    core: true,
+    data: /\/api\/v1\/assets/,
+    bulkBar: true,
+    drawer: true,
   },
   '/scans': {
     filters: [
       ['status', 'active'],
       ['origin', 'system'],
     ],
-    group: false,
+    query: true,
+    core: true,
+    data: /\/api\/v1\/scan/,
+    drawer: true,
   },
-} as const
+  '/vulnerabilities': {
+    filters: [
+      ['severity', 'critical'],
+      ['priority_class', 'P0,P1'],
+      ['kev', 'true'],
+      ['exploit', 'true'],
+      ['has_fix', 'true'],
+      ['past_sla', 'true'],
+    ],
+    data: /\/api\/v1\/vulnerabilit/,
+    scopes: [{ name: 'Findings', param: 'state', values: ['fixed', 'dispositioned', 'all'] }],
+    savedViews: { page: 'vulnerabilities', query: 'severity=critical' },
+    bulkBar: true,
+  },
+  '/emerging-threats': {
+    filters: [
+      ['level', 'immediate'],
+      ['tier', 'confirmed'],
+      ['kev', 'true'],
+      ['exposure', 'internet'],
+    ],
+    data: /\/api\/v1\/emerging-threats/,
+    scopes: [{ name: 'State', param: 'state', values: ['new', 'all'] }],
+    drawer: true,
+    optional: true,
+  },
+  '/attack-surface/exposures': {
+    filters: [
+      ['severity', 'critical'],
+      ['primary', 'true'],
+    ],
+    data: /\/api\/v1\/(attack-surface|exposures)/,
+    scopes: [
+      { name: 'Status', param: 'state', values: ['all'] },
+      { name: 'Asset monitoring', param: 'monitoring', values: ['all'] },
+    ],
+  },
+  '/attack-surface/technologies': {
+    filters: [
+      ['category', 'web_server'],
+      ['version', 'known'],
+      ['cves', 'true'],
+      ['kev', 'true'],
+    ],
+    data: /\/api\/v1\/attack-surface/,
+  },
+  '/attack-surface/certificates': {
+    filters: [['status', 'expired']],
+    data: /\/api\/v1\/attack-surface/,
+  },
+} as const satisfies Record<string, ListSpec>
+
+type Route = keyof typeof LISTS
+
+const WIDTHS = [1440, 1280, 1024, 768, 390]
 
 async function settle(page: Page) {
   await page.waitForLoadState('networkidle').catch(() => undefined)
@@ -124,7 +237,11 @@ async function snap(page: Page): Promise<Snap> {
         !b.closest('[data-slot="list-toolbar-region"], [data-slot="list-toolbar"], nav, header')
     )
     const name = (b: HTMLElement) =>
-      (b.getAttribute('aria-label') || b.textContent || '').trim().replace(/\d[\d,.]*/g, '#')
+      // Without its numbers: a tile's count arrives after its label.
+      (b.getAttribute('aria-label') || b.textContent || '')
+        .replace(/\d[\d,.]*\+?/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
     const mid = main.getBoundingClientRect().left + main.getBoundingClientRect().width / 2
     const titleEnd: Record<string, Box> = {}
     const titleStart: string[] = []
@@ -220,153 +337,483 @@ async function setUrl(page: Page, search: URLSearchParams) {
   await settle(page)
 }
 
-function headerHoldsStill(route: keyof typeof LISTS) {
-  const list = LISTS[route]
+/** Back to the top: a click on a row or on the pager may have scrolled the page. */
+async function toTop(page: Page) {
+  await page.evaluate(() => {
+    let el: Element | null = document.querySelector('main [data-slot="list-toolbar"]')
+    for (; el; el = el.parentElement) {
+      el.scrollTop = 0
+      el.scrollLeft = 0
+    }
+    window.scrollTo(0, 0)
+  })
+}
+
+/** The page's current query string, as params. */
+async function urlParams(page: Page) {
+  return new URLSearchParams(await page.evaluate(() => window.location.search))
+}
+
+/** Holds the list's own requests back, the way a slow network does. Returns the release. */
+async function holdBack(page: Page, data: RegExp) {
+  const matches = (url: URL) => data.test(url.pathname)
+  const late = async (route: PlaywrightRoute) => {
+    await new Promise((r) => setTimeout(r, 600))
+    await route.continue().catch(() => undefined)
+  }
+  await page.route(matches, late)
+  return () => page.unroute(matches, late)
+}
+
+type FirstPaint = { title: Box | null; titleEnd: Box[]; header: Snap | null }
+
+/**
+ * What the header shows before the rows arrive: the title row's box, the
+ * boxes of its end buttons and, where the toolbar is drawn already, the
+ * whole snapshot.
+ */
+async function firstPaint(page: Page): Promise<FirstPaint> {
+  const frame = await page.evaluate(() => {
+    const box = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      return {
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+      }
+    }
+    const row = document.querySelector('main [data-slot="list-title-row"]')
+    return {
+      title: row && row.getClientRects().length > 0 ? box(row) : null,
+      titleEnd: Array.from(row?.querySelectorAll('[data-slot="list-title-end"] button') ?? [])
+        .filter((b) => b.getClientRects().length > 0)
+        .map(box),
+    }
+  })
+  const drawn = await page
+    .locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]')
+    .first()
+    .isVisible()
+    .catch(() => false)
+  return { ...frame, header: drawn ? await snap(page) : null }
+}
+
+function compareFirstPaint(step: string, a: FirstPaint, b: FirstPaint) {
+  const same = (v: Box, w: Box | undefined) =>
+    !!w && v.x === w.x && v.y === w.y && v.w === w.w && v.h === w.h
+  const problems: string[] = []
+  if (a.title && !same(a.title, b.title ?? undefined)) problems.push('the title row moved')
+  a.titleEnd.forEach((v, i) => {
+    if (!same(v, b.titleEnd[i])) problems.push(`title-row end button ${i + 1} moved`)
+  })
+  expect(problems, `${step}: ${JSON.stringify({ before: a, after: b })}`).toEqual([])
+  if (a.header && b.header) compare(step, a.header, b.header)
+}
+
+/** A same-origin API call as the signed-in person (the page's own session and CSRF pair). */
+async function api(page: Page, method: string, path: string, body?: unknown) {
+  return page.evaluate(
+    async ({ method, path, body }) => {
+      const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+      const res = await fetch(path, {
+        method,
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      const text = await res.text()
+      let json: unknown = null
+      try {
+        json = JSON.parse(text)
+      } catch {
+        // Not JSON (an empty 204): the status says enough.
+      }
+      return { status: res.status, json, text: text.slice(0, 300) }
+    },
+    { method, path, body }
+  )
+}
+
+const SAVED_VIEW_PREFIX = 'E2E header stability'
+
+/**
+ * A personal saved view of the seed user for the test, and what an earlier,
+ * interrupted run left behind (older than ten minutes: a parallel worker's
+ * view is in use).
+ */
+async function createSavedView(page: Page, spec: { page: string; query: string }, tag: string) {
+  const listed = await api(page, 'GET', `/api/v1/views?page=${spec.page}`)
+  const stale = (
+    (
+      listed.json as {
+        data?: { id: string; name: string; is_owner: boolean; created_at: string }[]
+      }
+    )?.data ?? []
+  ).filter(
+    (v) =>
+      v.is_owner &&
+      v.name.startsWith(SAVED_VIEW_PREFIX) &&
+      Date.now() - Date.parse(v.created_at) > 10 * 60_000
+  )
+  for (const v of stale) await api(page, 'DELETE', `/api/v1/views/${encodeURIComponent(v.id)}`)
+  const name = `${SAVED_VIEW_PREFIX} ${tag} ${Date.now()}`
+  const made = await api(page, 'POST', '/api/v1/views', { ...spec, name })
+  const id = (made.json as { id?: string } | null)?.id
+  expect(id, `saved view created (${made.status}): ${made.text}`).toBeTruthy()
+  return { id: id!, name }
+}
+
+/**
+ * Opens the list and waits for its toolbar; false when the page shows no list
+ * once it has loaded (a list that shows only after it has held a row draws
+ * its toolbar while it loads, then its empty page).
+ */
+async function openList(page: Page, path: string, timeout = 45_000) {
+  await page.goto(path)
+  const input = page.locator('main [data-slot="list-search-input"]').first()
+  const drawn = await input.waitFor({ state: 'visible', timeout }).then(
+    () => true,
+    () => false
+  )
+  if (!drawn) return false
+  await settle(page)
+  return input.isVisible()
+}
+
+const NO_LIST = 'the list shows only once it has held a row: the seed has none'
+
+function headerHoldsStill(route: Route) {
+  const list: ListSpec = LISTS[route]
   for (const locale of ['en', 'vi'] as const) {
-    for (const width of [1440, 1024, 768, 390]) {
+    for (const width of WIDTHS) {
+      if (!list.core && locale === 'vi' && width !== 1440 && width !== 390) continue
       test(`${route} header holds still at ${width}px ${locale}`, async ({ page, baseURL }) => {
-        test.setTimeout(150_000)
+        test.setTimeout(300_000)
         await page.emulateMedia({ reducedMotion: 'reduce' })
         await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
         await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-        await page.goto(route)
-        await page
-          .locator('main [data-slot="list-search-input"]')
-          .first()
-          .waitFor({ state: 'visible', timeout: 45_000 })
-        await settle(page)
-        const params = new URLSearchParams(await page.evaluate(() => window.location.search))
-        let last = await snap(page)
-        const step = async (name: string, act: () => Promise<void>) => {
-          await act()
-          await settle(page)
-          const now = await snap(page)
-          compare(`${route} ${width} ${locale}: ${name}`, last, now)
-          last = now
+
+        // A saved view of the test's own, made before the list is opened: the
+        // page reads the saved views once and keeps them.
+        let saved: { id: string; name: string } | null = null
+        if (list.savedViews) {
+          await page.goto(route)
+          await page.locator('main').first().waitFor({ state: 'visible', timeout: 45_000 })
+          saved = await createSavedView(page, list.savedViews, `${width} ${locale}`)
         }
-
-        // A filter, then five more (overflow), then one removed.
-        const [first, ...more] = list.filters
-        await step('add a filter', async () => {
-          params.set(first[0], first[1])
-          await setUrl(page, params)
-        })
-        await step('add five more', async () => {
-          for (const [k, v] of more) params.set(k, v)
-          await setUrl(page, params)
-        })
-        await step('remove one', async () => {
-          params.delete(more[more.length - 1]?.[0] ?? first[0])
-          await setUrl(page, params)
-        })
-
-        // Group (where the list groups from its toolbar).
-        const group = page.getByRole('combobox', { name: /^(group findings|nhóm phát hiện)/i })
-        if (list.group && (await group.isVisible())) {
-          await step('choose a group', async () => {
-            await group.click()
-            await page.getByRole('option').nth(1).click()
-          })
-        }
-
-        // A view: a quick view of the list in the sidebar, then the first
-        // built-in view of the Views menu.
-        const quick = page.locator(`[data-slot="sidebar"] a[href^="${route}?"]:visible`).nth(1)
-        if (await quick.isVisible().catch(() => false)) {
-          await step('open a quick view', async () => {
-            await quick.click()
-            await page.waitForURL((u) => u.search !== `?${params.toString()}`)
-          })
-          for (const k of [...params.keys()]) params.delete(k)
-          new URLSearchParams(await page.evaluate(() => window.location.search)).forEach((v, k) =>
-            params.set(k, v)
+        try {
+          // The first load: what is painted before the rows arrive stays put.
+          const release = await holdBack(page, list.data)
+          await page.goto(route)
+          await page
+            .locator('main [data-slot="list-title-row"], main [data-slot="list-toolbar"]')
+            .first()
+            .waitFor({ state: 'visible', timeout: 45_000 })
+            .catch(() => undefined)
+          const painted = await firstPaint(page)
+          const input = page.locator('main [data-slot="list-search-input"]').first()
+          const drawn = await input
+            .waitFor({ state: 'visible', timeout: list.optional ? 15_000 : 45_000 })
+            .then(
+              () => true,
+              () => false
+            )
+          await release()
+          if (drawn) await settle(page)
+          const shown = drawn && (await input.isVisible())
+          test.skip(!!list.optional && !shown, NO_LIST)
+          expect(shown, 'the list toolbar shows').toBe(true)
+          compareFirstPaint(
+            `${route} ${width} ${locale}: first load`,
+            painted,
+            await firstPaint(page)
           )
-        }
-        const views = page.getByTestId('saved-views-trigger')
-        if (await views.isVisible()) {
-          await views.click()
-          const item = page.getByRole('menuitemcheckbox').first()
-          if (await item.isVisible().catch(() => false)) {
-            await step('choose a view', async () => {
-              await item.click()
-              await page.keyboard.press('Escape')
-            })
-          } else {
-            await page.keyboard.press('Escape')
+
+          const params = await urlParams(page)
+          const sync = async () => {
+            for (const k of [...params.keys()]) params.delete(k)
+            ;(await urlParams(page)).forEach((v, k) => params.set(k, v))
           }
+          let last = await snap(page)
+          const step = async (name: string, act: () => Promise<void>) => {
+            await act()
+            await settle(page)
+            const now = await snap(page)
+            compare(`${route} ${width} ${locale}: ${name}`, last, now)
+            last = now
+          }
+
+          // A filter, then five more (overflow), then one removed.
+          const [first, ...more] = list.filters
+          await step('add a filter', async () => {
+            params.set(first[0], first[1])
+            await setUrl(page, params)
+          })
+          await step('add five more', async () => {
+            for (const [k, v] of more) params.set(k, v)
+            await setUrl(page, params)
+          })
+          await step('remove one', async () => {
+            params.delete(more[more.length - 1]?.[0] ?? first[0])
+            await setUrl(page, params)
+          })
+
+          // Group (where the list groups from its toolbar).
+          const group = page.getByRole('combobox', { name: /^(group findings|nhóm phát hiện)/i })
+          if (list.group && (await group.isVisible())) {
+            await step('choose a group', async () => {
+              await group.click()
+              await page.getByRole('option').nth(1).click()
+            })
+          }
+
+          // A view: a quick view of the list in the sidebar, then the first
+          // built-in view of the Views menu, then a saved view.
+          const quick = page.locator(`[data-slot="sidebar"] a[href^="${route}?"]:visible`).nth(1)
+          if (await quick.isVisible().catch(() => false)) {
+            await step('open a quick view', async () => {
+              await quick.click()
+              await page.waitForURL((u) => u.search !== `?${params.toString()}`)
+            })
+            await sync()
+          }
+          const views = page.getByTestId('saved-views-trigger')
+          if (await views.isVisible()) {
+            await views.click()
+            const item = page.getByRole('menuitemcheckbox').first()
+            if (await item.isVisible().catch(() => false)) {
+              await step('choose a view', async () => {
+                await item.click()
+                await page.keyboard.press('Escape')
+              })
+            } else {
+              await page.keyboard.press('Escape')
+            }
+            await sync()
+            if (saved) {
+              await step('open a saved view', async () => {
+                await views.click()
+                await page.getByRole('menuitem').filter({ hasText: saved.name }).first().click()
+                await page.waitForURL((u) => u.searchParams.get('view') === saved.id)
+              })
+              await step('close the saved view', async () => {
+                await views.click()
+                await page.getByRole('menuitem', { name: /^(clear view|bỏ chế độ xem)$/i }).click()
+                await page.waitForURL((u) => u.searchParams.get('view') !== saved.id)
+              })
+              await sync()
+            }
+          }
+
+          // Basic | Query and back.
+          if (list.query) {
+            const toQuery = page.locator(
+              'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
+            )
+            await step('switch to Query mode', async () => {
+              await toQuery.click()
+              await page
+                .locator('main [data-slot="list-search-query"] [role="combobox"]')
+                .waitFor({ state: 'visible', timeout: 20_000 })
+              await page.locator('main h1').first().click({ force: true })
+            })
+            // The tokens stay, inert: the text owns the filter.
+            const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
+            if ((await tokens.count()) > 0)
+              await expect(tokens.first()).toHaveAttribute('inert', '')
+
+            // A text the server refuses: its problem shows in the status row
+            // under the toolbar, one row high, and the toolbar row keeps its
+            // height; putting the text right takes the row away again.
+            const editor = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
+            const statusRow = page.locator('main [data-slot="list-toolbar-status"]')
+            const appliedText = await editor.inputValue()
+            await step('apply a text the server refuses', async () => {
+              // One character of value: no value lookup opens a list over Enter.
+              await editor.fill('no_such_field=1')
+              await editor.press('Enter')
+              await expect(statusRow).toHaveAttribute('data-drawn', '', { timeout: 20_000 })
+              await expect(editor).toHaveAttribute('aria-invalid', 'true')
+            })
+            {
+              // The problem line is the one the field is described by, inside the
+              // status row, as tall as a chips row (32, 36 on a phone).
+              const line = statusRow.locator('[data-slot="query-status"]')
+              await expect(line).toBeVisible()
+              expect(await editor.getAttribute('aria-describedby')).toBe(
+                await line.getAttribute('id')
+              )
+              await expect(line).toHaveAttribute('aria-live', 'polite')
+              const h = (await statusRow.boundingBox())!.height
+              expect(Math.round(h)).toBe(width < 768 ? 36 : 32)
+              const main = (await page.locator('main').boundingBox())!
+              const sb = (await statusRow.boundingBox())!
+              expect(sb.x + sb.width).toBeLessThanOrEqual(main.x + main.width + 0.5)
+            }
+            await step('put the text right', async () => {
+              await editor.fill(appliedText)
+              await expect(statusRow).not.toHaveAttribute('data-drawn', '')
+              await expect(editor).toHaveAttribute('aria-invalid', 'false')
+              await page.locator('main h1').first().click({ force: true })
+            })
+            const toBasic = page.locator(
+              'main [data-slot="list-search-mode-basic"]:visible, main button[data-slot="list-search-mode"]:visible'
+            )
+            await step('switch back to Basic', async () => {
+              await toBasic.click()
+              await page
+                .locator('main [data-slot="list-search-input"]')
+                .waitFor({ state: 'visible', timeout: 20_000 })
+            })
+          }
+
+          await step('type in the field', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
+          })
+          await step('clear the text', async () => {
+            await page.locator('main [data-slot="list-search-input"]').fill('')
+          })
+
+          await step('clear the filters', async () => {
+            const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
+            if (await clear.isVisible()) await clear.click()
+            else await setUrl(page, new URLSearchParams())
+          })
+
+          // The list as it opens (no grouping, no view), for the row steps.
+          await step('back to the list as it opens', async () => {
+            await setUrl(page, new URLSearchParams())
+          })
+          await sync()
+
+          // The fixed scopes: every value in turn, then the default again.
+          for (const scope of list.scopes ?? []) {
+            for (const value of scope.values) {
+              await step(`${scope.name}: ${value}`, async () => {
+                params.set(scope.param, value)
+                await setUrl(page, params)
+              })
+            }
+            await step(`${scope.name}: the default again`, async () => {
+              params.delete(scope.param)
+              await setUrl(page, params)
+            })
+          }
+
+          // Sort by the first sortable column (a table; phone cards have no header).
+          const sort = page
+            .locator('main [data-slot="table-container"] [data-slot="sort-button"]:visible')
+            .first()
+          if (await sort.isVisible().catch(() => false)) {
+            await step('sort a column', async () => {
+              await sort.click()
+              await toTop(page)
+            })
+          }
+
+          // Density, from the Display menu (hidden where the list shows cards).
+          const display = page
+            .locator('main [data-slot="list-toolbar-end"]')
+            .getByRole('button', { name: /^(display: density|hiển thị: mật độ)/i })
+          if (await display.isVisible().catch(() => false)) {
+            const radios = page.getByRole('menuitemradio')
+            await display.click()
+            await radios.first().waitFor({ state: 'visible', timeout: 10_000 })
+            const states = await radios.evaluateAll((els) =>
+              els.map((el) => el.getAttribute('aria-checked') === 'true')
+            )
+            const was = Math.max(0, states.indexOf(true))
+            const other = was === 0 ? 1 : 0
+            await step('change the density', async () => {
+              await radios.nth(other).click()
+            })
+            await step('the density as it was', async () => {
+              await display.click()
+              await radios.nth(was).click()
+            })
+          }
+
+          // Select a row: the bulk bar is an overlay, nothing above the rows moves.
+          const rows = page.locator(
+            'main [data-slot="table-container"] tbody tr:has(td:nth-child(2)):visible'
+          )
+          const box = rows.first().getByRole('checkbox').first()
+          if (await box.isVisible().catch(() => false)) {
+            await step('select a row', async () => {
+              await box.click()
+              if (list.bulkBar)
+                await expect(page.locator('[data-slot="bulk-action-bar"]')).toBeVisible()
+              await toTop(page)
+            })
+            await step('clear the selection', async () => {
+              await box.click()
+              await toTop(page)
+            })
+          }
+
+          // The row's drawer (an overlay on the list), opened and closed.
+          const row = rows.or(page.locator('main [data-slot="mobile-card"]:visible')).first()
+          if (list.drawer && (await row.isVisible().catch(() => false))) {
+            const drawer = page.getByRole('dialog').first()
+            // The row's own corner: not its checkbox, link or menu.
+            await row.click({ position: { x: 3, y: 3 } })
+            const opened = await drawer.waitFor({ state: 'visible', timeout: 15_000 }).then(
+              () => true,
+              () => false
+            )
+            expect(opened, `${route} ${width} ${locale}: a row opens its drawer`).toBe(true)
+            await step('open the drawer', async () => {
+              await toTop(page)
+            })
+            await step('close the drawer', async () => {
+              await page.keyboard.press('Escape')
+              await drawer.waitFor({ state: 'hidden', timeout: 15_000 })
+              await toTop(page)
+            })
+          }
+        } finally {
+          if (saved)
+            await api(page, 'DELETE', `/api/v1/views/${encodeURIComponent(saved.id)}`).catch(
+              () => undefined
+            )
         }
-
-        // Basic | Query and back.
-        const toQuery = page.locator(
-          'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
-        )
-        await step('switch to Query mode', async () => {
-          await toQuery.click()
-          await page
-            .locator('main [data-slot="list-search-query"] [role="combobox"]')
-            .waitFor({ state: 'visible', timeout: 20_000 })
-          await page.locator('main h1').first().click({ force: true })
-        })
-        // The tokens stay, inert: the text owns the filter.
-        const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
-        if ((await tokens.count()) > 0) await expect(tokens.first()).toHaveAttribute('inert', '')
-
-        // A text the server refuses: its problem shows in the status row
-        // under the toolbar, one row high, and the toolbar row keeps its
-        // height; putting the text right takes the row away again.
-        const editor = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
-        const statusRow = page.locator('main [data-slot="list-toolbar-status"]')
-        const appliedText = await editor.inputValue()
-        await step('apply a text the server refuses', async () => {
-          // One character of value: no value lookup opens a list over Enter.
-          await editor.fill('no_such_field=1')
-          await editor.press('Enter')
-          await expect(statusRow).toHaveAttribute('data-drawn', '', { timeout: 20_000 })
-          await expect(editor).toHaveAttribute('aria-invalid', 'true')
-        })
-        {
-          // The problem line is the one the field is described by, inside the
-          // status row, as tall as a chips row (32, 36 on a phone).
-          const line = statusRow.locator('[data-slot="query-status"]')
-          await expect(line).toBeVisible()
-          expect(await editor.getAttribute('aria-describedby')).toBe(await line.getAttribute('id'))
-          await expect(line).toHaveAttribute('aria-live', 'polite')
-          const h = (await statusRow.boundingBox())!.height
-          expect(Math.round(h)).toBe(width < 768 ? 36 : 32)
-          const main = (await page.locator('main').boundingBox())!
-          const sb = (await statusRow.boundingBox())!
-          expect(sb.x + sb.width).toBeLessThanOrEqual(main.x + main.width + 0.5)
-        }
-        await step('put the text right', async () => {
-          await editor.fill(appliedText)
-          await expect(statusRow).not.toHaveAttribute('data-drawn', '')
-          await expect(editor).toHaveAttribute('aria-invalid', 'false')
-          await page.locator('main h1').first().click({ force: true })
-        })
-        const toBasic = page.locator(
-          'main [data-slot="list-search-mode-basic"]:visible, main button[data-slot="list-search-mode"]:visible'
-        )
-        await step('switch back to Basic', async () => {
-          await toBasic.click()
-          await page
-            .locator('main [data-slot="list-search-input"]')
-            .waitFor({ state: 'visible', timeout: 20_000 })
-        })
-
-        await step('type in the field', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('zz-no-match')
-        })
-        await step('clear the text', async () => {
-          await page.locator('main [data-slot="list-search-input"]').fill('')
-        })
-
-        await step('clear the filters', async () => {
-          const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
-          if (await clear.isVisible()) await clear.click()
-          else await setUrl(page, new URLSearchParams())
-        })
       })
     }
+  }
+}
+
+/**
+ * The second page (data-dependent: the list must hold more rows than one
+ * page shows; the seed gives Findings 26, see `e2e/ci/seed.sh`). The pager is
+ * under the rows: going to page 2 and back moves nothing above them.
+ */
+function pagingHoldsStill(route: Route) {
+  const list: ListSpec = LISTS[route]
+  for (const width of [1440, 390]) {
+    test(`${route} header holds still on page 2 at ${width}px`, async ({ page }) => {
+      test.setTimeout(120_000)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      const shown = await openList(page, route, list.optional ? 15_000 : 45_000)
+      test.skip(!!list.optional && !shown, NO_LIST)
+      expect(shown, 'the list toolbar shows').toBe(true)
+      await settle(page)
+      const pager = page.locator('main [data-slot="data-table-pager"]')
+      const next = pager.getByRole('button', { name: 'Next page', exact: true })
+      const more = (await next.isVisible().catch(() => false)) && (await next.isEnabled())
+      test.skip(!more, 'page 2 needs more rows than one page holds: the seed has fewer here')
+      const before = await snap(page)
+      await next.click()
+      await settle(page)
+      await toTop(page)
+      const second = await snap(page)
+      compare(`${route} ${width}: page 2`, before, second)
+      await pager.getByRole('button', { name: 'Previous page', exact: true }).click()
+      await settle(page)
+      await toTop(page)
+      compare(`${route} ${width}: page 1 again`, second, await snap(page))
+    })
   }
 }
 
@@ -525,14 +972,15 @@ async function countPlaces(page: Page) {
   })
 }
 
-function saysItsCountOnce(route: keyof typeof LISTS) {
-  const list = LISTS[route]
+function saysItsCountOnce(route: Route) {
+  const list: ListSpec = LISTS[route]
   for (const width of [1440, 390]) {
     test(`${route} says its count once at ${width}px`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
       for (const qs of ['', `?${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`]) {
-        await page.goto(`${route}${qs}`)
+        const shown = await openList(page, `${route}${qs}`, list.optional ? 15_000 : 45_000)
+        test.skip(!!list.optional && !shown, NO_LIST)
         await expect(page.locator('main [data-slot="list-count"]:visible')).toHaveText(/\d/, {
           timeout: 45_000,
         })
@@ -639,6 +1087,7 @@ function oneOverflowMenu() {
 
 test.describe('Findings list header', { tag: ['@findings'] }, () => {
   headerHoldsStill('/findings')
+  pagingHoldsStill('/findings')
   saysItsCountOnce('/findings')
   changedViewSaysSo()
   quickViewPinNeverCoversTheCount()
@@ -646,9 +1095,32 @@ test.describe('Findings list header', { tag: ['@findings'] }, () => {
 })
 test.describe('Assets list header', { tag: ['@assets'] }, () => {
   headerHoldsStill('/assets')
+  pagingHoldsStill('/assets')
   saysItsCountOnce('/assets')
 })
 test.describe('Scans list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans')
+  pagingHoldsStill('/scans')
   saysItsCountOnce('/scans')
+})
+test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () => {
+  headerHoldsStill('/vulnerabilities')
+  pagingHoldsStill('/vulnerabilities')
+  saysItsCountOnce('/vulnerabilities')
+})
+test.describe('Emerging threats list header', { tag: ['@prioritization'] }, () => {
+  headerHoldsStill('/emerging-threats')
+  pagingHoldsStill('/emerging-threats')
+  saysItsCountOnce('/emerging-threats')
+})
+test.describe('Attack surface list headers', { tag: ['@attack-surface'] }, () => {
+  for (const route of [
+    '/attack-surface/exposures',
+    '/attack-surface/technologies',
+    '/attack-surface/certificates',
+  ] as const) {
+    headerHoldsStill(route)
+    pagingHoldsStill(route)
+    saysItsCountOnce(route)
+  }
 })
