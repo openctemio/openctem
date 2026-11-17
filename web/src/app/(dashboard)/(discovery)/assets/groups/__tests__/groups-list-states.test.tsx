@@ -182,7 +182,9 @@ describe('/assets/groups', () => {
     state.total = 1
     render(<AssetGroupsPage />)
     const cell = document.querySelector('[data-slot="group-name-cell"]')
-    expect(cell?.className).toContain('min-w-0')
+    // Zero intrinsic width: the long name cannot widen the table.
+    expect(cell?.className).toContain('w-0')
+    expect(cell?.className).toContain('min-w-full')
     expect(cell?.querySelector('a')?.className).toContain('truncate')
   })
 
