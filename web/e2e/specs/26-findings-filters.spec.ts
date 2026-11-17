@@ -81,6 +81,79 @@ test.describe('Findings filters', { tag: ['@findings'] }, () => {
     await expect(page).not.toHaveURL(/severity=/)
   })
 
+  test("a chip's text opens its editor: the operator changes from the chip", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const listRequests: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname === '/api/v1/findings') listRequests.push(u.search)
+    })
+    await page.goto('/findings')
+    // Severity is Critical, through Add filter.
+    await page.getByRole('button', { name: /add filter/i }).click()
+    const picker = page.getByRole('dialog', { name: /add filter/i })
+    await picker.getByRole('option', { name: 'Severity' }).click({ timeout: 20_000 })
+    await picker.getByRole('checkbox', { name: 'Critical' }).check()
+    await picker.getByRole('button', { name: 'Apply' }).click()
+    await expect(page).toHaveURL(/[?&]severity=critical(&|$)/)
+    const chip = page.getByTestId('filter-chip').filter({ hasText: 'Severity: Critical' })
+    await expect(chip).toBeVisible()
+    const count = page.locator('main [data-slot="list-count"]')
+    await expect(count).toHaveText(/\d/, { timeout: 45_000 })
+    const before = await count.innerText()
+    const row = page.locator('main [data-slot="filter-chips-row"]:visible').first()
+    const rowBox = await row.boundingBox()
+
+    // The chip's text (not its X) opens the same editor, on "is" + Critical.
+    await chip.locator('[data-slot="filter-chip-edit"]').click()
+    const editor = page.getByRole('dialog', { name: 'Edit Severity filter' })
+    await expect(editor.getByRole('checkbox', { name: 'Critical' })).toBeChecked({
+      timeout: 20_000,
+    })
+    await expect(editor.getByRole('combobox', { name: 'Condition' })).toHaveText('is')
+
+    // Escape changes nothing and returns focus to the chip.
+    await page.keyboard.press('Escape')
+    await expect(editor).toBeHidden()
+    await expect(page).toHaveURL(/[?&]severity=critical(&|$)/)
+    await expect(chip.locator('[data-slot="filter-chip-edit"]')).toBeFocused()
+
+    // Enter opens it again; "is not" keeps Critical; Apply rewrites the filter.
+    await page.keyboard.press('Enter')
+    await editor.getByRole('combobox', { name: 'Condition' }).click()
+    await page.getByRole('option', { name: 'is not' }).click()
+    await expect(editor.getByRole('checkbox', { name: 'Critical' })).toBeChecked()
+    await editor.getByRole('button', { name: 'Apply' }).click()
+    await expect(page).toHaveURL(/[?&]severity_not=critical(&|$)/)
+    await expect(page).not.toHaveURL(/[?&]severity=/)
+    const edited = page.getByTestId('filter-chip').filter({ hasText: 'Severity is not Critical' })
+    await expect(edited).toBeVisible()
+    await expect(page.getByTestId('filter-chip')).toHaveCount(1)
+    await expect(edited.locator('[data-slot="filter-chip-edit"]')).toBeFocused()
+    await expect
+      .poll(() => listRequests.some((q) => q.includes('severity_not=critical')))
+      .toBe(true)
+    // The other findings: the count is another number.
+    await expect(count).not.toHaveText(before, { timeout: 45_000 })
+    await expect(count).toHaveText(/\d/)
+    // The chips row is still one line of the same height, in the same place.
+    const after = await row.boundingBox()
+    expect(after?.height).toBe(rowBox?.height)
+    expect(after?.y).toBe(rowBox?.y)
+  })
+
+  test('an unknown filter and a locked chip have no editor', async ({ page }) => {
+    await page.goto('/findings?sevrity=high&severity=low')
+    await expect(page.getByTestId('filter-chip').first()).toBeVisible({ timeout: 20_000 })
+    const unknown = page.getByTestId('filter-chip-unknown')
+    if (await unknown.count()) {
+      await expect(unknown.locator('[data-slot="filter-chip-edit"]')).toHaveCount(0)
+    }
+    await expect(
+      page.locator('[data-testid="filter-chip"][data-locked="true"] [data-slot="filter-chip-edit"]')
+    ).toHaveCount(0)
+  })
+
   test('an unknown filter in a link is named, and removable', async ({ page }) => {
     await page.goto('/findings?sevrity=high')
     await expect(
