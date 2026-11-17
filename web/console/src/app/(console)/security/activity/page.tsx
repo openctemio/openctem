@@ -5,7 +5,8 @@ import { Download } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ErrorState, FilterSelect, PageHeader, PageStack } from '@/features/shared'
+import { FilterSelect, PageHeader, PageStack } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -74,7 +75,7 @@ export default function AdminActivityPage() {
       : ''
   const dAction = useSearchQuery(action).term
   const dEmail = useSearchQuery(adminEmail).term
-  const { data, error, isLoading, mutate } = useAdminAuditLogs({
+  const { data, error, isLoading, isValidating, mutate } = useAdminAuditLogs({
     page,
     action: dAction,
     adminEmail: dEmail,
@@ -86,6 +87,13 @@ export default function AdminActivityPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const entries = useMemo(() => data?.data ?? [], [data])
   const { handleExport } = useCsvExport(entries, exportFields(t), 'admin-activity')
+  const total = data?.total ?? 0
+  // The kind lens is a view, not a filter: Clear filters keeps it.
+  const filtered = Boolean(action || adminEmail || outcome || list.filters.from || list.filters.to)
+  const clearFilters = () => {
+    for (const k of ['action', 'admin_email', 'outcome', 'from', 'to'] as const)
+      list.setFilter(k, '')
+  }
 
   return (
     <Main>
@@ -96,86 +104,102 @@ export default function AdminActivityPage() {
             'admin.activity.description',
             'Every action taken by platform administrators, including sign-ins and refused attempts.'
           )}
+        />
+        <AdminAuditChainStatus />
+        <ListTitleRow
+          title={
+            kind === 'all'
+              ? t('admin.activity.kindAll', 'All events')
+              : t('admin.activity.kindChanges', 'Changes')
+          }
+          count={
+            <ListCount
+              total={total}
+              loading={!data && !error}
+              label={t('admin.activity.total', '{count, plural, one {# event} other {# events}}', {
+                count: total,
+              })}
+            />
+          }
         >
+          {/* The list's own action: export the rows on this page. */}
           <Button
-            size="sm"
             variant="outline"
+            size="sm"
             onClick={handleExport}
             disabled={entries.length === 0}
           >
             <Download className="me-2 size-4" />
             {t('admin.activity.export', 'Export this page (CSV)')}
           </Button>
-        </PageHeader>
-        <AdminAuditChainStatus />
-        {error ? (
-          <ErrorState
-            title={t('admin.securityActivityPage.adminActivity', 'admin activity')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : (
-          <AdminActivityTable
-            entries={entries}
-            isLoading={isLoading}
-            onRowClick={(e) => setOpenId(e.id)}
-            paging={{
-              page,
-              pageCount: data?.total_pages ?? 1,
-              rowCount: data?.total ?? 0,
-              onPageChange: setPage,
-            }}
-            toolbarStart={
-              <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
-                <AuditKindLens
-                  value={kind}
-                  onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
-                />
-                <Input
-                  placeholder={t('admin.activity.actionFilter', 'Action, e.g. console.login')}
-                  value={action}
-                  onChange={(e) => list.setFilter('action', e.target.value)}
-                  className="lg:max-w-56"
-                  aria-label={t('admin.activity.actionFilterLabel', 'Filter by action')}
-                />
-                <Input
-                  placeholder={t('admin.activity.adminFilter', 'Administrator email')}
-                  value={adminEmail}
-                  onChange={(e) => list.setFilter('admin_email', e.target.value)}
-                  className="lg:max-w-56"
-                  aria-label={t('admin.activity.adminFilterLabel', 'Filter by administrator')}
-                />
-                <FilterSelect
-                  label={t('admin.activity.outcomeLabel', 'Filter by result')}
-                  value={outcome}
-                  onChange={(v) => list.setFilter('outcome', v)}
-                  allLabel={t('admin.activity.outcomeAll', 'All results')}
-                  options={[
-                    { value: 'success', label: t('admin.activity.outcomeSuccess', 'Succeeded') },
-                    {
-                      value: 'failure',
-                      label: t('admin.activity.outcomeFailure', 'Refused or failed'),
-                    },
-                  ]}
-                />
-                <Input
-                  type="date"
-                  value={list.filters.from}
-                  onChange={(e) => list.setFilter('from', e.target.value)}
-                  className="lg:w-40"
-                  aria-label={t('admin.activity.from', 'From date')}
-                />
-                <Input
-                  type="date"
-                  value={list.filters.to}
-                  onChange={(e) => list.setFilter('to', e.target.value)}
-                  className="lg:w-40"
-                  aria-label={t('admin.activity.to', 'To date')}
-                />
-              </div>
-            }
-          />
-        )}
+        </ListTitleRow>
+        <AdminActivityTable
+          entries={entries}
+          caption={t('admin.nav.activity', 'Admin activity')}
+          isLoading={isLoading && !data}
+          isRefreshing={isValidating && !!data}
+          error={error}
+          onRetry={() => void mutate()}
+          isFiltered={filtered}
+          onClearFilters={clearFilters}
+          onRowClick={(e) => setOpenId(e.id)}
+          paging={{
+            page,
+            pageCount: data?.total_pages ?? 1,
+            rowCount: total,
+            onPageChange: setPage,
+          }}
+          toolbarStart={
+            <>
+              <AuditKindLens
+                value={kind}
+                onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
+              />
+              <Input
+                placeholder={t('admin.activity.actionFilter', 'Action, e.g. console.login')}
+                value={action}
+                onChange={(e) => list.setFilter('action', e.target.value)}
+                className="sm:max-w-56"
+                aria-label={t('admin.activity.actionFilterLabel', 'Filter by action')}
+              />
+              <Input
+                placeholder={t('admin.activity.adminFilter', 'Administrator email')}
+                value={adminEmail}
+                onChange={(e) => list.setFilter('admin_email', e.target.value)}
+                className="sm:max-w-56"
+                aria-label={t('admin.activity.adminFilterLabel', 'Filter by administrator')}
+              />
+              <FilterSelect
+                label={t('admin.activity.outcomeLabel', 'Filter by result')}
+                value={outcome}
+                foldLabel
+                onChange={(v) => list.setFilter('outcome', v)}
+                allLabel={t('admin.activity.outcomeAll', 'All results')}
+                options={[
+                  { value: 'success', label: t('admin.activity.outcomeSuccess', 'Succeeded') },
+                  {
+                    value: 'failure',
+                    label: t('admin.activity.outcomeFailure', 'Refused or failed'),
+                  },
+                ]}
+              />
+              <Input
+                type="date"
+                value={list.filters.from}
+                onChange={(e) => list.setFilter('from', e.target.value)}
+                className="sm:w-40"
+                aria-label={t('admin.activity.from', 'From date')}
+              />
+              <Input
+                type="date"
+                value={list.filters.to}
+                onChange={(e) => list.setFilter('to', e.target.value)}
+                className="sm:w-40"
+                aria-label={t('admin.activity.to', 'To date')}
+              />
+            </>
+          }
+        />
         <AdminAuditDetailSheet entryId={openId} onClose={() => setOpenId(null)} />
       </PageStack>
     </Main>

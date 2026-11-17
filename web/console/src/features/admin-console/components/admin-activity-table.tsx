@@ -3,7 +3,9 @@
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, RelativeTime, StackedCell } from '@/features/shared'
+import { History } from 'lucide-react'
+import { DataTable, EmptyState, RelativeTime } from '@/features/shared'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import type { AdminAuditEntry } from '../types'
 
@@ -19,21 +21,44 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'action',
       header: t('admin.adminActivityTable.action', 'Action'),
+      // The action is the row's name: what happened in words, then its code,
+      // on one line. It stays in view while the table scrolls sideways.
+      meta: {
+        kind: 'name',
+        pin: 'start',
+        minWidth: 200,
+        label: t('admin.adminActivityTable.action', 'Action'),
+      },
       cell: ({ row }) => (
-        <StackedCell
-          primary={humanizeAction(row.original.action)}
-          secondary={row.original.action}
-        />
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 font-medium">{humanizeAction(row.original.action)}</span>
+          <span
+            className="truncate font-mono text-xs text-muted-foreground"
+            title={row.original.action}
+          >
+            {row.original.action}
+          </span>
+        </div>
       ),
     },
     {
       accessorKey: 'admin_email',
       header: t('admin.adminActivityTable.administrator', 'Administrator'),
-      cell: ({ row }) => <span className="text-sm">{row.original.admin_email}</span>,
+      meta: {
+        kind: 'text',
+        width: 200,
+        label: t('admin.adminActivityTable.administrator', 'Administrator'),
+      },
+      cell: ({ row }) => (
+        <span className="block truncate" title={toDisplayText(row.original.admin_email)}>
+          {toDisplayText(row.original.admin_email)}
+        </span>
+      ),
     },
     {
       accessorKey: 'success',
       header: t('admin.adminActivityTable.result', 'Result'),
+      meta: { kind: 'status', width: 152, label: t('admin.adminActivityTable.result', 'Result') },
       cell: ({ row }) =>
         row.original.success ? (
           <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
@@ -50,14 +75,25 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'ip_address',
       header: t('admin.adminActivityTable.ipAddress', 'IP address'),
+      meta: {
+        kind: 'text',
+        width: 144,
+        hideBelow: 900,
+        label: t('admin.adminActivityTable.ipAddress', 'IP address'),
+      },
       cell: ({ row }) => (
-        <span className="text-sm tabular-nums">{row.original.ip_address || '—'}</span>
+        <span className="block truncate tabular-nums">{row.original.ip_address || '-'}</span>
       ),
     },
     {
       accessorKey: 'created_at',
       header: t('admin.adminActivityTable.when', 'When'),
-      cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+      meta: {
+        kind: 'datetime-recent',
+        width: 152,
+        label: t('admin.adminActivityTable.when', 'When'),
+      },
+      cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
     },
   ]
 }
@@ -75,6 +111,16 @@ interface AdminActivityTableProps {
   toolbarStart?: React.ReactNode
   /** Opens one entry (the detail sheet). */
   onRowClick?: (entry: AdminAuditEntry) => void
+  /** The table's accessible name. */
+  caption?: string
+  /** A failed read: shown in the table with Retry, the toolbar stays. */
+  error?: unknown
+  onRetry?: () => void
+  /** A re-read while rows are shown. */
+  isRefreshing?: boolean
+  /** Filters narrow the list: the empty state offers Clear filters. */
+  isFiltered?: boolean
+  onClearFilters?: () => void
 }
 
 /** Platform admin audit trail (admin_audit_logs). */
@@ -84,6 +130,12 @@ export function AdminActivityTable({
   paging,
   toolbarStart,
   onRowClick,
+  caption,
+  error,
+  onRetry,
+  isRefreshing,
+  isFiltered,
+  onClearFilters,
 }: AdminActivityTableProps) {
   const { t } = useTranslation()
   const allColumns = useColumns()
@@ -98,17 +150,36 @@ export function AdminActivityTable({
     <DataTable
       columns={columns}
       data={entries}
+      caption={caption ?? t('admin.adminActivityTable.caption', 'Administrator activity')}
       getRowId={(e) => e.id}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={t('admin.adminActivityTable.refreshing', 'Refreshing activity')}
+      error={error}
+      onRetry={onRetry}
+      errorTitle={t('admin.securityActivityPage.adminActivity', 'admin activity')}
       showSearch={false}
-      showColumnToggle={false}
+      showToolbar={!!toolbarStart}
       showSelectionCount={false}
       showPagination={!!paging}
       toolbarStart={toolbarStart}
-      emptyMessage={t(
-        'admin.adminActivityTable.noAdministratorActivityYet',
-        'No administrator activity yet'
-      )}
+      isFiltered={isFiltered}
+      onClearFilters={onClearFilters}
+      emptyState={{
+        nothingYet: (
+          <EmptyState
+            icon={History}
+            title={t(
+              'admin.adminActivityTable.noAdministratorActivityYet',
+              'No administrator activity yet'
+            )}
+          />
+        ),
+        noMatch: {
+          title: t('admin.adminActivityTable.noMatch', 'No activity matches these filters'),
+        },
+      }}
+      paginationNoun={t('admin.adminActivityTable.noun', 'events')}
       mobileCards
       onRowClick={onRowClick}
       {...(paging && {
