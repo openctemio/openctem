@@ -23,6 +23,8 @@ e2e/ci/.env
 # next.js (the tenant app and the console app)
 /.next/
 /console/.next/
+# console/public/fonts: copied from public/fonts by scripts/console-fonts.mjs
+/console/public/
 /out/
 
 # eslint cache (a local run artefact, never committed)
