@@ -390,7 +390,9 @@ The scan workflow editor keeps its own editing layout (palette and step settings
     `toolbarStart`: a token that reads "Status: Pending", opens a menu of every
     value with its count (counted in the viewer's scope), can be cleared to
     all rows, and keeps its value in the URL (`useUrlFilter`, the page's
-    default value when the parameter is absent);
+    default value when the parameter is absent); the room of its clear button
+    is kept while nothing is chosen, so choosing a value never changes the
+    token's width;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read

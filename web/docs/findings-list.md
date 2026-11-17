@@ -340,3 +340,10 @@ A cold load of `/findings` sends at most 5 API requests: the session bootstrap, 
 stats response (the organization total, for the empty state), one quick-views response and the list. The source
 catalog loads when the Source filter opens (or a source is already picked). Refresh sends each request once.
 `e2e/request-budget.json` holds the number.
+
+## First load
+
+While the first page of rows loads, the list shows its real title row, toolbar and chips row over placeholder
+rows (`DataTable` `isLoading`), so nothing above the rows moves when they arrive. Before the page knows its
+URL, a placeholder of the title row's own height stands in for it. A table without a bulk bar says "N of M
+selected" under its rows, in the pager's line, never in the toolbar.

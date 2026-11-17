@@ -269,7 +269,10 @@ interface DataTableProps<TData, TValue> {
    * next tick brought the stale selection back).
    */
   resetSelectionKey?: string | number
-  /** Hide the "N of M selected" note, e.g. when a bulk-action bar shows it. */
+  /**
+   * Hide the "N of M selected" note, e.g. when a bulk-action bar shows it.
+   * The note is drawn under the rows, never in the toolbar.
+   */
   showSelectionCount?: boolean
   /**
    * Phone layout: below `md` each row renders through this as a stacked card
@@ -1260,6 +1263,18 @@ export function DataTable<TData, TValue>({
 
   // A stale read says so in the footer, with a refresh.
   const pagerShown = showPagination && !errorState && paginationTotal > 0
+  // "N of M selected", for a table without a bulk bar. Under the rows (in the
+  // pager's line, or a line of its own without a pager), never in the toolbar:
+  // selecting a row moves no control above the list.
+  const selectionNote =
+    showSelectionCount && !bulk && selectedCount > 0 ? (
+      <span data-slot="table-selected-count" className="max-sm:hidden">
+        {t('common.table.selectedOf', '{selected} of {total} selected', {
+          selected: selectedCount,
+          total: totalCount,
+        })}
+      </span>
+    ) : null
   const staleNote = (block: boolean) =>
     staleAt ? (
       <TableStaleNote readAt={staleAt} failed={refreshFailed} onRefresh={onRefresh} block={block} />
@@ -1301,15 +1316,6 @@ export function DataTable<TData, TValue>({
           end={
             <>
               {toolbarEnd}
-              {/* Selection info - hidden on mobile when no selection */}
-              {showSelectionCount && !bulk && selectedCount > 0 && (
-                <span className="text-sm text-muted-foreground hidden sm:inline">
-                  {t('common.table.selectedOf', '{selected} of {total} selected', {
-                    selected: selectedCount,
-                    total: totalCount,
-                  })}
-                </span>
-              )}
 
               {/* Phone: cards have no header checkbox; More turns select mode on
                 (the page's own More when it holds the mode). */}
@@ -1815,6 +1821,9 @@ export function DataTable<TData, TValue>({
 
       {/* A stale read with no pager (an empty list) still says how old it is. */}
       {!pagerShown && staleNote(true)}
+      {!(pagerShown && !phoneMore) && selectionNote && (
+        <div className="text-cap text-muted-foreground tabular-nums">{selectionNote}</div>
+      )}
 
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
@@ -1859,6 +1868,7 @@ export function DataTable<TData, TValue>({
             return (
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-cap text-muted-foreground tabular-nums sm:justify-start">
                 {staleNote(false)}
+                {selectionNote}
                 {countUnavailable ? (
                   <>
                     <span>

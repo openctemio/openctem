@@ -28,7 +28,7 @@ import {
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
 import { formatCalendarDate } from '@/lib/format-metric'
-import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   DEFAULT_FINDING_LENS,
   lensLabelKey,
@@ -480,26 +480,18 @@ const PRIORITY_OPTIONS = [
 ]
 
 /**
- * First-load placeholder shaped like the toolbar + table it stands in for. The
- * context chips render in it already (they come from the URL, not the fetch),
- * in the same row under the toolbar as the loaded table puts them, so nothing
- * moves when the rows arrive.
+ * The placeholder before the page knows its URL (and while the Compliance
+ * benchmarks above the list load): a toolbar row of the real toolbar's height
+ * over placeholder rows. The first load of the rows themselves keeps the real
+ * toolbar (`DataTable` `isLoading`).
  */
-function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
+function FindingsTableSkeleton() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Skeleton className="h-9 min-w-0 flex-1" />
-        <Skeleton className="h-9 w-28 shrink-0" />
+        <Skeleton className="h-control-field min-w-0 flex-1 max-md:h-control-touch" />
+        <Skeleton className="h-control-field w-28 shrink-0 max-md:h-control-touch" />
       </div>
-      {contextChips ? (
-        <div
-          data-testid="data-table-toolbar-below"
-          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
-        >
-          {contextChips}
-        </div>
-      ) : null}
       <div className="space-y-2 rounded-md border p-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
@@ -2992,7 +2984,8 @@ function FindingsContent() {
   const listRegion = (benchmarksPending: boolean) => (
     <>
       {!urlSettled || benchmarksPending ? (
-        <Skeleton className="h-9 w-80 max-w-full" />
+        // A row of the title row's own height: the list under it never moves.
+        <ListTitleRow title={<Skeleton className="h-5 w-48 max-w-full" />} />
       ) : !verifyView && !(listBare && !groupBy) ? (
         primaryRow
       ) : null}
@@ -3067,11 +3060,12 @@ function FindingsContent() {
               : undefined
           }
         />
-      ) : !findingsResponse && findingsLoading ? (
-        <FindingsTableSkeleton contextChips={filterBar} />
       ) : (
         <DataTable
           columns={columns}
+          // The first load keeps the real toolbar and chips row over
+          // placeholder rows: nothing above the rows moves when they arrive.
+          isLoading={!findingsResponse && findingsLoading}
           data={listForbidden ? NO_FINDINGS : findings}
           showToolbar={!listBare}
           staleAt={listReadAt}
