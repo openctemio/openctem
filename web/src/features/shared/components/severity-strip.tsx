@@ -44,7 +44,7 @@ export function SeverityStrip({ counts, className }: SeverityStripProps) {
           const n = counts[s] ?? 0
           return (
             <div key={s} className="min-w-0">
-              <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <dt className="flex items-center gap-1 text-cap text-muted-foreground">
                 <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', SEVERITY_DOT_COLORS[s])} />
                 <span className="truncate">{LABELS[s]}</span>
               </dt>
