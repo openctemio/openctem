@@ -421,6 +421,8 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
 
 type FacetSeverity = SeverityLevel
 const PAGE_SIZES = [10, 20, 30, 50, 100]
+// A refused read shows no row, whatever an earlier answer left on screen.
+const NO_FINDINGS: Finding[] = []
 /** Short option labels — the trigger's layers icon already says "group by". */
 const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   cve_id: 'CVE',
@@ -1202,6 +1204,12 @@ function FindingsContent() {
     [mutateOverviewStats]
   )
 
+  // When the list last answered, and the request that failed last (both by
+  // request key, from the list's own responses: no extra request, no timer).
+  // A refetch that fails for the request whose rows are on screen keeps them
+  // and says how old they are; a failure of another request is a load error.
+  const [listRead, setListRead] = useState<{ key: string; at: number } | null>(null)
+  const [listFailedKey, setListFailedKey] = useState<string | null>(null)
   // The flat list. The grouped and verification views render their own rows,
   // so the flat page is not fetched while one of them is shown.
   const {
@@ -1213,10 +1221,24 @@ function FindingsContent() {
   } = useFindingsApi(practiceCountsList.listFilters, {
     keepPreviousData: true,
     enabled: urlSettled && !groupBy && !verifyView,
+    onSuccess: (_data, key) => {
+      setListRead({ key, at: Date.now() })
+      setListFailedKey(null)
+    },
     // The failure shows inline in the table area (with Retry); the default
     // handler would add a toast saying the same thing.
-    onError: () => {},
+    onError: (_err, key) => setListFailedKey(key),
   })
+  // The read was refused: nothing of the list is shown or offered.
+  const listForbidden = accessStateOf(error) === 'no_access'
+  const listRefetchFailed =
+    !!error && !listForbidden && !!findingsResponse && !!listRead && listRead.key === listFailedKey
+  // A read that failed with no rows of its own to keep: the inline alert.
+  const listLoadFailed = !!error && !listForbidden && !listRefetchFailed
+  const listReadAt = useMemo(() => (listRead ? new Date(listRead.at) : undefined), [listRead])
+  // The list answered without a usable total: the count says so instead of 0.
+  const countUnknown =
+    !!findingsResponse && (typeof findingsResponse.total !== 'number' || findingsResponse.total < 0)
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
@@ -2259,7 +2281,7 @@ function FindingsContent() {
   const canTriageRef = useRef(canChangeStatusOne)
   useEffect(() => {
     openTriageRef.current = openTriage
-    canTriageRef.current = canChangeStatusOne
+    canTriageRef.current = canChangeStatusOne && !listForbidden
   })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2334,8 +2356,18 @@ function FindingsContent() {
     filterCount: activeCount,
     hasSearch: searchQuery.trim() !== '',
     hasContextScope,
-    forbidden: accessStateOf(error) === 'no_access',
+    forbidden: listForbidden,
   })
+  // First run and a refused read show the state alone: no title row, toolbar
+  // or chips (there is nothing to search, filter, count or arrange).
+  const listFirstRun =
+    emptyKind === 'nothing' &&
+    !error &&
+    !!findingsResponse &&
+    !countUnknown &&
+    findingsResponse.total === 0 &&
+    findings.length === 0
+  const listBare = listForbidden || listFirstRun
   // Findings of the viewed state that the filters and search hide.
   const hiddenByFilters = findingStats?.by_state?.[lens]
   const denialText = describePermissionDenied(errorDetails(error)) ?? undefined
@@ -2725,7 +2757,10 @@ function FindingsContent() {
         !groupBy && (
           <ListCount
             total={total}
-            loading={findingsLoading && !findingsResponse}
+            // A failed load shows no count (the alert below says what failed).
+            loading={(findingsLoading && !findingsResponse) || listLoadFailed}
+            failed={countUnknown}
+            onRetry={() => void mutateFindings()}
             label={t('findings.view.total', '{count, plural, one {# finding} other {# findings}}', {
               count: total,
             })}
@@ -2923,7 +2958,7 @@ function FindingsContent() {
     <>
       {!urlSettled || benchmarksPending ? (
         <Skeleton className="h-9 w-80 max-w-full" />
-      ) : !verifyView ? (
+      ) : !verifyView && !(listBare && !groupBy) ? (
         primaryRow
       ) : null}
       {!urlSettled || benchmarksPending ? (
@@ -3002,7 +3037,12 @@ function FindingsContent() {
       ) : (
         <DataTable
           columns={columns}
-          data={findings}
+          data={listForbidden ? NO_FINDINGS : findings}
+          showToolbar={!listBare}
+          staleAt={listReadAt}
+          refreshFailed={listRefetchFailed}
+          onRefresh={() => void handleRefresh()}
+          countUnavailable={countUnknown}
           isRefreshing={findingsValidating}
           refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
           showSearch={false}
@@ -3013,7 +3053,7 @@ function FindingsContent() {
           toolbarBelow={filterBar}
           getRowId={(f) => f.id}
           manualPagination
-          rowCount={total}
+          rowCount={countUnknown ? undefined : total}
           pagination={pagination}
           onPaginationChange={setPagination}
           pageSizeOptions={PAGE_SIZES}
@@ -3040,7 +3080,7 @@ function FindingsContent() {
               filterCount={activeCount}
               hasSearch={searchQuery.trim() !== ''}
               canImport={canImport}
-              canSetUpScan={hasPermission(Permission.ScansRead)}
+              canRunScan={hasPermission(Permission.ScansWrite)}
               canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
               onImport={() => setImportDialogOpen(true)}
               onClearFilters={clearAllFilters}
@@ -3060,7 +3100,7 @@ function FindingsContent() {
                   replaceUrlSearch(next)
                 }}
               />
-            ) : error && accessStateOf(error) !== 'no_access' ? (
+            ) : listLoadFailed ? (
               <ErrorState
                 title={t('findings.list.errorTitle', 'findings')}
                 error={error}
@@ -3096,7 +3136,7 @@ function FindingsContent() {
                 </Button>
               }
             />
-            {hasPermission('findings:write') && (
+            {hasPermission('findings:write') && !listForbidden && (
               <Button
                 iconOnlyBelow="sm"
                 variant="outline"
@@ -3113,7 +3153,7 @@ function FindingsContent() {
             {/* The one primary action of the page: deciding, for someone who may
               change a finding's status. With nothing to triage it stays, as a
               secondary button that opens the same view. */}
-            {canChangeStatusOne && (
+            {canChangeStatusOne && !listForbidden && (
               <Button
                 size="sm"
                 // Primary until the count says there is nothing to triage, so the

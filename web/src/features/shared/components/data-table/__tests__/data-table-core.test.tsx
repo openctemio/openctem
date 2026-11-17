@@ -261,12 +261,12 @@ describe('footer states', () => {
     onPaginationChange: () => {},
   }
 
-  it('partial counts: no total, Could not count with Retry, no Last page', async () => {
+  it('partial counts: no total, Could not count with Retry, Last page disabled', async () => {
     const retry = vi.fn()
     render(<DataTable {...paged} countUnavailable onRetryCount={retry} />)
     expect(screen.getByText('Showing 1 to 2')).toBeInTheDocument()
     expect(screen.getByText('Page 1')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Last page' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Last page' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalled()

@@ -30,3 +30,17 @@ one to the shared component removes it from the list, and nothing is added.
 `web/scripts/check-page-anatomy.sh` checks the added lines of both apps for the
 page-level rules (a page's own Save button, a hand-made "no permission"
 message, a raw table in a page, a new SegmentedLens).
+
+## List states in the shared table
+
+`DataTable` and `ListCount` carry the states every list shares, so a page only says which one it is in:
+
+- `showToolbar={false}`: no toolbar row (a first run or a refused read has nothing to search or arrange).
+- An empty list disables the header's select-all checkbox and offers no sorting.
+- `staleAt` (when the rows were read), `refreshFailed`, `onRefresh`: once the read is older than 5 minutes, or
+  at once after a failed refresh, the footer says "Updated 12 minutes ago" with a refresh button
+  (`data-slot="table-stale"`). The note keeps its own clock; the table does not re-render as time passes.
+- `countUnavailable`: the pager shows the rows on screen without a total and "Page N"; Last page is disabled
+  with its reason (`data-slot="table-last-page"`), as it is for a capped total (`rowCountCapped`). With
+  `onRetryCount` the footer also says "Could not count" with Retry; a list with a title row leaves it out and
+  uses `<ListCount failed onRetry>` (`data-state="failed"`, `data-slot="list-count-retry"`).
