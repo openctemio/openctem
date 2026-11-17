@@ -89,6 +89,39 @@ type EmergingThreatAsset struct {
 	TaskID         string `json:"task_id"`
 }
 
+// EmergingThreatHostService is one affected asset of a host row.
+type EmergingThreatHostService struct {
+	EmergingThreatAsset
+	// Label names the service within its host: the scheme, an explicit
+	// non-default port and the path ("http", "https:8443"). Empty for an asset
+	// that is not named by a URL.
+	Label string `json:"label"`
+}
+
+// EmergingThreatHost is the affected assets of one host in one tier. Assets
+// named by a URL of the same host share a row; any other asset is a row of
+// its own.
+type EmergingThreatHost struct {
+	// Host is the row's title: the host of the services, or the asset's name.
+	Host string `json:"host"`
+	// AssetID is set when the row is one asset that is not named by a URL.
+	AssetID string `json:"asset_id"`
+	// InternetFacing: any of the services is.
+	InternetFacing bool `json:"internet_facing"`
+	// Criticality is the highest of the services.
+	Criticality string   `json:"criticality"`
+	Products    []string `json:"products"`
+	Versions    []string `json:"versions"`
+	// Services lists every asset of the row with its own finding and task.
+	Services []EmergingThreatHostService `json:"services"`
+}
+
+// EmergingThreatAssetGroup is the host rows of one tier.
+type EmergingThreatAssetGroup struct {
+	Tier  string               `json:"tier" enums:"confirmed,likely,possible"`
+	Hosts []EmergingThreatHost `json:"hosts"`
+}
+
 // EmergingThreatEvent is one public event of the vulnerability.
 type EmergingThreatEvent struct {
 	Kind     string         `json:"kind"`
@@ -111,7 +144,10 @@ type EmergingThreatDetail struct {
 	SuppressedUntil   *time.Time            `json:"suppressed_until"`
 	CanSuppress       bool                  `json:"can_suppress"`
 	Assets            []EmergingThreatAsset `json:"assets"`
-	Timeline          []EmergingThreatEvent `json:"timeline"`
+	// AssetGroups is the same assets as one row per host, by tier (confirmed,
+	// likely, possible; a tier without an asset is left out).
+	AssetGroups []EmergingThreatAssetGroup `json:"asset_groups"`
+	Timeline    []EmergingThreatEvent      `json:"timeline"`
 }
 
 // EmergingThreatStateRequest is a triage decision.
@@ -141,23 +177,50 @@ func toEmergingDetail(d *threatalert.Detail) EmergingThreatDetail {
 		out.KEVDateAdded = d.Vuln.KEVDateAdded.Format(time.DateOnly)
 	}
 	for _, a := range d.Assets {
-		v := EmergingThreatAsset{AssetID: a.AssetID.String(), AssetName: a.Name, AssetType: a.Type, Tier: string(a.Kind),
-			Confidence: a.Confidence, InternetFacing: a.InternetFacing, Criticality: a.Criticality, Product: a.Product,
-			VersionSeen: a.Version, FindingStatus: a.FindingStatus}
-		if a.FindingID != nil {
-			v.FindingID = a.FindingID.String()
-		}
-		if a.TaskID != nil {
-			v.TaskID = a.TaskID.String()
-		}
-		out.Assets = append(out.Assets, v)
+		out.Assets = append(out.Assets, toEmergingAsset(a))
 	}
+	out.AssetGroups = toEmergingAssetGroups(threatalert.GroupByHost(d.Assets))
 	for _, e := range d.Timeline {
 		det := e.Detail
 		if det == nil {
 			det = map[string]any{}
 		}
 		out.Timeline = append(out.Timeline, EmergingThreatEvent{Kind: e.Kind, At: e.At, SourceAt: e.SourceAt, Detail: det})
+	}
+	return out
+}
+
+func toEmergingAsset(a threatalert.AssetView) EmergingThreatAsset {
+	v := EmergingThreatAsset{AssetID: a.AssetID.String(), AssetName: a.Name, AssetType: a.Type, Tier: string(a.Kind),
+		Confidence: a.Confidence, InternetFacing: a.InternetFacing, Criticality: a.Criticality, Product: a.Product,
+		VersionSeen: a.Version, FindingStatus: a.FindingStatus}
+	if a.FindingID != nil {
+		v.FindingID = a.FindingID.String()
+	}
+	if a.TaskID != nil {
+		v.TaskID = a.TaskID.String()
+	}
+	return v
+}
+
+func toEmergingAssetGroups(groups []threatalert.HostGroup) []EmergingThreatAssetGroup {
+	out := make([]EmergingThreatAssetGroup, 0, len(groups))
+	for _, g := range groups {
+		eg := EmergingThreatAssetGroup{Tier: string(g.Kind), Hosts: make([]EmergingThreatHost, 0, len(g.Hosts))}
+		for _, h := range g.Hosts {
+			eh := EmergingThreatHost{Host: h.Host, InternetFacing: h.InternetFacing, Criticality: h.Criticality,
+				Products: append([]string{}, h.Products...), Versions: append([]string{}, h.Versions...),
+				Services: make([]EmergingThreatHostService, 0, len(h.Services))}
+			if h.AssetID != nil {
+				eh.AssetID = h.AssetID.String()
+			}
+			for _, s := range h.Services {
+				eh.Services = append(eh.Services,
+					EmergingThreatHostService{EmergingThreatAsset: toEmergingAsset(s.AssetView), Label: s.Label})
+			}
+			eg.Hosts = append(eg.Hosts, eh)
+		}
+		out = append(out, eg)
 	}
 	return out
 }
