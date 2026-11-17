@@ -77,11 +77,7 @@ const REVIEWED: Record<string, string> = {
  * toolbar, saved views, the data table). Remove an entry with its width;
  * never add one for new code.
  */
-const PENDING = new Set([
-  'features/saved-views/components/saved-views-menu.tsx DropdownMenuContent',
-  'features/shared/components/data-table/data-table.tsx DropdownMenuContent',
-  'features/shared/components/filter-select.tsx DropdownMenuContent',
-])
+const PENDING = new Set<string>([])
 
 function* tsxFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

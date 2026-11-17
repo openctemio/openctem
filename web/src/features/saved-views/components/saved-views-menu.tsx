@@ -422,7 +422,7 @@ export function SavedViewsMenu({
             />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent>
           {builtIn && builtIn.length > 0 && (
             <>
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
@@ -448,7 +448,8 @@ export function SavedViewsMenu({
           )}
           {dirty && active && (
             <>
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              {/* A sentence, not an item: it wraps at a reading measure and never widens the menu. */}
+              <DropdownMenuLabel className="max-w-64 text-xs font-normal whitespace-normal text-muted-foreground">
                 {t('confirm.savedView.unsaved', 'Unsaved changes to “{name}”: {changes}', {
                   name: active.name,
                   changes: changes ? summarizeChanges(changes, t) : '',
