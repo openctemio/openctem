@@ -23,10 +23,14 @@ interface AxeResult {
   violations: Array<{ id: string; impact: string | null; nodes: Array<{ target: string[] }> }>
 }
 
-/** Lists with a search; `filter` = the list has a filter panel trigger. */
+/**
+ * Lists with a search; `filter` = the list has a filter panel trigger joined
+ * to the field ('phone': only below 768px, where a list with Add filter keeps
+ * the joined Filters button as its one filter entry).
+ */
 const PAGES = [
   { route: '/sensors', filter: true },
-  { route: '/scans', filter: true },
+  { route: '/scans', filter: 'phone' },
   { route: '/assets/groups', filter: true },
   { route: '/settings/audit-log', filter: false },
   { route: '/remediation/tasks', filter: false },
@@ -95,7 +99,7 @@ for (const width of [1440, 390] as const) {
         }
 
         // 2. the trigger touches the field.
-        if (p.filter) {
+        if (p.filter === true || (p.filter === 'phone' && width < 768)) {
           const trigger = toolbar.locator(
             '[data-slot="list-search"] [data-slot="filter-button"]:visible'
           )
