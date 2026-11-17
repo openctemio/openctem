@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mocks = vi.hoisted(() => ({
@@ -156,6 +156,25 @@ describe('Content catalog', () => {
         'withdrawn by the publisher'
       )
     )
+  })
+
+  it('lists the packages under a titled count, with the search and the type in the toolbar', () => {
+    mocks.role = 'super_admin'
+    render(<CatalogPage />)
+    expect(screen.getByRole('heading', { name: /All packages/ })).toBeInTheDocument()
+    expect(screen.getAllByText('1 package')).toHaveLength(1)
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('searchbox', { name: 'Search packages' })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: /Package type/ })).toBeInTheDocument()
+    // The catalog's two actions are the page's own, in its header.
+    const header = screen
+      .getByRole('heading', { level: 1, name: 'Content catalog' })
+      .closest('[data-slot="page-header"]') as HTMLElement | null
+    expect(header).not.toBeNull()
+    expect(within(header!).getByRole('button', { name: /Import a bundle/ })).toBeEnabled()
+    expect(within(header!).getByRole('button', { name: /Publish a package/ })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Catalog packages' })
+    expect(within(table).getAllByText('openctem/sensor').length).toBeGreaterThan(0)
   })
 
   it('offers no change to an operations administrator', () => {

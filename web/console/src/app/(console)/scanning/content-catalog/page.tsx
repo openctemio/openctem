@@ -8,13 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -24,12 +17,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DataTable,
+  EmptyState,
   ErrorState,
-  ListToolbar,
+  FilterSelect,
   PageHeader,
   PageStack,
   RelativeTime,
 } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { TrustBanner } from '@/features/content-catalog/components/trust-banner'
@@ -47,8 +42,6 @@ import {
 } from '@console/features/admin-console/components/content-catalog-dialogs'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminHas } from '@console/features/admin-console/types'
-
-const ALL_TYPES = '__all'
 
 /**
  * Scanning > Content catalog (RFC-099): the instance catalog organizations
@@ -83,18 +76,32 @@ export default function ContentCatalogPage() {
       {
         id: 'package',
         header: t('admin.catalog.col.package', 'Package'),
+        // The package is the row's name: its title, then its id, on one line.
+        // It stays in view while the table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 240,
+          label: t('admin.catalog.col.package', 'Package'),
+        },
         cell: ({ row }) => (
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{row.original.latest.title}</p>
-            <p className="truncate font-mono text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="truncate font-medium" title={row.original.latest.title}>
+              {row.original.latest.title}
+            </span>
+            <span
+              className="min-w-0 shrink truncate font-mono text-xs text-muted-foreground"
+              title={row.original.latest.package_id}
+            >
               {row.original.latest.package_id}
-            </p>
+            </span>
           </div>
         ),
       },
       {
         id: 'type',
         header: t('admin.catalog.col.type', 'Type'),
+        meta: { kind: 'text', width: 160, label: t('admin.catalog.col.type', 'Type') },
         cell: ({ row }) => (
           <Badge variant="outline">
             {t(`contentCatalog.type.${row.original.latest.type}`, row.original.latest.type)}
@@ -104,8 +111,14 @@ export default function ContentCatalogPage() {
       {
         id: 'origin',
         header: t('admin.catalog.col.origin', 'Source'),
+        meta: {
+          kind: 'text',
+          width: 168,
+          hideBelow: 800,
+          label: t('admin.catalog.col.origin', 'Source'),
+        },
         cell: ({ row }) => (
-          <span className="text-sm">
+          <span className="block truncate">
             {row.original.latest.origin === 'instance'
               ? t('admin.catalog.origin.instance', 'This installation')
               : t('admin.catalog.origin.catalog', 'Signed catalog')}
@@ -115,9 +128,10 @@ export default function ContentCatalogPage() {
       {
         id: 'latest',
         header: t('admin.catalog.col.latest', 'Latest'),
+        meta: { kind: 'text', width: 176, label: t('admin.catalog.col.latest', 'Latest') },
         cell: ({ row }) => (
-          <span className="flex items-center gap-1.5 font-mono text-sm">
-            {row.original.latest.version}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-mono">{row.original.latest.version}</span>
             {row.original.latest.revoked && (
               <Badge variant="destructive">{t('admin.catalog.revokedBadge', 'Revoked')}</Badge>
             )}
@@ -127,6 +141,7 @@ export default function ContentCatalogPage() {
       {
         id: 'versions',
         header: t('admin.catalog.col.versions', 'Versions'),
+        meta: { kind: 'number', width: 104, label: t('admin.catalog.col.versions', 'Versions') },
         cell: ({ row }) => <span className="tabular-nums">{row.original.versions}</span>,
       },
     ],
@@ -134,6 +149,7 @@ export default function ContentCatalogPage() {
   )
 
   const tr = trust.data
+  const total = pkgs.data?.total ?? 0
   return (
     <Main>
       <PageStack>
@@ -143,7 +159,24 @@ export default function ContentCatalogPage() {
             'admin.catalog.description',
             'The signed catalog of rules, templates, sensors and other packages organizations install from.'
           )}
-        />
+        >
+          {canEdit && tr && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setPublishOpen(true)}>
+                <Package className="me-1.5 size-4" aria-hidden />
+                {t('admin.catalog.publishButton', 'Publish a package')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setImportOpen(true)}
+                disabled={tr.roots_configured === 0}
+              >
+                <Upload className="me-1.5 size-4" aria-hidden />
+                {t('admin.catalog.importButton', 'Import a bundle')}
+              </Button>
+            </>
+          )}
+        </PageHeader>
         {trust.error ? (
           <ErrorState
             title={t('admin.catalog.trustError', 'the catalog trust state')}
@@ -157,27 +190,9 @@ export default function ContentCatalogPage() {
             <TrustBanner trust={tr} />
             <Card>
               <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle className="text-base">
-                    {t('admin.catalog.trustTitle', 'Trust')}
-                  </CardTitle>
-                  {canEdit && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setPublishOpen(true)}>
-                        <Package className="me-1.5 size-4" aria-hidden />
-                        {t('admin.catalog.publishButton', 'Publish a package')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => setImportOpen(true)}
-                        disabled={tr.roots_configured === 0}
-                      >
-                        <Upload className="me-1.5 size-4" aria-hidden />
-                        {t('admin.catalog.importButton', 'Import a bundle')}
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                <CardTitle className="text-base">
+                  {t('admin.catalog.trustTitle', 'Trust')}
+                </CardTitle>
                 <CardDescription>
                   {t(
                     'admin.catalog.rootsReadOnly',
@@ -241,65 +256,84 @@ export default function ContentCatalogPage() {
           </>
         )}
 
-        <ListToolbar
+        <ListTitleRow
+          title={
+            list.filters.type
+              ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
+              : t('admin.catalog.viewAll', 'All packages')
+          }
+          count={
+            <ListCount
+              total={total}
+              loading={!pkgs.data && !pkgs.error}
+              label={t(
+                'admin.catalog.total',
+                '{count, plural, one {# package} other {# packages}}',
+                {
+                  count: total,
+                }
+              )}
+            />
+          }
+        />
+        <DataTable
+          columns={columns}
+          data={pkgs.data?.data ?? []}
+          caption={t('admin.catalog.caption', 'Catalog packages')}
+          getRowId={(p) => p.latest.package_id}
+          error={pkgs.error}
+          onRetry={() => void pkgs.mutate()}
+          errorTitle={t('admin.catalog.packagesError', 'the catalog packages')}
+          // The first read: skeleton rows under a toolbar that stays mounted.
+          isLoading={pkgs.isLoading && !pkgs.data}
+          isRefreshing={pkgs.isValidating && !!pkgs.data}
+          refreshingLabel={t('admin.catalog.refreshing', 'Refreshing packages')}
+          showSearch={false}
           search={{
             value: list.q,
             onChange: list.setSearch,
             placeholder: t('admin.catalog.search', 'Search package id or title…'),
             label: t('admin.catalog.searchLabel', 'Search packages'),
           }}
-          start={
-            <Select
-              value={list.filters.type || ALL_TYPES}
-              onValueChange={(v) => list.setFilter('type', v === ALL_TYPES ? '' : v)}
-            >
-              <SelectTrigger
-                className="w-full sm:w-48"
-                aria-label={t('admin.catalog.typeFilter', 'Package type')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_TYPES}>
-                  {t('admin.catalog.allTypes', 'All types')}
-                </SelectItem>
-                {CONTENT_TYPES.map((ty) => (
-                  <SelectItem key={ty} value={ty}>
-                    {t(`contentCatalog.type.${ty}`, ty)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          toolbarStart={
+            <FilterSelect
+              label={t('admin.catalog.typeFilter', 'Package type')}
+              value={list.filters.type}
+              foldLabel
+              allLabel={t('admin.catalog.allTypes', 'All types')}
+              options={CONTENT_TYPES.map((ty) => ({
+                value: ty,
+                label: t(`contentCatalog.type.${ty}`, ty),
+              }))}
+              onChange={(v) => list.setFilter('type', v)}
+            />
           }
+          showSelectionCount={false}
+          mobileCards
+          onRowClick={(p) => setOpen(p.latest.package_id)}
+          isFiltered={!!(q || list.filters.type)}
+          onClearFilters={list.reset}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={Package}
+                title={t(
+                  'admin.catalog.empty',
+                  'No package in the catalog yet: import a signed bundle.'
+                )}
+              />
+            ),
+            noMatch: {
+              title: t('admin.catalog.noMatch', 'No package matches these filters'),
+            },
+          }}
+          manualPagination
+          pageCount={Math.max(1, Math.ceil(total / list.perPage))}
+          rowCount={total}
+          pagination={list.pagination}
+          onPaginationChange={list.setPagination}
+          paginationNoun={t('admin.catalog.noun', 'packages')}
         />
-        {pkgs.error ? (
-          <ErrorState
-            title={t('admin.catalog.packagesError', 'the catalog packages')}
-            error={pkgs.error}
-            onRetry={() => void pkgs.mutate()}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={pkgs.data?.data ?? []}
-            getRowId={(p) => p.latest.package_id}
-            isLoading={pkgs.isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            onRowClick={(p) => setOpen(p.latest.package_id)}
-            emptyMessage={t(
-              'admin.catalog.empty',
-              'No package in the catalog yet: import a signed bundle.'
-            )}
-            manualPagination
-            pageCount={Math.max(1, Math.ceil((pkgs.data?.total ?? 0) / list.perPage))}
-            rowCount={pkgs.data?.total ?? 0}
-            pagination={list.pagination}
-            onPaginationChange={list.setPagination}
-          />
-        )}
 
         <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
           <SheetContent className="w-full sm:max-w-lg">
