@@ -82,6 +82,35 @@ export function SeverityCountsCell({
   )
 }
 
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/**
+ * A package's open vulnerabilities as words, most severe first, then the
+ * known-exploited count: "1 critical, 2 high, 1 known exploited". Empty when
+ * there are none.
+ */
+export function componentVulnWords(
+  item: { vulnerabilities: SeverityCounts; kev: number },
+  t: Translate
+): string[] {
+  const words: string[] = []
+  const name: Record<keyof SeverityCounts, string> = {
+    critical: t('components.vulns.critical', '{count} critical', {
+      count: item.vulnerabilities.critical ?? 0,
+    }),
+    high: t('components.vulns.high', '{count} high', { count: item.vulnerabilities.high ?? 0 }),
+    medium: t('components.vulns.medium', '{count} medium', {
+      count: item.vulnerabilities.medium ?? 0,
+    }),
+    low: t('components.vulns.low', '{count} low', { count: item.vulnerabilities.low ?? 0 }),
+  }
+  for (const s of SEVERITIES) if (item.vulnerabilities[s]) words.push(name[s])
+  if (item.kev) {
+    words.push(t('components.vulns.kev', '{count} known exploited', { count: item.kev }))
+  }
+  return words
+}
+
 export function KevPill({ count }: { count: number }) {
   const { t } = useTranslation()
   if (!count) return null
@@ -109,7 +138,16 @@ export function FixPill({ available, compact = false }: { available: boolean; co
   )
 }
 
-export function LicenseList({ licenses, max = 1 }: { licenses: string[]; max?: number }) {
+export function LicenseList({
+  licenses,
+  max = 1,
+  oneLine = false,
+}: {
+  licenses: string[]
+  max?: number
+  /** In a table row: never wraps; plain text, a long license id ends in an ellipsis. */
+  oneLine?: boolean
+}) {
   const { t } = useTranslation()
   if (!licenses.length) {
     return (
@@ -121,13 +159,27 @@ export function LicenseList({ licenses, max = 1 }: { licenses: string[]; max?: n
   const shown = licenses.slice(0, max)
   const more = licenses.length - shown.length
   return (
-    <span className="inline-flex min-w-0 flex-wrap items-center gap-1" title={licenses.join(', ')}>
-      {shown.map((l) => (
-        <Badge key={l} variant="secondary" className="max-w-[12rem] truncate font-normal">
-          {l}
-        </Badge>
-      ))}
-      {more > 0 && <span className="text-xs text-muted-foreground">+{more}</span>}
+    <span
+      className={cn(
+        'min-w-0 items-center gap-1',
+        oneLine ? 'flex max-w-full flex-nowrap' : 'inline-flex flex-wrap'
+      )}
+      title={licenses.join(', ')}
+    >
+      {shown.map((l) =>
+        // A table row: plain text that ends in an ellipsis (a badge keeps
+        // its whole width and would be cut at the cell's edge).
+        oneLine ? (
+          <span key={l} className="min-w-0 truncate">
+            {l}
+          </span>
+        ) : (
+          <Badge key={l} variant="secondary" className="max-w-[12rem] truncate font-normal">
+            {l}
+          </Badge>
+        )
+      )}
+      {more > 0 && <span className="shrink-0 text-xs text-muted-foreground">+{more}</span>}
     </span>
   )
 }
