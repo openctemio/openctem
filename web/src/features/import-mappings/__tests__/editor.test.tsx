@@ -102,6 +102,7 @@ vi.mock('../api/import-mappings-api', async (importOriginal) => {
 
 import { ImportMappingEditor } from '../components/import-mapping-editor'
 import { ImportMappingListView } from '../components/import-mapping-list-view'
+import { enter } from '@/test/user-input'
 
 function identityConflict() {
   return new ApiClientError('identity changed', 'identity_change_unconfirmed', 409, {
@@ -113,7 +114,7 @@ function identityConflict() {
 async function addRuleIdToIdentityAndSave(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('checkbox', { name: 'Use rule_id to identify a finding' }))
   await user.click(screen.getByRole('button', { name: /Save as new version/ }))
-  await user.type(screen.getByLabelText('Version note'), 'add rule')
+  await enter(user, screen.getByLabelText('Version note'), 'add rule')
   await user.click(screen.getByRole('button', { name: 'Save version' }))
 }
 
@@ -125,7 +126,7 @@ describe('identity change confirmation', () => {
 
   it('asks before saving a version that identifies findings differently, then resends it', async () => {
     createVersion.mockRejectedValueOnce(identityConflict()).mockResolvedValueOnce({})
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
     await addRuleIdToIdentityAndSave(user)
 
@@ -147,7 +148,7 @@ describe('identity change confirmation', () => {
 
   it('sends nothing more when the person cancels', async () => {
     createVersion.mockRejectedValueOnce(identityConflict())
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
     await addRuleIdToIdentityAndSave(user)
     await screen.findByText('Change how findings are identified?')
@@ -167,14 +168,14 @@ describe('delete confirmation', () => {
 
   it('deletes only after the mapping name is typed', async () => {
     removeMapping.mockResolvedValue(undefined)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
     await user.click(screen.getByRole('button', { name: /Delete/ }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete the mapping "vendor-csv"?')
     const confirm = within(dialog).getByRole('button', { name: 'Delete mapping' })
     expect(confirm).toBeDisabled()
-    await user.type(within(dialog).getByRole('textbox'), 'vendor-csv')
+    await enter(user, within(dialog).getByRole('textbox'), 'vendor-csv')
     await user.click(confirm)
     await waitFor(() => expect(removeMapping).toHaveBeenCalledWith('m1'))
   })

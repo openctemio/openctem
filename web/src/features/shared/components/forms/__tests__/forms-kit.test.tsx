@@ -185,6 +185,28 @@ describe('FormDialog', () => {
   })
 })
 
+describe('FormDialog result view', () => {
+  it('leaves Cancel out when cancelLabel is null; its one action closes', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    render(
+      <FormDialog
+        open
+        onOpenChange={onOpenChange}
+        title="Scan started"
+        submitLabel="Done"
+        onSubmit={() => onOpenChange(false)}
+        cancelLabel={null}
+      >
+        <p>Started on 2 targets.</p>
+      </FormDialog>
+    )
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+})
+
 function Prompt({ close, keep }: { close: () => void; keep?: () => void }) {
   const { requestClose, prompt } = useDiscardPrompt(() => true, close, { keep })
   return (
