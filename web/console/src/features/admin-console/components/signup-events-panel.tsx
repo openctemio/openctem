@@ -32,6 +32,7 @@ import {
   type SignupEvent,
   type SignupEventKind,
 } from '../api/use-signup-events'
+import { organizationHref } from '../lib/console-links'
 
 const SUMMARY_DAYS = 30
 
@@ -161,7 +162,7 @@ export function SignupEventsPanel() {
           row.original.tenant_id ? (
             <Link
               className="block truncate underline-offset-4 hover:underline"
-              href={`/organizations/${encodeURIComponent(row.original.tenant_id)}`}
+              href={organizationHref(row.original.tenant_id)}
             >
               {t('admin.signups.openOrganization')}
             </Link>

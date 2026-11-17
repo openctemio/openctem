@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRouter } from 'next/navigation'
 
-import { organizationHref } from '@console/features/admin-console/lib/organization-links'
+import { organizationHref } from '@console/features/admin-console/lib/console-links'
 import type { AdminOrganization } from '@console/features/admin-console/types'
 import AdminOrganizationsPage from '../page'
 
