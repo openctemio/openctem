@@ -105,10 +105,10 @@ Notes on single checks:
 
 - **Keys.** The doctor measures the keys; it never prints a key, a part of
   one or a digest of one.
-- **Public certificate.** The doctor opens one TLS connection to the host of
-  `APP_URL`, reads the expiry date and closes it; nothing is sent. A server
-  that cannot reach its own public address gets "not checked" here, not a
-  failure. `--offline` skips the connection.
+- **Public certificate.** The doctor sends one `HEAD` request to `APP_URL`
+  (no proxy, no redirects, 5 seconds) and reads the expiry date of the
+  certificate it is served. A server that cannot reach its own public address
+  gets "not checked" here, not a failure. `--offline` skips the request.
 - **Backup, disk space, certificate files** read what the console's Health
   page reads (`SYSTEM_BACKUP_STATUS_FILE`, `SYSTEM_STORAGE_PATHS`,
   `SYSTEM_TLS_CERT_FILES`). An installation that records no backup status is
@@ -192,7 +192,7 @@ fields, where they are masked, but read the log before you send it, and use
 | `--max-size` | `20M` | largest archive (256K to 200M); the oldest log lines are cut to fit |
 | `--output` | `openctem-support-<time>.tar.gz` in the current directory | the file to write, new and readable by its owner only; an existing file is never replaced; `-` writes the archive to standard output |
 | `--logs` | none | a log file to include after masking; `-` reads standard input (at most 2 GiB are read) |
-| `--offline` | off | skip the connection to the public URL |
+| `--offline` | off | skip the request to the public URL |
 | `--timeout` | `2m` | stop after this long |
 
 The command prints every file it wrote into the archive with its size, every

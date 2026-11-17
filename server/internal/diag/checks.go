@@ -628,7 +628,7 @@ func (d Deps) checkSensors(ctx context.Context) []Check {
 	if d.SensorMin != "" {
 		rule = "this build supports sensors from " + safeName(d.SensorMin)
 	}
-	ver.Summary = fmt.Sprintf("%d on the latest release, %d with an update available, %d older than supported, %d of unknown version (%s; latest %s).",
+	ver.Summary = fmt.Sprintf("%d on the latest release, %d behind it, %d older than supported, %d of unknown version (%s; latest %s).",
 		counts[sensor.VersionLatest], counts[sensor.VersionUpdateAvailable], counts[sensor.VersionUnsupported], counts[sensor.VersionUnknown],
 		rule, safeName(d.SensorLatest))
 	if counts[sensor.VersionUnsupported] > 0 {
