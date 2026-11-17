@@ -17,7 +17,10 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   place, inert (checked);
  * - the title row's start (view name, count, Modified, Save view, Reset)
  *   follows the view's name and count; its buttons are checked never to
- *   disappear, and the title row's end (Refresh, Export, More) never moves.
+ *   disappear, and the title row's end (Refresh, Export, More) never moves;
+ * - a changed view's Modified lozenge, Save view and Reset
+ *   (`list-modified`, `list-view-actions`) come with the first change and go
+ *   with the last, in the row's start group: they move nothing else.
  *
  * Measured after the page settles (network idle, reduced motion, two frames).
  */
@@ -117,7 +120,15 @@ async function snap(page: Page): Promise<Snap> {
     const titleEnd: Record<string, Box> = {}
     const titleStart: string[] = []
     for (const b of head) {
-      if (b.getBoundingClientRect().left >= mid) titleEnd[name(b)] = box(b)
+      // A changed view's own buttons come and go with the change.
+      if (b.closest('[data-slot="list-view-actions"]')) continue
+      // The shared title row names its groups; elsewhere, by the half it is in.
+      const atEnd = b.closest('[data-slot="list-title-end"]')
+        ? true
+        : b.closest('[data-slot="list-title-start"]')
+          ? false
+          : b.getBoundingClientRect().left >= mid
+      if (atEnd) titleEnd[name(b)] = box(b)
       else titleStart.push(name(b))
     }
     // What follows the toolbar (with its chips row): the table or the cards.
@@ -167,10 +178,7 @@ function compare(step: string, a: Snap, b: Snap) {
       problems.push(`title-row "${k}" moved or resized`)
   }
   for (const k of a.titleStart) {
-    if (!b.titleStart.includes(k) && !/^(Save view|Reset|Modified)/i.test(k)) {
-      // A view's own buttons may follow the view; the rest stay.
-      problems.push(`title-row "${k}" disappeared`)
-    }
+    if (!b.titleStart.includes(k)) problems.push(`title-row "${k}" disappeared`)
   }
   if (a.listTop !== null && b.listTop !== null && a.listTop !== b.listTop) {
     const rowCame = a.chipsRow === null && b.chipsRow !== null
@@ -306,6 +314,117 @@ function headerHoldsStill(route: keyof typeof LISTS) {
       })
     }
   }
+}
+
+/**
+ * A changed view (owner rule): the title keeps a real view's name, and right
+ * after the count come the Modified lozenge (20 px with its dashed border),
+ * Save view and Reset. On a row under 42rem and on a phone the two buttons
+ * are in the row's More and only the lozenge stays. The end group (Refresh,
+ * Export, Task or More) keeps its boxes when they come and when they go, and
+ * Reset returns to the exact base view.
+ */
+function changedViewSaysSo() {
+  for (const width of [1440, 1024, 390]) {
+    test(`/findings a changed view shows Modified, Save view, Reset at ${width}px`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      await page.goto('/findings')
+      const row = page.getByTestId('findings-toolbar-primary')
+      await expect(row).toBeVisible({ timeout: 45_000 })
+      await expect(row.locator('[data-slot="list-count"]')).toHaveText(/\d/, { timeout: 45_000 })
+      await settle(page)
+      const title = page.getByTestId('findings-view-title')
+      const baseName = (await title.innerText()).trim()
+      const baseUrl = await page.evaluate(() => window.location.search)
+      const modified = row.locator('[data-slot="list-modified"]')
+      const save = row.locator('[data-slot="list-view-save"]')
+      const reset = row.locator('[data-slot="list-view-reset"]')
+      await expect(modified).toHaveCount(0)
+      await expect(save).toHaveCount(0)
+      const before = await snap(page)
+
+      const params = new URLSearchParams(baseUrl)
+      params.set('severity', 'critical')
+      await setUrl(page, params)
+      await expect(modified).toBeVisible()
+      await expect(title).toHaveText(baseName)
+      await expect(title).not.toHaveText(/custom view|saved view/i)
+      const changed = await snap(page)
+      compare(`/findings ${width}: a filter added`, before, changed)
+
+      // The pill and the lozenge are 20 px; the count's tooltip names the scope.
+      const count = row.locator('[data-slot="list-count"]')
+      expect(Math.round((await count.boundingBox())!.height)).toBe(20)
+      expect(Math.round((await modified.boundingBox())!.height)).toBe(20)
+      await expect(count).toHaveAttribute('title', /data scope/i)
+      // Order in the start group: count, Modified, then the two buttons.
+      const order = await row.evaluate((el) =>
+        Array.from(
+          el.querySelectorAll(
+            '[data-slot="list-count"], [data-slot="list-modified"], [data-slot="list-view-save"], [data-slot="list-view-reset"]'
+          )
+        )
+          .filter((n) => n.getClientRects().length > 0)
+          .map((n) => ({ slot: n.getAttribute('data-slot'), x: n.getBoundingClientRect().x }))
+      )
+      expect(order.map((o) => o.slot).slice(0, 2)).toEqual(['list-count', 'list-modified'])
+      expect([...order].sort((a, b) => a.x - b.x)).toEqual(order)
+      // Nothing in the row is drawn over its neighbour or past the row.
+      const overlap = await row.evaluate((el) => {
+        const kids = Array.from(
+          el.querySelectorAll(
+            '[data-slot="list-title-start"] > *, [data-slot="list-title-end"] > *'
+          )
+        )
+          .filter((n) => n.getClientRects().length > 0)
+          .map((n) => n.getBoundingClientRect())
+        const r = el.getBoundingClientRect()
+        return kids.some(
+          (a, i) =>
+            a.right > r.right + 1 ||
+            kids.some((b, j) => j > i && a.right > b.left + 1 && b.right > a.left + 1)
+        )
+      })
+      expect(overlap, 'title row parts overlap or leave the row').toBe(false)
+
+      const rowWidth = (await row.boundingBox())!.width
+      if (rowWidth >= 672) {
+        await expect(save).toBeVisible()
+        await expect(reset).toBeVisible()
+        expect(Math.round((await save.boundingBox())!.height)).toBe(
+          Math.round((await reset.boundingBox())!.height)
+        )
+        await reset.click()
+      } else {
+        // Folded: only the lozenge stays; the row's More holds the two.
+        await expect(save).toBeHidden()
+        await expect(reset).toBeHidden()
+        await row.getByRole('button', { name: 'More actions' }).click()
+        const menu = page.getByRole('menu').or(page.getByRole('dialog'))
+        await expect(menu.getByText('Save view', { exact: true })).toBeVisible()
+        await menu.getByText('Reset', { exact: true }).click()
+      }
+      await settle(page)
+      await expect(modified).toHaveCount(0)
+      await expect(title).toHaveText(baseName)
+      expect(
+        new URLSearchParams(await page.evaluate(() => window.location.search)).has('severity')
+      ).toBe(false)
+      compare(`/findings ${width}: reset to the view`, changed, await snap(page))
+    })
+  }
+
+  test('/findings the chips row ends with Clear filters only', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings?severity=critical&source=pentest')
+    const chips = page.locator('main [data-slot="filter-chips-row"]:visible').first()
+    await expect(chips).toBeVisible({ timeout: 45_000 })
+    await expect(chips.locator('[data-slot="filter-chips-clear"]')).toBeVisible()
+    await expect(chips.getByRole('button', { name: /reset/i })).toHaveCount(0)
+  })
 }
 
 /**
@@ -467,6 +586,7 @@ function oneOverflowMenu() {
 test.describe('Findings list header', { tag: ['@findings'] }, () => {
   headerHoldsStill('/findings')
   saysItsCountOnce('/findings')
+  changedViewSaysSo()
   quickViewPinNeverCoversTheCount()
   oneOverflowMenu()
 })
