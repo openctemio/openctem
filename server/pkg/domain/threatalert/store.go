@@ -29,15 +29,22 @@ type TenantState struct {
 
 // DigestItem is one alert named in a digest.
 type DigestItem struct {
-	ID             shared.ID
-	VulnID         string
-	Title          string
-	Level          Level
-	ETS            int
-	InKEV          bool
+	ID     shared.ID
+	VulnID string
+	Title  string
+	Level  Level
+	ETS    int
+	InKEV  bool
+	// Host counts within the reader's scope (HostCounts).
 	Confirmed      int
+	Likely         int
 	Possible       int
 	InternetFacing int
+}
+
+// HostCounts is the item's counts as one value.
+func (it DigestItem) HostCounts() HostCounts {
+	return HostCounts{Confirmed: it.Confirmed, Likely: it.Likely, Possible: it.Possible, InternetFacing: it.InternetFacing}
 }
 
 // Digest summarizes what changed since the last digest.
@@ -88,6 +95,10 @@ type PlannerStore interface {
 	// running a product the vulnerability names whose version is unknown
 	// (possible).
 	AffectedAssets(ctx context.Context, tenantID shared.ID, vulnID string) ([]Asset, error)
+	// PlannedAssets lists the assets the alert held when it was last
+	// planned (id, name and match kind), so the planner can tell a new host
+	// from one more service of a known host.
+	PlannedAssets(ctx context.Context, tenantID, alertID shared.ID) ([]Asset, error)
 	// AlertByVuln returns the organization's alert for the vulnerability
 	// (nil when none).
 	AlertByVuln(ctx context.Context, tenantID shared.ID, vulnID string) (*Alert, error)
@@ -160,6 +171,8 @@ type Summary struct {
 // AssetView is one affected asset as a viewer sees it.
 type AssetView struct {
 	Asset
+	// TenantID is the organization the asset belongs to.
+	TenantID      shared.ID
 	FindingStatus string
 	TaskID        *shared.ID
 }

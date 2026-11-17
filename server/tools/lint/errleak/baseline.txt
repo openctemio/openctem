@@ -280,7 +280,6 @@ wrap-err internal/infra/llm/openai_compatible.go:ValidateBaseURL 1
 wrap-err internal/infra/llm/ratelimit.go:rateLimitedProvider.Complete 1
 wrap-err internal/infra/malware/clamd.go:Clamd.Scan 3
 wrap-err internal/infra/postgres/command_web_scope.go:CommandRepository.guardCreate 1
-wrap-err internal/infra/postgres/finding_spec_repository.go:findingTimeout 1
 wrap-err internal/infra/redis/sensor_liveness.go:unavailable 1
 wrap-err internal/signer/keys.go:LoadKey 1
 wrap-err pkg/brand/svg.go:SanitizeSVG 1
