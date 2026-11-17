@@ -5,7 +5,6 @@
   "app/(dashboard)/(discovery)/assets/changes/page.tsx": 14,
   "app/(dashboard)/(discovery)/assets/suggestions/page.tsx": 23,
   "app/(dashboard)/(discovery)/error.tsx": 5,
-  "app/(dashboard)/(discovery)/scans/page.tsx": 17,
   "app/(dashboard)/(mobilization)/automations/page.tsx": 1,
   "app/(dashboard)/(mobilization)/error.tsx": 5,
   "app/(dashboard)/(prioritization)/priority-rules/page.tsx": 7,

@@ -9,15 +9,18 @@ import ScansPage from '../page'
 // tenant's 21st scan could not be seen and the footer read "of 20".
 const configCalls: Array<Record<string, unknown> | undefined> = []
 let configsResponse: unknown
+let readError: unknown
 const bulkDisable = vi.hoisted(() => vi.fn())
 const bulkActivate = vi.hoisted(() => vi.fn())
 const bulkPause = vi.hoisted(() => vi.fn())
 const bulkDelete = vi.hoisted(() => vi.fn())
+// Permissions the signed-in user lacks in a test (none by default).
+const denied = vi.hoisted(() => new Set<string>())
 
 vi.mock('@/lib/api/scan-hooks', () => ({
   useScanConfigs: (filters?: Record<string, unknown>) => {
     configCalls.push(filters)
-    return { data: configsResponse, isLoading: false }
+    return { data: configsResponse, isLoading: false, error: readError, mutate: vi.fn() }
   },
   useScanConfigStats: () => ({
     data: { total: 57, active: 50, paused: 5, disabled: 2 },
@@ -62,7 +65,7 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
     ...actual,
     Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useHasPermission: () => true,
-    usePermissions: () => ({ can: () => true }),
+    usePermissions: () => ({ can: (p: string) => !denied.has(p) }),
   }
 })
 // The real URL is the list state (useListParams reads and writes it).
@@ -106,6 +109,8 @@ const scan = (i: number) => ({
 describe('Scans › Configurations', () => {
   beforeEach(() => {
     configCalls.length = 0
+    denied.clear()
+    readError = undefined
     resetUrl()
     configsResponse = {
       data: Array.from({ length: 25 }, (_, i) => scan(i + 26)),
@@ -144,9 +149,9 @@ describe('Scans › Configurations', () => {
     urlState.page = '2'
     render(<ScansPage />)
     // One click on the header's sort button sorts by the column, in its
-    // first direction (ascending until the column declares its kind).
+    // kind's first direction (a number: largest first).
     await userEvent.click(screen.getByRole('button', { name: /^Runs/ }))
-    expect(urlState.sort).toBe('total_runs')
+    expect(urlState.sort).toBe('-total_runs')
     expect(urlState.page).toBeUndefined()
   })
 
@@ -156,7 +161,8 @@ describe('Scans › Configurations', () => {
     render(<ScansPage />)
     const boxes = screen.getAllByRole('checkbox')
     await userEvent.click(boxes[1])
-    await userEvent.click(screen.getByRole('button', { name: 'Disable' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Disable' }))
     expect(bulkDisable).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Disable 1 scan?')
@@ -171,7 +177,8 @@ describe('Scans › Configurations', () => {
     bulkDelete.mockResolvedValue({ message: 'ok' })
     render(<ScansPage />)
     await userEvent.click(screen.getAllByRole('checkbox')[0])
-    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete 25 scans?')
     expect(within(dialog).getByText('Scan 26')).toBeInTheDocument()
@@ -189,7 +196,8 @@ describe('Scans › Configurations', () => {
     bulkDelete.mockReset()
     render(<ScansPage />)
     await userEvent.click(screen.getAllByRole('checkbox')[1])
-    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('alertdialog')
     const confirm = within(dialog).getByRole('button', { name: 'Delete 1 scan' })
     expect(confirm).toBeDisabled()
@@ -240,12 +248,104 @@ describe('Scans › Configurations', () => {
   it("lists the platform's scans under the System origin filter", async () => {
     render(<ScansPage />)
     expect(configCalls.at(-1)?.origin).toBeUndefined()
-    await userEvent.click(screen.getAllByRole('button', { name: 'Filters' })[0])
-    await userEvent.click(screen.getByRole('checkbox', { name: 'System' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Origin: All origins' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'System' }))
     expect(urlState.origin).toBe('system')
     await waitFor(() => expect(configCalls.at(-1)).toMatchObject({ origin: 'system' }))
-    await userEvent.click(screen.getByRole('checkbox', { name: 'People' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Origin: System' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'People' }))
     await waitFor(() => expect(configCalls.at(-1)).toMatchObject({ origin: 'user' }))
+  })
+
+  // The list pattern: the bar holds two direct actions, the rest under More.
+  it('the bulk bar has Activate and Pause, then Disable and Delete under More', async () => {
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[1])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    expect(within(bar).getByRole('button', { name: 'Activate' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(within(bar).queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument()
+    expect(within(bar).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    await userEvent.click(within(bar).getByRole('button', { name: 'More actions' }))
+    const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent)
+    expect(items).toEqual(['Disable', 'Delete'])
+  })
+
+  it('offers no row selection to a user who can neither change nor delete scans', () => {
+    denied.add('scans:write')
+    denied.add('scans:delete')
+    render(<ScansPage />)
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('without scans:write the bar offers only Delete, under More', async () => {
+    denied.add('scans:write')
+    render(<ScansPage />)
+    await userEvent.click(screen.getAllByRole('checkbox')[1])
+    const bar = screen.getByRole('toolbar', { name: 'Actions for selected rows' })
+    expect(within(bar).queryByRole('button', { name: 'Activate' })).not.toBeInTheDocument()
+    await userEvent.click(within(bar).getByRole('button', { name: 'More actions' }))
+    expect((await screen.findAllByRole('menuitem')).map((i) => i.textContent)).toEqual(['Delete'])
+  })
+
+  // Filters set from Add filter (or a link) show as chips, each removable;
+  // State and Origin are the toolbar's own selects and never chips.
+  it('shows the type, schedule, tag and one-off filters as removable chips', async () => {
+    urlState.type = 'workflow'
+    urlState.schedule = 'daily'
+    urlState.tag = 'perimeter'
+    urlState.one_off = '1'
+    urlState.status = 'paused'
+    render(<ScansPage />)
+    const chips = screen.getAllByTestId('filter-chip').map((c) => c.textContent)
+    expect(chips).toEqual([
+      'Scan type: Workflow',
+      'Schedule: Daily',
+      'Tag: perimeter',
+      'One-off scans shown',
+    ])
+    expect(screen.getByRole('button', { name: 'State: Schedule paused' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove filter Scan type: Workflow' }))
+    expect(urlState.type).toBeUndefined()
+    expect(urlState.schedule).toBe('daily')
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(urlState.schedule).toBeUndefined()
+    expect(urlState.tag).toBeUndefined()
+    expect(urlState.one_off).toBeUndefined()
+    // Clear filters removes the chips; the State select keeps its value.
+    expect(urlState.status).toBe('paused')
+  })
+
+  it('the name is a link to the scan page', () => {
+    render(<ScansPage />)
+    const link = screen.getByRole('link', { name: 'Scan 26, view details' })
+    expect(link).toHaveAttribute('href', '/scans/s26')
+  })
+
+  it('says "no match" with Clear filters when a filter leaves no row', async () => {
+    urlState.status = 'disabled'
+    urlState.q = 'zz'
+    configsResponse = { data: [], total: 0, page: 1, per_page: 25, total_pages: 0 }
+    render(<ScansPage />)
+    expect(screen.getByText('No scans match these filters')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(urlState.status).toBeUndefined()
+    expect(urlState.q).toBeUndefined()
+  })
+
+  it('says "No scans yet" on an empty, unfiltered list', () => {
+    configsResponse = { data: [], total: 0, page: 1, per_page: 25, total_pages: 0 }
+    render(<ScansPage />)
+    expect(screen.getByText('No scans yet')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
+  it('shows the no-access notice, not an error, when the read is refused', () => {
+    configsResponse = undefined
+    readError = { statusCode: 403, code: 'FORBIDDEN' }
+    render(<ScansPage />)
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.getByText(/do not have access/i)).toBeInTheDocument()
   })
 
   it('reads the origin from a shared link', () => {
