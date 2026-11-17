@@ -4,6 +4,7 @@ import { BrandLogoFull } from '@/components/brand-logo'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { SectionTabs, type SectionTab } from '@/features/shared/components/section-tabs'
+import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 
 import { PrintButton } from './print-button'
@@ -94,7 +95,7 @@ export function StaticPage({
               {toc.map((s) => (
                 <li key={s.id}>
                   <a
-                    href={`#${s.id}`}
+                    href={safeInternalHref(`#${s.id}`)}
                     className="block rounded-sm py-1 text-signal-text underline-offset-3 hover:underline focus-visible:underline"
                   >
                     {s.heading}

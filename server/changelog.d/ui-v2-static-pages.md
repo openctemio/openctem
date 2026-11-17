@@ -8,3 +8,4 @@
 - A wide subprocessor table scrolls inside the page on a phone instead of pushing the page sideways.
 - About > Open-source licenses opens with the number of components per part, names its columns, and offers
   Reload beside a list that could not be loaded.
+- Docs: web/docs/ui-style-contract.md ("Static reading pages")
