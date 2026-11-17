@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
 
@@ -53,5 +53,88 @@ describe('DataTable error prop', () => {
     render(<DataTable columns={columns} data={[{ name: 'kept row' }]} error={new Error('boom')} />)
     expect(screen.getByText('kept row')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+describe('DataTable stale read', () => {
+  afterEach(() => vi.useRealTimers())
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000)
+
+  it('a fresh read says nothing', () => {
+    const { container } = render(
+      <DataTable columns={columns} data={[{ name: 'row' }]} staleAt={minutesAgo(1)} />
+    )
+    expect(container.querySelector('[data-slot=table-stale]')).toBeNull()
+  })
+
+  it('a read older than 5 minutes says how old it is in the pager, with a refresh', async () => {
+    const onRefresh = vi.fn()
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ name: 'row' }]}
+        staleAt={minutesAgo(12)}
+        onRefresh={onRefresh}
+      />
+    )
+    const note = container.querySelector('[data-slot=table-stale]')
+    expect(note).toHaveTextContent('Updated 12 minutes ago')
+    expect(note?.closest('[data-slot=data-table-pager]')).not.toBeNull()
+    const refresh = screen.getByRole('button', { name: 'Refresh now' })
+    // The kit's icon size: 32, 36 on a phone.
+    expect(refresh.className).toContain('size-control')
+    await userEvent.click(refresh)
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+    // The rows stay.
+    expect(screen.getByText('row')).toBeInTheDocument()
+  })
+
+  it('a failed refresh says so at once, whatever the age', () => {
+    const { container } = render(
+      <DataTable columns={columns} data={[{ name: 'row' }]} staleAt={minutesAgo(0)} refreshFailed />
+    )
+    expect(container.querySelector('[data-slot=table-stale]')).not.toBeNull()
+    expect(screen.getByText('row')).toBeInTheDocument()
+  })
+
+  it('the note appears as time passes, without new props', () => {
+    vi.useFakeTimers()
+    const { container } = render(
+      <DataTable columns={columns} data={[{ name: 'row' }]} staleAt={new Date()} />
+    )
+    expect(container.querySelector('[data-slot=table-stale]')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(6 * 60_000)
+    })
+    expect(container.querySelector('[data-slot=table-stale]')).not.toBeNull()
+  })
+})
+
+describe('DataTable without a toolbar or rows', () => {
+  it('showToolbar={false} draws no toolbar row', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        showToolbar={false}
+        toolbarStart={<input aria-label="my search" />}
+        emptyState={<p>Nothing yet</p>}
+      />
+    )
+    expect(screen.queryByLabelText('my search')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /display/i })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-slot=list-toolbar]')).toBeNull()
+    expect(screen.getAllByText('Nothing yet').length).toBeGreaterThan(0)
+  })
+
+  it('an empty list offers no select-all and no sorting in its header', () => {
+    const bulk = { actions: null, rowLabel: (r: Row) => r.name }
+    const sortable: ColumnDef<Row>[] = [
+      { accessorKey: 'name', header: 'Name', enableSorting: true },
+    ]
+    const { rerender } = render(<DataTable columns={sortable} data={[]} bulk={bulk} />)
+    expect(screen.getByRole('checkbox', { name: 'Select all rows on this page' })).toBeDisabled()
+    rerender(<DataTable columns={sortable} data={[{ name: 'row' }]} bulk={bulk} />)
+    expect(screen.getByRole('checkbox', { name: 'Select all rows on this page' })).toBeEnabled()
   })
 })

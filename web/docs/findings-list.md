@@ -54,19 +54,39 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 ## Empty and error states
 
 The list is in exactly one of these, and each says what to do next
-(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`):
+(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`, drawn with the shared `EmptyState`):
 
-| Kind        | When                                                            | Next action                                      |
-| ----------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| Nothing yet | the organization has no findings and nothing narrows the list   | Import results, Set up a scan, Integrations      |
-| No match    | filters, the search, a context scope or the state hide findings | Clear filters or search, Search all statuses     |
-| No access   | the list read was refused (403)                                 | names the missing permission when the server did |
+| Kind           | When                                                               | What shows                                                                     |
+| -------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| First run      | the organization has no findings and nothing narrows the list      | "No findings yet": Run a scan, Import results, Connect a tool                  |
+| Practice first | the chosen practice has no findings in any state, nothing narrowed | what the practice covers, Import results                                       |
+| No match       | filters, the search, a context scope or the state hide findings    | Clear filters (or Clear search), Search all states; the count reads 0          |
+| No access      | the list read was refused (403)                                    | "You cannot read findings here", the missing permission when named, one action |
+| Load error     | the read failed and there are no rows of that request to keep      | an inline alert with Retry and Copy request ID; no count, no footer            |
+| Stale          | the rows are older than 5 minutes, or a refresh of them failed     | the rows stay; the footer says "Updated 12 minutes ago" with a refresh button  |
+| Partial counts | the list answered without a usable total                           | "Could not count" and Retry beside the view name; the pager has no total       |
 
+- A state has at most one filled button: the first action the viewer may use. The buttons are kit buttons at
+  the default control height, in a row on a desktop and stacked full width on a phone.
+- First run: the page shows the state alone, with no title row, toolbar or chips row, and the table header
+  offers neither select-all nor sorting. Run a scan opens the scan form (`/scans?new=scan`, `scans:write`),
+  Import results opens the import dialog (the gate of the header's Import results) and Connect a tool opens
+  the integrations settings (`integrations:read`). An action the viewer may not use is not shown; the sentence
+  stays. The header keeps Add finding and Triage.
 - The total comes from the scope-only stats. When it is unknown, the list never claims the organization is empty.
-- A failed list is an inline alert in the table area with Retry and the server's request id (Copy request ID).
-  The heading, search, filters and chips stay, and there is no toast on top of it.
-- A refetch keeps the rows on screen with a thin progress bar above the table.
-- Set up a scan and Integrations show only to someone who can open those pages (`scans:read`, `integrations:read`).
+- No match: the toolbar and the chips stay. "Search all states" switches the State lens to All and is not
+  offered when the lens is already All.
+- No access: the header shows no Add finding and no Triage (the `t` key does nothing), there is no title row
+  or toolbar, rows from an earlier answer are removed, and the one action is "Go to the dashboard".
+- Load error: the heading, search, filters and chips stay, and there is no toast on top of the alert.
+- Stale: the page records when the list last answered, from the list's own responses (no extra request). A
+  refetch keeps the rows on screen with a thin progress bar above the table. When the refetch of the request
+  on screen fails, the rows stay and the footer says how old they are at once; a failure of a different
+  request (a new filter, another page) is a load error. Only the footer note re-renders as time passes.
+- Partial counts: the list API sends a total with every answer today. The page reads a missing or negative
+  total as "not known": the count slot says "Could not count" ("Not counted" on a phone, the full sentence in
+  its tooltip) with Retry, the pager reads "Showing 1 to 25" and "Page 1", and Last page is disabled with its
+  reason ("The total is not known yet").
 
 ## Export
 

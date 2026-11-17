@@ -68,6 +68,8 @@ export function bulkSelectColumn<TData>(labels: {
           table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')
         }
         onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+        // Nothing to select on an empty list (a first run, a no-match).
+        disabled={table.getRowModel().rows.length === 0}
         aria-label={labels.allOnPage}
       />
     ),
