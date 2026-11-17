@@ -10,6 +10,8 @@
 -- CHECK is validated in one pass; together they hold the table lock for a
 -- fraction of a second on 50 000 rows. Every existing key (findings,
 -- vulnerabilities, assets, scans) satisfies the new check.
+--
+-- expand-contract-ok: the type change only widens varchar(32) to varchar(64); a server of the previous release reads and writes the same values through the rollout
 ALTER TABLE saved_views DROP CONSTRAINT IF EXISTS chk_saved_views_page;
 ALTER TABLE saved_views ALTER COLUMN page TYPE varchar(64);
 ALTER TABLE saved_views ADD CONSTRAINT chk_saved_views_page
