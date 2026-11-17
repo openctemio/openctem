@@ -277,10 +277,16 @@ test(
     )
     await page.getByRole('heading', { name: 'Dashboard data' }).scrollIntoViewIfNeeded()
     await read
+    // Let that read finish (the API answers the path with a redirect) before the next load.
+    await page.waitForTimeout(QUIET_MS)
 
     // The old tab link lands on the section with its state loaded.
     const deep = await apiRequestsOfLoad(page, '/settings/general?tab=dashboard-data')
-    expect(deep.filter(dashboardData), deep.join('\n')).toHaveLength(1)
+    // One read of the section's state (the path the page asks for, not the redirect it follows).
+    expect(
+      deep.filter((r) => r === 'GET /api/v1/dashboard-data/'),
+      deep.join('\n')
+    ).toHaveLength(1)
     await expect(page.getByRole('button', { name: 'Rebuild dashboard data' })).toBeVisible()
   }
 )
