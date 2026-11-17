@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	exposureItemsListTimeout  = "3s"
-	exposureItemsStatsTimeout = "2s"
+	exposureItemsListTimeout  = 3 * time.Second
+	exposureItemsStatsTimeout = 2 * time.Second
 )
 
 var errUncompiledExposureItemFilter = errors.New("exposure item filter was not compiled for a tenant")
@@ -66,14 +66,10 @@ func exposureItemArgs(w *filterspec.Where, scanned bool) []any {
 }
 
 // readOnlyTx opens a read-only transaction with a statement timeout.
-func (r *ExposureRepository) readOnlyTx(ctx context.Context, timeout string) (*sql.Tx, error) {
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+func (r *ExposureRepository) readOnlyTx(ctx context.Context, timeout time.Duration) (*sql.Tx, error) {
+	tx, err := beginRead(ctx, r.db.DB, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin exposure items read: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+timeout+"'"); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("set exposure items timeout: %w", err)
 	}
 	return tx, nil
 }

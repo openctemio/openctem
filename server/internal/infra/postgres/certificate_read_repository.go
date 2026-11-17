@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/certificate"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -25,8 +26,8 @@ func NewCertificateReadRepository(db *DB) *CertificateReadRepository {
 }
 
 const (
-	certificateListTimeout  = "3s"
-	certificateStatsTimeout = "1500ms"
+	certificateListTimeout  = 3 * time.Second
+	certificateStatsTimeout = 1500 * time.Millisecond
 )
 
 var errUncompiledCertificateFilter = errors.New("certificate filter was not compiled for a tenant")
@@ -77,14 +78,11 @@ func (r *CertificateReadRepository) ListWhere( //nolint:dupl // same shape as ev
 	if err := checkCertificateWhere(w); err != nil {
 		return empty, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, certificateListTimeout)
 	if err != nil {
 		return empty, fmt.Errorf("begin certificate list: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+certificateListTimeout+"'"); err != nil {
-		return empty, fmt.Errorf("set certificate list timeout: %w", err)
-	}
 	var total int64
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*)"+certificateFrom+" AND "+w.SQL, w.Args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("count certificates: %w", err)
@@ -121,14 +119,11 @@ func (r *CertificateReadRepository) StatsWhere(ctx context.Context, w *filterspe
 	if err := checkCertificateWhere(w); err != nil {
 		return nil, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, certificateStatsTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin certificate stats: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+certificateStatsTimeout+"'"); err != nil {
-		return nil, fmt.Errorf("set certificate stats timeout: %w", err)
-	}
 	q := "SELECT " + certificate.StatusSQL + ", count(*)" + certificateFrom + " AND " + w.SQL + " GROUP BY 1" //nolint:gosec // G202: compiled filter
 	rows, err := tx.QueryContext(ctx, q, w.Args...)
 	if err != nil {

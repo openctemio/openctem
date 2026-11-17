@@ -411,7 +411,8 @@ appears in a URL a server or proxy records (RFC-041 §3.2 P4):
   verify challenge when a factor exists, with the names of the requiring
   organizations; `/auth/mfa/enroll/{start,confirm}` or `/auth/mfa/verify`
   complete it and sign the person in again with a session that proved the
-  factor. An enrollment challenge needs a session signed in within the last 15
+  factor (an enrollment signs out every earlier session of the person,
+  including the one that asked for the challenge). An enrollment challenge needs a session signed in within the last 15
   minutes (sign-up or sign-in, then accept); an older session gets 403
   `REAUTH_REQUIRED` and the web sends the person to the password sign-in, so a
   stolen refresh token alone cannot bind an authenticator. Verify challenges

@@ -10,6 +10,7 @@ import { sameColumns } from '@/features/findings/lib/list-columns'
  */
 export type ViewChange =
   | { kind: 'filters'; count: number }
+  | { kind: 'query' }
   | { kind: 'search' }
   | { kind: 'sort' }
   | { kind: 'group' }
@@ -34,6 +35,12 @@ export interface ViewChangeInput {
   columns: readonly string[]
   /** The density on screen, or undefined when the person's own preference applies. */
   density: string | undefined
+  /**
+   * The list is driven by a query text applied in place of the view's own
+   * (`from_view=<id>`): the URL holds the whole filter, so the filter is one
+   * change, not a count of params.
+   */
+  queryText?: boolean
 }
 
 /** Params that are not conditions of the view and are compared on their own. */
@@ -43,8 +50,9 @@ const sameList = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((v, i) => v === b[i])
 
 export function viewChanges(input: ViewChangeInput): ViewChange[] {
-  const { view, search, viewFilters, baselineColumns, columns, density } = input
+  const { view, search, viewFilters, baselineColumns, columns, density, queryText } = input
   const changes: ViewChange[] = []
+  if (queryText) changes.push({ kind: 'query' })
 
   // Filters: a URL param is a change unless the view sets the same param to the same values.
   const stored = new Map(viewFilters.map((f) => [f.param, f.values]))
@@ -64,12 +72,14 @@ export function viewChanges(input: ViewChangeInput): ViewChange[] {
   // A filter chips cannot show (query text applied on top of the view) is
   // one more filter, though the chips row draws it by itself.
   if ((search.get('fq') ?? '').trim() !== '') added += 1
-  if (added > 0) changes.push({ kind: 'filters', count: added })
+  // With a query text in place of the view's, the filters and the search
+  // words are that text's: one change, said once.
+  if (added > 0 && !queryText) changes.push({ kind: 'filters', count: added })
 
   const doc = view.filter as { q?: unknown; sort?: unknown }
   const storedQ = typeof doc.q === 'string' ? doc.q : ''
   const q = search.get('q') ?? ''
-  if (q !== '' && q !== storedQ) changes.push({ kind: 'search' })
+  if (q !== '' && q !== storedQ && !queryText) changes.push({ kind: 'search' })
 
   const storedSort = Array.isArray(doc.sort)
     ? doc.sort.filter((s) => typeof s === 'string').join(',')
