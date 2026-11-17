@@ -9,13 +9,16 @@
 
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowRight, CheckCircle2, RefreshCw, Timer } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Info, MoreHorizontal, Timer } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
+import { RefreshButton } from '@/components/list-page-parts'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader, PageStack } from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { LockedChip } from '@/features/shared/components/filter-chips-row'
@@ -222,7 +225,10 @@ export function MyWorkPage() {
         isLoading={(views.isLoading || findingRows.isLoading) && !findingRows.data}
         error={views.error ?? findingRows.error}
         onRetry={refresh}
-        toolbarStart={
+        // Line 2 of the toolbar: the queue's locked rule, its one filter token
+        // (due in 72 hours) and how much of the queue is on screen. Each item
+        // keeps its own width; the line wraps between items, never inside one.
+        toolbarBelow={
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {lockedChip(which)}
             {which === 'assigned' && dueSoonCount !== undefined && (
@@ -232,6 +238,7 @@ export function MyWorkPage() {
                 size="sm"
                 variant={dueSoon ? 'secondary' : 'outline'}
                 aria-pressed={dueSoon}
+                className="shrink-0"
                 onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
               >
                 <Timer className="me-2 size-4" aria-hidden="true" />
@@ -239,27 +246,44 @@ export function MyWorkPage() {
                 <span className="ms-2 tabular-nums">{dueSoonCount}</span>
               </Button>
             )}
-            <span className="text-meta text-muted-foreground tabular-nums" aria-live="polite">
-              {total > rows.length
-                ? t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })
-                : t('myWork.results', '{count} results', { count: total })}
-            </span>
+            {total > rows.length && (
+              <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+                {t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
+              </span>
+            )}
           </div>
         }
+        // The toolbar's end: the queue's one main action, everything else
+        // under More (View all opens the same list on Findings).
         toolbarEnd={
           viewParams !== undefined && total > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {canTriage && which !== 'expiring' && (
-                <Button size="sm" variant="outline" onClick={() => openTriage(viewParams, viewKey)}>
+                <Button size="sm" onClick={() => openTriage(viewParams, viewKey)}>
                   {t('myWork.triageThese', 'Triage these')}
                 </Button>
               )}
-              <Button size="sm" variant="outline" asChild>
-                <Link href={quickViewHref(viewParams, include)}>
-                  {t('myWork.viewAll', 'View all')}
-                  <ArrowRight className="ms-2 size-4" aria-hidden="true" />
-                </Link>
-              </Button>
+              <ActionMenu
+                title={t(`myWork.tabs.${which}`, TAB_LABELS[which])}
+                label={t('myWork.more', 'More for this queue')}
+                items={[
+                  {
+                    id: 'view-all',
+                    label: t('myWork.viewAll', 'View all'),
+                    icon: ArrowRight,
+                    href: quickViewHref(viewParams, include),
+                  },
+                ]}
+                trigger={
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                    aria-label={t('myWork.more', 'More for this queue')}
+                  >
+                    <MoreHorizontal aria-hidden="true" />
+                  </Button>
+                }
+              />
             </div>
           ) : null
         }
@@ -339,29 +363,14 @@ export function MyWorkPage() {
   }
 
   const asOf = views.data?.as_of
+  const explain = t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])
   return (
     <Main>
       <PageStack>
+        {/* The page's one main action (Triage, with what waits) sits on the
+            title's line; Refresh belongs to the list, in its title row. */}
         <PageHeader title={t('myWork.title')} description={t('myWork.description')}>
           <>
-            {asOf && (
-              <span className="hidden text-meta text-muted-foreground sm:inline">
-                {t('myWork.updated', 'Updated')} <RelativeTime date={asOf} />
-              </span>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  onClick={refresh}
-                  aria-label={t('myWork.refresh', 'Refresh')}
-                >
-                  <RefreshCw className="size-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('myWork.refresh', 'Refresh')}</TooltipContent>
-            </Tooltip>
             {canTriage && triageView && (
               <Button
                 onClick={() =>
@@ -388,9 +397,55 @@ export function MyWorkPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-          <p className="text-meta text-muted-foreground">
-            {t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])}
-          </p>
+          {/* The list's title row: the queue's name, its count once, what it
+              holds (a sentence on one line from md, behind the info mark on
+              a phone) and Refresh. */}
+          <ListTitleRow
+            className="mt-3"
+            title={t(`myWork.tabs.${tab}`, TAB_LABELS[tab])}
+            data-testid="my-work-title-row"
+            count={
+              counts[tab] !== undefined ? (
+                <ListCount
+                  total={counts[tab] ?? 0}
+                  label={t('myWork.total', '{count, plural, one {# item} other {# items}}', {
+                    count: counts[tab] ?? 0,
+                  })}
+                />
+              ) : undefined
+            }
+            start={
+              <>
+                <p
+                  data-slot="my-work-hint"
+                  className="hidden min-w-0 truncate text-meta text-muted-foreground md:block"
+                  title={explain}
+                >
+                  {explain}
+                </p>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="shrink-0 md:hidden"
+                      aria-label={t('myWork.about', 'About this list')}
+                    >
+                      <Info aria-hidden="true" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="max-w-xs text-sm">{explain}</PopoverContent>
+                </Popover>
+              </>
+            }
+          >
+            {asOf && (
+              <span className="hidden text-meta whitespace-nowrap text-muted-foreground lg:inline">
+                {t('myWork.updated', 'Updated')} <RelativeTime date={asOf} />
+              </span>
+            )}
+            <RefreshButton onClick={refresh} label={t('myWork.refresh', 'Refresh')} />
+          </ListTitleRow>
           {available.map((key) => (
             <TabsContent key={key} value={key} className="mt-1">
               {key === tab &&

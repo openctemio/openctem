@@ -1,4 +1,5 @@
 {
+  "myWork.about": "About this list",
   "myWork.changed.crown_jewel": "asset is a crown jewel",
   "myWork.changed.epss_at_or_above_threshold": "EPSS now above the threshold",
   "myWork.changed.exploit_validated": "exploit validated",
@@ -48,6 +49,7 @@
   "myWork.locked.requested": "Made by me",
   "myWork.locked.review": "I can decide",
   "myWork.locked.team": "My groups",
+  "myWork.more": "More for this queue",
   "myWork.next.allAccepted": "All accepted risks ending soon",
   "myWork.next.allFindings": "Open all findings",
   "myWork.next.approvalRules": "Set up approval rules",
@@ -87,6 +89,7 @@
   "myWork.tasks.viewAll": "View all tasks",
   "myWork.title": "My work",
   "myWork.topOf": "Top {shown} of {total}",
+  "myWork.total": "{count, plural, one {# item} other {# items}}",
   "myWork.triage": "Triage",
   "myWork.triageThese": "Triage these",
   "myWork.untitled": "Untitled finding",

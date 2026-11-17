@@ -223,11 +223,16 @@ describe('My Work page', () => {
     expect(findingQueue.mock.calls.at(-1)![0]).toBe(
       'state=open&related_to=my_team&informational=false'
     )
-    expect(screen.getByRole('link', { name: /View all/ })).toHaveAttribute(
-      'href',
-      '/findings?state=open&related_to=my_team'
-    )
+    // View all is the queue's one secondary action: a named icon button at
+    // the toolbar's end (the More menu with its only item).
+    fireEvent.click(screen.getByRole('button', { name: 'View all' }))
+    expect(push).toHaveBeenCalledWith('/findings?state=open&related_to=my_team')
     expect(screen.getByText('Top 1 of 23')).toBeInTheDocument()
+    // The count shows once, in the list's title row, with what the list holds.
+    const titleRow = screen.getByTestId('my-work-title-row')
+    expect(within(titleRow).getByRole('heading', { name: 'My team' })).toBeInTheDocument()
+    expect(within(titleRow).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(within(titleRow).getByRole('button', { name: 'About this list' })).toBeInTheDocument()
   })
 
   it('lists requests awaiting my review with what changed, decided in place', async () => {

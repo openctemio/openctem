@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { DataTable, DataTableColumnHeader } from '@/features/shared'
+import { QueueCard } from '@/features/shared/components/queue'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { RelativeTime } from '@/features/shared/components/relative-time'
@@ -35,7 +36,7 @@ export function FindingQueue({
   isLoading,
   error,
   onRetry,
-  toolbarStart,
+  toolbarBelow,
   toolbarEnd,
   empty,
 }: {
@@ -45,7 +46,8 @@ export function FindingQueue({
   isLoading: boolean
   error: unknown
   onRetry: () => void
-  toolbarStart?: ReactNode
+  /** The queue's locked rule and its filter tokens: the line under the toolbar. */
+  toolbarBelow?: ReactNode
   toolbarEnd?: ReactNode
   empty: ReactNode
 }) {
@@ -142,6 +144,54 @@ export function FindingQueue({
     return cols
   }, [t, tab])
 
+  // A phone card on the queue card's slots: the title on the full width (two
+  // lines at most), priority and severity on one line, where the finding is,
+  // then the deadline (or the acceptance end) and the status on one line.
+  // Marks never wrap inside themselves.
+  const mobileRow = (f: ApiFinding) => {
+    const location = findingLocation(f).full
+    return (
+      <QueueCard
+        data-testid="my-work-finding-card"
+        title={
+          <Link
+            href={`/findings/${encodeURIComponent(f.id)}`}
+            className="block min-w-0 text-sm font-medium hover:underline"
+          >
+            <span className="line-clamp-2 break-words">
+              {findingName(f) || t('myWork.untitled')}
+            </span>
+          </Link>
+        }
+        marks={
+          <span className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
+            <PriorityClassBadge priorityClass={f.priority_class} assetId={f.asset?.id} showWord />
+            <SeverityBadge severity={f.severity} />
+          </span>
+        }
+        meta={location ? <span className="min-w-0 truncate">{location}</span> : undefined}
+        reason={
+          <span className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
+            {tab === 'expiring' ? (
+              <span className="text-xs text-muted-foreground">
+                {t('myWork.columns.acceptanceEnds')} <RelativeTime date={f.acceptance_expires_at} />
+              </span>
+            ) : (
+              <>
+                <SlaDueChip
+                  status={f.sla_status}
+                  deadline={f.sla_deadline}
+                  kevCapped={f.sla_kev_capped}
+                />
+                <FindingStatusBadge status={f.status as FindingStatus} />
+              </>
+            )}
+          </span>
+        }
+      />
+    )
+  }
+
   if (error) {
     return <ErrorState title={t('myWork.loadError')} onRetry={onRetry} />
   }
@@ -156,8 +206,9 @@ export function FindingQueue({
       pageSize={QUEUE_SIZE}
       getRowId={(f) => f.id}
       onRowClick={(f) => router.push(`/findings/${encodeURIComponent(f.id)}`)}
-      toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      toolbarBelow={toolbarBelow}
+      mobileRow={mobileRow}
       emptyState={total === 0 ? empty : undefined}
     />
   )

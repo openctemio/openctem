@@ -1,4 +1,5 @@
 {
+  "myWork.about": "Về danh sách này",
   "myWork.changed.crown_jewel": "tài sản là tài sản trọng yếu",
   "myWork.changed.epss_at_or_above_threshold": "EPSS nay vượt ngưỡng",
   "myWork.changed.exploit_validated": "đã xác nhận khai thác được",
@@ -48,6 +49,7 @@
   "myWork.locked.requested": "Do tôi tạo",
   "myWork.locked.review": "Tôi có thể quyết định",
   "myWork.locked.team": "Nhóm của tôi",
+  "myWork.more": "Thêm cho hàng đợi này",
   "myWork.next.allAccepted": "Tất cả rủi ro chấp nhận sắp hết hạn",
   "myWork.next.allFindings": "Mở tất cả phát hiện",
   "myWork.next.approvalRules": "Thiết lập quy tắc phê duyệt",
@@ -87,6 +89,7 @@
   "myWork.tasks.viewAll": "Xem mọi công việc",
   "myWork.title": "Việc của tôi",
   "myWork.topOf": "{shown} đầu tiên trong {total}",
+  "myWork.total": "{count} mục",
   "myWork.triage": "Phân loại",
   "myWork.triageThese": "Phân loại các mục này",
   "myWork.untitled": "Phát hiện chưa có tên",
