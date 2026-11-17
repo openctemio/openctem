@@ -2354,7 +2354,7 @@ function FindingsContent() {
           </ToolbarSlot>
         </span>
       </SelectTrigger>
-      <SelectContent align="end">
+      <SelectContent>
         <SelectItem value="none">{t('findings.toolbar.groupNone', 'Group')}</SelectItem>
         {GROUP_BY_DIMENSIONS.map((d) => (
           <SelectItem key={d} value={d}>
@@ -2397,7 +2397,7 @@ function FindingsContent() {
           {t('findings.toolbar.export', 'Export')}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent>
         <DropdownMenuItem disabled={exporting} onClick={() => void handleExport('csv')}>
           {t('findings.toolbar.exportCsv', 'Export as CSV')}
         </DropdownMenuItem>
