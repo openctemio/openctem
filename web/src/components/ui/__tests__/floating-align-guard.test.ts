@@ -33,12 +33,7 @@ const DESIGN_FIXED = new Set([
  * bulk bars, the findings page menus). Remove an entry once its fixed
  * alignment is gone; never add one for new code.
  */
-const PENDING = new Set([
-  'app/(dashboard)/findings/page.tsx',
-  'features/saved-views/components/saved-views-menu.tsx',
-  'features/shared/components/filter-chips-row.tsx',
-  'features/shared/components/filter-select.tsx',
-])
+const PENDING = new Set<string>([])
 
 function* tsxFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

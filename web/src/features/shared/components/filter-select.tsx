@@ -124,7 +124,7 @@ export function FilterSelect<V extends string>({
           </ToolbarSlot>
           <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-48">
+        <DropdownMenuContent>
           <DropdownMenuRadioGroup
             value={clearable ? (filtered ? value : allValue) : value}
             onValueChange={(v) => onChange(v as V | '')}
