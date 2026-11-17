@@ -9,7 +9,8 @@
   any service is, the highest criticality, the distinct products and versions, and the finding and task links
   of every service. A group's count is its number of rows.
 - `GET /api/v1/emerging-threats/{id}` adds `asset_groups` (tier, hosts, services); `assets` is unchanged.
-  The alert's stored counters, the list, the drawer, messages and the score are unchanged and count assets.
+  The list, the drawer, messages and the stored counters count hosts the same way (see "an emerging-threat
+  alert counts hosts everywhere").
 - On a phone the affected assets are cards under the same group headers instead of a table cut at the
   screen edge.
 - Docs: server/docs/architecture/emerging-threat-alerts.md

@@ -39,32 +39,37 @@ func NewEmergingThreatHandler(svc *threatalertapp.Service, scope DataScopeEnforc
 
 // EmergingThreatSummary is one alert in the list.
 type EmergingThreatSummary struct {
-	ID                   string   `json:"id"`
-	VulnID               string   `json:"vuln_id"`
-	Title                string   `json:"title"`
-	Severity             string   `json:"severity"`
-	Level                string   `json:"level" enums:"immediate,digest,listed"`
-	Tier                 string   `json:"tier" enums:"confirmed,possible"`
-	State                string   `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
-	ETS                  int      `json:"ets"`
-	InKEV                bool     `json:"in_kev"`
-	KEVRansomware        bool     `json:"kev_ransomware"`
-	EPSS                 *float64 `json:"epss"`
-	ConfirmedAssets      int      `json:"confirmed_assets"`
-	PossibleAssets       int      `json:"possible_assets"`
-	InternetFacingAssets int      `json:"internet_facing_assets"`
-	// CriticalAssets counts the affected assets of criticality "critical";
+	ID            string   `json:"id"`
+	VulnID        string   `json:"vuln_id"`
+	Title         string   `json:"title"`
+	Severity      string   `json:"severity"`
+	Level         string   `json:"level" enums:"immediate,digest,listed"`
+	Tier          string   `json:"tier" enums:"confirmed,possible"`
+	State         string   `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
+	ETS           int      `json:"ets"`
+	InKEV         bool     `json:"in_kev"`
+	KEVRansomware bool     `json:"kev_ransomware"`
+	EPSS          *float64 `json:"epss"`
+	// ConfirmedHosts, LikelyHosts and PossibleHosts count the affected hosts
+	// of each tier in the caller's scope, the rows of asset_groups: a host
+	// that serves several ports is one. InternetFacingHosts counts the hosts
+	// with an internet-facing service.
+	ConfirmedHosts      int `json:"confirmed_hosts"`
+	LikelyHosts         int `json:"likely_hosts"`
+	PossibleHosts       int `json:"possible_hosts"`
+	InternetFacingHosts int `json:"internet_facing_hosts"`
+	// CriticalHosts counts the affected hosts of criticality "critical";
 	// Product names the best match and ProductCount the distinct matching
 	// products, all over the caller's scope.
-	CriticalAssets int                   `json:"critical_assets"`
-	Product        string                `json:"product"`
-	ProductCount   int                   `json:"product_count"`
-	ETSBreakdown   threatalert.Breakdown `json:"ets_breakdown"`
-	LastEventKind  string                `json:"last_event_kind"`
-	EventAt        *time.Time            `json:"event_at"`
-	SourceAt       *time.Time            `json:"source_at"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	CriticalHosts int                   `json:"critical_hosts"`
+	Product       string                `json:"product"`
+	ProductCount  int                   `json:"product_count"`
+	ETSBreakdown  threatalert.Breakdown `json:"ets_breakdown"`
+	LastEventKind string                `json:"last_event_kind"`
+	EventAt       *time.Time            `json:"event_at"`
+	SourceAt      *time.Time            `json:"source_at"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
 }
 
 // EmergingThreatListResponse is a page of alerts and the viewer's counts.
@@ -160,8 +165,8 @@ type EmergingThreatStateRequest struct {
 func toEmergingSummary(a *threatalert.Alert) EmergingThreatSummary {
 	return EmergingThreatSummary{ID: a.ID.String(), VulnID: a.VulnID, Title: a.Title, Severity: a.Severity,
 		Level: string(a.Level), Tier: string(a.Tier), State: string(a.State), ETS: a.ETS, InKEV: a.InKEV,
-		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedAssets: a.Confirmed, PossibleAssets: a.Possible,
-		InternetFacingAssets: a.InternetFacing, CriticalAssets: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
+		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedHosts: a.Confirmed, LikelyHosts: a.Likely,
+		PossibleHosts: a.Possible, InternetFacingHosts: a.InternetFacing, CriticalHosts: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
 		ETSBreakdown: a.Breakdown, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
 }
@@ -260,7 +265,7 @@ func (h *EmergingThreatHandler) writeErr(w http.ResponseWriter, err error) {
 
 // List handles GET /api/v1/emerging-threats.
 // @Summary      List emerging-threat alerts
-// @Description  One alert per vulnerability that newly affects the organization (new CVE, KEV addition, EPSS jump), with the Emerging Threat Score and the level that decided delivery. Only alerts with at least one asset in the caller's data scope; counts are those in scope. state=open (default) is new, acknowledged and remediating; state=all lists every state.
+// @Description  One alert per vulnerability that newly affects the organization (new CVE, KEV addition, EPSS jump), with the Emerging Threat Score and the level that decided delivery. Only alerts with at least one asset in the caller's data scope; the counts are hosts in scope (confirmed_hosts, likely_hosts, possible_hosts: a host that serves several ports is one). state=open (default) is new, acknowledged and remediating; state=all lists every state.
 // @Tags         Emerging threats
 // @Produce      json
 // @Security     BearerAuth

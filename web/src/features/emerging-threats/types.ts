@@ -24,11 +24,17 @@ export interface EmergingThreatSummary {
   in_kev: boolean
   kev_ransomware: boolean
   epss: number | null
-  confirmed_assets: number
-  possible_assets: number
-  internet_facing_assets: number
-  /** Affected assets of criticality "critical" (the crown jewels), in the caller's scope. */
-  critical_assets: number
+  /**
+   * Affected hosts in the caller's scope, by tier: the rows of `asset_groups`.
+   * A host that serves several ports (one service asset per port) is one.
+   */
+  confirmed_hosts: number
+  likely_hosts: number
+  possible_hosts: number
+  /** Affected hosts with an internet-facing service. */
+  internet_facing_hosts: number
+  /** Affected hosts of criticality "critical" (the crown jewels), in the caller's scope. */
+  critical_hosts: number
   /** The product of the best in-scope match ('' when none is known). */
   product: string
   /** How many distinct products match, in the caller's scope. */
