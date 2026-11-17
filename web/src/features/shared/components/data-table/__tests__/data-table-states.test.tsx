@@ -29,6 +29,31 @@ describe('DataTable empty and error states', () => {
   })
 })
 
+describe('DataTable beforeRows', () => {
+  it('draws page content after the toolbar and its chips row, before the rows', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={[{ name: 'a row' }]}
+        toolbarStart={<input aria-label="my search" />}
+        toolbarBelow={<span>chip</span>}
+        beforeRows={<section aria-label="summary">summary block</section>}
+      />
+    )
+    const chip = screen.getByText('chip')
+    const block = screen.getByLabelText('summary')
+    const row = screen.getAllByText('a row')[0]
+    // Document order: chips row, then the block, then the rows.
+    expect(chip.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(block.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('reserves nothing without it', () => {
+    const { container } = render(<DataTable columns={columns} data={[]} />)
+    expect(container.querySelector('[data-slot="table-before-rows"]')).toBeNull()
+  })
+})
+
 describe('DataTable error prop', () => {
   it('error with no rows shows the shared error state, Retry calls onRetry, the toolbar stays', async () => {
     const onRetry = vi.fn()

@@ -1085,6 +1085,83 @@ function oneOverflowMenu() {
   }
 }
 
+/**
+ * Under Compliance the benchmarks block is the list's content: it draws under
+ * the chips row and above the rows, so the title row and the toolbar hold
+ * still when it arrives and when it folds. The seed has no compliance checks:
+ * the endpoint answers late with one benchmark.
+ */
+function benchmarksNeverMoveTheHeader() {
+  for (const width of [1440, 390]) {
+    test(`/findings Compliance benchmarks never move the header at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      let release: () => void = () => undefined
+      const gate = new Promise<void>((r) => (release = r))
+      await page.route(/\/api\/v1\/findings\/compliance\/benchmarks(\?|$)/, async (route) => {
+        await gate
+        await route.fulfill({
+          json: {
+            data: [
+              {
+                key: 'e2e-example-benchmark',
+                name: 'Example benchmark',
+                version: '1.0',
+                framework: 'cis',
+                assets: 4,
+                failing_assets: 1,
+                counts: {
+                  pass: 9,
+                  fail: 3,
+                  manual: 0,
+                  not_applicable: 0,
+                  error: 0,
+                  excepted: 0,
+                  applicable: 12,
+                },
+                pass_rate: 0.75,
+                last_checked_at: '2026-11-01T00:00:00Z',
+              },
+            ],
+          },
+        })
+      })
+      await page.goto('/findings?practice=compliance')
+      await expect(
+        page.locator('main [data-slot="list-toolbar"] [data-slot="list-search-input"]').first()
+      ).toBeVisible({ timeout: 45_000 })
+      await settle(page)
+      const before = await firstPaint(page)
+      release()
+      const panel = page.locator('main [data-testid="compliance-benchmarks-panel"]')
+      await expect(panel).toBeVisible({ timeout: 20_000 })
+      await settle(page)
+      compareFirstPaint('benchmarks arrive', before, await firstPaint(page))
+      // Placement: under the toolbar (and its chips row), above the rows.
+      const order = await page.evaluate(() => {
+        const top = (sel: string) =>
+          document.querySelector(`main ${sel}`)?.getBoundingClientRect() ?? null
+        const bar = top('[data-slot="list-toolbar"]')
+        const block = top('[data-slot="table-before-rows"]')
+        return { barBottom: bar?.bottom ?? null, blockTop: block?.top ?? null }
+      })
+      expect(order.blockTop, JSON.stringify(order)).not.toBeNull()
+      expect(order.blockTop!).toBeGreaterThanOrEqual(order.barBottom!)
+      // Folding it moves nothing above it either.
+      const folded = await firstPaint(page)
+      await page.locator('main [data-slot="compliance-benchmarks-fold"]').click()
+      await expect(panel).toBeHidden()
+      await settle(page)
+      compareFirstPaint('benchmarks fold', folded, await firstPaint(page))
+      await page.evaluate(() =>
+        window.localStorage.removeItem('findings.complianceBenchmarks.folded')
+      )
+    })
+  }
+}
+
 test.describe('Findings list header', { tag: ['@findings'] }, () => {
   headerHoldsStill('/findings')
   pagingHoldsStill('/findings')
@@ -1092,6 +1169,7 @@ test.describe('Findings list header', { tag: ['@findings'] }, () => {
   changedViewSaysSo()
   quickViewPinNeverCoversTheCount()
   oneOverflowMenu()
+  benchmarksNeverMoveTheHeader()
 })
 test.describe('Assets list header', { tag: ['@assets'] }, () => {
   headerHoldsStill('/assets')

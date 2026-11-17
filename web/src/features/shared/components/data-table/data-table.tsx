@@ -251,6 +251,12 @@ interface DataTableProps<TData, TValue> {
    */
   toolbarBelow?: React.ReactNode
   /**
+   * Page content between the toolbar (with its chips row) and the rows, such
+   * as a summary block that loads on its own. It is content, not chrome:
+   * whatever it does, the title row and the toolbar above it never move.
+   */
+  beforeRows?: React.ReactNode
+  /**
    * Keep the selection checkbox and the row's identifying columns
    * (`meta.pin: 'start'`, else the first data column) in view while the
    * table scrolls sideways, so a row can be identified at any scroll
@@ -663,6 +669,7 @@ export function DataTable<TData, TValue>({
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
+  beforeRows,
   stickyFirstColumn = true,
   pinActions = false,
   resetSelectionKey,
@@ -1406,6 +1413,10 @@ export function DataTable<TData, TValue>({
             </>
           }
         />
+      )}
+
+      {beforeRows != null && beforeRows !== false && (
+        <div data-slot="table-before-rows">{beforeRows}</div>
       )}
 
       {phoneCards && (

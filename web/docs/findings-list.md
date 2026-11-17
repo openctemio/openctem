@@ -347,3 +347,8 @@ While the first page of rows loads, the list shows its real title row, toolbar a
 rows (`DataTable` `isLoading`), so nothing above the rows moves when they arrive. Before the page knows its
 URL, a placeholder of the title row's own height stands in for it. A table without a bulk bar says "N of M
 selected" under its rows, in the pager's line, never in the toolbar.
+
+Under the Compliance practice the list shows its benchmarks (pass rate per benchmark, failing controls, the
+assets of each control) under the chips row and above the rows (`DataTable` `beforeRows`): it is content of the
+list, not chrome, so the title row and the toolbar never move while it loads. It folds to its heading (the
+browser remembers it) and draws nothing when there are no checks.
