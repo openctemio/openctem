@@ -1,8 +1,9 @@
 ### Changed: the console Admin activity list follows the shared list pattern (redesign branch)
 
 - Console > Admin activity: a title row with the view name ("Changes" or "All events") and the count once, with
-  "Export this page (CSV)" at its end as the list's own action (it was in the page header). The kind, action,
-  administrator, result and date filters stay in the table's own toolbar; rows are on one line (the action in words,
+  "Export this page (CSV)" at its end as the list's own action (it was in the page header). The kind view and
+  Result stay in the table's toolbar; action, administrator and the two dates move into "Add filter" and show as
+  chips under the toolbar (one row at 1440 px); a phone opens every filter from the Filters button. Rows are on one line (the action in words,
   then its code) and the action stays in view while the table scrolls sideways. IP address steps aside on a narrow
   table.
 - The shared activity table (also on the console overview and an organization's activity tab) gets column kinds and
