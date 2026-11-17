@@ -43,7 +43,7 @@
   "assetGroups.csv.owner": "Owner",
   "assetGroups.csv.riskScore": "Risk score",
   "assetGroups.csv.tags": "Tags",
-  "assetGroups.description": "Organize and monitor assets by logical group.",
+  "assetGroups.description": "Organize and monitor assets by group.",
   "assetGroups.detail.addAssets": "Add assets",
   "assetGroups.detail.back": "Back to asset groups",
   "assetGroups.detail.backToGroups": "Back to groups",
