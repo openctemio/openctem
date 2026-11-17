@@ -177,6 +177,15 @@ describe('/assets/groups', () => {
     state.can = true
   })
 
+  it('a long name is cut inside its cell, not drawn over the next column', () => {
+    state.data = [group('g1', 'a very long group name '.repeat(8))]
+    state.total = 1
+    render(<AssetGroupsPage />)
+    const cell = document.querySelector('[data-slot="group-name-cell"]')
+    expect(cell?.className).toContain('min-w-0')
+    expect(cell?.querySelector('a')?.className).toContain('truncate')
+  })
+
   it('has one filter entry and no docked panel', () => {
     render(<AssetGroupsPage />)
     expect(document.querySelectorAll('[data-slot="add-filter"]')).toHaveLength(1)
