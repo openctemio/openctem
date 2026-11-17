@@ -1,17 +1,32 @@
 'use client'
 
 import { PossiblePathLabel } from '@/components/ui/possible-path-label'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { PageHeader, PageStack, MetricStrip, EmptyState, ErrorState } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  ListSearch,
+  MetricStrip,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
+import {
+  GraphLegend,
+  GraphNote,
+  GraphToolbar,
+  type GraphLegendItem,
+} from '@/components/graph-page/graph-page'
+import { KevBadge } from '@/components/ui/kev-badge'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
 import { attackPathHref } from '@/features/attack-surface/lib/attack-path-model'
 import type { ExposureChain, PathGraphPath, PathGraphNode } from '@/features/attack-surface'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ShieldCheck, ArrowRight, Network } from 'lucide-react'
+import { ShieldCheck, ArrowRight, Network, SearchX } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
@@ -112,6 +127,8 @@ function NoRelationshipData() {
   )
 }
 
+type ChainFilter = 'kev' | 'crown'
+
 // ============================================================
 // Page
 // ============================================================
@@ -132,6 +149,58 @@ export default function ExposureChainsPage() {
       rank: idx + 1,
     }))
   }, [chains])
+
+  // The chains arrive in one read; the search and the filter narrow what is
+  // drawn, in the browser.
+  const [search, setSearch] = useState('')
+  const [only, setOnly] = useState<ChainFilter | ''>('')
+  const shownPaths = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return paths.filter((p) => {
+      if (only === 'kev' && !(p.kevCount && p.kevCount > 0)) return false
+      if (only === 'crown' && !p.nodes[p.nodes.length - 1]?.isCrownJewel) return false
+      if (!q) return true
+      return p.nodes.some((n) => !n.hidden && n.name.toLowerCase().includes(q))
+    })
+  }, [paths, search, only])
+  const filtered = search.trim() !== '' || only !== ''
+
+  const legendItems: GraphLegendItem[] = [
+    {
+      key: 'asset',
+      mark: <span className="h-3 w-5 rounded-sm border-2 bg-card" />,
+      label: t(
+        'prioritization.exposureChains.legendAsset',
+        'An asset on the chain; opens its findings'
+      ),
+    },
+    {
+      key: 'hidden',
+      mark: <span className="h-3 w-5 rounded-sm border-2 border-dashed" />,
+      label: t('prioritization.attackPath.hidden', 'Outside your access'),
+    },
+    {
+      key: 'link',
+      mark: <span className="h-0.5 w-5 rounded bg-border-strong" />,
+      label: t(
+        'prioritization.exposureChains.legendLink',
+        'A relationship an attacker could follow'
+      ),
+    },
+    {
+      key: 'linkKev',
+      mark: <span className="h-0.5 w-5 rounded bg-destructive" />,
+      label: t(
+        'prioritization.exposureChains.legendLinkKev',
+        'A chain that ends at a known exploited finding'
+      ),
+    },
+    {
+      key: 'kev',
+      mark: <KevBadge />,
+      label: t('prioritization.exposureChains.legendKev', 'Known exploited finding on the target'),
+    },
+  ]
 
   return (
     <Main>
@@ -200,46 +269,15 @@ export default function ExposureChainsPage() {
               ]}
             />
 
-            {/* Main: ranked chains + explainer */}
-            <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-              {/* The ranked list is a column of bordered chain rows, so it sits under a
-                section heading rather than inside another card. */}
-              <section id="ranked-chains" className="scroll-mt-20 space-y-3 lg:col-span-2">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {t(
-                      'prioritization.exposureChains.rankedHint',
-                      'Each chain is the shortest path. Click a node to open its findings.'
-                    )}
-                  </p>
-                </div>
-                <PathGraph
-                  paths={paths}
-                  empty={
-                    <EmptyState
-                      icon={ShieldCheck}
-                      title={t('prioritization.exposureChains.emptyTitle', 'No exposure chains')}
-                      description={t(
-                        'prioritization.exposureChains.emptyDescription',
-                        'No internet-facing entry point reaches an asset with KEV or critical findings.'
-                      )}
-                    />
-                  }
-                />
-              </section>
-
-              {/* Sidebar explainer */}
-              <div className="flex flex-col gap-5">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">
-                      {t('prioritization.exposureChains.howTitle', 'How chains are built')}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-muted-foreground space-y-2 text-xs">
+            <GraphToolbar
+              label={t('prioritization.exposureChains.toolbarLabel', 'Exposure chain filters')}
+              end={
+                <>
+                  <GraphLegend items={legendItems} testId="exposure-chains-legend" />
+                  <GraphNote
+                    label={t('prioritization.exposureChains.howTitle', 'How chains are built')}
+                    title={t('prioritization.exposureChains.howTitle', 'How chains are built')}
+                  >
                     <p>
                       <strong className="text-foreground">
                         {t('prioritization.exposureChains.howEntryLead', 'Entry point')}
@@ -288,9 +326,82 @@ export default function ExposureChainsPage() {
                         )}
                       </p>
                     )}
-                  </CardContent>
-                </Card>
+                  </GraphNote>
+                </>
+              }
+            >
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder={t('prioritization.exposureChains.search', 'Search chains by asset')}
+              />
+              <FilterSelect<ChainFilter>
+                label={t('prioritization.exposureChains.filterLabel', 'Target')}
+                value={only}
+                onChange={setOnly}
+                options={[
+                  {
+                    value: 'kev',
+                    label: t('prioritization.exposureChains.filterKev', 'Known exploited'),
+                  },
+                  {
+                    value: 'crown',
+                    label: t('prioritization.exposureChains.filterCrown', 'Crown jewel'),
+                  },
+                ]}
+              />
+            </GraphToolbar>
+
+            {/* The ranked list is a column of bordered chain rows, so it sits under a
+                section heading rather than inside another card. */}
+            <section id="ranked-chains" className="scroll-mt-20 space-y-3">
+              <div>
+                <h2 className="text-section">
+                  {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
+                </h2>
+                <p className="text-body text-muted-foreground">
+                  {t(
+                    'prioritization.exposureChains.rankedHint',
+                    'Each chain is the shortest path. Click a node to open its findings.'
+                  )}
+                </p>
               </div>
+              <PathGraph
+                paths={shownPaths}
+                empty={
+                  filtered ? (
+                    <EmptyState
+                      icon={SearchX}
+                      title={t('prioritization.exposureChains.noMatchTitle', 'No chain matches')}
+                      description={t(
+                        'prioritization.exposureChains.noMatchDescription',
+                        'No chain passes through an asset with that name or filter.'
+                      )}
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSearch('')
+                            setOnly('')
+                          }}
+                        >
+                          {t('prioritization.exposureChains.clearFilters', 'Clear filters')}
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={ShieldCheck}
+                      title={t('prioritization.exposureChains.emptyTitle', 'No exposure chains')}
+                      description={t(
+                        'prioritization.exposureChains.emptyDescription',
+                        'No internet-facing entry point reaches an asset with KEV or critical findings.'
+                      )}
+                    />
+                  )
+                }
+              />
             </section>
           </>
         )}

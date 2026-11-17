@@ -42,6 +42,9 @@ const SAFE_CALLS = new Set([
   // Route builders: each returns a fixed same-origin prefix, or a fixed
   // https://attack.mitre.org prefix, with the data only in the path/query.
   'assetDetailHref',
+  // features/asset-groups/lib/group-link.ts: /assets/groups/ with the id
+  // URI-encoded as one path segment.
+  'assetGroupHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',

@@ -96,7 +96,7 @@ import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-d
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ManagedScansSection } from '@/features/scans/components/managed-scans-section'
 import { RunHistory } from '@/features/scans/components/run-history'
-import { ScanAddFilter } from '@/features/scans/components/scan-add-filter'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScanNameCell } from '@/features/scans/components/scan-name-cell'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
@@ -990,7 +990,7 @@ function ConfigurationsTab() {
   // value, so choosing a value moves nothing.
   const toolbarStart = (
     <>
-      <ScanAddFilter>{facetPanel(false)}</ScanAddFilter>
+      <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
       <FilterSelect<ConfigStatusFilter>
         label={t('scans.filter.state', 'State')}
         value={statusFilter}

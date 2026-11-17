@@ -41,7 +41,7 @@ export function useAttackPathLabels() {
     }
     const canvasHelp = t(
       'prioritization.attackPath.canvasHelp',
-      'Tab moves into the graph. Arrow keys follow the edges: right to the next step, left to the previous one, up and down within a column. Square brackets switch the selected path. Enter opens the findings of a step. Escape clears the highlight.'
+      'Tab moves into the graph. Arrow keys follow the edges: right to the next step, left to the previous one, up and down within a column. Square brackets switch the selected path. Enter opens the detail of a step. Escape clears the highlight.'
     )
     return { assetType, role, hiddenTitle, basis, nodeDescription, canvasHelp }
   }, [t])
