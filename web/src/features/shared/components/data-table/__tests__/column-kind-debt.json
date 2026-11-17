@@ -71,7 +71,6 @@
   "src/features/content-catalog/components/requests-tab.tsx": 5,
   "src/features/cycles/components/cycle-detail-tabs.tsx": 4,
   "src/features/emerging-threats/components/emerging-threats-list.tsx": 8,
-  "src/features/exposures/components/exposure-table.tsx": 6,
   "src/features/findings/components/detail/related-tab.tsx": 5,
   "src/features/findings/components/group-exceptions-panel.tsx": 6,
   "src/features/findings/components/receipt-history.tsx": 4,
