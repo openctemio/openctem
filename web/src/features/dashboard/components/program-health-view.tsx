@@ -639,11 +639,7 @@ function ExposureTrend({
               minTickGap={24}
               tickFormatter={(d: string) => formatTickDate(d, locale)}
             />
-            <YAxis
-              {...CHART_AXIS}
-              width={36}
-              allowDecimals={false}
-            />
+            <YAxis {...CHART_AXIS} width={36} allowDecimals={false} />
             <Tooltip
               {...CHART_TOOLTIP_PROPS}
               labelFormatter={(d) => formatTickDate(String(d), locale)}
