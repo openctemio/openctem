@@ -18,7 +18,6 @@
   "src/app/(dashboard)/(discovery)/assets/suggestions/page.tsx": 6,
   "src/app/(dashboard)/(discovery)/credentials/page.tsx": 7,
   "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 6,
-  "src/app/(dashboard)/(discovery)/scans/workflows/page.tsx": 5,
   "src/app/(dashboard)/(mobilization)/automations/page.tsx": 13,
   "src/app/(dashboard)/(mobilization)/exceptions/page.tsx": 6,
   "src/app/(dashboard)/(mobilization)/sla/page.tsx": 5,

@@ -85,6 +85,15 @@ const LISTS = {
     group: false,
     query: false,
   },
+  // Searched by name on the page; no query language for workflows.
+  '/scans/workflows': {
+    filters: [
+      ['retired', 'show'],
+      ['owner', 'mine'],
+    ],
+    group: false,
+    query: false,
+  },
 } as const
 
 /** A list without a query language skips the Basic | Query steps. */
@@ -677,4 +686,8 @@ test.describe('Scans list header', { tag: ['@scans'] }, () => {
 test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
   headerHoldsStill('/sensors')
   saysItsCountOnce('/sensors')
+})
+test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
+  headerHoldsStill('/scans/workflows')
+  saysItsCountOnce('/scans/workflows')
 })
