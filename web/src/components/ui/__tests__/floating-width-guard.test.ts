@@ -30,7 +30,6 @@ const REVIEWED: Record<string, string> = {
   // Popovers: panels of text, forms and search pickers, not lists of actions
   'app/(dashboard)/(prioritization)/attack-paths/page.tsx PopoverContent':
     'explanation text needs a reading measure',
-  'components/dashboard-kit/widget-frame.tsx PopoverContent': 'definition text needs a measure',
   'components/layout/team-switcher.tsx PopoverContent': 'shell design: organization switcher',
   'components/notification-bell.tsx PopoverContent': 'shell design: notifications panel',
   'features/activity/components/comment-reactions.tsx PopoverContent':

@@ -536,6 +536,30 @@ load.
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
 
+### Dashboard widgets
+
+- Every dashboard widget renders in `WidgetFrame`
+  (`src/components/dashboard-kit/widget-frame.tsx`): the metric name, one
+  menu, the state body or the figures, and the freshness line (only when the
+  figures are stale or their time differs from the page's).
+- **One menu per widget**, the shared `ActionMenu` (an anchored menu, or a
+  bottom sheet on a phone without room). Its items, each only when it applies:
+  "Open list" (the list the figure counts, same filter), "Show table" /
+  "Show chart" (a chart that has a table alternative registers it through
+  `ChartOrTable`; the switch is not a second button in the body), "How this
+  is counted" (the definition opens as a note inside the frame, with Close),
+  then the host's own items (`menuItems`: an editor's Edit, Duplicate,
+  Remove). A widget with no applicable item has no menu button. A preview that
+  cannot be operated passes `menu={false}`.
+- A visualization never draws its own loading, empty or error box: the frame
+  owns every state (loading skeleton shaped like the result, no data yet with
+  the next step, no results, not measured as a dash with the reason and never
+  0, no access, module off, error with Retry and "The other widgets are not
+  affected", partial, stale, scope changed). A state has an icon and words,
+  never colour alone.
+- Every chart has a text alternative: its one-sentence summary as the figure's
+  accessible name, and its table one menu item away.
+
 ## 5. Typography
 
 - Sentence case everywhere. No UPPERCASE eyebrows or labels.

@@ -761,6 +761,7 @@ function EditorCard({
         <div className="pointer-events-none flex min-w-0 flex-1 flex-col max-sm:hidden">
           <WidgetView
             widget={widget}
+            menu={false}
             value={
               value ??
               (typed
