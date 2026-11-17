@@ -213,6 +213,10 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   const blocked = request.blocked
   const host = request.client_host
   const orgName = currentTenant?.name ?? t('mcp.consent.yourOrganization', 'your organization')
+  const allowPublisherLabel = t('mcp.consent.allowPublisher', 'Allow {host} for {org}', {
+    host: host ?? '',
+    org: orgName,
+  })
   const requested = asked || !!request.access_requested
   const device = request.flow === 'device'
 
@@ -408,15 +412,22 @@ export function ConsentView({ requestId }: ConsentViewProps) {
                     'Your organization has not approved this application'
                   )}
             </AlertTitle>
-            <AlertDescription className="space-y-3">
-              <p>{blockedMessage(blocked, request.client_kind, host)}</p>
+            {/* min-w-0: the one-line action below must not widen the alert's grid
+                column past a phone screen; its label truncates instead, and the
+                full text stays its accessible name, its tooltip and the confirm
+                dialog's text. */}
+            <AlertDescription className="min-w-0 space-y-3">
+              <p className="break-words">{blockedMessage(blocked, request.client_kind, host)}</p>
               {request.requestable && request.can_allow && (
-                <Button size="sm" onClick={() => setConfirmAllow(true)} disabled={allowing}>
+                <Button
+                  size="sm"
+                  className="max-w-full"
+                  title={allowPublisherLabel}
+                  onClick={() => setConfirmAllow(true)}
+                  disabled={allowing}
+                >
                   <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
-                  {t('mcp.consent.allowPublisher', 'Allow {host} for {org}', {
-                    host: host ?? '',
-                    org: orgName,
-                  })}
+                  <span className="truncate">{allowPublisherLabel}</span>
                 </Button>
               )}
               {request.requestable &&
