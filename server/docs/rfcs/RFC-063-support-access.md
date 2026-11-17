@@ -210,7 +210,7 @@ Each phase ships tests for:
 | SU5 | Role construction | Allow-list roles (no deny-gate), with the §5.2 list never granted |
 | SU6 | Revocation latency | Checked on every request without a cache |
 | SU7 | Audit granularity | Session events plus every request, batched per minute for reads |
-| SU8 | Plan | Enterprise in SaaS; on by default self-hosted |
+| SU8 | Availability | A deniable feature: on by default; the operator may deny it per organization |
 | SU9 | Emergency access | Two super admins, 4 hours, read-only, owners told at once |
 | SU10 | Personal data | Member emails masked for support, except the case requester |
 
