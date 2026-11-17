@@ -8,3 +8,4 @@
   closed.
 - A widget that could not be loaded says that the other widgets are not
   affected.
+- Docs: web/docs/ui-style-contract.md ("Dashboard widgets")
