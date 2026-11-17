@@ -1,10 +1,9 @@
-# Extension API: building your own edition
+# Extension API: building OpenCTEM with your own extensions
 
-OpenCTEM Community is an extensible platform. Anyone can build their own
-edition: a separate Go module that requires the core, adds one or more
-extensions written against the public extension API, and calls the core's
-server entry point. The Enterprise edition is one such custom build; it uses
-exactly the API described here and nothing else.
+OpenCTEM is an extensible platform. Anyone can make a custom build: a separate
+Go module that requires the core, adds one or more extensions written against
+the public extension API, and calls the core's server entry point. Every
+custom build uses exactly the API described here and nothing else.
 
 | Part | Where |
 |---|---|
@@ -14,12 +13,12 @@ exactly the API described here and nothing else.
 | Reference extension | [`server/pkg/extension/example`](../../pkg/extension/example/example.go) |
 | Reference custom build | [`server/examples/custombuild`](../../examples/custombuild/main.go) |
 | Web API | `web/src/lib/extension` (navigation, settings, slots, override allowlist, message catalogs) |
-| Where paid code goes, the fence | [editions](editions.md) |
+| Where extension code goes, the core boundary check | [extensions](extensions.md) |
 
 ## Build your own
 
 ```
-go mod init example.com/myedition
+go mod init example.com/mybuild
 go get github.com/openctemio/openctem/server@<version or commit>
 ```
 
@@ -28,7 +27,7 @@ go get github.com/openctemio/openctem/server@<version or commit>
 package main
 
 import (
-	"example.com/myedition/myext"
+	"example.com/mybuild/myext"
 	"github.com/openctemio/openctem/server/pkg/server"
 )
 
@@ -67,19 +66,19 @@ to start on a mistake.
   packages (best effort, not versioned before 1.0), its own packages and its
   own dependencies. Go refuses `server/internal/...` from another module, so
   this rule is enforced by the compiler.
-- The core imports nothing of any extension and never names a grant key, a
-  plan, a tier, an edition or a brand.
+- The core imports nothing of any extension and never names a grant key or a
+  brand.
 - The web build reaches extension code only through the `@extension/*` alias
   (see [Web](#web)).
 
 ## Extension points
 
-Each point is named by function, has a Community default that keeps today's
+Each point is named by function, has a default that keeps today's
 behaviour, and is covered by the example extension and a contract test.
 
 | Point | Shape | Notes |
 |---|---|---|
-| Grants | `Grants func(ctx, Deps) (GrantProvider, error)` | things that are off unless granted; at most one provider per build; a failing provider leaves every grant off ([RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md) lists the guarantees every provider keeps) |
+| Grants | `Grants func(ctx, Deps) (GrantProvider, error)` | things that are off unless granted; at most one provider per build; a failing provider leaves every grant off ([RFC-145](../rfcs/RFC-145-grants-and-grant-providers.md) lists the guarantees every provider keeps) |
 | Controllers | `Controllers func(ctx, Deps) ([]Controller, error)` | run by the core controller manager; `Exclusive` ones on one replica; an error stops the start |
 | Routes | `Routes func(ctx, Router, Deps) error`, `Route{Method, Path, Permission, Grant, Handler}` | mounted at `/api/v1<Path>` behind authentication, the organization from the credential, membership, CSRF, the core permission and the grant; core routes and planes (`/admin`, `/auth`, `/internal`, `/sensor`, `/scim`, `/tenants`, `/ci`, `/mcp`, `/oauth`, `/platform`, the credential roots, ...) cannot be used; the caller is in `CallerFrom(ctx)` |
 | Migrations | `Schema` + `Migrations fs.FS` | in the extension's own schema; reference core tables only by primary key and `tenant_id` (`ON DELETE CASCADE`); its migration tracking tables are written by the migrator alone (the runner and the database roles script take writes back from the app role) |
@@ -106,7 +105,7 @@ flows (brand, retention, member lifecycle, sensor admission).
   switch refuses to run while a mount directory exists.
 - Navigation and settings rows carry `module`, `permission` and `grant`. A row
   whose grant is off is not rendered, so a build without a grant shows exactly
-  the Community UI: no locked items, no upsell. The API gate is the security
+  the default build's UI: no locked items, no placeholders. The API gate is the security
   boundary; the web only hides.
 - Strings go through the message catalogs (en and vi); an extension adds keys
   and never replaces core ones.
@@ -147,13 +146,13 @@ and support can tell a stock build from a custom one.
   Build and test it against the core's development branch regularly to catch
   breaks early.
 
-## Moving an installation between editions
+## Switching between the default build and a custom build
 
 | From | To | How |
 |---|---|---|
-| Community vX | a custom build on core vX | swap the images; migrations apply the core set, then each extension's set in its schema |
-| a custom build | Community, same core version | swap back; the extension schemas stay and are ignored; its permission ids in stored roles are ignored |
-| a custom build on vY | Community vX, X < Y | not supported: restore the backup taken before the upgrade |
+| the default build vX | a custom build on core vX | swap the images; migrations apply the core set, then each extension's set in its schema |
+| a custom build | the default build, same core version | swap back; the extension schemas stay and are ignored; its permission ids in stored roles are ignored |
+| a custom build on vY | the default build vX, X < Y | not supported: restore the backup taken before the upgrade |
 
 Nothing else changes on a swap: database, users, sessions and signing keys,
 sensors (no re-pairing), the encryption keys, SSO settings, API keys.

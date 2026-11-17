@@ -54,21 +54,28 @@ func TestPairing_OneCodeEverywhere_DB(t *testing.T) {
 		t.Fatalf("approve from the link: %v", err)
 	}
 
-	// The command was run after its code expired: the code becomes the
-	// request's own; nothing silently changes the code the person sees.
+	// The command was run after its code expired: the expired code is
+	// never used again (it would be a code of no organization); the request
+	// opens under a new code the sensor prints with its link.
 	late := f.expect(a, "late-01")
 	f.now = f.now.Add(pairing.TTL + time.Minute)
 	l := newSensor(82)
 	f.start(l, late.Code, "")
-	if l.resp.UserCode != late.Code || l.resp.PairingID == late.ID {
+	if l.resp.UserCode == "" || l.resp.UserCode == late.Code || l.resp.PairingID == late.ID ||
+		!strings.HasSuffix(l.resp.VerificationURIComplete, "?code="+l.resp.UserCode) {
 		t.Fatalf("start with an expired console code: %+v", l.resp)
 	}
 	if f.pairingStatus(late.ID) != "expired" {
 		t.Fatalf("the stale expectation stays open: %s", f.pairingStatus(late.ID))
 	}
 	f.reveal(l)
-	if v, err := f.svc.Lookup(ctx, a, late.Code); err != nil || v.ID != l.resp.PairingID {
-		t.Fatalf("lookup of a late start: %v %+v", err, v)
+	for _, o := range []sensorpairing.Actor{a, b} {
+		if _, err := f.svc.Lookup(ctx, o, late.Code); !errors.Is(err, sensorpairing.ErrNotFound) {
+			t.Fatalf("lookup by an expired code: %v", err)
+		}
+	}
+	if v, err := f.svc.Lookup(ctx, a, l.resp.UserCode); err != nil || v.ID != l.resp.PairingID {
+		t.Fatalf("lookup of a late start by its printed code: %v %+v", err, v)
 	}
 	f.now = time.Now()
 
@@ -79,13 +86,14 @@ func TestPairing_OneCodeEverywhere_DB(t *testing.T) {
 		t.Fatalf("codeless start: %+v", n.resp)
 	}
 
-	// A restarted sensor with the same code keeps the same code.
+	// A restarted sensor with a code no organization made opens a new
+	// request under a new code each time and closes its earlier one.
 	r := newSensor(84)
 	f.start(r, "R5T7-K2M9", "")
 	first := r.resp.PairingID
 	r.restart()
 	f.start(r, "R5T7-K2M9", "")
-	if r.resp.UserCode != "R5T7-K2M9" || r.resp.PairingID == first {
+	if r.resp.UserCode == "R5T7-K2M9" || r.resp.UserCode == "" || r.resp.PairingID == first {
 		t.Fatalf("restart with the same code: %+v", r.resp)
 	}
 	if f.pairingStatus(first) != "expired" {

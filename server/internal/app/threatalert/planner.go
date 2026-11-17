@@ -8,7 +8,7 @@
 // organization's affected assets to decide; nothing it reads leaves the
 // organization it belongs to. Every write carries the organization. Channel
 // messages hold vulnerability ids, catalog product names (stripped of
-// markup) and counts; asset names only when the organization turns them on
+// markup) and host counts; asset names only when the organization turns them on
 // (at most five). The rate cap and the levels bound what a poisoned feed can
 // cause. E-mail digests are counted within each recipient's data scope.
 //
@@ -433,7 +433,15 @@ func (p *Planner) plan(ctx context.Context, rs *runState, tenantID shared.ID, vu
 		a = &threatalert.Alert{TenantID: tenantID, VulnID: vulnID, State: threatalert.StateNew, Baseline: baseline,
 			NotifiedLevel: threatalert.NotifiedNone}
 	}
-	prevTier, prevKEV, prevCount := a.Tier, a.InKEV, a.Confirmed+a.Possible
+	prevTier, prevKEV := a.Tier, a.InKEV
+	// What the alert held when it was last planned: growth is a host it did
+	// not hold, or a host in a stronger tier, never one more port of a host.
+	var before []threatalert.Asset
+	if existing != nil {
+		if before, err = p.store.PlannedAssets(ctx, tenantID, existing.ID); err != nil {
+			return err
+		}
+	}
 	a.Title = threatalert.Title(vulnID, firstProduct(assets))
 	a.Severity = normSeverity(v.Severity)
 	a.Level, a.Tier, a.ETS, a.Breakdown = level, tier, b.Total, b
@@ -465,7 +473,7 @@ func (p *Planner) plan(ctx context.Context, rs *runState, tenantID shared.ID, vu
 			a.NotifiedLevel = string(threatalert.LevelDigest)
 		}
 		if level.Rank() >= threatalert.LevelDigest.Rank() &&
-			(levelRank(a.NotifiedLevel) < threatalert.LevelDigest.Rank() || a.Confirmed+a.Possible > prevCount) {
+			(levelRank(a.NotifiedLevel) < threatalert.LevelDigest.Rank() || threatalert.HostsGrew(before, assets)) {
 			a.DigestPending = true
 		}
 	}

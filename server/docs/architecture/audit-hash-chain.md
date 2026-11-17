@@ -24,14 +24,14 @@ sequenceDiagram
     TR->>TR: pg_advisory_xact_lock(chain), chain = tenant_id or the system chain
     TR->>CH: prev = last chain hash, else newest anchor, else empty
     TR->>CH: hash = sha256(prev | audit_log_row_payload(row)), hash_version 2
-    Note over AL,CH: UPDATE and TRUNCATE refused by audit_log_refuse_change, UNIQUE (tenant_id, prev_hash) deferred
+    Note over AL,CH: UPDATE, DELETE and TRUNCATE refused by audit_chain_refuse_change outside the owner functions, UNIQUE (tenant_id, prev_hash) deferred
     V->>CH: walk from the newest anchor, recompute with the same SQL payload
     alt mismatch, link broken, position missing
         V->>V: 409 with breaks (API), metric and log (controller)
     end
     RT->>CH: oldest contiguous prefix past AUDIT_RETENTION_DAYS (at least 365)
     RT->>RT: archive gz JSONL to audit-archive storage
-    RT->>CH: one tx under the same lock - insert anchor = last pruned hash, delete the prefix
+    RT->>CH: audit_chain_prune_prefix (owner rights) - same lock, insert anchor = last pruned hash, delete the prefix
 ```
 
 ## How it works
@@ -41,7 +41,8 @@ sequenceDiagram
 | Version 2 hash (every row since migration `audit_log_db_chain`): `SHA-256(prev_hash \| "\|" \| audit_log_row_payload(row))` | SQL `audit_log_row_hash`; Go `crypto.ComputeAuditRowHash` |
 | Version 1 hash (older rows): `SHA-256(prev_hash \| audit_log_id \| payload \| timestamp)` | `pkg/crypto/audit_chain.go` (`ComputeAuditChainHash`) |
 | Append: `AFTER INSERT` trigger `audit_log_chain_append` on `audit_logs`, under the per-chain advisory lock | migration `audit_log_db_chain` |
-| Append-only: `UPDATE`/`TRUNCATE` of `audit_logs`, `audit_log_chain` and the anchor/rebaseline tables raise `insufficient_privilege` | trigger `audit_log_refuse_change` |
+| Append-only: `UPDATE`/`DELETE`/`TRUNCATE` of `audit_logs`, `audit_log_chain` and the anchor/rebaseline tables raise `insufficient_privilege` outside the two owner functions; the API role holds no such grant | trigger `audit_chain_refuse_change`, migration `audit_chain_owner_only` |
+| Retention and rebaseline: the only delete and rewrite paths, `SECURITY DEFINER` functions owned by the schema owner | `audit_chain_prune_prefix`, `audit_chain_rebaseline_apply` |
 | Tenant-less events (logins, failed logins) go to the system chain `ffffffff-…` | `auditdom.SystemChainTenantID` |
 | Verify: `GET /api/v1/audit-logs/verify` (admin), 409 + `breaks[]` on a break | `AuditService.VerifyChain` |
 | Hourly verification of every tenant | `internal/infra/controller/audit_chain_verify.go` |
@@ -72,27 +73,52 @@ a rebaseline re-signs each row in its own version.
 
 ### Append-only
 
-- `UPDATE` and `TRUNCATE` of `audit_logs` are refused. So are updates of
-  `audit_chain_anchors`, `audit_chain_rebaselines` and
-  `audit_chain_rebaseline_entries`, and `TRUNCATE` of the chain.
-- A chain row's `prev_hash` and `hash` change only in a transaction that sets
-  `openctem.audit_rebaseline = 'on'` (`ApplyChainRebaseline`); its id, tenant,
-  position and version never change.
+- `INSERT` and `SELECT` are all the API role may do on `audit_logs` and
+  `audit_log_chain`. It holds no `UPDATE`, `DELETE` or `TRUNCATE` on them, and
+  no write at all on `audit_chain_anchors`, `audit_chain_rebaselines` and
+  `audit_chain_rebaseline_entries` (migration `audit_chain_owner_only` and
+  `deploy/postgres/least-privilege-roles.sql`, which also checks it).
+- Two functions owned by the schema owner are the only way to delete or
+  rewrite. Both are `SECURITY DEFINER` with a pinned `search_path`; `EXECUTE`
+  is revoked from `PUBLIC`, granted to the API role, and not to the console
+  role:
+  - `audit_chain_prune_prefix` (retention, below) deletes only the oldest
+    prefix of one chain, only rows older than 365 days by the database's own
+    clock, and always records an anchor in the same transaction;
+  - `audit_chain_rebaseline_apply` (rebaseline, below) records the
+    rebaseline, archives every hash it overwrites, rewrites only `prev_hash`
+    and `hash` (id, tenant, position and version never change), gives a
+    version 2 row only the hash the database computes for it, and checks that
+    every rewritten entry links to the one before it.
+- The trigger `audit_chain_refuse_change` refuses every `UPDATE`, `DELETE` and
+  `TRUNCATE` on the five tables unless it runs as the table's owner (inside
+  the functions, `current_user` is the owner) and the function declared the
+  operation (`openctem.audit_chain_op`). The setting alone opens nothing: the
+  API role is not the owner. The setting `openctem.audit_rebaseline` of
+  earlier releases no longer opens anything.
 - `UNIQUE (tenant_id, prev_hash)`, checked at commit, refuses a fork: two rows
   of one chain linking to the same predecessor.
-- `audit_logs` has no foreign key to `users` or `tenants`: deleting an account
-  or an organization leaves the audit rows (and their ids) as recorded, in
-  their organization's chain. Retention removes them.
-- Deleting stays possible for the retention prune (oldest prefix, archived
-  first). The chain row's foreign key (`ON DELETE RESTRICT`) means an audit row
-  cannot go without its chain row going first, which verification reports.
-- The least-privilege bootstrap (`deploy/postgres/least-privilege-roles.sql`)
-  also revokes `UPDATE` and `TRUNCATE` on these tables from the application
-  role. The triggers protect against the application and anything speaking
-  with its credentials; an operator with the table owner role can still
-  rewrite history, which only an off-database copy of the chain head detects.
-  For the organization chains no such copy is exported today (the head export
-  and the forwarding sink exist for the administrators' log only, below).
+- None of the five tables has a foreign key to `users` or `tenants`: deleting
+  an account or an organization (`TenantRepository.Delete`, the organization
+  deletion worker, the console purge) does not touch them and is not blocked
+  by the guard. The organization's audit rows, chain and evidence stay as
+  recorded, keep verifying, and age out through retention like any other
+  chain (retention prunes the chains of organizations that no longer exist).
+  No path erases audit rows today, so no function can erase or shorten the
+  chain of an organization that still exists; the hash leaves out the actor's
+  e-mail, IP address and user agent so that a future erasure function can
+  clear them without breaking the chain.
+- The chain row's foreign key (`ON DELETE RESTRICT`) means an audit row cannot
+  go without its chain row going first, which verification reports.
+
+#### What this protects, and against whom
+
+| Who | Can delete or rewrite audit history? |
+|---|---|
+| The API and anything using its credentials (an injection, a stolen `DB_PASSWORD`), with the least-privilege roles | No. Retention removes only rows over 365 days old, as the oldest prefix, with an anchor; a rebaseline is archived and checked. |
+| The same, when the API connects as the schema owner (one role for migrations and the API) | Yes: an owner may change its own tables and drop triggers. The triggers still refuse a change that does not go through the functions, and the API logs `audit log preflight: the API connects as the owner of the audit tables` at start-up. Use the least-privilege roles (`docs/deployment/database-roles.md`). |
+| The same, within the two functions | Only what retention and rebaseline may do, and always with evidence: prune the oldest prefix of any chain whose rows are all over 365 days old, earlier than a longer `AUDIT_RETENTION_DAYS` would (an anchor row records it, with the archive path the caller gave); re-sign a chain whose entries already hash and link correctly (a rebaseline record archives every overwritten hash). It can also append new rows, with any `logged_at`, as the API does; appends never remove or reorder history. |
+| The schema owner or a superuser | Yes. Verification finds a removed or changed row (a broken link or hash), but no off-database copy of an organization chain's head is exported today (the head export and the forwarding sink exist for the administrators' log only, below), so a complete re-hash by the owner is not detected. |
 
 ## Retention
 
@@ -108,11 +134,14 @@ rows in the middle:
    provider (`STORAGE_PROVIDER`: the local filesystem or the S3-compatible
    bucket, namespace `audit-archive`, which an organization's storage erase
    never touches) and hash the file;
-3. in one transaction, under the same advisory lock appends take: check the
-   entries are still exactly the chain's oldest ones and the last still has the
-   hash that was read, insert an `audit_chain_anchors` row (anchor hash = the
-   last pruned entry's hash, positions, counts, archive path and SHA-256), and
-   delete the entries, their rebaseline archive rows and their audit rows.
+3. call `audit_chain_prune_prefix`, which in one transaction, under the same
+   advisory lock appends take, checks that the entries are still exactly the
+   chain's oldest ones, that the last still has the hash that was read and
+   that every row is older than 365 days (by the database clock, whatever the
+   caller asks), inserts an `audit_chain_anchors` row (anchor hash = the last
+   pruned entry's hash, positions, counts and times computed by the database,
+   archive path and SHA-256), and deletes the entries, their rebaseline
+   archive rows and their audit rows.
 
 A chain that changed in between (a rebaseline, a racing append) is skipped and
 retried next run; its archive file is removed. Retention is on by default;
@@ -277,17 +306,17 @@ change, with `postgres.CreateAdminAuditLogTx`).
 | Append: a `BEFORE INSERT` trigger takes a transaction-scoped advisory lock, reads the tail and overwrites whatever chain values the writer sent | `admin_audit_chain_append` |
 | Append-only: `UPDATE`, `DELETE` and `TRUNCATE` are refused by triggers, and the API role holds no `UPDATE`/`DELETE`/`TRUNCATE` grant on the table (the migration and `deploy/postgres/least-privilege-roles.sql` revoke them) | `admin_audit_refuse_change` |
 | Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
-| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break). The report carries the chain `head` (position and hash of the newest row, or of the newest anchor when no row is online) in every edition, so a copy of the rows can be verified offline and compared with the head of an earlier copy, with or without a forwarding sink |
+| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break). The report carries the chain `head` (position and hash of the newest row, or of the newest anchor when no row is online) in every build, so a copy of the rows can be verified offline and compared with the head of an earlier copy, with or without a forwarding sink |
 
 Off-box copy. The chain cannot stop the table owner from re-signing it, so
 a copy at a destination the database operator cannot write is the stronger
-guarantee. Streaming the log to such a destination continuously is an
-extension feature, not part of the Community build
-([editions](../development/editions.md)); its table
+guarantee. Streaming the log to such a destination continuously is provided
+by an optional module and is not included in this build
+([extensions](../development/extensions.md)); its table
 `admin_audit_forward_cursor` stays in the schema. Every build keeps the chain,
 its verification (`GET /api/v1/admin/audit-logs/chain`, `bootstrap-admin
 verify-audit`), the hourly chain verification controller and the audit log
-views and exports. A Community server refuses to start when `ADMIN_AUDIT_SINK`
+views and exports. A server of the default build refuses to start when `ADMIN_AUDIT_SINK`
 is set, so an operator never loses an off-box copy unnoticed.
 
 The administrator a row names is history: the foreign key from `admin_id` to
