@@ -434,7 +434,7 @@ export function TargetsStep({
   const canLower = (tier: ProbeTier) => lowerIntensityAllowed(data, chosenWorkflow?.steps, tier)
 
   return (
-    <div className="grid min-w-0 gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] xl:gap-8">
+    <div className="grid min-w-0 gap-6 p-4 sm:p-6">
       {/* What you scan */}
       <section className="min-w-0 space-y-2" aria-labelledby={`${fieldId}-label`}>
         <label id={`${fieldId}-label`} htmlFor={fieldId} className="text-sm font-medium">
