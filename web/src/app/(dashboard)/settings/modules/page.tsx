@@ -6,20 +6,15 @@
  * impact preview before saving, locks with their reason).
  */
 import { useCallback, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
+import { AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
 import { toast } from 'sonner'
-import { Main } from '@/components/layout'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   EmptyState,
   FilterSelect,
   ListToolbar,
-  PageHeader,
-  PageStack,
-  ReadOnlyNotice,
+  SettingsPage,
   SettingsSaveBar,
   SettingsSection,
 } from '@/features/shared'
@@ -375,41 +370,15 @@ export default function ModuleManagementPage() {
     }
   }, [resetModules, mutate, refreshModules, t])
 
-  if (error && !modules.length) {
+  if ((error && !modules.length) || isLoading) {
     return (
-      <Main>
-        <PageStack>
-          <PageHeader title={pageTitle} description={pageDescription} />
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('settings.modules.loadFailed', 'Failed to load modules')}</AlertTitle>
-            <AlertDescription>
-              <p>
-                {getErrorMessage(
-                  error,
-                  t('settings.modules.requestFailed', 'The modules request failed.')
-                )}
-              </p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </PageStack>
-      </Main>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <Main>
-        <PageStack>
-          <PageHeader title={pageTitle} description={pageDescription} />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-xl" />
-          ))}
-        </PageStack>
-      </Main>
+      <SettingsPage
+        title={pageTitle}
+        description={pageDescription}
+        state={isLoading ? 'loading' : 'error'}
+        error={error}
+        onRetry={() => void mutate()}
+      />
     )
   }
 
@@ -421,32 +390,31 @@ export default function ModuleManagementPage() {
       ? (depConflict.blockers?.length ?? 0)
       : (depConflict?.required?.length ?? 0)
 
-  return (
-    <Main>
-      <PageStack>
-        <PageHeader title={pageTitle} description={pageDescription}>
-          <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowReset(true)}
-              disabled={isResetting}
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t('settings.modules.reset', 'Reset to defaults')}
-            </Button>
-          </Can>
-        </PageHeader>
+  // Who changed the modules last: the first section's meta line.
+  const lastChange = canReadAudit ? <ModulesLastChange /> : null
+  const firstGroup = coreShown.length > 0 ? 'always-on' : groups.find((g) => g.shown.length)?.key
 
-        {!canEdit && (
-          <ReadOnlyNotice
-            reason={t(
+  return (
+    <SettingsPage
+      title={pageTitle}
+      description={pageDescription}
+      readOnly={
+        canEdit
+          ? false
+          : t(
               'settings.modules.readOnly',
               'You can see which modules are on. Only administrators can change them.'
-            )}
-          />
-        )}
-
+            )
+      }
+      actions={
+        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
+          <Button variant="outline" onClick={() => setShowReset(true)} disabled={isResetting}>
+            <RotateCcw aria-hidden />
+            {t('settings.modules.reset', 'Reset to defaults')}
+          </Button>
+        </Can>
+      }
+    >
         <ListToolbar
           search={{
             value: query,
@@ -481,7 +449,7 @@ export default function ModuleManagementPage() {
             />
           }
           end={
-            <span className="text-sm tabular-nums text-muted-foreground" role="status">
+            <span className="text-dense tabular-nums text-muted-foreground" role="status">
               {t('settings.modules.onCount', '{on} of {total} on', {
                 on: featureOn,
                 total: featureModules.length,
@@ -492,12 +460,14 @@ export default function ModuleManagementPage() {
 
         {coreShown.length > 0 && (
           <SettingsSection
+            framed
             id="modules-always-on"
             title={t('settings.modules.alwaysOnTitle', 'Always on')}
             description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
+            meta={firstGroup === 'always-on' ? lastChange : undefined}
           >
             {coreWithSubs.length > 0 && (
-              <ul className="divide-y rounded-xl border">
+              <ul>
                 {coreWithSubs.map((m) => (
                   <ModuleRow
                     key={m.id}
@@ -525,19 +495,17 @@ export default function ModuleManagementPage() {
           .filter((g) => g.shown.length > 0)
           .map((g) => (
             <SettingsSection
+              framed
               key={g.key}
               id={`modules-${g.key}`}
               title={g.label}
-              actions={
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  {t('settings.modules.onCount', '{on} of {total} on', {
-                    on: g.on,
-                    total: g.total,
-                  })}
-                </span>
-              }
+              description={t('settings.modules.onCount', '{on} of {total} on', {
+                on: g.on,
+                total: g.total,
+              })}
+              meta={firstGroup === g.key ? lastChange : undefined}
             >
-              <ul className="divide-y rounded-xl border">
+              <ul>
                 {g.shown.map((m) => (
                   <ModuleRow
                     key={m.id}
@@ -589,7 +557,7 @@ export default function ModuleManagementPage() {
           />
         )}
 
-        {canReadAudit && <ModulesLastChange />}
+        {!firstGroup && lastChange}
 
         {canEdit && (
           <SettingsSaveBar
@@ -676,7 +644,6 @@ export default function ModuleManagementPage() {
           isLoading={isResetting}
           handleConfirm={() => void handleReset()}
         />
-      </PageStack>
-    </Main>
+    </SettingsPage>
   )
 }
