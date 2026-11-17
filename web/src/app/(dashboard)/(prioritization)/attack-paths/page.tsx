@@ -18,7 +18,6 @@ import { ArrowRight, Crown, GitBranch, List, Network, Route } from 'lucide-react
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -43,15 +42,22 @@ import {
 import { useExposureChains } from '@/features/attack-surface'
 import { useAttackPathDetail } from '@/features/attack-surface/hooks/use-attack-path-detail'
 import { FlowFullscreen } from '@/components/flow/flow-fullscreen'
+import {
+  GraphFrame,
+  GraphLegend,
+  GraphNote,
+  GraphToolbar,
+} from '@/components/graph-page/graph-page'
+import { AttackPathNodeSheet } from '@/features/attack-surface/components/attack-path-node-sheet'
 import { AttackPathCanvas } from '@/features/attack-surface/components/attack-path-canvas'
 import {
   AttackPathLegend,
   AttackPathList,
   ChokePointsCard,
   PathScoreCard,
+  useAttackPathLegendItems,
 } from '@/features/attack-surface/components/attack-path-panels'
 import {
-  assetFindingsHref,
   chokeRows,
   formatWeight,
   nodeByKey,
@@ -65,15 +71,9 @@ type View = 'canvas' | 'list'
 
 function BodySkeleton() {
   return (
-    <div
-      className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]"
-      data-testid="attack-path-loading"
-    >
-      <Skeleton className="h-[560px] w-full rounded-lg" />
-      <div className="grid content-start gap-4">
-        <Skeleton className="h-48 w-full rounded-lg" />
-        <Skeleton className="h-40 w-full rounded-lg" />
-      </div>
+    <div className="grid gap-4" data-testid="attack-path-loading">
+      <Skeleton className="h-control w-full max-w-md rounded-md" />
+      <Skeleton className="h-96 w-full rounded-lg" />
     </div>
   )
 }
@@ -142,13 +142,16 @@ export default function AttackPathsPage() {
     [shown, selected]
   )
 
+  // The detail of a step opens over the page; its findings are one link away.
+  const [openKey, setOpenKey] = useState<string | null>(null)
   const openNode = useCallback(
     (key: string) => {
-      const n = byKey.get(key)
-      if (n && !n.hidden && n.assetId) router.push(assetFindingsHref(n.assetId))
+      if (byKey.has(key)) setOpenKey(key)
     },
-    [byKey, router]
+    [byKey]
   )
+  const openNodeData = openKey ? (byKey.get(openKey) ?? null) : null
+  const legendItems = useAttackPathLegendItems()
 
   const computedAt = detail?.computedAt ? new Date(detail.computedAt) : null
   const computedLabel =
@@ -223,8 +226,81 @@ export default function AttackPathsPage() {
           />
         ) : undefined
       }
-      actionsClassName="basis-full sm:basis-auto"
     >
+      {canTask && detail && detail.paths.length > 0 && (
+        <Button
+          type="button"
+          disabled={!firstChoke?.node.finding}
+          onClick={() => setTaskOpen(true)}
+          data-testid="choke-task"
+        >
+          {t('prioritization.attackPath.createTask', 'Create task for choke point')}
+        </Button>
+      )}
+    </PageHeader>
+  )
+
+  const graphFacts = (more: boolean) =>
+    detail ? (
+      <>
+        <span className="flex flex-wrap gap-x-3">
+          {computedLabel && (
+            <span>
+              {t('prioritization.attackPath.computedAt', 'Computed at {time}', {
+                time: computedLabel,
+              })}
+            </span>
+          )}
+          <span>{t('prioritization.attackPath.inScope', 'Paths in your scope')}</span>
+          {more && (
+            <span data-testid="paths-capped">
+              {t('prioritization.attackPath.showingOf', 'Showing {n} of {total} paths', {
+                n: detail.paths.length,
+                total: detail.capped ? `${detail.totalPaths}+` : detail.totalPaths,
+              })}
+            </span>
+          )}
+        </span>
+        <span>{t('prioritization.attackPath.weights', 'Weights from EPSS, KEV and severity')}</span>
+      </>
+    ) : null
+
+  const toolbar =
+    targets.length > 0 || detail ? (
+      <GraphToolbar
+        label={t('prioritization.attackPath.toolbarLabel', 'Attack path filters')}
+        end={
+          detail && detail.paths.length > 0 ? (
+            <>
+              {view === 'canvas' && <GraphLegend items={legendItems} testId="attack-path-legend" />}
+              <GraphNote
+                label={t('prioritization.attackPath.howLabel', 'How paths are scored')}
+                title={t('prioritization.attackPath.howTitle', 'How a path is scored')}
+              >
+
+                    <p>
+                      {t(
+                        'prioritization.attackPath.howStep',
+                        'Each step weighs the open finding most likely to let an attacker onto that asset: its EPSS score, at least 0.9 when it is known exploited, and at least 0.5, 0.3, 0.1 or 0.05 for a critical, high, medium or low finding.'
+                      )}
+                    </p>
+                    <p>
+                      {t(
+                        'prioritization.attackPath.howAssumed',
+                        'A step with no open finding counts as 1: the relationship alone is taken to allow it.'
+                      )}
+                    </p>
+                    <p>
+                      {t(
+                        'prioritization.attackPath.howProduct',
+                        'The path likelihood is the product of its step weights. A choke point is a step whose findings, once fixed, cut the most of the paths shown.'
+                      )}
+                    </p>
+              </GraphNote>
+            </>
+          ) : undefined
+        }
+      >
       {targets.length > 0 && (
         <Select value={targetId ?? undefined} onValueChange={(v) => setParam('target', v)}>
           <SelectTrigger
@@ -269,18 +345,8 @@ export default function AttackPathsPage() {
           ]}
         />
       )}
-      {canTask && detail && detail.paths.length > 0 && (
-        <Button
-          type="button"
-          disabled={!firstChoke?.node.finding}
-          onClick={() => setTaskOpen(true)}
-          data-testid="choke-task"
-        >
-          {t('prioritization.attackPath.createTask', 'Create task for choke point')}
-        </Button>
-      )}
-    </PageHeader>
-  )
+      </GraphToolbar>
+    ) : null
 
   let body: React.ReactNode
   if (chainsLoading || (targetId && isLoading)) {
@@ -357,27 +423,26 @@ export default function AttackPathsPage() {
   } else {
     const more = detail.totalPaths > detail.paths.length || detail.capped
     body = (
-      // The side cards go beside the canvas only when the canvas keeps a
-      // readable width (zoom 1 for a three-step route); below that they sit
-      // under it, side by side.
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section
-          className="min-w-0 overflow-hidden rounded-lg border bg-card"
-          aria-label={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
-        >
-          {view === 'canvas' ? (
+      <>
+        {view === 'canvas' ? (
+          <GraphFrame
+            label={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
+            footer={graphFacts(more)}
+          >
             <FlowFullscreen title={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}>
               {(full) => (
                 <div
-                  className={full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : undefined}
+                  className={
+                    full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : 'flex h-full flex-col'
+                  }
                 >
-                  <div className="border-b border-border-subtle px-4 py-2.5">
-                    <AttackPathLegend />
-                  </div>
+                  {full && (
+                    <div className="border-b border-border-subtle px-4 py-2.5">
+                      <AttackPathLegend />
+                    </div>
+                  )}
                   <div
-                    className={
-                      full ? 'min-h-[320px] flex-1' : 'h-[520px] border-b border-border-subtle'
-                    }
+                    className={full ? 'min-h-80 flex-1' : 'min-h-0 flex-1'}
                     data-testid={full ? 'attack-path-canvas-full' : 'attack-path-canvas'}
                   >
                     <AttackPathCanvas
@@ -393,78 +458,24 @@ export default function AttackPathsPage() {
                 </div>
               )}
             </FlowFullscreen>
-          ) : (
-            <div className="border-b border-border-subtle">
-              <AttackPathList
-                detail={detail}
-                shown={shown}
-                selected={selected}
-                onSelect={setSelected}
-              />
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-xs text-muted-foreground">
-            <span className="flex flex-wrap gap-x-3">
-              {computedLabel && (
-                <span>
-                  {t('prioritization.attackPath.computedAt', 'Computed at {time}', {
-                    time: computedLabel,
-                  })}
-                </span>
-              )}
-              <span>{t('prioritization.attackPath.inScope', 'Paths in your scope')}</span>
-              {more && (
-                <span data-testid="paths-capped">
-                  {t('prioritization.attackPath.showingOf', 'Showing {n} of {total} paths', {
-                    n: detail.paths.length,
-                    total: detail.capped ? `${detail.totalPaths}+` : detail.totalPaths,
-                  })}
-                </span>
-              )}
-            </span>
-            <span className="flex items-center gap-2">
-              <span>
-                {t('prioritization.attackPath.weights', 'Weights from EPSS, KEV and severity')}
-              </span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="rounded text-signal-text hover:underline focus-visible:ring-2 focus-visible:ring-ring outline-none"
-                  >
-                    {t('prioritization.attackPath.how', 'How')}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 text-sm">
-                  <p className="font-semibold">
-                    {t('prioritization.attackPath.howTitle', 'How a path is scored')}
-                  </p>
-                  <ul className="mt-2 grid gap-1.5 text-muted-foreground">
-                    <li>
-                      {t(
-                        'prioritization.attackPath.howStep',
-                        'Each step weighs the open finding most likely to let an attacker onto that asset: its EPSS score, at least 0.9 when it is known exploited, and at least 0.5, 0.3, 0.1 or 0.05 for a critical, high, medium or low finding.'
-                      )}
-                    </li>
-                    <li>
-                      {t(
-                        'prioritization.attackPath.howAssumed',
-                        'A step with no open finding counts as 1: the relationship alone is taken to allow it.'
-                      )}
-                    </li>
-                    <li>
-                      {t(
-                        'prioritization.attackPath.howProduct',
-                        'The path likelihood is the product of its step weights. A choke point is a step whose findings, once fixed, cut the most of the paths shown.'
-                      )}
-                    </li>
-                  </ul>
-                </PopoverContent>
-              </Popover>
-            </span>
-          </div>
-        </section>
-        <aside className="grid content-start gap-4 md:grid-cols-2 2xl:grid-cols-1">
+          </GraphFrame>
+        ) : (
+          <GraphFrame
+            fill={false}
+            label={t('prioritization.attackPath.listLabel', 'Attack paths as a list')}
+            footer={graphFacts(more)}
+          >
+            <AttackPathList
+              detail={detail}
+              shown={shown}
+              selected={selected}
+              onSelect={setSelected}
+              onOpenNode={openNode}
+            />
+          </GraphFrame>
+        )}
+        {/* What to fix and how the selected path scores: under the graph, never beside it. */}
+        <div className="grid items-start gap-4 md:grid-cols-2">
           <ChokePointsCard detail={detail} onFocus={setFocus} />
           <PathScoreCard
             detail={detail}
@@ -473,8 +484,8 @@ export default function AttackPathsPage() {
             onSelect={setSelected}
             onFocus={(f) => setFocus(f && f.kind === 'path' ? null : f)}
           />
-        </aside>
-      </div>
+        </div>
+      </>
     )
   }
 
@@ -482,8 +493,28 @@ export default function AttackPathsPage() {
     <Main>
       <PageStack>
         {header}
+        {toolbar}
         {body}
       </PageStack>
+      {detail && (
+        <AttackPathNodeSheet
+          detail={detail}
+          node={openNodeData}
+          through={openKey ? shown.filter((i) => detail.paths[i]?.nodes.includes(openKey)).length : 0}
+          shownTotal={shown.length}
+          onOpenChange={(o) => {
+            if (!o) setOpenKey(null)
+          }}
+          onHighlight={
+            view === 'canvas' && openKey
+              ? () => {
+                  setFocus({ kind: 'node', key: openKey })
+                  setOpenKey(null)
+                }
+              : undefined
+          }
+        />
+      )}
       {taskOpen && firstChoke?.node.finding && (
         <AddFindingsToTaskDialog
           open

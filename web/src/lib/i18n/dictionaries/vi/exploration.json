@@ -145,6 +145,7 @@
   "exploration.toast.dismissFailed": "Không thể bỏ qua",
   "exploration.toast.dismissed": "{count, plural, other {Đã bỏ qua # bước}}",
   "exploration.toast.someFailed": "{count, plural, other {# bước không được thay đổi: chúng đã thay đổi trong lúc đó hoặc không còn chờ.}}",
+  "exploration.toolbarLabel": "Bộ lọc bước tiếp theo",
   "exploration.verdict.inconclusive": "Chưa kết luận",
   "exploration.verdict.proven": "Đã chứng minh",
   "exploration.verdict.refuted": "Bị bác bỏ",
