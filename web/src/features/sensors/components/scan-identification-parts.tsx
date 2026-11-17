@@ -261,7 +261,9 @@ export function HeaderListEditor({
       )}
       {headers.map((h, i) => (
         <div key={i} className="space-y-1">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.5fr_auto] sm:items-center">
+          {/* Phone: name and Remove share the first line, the value takes the
+              second, so each pair reads as one unit. */}
+          <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:grid-cols-[1fr_1.5fr_auto]">
             <Input
               id={`${idPrefix}-name-${i}`}
               aria-label={t('sensors.scanIdent.headerNameN', 'Header {n} name', { n: i + 1 })}
@@ -276,13 +278,13 @@ export function HeaderListEditor({
             <Input
               aria-label={t('sensors.scanIdent.headerValueN', 'Header {n} value', { n: i + 1 })}
               aria-invalid={errors[i] ? true : undefined}
-              className="font-mono"
+              className="font-mono max-sm:col-span-2 max-sm:row-start-2"
               value={h.value}
               maxLength={MAX_HEADER_VALUE}
               onChange={(e) => set(i, { value: e.target.value })}
               disabled={disabled}
             />
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 max-sm:col-start-2 max-sm:row-start-1">
               {withEnforced && (
                 <div className="flex items-center gap-2">
                   <Switch
