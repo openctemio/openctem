@@ -267,7 +267,8 @@ Attack paths, Exposure chains and Exploration use `src/components/graph-page`:
   graph in a `GraphFrame` that takes the rest of the window (never under 24rem, 30rem from 768 px). Cards that
   belong to the page (choke points, the score of a path) go under the graph, never beside it.
 - **Detail**: the detail of a node opens over the page in `GraphNodeSheet` (click, or Enter on the focused
-  node). Esc closes it and focus returns to the node. No panel stands beside a graph.
+  node). Its `action` (the node's main way on, e.g. "View findings") is the first thing in it and has focus,
+  so Enter twice follows it. Esc closes it and focus returns to the node. No panel stands beside a graph.
 - **Keyboard and screen readers**: the canvas is one tab stop, the arrow keys follow the edges, and every page
   keeps the same content as a list or table (the List view, the default below 768 px).
 - **Legend**: every mark drawn on the graph is in the legend; a legend never lists a mark the graph does not draw.

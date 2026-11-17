@@ -160,25 +160,25 @@ export function AttackPathNodeSheet({
           ? t('prioritization.attackPath.hiddenDetail', 'No details in your scope')
           : roleLabel
       }
+      action={
+        !node.hidden && node.assetId ? (
+          <Button asChild>
+            <Link href={assetFindingsHref(node.assetId)} data-testid="node-sheet-findings">
+              {node.openFindings === 1
+                ? t('prioritization.attackPath.viewOneFinding', 'View 1 finding')
+                : t('prioritization.attackPath.viewFindings', 'View {n} findings', {
+                    n: node.openFindings,
+                  })}
+            </Link>
+          </Button>
+        ) : undefined
+      }
       footer={
-        <>
-          {onHighlight && (
-            <Button type="button" variant="outline" onClick={onHighlight}>
-              {t('prioritization.attackPath.node.highlight', 'Show its paths on the graph')}
-            </Button>
-          )}
-          {!node.hidden && node.assetId && (
-            <Button asChild>
-              <Link href={assetFindingsHref(node.assetId)} data-testid="node-sheet-findings">
-                {node.openFindings === 1
-                  ? t('prioritization.attackPath.viewOneFinding', 'View 1 finding')
-                  : t('prioritization.attackPath.viewFindings', 'View {n} findings', {
-                      n: node.openFindings,
-                    })}
-              </Link>
-            </Button>
-          )}
-        </>
+        onHighlight ? (
+          <Button type="button" variant="outline" onClick={onHighlight}>
+            {t('prioritization.attackPath.node.highlight', 'Show its paths on the graph')}
+          </Button>
+        ) : undefined
       }
     >
       {node.hidden ? (

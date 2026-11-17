@@ -176,10 +176,11 @@ describe('/attack-paths view', () => {
     fireEvent.keyDown(jewel, { key: 'Enter' })
     const sheet = screen.getByTestId('attack-path-node-sheet')
     expect(within(sheet).getByRole('heading', { name: 'billing-db' })).toBeInTheDocument()
-    expect(within(sheet).getByTestId('node-sheet-findings')).toHaveAttribute(
-      'href',
-      '/findings?asset_id=asset-n0&informational=true'
-    )
+    const findings = within(sheet).getByTestId('node-sheet-findings')
+    expect(findings).toHaveAttribute('href', '/findings?asset_id=asset-n0&informational=true')
+    // The first action in the sheet, focused: Enter, then Enter again reaches the findings.
+    expect(within(sheet).getAllByRole('link')[0]).toBe(findings)
+    expect(document.activeElement).toBe(findings)
     expect(within(sheet).getByText('2 of 2 shown')).toBeInTheDocument()
     // Nothing navigates on its own, and no panel stands beside the graph.
     expect(push).not.toHaveBeenCalled()

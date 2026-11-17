@@ -196,8 +196,10 @@ export function GraphFrame({
 }
 
 /**
- * The detail of one node, over the page. Closing it (Esc, the close button, a
- * click outside) returns focus to the node or row that opened it.
+ * The detail of one node, over the page. Its `action` (the node's main way on,
+ * e.g. "View findings") is the first thing in it and has focus when it opens,
+ * so Enter on a node and Enter again follows it. Closing it (Esc, the close
+ * button, a click outside) returns focus to the node or row that opened it.
  */
 export function GraphNodeSheet({
   open,
@@ -205,6 +207,7 @@ export function GraphNodeSheet({
   title,
   description,
   children,
+  action,
   footer,
   testId = 'graph-node-sheet',
   returnFocus,
@@ -214,6 +217,8 @@ export function GraphNodeSheet({
   title: React.ReactNode
   description?: React.ReactNode
   children: React.ReactNode
+  /** The node's main way on, first in the sheet and focused when it opens. */
+  action?: React.ReactNode
   footer?: React.ReactNode
   testId?: string
   /**
@@ -223,10 +228,20 @@ export function GraphNodeSheet({
    */
   returnFocus?: () => HTMLElement | null
 }) {
+  const actionId = React.useId()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         data-testid={testId}
+        onOpenAutoFocus={(e) => {
+          const first = document
+            .getElementById(actionId)
+            ?.querySelector<HTMLElement>('a[href], button:not([disabled])')
+          if (first) {
+            e.preventDefault()
+            first.focus()
+          }
+        }}
         onCloseAutoFocus={(e) => {
           const el = returnFocus?.()
           if (el?.isConnected) {
@@ -239,7 +254,14 @@ export function GraphNodeSheet({
           <SheetTitle>{title}</SheetTitle>
           {description && <SheetDescription>{description}</SheetDescription>}
         </SheetHeader>
-        <SheetBody>{children}</SheetBody>
+        <SheetBody>
+          {action && (
+            <div id={actionId} data-slot="graph-node-action" className="flex">
+              {action}
+            </div>
+          )}
+          {children}
+        </SheetBody>
         {footer && <SheetFooter>{footer}</SheetFooter>}
       </SheetContent>
     </Sheet>
