@@ -340,6 +340,61 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
       }, made.id)
     }
   })
+
+  test('a saved view of someone else in Query mode: an edited text is saved only as a new view', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings')
+    const name = `e2e query not mine ${Date.now()}`
+    const made = await page.evaluate(async (viewName) => {
+      const res = await fetch('/api/v1/views', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page: 'findings',
+          name: viewName,
+          query: 'severity=critical',
+          page_params: { mode: 'query' },
+        }),
+      })
+      return { status: res.status, id: ((await res.json()) as { id: string }).id }
+    }, name)
+    expect(made.status).toBe(201)
+    // The views list says the view is shared with the user, not theirs (the
+    // seed has one member who reads findings; the server keeps owning it).
+    await page.route('**/api/v1/views?page=findings*', async (route) => {
+      const res = await route.fetch()
+      const body = (await res.json()) as { data?: { id: string; is_owner: boolean }[] }
+      for (const v of body.data ?? []) if (v.id === made.id) v.is_owner = false
+      await route.fulfill({ response: res, json: body })
+    })
+    const box = page.getByRole('combobox', { name: /filter as query text/i })
+    const modified = page.locator('main [data-slot="list-modified"]')
+    try {
+      await page.goto(`/findings?view=${made.id}&mode=query`)
+      await expect(box).toBeEnabled({ timeout: 20_000 })
+      await expect(box).toHaveValue('severity=critical')
+      await box.fill('severity=critical OR is_in_kev=true')
+      await box.press('Control+Enter')
+      await expect(page).toHaveURL(new RegExp(`from_view=${made.id}`))
+      await expect(modified).toBeVisible()
+      // One plain Save view (a new view), no Save changes anywhere.
+      const save = page.locator('main [data-slot="list-view-save"]')
+      await expect(save).toBeVisible()
+      await save.click()
+      await expect(page.getByRole('menuitem', { name: /^save changes$/i })).toHaveCount(0)
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.unroute('**/api/v1/views?page=findings*')
+      await page.evaluate(async (viewId) => {
+        await fetch(`/api/v1/views/${viewId}`, { method: 'DELETE', credentials: 'same-origin' })
+      }, made.id)
+    }
+  })
 })
 
 test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => {
