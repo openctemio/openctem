@@ -28,6 +28,10 @@ elevated.
 `specs/elevation.spec.ts`: read-only, elevate with a reason and a fresh authenticator
 code, then a protected page renders its content.
 
+`specs/fonts.spec.ts`: every font file the shared stylesheet (`src/styles/fonts.css`) loads is served
+(200, `font/woff2`). The console has no `public/` folder of its own: `scripts/console-fonts.mjs` copies
+`public/fonts` to `console/public/fonts` before `dev:console` and `build:console`.
+
 ## Run it locally
 
 You need Postgres and Redis, the API binaries, and the console built.
