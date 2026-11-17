@@ -257,6 +257,9 @@
   --sp-8: 2rem;
   --sp-section: 1rem;
   --sp-page: 1.5rem;
+  /* The settings column: sections of a settings page at a reading width
+     (SettingsPage). One value, so the family changes in one place. */
+  --settings-col: 55rem;
 
   /* Type sizes that change below 768px (the text-page, text-figure and
      text-figure-lead roles read these). */
@@ -651,6 +654,8 @@
   --spacing-page: var(--sp-page);
   --spacing-page-tight: var(--sp-section);
   --spacing-section: var(--sp-section);
+  /* max-w-settings: the settings column (SettingsPage). */
+  --container-settings: var(--settings-col);
 
   /* Control and row heights: h-control, h-control-sm, h-control-seg,
      h-control-xs, h-control-entry, h-control-touch, h-control-field,

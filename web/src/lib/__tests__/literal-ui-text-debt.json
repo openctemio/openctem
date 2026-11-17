@@ -194,7 +194,6 @@
   "features/shared/components/detail-sheet.tsx": 1,
   "features/shared/components/epss-score-badge.tsx": 8,
   "features/shared/components/kev-indicator-badge.tsx": 16,
-  "features/shared/components/one-time-secret-field.tsx": 6,
   "features/shared/components/one-time-setup-link.tsx": 15,
   "features/shared/components/run-status-badge.tsx": 12,
   "features/shared/components/sheet-detail-toolbar.tsx": 5,
