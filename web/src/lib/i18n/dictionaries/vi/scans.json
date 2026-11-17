@@ -2120,6 +2120,7 @@
   "scans.runZoneSplit.refused": "Chưa bắt đầu",
   "scans.runZoneSplit.targets": "{count} mục tiêu",
   "scans.runZoneSplit.title": "Vùng quét",
+  "scans.runs.card.findings": "{count, plural, other {# phát hiện}}",
   "scans.runs.colDuration": "Thời lượng",
   "scans.runs.colFindings": "Phát hiện",
   "scans.runs.colScan": "Quét",
