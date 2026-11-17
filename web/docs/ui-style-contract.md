@@ -348,7 +348,8 @@ reference.
    card. The value takes text, links, chips or a control (a status or
    assignee picker). The list follows its own width: one column in a rail,
    two columns when it sits under the header on a narrower page. Below
-   768 px every row is a 44 px line with the value at its end, and
+   768 px every row is a 44 px line with the value at its end (a 36 px
+   control in it keeps the line at 44 px), and
    `PropertyFold` keeps the rows after the first group one tap away. A row
    with an empty value renders nothing.
    Read-only facts inside a panel (a source record, a score table) keep
