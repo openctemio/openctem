@@ -773,8 +773,6 @@ function ConfigurationsTab() {
   /** Everything that narrows the list: chips, the two selects and the search. */
   const clearFilters = () => patchUrl([...CHIP_PARAMS, 'status', 'origin', 'q'])
 
-  const stateLabel = (v: ScanConfigStatus) =>
-    t(CONFIG_STATES.find((s) => s.value === v)?.labelKey ?? '', v)
   const typeLabel = (v: ApiScanType) =>
     t(CONFIG_TYPES.find((s) => s.value === v)?.labelKey ?? '', v)
 
