@@ -27,14 +27,8 @@ export default function OpenSourceLicensesPage() {
   return (
     <Main>
       <PageStack>
-        <PageHeader
-          title={t('help.licenses.title', 'Open-source licenses')}
-          description={t(
-            'help.licenses.description',
-            'The open-source components this build is made of, with their licenses. The list is generated when the release is built.'
-          )}
-        />
-        <OpenSourceLicenses api={api} web={web} />
+        <PageHeader title={t('help.licenses.title', 'Open-source licenses')} />
+        <OpenSourceLicenses api={api} web={web} lead />
       </PageStack>
     </Main>
   )

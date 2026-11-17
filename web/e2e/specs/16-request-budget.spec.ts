@@ -260,6 +260,37 @@ test(
   }
 )
 
+test(
+  'settings general: the dashboard data section reads its state only when it comes into view',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    // The section is below the fold: the load stays within the default budget
+    // without its read, and scrolling to it (or a link to it) loads it.
+    await page.setViewportSize({ width: 1280, height: 720 })
+    const dashboardData = (r: string) => r.startsWith('GET /api/v1/dashboard-data')
+    const load = await apiRequestsOfLoad(page, '/settings/general')
+    expect(load.length, load.join('\n')).toBeLessThanOrEqual(budget.defaultMax)
+    expect(load.filter(dashboardData), load.join('\n')).toEqual([])
+
+    const read = page.waitForRequest(
+      (req) => isApi(req) && req.url().includes('/api/v1/dashboard-data')
+    )
+    await page.getByRole('heading', { name: 'Dashboard data' }).scrollIntoViewIfNeeded()
+    await read
+    // Let that read finish (the API answers the path with a redirect) before the next load.
+    await page.waitForTimeout(QUIET_MS)
+
+    // The old tab link lands on the section with its state loaded.
+    const deep = await apiRequestsOfLoad(page, '/settings/general?tab=dashboard-data')
+    // One read of the section's state (the path the page asks for, not the redirect it follows).
+    expect(
+      deep.filter((r) => r === 'GET /api/v1/dashboard-data/'),
+      deep.join('\n')
+    ).toHaveLength(1)
+    await expect(page.getByRole('button', { name: 'Rebuild dashboard data' })).toBeVisible()
+  }
+)
+
 test('findings: Refresh sends each request once', { tag: ['@budget'] }, async ({ page }) => {
   await apiRequestsOfLoad(page, '/findings')
   const seen: string[] = []
