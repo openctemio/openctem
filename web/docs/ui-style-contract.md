@@ -662,8 +662,8 @@ load.
 
 A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
 queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
-`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/queue`, which every queue uses
-and no page rebuilds:
+`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue` (exported from `@/features/shared`), which
+every queue uses, the platform console's included, and no page rebuilds:
 
 - **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve, Reject) and one More
   for everything else, in the row's last column and on the phone card. The buttons are named after the item
