@@ -31,7 +31,7 @@ interface AxeResult {
 const PAGES = [
   { route: '/sensors', filter: true },
   { route: '/scans', filter: 'phone' },
-  { route: '/assets/groups', filter: true },
+  { route: '/assets/groups', filter: 'phone' },
   { route: '/settings/audit-log', filter: false },
   { route: '/remediation/tasks', filter: false },
   { route: '/credentials', filter: false },
