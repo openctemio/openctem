@@ -134,6 +134,7 @@ export function ScannerSelect({
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           id={id}
+          className="w-full"
           aria-label={t('scans.basic.scanner')}
           aria-describedby={describedBy}
           aria-invalid={invalid}

@@ -12,23 +12,13 @@
 
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useRouter } from 'next/navigation'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
+import { AlertTriangle, Wifi } from 'lucide-react'
+import { FormDialog, FormField, FormStack } from '@/features/shared/components/forms'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
@@ -103,6 +93,14 @@ export function ScanAssetsDialog({
   // Nothing the scope check lets through: starting would only be refused.
   const blocked = readiness?.state === 'blocked'
   const canSubmit = cappedTargets.length > 0 && !!scannerName && !isSubmitting && !blocked
+  // Why Start is off, read with the button (a blocked scope check explains itself above).
+  const reason =
+    cappedTargets.length === 0
+      ? t('scans.assetsDialog.noTargets')
+      : !scannerName
+        ? t('scans.err.scanner')
+        : undefined
+  const targetsLabelId = useId()
 
   const handleSubmit = async () => {
     if (cappedTargets.length === 0) {
@@ -151,117 +149,116 @@ export function ScanAssetsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle>{title ?? t('scans.assetsDialog.title')}</DialogTitle>
-          <DialogDescription>
-            {cappedTargets.length > 0
-              ? cappedTargets.length === 1
-                ? t('scans.assetsDialog.runOne')
-                : t('scans.assetsDialog.runMany', undefined, { count: cappedTargets.length })
-              : t('scans.assetsDialog.noAddress')}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogBody className="space-y-4">
-          {/* Target preview */}
-          {cappedTargets.length > 0 && (
-            <div className="space-y-2">
-              <Label>{t('scans.assetsDialog.targets')}</Label>
-              <div className="flex flex-wrap gap-2 rounded-md border p-3 max-h-40 overflow-y-auto">
-                {cappedTargets.slice(0, PREVIEW_LIMIT).map((target) => (
-                  <Badge key={target} variant="secondary" className="font-mono text-xs">
-                    {target}
-                  </Badge>
-                ))}
-                {cappedTargets.length > PREVIEW_LIMIT && (
-                  <Badge variant="outline" className="text-xs">
-                    {t('scans.assetsDialog.more', undefined, {
-                      count: cappedTargets.length - PREVIEW_LIMIT,
-                    })}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Guards / warnings */}
-          {skippedCount > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                skippedCount === 1
-                  ? 'scans.assetsDialog.skippedOne'
-                  : 'scans.assetsDialog.skippedMany',
-                undefined,
-                { count: skippedCount }
-              )}
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title ?? t('scans.assetsDialog.title')}
+      description={
+        cappedTargets.length > 0
+          ? cappedTargets.length === 1
+            ? t('scans.assetsDialog.runOne')
+            : t('scans.assetsDialog.runMany', undefined, { count: cappedTargets.length })
+          : t('scans.assetsDialog.noAddress')
+      }
+      onSubmit={() => void handleSubmit()}
+      submitting={isSubmitting}
+      canSubmit={canSubmit}
+      reason={reason}
+      submitLabel={
+        isSubmitting ? (
+          t('scans.common.starting')
+        ) : (
+          <>
+            <Wifi aria-hidden />
+            {t('scans.quick.start')}
+          </>
+        )
+      }
+      data-testid="scan-assets-dialog"
+    >
+      <FormStack>
+        {/* Target preview */}
+        {cappedTargets.length > 0 && (
+          <div
+            role="group"
+            aria-labelledby={targetsLabelId}
+            className="flex min-w-0 flex-col gap-1.5"
+          >
+            <p id={targetsLabelId} className="text-dense font-medium">
+              {t('scans.assetsDialog.targets')}
             </p>
-          )}
-          {isOverCap && (
-            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-              <span>
-                {t('scans.assetsDialog.overCap', undefined, {
-                  count: targets.length,
-                  max: MAX_TARGETS,
-                })}
-              </span>
+            <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-md border p-3">
+              {cappedTargets.slice(0, PREVIEW_LIMIT).map((target) => (
+                <Badge key={target} variant="secondary" className="font-mono">
+                  {target}
+                </Badge>
+              ))}
+              {cappedTargets.length > PREVIEW_LIMIT && (
+                <Badge variant="outline">
+                  {t('scans.assetsDialog.more', undefined, {
+                    count: cappedTargets.length - PREVIEW_LIMIT,
+                  })}
+                </Badge>
+              )}
             </div>
-          )}
-          {isLargeSet && (
-            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-              <span>
-                {t('scans.assetsDialog.large', undefined, { count: cappedTargets.length })}
-              </span>
-            </div>
-          )}
-
-          {/* Scanner: the tool registry's active scanners (it was a fixed list) */}
-          <div className="space-y-2">
-            <Label htmlFor="scan-assets-scanner">{t('scans.basic.scanner')}</Label>
-            <ScannerSelect id="scan-assets-scanner" value={scannerName} onChange={setScannerName} />
           </div>
+        )}
 
-          {refused.length > 0 ? (
-            <ScopeRefusalPanel refused={refused} />
-          ) : (
-            // The same live scope check as New Scan and Quick scan.
-            <SelectionSummary
-              targets={cappedTargets}
-              chips={cappedTargets.map((target) => ({
-                key: target,
-                label: target,
-                kind: 'typed' as const,
-              }))}
-              groupCount={0}
-              invalidCount={0}
-              scannerName={scannerName}
-              onReadinessChange={setReadiness}
-            />
-          )}
-        </DialogBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit}>
-            {isSubmitting ? (
-              <>
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('scans.common.starting')}
-              </>
-            ) : (
-              <>
-                <Wifi className="me-2 h-4 w-4" />
-                {t('scans.quick.start')}
-              </>
+        {/* Guards / warnings */}
+        {skippedCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {t(
+              skippedCount === 1
+                ? 'scans.assetsDialog.skippedOne'
+                : 'scans.assetsDialog.skippedMany',
+              undefined,
+              { count: skippedCount }
             )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </p>
+        )}
+        {isOverCap && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span>
+              {t('scans.assetsDialog.overCap', undefined, {
+                count: targets.length,
+                max: MAX_TARGETS,
+              })}
+            </span>
+          </div>
+        )}
+        {isLargeSet && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <span>{t('scans.assetsDialog.large', undefined, { count: cappedTargets.length })}</span>
+          </div>
+        )}
+
+        {/* Scanner: the tool registry's active scanners */}
+        <FormField id="scan-assets-scanner" label={t('scans.basic.scanner')}>
+          {(control) => (
+            <ScannerSelect {...control} value={scannerName} onChange={setScannerName} />
+          )}
+        </FormField>
+
+        {refused.length > 0 ? (
+          <ScopeRefusalPanel refused={refused} />
+        ) : (
+          // The same live scope check as New Scan and Quick scan.
+          <SelectionSummary
+            targets={cappedTargets}
+            chips={cappedTargets.map((target) => ({
+              key: target,
+              label: target,
+              kind: 'typed' as const,
+            }))}
+            groupCount={0}
+            invalidCount={0}
+            scannerName={scannerName}
+            onReadinessChange={setReadiness}
+          />
+        )}
+      </FormStack>
+    </FormDialog>
   )
 }
