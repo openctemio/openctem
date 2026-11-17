@@ -109,6 +109,15 @@ const LISTS = {
     group: false,
     query: false,
   },
+  // Searched by name on the page; no query language for workflows.
+  '/scans/workflows': {
+    filters: [
+      ['retired', 'show'],
+      ['owner', 'mine'],
+    ],
+    group: false,
+    query: false,
+  },
 } as const
 
 /** A list without a search field skips the Query mode and typing steps. */
@@ -720,4 +729,8 @@ test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
 test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () => {
   headerHoldsStill('/vulnerabilities')
   saysItsCountOnce('/vulnerabilities')
+})
+test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
+  headerHoldsStill('/scans/workflows')
+  saysItsCountOnce('/scans/workflows')
 })
