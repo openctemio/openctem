@@ -85,7 +85,7 @@
   "features/asset-groups/components/edit-group/edit-group-dialog.tsx": 32,
   "features/asset-groups/components/group-quick-view.tsx": 23,
   "features/asset-groups/hooks/use-asset-groups.ts": 14,
-  "features/asset-lifecycle/components/asset-status-badge.tsx": 13,
+  "features/asset-lifecycle/components/asset-status-badge.tsx": 10,
   "features/assets/components/asset-findings.tsx": 6,
   "features/assets/components/asset-form-dialog-shared.tsx": 14,
   "features/assets/components/asset-owners-tab.tsx": 5,
