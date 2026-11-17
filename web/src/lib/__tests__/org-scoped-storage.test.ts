@@ -56,7 +56,6 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/announcements/components/platform-announcement-banner.tsx': 'not-org-data',
   'src/features/auth/components/login-form.tsx': 'not-org-data',
   'src/features/auth/lib/invitation-token.ts': 'not-org-data',
-  'src/features/components/components/components-list-view.tsx': 'not-org-data',
   'src/features/dashboards/layout-hint.ts': 'not-org-data',
   // The expanded query editor's height (a UI preference).
   'src/features/query/components/query-input.tsx': 'not-org-data',

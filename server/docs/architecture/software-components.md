@@ -203,13 +203,20 @@ Module: `components`.
 
 ## Web console
 
-- `/components`: one row per package (versions in use, assets, open findings
-  by severity, KEV, fix, licenses, risk, last seen); KPI strip and presets
-  (vulnerable, known exploited, fixable, direct); facets (risk toggles,
-  severity, ecosystem, dependency, scope, license) in a side panel on desktop
-  and a sheet on phones; search, sort, page and every filter in the URL;
-  Import SBOM (asset, file, preview, import) and Export SBOM (format, one
-  asset or every visible asset). An empty inventory says how to get data.
+- `/components`: the shared list pattern. One line per package (name with its
+  ecosystem and package URL, kept in view while the table scrolls sideways;
+  versions in use, assets, open findings by severity with KEV, risk, fix,
+  licenses, last seen; Fix and License step aside on a narrow table and stay
+  under Display > Columns); a KPI strip whose tiles are presets (packages,
+  vulnerable, known exploited, fixable); a title row with the view name, the
+  count once, Modified and Reset on a changed view, Refresh, Export SBOM and
+  More (Import VEX); facets (risk toggles, severity, ecosystem, dependency,
+  scope, license) under Add filter (key `f`) and in a sheet on phones, every
+  filter a removable chip; search, sort, page and every filter in the URL;
+  Import SBOM (asset, file, preview, import) as the page's primary action and
+  Export SBOM (format, one asset or every visible asset). An empty inventory
+  says how to get data. Phones show a card per package with fixed slots. No
+  selection: the list has no bulk action.
 - `/components/{id}`: header with the package URL, licenses, KEV and risk;
   tabs Versions (upgrade advice, major-version hint), Where used (asset,
   version, direct or transitive, scope, manifest, open findings; the paths
