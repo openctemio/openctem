@@ -72,7 +72,7 @@ var (
 )
 
 // orgPolicy is the platform policy on organizations' own AI providers. A
-// missing value means allowed: security and privacy are not paid features, and
+// missing value means allowed: security and privacy are never behind a grant, and
 // an organization's own key lowers the platform's cost.
 type orgPolicy struct {
 	AllowOwnProvider *bool `json:"allow_own_provider,omitempty"`

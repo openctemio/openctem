@@ -1,5 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { applyTextFilter, filterParams, FQ_PARAM } from '../filter-query-mode'
+import { NON_FILTER_PARAMS } from '../model'
+import { advancedFindingsDocument } from '../../api/advanced-fetch'
+import { viewQueryFromSearch } from '@/features/saved-views/api/use-saved-views'
 import type { ParseResult } from '@/features/query/api/query-api'
 
 const api = vi.hoisted(() => ({ parse: vi.fn(), post: vi.fn() }))
@@ -127,44 +130,79 @@ describe('the findings Query mode and the URL', () => {
   })
 
   describe('with a saved view open', () => {
-    const VIEW = 'view=0b0e7a52-6c1f-4f0e-9d0a-1c2b3d4e5f60'
+    const ID = '0b0e7a52-6c1f-4f0e-9d0a-1c2b3d4e5f60'
+    const VIEW = `view=${ID}`
 
-    it("a text that leaves state and practice out keeps the view's own (nothing written)", () => {
+    it('an applied text drives the list alone: the view leaves the URL and stays as from_view', () => {
       const next = applyTextFilter(
-        new URLSearchParams(`${VIEW}&mode=query`),
+        new URLSearchParams(`${VIEW}&mode=query&sort=-severity`),
         skip,
-        RECORDED.kevOnly
+        RECORDED.advanced
       )
-      expect(next.toString()).toBe(`${VIEW}&mode=query&is_in_kev=true`)
-    })
-
-    it('a text that says them writes them on top of the view', () => {
-      const next = applyTextFilter(new URLSearchParams(VIEW), skip, RECORDED.printed)
-      expect(next.get('state')).toBe('open')
-      expect(next.get('practice')).toBe('vulnerabilities')
-      expect(next.get('view')).toBe(VIEW.slice(5))
-    })
-
-    it("a lens or a practice the URL set on top of the view is still the text's to drop", () => {
-      const next = applyTextFilter(
-        new URLSearchParams(`${VIEW}&state=open&practice=cloud`),
-        skip,
-        RECORDED.kevOnly
-      )
+      // No double application: no request can send the view under the text.
+      expect(next.get('view')).toBeNull()
+      expect(next.get('from_view')).toBe(ID)
+      expect(next.get(FQ_PARAM)).toBe('(severity=critical OR is_in_kev=true) state=open')
+      expect(next.get('mode')).toBe('query')
+      expect(next.get('sort')).toBe('-severity')
+      // The text is the whole filter: what it leaves out is not restricted.
       expect(next.get('state')).toBe('all')
       expect(next.get('practice')).toBe('all')
     })
 
-    it('an empty text goes back to the view alone', () => {
-      expect(
-        applyTextFilter(new URLSearchParams(`${VIEW}&severity=low`), skip, result({})).toString()
-      ).toBe(VIEW)
+    it('a text chips can show is written as flat params, still without the view', () => {
+      const next = applyTextFilter(new URLSearchParams(VIEW), skip, RECORDED.kevOnly)
+      expect(next.toString()).toBe(`from_view=${ID}&is_in_kev=true&state=all&practice=all`)
     })
 
-    it('view=verify (the queue, not a saved view) keeps the plain rule', () => {
+    it('the next text keeps the view it came from', () => {
+      const first = applyTextFilter(new URLSearchParams(VIEW), skip, RECORDED.kevOnly)
+      const next = applyTextFilter(first, skip, RECORDED.advanced)
+      expect(next.get('from_view')).toBe(ID)
+      expect(next.get('view')).toBeNull()
+      expect(next.get('is_in_kev')).toBeNull()
+    })
+
+    it('from_view is page state: no chip, no unknown filter, not part of the text or of a saved query', () => {
+      const next = applyTextFilter(new URLSearchParams(VIEW), skip, RECORDED.kevOnly)
+      expect(NON_FILTER_PARAMS.has('from_view')).toBe(true)
+      expect(filterParams(next, skip)).toBe('is_in_kev=true&state=all&practice=all')
+      expect(viewQueryFromSearch(`?${next.toString()}`)).toBe('is_in_kev=true&state=all')
+    })
+
+    it('view=verify (the queue, not a saved view) is left alone', () => {
       const next = applyTextFilter(new URLSearchParams('view=verify'), skip, RECORDED.kevOnly)
-      expect(next.get('state')).toBe('all')
-      expect(next.get('practice')).toBe('all')
+      expect(next.get('view')).toBe('verify')
+      expect(next.get('from_view')).toBeNull()
+    })
+  })
+
+  describe('the document a view stores for a text filter', () => {
+    it('is the checked document of the list URL, with its sort, asked once per part', async () => {
+      const document = { v: 1, filter: { any: [] } }
+      api.parse.mockImplementation((req: { params?: string; text?: string }) =>
+        Promise.resolve(
+          req.params !== undefined
+            ? result({ text: 'state=all' })
+            : result({ text: req.text ?? '', document })
+        )
+      )
+      const doc = await advancedFindingsDocument(
+        '/api/v1/findings?fq=a%3D1+OR+b%3D2&state=all&sort=-severity,created_at&page=2&per_page=50'
+      )
+      expect(doc).toEqual({ ...document, sort: ['-severity', 'created_at'] })
+      expect(api.parse).toHaveBeenLastCalledWith({
+        entity: 'findings',
+        text: '(state=all) (a=1 OR b=2)',
+      })
+    })
+
+    it('refuses a URL that still names a view: its conditions would apply twice', async () => {
+      await expect(
+        advancedFindingsDocument(
+          '/api/v1/findings?fq=a%3D1&view=0b0e7a52-6c1f-4f0e-9d0a-1c2b3d4e5f60'
+        )
+      ).rejects.toThrow()
     })
   })
 
