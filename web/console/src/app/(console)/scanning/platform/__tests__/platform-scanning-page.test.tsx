@@ -156,6 +156,16 @@ describe('Platform scanning console page', () => {
     expect(screen.getByText('Blocked target names')).toBeInTheDocument()
   })
 
+  it('opens a Blocked names link on the exceptions list while shared sensors are not available', () => {
+    state.ready = false
+    state.tab = 'blocked'
+    render(<PlatformScanningPage />)
+    const list = screen.getByTestId('blocked-names-exceptions')
+    const notice = screen.getByTestId('shared-sensors-unavailable')
+    // The list first; the notice and the domain-proof policy follow it.
+    expect(list.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('offers the six tabs once shared sensors are available', () => {
     render(<PlatformScanningPage />)
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
