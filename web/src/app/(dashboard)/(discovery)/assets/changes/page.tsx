@@ -293,7 +293,8 @@ export default function AssetChangesPage() {
         id: 'detail',
         meta: {
           kind: 'text',
-          minWidth: 200,
+          // Asset 200 + Change 176 + this + When 144 fit a 1024 screen (frame 700).
+          minWidth: 180,
           maxWidth: 360,
           label: t('assetTimeline.activity.col.detail', 'Detail'),
         },
