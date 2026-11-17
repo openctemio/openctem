@@ -203,7 +203,7 @@ function TabsCount({
         data-pending=""
         aria-hidden
         className={cn(
-          'inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs leading-none tabular-nums',
+          'inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-cap leading-none tabular-nums',
           className
         )}
       >
