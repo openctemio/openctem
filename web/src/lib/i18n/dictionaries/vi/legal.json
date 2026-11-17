@@ -1,0 +1,9 @@
+{
+  "legal.frame.contact": "Liên hệ: {contact}. Tài liệu: {docs}.",
+  "legal.frame.documents": "Văn bản pháp lý",
+  "legal.frame.effective": "Có hiệu lực từ {date}",
+  "legal.frame.onThisPage": "Trên trang này",
+  "legal.frame.print": "In hoặc lưu thành PDF",
+  "legal.frame.signIn": "Đăng nhập",
+  "legal.frame.skip": "Chuyển đến văn bản"
+}

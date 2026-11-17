@@ -1,15 +1,17 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 
 import { GET } from '../.well-known/security.txt/route'
 import { LegalPage } from '@/features/legal/legal-page'
 import { LEGAL_DOCS } from '@/lib/legal'
 import { PUBLIC_ROUTES } from '@/lib/middleware/config'
 
+const path = vi.hoisted(() => ({ current: '/terms' }))
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND')
   },
+  usePathname: () => path.current,
 }))
 
 // The legal information comes from the admin console through the API; the
@@ -64,6 +66,40 @@ describe('legal pages', () => {
     render(await LegalPage({ doc: 'terms' }))
     expect(screen.getAllByText(/Acme Ltd/).length).toBeGreaterThan(0)
   })
+
+  it.each(LEGAL_DOCS.map((d) => [d.title, d.doc, d.path] as const))(
+    '%s is in the reading frame: tabs, table of contents, sections',
+    async (title, doc, docPath) => {
+      settings.current = { LEGAL_PAGES_ENABLED: 'true' }
+      path.current = docPath
+      render(await LegalPage({ doc }))
+      // The five documents, this one current.
+      const docs = screen.getByRole('navigation', { name: 'Legal documents' })
+      for (const d of LEGAL_DOCS) {
+        expect(within(docs).getByRole('link', { name: d.title })).toHaveAttribute('href', d.path)
+      }
+      expect(within(docs).getByRole('link', { name: title })).toHaveAttribute(
+        'aria-current',
+        'page'
+      )
+      // One entry in the table of contents per section, each pointing at it.
+      const toc = screen.getByRole('navigation', { name: 'On this page' })
+      const headings = screen.getAllByRole('heading', { level: 2 })
+      const links = within(toc).getAllByRole('link')
+      expect(links.map((a) => a.textContent)).toEqual(headings.map((h) => h.textContent))
+      for (const a of links) {
+        const id = a.getAttribute('href')!.slice(1)
+        expect(document.getElementById(id)?.tagName).toBe('SECTION')
+      }
+      expect(within(toc).getByRole('button', { name: 'Print or save as PDF' })).toBeInTheDocument()
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+      expect(screen.getByRole('main')).toContainElement(headings[0])
+      expect(screen.getByRole('link', { name: 'Skip to the document' })).toHaveAttribute(
+        'href',
+        '#static-content'
+      )
+    }
+  )
 
   it('all open without a session', () => {
     for (const d of LEGAL_DOCS) {

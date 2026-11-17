@@ -292,6 +292,18 @@ Every page, top to bottom:
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
 
+**Static reading pages** (legal documents, Open-source licenses) use the
+frame in `src/components/static-page`. A page outside the app shell is one
+`StaticPage`: the brand and Sign in on top, the sibling documents as route
+tabs, the table of contents of the open document (beside the text from 768px,
+above it below; it holds Print) and one `StaticArticle`, at most 720px wide:
+the title is the page's only `<h1>` (`text-page`), each `StaticSection` an
+`<h2>` (`text-section`) with its anchor, body text `text-body` on a 24px
+line. Controls take the entry scale (36). A static page inside the app shell
+keeps `Main` > `PageStack` > `PageHeader` and opens with a `StaticLead`
+(16/24, at most 720px wide). The frame takes its words from the caller, so a
+legal page stays server-rendered.
+
 Checked in a browser on every route at 1440px and 390px by
 `e2e/specs/31-page-rhythm.spec.ts` (gaps from bounding boxes, one tab row,
 tab icons, strip rules, chips, empty pagination, name column width).
