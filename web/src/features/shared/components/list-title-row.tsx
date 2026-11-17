@@ -193,6 +193,7 @@ export function ListTitleRow({
   children,
   className,
   titleTestId,
+  titleHidden = false,
   ref,
   'data-testid': testId,
 }: {
@@ -207,6 +208,11 @@ export function ListTitleRow({
   className?: string
   /** A test id for the view name. */
   titleTestId?: string
+  /**
+   * The name is said to assistive technology only: for a list whose selected
+   * tab already shows its name and count, so the row does not repeat them.
+   */
+  titleHidden?: boolean
   /** The row element (a page reads its width to fold its actions). */
   ref?: React.Ref<HTMLDivElement>
   'data-testid'?: string
@@ -222,8 +228,8 @@ export function ListTitleRow({
         {/* The name gives way first: what follows it keeps its width. */}
         <h2
           data-testid={titleTestId}
-          className="min-w-0 truncate text-sm font-medium"
-          title={typeof title === 'string' ? title : undefined}
+          className={titleHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
+          title={!titleHidden && typeof title === 'string' ? title : undefined}
         >
           {title}
         </h2>
