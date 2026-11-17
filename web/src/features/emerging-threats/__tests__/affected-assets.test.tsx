@@ -86,7 +86,7 @@ describe('AffectedAssets', () => {
     ])
     // The tier is said once, by the group: no row repeats it.
     expect(screen.getAllByText('Likely affected')).toHaveLength(1)
-    expect(screen.queryByText('No asset is confirmed affected.')).toBeNull()
+    expect(screen.queryByText('No host is confirmed affected.')).toBeNull()
   })
 
   it('folds the services of a host into one row and links each to its own asset, finding and task', () => {
@@ -122,7 +122,7 @@ describe('AffectedAssets', () => {
   it('says so when no asset is confirmed or likely, and still lists the possible ones', () => {
     setWidth(1440)
     render(<AffectedAssets groups={groups.filter((g) => g.tier === 'possible')} />)
-    expect(screen.getByText('No asset is confirmed affected.')).toBeInTheDocument()
+    expect(screen.getByText('No host is confirmed affected.')).toBeInTheDocument()
     expect(screen.getByText('example.org')).toBeInTheDocument()
     expect(screen.queryByText('Confirmed affected')).toBeNull()
   })
@@ -131,13 +131,13 @@ describe('AffectedAssets', () => {
     setWidth(1440)
     render(<AffectedAssets groups={groups.filter((g) => g.tier === 'likely')} />)
     expect(screen.queryByText('Confirmed affected')).toBeNull()
-    expect(screen.queryByText('No asset is confirmed affected.')).toBeNull()
+    expect(screen.queryByText('No host is confirmed affected.')).toBeNull()
     expect(screen.getByText('Likely affected')).toBeInTheDocument()
   })
 
   it('has only the empty text when the alert has no asset in view', () => {
     const { container } = render(<AffectedAssets groups={[]} />)
-    expect(screen.getByText('No asset is confirmed affected.')).toBeInTheDocument()
+    expect(screen.getByText('No host is confirmed affected.')).toBeInTheDocument()
     expect(container.querySelector('table')).toBeNull()
   })
 
