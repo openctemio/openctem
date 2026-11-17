@@ -27,16 +27,21 @@ import { useTranslation } from '@/context/i18n-provider'
 import { NONE_VAR, seriesFill, seriesVar } from '@/lib/chart-palette'
 import { formatBucket, formatCount, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
+import {
+  CHART_AXIS,
+  CHART_BAR_CURSOR,
+  CHART_GRID,
+  CHART_HEIGHT,
+  CHART_LINE_CURSOR,
+  CHART_REFERENCE,
+  CHART_REFERENCE_LABEL,
+} from '@/components/charts/chart-defaults'
 import { SeriesTooltip, type SeriesTooltipMode } from './series-tooltip'
 import { TimeSeriesTable } from './table-viz'
 import { ChartOrTable, Legend, useLabel, usePrefersReducedMotion } from './viz-parts'
 import type { DrillFn, Polarity, TimeSeriesResult } from './types'
 
-const AXIS_TICK = { fill: 'var(--muted-foreground)', fontSize: 12 }
-/** Column charts shade the hovered bucket; line and area charts draw a rule. */
-const BAR_CURSOR = { fill: 'var(--muted)', opacity: 0.5 }
-const LINE_CURSOR = { stroke: 'var(--border)', strokeWidth: 1 }
-export const CHART_HEIGHT = 220
+export { CHART_HEIGHT }
 /** Plot height: shorter on a phone so a chart and its legend fit one screen. */
 const PLOT_CLASS = 'h-[180px] sm:h-[220px]'
 
@@ -184,18 +189,14 @@ export function ColumnViz({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
                 {hatchDefs(hatchId)}
-                <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+                <CartesianGrid {...CHART_GRID} />
                 <XAxis
                   dataKey="t"
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
+                  {...CHART_AXIS}
                   tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
                 />
                 <YAxis
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
+                  {...CHART_AXIS}
                   allowDecimals={false}
                   tickFormatter={(v: number) => formatCount(v, locale)}
                 />
@@ -206,7 +207,7 @@ export function ColumnViz({
                     stacked ? 'stack' : 'lines',
                     result.bucket,
                     unit,
-                    BAR_CURSOR,
+                    CHART_BAR_CURSOR,
                     polarity
                   )}
                 />
@@ -261,18 +262,14 @@ export function AreaLineViz({
   }
   const axes = (
     <>
-      <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+      <CartesianGrid {...CHART_GRID} />
       <XAxis
         dataKey="t"
-        tick={AXIS_TICK}
-        axisLine={false}
-        tickLine={false}
+        {...CHART_AXIS}
         tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
       />
       <YAxis
-        tick={AXIS_TICK}
-        axisLine={false}
-        tickLine={false}
+        {...CHART_AXIS}
         allowDecimals={unit !== 'count'}
         tickFormatter={(v: number) => formatMetric(v, unit, locale)}
       />
@@ -283,7 +280,7 @@ export function AreaLineViz({
           mode === 'area' ? 'stack' : 'lines',
           result.bucket,
           unit,
-          LINE_CURSOR,
+          CHART_LINE_CURSOR,
           polarity
         )}
       />
@@ -291,12 +288,10 @@ export function AreaLineViz({
         <ReferenceLine
           key={mk.t}
           x={mk.t}
-          stroke="var(--muted-foreground)"
-          strokeDasharray="4 3"
+          {...CHART_REFERENCE}
           label={{
             value: label({ key: mk.t, ...mk }),
-            fill: 'var(--muted-foreground)',
-            fontSize: 11,
+            ...CHART_REFERENCE_LABEL,
             position: 'insideTopLeft',
           }}
         />
@@ -410,18 +405,14 @@ export function DivergingViz({
                 margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
               >
                 {hatchDefs(hatchId)}
-                <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+                <CartesianGrid {...CHART_GRID} />
                 <XAxis
                   dataKey="t"
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
+                  {...CHART_AXIS}
                   tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
                 />
                 <YAxis
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
+                  {...CHART_AXIS}
                   allowDecimals={false}
                   tickFormatter={(v: number) => formatCount(Math.abs(v), locale)}
                 />
@@ -433,7 +424,7 @@ export function DivergingViz({
                     'flow',
                     result.bucket,
                     'count',
-                    BAR_CURSOR,
+                    CHART_BAR_CURSOR,
                     polarity
                   )}
                 />
