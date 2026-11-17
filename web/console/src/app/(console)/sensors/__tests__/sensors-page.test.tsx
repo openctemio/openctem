@@ -69,6 +69,10 @@ describe('Platform sensors page', () => {
     expect(screen.getAllByText('relay-01').length).toBeGreaterThan(0)
     expect(screen.getByTestId('sensors-shared-scanning-closed')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
+    // Pause, Resume and Retire live in the row menu, which a read-only role does not get.
+    expect(
+      screen.queryByRole('button', { name: /^Actions for the sensor/ })
+    ).not.toBeInTheDocument()
   })
 
   it('names the feed relay role only when a sensor advertises it', () => {
@@ -91,7 +95,8 @@ describe('Platform sensors page', () => {
   it('lets a super admin pause a sensor with a reason and a code', async () => {
     state.role = 'super_admin'
     render(<PlatformSensorsPage />)
-    await userEvent.click(screen.getAllByRole('button', { name: /Pause/ })[0])
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for the sensor/ })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Pause/ }))
     await userEvent.type(screen.getByLabelText(/reason/i), 'maintenance window tonight')
     await userEvent.type(screen.getByLabelText(/code/i), '123456')
     await userEvent.click(screen.getByRole('button', { name: 'Pause' }))
