@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
+import { CHART_AXIS } from '@/components/charts/chart-defaults'
 import { CHART_TOOLTIP_PROPS } from '../lib/ctem-colors'
 import {
   useExecutiveSummary,
@@ -634,16 +635,12 @@ function ExposureTrend({
           <AreaChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              {...CHART_AXIS}
               minTickGap={24}
               tickFormatter={(d: string) => formatTickDate(d, locale)}
             />
             <YAxis
-              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              {...CHART_AXIS}
               width={36}
               allowDecimals={false}
             />
