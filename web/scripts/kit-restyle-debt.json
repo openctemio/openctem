@@ -184,8 +184,6 @@
   "src/features/notifications/components/notification-events.tsx": 1,
   "src/features/organization/components/access-restrictions-card.tsx": 1,
   "src/features/organization/components/add-user-dialog.tsx": 1,
-  "src/features/organization/components/dashboard-data-card.tsx": 1,
-  "src/features/organization/components/general-settings.tsx": 1,
   "src/features/organization/components/invite-user-dialog.tsx": 1,
   "src/features/organization/components/member-mfa-badge.tsx": 1,
   "src/features/organization/components/module-settings/module-row.tsx": 1,
