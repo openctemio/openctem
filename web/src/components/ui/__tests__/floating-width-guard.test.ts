@@ -40,7 +40,6 @@ const REVIEWED: Record<string, string> = {
     'w-auto with the 360 px ceiling: sized by its content',
   'features/assets/components/service-cells/surface-facts.tsx PopoverContent':
     'a fact sheet with long values',
-  'features/findings/components/assignee-select.tsx PopoverContent': 'a picker with a search field',
   'features/findings/components/create-finding-dialog.tsx PopoverContent':
     'a combobox as wide as its field',
   'features/findings/components/detail/sla-why-this-date.tsx PopoverContent':
