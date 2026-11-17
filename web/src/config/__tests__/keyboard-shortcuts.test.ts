@@ -52,7 +52,7 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     /e\.key !== 't' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'add-filter': [
-    'features/findings/filters/add-filter-popover.tsx',
+    'features/shared/components/filter-button.tsx',
     /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'focus-search': [

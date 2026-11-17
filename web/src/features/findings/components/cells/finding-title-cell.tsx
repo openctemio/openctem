@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
-import Link from '@/components/link'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { findingDetailHref } from '@/features/findings/lib/finding-link'
 
 /**
@@ -93,27 +93,16 @@ export function FindingTitleCell({
     <div data-slot="finding-title-cell" className={cn('flex min-w-0 flex-col', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
         {onOpen && findingId ? (
-          <Link
+          <RowNameLink
             href={findingDetailHref(findingId)}
-            prefetch={false}
-            dir="auto"
-            data-slot="finding-title-link"
+            onOpen={onOpen}
+            label={openLabel}
             title={tip}
-            className={cn(
-              titleClass,
-              'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset'
-            )}
-            aria-label={openLabel}
-            onClick={(e) => {
-              // The row must not open the drawer as well.
-              e.stopPropagation()
-              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-              e.preventDefault()
-              onOpen()
-            }}
+            lines={titleLines}
+            slot="finding-title-link"
           >
             {toDisplayText(title ?? '', 500)}
-          </Link>
+          </RowNameLink>
         ) : onOpen ? (
           <button
             type="button"

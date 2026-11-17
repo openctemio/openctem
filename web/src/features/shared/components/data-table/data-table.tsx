@@ -124,7 +124,8 @@ interface DataTableProps<TData, TValue> {
    * two kinds: `nothingYet` (the list has no records at all: say so and offer
    * the first action) and `noMatch` (a search or filter left no row; defaults
    * to "No results found" with a Clear filters action when `onClearFilters`
-   * is given). Which one shows follows `isFiltered`.
+   * is given; `{ title, hint }` keeps that block and its action with the
+   * page's words). Which one shows follows `isFiltered`.
    */
   emptyState?: React.ReactNode | DataTableEmptyStates
   /**
@@ -357,7 +358,27 @@ export interface DataTableSelectMode {
 /** The two kinds of empty list (`emptyState`). */
 export interface DataTableEmptyStates {
   nothingYet: React.ReactNode
-  noMatch?: React.ReactNode
+  /**
+   * A block of the page's own, or just its words: the table keeps its icon,
+   * its layout and the Clear filters action (`onClearFilters`).
+   */
+  noMatch?: React.ReactNode | DataTableNoMatchWords
+}
+
+/** The words of the default no-match block; each defaults to the table's. */
+export interface DataTableNoMatchWords {
+  title?: string
+  hint?: string
+}
+
+function isNoMatchWords(v: unknown): v is DataTableNoMatchWords {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !React.isValidElement(v) &&
+    !('$$typeof' in v) &&
+    Object.getPrototypeOf(v) === Object.prototype
+  )
 }
 
 function isEmptyStates(v: unknown): v is DataTableEmptyStates {
@@ -1170,23 +1191,35 @@ export function DataTable<TData, TValue>({
   // The empty body: one block, or the two kinds of empty list. It sits in
   // the table's one frame: a page's empty state drawn as a card loses its
   // card's frame there (one frame, as on every list), keeping its content.
-  const emptyContent = isEmptyStates(emptyState)
-    ? filterActive
-      ? (emptyState.noMatch ?? (
-          <DefaultEmpty
-            message={t('common.table.noResults', 'No results found')}
-            hint={t('common.table.adjustSearch', 'Try adjusting your search or filters')}
-            action={
-              onClearFilters ? (
-                <Button variant="outline" size="sm" onClick={onClearFilters}>
-                  {t('common.table.clearFilters', 'Clear filters')}
-                </Button>
-              ) : undefined
-            }
-          />
-        ))
-      : emptyState.nothingYet
-    : (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+  const noMatch = isEmptyStates(emptyState) ? emptyState.noMatch : undefined
+  const noMatchWords = isNoMatchWords(noMatch) ? noMatch : undefined
+  const noMatchBlock = noMatchWords ? undefined : (noMatch as React.ReactNode)
+  const emptyContent = isEmptyStates(emptyState) ? (
+    filterActive ? (
+      noMatchBlock != null ? (
+        noMatchBlock
+      ) : (
+        <DefaultEmpty
+          message={noMatchWords?.title ?? t('common.table.noResults', 'No results found')}
+          hint={
+            noMatchWords?.hint ??
+            t('common.table.adjustSearch', 'Try adjusting your search or filters')
+          }
+          action={
+            onClearFilters ? (
+              <Button variant="outline" size="sm" onClick={onClearFilters}>
+                {t('common.table.clearFilters', 'Clear filters')}
+              </Button>
+            ) : undefined
+          }
+        />
+      )
+    ) : (
+      emptyState.nothingYet
+    )
+  ) : (
+    (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+  )
   const emptyBody = (
     <div
       data-slot="table-empty"
