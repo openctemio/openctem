@@ -292,7 +292,10 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
                           name: inv.invited_by,
                           role: inv.role,
                         })
-                      : t('org.onboarding.invitedAs', undefined, { role: inv.role })}{' '}
+                      : t('org.onboarding.invitedAs', undefined, { role: inv.role })}
+                  </p>
+                  {/* Its own line: two sentences run together read as one. */}
+                  <p className="text-cap text-muted-foreground">
                     {t('auth.welcome.expires', 'Expires {when}', {
                       when: formatRelative(inv.expires_at, '', locale),
                     })}
