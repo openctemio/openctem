@@ -251,7 +251,11 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
   return (
     <>
       <div className="flex min-w-0 flex-col gap-3" data-testid="sensors-fleet">
+        {/* On a phone the info mark is a 36 px touch target: the row has that
+            height from the first frame, so the mark appearing once the setting
+            is read moves nothing. */}
         <ListTitleRow
+          className="max-md:min-h-control-touch"
           title={t('admin.sharedFleet.fleetTitle')}
           count={
             <ListCount
