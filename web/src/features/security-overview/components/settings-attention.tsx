@@ -5,9 +5,8 @@ import { HealthStatus } from '@/components/ui/health-status'
 import { TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsBlock, SettingsRow, SettingsSection } from '@/features/shared'
-import { safeInternalHref } from '@/lib/safe-href'
 import { useSecurityOverview } from '../api/use-security-overview'
-import { normalizeChecks } from '../lib/checks'
+import { normalizeChecks, safeInternalLink } from '../lib/checks'
 
 /**
  * "Needs attention" at the top of /settings for owners and administrators:
@@ -68,7 +67,7 @@ export function SettingsAttention({ enabled }: { enabled: boolean }) {
         </SettingsBlock>
       ) : (
         todo.map((c) => {
-          const href = safeInternalHref(c.link)
+          const href = safeInternalLink(c.link)
           const title = t(`securityOverview.check.${c.id}.title`, c.id)
           return (
             <SettingsRow
