@@ -5,3 +5,4 @@
   a masked field for secrets, and a danger zone drawn as the last section.
 - The save bar counts the changed settings, lists them under "What changes", says a failed save in the bar and
   spans the bottom of the screen on a phone. Ctrl/Cmd+S, Discard and the question before leaving are unchanged.
+- Docs: web/docs/ui-style-contract.md ("Settings pages")
