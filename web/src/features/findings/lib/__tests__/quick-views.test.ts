@@ -6,6 +6,7 @@ import {
   informationalHidden,
   knownQuickViews,
   quickViewHref,
+  quickViewLink,
   quickViewIsActive,
   withInformational,
   type QuickView,
@@ -31,6 +32,12 @@ describe('quickViewHref', () => {
     expect(quickViewHref(TRIAGE.params)).toBe('/findings?status=new&state=all')
     expect(quickViewHref(PENDING.params)).toBe('/findings?pending_approval=true&state=all')
     expect(quickViewHref(ACCEPTED.params)).toContain('state=all')
+  })
+
+  it('leads Pending approval to the approvals inbox and every other view to the list', () => {
+    expect(quickViewLink(PENDING)).toBe('/findings/approvals')
+    expect(quickViewLink(ACTIVE)).toBe('/findings?state=open')
+    expect(quickViewLink(TRIAGE)).toBe('/findings?status=new&state=all')
   })
 
   it('keeps a comma list of values intact', () => {

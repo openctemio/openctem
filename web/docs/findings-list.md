@@ -110,7 +110,9 @@ the dashboard owns the KPI tiles.
 - The API defines the views (`GET /findings/quick-views`). Each view carries the exact `GET /findings` query
   string, so a view's count equals the total of the list it opens, in the viewer's own data scope. The web keeps
   no second definition (`src/features/findings/lib/quick-views.ts`).
-- A view is a plain link: `/findings?<params>`. A view with no `state` of its own is opened with `state=all`,
+- A view is a plain link: `/findings?<params>`. Pending approval is the exception: it links to the approvals inbox
+  (`/findings/approvals`), where the requests are approved, rejected, reminded or cancelled; the sidebar, a pinned
+  view and the command palette all use that link (`quickViewLink`), and its row is never marked as the current view. A view with no `state` of its own is opened with `state=all`,
   because the page's default is the Open lens and the count counted every state.
 - A row is active when the URL is exactly that view (page, sort, search and grouping do not count).
 - The views show, and their counts are requested, only on the list page. Other pages pay nothing.
