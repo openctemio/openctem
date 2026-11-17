@@ -228,9 +228,16 @@ describe('My Work page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View all' }))
     expect(push).toHaveBeenCalledWith('/findings?state=open&related_to=my_team')
     expect(screen.getByText('Top 1 of 23')).toBeInTheDocument()
-    // The count shows once, in the list's title row, with what the list holds.
+    // The count shows once, on the selected tab: the title row names the
+    // queue for assistive technology only, shows no count, and holds what the
+    // list holds and Refresh. No chip repeats the tab's scope.
     const titleRow = screen.getByTestId('my-work-title-row')
-    expect(within(titleRow).getByRole('heading', { name: 'My team' })).toBeInTheDocument()
+    expect(within(titleRow).getByRole('heading', { name: 'My team' })).toHaveClass('sr-only')
+    expect(titleRow.querySelector('[data-slot="list-count"]')).toBeNull()
+    expect(titleRow).not.toHaveTextContent('23')
+    expect(screen.getByRole('tab', { name: /My team/ })).toHaveTextContent('My team23')
+    expect(screen.queryByText('My groups')).toBeNull()
+    expect(document.querySelector('[data-slot="locked-chip"]')).toBeNull()
     expect(within(titleRow).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
     expect(within(titleRow).getByRole('button', { name: 'About this list' })).toBeInTheDocument()
   })
@@ -296,13 +303,45 @@ describe('My Work page', () => {
 
   it('enters triage mode on the Needs triage view', () => {
     renderPage()
-    fireEvent.click(screen.getByRole('button', { name: /^Triage\s*9$/ }))
+    // One main action per screen: the queue's Triage these is filled, the
+    // page's Triage (everything new) is a secondary, outline control.
+    expect(screen.getByRole('button', { name: 'Triage these' })).toHaveAttribute(
+      'data-variant',
+      'default'
+    )
+    const triage = screen.getByRole('button', { name: /^Triage\s*9$/ })
+    expect(triage).toHaveAttribute('data-variant', 'outline')
+    expect(
+      screen
+        .getAllByRole('button')
+        .filter((b) => b.getAttribute('data-variant') === 'default')
+        .map((b) => b.textContent)
+    ).toEqual(['Triage these'])
+    fireEvent.click(triage)
     expect(startSession).toHaveBeenCalledWith(
       'status=new&informational=false',
       '/findings?status=new&state=all',
       'needs_triage'
     )
     expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/findings\/triage\?status=new/))
+  })
+
+  it('keeps the header, the tabs and the toolbar in place while the counts load', () => {
+    const loaded = quickViews.data
+    quickViews.data = undefined
+    try {
+      renderPage()
+      // Each finding tab holds its count's place; the loaded ones show theirs.
+      expect(screen.getByRole('tab', { name: /Assigned to me/ })).toHaveTextContent(
+        'Assigned to me…'
+      )
+      expect(screen.getByRole('tab', { name: /My tasks/ })).toHaveTextContent('My tasks5')
+      // Triage is drawn, disabled, until it knows what waits.
+      expect(screen.getByRole('button', { name: /^Triage$/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'More for this queue' })).toBeDisabled()
+    } finally {
+      quickViews.data = loaded
+    }
   })
 
   it('hides triage without findings:status', () => {
