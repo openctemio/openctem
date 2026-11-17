@@ -28,6 +28,34 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 - With no `sort` in the URL the list is in the server's order (priority first), and the Priority header
   says so (`aria-sort`). The footer counts "findings".
 
+## Sensitive values in rows
+
+A row, a phone card and a group header never show an e-mail address, a URL credential or a secret in clear,
+whatever a scanner, an importer or a person wrote into a title, a location, a rule id or a group label.
+Nothing is discarded: the list shows the value masked, and "Show" exists only on the finding page
+(`findings:reveal`, with step-up for secrets). Rows and cards have no "Show".
+
+- One function does it, `maskSensitiveText` in `src/lib/mask-sensitive.ts`; its comment is the rule of record.
+  It mirrors the server's display masking (`server/pkg/safetext`): an address keeps its domain
+  (`***@example.com`), a URL keeps its host (`https://••••••••@git.example.com/a.git`), a secret keeps at
+  most its first and last 4 characters (`AKIA••••••••MPLE`). Known token formats, private key blocks, a
+  `Bearer` token, the value of `password=` / `secret=` / `token=` / `api_key=`, and any other long run that
+  mixes lower case, upper case and digits are secrets. CVE, CWE and GHSA ids, UUIDs, versions and one-case
+  hashes stay readable.
+- It runs where the API row becomes the list row (`transformApiToUiFinding`: the title, the location and
+  the asset name) and again in the cells that draw list text, so every list of findings has it: the title,
+  its tooltip and accessible name (`FindingTitleCell`), the id after it (`FindingRowId`), the Location cell
+  with its tooltip (`FindingAssetCell`), the phone card, the row menu's title and name, the selection
+  checkbox's name and the group headers of the grouped table (an owner group is a member's name and is not
+  masked). The text is masked before it is cut for display.
+- Ids, hrefs, filters and the search text are never masked: requests and links use the API's own values.
+  Copy ID and Copy link copy the id and the link, never the title. A finding whose title holds a masked
+  secret is deleted by typing its short id, since the mask cannot be typed.
+- This is a display guarantee of the list: the list response still carries the text as stored. The drawer and
+  the finding page show their own masked evidence.
+- `src/lib/__tests__/mask-sensitive.test.ts`, `finding-masked-rows.test.tsx` and
+  `e2e/specs/64-findings-masked-rows.spec.ts` check it.
+
 ## Selection
 
 - A selection belongs to the rows on screen. Changing the page, the page size, the sort, the search, a
@@ -43,6 +71,20 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
   mode. On a phone the bar is a full-width bottom row of two lines (the count and X, then the actions), every
   control 36, and the page keeps room for it under the last card. Selecting a card is a separate control
   from opening it.
+- A phone card reads top to bottom (`FindingPhoneCard`): the priority, with the row menu (36, touch target 44)
+  at the end of its line and the checkbox (its own 44 target) at its start in select mode; the title on up to
+  two lines, a link named by the whole title; the asset and the place on it on one line; the id (the CVE, else the rule id, the
+  same `FindingRowId` as the table row) and the time left (the same `SlaDueChip`; nothing when the finding has
+  no deadline); the severity, the status and one exploit mark, then the branch-only and duplicates marks
+  when set. A tap anywhere else on the card opens the finding.
+- A phone has no numbered pager. The list's footer (the shared `DataTable`, for every list drawn as cards) is
+  one full-width "Show 25 more" button and a line "50 of 418" ("50 shown" when the total is capped or could
+  not be counted). The button grows `per_page` in the URL by one step (25, 50, 75, 100), so the cards on
+  screen stay where they are, the new ones come under them, the first new card takes the focus and a reload
+  shows the same number. The button names what is left when that is less than a step ("Show 10 more") and
+  goes when everything is shown. 100 is the largest page the API returns: there the button gives way to
+  "These are the first 100. Narrow the filters to see the rest." A link to a later page opens on the first
+  one on a phone. Growing the list clears the selection, as a page-size change does on a desktop.
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.

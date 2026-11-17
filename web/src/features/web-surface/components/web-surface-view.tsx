@@ -50,7 +50,7 @@ import { CatalogBadge, PathText } from './web-surface-badges'
 import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
 import { EndpointSheet } from './endpoint-sheet'
 import { useSearchQuery } from '@/hooks/use-search-query'
-import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES } from '@/lib/page-size-options'
+import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, isPhonePageSize } from '@/lib/page-size-options'
 
 // The shared sizes, and 20 for links from before they were one set.
 const PAGE_SIZES = [...TABLE_PAGE_SIZES, 20]
@@ -74,9 +74,11 @@ function usePaging(prefix: string) {
   const pagination = useMemo(
     () => ({
       pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10))
-        ? parseInt(perPageParam, 10)
-        : DEFAULT_TABLE_PAGE_SIZE,
+      pageSize:
+        PAGE_SIZES.includes(parseInt(perPageParam, 10)) ||
+        isPhonePageSize(parseInt(perPageParam, 10))
+          ? parseInt(perPageParam, 10)
+          : DEFAULT_TABLE_PAGE_SIZE,
     }),
     [pageParam, perPageParam]
   )

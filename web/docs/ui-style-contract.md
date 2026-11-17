@@ -367,6 +367,18 @@ tab icons, strip rules, chips, empty pagination, name column width).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
   does the same, and never shows a page count below 1.
+- **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
+  draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
+  outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
+  without a known total). The button grows the page size by one step of 25
+  through the list's own `onPaginationChange`, so the URL keeps `per_page`,
+  the cards on screen do not move and the first new card takes the focus. A
+  server-paged list stops at 100, the largest page the API returns, with a
+  line that says to narrow the filters; a list paged in the browser has no
+  cap. The page supplies nothing: its size check accepts the steps
+  (`isPhonePageSize` in `lib/page-size-options.ts`, already in
+  `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
+  list with one fixed size (`pageSizeOptions` of one) keeps the pager.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with

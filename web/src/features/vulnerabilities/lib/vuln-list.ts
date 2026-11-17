@@ -7,6 +7,7 @@
  */
 
 import type { SortingState } from '@tanstack/react-table'
+import { isPhonePageSize } from '@/lib/page-size-options'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import type { VulnListItem } from '../types/list'
 
@@ -132,7 +133,8 @@ export function readPage(params: URLSearchParams): { page: number; perPage: numb
   const per = parseInt(params.get('per_page') ?? '', 10)
   return {
     page,
-    perPage: VULN_LIST_PAGE_SIZES.includes(per) ? per : VULN_LIST_DEFAULT_PER_PAGE,
+    perPage:
+      VULN_LIST_PAGE_SIZES.includes(per) || isPhonePageSize(per) ? per : VULN_LIST_DEFAULT_PER_PAGE,
   }
 }
 
