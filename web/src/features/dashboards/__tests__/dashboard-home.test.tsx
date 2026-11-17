@@ -283,6 +283,38 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
+  it('the header keeps only the one-line freshness; a notice sits under the header', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = { ...snapshot('personal', 5), facts_built_at: null, stale: true }
+    renderHome()
+    const notice = await screen.findByTestId('dashboard-data-notice')
+    // Building wins over stale: nothing older exists yet.
+    expect(notice).toHaveTextContent('Dashboard data is being built for the first time.')
+    expect(notice).toHaveAttribute('role', 'status')
+    const header = document.querySelector('[data-slot="page-header"]')
+    expect(header).toContainElement(screen.getByTestId('dashboard-freshness'))
+    expect(header).not.toContainElement(notice)
+    expect(screen.getByTestId('dashboard-freshness')).not.toHaveTextContent('being built')
+  })
+
+  it('a stale notice names a failed refresh; current figures show no notice', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = {
+      ...snapshot('personal', 5),
+      stale: true,
+      last_refresh_error: 'timeout',
+    }
+    const { unmount } = renderHome()
+    expect(await screen.findByTestId('dashboard-data-notice')).toHaveTextContent(
+      'The last refresh failed; these are the last good figures.'
+    )
+    unmount()
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-data-notice')).toBeNull()
+  })
+
   it('the personal delete confirm does not claim the dashboard is deleted for everyone', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)

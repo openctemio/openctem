@@ -97,11 +97,6 @@ export interface DashboardFreshnessProps {
   data?: DashboardData
 }
 
-/**
- * "Your scope", "Updated 2m ago" and "Next in 58m" as one MetaLine (the full times
- * are in the hover text), and a
- * status line under it only when the figures are stale or still being built.
- */
 /** Re-renders its component every minute so relative times keep ticking. */
 export function useMinuteTick(): number {
   const [tick, setTick] = useState(0)
@@ -112,6 +107,12 @@ export function useMinuteTick(): number {
   return tick
 }
 
+/**
+ * "Your scope", "Updated 2m ago" and "Next in 58m" as one MetaLine (the full
+ * times are in the hover text). Always one line, so the page header keeps one
+ * height in every state; `DashboardDataNotice` says when the figures are stale
+ * or still being built.
+ */
 export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   const { t, locale } = useTranslation()
   useMinuteTick()
@@ -146,23 +147,44 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
           ),
         ]}
       />
-      {data?.stale && (
-        <p className="flex items-start gap-1 text-warning" role="status">
-          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-          {data.last_refresh_error
-            ? t(
-                'dashboards.freshness.failed',
-                'The last refresh failed; these are the last good figures.'
-              )
-            : t('dashboards.freshness.stale', 'These figures are older than their schedule.')}
-        </p>
-      )}
-      {data && !data.facts_built_at && (
-        <p role="status">
-          {t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')}
-        </p>
-      )}
     </div>
+  )
+}
+
+/**
+ * Why the figures may not be current: still being built for the first time,
+ * or older than their schedule (with the last refresh's failure). One status
+ * row under the page header, never inside it, so a notice never moves the
+ * header's controls. Building wins over stale: nothing older exists yet.
+ */
+export function DashboardDataNotice({ data }: { data?: DashboardData }) {
+  const { t } = useTranslation()
+  if (!data) return null
+  const building = !data.facts_built_at
+  if (!building && !data.stale) return null
+  return (
+    <p
+      className={cn(
+        'flex items-start gap-1.5 text-sm',
+        building ? 'text-muted-foreground' : 'text-warning'
+      )}
+      role="status"
+      data-testid="dashboard-data-notice"
+    >
+      {building ? (
+        <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      ) : (
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      )}
+      {building
+        ? t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')
+        : data.last_refresh_error
+          ? t(
+              'dashboards.freshness.failed',
+              'The last refresh failed; these are the last good figures.'
+            )
+          : t('dashboards.freshness.stale', 'These figures are older than their schedule.')}
+    </p>
   )
 }
 
