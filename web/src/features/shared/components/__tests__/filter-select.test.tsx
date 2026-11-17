@@ -87,4 +87,57 @@ describe('FilterSelect', () => {
     )
     expect(screen.getByRole('button', { name: 'State: Set by the view' })).toBeInTheDocument()
   })
+
+  it('folded with nothing chosen shows its key instead of All, and keeps "State: All" as its name', () => {
+    render(<FilterSelect label="State" value="" options={options} foldLabel onChange={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'State: All' })
+    const key = trigger.querySelector('[data-slot=filter-select-key]') as HTMLElement
+    expect(key).toHaveTextContent('State')
+    // Shown only while the key ("State:") is folded away, where "All" hides.
+    expect(key).toHaveClass(
+      'hidden',
+      '@max-4xl/toolbar:inline',
+      'group-data-[fold=true]/toolbar:inline'
+    )
+    expect(key.previousElementSibling).toHaveTextContent('All')
+    expect(key.previousElementSibling).toHaveClass(
+      '@max-4xl/toolbar:hidden',
+      'group-data-[fold=true]/toolbar:hidden'
+    )
+    // The key sizes the slot too, so folding moves nothing.
+    const sized = Array.from(trigger.querySelectorAll('[data-slot=toolbar-slot] [data-label]')).map(
+      (el) => el.getAttribute('data-label')
+    )
+    expect(sized).toEqual(['All', 'Pending', 'Approved', 'State'])
+  })
+
+  it('folded with a chosen value shows the value', () => {
+    render(
+      <FilterSelect label="State" value="pending" options={options} foldLabel onChange={() => {}} />
+    )
+    const trigger = screen.getByRole('button', { name: 'State: Pending' })
+    expect(trigger.querySelector('[data-slot=filter-select-key]')).toBeNull()
+    expect(trigger.querySelector('[data-slot=toolbar-slot]')).toHaveTextContent('Pending')
+  })
+
+  it('the key never stands in without foldLabel, or for a select that always has a value', () => {
+    const first = render(
+      <FilterSelect label="State" value="" options={options} onChange={() => {}} />
+    )
+    expect(document.querySelector('[data-slot=filter-select-key]')).toBeNull()
+    first.unmount()
+    render(
+      <FilterSelect
+        label="State"
+        value=""
+        allLabel="Set by the view"
+        options={options}
+        clearable={false}
+        foldLabel
+        onChange={() => {}}
+      />
+    )
+    expect(document.querySelector('[data-slot=filter-select-key]')).toBeNull()
+    expect(document.querySelector('[data-slot=toolbar-slot] [data-label="State"]')).toBeNull()
+  })
 })
