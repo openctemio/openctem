@@ -30,6 +30,12 @@ describe('RowNameLink', () => {
     expect(link).toHaveTextContent('Nightly scan')
   })
 
+  it('cuts its one line alone in a cell: a box no wider than the cell, no wrapper needed', () => {
+    const { link } = setup()
+    // An inline anchor ignores `truncate`; an inline box capped at its cell does not.
+    expect(link).toHaveClass('inline-block', 'max-w-full', 'truncate')
+  })
+
   it('a plain click opens the overlay and does not navigate', () => {
     const { link, onOpen, onRow } = setup()
     // fireEvent returns false when the default action was prevented.
@@ -68,6 +74,7 @@ describe('RowNameLink', () => {
     expect(link).toHaveAttribute('data-slot', 'finding-title-link')
     expect(link).toHaveClass('line-clamp-2')
     expect(link).not.toHaveClass('truncate')
+    expect(link).not.toHaveClass('inline-block')
   })
 
   it('follows only a path of this app', () => {
