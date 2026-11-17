@@ -119,6 +119,9 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
       }
     }
     if (stack) walk(stack)
+    // In reading order on screen: a block a phone moves with `order` (a list's
+    // tiles after its rows) is paired with the blocks it now sits between.
+    blocks.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top)
     const pairs = []
     for (let i = 1; i < blocks.length; i++) {
       const a = blocks[i - 1].getBoundingClientRect()
