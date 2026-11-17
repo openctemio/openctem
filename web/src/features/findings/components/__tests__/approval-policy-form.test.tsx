@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { ApprovalPolicyForm } from '../approval-policy-form'
 import type { FindingApprovalSettings } from '../../api/use-findings-api'
 
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
+
 if (!('ResizeObserver' in globalThis)) {
   ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
     observe() {}
@@ -72,12 +78,12 @@ function settings(over: Partial<FindingApprovalSettings> = {}): FindingApprovalS
 }
 
 async function optionsOf(cell: string): Promise<string[]> {
-  await userEvent.click(screen.getByTestId(`tier-${cell}`))
+  await user.click(screen.getByTestId(`tier-${cell}`))
   const listbox = await screen.findByRole('listbox')
   const names = within(listbox)
     .getAllByRole('option')
     .map((o) => o.textContent ?? '')
-  await userEvent.keyboard('{Escape}')
+  await user.keyboard('{Escape}')
   return names
 }
 
@@ -108,9 +114,9 @@ describe('ApprovalPolicyForm — tier grid', () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
     const save = screen.getByRole('button', { name: /save approval policy/i })
     expect(save).toBeDisabled()
-    await userEvent.click(screen.getByTestId('tier-accepted.high'))
-    await userEvent.click(await screen.findByRole('option', { name: 'Two approvers' }))
-    await userEvent.click(save)
+    await user.click(screen.getByTestId('tier-accepted.high'))
+    await user.click(await screen.findByRole('option', { name: 'Two approvers' }))
+    await user.click(save)
     expect(update).toHaveBeenCalledTimes(1)
     const body = update.mock.calls[0][0] as { policy: Record<string, unknown> }
     expect(body.policy.tiers).toEqual({ 'accepted.high': 'dual' })
@@ -125,7 +131,7 @@ describe('ApprovalPolicyForm — tier grid', () => {
   it('refuses an acceptance cap above the platform maximum', async () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
     const [standard] = screen.getAllByLabelText('Standard', { selector: 'input' })
-    await userEvent.type(standard, '400')
+    await user.type(standard, '400')
     expect(screen.getByRole('alert')).toHaveTextContent('Enter whole days from 1 to 365.')
     expect(screen.getByRole('button', { name: /save approval policy/i })).toBeDisabled()
   })
@@ -171,7 +177,7 @@ describe('ApprovalPolicyForm — relaxation', () => {
         canEdit
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
+    await user.click(screen.getByRole('button', { name: /cancel the change/i }))
     expect(update).toHaveBeenCalledWith({ cancel_pending: true })
   })
 

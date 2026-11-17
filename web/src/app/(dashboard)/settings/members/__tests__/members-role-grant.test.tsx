@@ -118,7 +118,7 @@ globalThis.ResizeObserver ??= class {
 
 describe('Members page role grant confirmation', () => {
   it('asks before adding a role and saves only after confirming', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(
       <I18nProvider locale="en">
         <UsersPage />
