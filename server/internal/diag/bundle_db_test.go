@@ -122,14 +122,12 @@ func recordMigrations(t *testing.T, db *sql.DB, migs []migrate.Migration) {
 			t.Fatal(err)
 		}
 	}
-	var highest int64
 	for _, m := range migs {
 		if _, err := db.ExecContext(context.Background(), `INSERT INTO schema_migrations_applied (version, name) VALUES ($1, $2)`, m.Version, m.Name); err != nil {
 			t.Fatal(err)
 		}
-		highest = max(highest, m.Version)
 	}
-	if _, err := db.ExecContext(context.Background(), `INSERT INTO schema_migrations (version, dirty) VALUES ($1, false)`, highest); err != nil {
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO schema_migrations (version, dirty) VALUES ($1, false)`, migrate.Fence); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -346,7 +344,7 @@ func TestBundle_SeededInstallationLeaksNothing(t *testing.T) {
 	if c := deps.checkMigrations(ctx); c.Status != StatusFail || !strings.Contains(c.Summary, "1 of its") || c.Fix == "" {
 		t.Errorf("one pending migration: %+v", c)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE schema_migrations SET dirty = true`); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE schema_migrations SET version = $1, dirty = true`, migs[len(migs)-1].Version); err != nil {
 		t.Fatal(err)
 	}
 	if c := deps.checkMigrations(ctx); c.Status != StatusFail || !strings.Contains(c.Summary, "dirty") {
@@ -364,7 +362,7 @@ func TestReadOnly_NothingCanBeWritten(t *testing.T) {
 	}
 	for _, stmt := range []string{
 		`INSERT INTO probe VALUES (1)`, `UPDATE probe SET n = 2`, `DELETE FROM probe`, `TRUNCATE probe`,
-		`CREATE TABLE other (n int)`, `DROP TABLE probe`, `SET TRANSACTION READ WRITE`,
+		`CREATE TABLE other (n int)`, `DROP TABLE probe`, `SET TRANSACTION READ WRITE`, `SET LOCAL transaction_read_only = off`,
 	} {
 		err := ReadOnly(ctx, db, time.Second, func(q Querier) error {
 			var discard any

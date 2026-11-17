@@ -172,7 +172,8 @@ func (d Deps) statementTimeout() time.Duration {
 }
 
 // ReadOnly runs fn in a read-only transaction whose statements are cut at
-// timeout. The transaction is always rolled back.
+// timeout. The transaction cannot be made read-write and is always rolled
+// back.
 func ReadOnly(ctx context.Context, db *sql.DB, timeout time.Duration, fn func(q Querier) error) error {
 	if db == nil {
 		return errNoDatabase
@@ -191,6 +192,12 @@ func ReadOnly(ctx context.Context, db *sql.DB, timeout time.Duration, fn func(q 
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL lock_timeout = %d", ms)); err != nil {
+		return err
+	}
+	// The first query fixes the transaction's mode: after it PostgreSQL
+	// refuses a switch to read-write for the rest of the transaction.
+	var one int
+	if err := tx.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
 		return err
 	}
 	return fn(tx)
