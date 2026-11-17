@@ -32,6 +32,7 @@ import {
   Settings2,
   Hash,
   Link2,
+  ListPlus,
   Loader2,
   ShieldCheck,
   Ticket,
@@ -54,7 +55,8 @@ import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
 import type { TransitionDecision } from '../../api/use-finding-transitions'
-import { FindingMainAction } from './finding-main-action'
+import { FindingMainAction, useFindingMainActionKind } from './finding-main-action'
+import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
 import { Tag } from '@/components/ui/tag'
 import { CreateTicketDialog } from '../create-ticket-dialog'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
@@ -97,6 +99,11 @@ export function FindingHeader({
   const [ticketOpen, setTicketOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
   const [reverifyOpen, setReverifyOpen] = useState(false)
+  const [taskOpen, setTaskOpen] = useState(false)
+  // "Add to task" is in More whenever it is not the main action (a resolved
+  // finding has no main action at all).
+  const main = useFindingMainActionKind({ finding, status, onStatusMove })
+  const taskInMenu = main.canAddToTask && main.kind !== 'add-to-task'
   // An inventory asset (not a free-text pentest target) the duplicate must share.
   const assetId = isHuman ? undefined : finding.assets[0]?.id
   const canMarkDuplicate =
@@ -165,6 +172,15 @@ export function FindingHeader({
       onSelect: () => void copy(finding.id, t('findings.header.idCopied', 'Finding ID copied')),
     },
   ]
+  if (taskInMenu) {
+    menu.push({
+      id: 'add-to-task',
+      label: t('remediationClaim.add.addToTask', 'Add to task'),
+      icon: ListPlus,
+      section: 'track',
+      onSelect: () => setTaskOpen(true),
+    })
+  }
   if (canCreateTicket) {
     menu.push({
       id: 'create-ticket',
@@ -283,6 +299,16 @@ export function FindingHeader({
           open={duplicateOpen}
           onOpenChange={setDuplicateOpen}
           onMarked={(canonicalId) => router.push(`/findings/${encodeURIComponent(canonicalId)}`)}
+        />
+      )}
+
+      {taskInMenu && taskOpen && (
+        <AddFindingsToTaskDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setTaskOpen(false)
+          }}
+          findings={[{ id: finding.id, title: finding.title }]}
         />
       )}
 

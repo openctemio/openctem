@@ -7,6 +7,7 @@
  *   duplicate of another finding        Open the original
  *   fix applied, a retest can run       Retest now
  *   in progress                         Mark fix applied
+ *   resolved, accepted, false positive  none ("Add to task" stays in More)
  *   otherwise                           Add to task
  *
  * Each keeps the gate it has elsewhere on the page: Retest now needs
@@ -36,7 +37,7 @@ import { fetchTransitions } from '../../api/triage-api'
 import type { TransitionDecision } from '../../api/use-finding-transitions'
 import { firstReason } from '../../lib/transition-reasons'
 import { isTriageLocked } from '../../lib/finding-detail'
-import type { FindingDetail, FindingStatus } from '../../types'
+import { findingStatusesInCategory, type FindingDetail, type FindingStatus } from '../../types'
 
 export type FindingMainActionKind = 'open-original' | 'retest' | 'mark-fixed' | 'add-to-task'
 
@@ -47,8 +48,19 @@ interface FindingMainActionProps {
   onStatusMove?: (status: FindingStatus, move?: TransitionDecision) => void
 }
 
-export function FindingMainAction({ finding, status, onStatusMove }: FindingMainActionProps) {
-  const { t } = useTranslation()
+/** A finding in one of these needs no next step: the header shows no main action. */
+const CLOSED: ReadonlySet<FindingStatus> = new Set(findingStatusesInCategory('closed'))
+
+/**
+ * Which main action the finding's state calls for, and whether the viewer may
+ * add it to a task (the header's More menu offers that when it is not the main
+ * action). The header and the action share it; the retests read is one request.
+ */
+export function useFindingMainActionKind({
+  finding,
+  status,
+  onStatusMove,
+}: FindingMainActionProps) {
   const { hasPermission } = usePermissions()
   const canCreateTask = useCanMutate('POST /api/v1/remediation/tasks')
   const remediationEnabled = useModuleEnabled('remediation')
@@ -62,6 +74,28 @@ export function FindingMainAction({ finding, status, onStatusMove }: FindingMain
   const { data: retests } = useFindingRetests(
     status === 'fix_applied' && mayVerify ? finding.id : null
   )
+
+  const originalHref = finding.duplicateOf
+    ? safeHref(`/findings/${encodeURIComponent(finding.duplicateOf)}`)
+    : undefined
+
+  let kind: FindingMainActionKind | null = null
+  if (originalHref) kind = 'open-original'
+  else if (CLOSED.has(status)) kind = null
+  else if (status === 'fix_applied' && mayVerify && retests?.can_retest === true) kind = 'retest'
+  else if (status === 'in_progress' && canMoveStatus && onStatusMove) kind = 'mark-fixed'
+  else if (canAddToTask) kind = 'add-to-task'
+
+  return { kind, canAddToTask, mayVerify, retests, originalHref }
+}
+
+export function FindingMainAction({ finding, status, onStatusMove }: FindingMainActionProps) {
+  const { t } = useTranslation()
+  const { kind, canAddToTask, mayVerify, retests, originalHref } = useFindingMainActionKind({
+    finding,
+    status,
+    onStatusMove,
+  })
   const { data: checkData } = useFindingRetestCheck(
     status === 'fix_applied' && mayVerify ? finding.id : null
   )
@@ -71,16 +105,6 @@ export function FindingMainAction({ finding, status, onStatusMove }: FindingMain
   const [taskOpen, setTaskOpen] = useState(false)
   const [retestOpen, setRetestOpen] = useState(false)
   const [moving, setMoving] = useState(false)
-
-  const originalHref = finding.duplicateOf
-    ? safeHref(`/findings/${encodeURIComponent(finding.duplicateOf)}`)
-    : undefined
-
-  let kind: FindingMainActionKind | null = null
-  if (originalHref) kind = 'open-original'
-  else if (status === 'fix_applied' && mayVerify && retests?.can_retest === true) kind = 'retest'
-  else if (status === 'in_progress' && canMoveStatus && onStatusMove) kind = 'mark-fixed'
-  else if (canAddToTask) kind = 'add-to-task'
 
   const markFixed = async () => {
     if (!onStatusMove) return

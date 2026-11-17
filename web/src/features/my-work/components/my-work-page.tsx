@@ -383,7 +383,7 @@ export function MyWorkPage() {
             'review',
             canSeeApprovalRules ? (
               <Button size="sm" variant="ghost" asChild>
-                <Link href="/settings/finding-approvals">
+                <Link href="/settings/approvals">
                   {t('myWork.next.approvalRules', 'Set up approval rules')}
                 </Link>
               </Button>
