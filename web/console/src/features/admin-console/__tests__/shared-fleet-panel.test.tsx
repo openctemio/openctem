@@ -102,7 +102,7 @@ describe('SharedFleetMobileCard', () => {
 
   it('leaves out an empty version and tools instead of showing a dash, and has no label/value grid', () => {
     const { container } = render(<SharedFleetMobileCard sensor={base} />)
-    expect(container).not.toHaveTextContent('Version')
+    expect(container).not.toHaveTextContent(/\bv\d/)
     expect(
       Array.from(container.querySelectorAll('span, p')).some((e) => e.textContent?.trim() === '-')
     ).toBe(false)
@@ -124,7 +124,7 @@ describe('SharedFleetMobileCard', () => {
       />
     )
     const facts = container.querySelector('[data-slot="meta-line"]') as HTMLElement
-    expect(facts).toHaveTextContent('Version v1.2.3')
+    expect(facts).toHaveTextContent('v1.2.3')
     expect(facts).toHaveTextContent('1 of 4 jobs')
     expect(facts).toHaveTextContent('Seen')
     expect(container.querySelector('[data-slot="fleet-card-tools"]')).toHaveTextContent(

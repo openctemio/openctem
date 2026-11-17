@@ -1921,7 +1921,7 @@
   "admin.sharedFleet.card.jobsOf": "{current} of {max} jobs",
   "admin.sharedFleet.card.neverSeen": "Not seen yet",
   "admin.sharedFleet.card.seen": "Seen",
-  "admin.sharedFleet.card.version": "Version {version}",
+  "admin.sharedFleet.card.version": "v{version}",
   "admin.sharedFleet.col.created": "Created",
   "admin.sharedFleet.col.jobs": "Current jobs",
   "admin.sharedFleet.col.lastSeen": "Last seen",

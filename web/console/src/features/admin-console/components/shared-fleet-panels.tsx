@@ -347,10 +347,11 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
  *
  *   shared-eu-1  eu                                   [...]
  *   Active  Online                  (wraps, never cut)
- *   Version v1.2.3   1 of 4 jobs   Seen 2 hours ago
+ *   v1.2.3   1 of 4 jobs   Seen 2 hours ago
  *   nuclei, httpx                   (only when it has tools)
  *
- * An item with no value is left out instead of showing a dash.
+ * An item with no value (region, version, tools) is left out instead of
+ * showing a dash or a placeholder.
  */
 export function SharedFleetMobileCard({
   sensor,
@@ -361,7 +362,6 @@ export function SharedFleetMobileCard({
   actions?: ReactNode
 }) {
   const { t } = useTranslation()
-  const region = sensor.region || t('admin.sharedFleet.noRegion')
   return (
     <div data-slot="fleet-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -369,7 +369,9 @@ export function SharedFleetMobileCard({
           <span className="min-w-0 truncate font-medium" title={sensor.name}>
             {sensor.name}
           </span>
-          <span className="shrink-0 text-cap text-muted-foreground">{region}</span>
+          {sensor.region ? (
+            <span className="shrink-0 text-cap text-muted-foreground">{sensor.region}</span>
+          ) : null}
         </div>
         <div data-slot="fleet-card-state" className="flex flex-wrap items-center gap-1">
           <Badge variant={sensor.status === 'active' ? 'secondary' : 'outline'}>
@@ -386,8 +388,8 @@ export function SharedFleetMobileCard({
           items={[
             sensor.version ? (
               <span key="version">
-                {t('admin.sharedFleet.card.version', 'Version {version}', {
-                  version: sensor.version,
+                {t('admin.sharedFleet.card.version', 'v{version}', {
+                  version: sensor.version.replace(/^v/i, ''),
                 })}
               </span>
             ) : null,
