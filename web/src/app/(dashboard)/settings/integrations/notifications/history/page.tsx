@@ -33,6 +33,7 @@ import {
   useNotificationIntegrationsApi,
   useNotificationEventsApi,
   invalidateNotificationEventsCache,
+  integrationIdFromParam,
 } from '@/features/integrations/api/use-integrations-api'
 import type { NotificationEventEntry } from '@/features/integrations/types/integration.types'
 import { safeHref } from '@/lib/safe-href'
@@ -203,7 +204,8 @@ function HistoryContent() {
   const router = useRouter()
   // Read on every render, not once: after an in-app navigation (a channel's
   // "View events") the first render still sees the previous page's URL.
-  const urlId = useUrlParam('integration') || ''
+  // Only a channel id is used from the link; anything else is ignored.
+  const urlId = integrationIdFromParam(useUrlParam('integration'))
   const [pickedId, setPickedId] = useState('')
 
   const { data: integrationsData, isLoading: loadingIntegrations } =
