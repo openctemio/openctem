@@ -1,16 +1,39 @@
 'use client'
 
 /**
- * The one frame every dashboard widget renders in: title, definition,
+ * The one frame every dashboard widget renders in: title, one control (a menu
+ * of open the list, table or chart, how the figure is counted and the host's
+ * own items; a lone item is a button),
  * freshness, and every state a widget can be in. Each frame is its own error
  * boundary, so one malformed payload never blanks the dashboard.
  */
 
-import { Component, useId, type ErrorInfo, type ReactNode } from 'react'
-import { AlertCircle, Clock, Info, Lock, Plug, RefreshCw, ShieldAlert } from 'lucide-react'
+import {
+  Component,
+  useCallback,
+  useId,
+  useMemo,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react'
+import {
+  AlertCircle,
+  BarChart3,
+  Clock,
+  Info,
+  List,
+  Lock,
+  MoreHorizontal,
+  Plug,
+  RefreshCw,
+  ShieldAlert,
+  Table2,
+  X,
+} from 'lucide-react'
 import Link from '@/components/link'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { errorDetails } from '@/lib/api/access-state'
@@ -25,11 +48,18 @@ import {
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import type { SkeletonKind, WidgetState } from './types'
+import { WidgetFrameContext, type WidgetBodyView } from './widget-frame-context'
 
 export interface WidgetFrameProps {
   title: string
-  /** Plain-words definition shown behind the info button (formula, population, window). */
+  /** Plain-words definition (formula, population, window): "How this is counted" in the menu. */
   definition?: ReactNode
+  /** The list the figure counts, with the same filter: "Open list" in the menu. */
+  listHref?: string
+  /** The host's own items (an editor's Edit, Duplicate, Remove), after the frame's. */
+  menuItems?: ActionMenuEntry[]
+  /** False for a preview that cannot be operated: the frame then has no menu. */
+  menu?: boolean
   /** When the figures were computed (ISO). Shown as "Updated …" with the absolute time on hover. */
   asOf?: string | null
   /** The page's own "Updated" time: a widget repeats its time only when stale or when it differs. */
@@ -57,7 +87,7 @@ export interface WidgetFrameProps {
   moduleHref?: string
   /** partial: what is missing ("Fixed findings could not be loaded"). */
   partialMessage?: string
-  /** Extra controls in the header (menu, table toggle). */
+  /** Extra controls in the header, before the menu. */
   actions?: ReactNode
   className?: string
 }
@@ -161,8 +191,8 @@ function StateMessage({
       >
         {icon}
       </span>
-      <p className="text-sm font-medium">{title}</p>
-      {body && <p className="max-w-xs text-xs text-muted-foreground">{body}</p>}
+      <p className="text-body font-medium">{title}</p>
+      {body && <p className="max-w-xs text-cap text-muted-foreground">{body}</p>}
       {children}
     </div>
   )
@@ -182,7 +212,7 @@ function Freshness({ asOf, stale }: { asOf: string; stale: boolean }) {
   const { t, locale } = useTranslation()
   const age = ageMs(asOf)
   return (
-    <p className="mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-muted-foreground">
+    <p className="mt-auto flex flex-wrap items-center gap-2 pt-2 text-cap text-muted-foreground">
       <span title={formatAbsoluteTime(asOf, locale)}>
         {t('dashboardKit.freshness.updated', 'Updated {time}', {
           time: formatRelativeTime(asOf, locale),
@@ -209,7 +239,7 @@ function FrameBody(props: WidgetFrameProps) {
     case 'scope_changed':
       return (
         <div className="flex flex-col gap-2">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+          <p className="flex items-center gap-1.5 text-cap text-muted-foreground" role="status">
             <ShieldAlert className="size-3.5" aria-hidden />
             {t('dashboardKit.state.scopeChanged', 'Your access changed. Updating these figures.')}
           </p>
@@ -248,8 +278,8 @@ function FrameBody(props: WidgetFrameProps) {
     case 'not_measured':
       return (
         <div className={cn('flex flex-1 flex-col justify-center gap-1', SKELETON_HEIGHT)}>
-          <p className="text-3xl font-semibold tabular-nums text-muted-foreground">—</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-figure tabular-nums text-muted-foreground">—</p>
+          <p className="text-cap text-muted-foreground">
             {props.notMeasuredReason ??
               t('dashboardKit.state.notMeasured', 'Not measured yet for this period')}
           </p>
@@ -300,6 +330,7 @@ function FrameBody(props: WidgetFrameProps) {
           icon={<AlertCircle />}
           tone="destructive"
           title={t('dashboardKit.state.error', "Couldn't load these figures")}
+          body={t('dashboardKit.state.errorHint', 'The other widgets are not affected.')}
         >
           {props.onRetry && <RetryButton onRetry={props.onRetry} />}
         </StateMessage>
@@ -307,7 +338,7 @@ function FrameBody(props: WidgetFrameProps) {
     case 'partial':
       return (
         <>
-          <p className="mb-2 flex items-center gap-1.5 text-xs text-warning" role="status">
+          <p className="mb-2 flex items-center gap-1.5 text-cap text-warning" role="status">
             <AlertCircle className="size-3.5" aria-hidden />
             {props.partialMessage ??
               t('dashboardKit.state.partial', 'Some of these figures could not be loaded')}
@@ -347,16 +378,128 @@ export class WidgetErrorBoundary extends Component<BoundaryProps, { failed: bool
   }
 }
 
+/**
+ * The frame's one control. Two items or more are the shared action menu; a
+ * single item is that action as a button (a menu never holds one item);
+ * nothing applies, nothing is shown.
+ */
+function FrameMenu({
+  title,
+  label,
+  items,
+}: {
+  title: string
+  label: string
+  items: ActionMenuEntry[]
+}) {
+  // The button is pulled into the frame's padding, so the title line keeps
+  // its height; on a phone its touch area is 44 px.
+  const className = '-my-1 -me-1.5 shrink-0 text-muted-foreground'
+  if (items.length === 0) return null
+  const only = items.length === 1 && items[0].kind !== 'sub' ? items[0] : null
+  if (only) {
+    const Icon = only.icon ?? MoreHorizontal
+    const href = safeInternalHref(only.href)
+    return href ? (
+      <Button
+        asChild
+        variant="ghost"
+        size="icon-sm"
+        className={className}
+        data-testid="widget-action"
+      >
+        <Link href={href} aria-label={only.label} title={only.label}>
+          <Icon aria-hidden />
+        </Link>
+      </Button>
+    ) : (
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className={className}
+        aria-label={only.label}
+        title={only.label}
+        onClick={only.onSelect}
+        data-testid="widget-action"
+      >
+        <Icon aria-hidden />
+      </Button>
+    )
+  }
+  return (
+    <ActionMenu
+      title={title}
+      label={label}
+      items={items}
+      trigger={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className={className}
+          aria-label={label}
+          data-testid="widget-menu"
+        >
+          <MoreHorizontal aria-hidden />
+        </Button>
+      }
+    />
+  )
+}
+
 export function WidgetFrame(props: WidgetFrameProps) {
   const { t, locale } = useTranslation()
   const titleId = useId()
+  const noteId = useId()
   const { title, definition, asOf, state, actions, className, onRetry } = props
   const showsFigures = state === 'ready' || state === 'stale' || state === 'partial'
+
+  // A chart with a table alternative registers here; the menu then offers the
+  // other view, and the visualization draws the chosen one.
+  const [initialView, setInitialView] = useState<WidgetBodyView | null>(null)
+  const [chosenView, setChosenView] = useState<WidgetBodyView | null>(null)
+  const registerViews = useCallback((initial: WidgetBodyView) => {
+    setInitialView(initial)
+    return () => setInitialView(null)
+  }, [])
+  const frame = useMemo(() => ({ view: chosenView, registerViews }), [chosenView, registerViews])
+  const view = chosenView ?? initialView
+  const [noteOpen, setNoteOpen] = useState(false)
+
+  const listHref = showsFigures ? safeInternalHref(props.listHref) : undefined
+  const items: ActionMenuEntry[] = []
+  if (listHref)
+    items.push({
+      id: 'list',
+      label: t('dashboardKit.action.openList', 'Open list'),
+      icon: List,
+      href: listHref,
+    })
+  if (showsFigures && view)
+    items.push({
+      id: 'view',
+      label:
+        view === 'chart'
+          ? t('dashboardKit.action.showTable', 'Show table')
+          : t('dashboardKit.action.showChart', 'Show chart'),
+      icon: view === 'chart' ? Table2 : BarChart3,
+      onSelect: () => setChosenView(view === 'chart' ? 'table' : 'chart'),
+    })
+  if (definition)
+    items.push({
+      id: 'definition',
+      label: t('dashboardKit.action.definition', 'How this is counted'),
+      icon: Info,
+      onSelect: () => setNoteOpen((open) => !open),
+    })
+  for (const item of props.menuItems ?? []) items.push({ section: 'host', ...item })
+  const menuLabel = t('dashboardKit.action.menu', 'Actions for {title}', { title })
+
   return (
     <section
       aria-labelledby={titleId}
       aria-busy={state === 'loading' || state === 'scope_changed'}
       data-state={state}
+      data-view={showsFigures && view ? view : undefined}
       className={cn(
         'flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-card p-4 text-card-foreground',
         className
@@ -365,10 +508,7 @@ export function WidgetFrame(props: WidgetFrameProps) {
       <header className="mb-2 flex items-start gap-2">
         {/* A widget title is the level under the page title (h1): h2, so
             the sections inside a widget (h3) keep the heading order. */}
-        <h2
-          id={titleId}
-          className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
-        >
+        <h2 id={titleId} className="min-w-0 flex-1 text-card-title line-clamp-2 sm:line-clamp-1">
           {title}
           {props.count != null && (
             <span
@@ -379,31 +519,35 @@ export function WidgetFrame(props: WidgetFrameProps) {
             </span>
           )}
         </h2>
-        {definition && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                // A 24 px icon with a 44 px hit area (the after: box), so the
-                // header keeps its height and a finger still lands on it.
-                className="relative text-muted-foreground after:absolute after:-inset-2.5"
-                aria-label={t('dashboardKit.action.definition', 'How this is counted')}
-              >
-                <Info className="size-4" aria-hidden />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 text-xs leading-relaxed">{definition}</PopoverContent>
-          </Popover>
-        )}
         {actions}
+        {props.menu !== false && <FrameMenu title={title} label={menuLabel} items={items} />}
       </header>
+      {noteOpen && definition && (
+        <div
+          id={noteId}
+          role="status"
+          data-testid="widget-definition"
+          className="mb-2 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-cap text-muted-foreground"
+        >
+          <div className="min-w-0 flex-1">{definition}</div>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="-me-1 shrink-0"
+            aria-label={t('dashboardKit.action.closeDefinition', 'Close how this is counted')}
+            onClick={() => setNoteOpen(false)}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      )}
       <WidgetErrorBoundary
         fallback={(reset) => (
           <StateMessage
             icon={<AlertCircle />}
             tone="destructive"
             title={t('dashboardKit.state.error', "Couldn't load these figures")}
+            body={t('dashboardKit.state.errorHint', 'The other widgets are not affected.')}
           >
             <RetryButton
               onRetry={() => {
@@ -414,9 +558,11 @@ export function WidgetFrame(props: WidgetFrameProps) {
           </StateMessage>
         )}
       >
-        <div className="flex min-h-0 flex-1 flex-col">
-          <FrameBody {...props} />
-        </div>
+        <WidgetFrameContext.Provider value={frame}>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <FrameBody {...props} />
+          </div>
+        </WidgetFrameContext.Provider>
       </WidgetErrorBoundary>
       {showsFigures && asOf && (state === 'stale' || asOf !== props.pageAsOf) && (
         <Freshness asOf={asOf} stale={state === 'stale'} />
