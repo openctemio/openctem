@@ -42,7 +42,7 @@ func TestCIListUnverifiedRefusals(t *testing.T) {
 	h := NewCIAdminHandler(nil, nil, logger.NewNop())
 	w := httptest.NewRecorder()
 	h.ListUnverifiedRefusals(w, tenantRequest(http.MethodGet, "/", "", tenant))
-	if w.Code != http.StatusNotFound {
+	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unwired: %d", w.Code)
 	}
 	cfgID := shared.NewID()

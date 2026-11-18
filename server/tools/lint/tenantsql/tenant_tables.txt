@@ -92,6 +92,7 @@ ci_run_tokens
 ci_runs
 ci_trust_configs
 ci_trust_owner_pins
+ci_unverified_refusals
 code_scan_settings
 collector_assets
 command_events
