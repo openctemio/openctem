@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { render, screen, within } from '@testing-library/react'
 
 import { LEGAL_DOCS, legalConfig } from '@/lib/legal'
@@ -163,4 +165,18 @@ describe('legal documents', () => {
     renderDoc(terms, 'Văn bản này được công bố bằng tiếng Anh.')
     expect(screen.getByText('Văn bản này được công bố bằng tiếng Anh.')).toBeInTheDocument()
   })
+})
+
+describe('legal pages render on the server', () => {
+  // A value imported from a 'use client' module reaches a server component as
+  // a client reference, so a link drawn there would lose its classes.
+  it.each(['templates.tsx', 'components/legal-links.tsx'])(
+    '%s takes the link classes from the plain module',
+    (file) => {
+      const src = readFileSync(path.resolve(__dirname, '..', file), 'utf8')
+      expect(src).not.toMatch(/TEXT_LINK_CLASS[^\n]*from '@\/components\/ui\/text-link'/)
+      if (src.includes('TEXT_LINK_CLASS'))
+        expect(src).toContain("from '@/components/ui/text-link-class'")
+    }
+  )
 })

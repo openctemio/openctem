@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 
-import { TEXT_LINK_CLASS } from '@/components/ui/text-link'
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link-class'
 import { safeHref } from '@/lib/safe-href'
 
 /**

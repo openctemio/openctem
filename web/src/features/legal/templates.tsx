@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { LEGAL_DOCS, type LegalDoc, type LegalValues } from '@/lib/legal'
-import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
+import { TextLink } from '@/components/ui/text-link'
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link-class'
 import { safeInternalHref } from '@/lib/safe-href'
 import type { LegalSection } from './components/legal-document'
 import { LegalMail, LegalWeb } from './components/legal-links'
