@@ -2414,6 +2414,9 @@ func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, 
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
+	if svc.Auth != nil {
+		h.SetMembershipAdmission(svc.Auth)
+	}
 	return h
 }
 

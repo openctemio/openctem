@@ -63,6 +63,9 @@ var tenantlessRoutes = []string{
 	"POST /api/v1/me/sso-links/{provider}/start",
 	"POST /api/v1/me/sso-links/{provider}/complete",
 	"DELETE /api/v1/me/sso-links/identities/{identity}",
+	// Leaving one of the account's organizations (step-up): the way out of
+	// one that does not admit the session.
+	"POST /api/v1/me/memberships/{tenantId}/leave",
 	// Deleting the account (step-up).
 	"DELETE /api/v1/me/account",
 	"GET /api/v1/me/account/deletion",
