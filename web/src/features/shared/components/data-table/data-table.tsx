@@ -1171,9 +1171,9 @@ export function DataTable<TData, TValue>({
   const pageRows = table.getRowModel().rows
 
   // Placeholder rows while loading (loading-rows.ts): the last count this list
-  // showed, else its page size, capped to the viewport, so the list keeps its
-  // height when the rows arrive. Read through useSyncExternalStore: the
-  // server render (no storage, no viewport) uses the page size.
+  // showed, else five, capped to the page size and the viewport, so the list
+  // keeps its height when the rows arrive. Read through useSyncExternalStore:
+  // the server render (no storage, no viewport) draws five.
   const rowCountKey = `${pathname ?? ''}#${caption ?? labelledBy ?? ''}`
   const knownRows = React.useSyncExternalStore(
     noSubscribe,

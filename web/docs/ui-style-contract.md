@@ -907,8 +907,8 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
   (`Loader2`) only inside buttons that are working. A `DataTable` draws as
   many placeholder rows as the list showed last time in this browser session
-  (same page and table), else its page size, never more than fit on the
-  screen and at least one (`data-table/loading-rows.ts`); it reads its frame
+  (same page and table), else five, never more than its page size or than fit
+  on the screen, and at least one (`data-table/loading-rows.ts`); it reads its frame
   width before the first paint, so columns do not move when the rows arrive.
 - **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
   `DataTable` `error` with `onRetry`) for every read that can fail, so a failed

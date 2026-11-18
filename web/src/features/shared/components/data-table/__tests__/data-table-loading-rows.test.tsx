@@ -3,8 +3,9 @@
  * 2026-11-18):
  * - the loading placeholder drew a fixed five rows whatever the list held, so
  *   a list of 25 grew by 20 rows and a list of 1 shrank by 4 on load. It now
- *   draws the last row count this list showed, else its page size, capped to
- *   the viewport;
+ *   draws the last row count this list showed, else five (a full page of
+ *   placeholders collapsing to one real row moves more than five), capped to
+ *   the page size and the viewport;
  * - the frame width that decides the column widths was read after paint (a
  *   passive effect), so the first frame had other widths than the second. It
  *   is read before paint now, also without a ResizeObserver.
@@ -35,18 +36,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('loading placeholder rows', () => {
-  it('draws the page size when the list was never shown', () => {
+  it('draws five rows, not the page size, when the list was never shown', () => {
     const { container } = render(
       <DataTable
         columns={columns}
         data={[]}
         isLoading
-        pageSize={10}
+        pageSize={25}
         mobileCards={false}
         caption="Things"
       />
     )
-    expect(skeletonRows(container)).toBe(10)
+    expect(skeletonRows(container)).toBe(5)
   })
 
   it('draws the count the list showed last time', () => {
@@ -74,10 +75,13 @@ describe('loading placeholder rows', () => {
   })
 
   it('never draws more rows than fit in the viewport, and at least one', () => {
-    expect(loadingRowCount(undefined, 100, 900, 40)).toBe(23)
+    expect(loadingRowCount(undefined, 100, 900, 40)).toBe(5)
+    expect(loadingRowCount(undefined, 3, 900, 40)).toBe(3)
+    expect(loadingRowCount(undefined, 25, 100, 40)).toBe(3)
     expect(loadingRowCount(0, 25, 900, 40)).toBe(1)
-    expect(loadingRowCount(60, 25, 900, 40)).toBe(23)
-    expect(loadingRowCount(undefined, 25, 0, 40)).toBe(25)
+    expect(loadingRowCount(20, 25, 900, 40)).toBe(20)
+    expect(loadingRowCount(60, 100, 900, 40)).toBe(23)
+    expect(loadingRowCount(undefined, 25, 0, 40)).toBe(5)
   })
 })
 

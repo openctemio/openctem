@@ -5,14 +5,18 @@
  *
  * - the last row count this list showed in this browser session (same page,
  *   same table), so a reload or a return to the list keeps its height;
- * - else the page size the list asks for;
- * - never more rows than fit in the viewport (the rest would be off screen),
- *   and at least one.
+ * - else five rows (a list never shown before: five placeholders that settle
+ *   to one real row move less than a full page of them);
+ * - never more than the page size, never more rows than fit in the viewport
+ *   (the rest would be off screen), and at least one.
  */
 import type { TableDensity } from './use-table-density'
 
 const STORAGE_PREFIX = 'openctem:table-rows:'
 const remembered = new Map<string, number>()
+
+/** Placeholder rows of a list with no remembered count. */
+export const DEFAULT_LOADING_ROWS = 5
 
 /** Row height in px of each density (`use-table-density.ts`). */
 export const ROW_HEIGHT: Record<TableDensity, number> = {
@@ -46,7 +50,7 @@ export function rememberRowCount(key: string, count: number): void {
   }
 }
 
-/** Placeholder rows: last known count, else the page size, capped to the viewport. */
+/** Placeholder rows: last known count, else five, capped to the page size and the viewport. */
 export function loadingRowCount(
   known: number | undefined,
   pageSize: number,
@@ -54,7 +58,7 @@ export function loadingRowCount(
   rowHeight: number
 ): number {
   const fit = rowHeight > 0 && viewportHeight > 0 ? Math.ceil(viewportHeight / rowHeight) : pageSize
-  return Math.max(1, Math.min(known ?? pageSize, pageSize, fit))
+  return Math.max(1, Math.min(known ?? DEFAULT_LOADING_ROWS, pageSize, fit))
 }
 
 /** Forget every recorded count (tests). */
