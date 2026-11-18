@@ -760,7 +760,7 @@ func TestResetCredentialsRemovesKeys(t *testing.T) {
 	_, _ = w.svc.GenerateRecoveryCodes(ctx, w.admin, client)
 	actor := admin.Reconstitute(shared.NewID(), "root@acme.io", "Root", admin.AdminRoleSuperAdmin, true,
 		nil, nil, "", 0, nil, nil, "", w.clock, nil, w.clock)
-	if err := w.svc.ResetCredentials(ctx, actor, w.admin.ID(), client); err != nil {
+	if err := w.svc.ResetCredentials(ctx, actor, w.admin.ID(), "", client); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := w.svc.FactorStatus(ctx, w.admin)
