@@ -86,7 +86,9 @@ composite foreign keys to the organization's assets.
 ### 3.2 Emerging Threat Score
 
 ```
-exploitation = KEV 40 | EPSS >= 0.5 20 | EPSS >= 0.1 10 | none 0   (+5 KEV ransomware use)
+exploitation = KEV 40 | card: vendor-confirmed or exploited in the wild 40, weaponised 30,
+               public proof of concept 20 | EPSS >= 0.5 20 | EPSS >= 0.1 10 | none 0
+               (the strongest one counts; +5 KEV ransomware use)
 severity     = critical 20 | high 12 | medium 5 | low 0             (+5 network, no privileges, no interaction)
 exposure     = internet-facing 20 | crown jewel 15 | both 30 | internal 0   (best affected asset)
 freshness    = 10 when the triggering event is less than 72 hours old
@@ -94,11 +96,16 @@ confidence   = confirmed 1.0 | likely (match below 80% confidence) 0.8 | possibl
 ETS          = round((exploitation + severity + exposure + freshness) x confidence), 0..100
 ```
 
-The breakdown is stored with the alert and shown ("why am I seeing this").
+The breakdown is stored with the alert and shown ("why am I seeing this");
+`exploitation_basis` names the evidence the exploitation points come from
+(`kev`, `vendor_confirmed_exploited`, `exploited_itw`, `weaponised`,
+`poc_public`, `epss_high`, `epss`). Card statuses come from reviewed advisory
+cards (§3.5), each citing its public sources; a day-0 vulnerability has no KEV
+entry and no EPSS score, so a card is what lets its exploitation count.
 
 | Level | Rule (defaults; organization-tunable within bounds) |
 |---|---|
-| Immediate | ETS >= 70 (60-90) **and** exploitation >= 20; possibly affected assets only when the CVE is in KEV and the asset is internet-facing, unless the organization opts in |
+| Immediate | ETS >= 70 (60-90) **and** exploitation >= 20; possibly affected assets only when the CVE is in KEV and the asset is internet-facing, unless the organization opts in. One "check needed" exception without the threshold: a critical vulnerability with a public exploit (KEV, or a card at public proof of concept or stronger; EPSS alone never) on a possibly affected asset that is internet-facing **and** of business criticality critical; the recommended action is "confirm", and it is sent once per alert |
 | Daily digest | ETS >= 35 (20-60), or the severity reaches the organization's vulnerability matching minimum severity |
 | Listed only | everything else that matched |
 
@@ -132,6 +139,56 @@ The breakdown is stored with the alert and shown ("why am I seeing this").
 The digest goes at 08:00 organization time (`settings.general.timezone`; the
 hour is a setting) and is skipped when empty.
 
+### 3.5 Advisory cards
+
+An advisory card is a reviewed, product-level statement from the signed
+vulnerability bundle (the `cards` stream of the intel side manifest). It can
+exist before a CVE record or a CPE does, and holds: an id (`OCA-YYYY-NNNN`),
+a revision, a title and nicknames, the affected products by catalog key, the
+affected and fixed versions per branch (or "not published yet"), the
+configuration each vulnerability needs (a closed list: `http2_enabled`,
+`http3_enabled`, `mail_proxy_auth_http`, `resolver_runtime_dns`,
+`kernel_sctp_reachable`, `other`), the exploitation status, links to public
+proof-of-concept write-ups (metadata only: the platform never fetches them),
+workarounds and what each blocks, detection ideas, the vulnerability ids it
+groups, a source citation for every fact, and the review record (author,
+reviewer, `two_person` or `single_review`) with a revision history. Format
+`openctem.advisory-card/v1`; it grows only by optional fields, so the platform
+ignores fields it does not know and reads an unknown condition as `other`.
+
+- **Import.** The bundle importer verifies the side manifest as for KEV and
+  EPSS, then validates every card (caps, citations, review record, display
+  text without control, bidirectional or zero-width characters or markup
+  brackets, https links without credentials) and applies the stream only when
+  its data date is newer than the newest card held. A new card, a higher
+  revision or a withdrawal replaces the stored card; every revision is kept;
+  a replay or an older revision changes nothing. Each change is a
+  `card_published`, `card_updated` or `card_withdrawn` event keyed by the
+  card id. A platform without this support skips the stream (it is signed).
+- **One alert per organization and card.** The vulnerabilities a reviewed
+  card groups are planned as the card: their events, the matcher's findings
+  and the baseline queue the card id. The card's alert holds the findings of
+  every grouped vulnerability (confirmed or likely), the version-less assets
+  of every product they or the card name (possible), and assets of the card's
+  products whose version the card places: inside a published range likely
+  (confidence 60, no finding is created), versions not published yet
+  possible, outside every range left out. When the card's alert is planned,
+  the organization's open alerts of the grouped vulnerabilities are resolved
+  with the reason `grouped_into_card` and the card id in the note (nothing is
+  deleted).
+- **Withdrawal.** A withdrawn card resolves its alerts (`card_withdrawn`) and
+  the vulnerabilities it grouped are planned on their own again (their
+  earlier alerts reopen when still affected).
+- **Detail.** `GET /api/v1/emerging-threats/{id}` returns `card` (the
+  validated card, plain text) and `exploitation` with
+  `exploitation_sources`; the timeline holds the card's events and those of
+  its vulnerabilities.
+
+Review is a role, not a person: the card records its author and reviewer, and
+a card its own author published says `single_review`, visibly. The review
+queue, the reviewer permission, notifications and review metrics are planned
+(§6).
+
 ## 4. API and permissions
 
 | Route | Gate |
@@ -160,7 +217,9 @@ cannot see). Out of scope answers 404.
 | Cross-organization leak | `tenant_id` on every alert row with composite foreign keys; every query filters on the authenticated organization; tests prove another organization's alerts and assets are never returned. |
 | Out-of-scope leak | Alert visibility, counts, assets and findings filtered by the caller's data scope; tests prove an out-of-scope asset never appears and its alert answers 404. |
 | Existence oracle ("some organization runs X") | No API returns how many organizations an event affects; messages never mention other organizations. |
-| Feed poisoning (fake urgency) | Immediate needs exploitation evidence from records (KEV, EPSS); per-organization rate cap; one message per level. |
+| Feed poisoning (fake urgency) | Immediate needs exploitation evidence from signed records (KEV, EPSS, reviewed cards); per-organization rate cap; one message per level. A card is accepted only from the signed manifest built for the applied sequence, only when reviewed or withdrawn, and only with every fact cited; the "check needed" exception needs a critical vulnerability, a public exploit and an internet-facing crown-jewel asset. |
+| Hostile card text | Card text is validated twice (collector and platform): no control, bidirectional or zero-width characters, no markup brackets, per-field caps, at most 64 KiB per card and 2,000 cards; links https only without credentials; returned as plain text; channel messages use the card title through the same markup stripping as product names. |
+| Card rollback or silent change | The collector refuses a set that drops a card or changes one without a new revision; the platform keeps the highest revision and every revision it saw. |
 | Hostile text in messages | Titles built from ids, catalog product names and counts; control characters and channel markup (`<>&@`) stripped; length capped; no CVE description in channel messages. |
 | Notification spam | Rate cap, quiet hours, digest by default, the integrations' own filters. |
 | Asset names in external channels | Off by default; organization opt-in, at most 5; channels without details enabled still get only a minimal message. |
@@ -171,8 +230,15 @@ cannot see). Out of scope answers 404.
 
 Shipped by this RFC's pull requests: §2 (event log, hourly KEV), §3, §4.
 
-Planned: exploit and PoC events from the feed (`weaponised`,
-`exploit_public`, `detection_available`) and removal of the direct KEV/EPSS
+Shipped later: exploitation from reviewed advisory cards in the score, the
+"check needed" exception, and advisory cards as alert keys (§3.2, §3.5).
+
+Planned: the card review queue (a `intel.cards.review` role with step-up and
+audit on every publish and withdrawal, two-person review when more than one
+reviewer exists, a queue with a time target by severity, reviewer
+notifications and escalation, a stale-queue alarm, metrics: time to review,
+time to alert, corrections per card); condition evaluation from scan evidence
+(HTTP/2, HTTP/3); exploit and detection events from the feed and removal of the direct KEV/EPSS
 fetch; possibly affected assets from version-less technologies; targeted
 confirmation scans; per-asset verdicts; learning from *not affected*;
 vendor advisory grouping; signal-based early warnings (opt-in).
@@ -187,3 +253,7 @@ vendor advisory grouping; signal-based early warnings (opt-in).
   `threat_alerts` and `findings_open_cve_index`, controller
   `threat-alert-planner`, `/api/v1/emerging-threats`,
   `/api/v1/organization/settings/emerging-threats`.
+- Advisory cards: `pkg/domain/advisory`, `pkg/vulnbundle/cards.go`,
+  `internal/app/vulnfeed/intel.go` (cards stream),
+  `internal/infra/postgres/advisory_card_repository.go`,
+  `internal/infra/postgres/threat_alert_cards.go`, migration `advisory_cards`.

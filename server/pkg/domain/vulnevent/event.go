@@ -26,11 +26,16 @@ const (
 	KindKEVAdded      Kind = "kev_added"
 	KindEPSSCrossed   Kind = "epss_crossed"
 	KindRejected      Kind = "rejected"
+	// Advisory card events: the vuln id is the card id.
+	KindCardPublished Kind = "card_published"
+	KindCardUpdated   Kind = "card_updated"
+	KindCardWithdrawn Kind = "card_withdrawn"
 )
 
 // AllKinds lists every kind.
 func AllKinds() []Kind {
-	return []Kind{KindPublished, KindRangesAdded, KindRangesWidened, KindSeverityUp, KindKEVAdded, KindEPSSCrossed, KindRejected}
+	return []Kind{KindPublished, KindRangesAdded, KindRangesWidened, KindSeverityUp, KindKEVAdded, KindEPSSCrossed, KindRejected,
+		KindCardPublished, KindCardUpdated, KindCardWithdrawn}
 }
 
 // IsValid reports whether k is a known kind.
