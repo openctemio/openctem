@@ -6,7 +6,7 @@ export {
   AssetLivenessLine,
   livenessNotable,
 } from './components/asset-liveness-badge'
-export { LifecycleSnoozeMenu } from './components/lifecycle-snooze-menu'
+export { LifecycleSnoozeMenu, useLifecycleSnooze } from './components/lifecycle-snooze-menu'
 export {
   LifecycleSettingsForm,
   type LifecycleFormStatus,
