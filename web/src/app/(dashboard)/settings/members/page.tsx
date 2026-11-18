@@ -1,6 +1,5 @@
 'use client'
 
-import { formatLocalized } from '@/lib/format-date'
 import { useNow } from '@/hooks/use-now'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
@@ -47,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatCalendarDate } from '@/lib/format-metric'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
 import { useJoinRequests } from '@/features/organization/api/use-domain-signup'
 import type { RowAction } from '@/features/shared/components/data-table-row-actions'
@@ -172,8 +172,8 @@ const roleFilters: { value: RoleFilter; key: string; en: string }[] = [
 type MemberTab = 'members' | 'invitations' | 'requests'
 
 // Helper functions
-// Dates in the console language (they were always en-US, also on a vi page).
-const formatDate = (dateString: string, locale: string) => formatLocalized(dateString, locale)
+// In the console language ("25 thg 11, 2026" in Vietnamese), not always English.
+const formatDate = (dateString: string, locale: string) => formatCalendarDate(dateString, locale)
 
 type TFn = ReturnType<typeof useTranslation>['t']
 

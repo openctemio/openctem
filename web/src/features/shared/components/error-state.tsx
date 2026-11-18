@@ -35,9 +35,11 @@ interface ErrorStateProps {
 type Translate = ReturnType<typeof useTranslation>['t']
 
 /**
- * The sentence shown under the title. A rate limit and a lost connection get
- * our own words (the server's text for them is English-only and says nothing
- * about what to do); every other error keeps the server's message.
+ * The sentence shown under the title. A rate limit, a lost connection and a
+ * server failure get our own words: the server's text for them is English-only,
+ * often a bare code ("internal") and says nothing about what to do. A refusal
+ * the server explains in a sentence (a 4xx with a message) keeps that message.
+ * The raw details stay one click away in "Copy diagnostics".
  */
 function errorMessage(error: unknown, t: Translate): string {
   const status = (error as { statusCode?: unknown } | undefined)?.statusCode
@@ -53,9 +55,17 @@ function errorMessage(error: unknown, t: Translate): string {
       'The server could not be reached. Check your connection, then retry.'
     )
   }
-  return error instanceof Error && error.message
-    ? error.message
-    : t('common.unexpectedError', 'An unexpected error occurred')
+  const message = error instanceof Error ? error.message.trim() : ''
+  const sentence = /\s/.test(message)
+  if (typeof status === 'number' && status >= 500) return serverFailed(t)
+  return message && sentence ? message : serverFailed(t)
+}
+
+function serverFailed(t: Translate): string {
+  return t(
+    'common.loadFailedPlain',
+    'Something went wrong while loading. Try again; if it keeps failing, report the problem.'
+  )
 }
 
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
@@ -71,7 +81,8 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
       <AlertTitle>{t('common.failedToLoad', 'Failed to load {title}', { title })}</AlertTitle>
       <AlertDescription>
         <p>{errorMessage(error, t)}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        {/* Ink, not the alert's red: these are ways on, not part of the error text. */}
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-foreground">
           {onRetry && (
             <Button variant="outline" size="sm" onClick={onRetry}>
               <RefreshCw className="me-2 h-4 w-4" />

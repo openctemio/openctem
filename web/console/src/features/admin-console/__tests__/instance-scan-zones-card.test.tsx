@@ -42,6 +42,14 @@ describe('InstanceScanZonesCard', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
+  it('keeps Add zone secondary: the page has one filled main button', () => {
+    render(<InstanceScanZonesCard zones={[]} canEdit onChanged={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Add zone' })).toHaveAttribute(
+      'data-variant',
+      'outline'
+    )
+  })
+
   it('says shared sensors scan public targets only when there is no zone', () => {
     render(<InstanceScanZonesCard zones={[]} canEdit onChanged={vi.fn()} />)
     expect(screen.getByText(/scan public targets only/)).toBeInTheDocument()

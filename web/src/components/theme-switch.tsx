@@ -18,8 +18,8 @@ const MODES = ['light', 'dark', 'system'] as const
 
 /**
  * Light / Dark / System as menu rows with a check on the current one: the
- * theme menu of the top bar, and the "Theme" rows of the phone account menu
- * (the phone bar has no theme button).
+ * theme menu of the top bar. On a phone the account menu builds the same rows
+ * as its "Theme" step (the phone bar has no theme button).
  */
 export function ThemeMenuItems() {
   const { theme, setTheme } = useTheme()

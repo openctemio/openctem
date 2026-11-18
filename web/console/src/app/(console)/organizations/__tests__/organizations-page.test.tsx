@@ -124,6 +124,15 @@ describe('Console organizations list', () => {
     ])
   })
 
+  it('keeps the name its room: the slug is the one that gives way', () => {
+    render(<AdminOrganizationsPage />)
+    const row = screen.getByRole('link', { name: 'Example Works' }).closest('tr')!
+    expect(within(row).getByText('example-works')).toHaveClass('min-w-0', 'truncate')
+    expect(screen.getByRole('link', { name: 'Example Works' }).closest('span')).toHaveClass(
+      'shrink-0'
+    )
+  })
+
   it('keeps every fact of a row: slug, owner domains, limits, status, sign-on', () => {
     render(<AdminOrganizationsPage />)
     const row = screen.getByRole('link', { name: 'Example Works' }).closest('tr')!
