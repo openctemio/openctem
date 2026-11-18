@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { EntryBanner } from '@/components/entry/entry-card'
@@ -53,9 +53,10 @@ describe('notice roles', () => {
     const roots = [join(process.cwd(), 'src'), join(process.cwd(), 'console', 'src')]
     const offenders: string[] = []
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
         const full = join(dir, name)
-        if (statSync(full).isDirectory()) {
+        if (entry.isDirectory()) {
           if (name !== '__tests__' && name !== 'node_modules') walk(full)
         } else if (name.endsWith('.tsx') && !name.includes('.test.')) {
           const src = readFileSync(full, 'utf8')
