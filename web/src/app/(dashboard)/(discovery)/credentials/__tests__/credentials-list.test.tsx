@@ -120,9 +120,13 @@ describe('credentials list', () => {
   })
 
   it('drops a value the list does not know instead of sending it', () => {
-    window.history.replaceState({}, '', '/credentials?status=all&severity=bogus')
+    window.history.replaceState({}, '', '/credentials?status=all&severity=bogus&source=all')
     render(<CredentialsPage />)
-    expect(listCalls.at(-1)).toMatchObject({ state: undefined, severity: undefined })
+    expect(listCalls.at(-1)).toMatchObject({
+      state: undefined,
+      severity: undefined,
+      source: undefined,
+    })
     expect(screen.queryByTestId('credential-filter-chips')).not.toBeInTheDocument()
   })
 

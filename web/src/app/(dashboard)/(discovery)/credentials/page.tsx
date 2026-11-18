@@ -164,7 +164,8 @@ export default function CredentialsPage() {
   })
   const statuses = listValues(list.filters.status, CREDENTIAL_STATUSES) as CredentialStatus[]
   const severities = listValues(list.filters.severity, CREDENTIAL_SEVERITIES)
-  const sources = listValues(list.filters.source)
+  // Sources come from the server's list; the old page's "all" is no source.
+  const sources = listValues(list.filters.source).filter((s) => s !== 'all')
   // Group by identity is a view of the same leaks ("Group by", in the URL). The
   // old List / By identity tabs map over: ?tab=identity → ?group=identity.
   const [groupParam, setGroupParam] = useUrlFilter('group', '')
