@@ -14,7 +14,7 @@ export function OrgAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | '
       data-slot="org-avatar"
       className={cn(
         'flex shrink-0 items-center justify-center rounded-md bg-muted font-semibold text-foreground ring-1 ring-border',
-        size === 'md' ? 'size-9 text-xs' : 'size-6 text-[10px]'
+        size === 'md' ? 'size-9 text-cap' : 'size-6 text-cap'
       )}
     >
       {orgInitials(name)}
