@@ -1,6 +1,7 @@
 package httpsec
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 func reused(t *testing.T, tr *http.Transport, url string) bool {
 	t.Helper()
 	var got bool
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

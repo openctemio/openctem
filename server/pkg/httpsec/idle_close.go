@@ -32,7 +32,8 @@ func registerGuardedTransport(tr *http.Transport) {
 			live = append(live, w)
 		}
 	}
-	guardedTransports = append(live, weak.Make(tr))
+	live = append(live, weak.Make(tr))
+	guardedTransports = live
 }
 
 // closeGuardedIdleConnections closes the idle connections of every registered
