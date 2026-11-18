@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ApprovalPolicyForm } from '../approval-policy-form'
+import { FindingApprovalsForm as ApprovalPolicyForm } from '../finding-approvals-form'
 import type { FindingApprovalSettings } from '../../api/use-findings-api'
+
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
 
 if (!('ResizeObserver' in globalThis)) {
   ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
@@ -72,16 +78,16 @@ function settings(over: Partial<FindingApprovalSettings> = {}): FindingApprovalS
 }
 
 async function optionsOf(cell: string): Promise<string[]> {
-  await userEvent.click(screen.getByTestId(`tier-${cell}`))
+  await user.click(screen.getByTestId(`tier-${cell}`))
   const listbox = await screen.findByRole('listbox')
   const names = within(listbox)
     .getAllByRole('option')
     .map((o) => o.textContent ?? '')
-  await userEvent.keyboard('{Escape}')
+  await user.keyboard('{Escape}')
   return names
 }
 
-describe('ApprovalPolicyForm — tier grid', () => {
+describe('FindingApprovalsForm, policy — tier grid', () => {
   beforeEach(() => update.mockReset())
 
   it('never offers a tier below the floor', async () => {
@@ -106,13 +112,15 @@ describe('ApprovalPolicyForm — tier grid', () => {
   it('saves the whole policy with only the cells that differ from the default', async () => {
     update.mockResolvedValue(settings())
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
-    const save = screen.getByRole('button', { name: /save approval policy/i })
-    expect(save).toBeDisabled()
-    await userEvent.click(screen.getByTestId('tier-accepted.high'))
-    await userEvent.click(await screen.findByRole('option', { name: 'Two approvers' }))
-    await userEvent.click(save)
+    // Nothing changed yet: no save bar.
+    expect(screen.queryByRole('button', { name: /save changes/i })).toBeNull()
+    await user.click(screen.getByTestId('tier-accepted.high'))
+    await user.click(await screen.findByRole('option', { name: 'Two approvers' }))
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
     expect(update).toHaveBeenCalledTimes(1)
     const body = update.mock.calls[0][0] as { policy: Record<string, unknown> }
+    // Only the policy changed: the body is the policy alone, as before.
+    expect(Object.keys(body)).toEqual(['policy'])
     expect(body.policy.tiers).toEqual({ 'accepted.high': 'dual' })
     expect(body.policy).toMatchObject({
       security_pool_strict: false,
@@ -125,9 +133,9 @@ describe('ApprovalPolicyForm — tier grid', () => {
   it('refuses an acceptance cap above the platform maximum', async () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
     const [standard] = screen.getAllByLabelText('Standard', { selector: 'input' })
-    await userEvent.type(standard, '400')
+    await user.type(standard, '400')
     expect(screen.getByRole('alert')).toHaveTextContent('Enter whole days from 1 to 365.')
-    expect(screen.getByRole('button', { name: /save approval policy/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled()
   })
 
   it('needs a security pool before the strict toggle can be set', () => {
@@ -136,7 +144,7 @@ describe('ApprovalPolicyForm — tier grid', () => {
   })
 })
 
-describe('ApprovalPolicyForm — relaxation', () => {
+describe('FindingApprovalsForm, policy — relaxation', () => {
   beforeEach(() => update.mockReset())
 
   it('shows the waiting relaxation with its time and edits the chosen policy', () => {
@@ -171,7 +179,7 @@ describe('ApprovalPolicyForm — relaxation', () => {
         canEdit
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: /cancel the change/i }))
+    await user.click(screen.getByRole('button', { name: /cancel the change/i }))
     expect(update).toHaveBeenCalledWith({ cancel_pending: true })
   })
 
@@ -179,6 +187,6 @@ describe('ApprovalPolicyForm — relaxation', () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit={false} />)
     expect(screen.getByTestId('tier-accepted.high')).toBeDisabled()
     expect(screen.getByRole('switch', { name: /exclude the assignee/i })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: /save approval policy/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument()
   })
 })

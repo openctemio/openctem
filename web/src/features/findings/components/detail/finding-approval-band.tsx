@@ -72,7 +72,7 @@ function PendingRequest({
   onChanged: () => void
   decision: ReturnType<typeof useApprovalDecision>
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { trigger: cancel, isMutating } = useCancelApproval(approval.id)
   const [error, setError] = useState(false)
   const mayCancel = canWrite && canCancelApproval(approval, currentUserId)
@@ -101,7 +101,8 @@ function PendingRequest({
       title={t('findings.approvalBand.title', 'Awaiting approval: {status}', { status: target })}
       requestedBy={t('findings.approvalBand.requestedBy', 'Requested by {who} {when}', {
         who: requesterLabel(t, approval, currentUserId),
-        when: formatRelative(approval.created_at),
+        // In the console language ("3 giờ trước"), not the browser's.
+        when: formatRelative(approval.created_at, '—', locale),
       })}
       reason={approval.justification || undefined}
       details={

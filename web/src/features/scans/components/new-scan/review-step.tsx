@@ -10,7 +10,7 @@ import { AlertTriangle, CheckCircle2, Pencil, RefreshCw, ShieldAlert, XCircle } 
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField, FormStack } from '@/features/shared/components/forms'
 import { cn } from '@/lib/utils'
 import type { ApiScopeCheckRouting } from '@/features/scope'
 import { ScanRoutingSection } from '@/features/scan-zones'
@@ -57,18 +57,18 @@ function Row({
   const { t } = useTranslation()
   return (
     <div className="grid gap-1 border-b py-3 last:border-b-0 sm:grid-cols-[7rem_1fr_auto] sm:gap-3">
-      <dt className="text-muted-foreground text-sm">{title}</dt>
-      <dd className="min-w-0 text-sm">{children}</dd>
+      <dt className="text-dense text-muted-foreground">{title}</dt>
+      <dd className="min-w-0 text-dense">{children}</dd>
       {step && (
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 justify-self-start px-2 text-xs sm:justify-self-end"
+          className="justify-self-start sm:justify-self-end"
           onClick={() => onEdit(step)}
           aria-label={t('scans.review.editRow', undefined, { title: title.toLowerCase() })}
         >
-          <Pencil className="me-1 h-3 w-3" aria-hidden />
+          <Pencil aria-hidden />
           {t('scans.review.edit')}
         </Button>
       )}
@@ -213,18 +213,14 @@ export function ReviewStep({
   ].filter(Boolean)
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="space-y-2">
-        <Label htmlFor="review-name">
-          {t('scans.review.scanName')} <span className="text-destructive">*</span>
-        </Label>
+    <FormStack className="px-4 py-4 sm:px-6">
+      <FormField id="review-name" label={t('scans.review.scanName')}>
         <Input
-          id="review-name"
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder={t('scans.review.namePlaceholder')}
         />
-      </div>
+      </FormField>
 
       <dl className="rounded-lg border px-3">
         <Row title={t('scans.review.rowWhat')} step="basic" onEdit={onEdit}>
@@ -397,6 +393,6 @@ export function ReviewStep({
         </ul>
       )}
       {approvalBlock}
-    </div>
+    </FormStack>
   )
 }

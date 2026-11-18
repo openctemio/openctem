@@ -1,3 +1,4 @@
+import { resolveLegacyRoute } from '@/config/legacy-routes'
 import { safeInternalHref } from '@/lib/safe-href'
 /**
  * What the console knows about the security overview's checks. The server
@@ -86,7 +87,17 @@ export function groupChecks(checks: OverviewCheck[]): Array<[string, OverviewChe
   ])
 }
 
-/** Only in-app paths are links: a value from the API is never an off-site URL. */
+/**
+ * Only in-app paths are links: a value from the API is never an off-site URL.
+ * A link to a settings page that moved goes straight to its new home with its
+ * #setting: the server's permanent redirect would answer an in-app navigation
+ * without the hash.
+ */
 export function safeInternalLink(link: string): string | null {
-  return safeInternalHref(link) ?? null
+  const href = safeInternalHref(link)
+  if (!href) return null
+  const at = href.indexOf('#')
+  const path = at < 0 ? href : href.slice(0, at)
+  const moved = resolveLegacyRoute(path)
+  return moved ? moved + (at < 0 ? '' : href.slice(at)) : href
 }

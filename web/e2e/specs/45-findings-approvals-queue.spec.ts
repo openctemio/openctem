@@ -169,6 +169,15 @@ test.describe('approval requests decide real requests', () => {
     { tag: ['@findings'] },
     async ({ page, browser }) => {
       const member = await memberPage(browser)
+      // In CI the seed always makes the member (web/e2e/ci/seed.sh writes
+      // E2E_LIMITED_* into e2e/.env): a missing one is a broken seed, not a
+      // reason to skip the four-eyes proof. Only a local run without it skips.
+      if (process.env.CI) {
+        expect(
+          member,
+          'the CI seed provides E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD'
+        ).not.toBeNull()
+      }
       test.skip(!member, 'Set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD')
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.goto('/findings/approvals')

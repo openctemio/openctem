@@ -32,6 +32,7 @@ import {
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ScreenReaderTable } from '@/components/screen-reader-table'
 import {
   Select,
   SelectContent,
@@ -656,7 +657,7 @@ function ExposureTrend({
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <table className="sr-only">
+      <ScreenReaderTable>
         <caption>{title}</caption>
         <thead>
           <tr>
@@ -672,7 +673,7 @@ function ExposureTrend({
             </tr>
           ))}
         </tbody>
-      </table>
+      </ScreenReaderTable>
     </div>
   )
 }

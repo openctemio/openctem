@@ -5,6 +5,7 @@ import { FindingApprovalBand } from '../finding-approval-band'
 let approvals: unknown[] | undefined
 let userId: string | undefined
 let perms: string[] = []
+let locale = 'en'
 const cancel = vi.fn()
 const mutate = vi.fn()
 const lastKey = vi.fn()
@@ -15,6 +16,7 @@ vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({
     t: (_k: string, fallback?: string, vars?: Record<string, string>) =>
       (fallback ?? _k).replace(/\{(\w+)\}/g, (_m, v) => vars?.[v] ?? ''),
+    locale,
   }),
 }))
 vi.mock('@/context/permission-provider', () => ({
@@ -59,9 +61,20 @@ beforeEach(() => {
   vi.clearAllMocks()
   approvals = [pending]
   perms = ['findings:write', 'findings:approve']
+  locale = 'en'
 })
 
 describe('FindingApprovalBand', () => {
+  it('says when the request was made in the console language', () => {
+    approvals = [{ ...pending, created_at: new Date(Date.now() - 3 * 3600_000).toISOString() }]
+    const { unmount } = render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.getByText(/Requested by An Nguyen .*3 hours ago/)).toBeInTheDocument()
+    unmount()
+    locale = 'vi'
+    render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.getByText(/Requested by An Nguyen .*3 giờ trước/)).toBeInTheDocument()
+  })
+
   it('shows nothing without a pending request', () => {
     approvals = [{ ...pending, status: 'approved' }]
     const { container } = render(<FindingApprovalBand findingId="f1" />)
