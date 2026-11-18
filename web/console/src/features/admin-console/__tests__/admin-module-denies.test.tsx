@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -148,7 +149,7 @@ describe('OrganizationModulesPanel', () => {
     render(<OrganizationModulesPanel tenantId="t1" canManage />)
     expect(screen.getByText('Read-only')).toBeInTheDocument()
     expect(
-      screen.getByText(`until ${new Date('2026-11-08T12:00:00Z').toLocaleDateString()}`)
+      screen.getByText(`until ${formatDate(new Date('2026-11-08T12:00:00Z'))}`)
     ).toBeInTheDocument()
   })
 

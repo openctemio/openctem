@@ -10,12 +10,13 @@ import { formatDate } from '@/lib/app-locale'
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
 /** The weekday's long name in the app locale (0 = Sunday), from Intl. */
-export function weekdayName(dow: number, _locale?: string): string {
+export function weekdayName(dow: number, locale?: string): string {
   // 2024-01-07 is a Sunday.
-  return formatDate(new Date(Date.UTC(2024, 0, 7 + (dow % 7))), {
-    weekday: 'long',
-    timeZone: 'UTC',
-  })
+  return formatDate(
+    new Date(Date.UTC(2024, 0, 7 + (dow % 7))),
+    { weekday: 'long', timeZone: 'UTC' },
+    locale
+  )
 }
 
 function pad(n: string): string {

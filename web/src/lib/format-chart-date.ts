@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/app-locale'
  * Chart x values arrive in wildly different shapes: full ISO timestamps, plain
  * `YYYY-MM-DD` day strings, month-only strings (`"Jan"`, `"2026-01"`),
  * pre-formatted labels (`"Jan 5"`, `"Week 3"`), numbers, or `null`. Passing any
- * of the non-date shapes straight into `new Date(value).toLocaleDateString()`
+ * of the non-date shapes straight into a raw date formatter
  * yields the literal text "Invalid Date" on every tick.
  *
  * `formatChartDate` degrades gracefully instead:
