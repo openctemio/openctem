@@ -390,7 +390,7 @@ export function EASMTechnologies() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ListTitleRow
         title={t('attackSurface.technologies.viewAll', 'All technology versions')}
         count={
