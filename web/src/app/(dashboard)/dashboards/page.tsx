@@ -367,44 +367,49 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           )}
         </section>
 
-        <section className="flex flex-col gap-2" aria-labelledby="dashboards-templates">
-          <h2 id="dashboards-templates" className="text-section">
-            {t('dashboards.manage.templates', 'Start from a template')}
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {DASHBOARD_TEMPLATES.map((tpl) => (
-              <Card key={tpl.key} className="flex flex-col">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">
-                    {t(templateNameKey(tpl.key), tpl.key)}
-                  </CardTitle>
-                  <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
-                </CardHeader>
-                <CardContent className="mt-auto flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      createFrom(
-                        t(templateNameKey(tpl.key), tpl.key),
-                        templateLayout(tpl),
-                        tpl.columns,
-                        t(templateDescriptionKey(tpl.key), '')
-                      )
-                    }
-                  >
-                    {t('dashboards.manage.useTemplate', 'Use template')}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
+        {/* The templates follow the list once it has its rows: while the
+            list loads it shows skeleton rows of a guessed count, and content
+            below it would jump when the real rows replace them. */}
+        {!isLoading && (
+          <section className="flex flex-col gap-2" aria-labelledby="dashboards-templates">
+            <h2 id="dashboards-templates" className="text-section">
+              {t('dashboards.manage.templates', 'Start from a template')}
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {DASHBOARD_TEMPLATES.map((tpl) => (
+                <Card key={tpl.key} className="flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">
+                      {t(templateNameKey(tpl.key), tpl.key)}
+                    </CardTitle>
+                    <CardDescription>{t(templateDescriptionKey(tpl.key), '')}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="mt-auto flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">
+                      {t('dashboards.manage.widgetCount', '{n} widgets', { n: tpl.widgets.length })}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        createFrom(
+                          t(templateNameKey(tpl.key), tpl.key),
+                          templateLayout(tpl),
+                          tpl.columns,
+                          t(templateDescriptionKey(tpl.key), '')
+                        )
+                      }
+                    >
+                      {t('dashboards.manage.useTemplate', 'Use template')}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
         <ConfirmDialog
           open={pendingDelete !== null}
           onOpenChange={(open) => !open && setPendingDelete(null)}

@@ -21,12 +21,14 @@ const mine = {
   is_default: false,
   description: '',
 }
-const list = vi.hoisted(() => ({ error: undefined as Error | undefined }))
+const list = vi.hoisted(() => ({ error: undefined as Error | undefined, loading: false }))
 vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   useMyDashboards: () =>
-    list.error
-      ? { data: undefined, error: list.error, isLoading: false, mutate: vi.fn() }
-      : { data: { data: [mine] }, isLoading: false, mutate: vi.fn() },
+    list.loading
+      ? { data: undefined, isLoading: true, mutate: vi.fn() }
+      : list.error
+        ? { data: undefined, error: list.error, isLoading: false, mutate: vi.fn() }
+        : { data: { data: [mine] }, isLoading: false, mutate: vi.fn() },
   useMyDashboard: () => ({ data: mine, isLoading: false }),
   useRevalidateDashboards: () => vi.fn(() => Promise.resolve()),
   createDashboard: api.create,
@@ -47,6 +49,7 @@ describe('Dashboards page', () => {
     vi.clearAllMocks()
     nav.search = ''
     list.error = undefined
+    list.loading = false
     window.localStorage.clear()
     api.create.mockResolvedValue({ id: 'new' })
   })
@@ -55,6 +58,15 @@ describe('Dashboards page', () => {
     render(<DashboardsPage />)
     expect(screen.queryByText(/\{[a-z]+\} columns/)).toBeNull()
     expect(screen.getAllByText('2 columns').length).toBeGreaterThan(0)
+  })
+
+  it('the templates come once the list has its rows, so nothing below the list moves', () => {
+    list.loading = true
+    const { rerender } = render(<DashboardsPage />)
+    expect(screen.queryByRole('heading', { name: 'Start from a template' })).toBeNull()
+    list.loading = false
+    rerender(<DashboardsPage />)
+    expect(screen.getByRole('heading', { name: 'Start from a template' })).toBeInTheDocument()
   })
 
   it('a template whose name is taken is created with a numbered name', async () => {
