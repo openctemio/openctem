@@ -12,6 +12,8 @@ import {
   shard,
   specTags,
   timingsFromReport,
+  specHelpers,
+  withHelperCosts,
 } from './select.mjs'
 
 const map = parseMap(`
@@ -234,6 +236,24 @@ test('timings sum the last attempt of each test per file', () => {
   assert.deepEqual(timingsFromReport(report), { 'e2e/specs/a.spec.ts': 2.5 })
 })
 
+test('timings count a test a helper declares for the spec that ran it', () => {
+  const report = {
+    suites: [
+      {
+        file: 'specs/62-list.spec.ts',
+        suites: [
+          {
+            specs: [
+              { file: 'helpers/list-stability.ts', tests: [{ results: [{ duration: 4000 }] }] },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+  assert.deepEqual(timingsFromReport(report), { 'e2e/specs/62-list.spec.ts': 4 })
+})
+
 test('globs', () => {
   assert.ok(globToRegExp('web/src/**').test('web/src/a/b.ts'))
   assert.ok(globToRegExp('web/src/features/*/hooks/**').test('web/src/features/x/hooks/y/z.ts'))
@@ -298,4 +318,32 @@ test('a pull request that changes a page data hook also runs the request budget 
   assert.deepEqual(files(r), ['01-smoke.spec.ts', '04-budget.spec.ts'])
   const plain = select(['web/src/features/b/x.tsx'], map, specs, { event: 'pull_request' })
   assert.deepEqual(files(plain), ['01-smoke.spec.ts'])
+})
+
+test('a spec without a duration takes its part of a helper filed under the helper', () => {
+  assert.deepEqual(
+    specHelpers(`import { x } from '../helpers/list-stability'\nimport y from '../fixtures/a'`),
+    ['e2e/specs/helpers/list-stability.ts']
+  )
+  const specs = [
+    { file: 'e2e/specs/62.spec.ts', tags: [], helpers: ['e2e/specs/helpers/list-stability.ts'] },
+    { file: 'e2e/specs/35.spec.ts', tags: [], helpers: ['e2e/specs/helpers/list-stability.ts'] },
+    { file: 'e2e/specs/a.spec.ts', tags: [], helpers: [] },
+  ]
+  const t = withHelperCosts(
+    { 'e2e/specs/helpers/list-stability.ts': 1200, 'e2e/specs/a.spec.ts': 10 },
+    specs
+  )
+  assert.equal(t['e2e/specs/62.spec.ts'], 600)
+  assert.equal(t['e2e/specs/35.spec.ts'], 600)
+  // The two long specs go to different shards.
+  const bins = shard(['e2e/specs/62.spec.ts', 'e2e/specs/35.spec.ts', 'e2e/specs/a.spec.ts'], t, {
+    targetSeconds: 240,
+    maxShards: 4,
+  })
+  assert.ok(
+    bins.every(
+      (b) => !(b.files.includes('e2e/specs/62.spec.ts') && b.files.includes('e2e/specs/35.spec.ts'))
+    )
+  )
 })
