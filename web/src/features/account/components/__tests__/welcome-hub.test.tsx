@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   options: vi.fn(),
   accept: vi.fn(),
   decline: vi.fn(),
-  start: vi.fn(),
 }))
 
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
@@ -25,7 +24,6 @@ vi.mock('@/features/auth/actions/local-auth-actions', () => ({
 }))
 vi.mock('@/features/auth/actions/account-space-actions', () => ({
   onboardingDeclineAction: mocks.decline,
-  startAccountSessionAction: mocks.start,
 }))
 vi.mock('../../api', () => ({
   useProfile: () => ({ profile: { name: 'Alice', email: 'alice@acme.io' } }),
@@ -170,12 +168,29 @@ describe('WelcomeHub', () => {
     expect(screen.queryByText('Create an organization')).not.toBeInTheDocument()
   })
 
-  it('asks for the account token first when the browser holds only a refresh token', async () => {
-    mocks.start.mockResolvedValue({ success: false, code: 'ERROR' })
-    render(<WelcomeHub needsSession />)
-    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1))
-    // The options are not read before the session exists.
-    expect(mocks.options).not.toHaveBeenCalled()
+  it('without an account session, lets /auth/continue decide from the memberships', async () => {
+    const replace = vi.fn()
+    vi.stubGlobal('location', { ...window.location, search: '', replace })
+    try {
+      render(<WelcomeHub needsSession />)
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/auth/continue'))
+      // The options are not read before the session exists.
+      expect(mocks.options).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not loop when /auth/continue could not start a session', async () => {
+    const replace = vi.fn()
+    vi.stubGlobal('location', { ...window.location, search: '?start_failed=1', replace })
+    try {
+      render(<WelcomeHub needsSession />)
+      await screen.findByRole('button', { name: /retry/i })
+      expect(replace).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 
