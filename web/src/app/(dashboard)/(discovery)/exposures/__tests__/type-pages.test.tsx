@@ -66,15 +66,15 @@ beforeEach(() => {
 })
 
 describe.each([
-  ['vulnerabilities', VulnerabilitiesPage, /Failed to load vulnerability statistics/i, 'va'],
-  ['code', CodePage, /Failed to load code weakness statistics/i, 'sast'],
+  ['vulnerabilities', VulnerabilitiesPage, /Couldn't load vulnerability statistics/i, 'va'],
+  ['code', CodePage, /Couldn't load code weakness statistics/i, 'sast'],
   [
     'misconfigurations',
     MisconfigurationsPage,
-    /Failed to load misconfiguration statistics/i,
+    /Couldn't load misconfiguration statistics/i,
     'cspm',
   ],
-  ['secrets', SecretsPage, /Failed to load secret statistics/i, 'secret'],
+  ['secrets', SecretsPage, /Couldn't load secret statistics/i, 'secret'],
 ])('/exposures/%s', (_name, Page, title, source) => {
   it('shows an error state with retry, not the empty state', async () => {
     const mutate = vi.fn()

@@ -52,7 +52,7 @@ describe('ScimTokensPage', () => {
 
   it('a member or viewer gets no Generate token and no token request', () => {
     // The API refuses /scim-tokens to anyone but an owner or admin; the page
-    // used to show them an enabled button next to "Failed to load".
+    // used to show them an enabled button next to "Couldn't load".
     tenantAdmin = false
     render(<ScimTokensPage />)
     expect(screen.queryByRole('button', { name: /generate token/i })).toBeNull()
