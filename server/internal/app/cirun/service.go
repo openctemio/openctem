@@ -196,6 +196,8 @@ type Service struct {
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
+	// keyNotices throttles the pasted-key rotation notices.
+	keyNotices noticeThrottle
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -332,6 +334,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		s.log.Info("ci exchange refused: token did not verify", "tenant_id", tenantID.String(),
 			"issuer", logger.SanitizeValue(issuer), "error", logger.SanitizeError(err))
+		var unknown *pastedKeyUnknownError
+		if errors.As(err, &unknown) {
+			// The trust verifies with pasted keys only and the token names
+			// another key: the provider rotated. Never a 503 (nothing would
+			// change on retry); the administrators are told.
+			s.notePastedKeyUnknown(ctx, tenantID, unknown.configs, oidc.UnverifiedKeyID(in.IDToken))
+			return nil, &RefusedError{Code: RefuseUnknownKey, Message: UnknownKeyMessage}
+		}
 		if errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound) {
 			// The issuer's keys cannot be had right now (the issuer is
 			// unreachable past the stale bound, or it rotated to a key the
@@ -446,7 +456,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		return nil, err
 	}
-	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now())
+	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now(), tok.KeyID)
 	if !legacy && cfg.LegacyAudience != "" {
 		// The pipeline uses the new audience: its legacy one is refused from
 		// now on.
@@ -549,9 +559,25 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 		return nil, cirun.Claims{}, errors.New("no token verifier")
 	}
 	tried := map[string]bool{}
-	var lastErr error
+	var lastErr, fetchErr error
+	var unknownKey []cirun.TrustConfig
 	now := s.now()
 	for _, c := range configs {
+		keys, err := c.PastedKeys()
+		if err != nil {
+			// Stored keys that no longer parse refuse the token (fail
+			// closed); they were valid when saved.
+			s.log.Warn("ci trust configuration has unusable pasted signing keys", "trust_config_id", c.ID.String(),
+				"error", logger.SanitizeError(err))
+			lastErr = err
+			continue
+		}
+		// A configuration with pasted keys is verified on its own: two
+		// configurations of one issuer may hold different keys.
+		scope := ""
+		if keys != nil {
+			scope = c.ID.String()
+		}
 		auds := []string{c.Audience}
 		if c.LegacyAccepted(c.LegacyAudience, now) {
 			// The audience the configuration had before audiences named the
@@ -560,15 +586,21 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 			auds = append(auds, c.LegacyAudience)
 		}
 		for _, aud := range auds {
-			key := string(c.Provider) + "\x00" + aud
+			key := string(c.Provider) + "\x00" + aud + "\x00" + scope
 			if tried[key] {
 				continue
 			}
 			tried[key] = true
 			tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: aud,
-				JTIOptional: cirun.JTIOptional(c.Provider)})
+				JTIOptional: cirun.JTIOptional(c.Provider), Keys: keys})
 			if err != nil {
 				lastErr = err
+				switch {
+				case errors.Is(err, oidc.ErrPastedKeyUnknown):
+					unknownKey = append(unknownKey, c)
+				case errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound):
+					fetchErr = err
+				}
 				continue
 			}
 			claims := cirun.ParseClaims(c.Provider, tok.Claims)
@@ -580,7 +612,14 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 			return tok, claims, nil
 		}
 	}
-	if lastErr == nil {
+	switch {
+	case fetchErr != nil:
+		// A configuration that fetches could not get the keys: the job
+		// may retry (it may verify once the keys are back).
+		return nil, cirun.Claims{}, fetchErr
+	case len(unknownKey) > 0:
+		return nil, cirun.Claims{}, &pastedKeyUnknownError{configs: unknownKey}
+	case lastErr == nil:
 		lastErr = errors.New("no audience to verify against")
 	}
 	return nil, cirun.Claims{}, lastErr

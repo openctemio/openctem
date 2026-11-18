@@ -29,26 +29,26 @@ func TestTouchTrustConfig_WritesAtMostOncePerMinute_DB(t *testing.T) {
 		return at
 	}
 	t0 := time.Now().UTC().Truncate(time.Second)
-	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0); err != nil {
+	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := lastUsed(); !got.Equal(t0) {
 		t.Fatalf("first touch wrote %v, want %v", got, t0)
 	}
-	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0.Add(30*time.Second)); err != nil {
+	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0.Add(30*time.Second), ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := lastUsed(); !got.Equal(t0) {
 		t.Fatalf("a touch within a minute rewrote the row: %v", got)
 	}
-	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0.Add(2*time.Minute)); err != nil {
+	if err := repo.TouchTrustConfig(ctx, tenant, trust, t0.Add(2*time.Minute), ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := lastUsed(); !got.Equal(t0.Add(2 * time.Minute)) {
 		t.Fatalf("a touch after a minute did not write: %v", got)
 	}
 	// Another tenant's touch never changes this row.
-	if err := repo.TouchTrustConfig(ctx, newIngestJobTestTenant(t, db), trust, t0.Add(10*time.Minute)); err != nil {
+	if err := repo.TouchTrustConfig(ctx, newIngestJobTestTenant(t, db), trust, t0.Add(10*time.Minute), "k1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := lastUsed(); !got.Equal(t0.Add(2 * time.Minute)) {
