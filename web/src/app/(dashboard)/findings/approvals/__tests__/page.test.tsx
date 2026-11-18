@@ -395,7 +395,7 @@ describe('ApprovalsPage', () => {
       // The view is named for assistive technology; the selected tab shows the number.
       expect(screen.getByRole('heading', { name: 'Pending requests' })).toHaveClass('sr-only')
       expect(container.querySelector('[data-slot="list-count"]')).toBeNull()
-      expect(screen.getByRole('tab', { name: /Requests/ })).toHaveTextContent(
+      expect(screen.getByRole('tab', { name: /^Finding requests/ })).toHaveTextContent(
         String(COUNTS.pending)
       )
       // No second count in the page header.
@@ -569,8 +569,8 @@ describe('ApprovalsPage', () => {
       render(<ApprovalsPage />)
       expect(screen.getByRole('tab', { name: /^Finding requests\s*120$/ })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: /^Group exceptions$/ })).toBeInTheDocument()
-      // The title row counts the list on screen, once.
-      expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('120 requests')
+      // Said once: the tab carries the number, the title row has no count under Pending.
+      expect(document.querySelector('[data-slot="list-count"]')).toBeNull()
     })
   })
 
