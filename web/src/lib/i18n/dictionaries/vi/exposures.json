@@ -352,7 +352,7 @@
   "exposures.view.allStates": "Mọi trạng thái",
   "exposures.view.analytics": "Dạng phân tích",
   "exposures.view.list": "Dạng danh sách",
-  "exposures.view.needsAttention": "Cần xử lý",
+  "exposures.view.needsAttention": "Cần chú ý",
   "exposures.vulnCatalog.col.cve": "Mã CVE",
   "exposures.vulnCatalog.col.cvss": "CVSS",
   "exposures.vulnCatalog.col.epss": "EPSS",
