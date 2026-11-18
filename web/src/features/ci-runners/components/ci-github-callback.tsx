@@ -11,11 +11,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from '@/components/link'
-import { CheckCircle2, ShieldX } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EntryBanner } from '@/components/entry'
 import { useBrand } from '@/context/brand-provider'
 import { useTranslation } from '@/context/i18n-provider'
+import { PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCompleteGitHubInstall } from '../api/use-ci'
 
@@ -64,44 +65,47 @@ export function CIGitHubCallback() {
       .finally(clearQuery)
   }, [params, trigger, t, router, pathname])
 
+  const tone = state.kind === 'done' ? 'ok' : state.kind === 'error' ? 'danger' : 'info'
+
   return (
-    <Card className="mx-auto mt-8 max-w-xl" data-testid="ci-github-callback">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          {state.kind === 'done' ? (
-            <CheckCircle2 className="size-5 text-success" aria-hidden />
-          ) : state.kind === 'error' ? (
-            <ShieldX className="size-5 text-destructive" aria-hidden />
-          ) : null}
-          {t('scans.ci.callback.title', 'GitHub App installation')}
-        </CardTitle>
-        <CardDescription>
-          {state.kind === 'working' &&
-            t('scans.ci.callback.working', 'Checking the installation with GitHub…')}
-          {state.kind === 'done' &&
-            t(
-              'scans.ci.callback.done',
-              'Installed on {account}. CI runs of its repositories now post the OpenCTEM gate check and a pull request comment.',
-              {
-                account: state.account,
-                product: brand.name,
-              }
+    <PageStack data-testid="ci-github-callback">
+      <PageHeader title={t('scans.ci.callback.title', 'GitHub App installation')} />
+      <div className="flex max-w-xl flex-col gap-4">
+        <EntryBanner tone={tone}>
+          <p className="flex items-center gap-2">
+            {state.kind === 'working' && (
+              <Loader2
+                aria-hidden
+                className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+              />
             )}
-          {state.kind === 'requested' &&
-            t(
-              'scans.ci.callback.requested',
-              'GitHub sent the install request to an owner of the organization. Come back here after they approve it.'
-            )}
-          {state.kind === 'error' && state.message}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/ci-cd?tab=setup&section=feedback">
-            {t('scans.ci.callback.back', 'Back to CI/CD settings')}
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
+            {state.kind === 'working' &&
+              t('scans.ci.callback.working', 'Checking the installation with GitHub…')}
+            {state.kind === 'done' &&
+              t(
+                'scans.ci.callback.done',
+                'Installed on {account}. CI runs of its repositories now post the OpenCTEM gate check and a pull request comment.',
+                {
+                  account: state.account,
+                  product: brand.name,
+                }
+              )}
+            {state.kind === 'requested' &&
+              t(
+                'scans.ci.callback.requested',
+                'GitHub sent the install request to an owner of the organization. Come back here after they approve it.'
+              )}
+            {state.kind === 'error' && state.message}
+          </p>
+        </EntryBanner>
+        <div>
+          <Button asChild variant="outline">
+            <Link href="/ci-cd?tab=setup&section=feedback">
+              {t('scans.ci.callback.back', 'Back to CI/CD settings')}
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </PageStack>
   )
 }

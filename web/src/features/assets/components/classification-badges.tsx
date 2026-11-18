@@ -162,7 +162,11 @@ export function ExposureBadge({
   const prefix = labelled ? t('assets.badge.exposure', 'Exposure') : null
 
   const badge = (
-    <span className="inline-flex" data-slot="exposure-badge" data-exposure={exposure}>
+    <span
+      className={cn('inline-flex', labelled && 'max-w-full')}
+      data-slot="exposure-badge"
+      data-exposure={exposure}
+    >
       <ToneChip
         tone={EXPOSURE_TONE[exposure] ?? 'quiet'}
         icon={showIcon ? Icon : undefined}
@@ -170,7 +174,7 @@ export function ExposureBadge({
         value={exposure}
         label={prefix ? `${prefix}: ${label}` : label}
         title={showTooltip ? undefined : label}
-        className={cn(size === 'sm' && 'h-5', className)}
+        className={cn(size === 'sm' && 'h-5', labelled && 'max-w-full', className)}
       />
     </span>
   )
@@ -219,13 +223,21 @@ export function CriticalityBadge({
   // An ordinal classification, not a severity: four bars and the word. The
   // icon prop is kept for callers; the bars are the glyph.
   const badge = (
-    <span className="inline-flex" data-slot="criticality-badge" data-criticality={criticality}>
+    <span
+      className={cn('inline-flex', labelled && 'max-w-full')}
+      data-slot="criticality-badge"
+      data-criticality={criticality}
+    >
       {!labelled && <span className="sr-only">{noun}: </span>}
       <Tag
         level={CRITICALITY_LEVEL[criticality]}
         label={labelled ? named : label}
         title={showTooltip ? undefined : named}
-        className={cn(size === 'sm' && 'h-5', className)}
+        // One look wherever criticality shows (list, card, record header): the
+        // bars and the word on the neutral pill, never a solid fill, which
+        // reads as a button next to actions and outweighs severity in a row.
+        levelOutline
+        className={cn(size === 'sm' && 'h-5', labelled && 'max-w-full', className)}
       />
     </span>
   )

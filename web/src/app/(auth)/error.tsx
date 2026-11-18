@@ -6,16 +6,9 @@ import { devLog } from '@/lib/logger'
 import { reportRouteError } from '@/lib/error-reporting'
 import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 
 interface ErrorProps {
   error: Error & { digest?: string; statusCode?: number; code?: string }
@@ -77,53 +70,36 @@ export default function AuthError({ error, reset }: ErrorProps) {
   // Show loading while redirecting for auth errors
   if (isRedirecting) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-            <CardTitle>
-              <h1>{t('auth.error.sessionExpired', 'Session expired')}</h1>
-            </CardTitle>
-            <CardDescription>
-              {t('auth.error.redirecting', 'Redirecting to sign in...')}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
+      <EntryCard>
+        <EntryHeader title={t('auth.error.sessionExpired', 'Session expired')} />
+        <p className="text-body text-muted-foreground flex items-center gap-2">
+          <Loader2 aria-hidden className="size-4 animate-spin" />
+          {t('auth.error.redirecting', 'Redirecting to sign in...')}
+        </p>
+      </EntryCard>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-            <AlertCircle className="h-6 w-6 text-destructive" />
-          </div>
-          <CardTitle>
-            <h1>{t('auth.error.title', 'Authentication error')}</h1>
-          </CardTitle>
-          <CardDescription>
-            {t('auth.error.body', 'Something went wrong during authentication.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center">
-          {error.digest && (
-            <p className="text-muted-foreground text-sm">
-              {t('auth.error.errorId', 'Error ID: {id}', { id: error.digest })}
-            </p>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-wrap justify-center gap-2">
-          <Button onClick={reset}>{t('auth.error.tryAgain', 'Try again')}</Button>
-          <Button variant="outline" asChild>
-            <Link href="/login">{t('auth.error.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
-          <ReportProblem error={error} />
-        </CardFooter>
-      </Card>
-    </div>
+    <EntryCard>
+      <EntryHeader
+        title={t('auth.error.title', 'Authentication error')}
+        description={t('auth.error.body', 'Something went wrong during authentication.')}
+      />
+      {error.digest && (
+        <p className="text-cap text-muted-foreground">
+          {t('auth.error.errorId', 'Error ID: {id}', { id: error.digest })}
+        </p>
+      )}
+      <EntryActions>
+        <Button variant="signal" onClick={reset}>
+          {t('auth.error.tryAgain', 'Try again')}
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/login">{t('auth.error.backToSignIn', 'Back to sign in')}</Link>
+        </Button>
+        <ReportProblem error={error} />
+      </EntryActions>
+    </EntryCard>
   )
 }

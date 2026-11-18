@@ -26,6 +26,20 @@ describe('criticality is a Tag level, not a severity hue', () => {
     expect(container.querySelector('[data-slot="tag"]')).toHaveAttribute('data-level', '1')
     expect(container.innerHTML).not.toMatch(/green/)
   })
+
+  it('has one look in a list and in a header: no solid fill, even for critical', () => {
+    for (const labelled of [false, true]) {
+      const { container, unmount } = render(
+        <CriticalityBadge criticality="critical" labelled={labelled} showTooltip={false} />
+      )
+      const tag = container.querySelector('[data-slot="tag"]')
+      expect(tag).toHaveAttribute('data-level', '4')
+      expect(tag?.className).not.toContain('bg-lvl-4-bg')
+      expect(tag?.className).not.toContain('bg-lvl-3-bg')
+      expect(tag?.className).toContain('bg-card')
+      unmount()
+    }
+  })
 })
 
 describe('CIA impact rating is a Tag level', () => {

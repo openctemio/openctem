@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
+import { preload } from 'react-dom'
 
 import './console.css'
 import { Providers } from '@/app/providers'
@@ -7,6 +8,7 @@ import { getDirFromLocale, defaultLocale, isSupportedLocale } from '@/lib/i18n'
 import { NavProgressBar } from '@/components/layout/nav-progress'
 import { brandSettings } from '@/lib/brand-settings'
 import { BRAND_INK } from '@/lib/brand'
+import { firstPaintFonts } from '@console/lib/first-paint-fonts'
 
 /** The page title comes from the instance brand, like the tenant app's. */
 export async function generateMetadata(): Promise<Metadata> {
@@ -28,6 +30,9 @@ export default async function ConsoleRootLayout({
   const requested = h.get('x-locale')
   const locale = isSupportedLocale(requested) ? requested : defaultLocale
   const dir = getDirFromLocale(locale)
+  for (const href of firstPaintFonts(locale)) {
+    preload(href, { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' })
+  }
   // Per-request CSP nonce from src/proxy.ts, for the theme's inline script.
   const nonce = h.get('x-nonce') ?? undefined
   const brand = await brandSettings()
