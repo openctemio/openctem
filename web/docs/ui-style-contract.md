@@ -524,6 +524,10 @@ reference.
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
     the first chip opens its own line (the list moves 44 px: the row and its
     gap) instead of sitting on a line an empty group already opened.
+    An icon counts as drawn by its own box (an icon-only Add filter is not
+    empty), and with the tokens out of the flow the end group keeps its own
+    auto margin: it stays at the end of the line before and after the first
+    chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
