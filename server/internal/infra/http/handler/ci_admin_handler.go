@@ -54,8 +54,10 @@ type CIAdminHandler struct {
 	baseline     CIGateBaselineService
 	repoSettings CIRepositorySettingsService
 	refusals     CIRefusalService
-	dataScope    DataScopeEnforcer
-	logger       *logger.Logger
+	// refusalActions: unverified refusals and the allow action.
+	refusalActions CIRefusalActions
+	dataScope      DataScopeEnforcer
+	logger         *logger.Logger
 }
 
 // SetStepUpGate passes the re-authentication gate to the service: a gate

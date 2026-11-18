@@ -252,6 +252,49 @@ type TokenRefusal struct {
 	Event      string
 	Reasons    []string
 	Message    string
+	// The token's own values the rules compared (empty in records written
+	// before they were kept).
+	Issuer             string
+	Owner              string
+	Environment        string
+	WorkflowDefinition string
+	// Configs say which trust configuration refused with which code.
+	Configs []RefusalConfig
+}
+
+// RefusalConfig is one trust configuration's refusal of a token.
+type RefusalConfig struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+// UnverifiedRefusal is the per-tenant, per-issuer, per-reason record of CI
+// token exchanges refused before the token verified (no trust configuration
+// for its issuer, the issuer's keys unavailable, a token that did not
+// verify). It holds no token contents: the issuer the token claimed (only a
+// plain https address), the reason, the cause class, times and a count.
+type UnverifiedRefusal struct {
+	TenantID  shared.ID
+	Issuer    string
+	Reason    string
+	Cause     string
+	FirstSeen time.Time
+	LastSeen  time.Time
+	Count     int
+}
+
+// MaxUnverifiedRefusals bounds the records kept per tenant (the oldest go).
+const MaxUnverifiedRefusals = 20
+
+// UnverifiedRefusalStore keeps the unverified refusal records.
+type UnverifiedRefusalStore interface {
+	// RecordUnverifiedRefusal adds r.Count to the record of (tenant,
+	// issuer, reason), creating it, only when the tenant has a CI trust
+	// configuration; it keeps at most MaxUnverifiedRefusals per tenant.
+	RecordUnverifiedRefusal(ctx context.Context, r UnverifiedRefusal) error
+	// ListUnverifiedRefusals lists the tenant's records, newest first.
+	ListUnverifiedRefusals(ctx context.Context, tenantID shared.ID) ([]UnverifiedRefusal, error)
 }
 
 // MaxTokenRefusals bounds a refusal listing.

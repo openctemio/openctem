@@ -274,7 +274,10 @@ func (r *CIRunRepository) RecentTokenRefusals(ctx context.Context, tenantID shar
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT logged_at, COALESCE(resource_name, ''), COALESCE(metadata->>'provider', ''),
 			COALESCE(metadata->>'ref', ''), COALESCE(metadata->>'event', ''),
-			COALESCE(metadata->'reasons', '[]'::jsonb), COALESCE(message, '')
+			COALESCE(metadata->'reasons', '[]'::jsonb), COALESCE(message, ''),
+			COALESCE(metadata->>'issuer', ''), COALESCE(metadata->>'owner', ''),
+			COALESCE(metadata->>'environment', ''), COALESCE(metadata->>'workflow_definition', ''),
+			COALESCE(metadata->'configs', '[]'::jsonb)
 		FROM audit_logs WHERE tenant_id = $1 AND action = 'ci_run.token_refused'
 		ORDER BY logged_at DESC LIMIT $2`, tenantID.String(), limit)
 	if err != nil {
@@ -286,11 +289,14 @@ func (r *CIRunRepository) RecentTokenRefusals(ctx context.Context, tenantID shar
 		var (
 			t       cirun.TokenRefusal
 			reasons []byte
+			configs []byte
 		)
-		if err := rows.Scan(&t.At, &t.Repository, &t.Provider, &t.Ref, &t.Event, &reasons, &t.Message); err != nil {
+		if err := rows.Scan(&t.At, &t.Repository, &t.Provider, &t.Ref, &t.Event, &reasons, &t.Message,
+			&t.Issuer, &t.Owner, &t.Environment, &t.WorkflowDefinition, &configs); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(reasons, &t.Reasons)
+		_ = json.Unmarshal(configs, &t.Configs)
 		out = append(out, t)
 	}
 	return out, rows.Err()
