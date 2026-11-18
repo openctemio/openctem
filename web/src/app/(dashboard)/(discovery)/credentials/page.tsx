@@ -938,6 +938,8 @@ export default function CredentialsPage() {
               columns={columns}
               data={credentials}
               {...tableProps}
+              // The toolbar's search box reads the server; the table's own box stays off.
+              showSearch={false}
               error={listError && !apiResponse ? listError : undefined}
               onRetry={() => void mutate()}
               errorTitle={t('credentials.error.list', 'credential leaks')}
