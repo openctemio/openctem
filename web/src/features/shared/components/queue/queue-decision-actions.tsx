@@ -1,6 +1,7 @@
 'use client'
 
-import { Check, Loader2, MoreHorizontal, X } from 'lucide-react'
+import { useId } from 'react'
+import { Check, Loader2, Lock, MoreHorizontal, X } from 'lucide-react'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -19,6 +20,9 @@ import { cn } from '@/lib/utils'
  * - `menu`: only the items the user may use; with none, no More.
  * - `busy`: the row's own request is in flight; every control is inert and
  *   More spins.
+ * - `stepUpHint`: the first decision asks the user to confirm their sign-in
+ *   before it is saved; it carries a lock and the sentence (on hover and
+ *   focus, and as its description for assistive technology).
  *
  * In a table row the two decisions are text buttons (the column stays
  * narrow); on a card they carry their icon.
@@ -41,6 +45,7 @@ export function QueueDecisionActions({
   rejectLabel,
   approveAccessibleName,
   rejectAccessibleName,
+  stepUpHint,
   menu,
   layout = 'row',
   className,
@@ -70,6 +75,8 @@ export function QueueDecisionActions({
   approveAccessibleName?: string
   /** The second decision's accessible name, as `approveAccessibleName`. */
   rejectAccessibleName?: string
+  /** Said on the first decision when it asks for a sign-in confirmation. */
+  stepUpHint?: string
   menu?: ActionMenuEntry[]
   layout?: 'row' | 'card'
   className?: string
@@ -89,7 +96,24 @@ export function QueueDecisionActions({
   const why = ownReason ?? t('queue.decision.ownReason', 'Someone else decides a request you made.')
   const menuLabel = t('common.actionMenu.label', 'Actions for {name}', { name })
   const items = menu ?? []
+  const hintBase = useId()
   if (!canDecide && items.length === 0) return null
+  const hintId = `${hintBase}-stepup`
+  const approveButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={busy}
+      onClick={onApprove}
+      data-slot="queue-approve"
+      aria-label={approveName}
+      aria-describedby={stepUpHint ? hintId : undefined}
+    >
+      {layout === 'card' && <Check className="me-1 h-4 w-4" aria-hidden />}
+      {approve}
+      {stepUpHint && <Lock className="ms-1 size-3.5" aria-hidden />}
+    </Button>
+  )
 
   return (
     <div
@@ -127,17 +151,19 @@ export function QueueDecisionActions({
           )
         ) : (
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={onApprove}
-              data-slot="queue-approve"
-              aria-label={approveName}
-            >
-              {layout === 'card' && <Check className="me-1 h-4 w-4" aria-hidden />}
-              {approve}
-            </Button>
+            {stepUpHint ? (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>{approveButton}</TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">{stepUpHint}</TooltipContent>
+                </Tooltip>
+                <span id={hintId} className="sr-only">
+                  {stepUpHint}
+                </span>
+              </>
+            ) : (
+              approveButton
+            )}
             <Button
               size="sm"
               variant="outline"

@@ -107,6 +107,19 @@ describe('Settings › Sensor job safety', () => {
     ])
   })
 
+  it('names the opt-ins in plain words; code and env names only as mono secondary help', () => {
+    open()
+    const oob = screen.getByRole('switch', { name: 'Out-of-band callbacks' })
+    expect(screen.getByRole('switch', { name: 'Custom templates' })).toBeInTheDocument()
+    const hint = document.getElementById(oob.getAttribute('aria-describedby')!)!
+    const tech = hint.querySelector('[data-slot=settings-row-tech] .font-mono')
+    expect(tech).toHaveTextContent('interactsh, allow_interactsh, SENSOR_OOB_SERVER')
+    // Outside that line, no label or hint on the page carries an identifier.
+    const main = document.body.cloneNode(true) as HTMLElement
+    main.querySelectorAll('[data-slot=settings-row-tech]').forEach((e) => e.remove())
+    expect(main.textContent).not.toMatch(/interactsh|allow_|SENSOR_[A-Z]/)
+  })
+
   it('a tightening change saves at once through the bar, with the four fields', async () => {
     security.require_sensor_local_policy_for_private_targets = false
     const user = userEvent.setup()

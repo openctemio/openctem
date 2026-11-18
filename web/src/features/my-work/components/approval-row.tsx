@@ -124,7 +124,10 @@ export function ApprovalRow({
           {facts && <EpssChip score={facts.epss} />}
           {facts?.asset_name && (
             <span className="inline-flex h-6 max-w-[16rem] items-center rounded-md border px-2 text-xs">
-              <span className="text-muted-foreground">{t('myWork.chip.asset', 'Asset')}</span>
+              {/* A short label: never broken over two lines; the name truncates instead. */}
+              <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+                {t('myWork.chip.asset', 'Asset')}
+              </span>
               <span className="ms-1 truncate font-medium" dir="auto">
                 {toDisplayText(facts.asset_name, 200)}
               </span>

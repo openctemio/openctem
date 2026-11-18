@@ -118,6 +118,22 @@ describe('QueueDecisionActions', () => {
     )
   })
 
+  it('says the sign-in step on the first decision only when it has one', () => {
+    const { rerender } = render(<QueueDecisionActions {...base} canDecide />)
+    expect(screen.getByRole('button', { name: 'Approve Request A' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
+    rerender(
+      <QueueDecisionActions {...base} canDecide stepUpHint="You confirm your sign-in first." />
+    )
+    const approve = screen.getByRole('button', { name: 'Approve Request A' })
+    expect(approve).toHaveAccessibleDescription('You confirm your sign-in first.')
+    expect(approve).toHaveAttribute('data-variant', 'outline')
+    expect(screen.getByRole('button', { name: 'Reject Request A' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
+  })
+
   it('renders nothing without the permission and without menu items', () => {
     const { container } = render(<QueueDecisionActions {...base} canDecide={false} />)
     expect(container).toBeEmptyDOMElement()
