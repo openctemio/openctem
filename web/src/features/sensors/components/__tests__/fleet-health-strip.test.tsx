@@ -67,6 +67,34 @@ describe('FleetHealthStrip', () => {
     ).toBeInTheDocument()
   })
 
+  it('holds the state bar and its legend line while loading, so nothing below moves', () => {
+    renderStrip({ loading: true })
+    const skeleton = document.querySelector('[data-slot="fleet-bar-skeleton"]')
+    expect(skeleton).not.toBeNull()
+    // Same boxes as the loaded bar: a 6px bar under a 4px gap, a 16px legend line.
+    const [bar, legend] = Array.from(skeleton!.children)
+    expect(bar).toHaveClass('mt-1', 'h-1.5')
+    expect(legend).toHaveClass('mt-1.5', 'h-4')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('keeps every detail to one line above the list (from 768 px), whole in its tooltip', () => {
+    renderStrip()
+    const lines = document.querySelectorAll('[data-slot="fleet-detail-line"]')
+    expect(lines.length).toBeGreaterThanOrEqual(2)
+    for (const line of Array.from(lines)) {
+      expect(line).toHaveClass('block', 'md:truncate')
+      expect(line).toHaveAttribute('title', line.textContent)
+    }
+    const legend = document.querySelector('[data-slot="fleet-bar-legend"]')
+    // One 16px line from 768 px; an item that does not fit goes to a hidden second line, never cut.
+    expect(legend).toHaveClass('flex-wrap', 'md:h-4', 'md:overflow-hidden')
+    expect(legend).toHaveAttribute(
+      'title',
+      '3 online, 3 degraded, late or stale, 1 offline, 1 disabled'
+    )
+  })
+
   it('fleet health filters to the sensors that are not connected', () => {
     const p = renderStrip({ notConnectedActive: true })
     const btn = screen.getByRole('button', { name: /Fleet health/ })

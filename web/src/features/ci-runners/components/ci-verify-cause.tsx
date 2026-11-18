@@ -80,7 +80,7 @@ export function CIVerifyCause({
           {t('scans.ci.cause.useIssuer', 'Use {issuer}', { issuer: cause.token })}
         </Button>
       )}
-      <p className="break-all text-xs text-muted-foreground">{message}</p>
+      <p className="break-words text-xs text-muted-foreground">{message}</p>
     </div>
   )
 }

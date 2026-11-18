@@ -6,6 +6,7 @@
  * caller's data scope), searched by name. The asset id stays internal.
  */
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,8 +55,8 @@ export function CIRepositoryPicker({
   if (value)
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5">
-        <span className="min-w-0 break-all text-sm" data-testid="ci-repository-picked">
-          {nameFor(value)}
+        <span className="min-w-0 break-words text-sm" data-testid="ci-repository-picked">
+          <BreakText>{nameFor(value)}</BreakText>
         </span>
         <Button type="button" variant="ghost" size="sm" onClick={() => onChange('')}>
           {t('scans.ci.repoPicker.change', 'Change')}
@@ -88,13 +89,13 @@ export function CIRepositoryPicker({
               <li key={c.id}>
                 <button
                   type="button"
-                  className="w-full break-all px-3 py-2 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  className="w-full break-words px-3 py-2 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                   onClick={() => {
                     onChange(c.id)
                     setInput('')
                   }}
                 >
-                  {c.name}
+                  <BreakText>{c.name}</BreakText>
                 </button>
               </li>
             ))

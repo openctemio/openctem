@@ -132,7 +132,7 @@ export function AssetsTab({
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium break-all">
+                    <p className="text-sm font-medium break-words">
                       {item.asset?.name || 'Unknown Asset'}
                     </p>
                     <Badge variant="outline" className="text-xs capitalize">

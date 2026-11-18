@@ -189,6 +189,26 @@ describe('MetricStrip', () => {
     expect(details[0]).toHaveClass('h-4')
     expect(screen.queryByText('4 new this week')).not.toBeInTheDocument()
   })
+
+  it('holds a taller detail with its own loading shape, then shows the detail', () => {
+    const item = {
+      key: 't',
+      label: 'Total',
+      value: 93,
+      detail: <span data-testid="bar">bar and legend</span>,
+      detailLoading: <span data-testid="bar-skeleton" />,
+    }
+    const { container, rerender } = render(<MetricStrip loading items={[item]} />)
+    const detail = container.querySelector('[data-slot="metric-detail"]')
+    // The page's placeholder, not the one-line skeleton.
+    expect(detail).not.toHaveClass('h-4')
+    expect(detail).toHaveAttribute('aria-hidden')
+    expect(screen.getByTestId('bar-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('bar')).not.toBeInTheDocument()
+    rerender(<MetricStrip items={[item]} />)
+    expect(screen.getByTestId('bar')).toBeInTheDocument()
+    expect(screen.queryByTestId('bar-skeleton')).not.toBeInTheDocument()
+  })
 })
 
 describe('MetricStrip warning tone and detail', () => {

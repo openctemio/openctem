@@ -352,7 +352,7 @@ export function SensorInstallSnippets({
               {t('sensors.snippets.caNoteAfter')}
             </p>
             {data.ca_fingerprint_sha256 && (
-              <p className="break-all text-muted-foreground">
+              <p className="break-words text-muted-foreground">
                 {t('sensors.snippets.fingerprint')}{' '}
                 <span className="font-mono">{data.ca_fingerprint_sha256}</span>
               </p>

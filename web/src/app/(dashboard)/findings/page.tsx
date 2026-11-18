@@ -28,7 +28,7 @@ import {
   type BulkSummary,
 } from '@/features/findings/lib/bulk-result'
 import { formatCalendarDate } from '@/lib/format-metric'
-import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   DEFAULT_FINDING_LENS,
   lensLabelKey,
@@ -43,7 +43,7 @@ import {
 } from '@/features/findings/lib/practice'
 import { FindingsBaseChips } from '@/features/findings/components/base-chips'
 import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
-import { ComplianceBenchmarksGate } from '@/features/findings/components/compliance-benchmarks-panel'
+import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
@@ -482,26 +482,17 @@ const PRIORITY_OPTIONS = [
 ]
 
 /**
- * First-load placeholder shaped like the toolbar + table it stands in for. The
- * context chips render in it already (they come from the URL, not the fetch),
- * in the same row under the toolbar as the loaded table puts them, so nothing
- * moves when the rows arrive.
+ * The placeholder before the page knows its URL: a toolbar row of the real toolbar's height
+ * over placeholder rows. The first load of the rows themselves keeps the real
+ * toolbar (`DataTable` `isLoading`).
  */
-function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
+function FindingsTableSkeleton() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Skeleton className="h-9 min-w-0 flex-1" />
-        <Skeleton className="h-9 w-28 shrink-0" />
+        <Skeleton className="h-control-field min-w-0 flex-1 max-md:h-control-touch" />
+        <Skeleton className="h-control-field w-28 shrink-0 max-md:h-control-touch" />
       </div>
-      {contextChips ? (
-        <div
-          data-testid="data-table-toolbar-below"
-          className="-mt-2 flex min-w-0 flex-wrap items-center gap-2"
-        >
-          {contextChips}
-        </div>
-      ) : null}
       <div className="space-y-2 rounded-md border p-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
@@ -3012,16 +3003,22 @@ function FindingsContent() {
   // The page's other actions, under More (`headerMoreItems`, built with the
   // title row's menu above so an item is never in both).
 
-  // The title row and the list; held as skeletons while the Compliance
-  // benchmarks above them load (`ComplianceBenchmarksGate`).
-  const listRegion = (benchmarksPending: boolean) => (
+  // Under Compliance: the pass rate per benchmark, its controls failed first
+  // and the assets of each control (nothing when there are none). It is the
+  // list's content, under the chips row and above the rows, so the title row
+  // and the toolbar never move when it loads; it folds to its heading.
+  const benchmarks = showBenchmarks ? <ComplianceBenchmarksPanel /> : undefined
+
+  // The title row and the list.
+  const listRegion = (
     <>
-      {!urlSettled || benchmarksPending ? (
-        <Skeleton className="h-9 w-80 max-w-full" />
+      {!urlSettled ? (
+        // A row of the title row's own height: the list under it never moves.
+        <ListTitleRow title={<Skeleton className="h-5 w-48 max-w-full" />} />
       ) : !verifyView && !(listBare && !groupBy) ? (
         primaryRow
       ) : null}
-      {!urlSettled || benchmarksPending ? (
+      {!urlSettled ? (
         // The render before the address bar holds this page's URL:
         // nothing here is real yet, and nothing is fetched.
         <FindingsTableSkeleton />
@@ -3085,6 +3082,7 @@ function FindingsContent() {
           filterToggle={filterToggle}
           toolbarStart={toolbarStart}
           toolbarBelow={filterBar}
+          beforeRows={benchmarks}
           toolbarEnd={toolbarEnd}
           emptyDescription={
             activeCount > 0
@@ -3092,11 +3090,12 @@ function FindingsContent() {
               : undefined
           }
         />
-      ) : !findingsResponse && findingsLoading ? (
-        <FindingsTableSkeleton contextChips={filterBar} />
       ) : (
         <DataTable
           columns={columns}
+          // The first load keeps the real toolbar and chips row over
+          // placeholder rows: nothing above the rows moves when they arrive.
+          isLoading={!findingsResponse && findingsLoading}
           data={listForbidden ? NO_FINDINGS : findings}
           showToolbar={!listBare}
           staleAt={listReadAt}
@@ -3111,6 +3110,7 @@ function FindingsContent() {
           toolbarStart={toolbarStart}
           toolbarEnd={toolbarEnd}
           toolbarBelow={filterBar}
+          beforeRows={benchmarks}
           getRowId={(f) => f.id}
           manualPagination
           rowCount={countUnknown ? undefined : total}
@@ -3244,17 +3244,7 @@ function FindingsContent() {
                 {facetPanel}
               </FilterPanelSlot>
 
-              <div className="min-w-0 flex-1 space-y-3">
-                {/* Under Compliance: the pass rate per benchmark, its controls
-                    failed first and the assets of each control (nothing when
-                    there are none). The list waits for it, so it never pushes
-                    the list down after the first paint. */}
-                {urlSettled && showBenchmarks ? (
-                  <ComplianceBenchmarksGate>{listRegion}</ComplianceBenchmarksGate>
-                ) : (
-                  listRegion(false)
-                )}
-              </div>
+              <div className="min-w-0 flex-1 space-y-3">{listRegion}</div>
             </div>
 
             <FilterSheet

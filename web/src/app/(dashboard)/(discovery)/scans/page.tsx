@@ -1115,13 +1115,16 @@ function ConfigurationsTab() {
   return (
     <>
       {statsError && !stats ? (
-        <ErrorState
-          title={t('scans.configs.statsErrorTitle', 'scan counts')}
-          error={statsError}
-          onRetry={() => void retryStats()}
-        />
+        // On a phone the counts follow the list, like the strip they replace.
+        <div className="max-md:order-last">
+          <ErrorState
+            title={t('scans.configs.statsErrorTitle', 'scan counts')}
+            error={statsError}
+            onRetry={() => void retryStats()}
+          />
+        </div>
       ) : (
-        <MetricStrip loading={isLoadingStats} items={metrics} />
+        <MetricStrip loading={isLoadingStats} items={metrics} listFirst />
       )}
 
       <ListTitleRow
