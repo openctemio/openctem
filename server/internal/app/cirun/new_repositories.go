@@ -21,8 +21,6 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
-	"github.com/openctemio/openctem/server/pkg/domain/integration"
-	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
@@ -177,13 +175,12 @@ func (s *Service) noticeNewGroup(ctx context.Context, tenantID shared.ID, cfg *c
 	if held > 0 {
 		body += fmt.Sprintf(" %d more new groups asked since the last notice; they are in the same list.", held)
 	}
-	s.alertAdmins(ctx, tenantID, AdminAlert{
-		EventType: string(integration.EventTypeCINewRepositoryGroup), Severity: notificationdom.SeverityMedium,
+	s.alertAdmins(ctx, tenantID, newGroupAlert(AdminAlert{
 		Title: fmt.Sprintf("A new GitLab group asks to send CI results: %s", group),
 		Body:  body,
 		URL:   "/ci-cd?tab=setup&section=new-repositories", Metadata: map[string]any{"trust_config_id": cfg.ID.String(),
 			"group": group, "project": project, "held_back": held},
-	})
+	}))
 }
 
 // NewRepositoryList is the configuration's new repositories.
@@ -294,7 +291,7 @@ func (s *Service) pinApprovedNamespaces(ctx context.Context, tenantID, configID 
 			continue
 		}
 		if prev, ok := want[r.NamespacePath]; ok && prev != r.NamespaceID {
-			return fmt.Errorf("%w: %s (ids %s and %s)", ErrApprovalIDConflict, r.NamespacePath, prev, r.NamespaceID)
+			return fmt.Errorf("%w: %s", ErrApprovalIDConflict, r.NamespacePath)
 		}
 		want[r.NamespacePath] = r.NamespaceID
 	}
@@ -307,7 +304,7 @@ func (s *Service) pinApprovedNamespaces(ctx context.Context, tenantID, configID 
 	}
 	for _, p := range pins {
 		if id, ok := want[p.OwnerName]; ok && id != p.OwnerID {
-			return fmt.Errorf("%w: %s is pinned to id %s, the pending project was seen with id %s", ErrApprovalIDConflict, p.OwnerName, p.OwnerID, id)
+			return fmt.Errorf("%w: %s", ErrApprovalIDConflict, p.OwnerName)
 		}
 	}
 	for name, id := range want {
