@@ -109,7 +109,12 @@ export function translate(
   // A variable the English string counts with (its plural selector) is a
   // count in every language: a Vietnamese "{count} tài sản" shows "12.840",
   // not "12840", though Vietnamese strings carry no plural block.
-  const counts = pluralNames(loaded.en?.[key] ?? fallback ?? '')
+  // A page loads one catalog, so on a Vietnamese page the English string is
+  // usually not there and the call's English fallback may predate its plural
+  // block: then the usual count names are counts too.
+  const english = loaded.en?.[key]
+  const counts = pluralNames(english ?? fallback ?? '')
+  if (english === undefined) for (const name of COUNT_NAMES) counts.add(name)
   for (const [name, value] of Object.entries(all)) {
     const shown =
       typeof value === 'number' && counts.has(name) && Number.isFinite(value)
@@ -119,6 +124,9 @@ export function translate(
   }
   return str
 }
+
+/** Variable names that hold a count wherever they appear. */
+const COUNT_NAMES = ['count', 'total']
 
 /** The variables a string selects plural branches with. */
 function pluralNames(str: string): Set<string> {

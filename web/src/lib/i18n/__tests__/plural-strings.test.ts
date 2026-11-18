@@ -113,6 +113,17 @@ describe('plural strings', () => {
     expect(translate(vi, 'p', undefined, { port: 12840 })).toBe('Cổng 12840')
   })
 
+  it('groups a count on a page without the English catalog, whatever the fallback says', () => {
+    // One catalog per page: a Vietnamese page has no English string to read the
+    // plural block from, and a call's fallback may be the old "{count} ..." form.
+    const vi = { many: '{count} phát hiện đang mở', step: 'Bước {step}' }
+    registerDictionary('vi', vi)
+    expect(translate(vi, 'many', '{count} open findings', { count: 12840 }, 'vi')).toBe(
+      '12.840 phát hiện đang mở'
+    )
+    expect(translate(vi, 'step', 'Step {step}', { step: 12840 }, 'vi')).toBe('Bước 12840')
+  })
+
   it('selects a branch for a count passed as text and shows that text', () => {
     const en = { k: '{count, plural, one {# asset} other {# assets}}' }
     expect(translate(en, 'k', undefined, { count: '1' })).toBe('1 asset')
