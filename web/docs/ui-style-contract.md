@@ -294,7 +294,8 @@ Every page, top to bottom:
      of the strip. The current tab is always one of the shown tabs; a label is
      never cut at the edge and the strip never scrolls sideways. In-page
      `<Tabs>` scroll with a fade on the hidden side and keep the active tab in
-     view.
+     full view: a tab under an edge's 2.5rem fade counts as hidden and is
+     scrolled to the middle (at the ends, the strip stops at its edge).
 5. **Sidebar**: the main sidebar collapses and its width can be resized
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
@@ -853,7 +854,9 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
-  `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+  `src/lib/criticality-colors.ts`; its badge (`CriticalityBadge`) has one look
+  everywhere, list rows and record headers alike: the level bars and the word on
+  the neutral pill (`Tag levelOutline`), never a solid fill. Charts: the chart colour sources.
 
 ### Charts
 

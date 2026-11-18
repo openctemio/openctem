@@ -24,8 +24,9 @@ export interface TagProps {
   /** An ordinal level 0 to 4 (criticality): four bars and the word. Level 4 is bold. */
   level?: 0 | 1 | 2 | 3 | 4
   /**
-   * A level on the neutral pill: the bars and the word only, no fill. For a
-   * record's header, where a solid pill next to the actions reads as a button.
+   * A level on the neutral pill: the bars and the word only, no fill. Used by
+   * every criticality badge (list rows and record headers), where a solid pill
+   * reads as a button and outweighs severity.
    */
   levelOutline?: boolean
   /** Shows a remove button (an editable tag). */
