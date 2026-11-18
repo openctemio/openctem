@@ -2205,7 +2205,7 @@ function FindingsContent() {
           t('findings.list.selectRow', 'Select finding {title}', {
             title: toDisplayText(f.title, 80),
           }),
-        noun: t('findings.bulk.selectedNoun', 'findings selected'),
+        noun: (count) => t('findings.bulk.selectedNoun', 'findings selected', { count }),
         onSelectionChange: setBulkSelection,
         matching: matchingFilter && total > 0 ? { total, max: BULK_BY_FILTER_MAX } : undefined,
         actions: bulkActions,

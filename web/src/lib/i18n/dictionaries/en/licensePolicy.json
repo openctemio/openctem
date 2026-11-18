@@ -18,7 +18,7 @@
   "licensePolicy.reviewFindings": "Open findings for review verdicts",
   "licensePolicy.reviewFindingsHelp": "Medium findings; otherwise review verdicts only show in the inventory.",
   "licensePolicy.saveFailed": "The license policy could not be saved.",
-  "licensePolicy.saved": "Saved: {violations} packages flagged, {created} findings opened, {resolved} resolved.",
+  "licensePolicy.saved": "Saved: {violations} packages flagged, {created, plural, one {# finding} other {# findings}} opened, {resolved} resolved.",
   "licensePolicy.savedNotEvaluated": "Saved. Evaluating the inventory did not finish; it runs again on the next package write.",
   "licensePolicy.savedPlain": "License policy saved.",
   "licensePolicy.scopes": "Dependency scopes",

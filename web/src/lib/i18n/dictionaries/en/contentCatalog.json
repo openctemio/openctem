@@ -156,5 +156,5 @@
   "contentCatalog.type.templates": "Templates",
   "contentCatalog.type.tool-adapters": "Tool adapters",
   "contentCatalog.type.wordlists": "Wordlists",
-  "contentCatalog.versionsCount": "({n} versions)"
+  "contentCatalog.versionsCount": "({n, plural, one {# version} other {# versions}})"
 }

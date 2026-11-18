@@ -46,7 +46,7 @@
   "tenableSc.coverage.cycleMeterLabel": "{assessed} of {eligible} assets assessed in this cycle",
   "tenableSc.coverage.cycleValue": "Cycle {cycle}: {assessed} / {eligible}",
   "tenableSc.coverage.firstSync": "reported by the first successful sync",
-  "tenableSc.coverage.freshnessHint": "{covered} of {total} hosts, {never} never scanned",
+  "tenableSc.coverage.freshnessHint": "{covered} of {total, plural, one {# host} other {# hosts}}, {never} never scanned",
   "tenableSc.coverage.ips": "{count} IPs",
   "tenableSc.coverage.keepsMargin": "keeps a margin of {margin} IPs",
   "tenableSc.coverage.lastBatch": "last batch {outcome}",
