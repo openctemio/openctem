@@ -32,6 +32,7 @@ import { ResendVerification } from '@/features/auth/components/resend-verificati
 import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
 import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { safeText } from '@/lib/api/error-message'
+import { useMyTenants } from '@/lib/api/user-tenant-hooks'
 import { formatRelative } from '@/lib/format-date'
 
 import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
@@ -147,6 +148,14 @@ export function WelcomeHub({ needsSession, notice }: WelcomeHubProps) {
   const view = welcomeView(options)
   const email = profile?.email
 
+  // The organization a notice names comes from the page URL, which anyone can
+  // write: it is shown, and its identity-provider button offered, only when
+  // it is one of this person's own memberships. Otherwise the notice is the
+  // generic one (no name, no button).
+  const { data: myTenants } = useMyTenants({ skip: !notice?.org })
+  const noticeOrg =
+    notice?.org && myTenants?.some((m) => m.slug === notice.org) ? notice.org : undefined
+
   const accept = (ref: string) => {
     setBusyRef(ref)
     startTransition(async () => {
@@ -213,7 +222,7 @@ export function WelcomeHub({ needsSession, notice }: WelcomeHubProps) {
       />
 
       {notice && (
-        <WelcomeNotice notice={notice.notice} org={notice.org} email={email ?? undefined} />
+        <WelcomeNotice notice={notice.notice} org={noticeOrg} email={email ?? undefined} />
       )}
 
       {loading && (
