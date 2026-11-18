@@ -10,12 +10,13 @@
  * Results and findings are never shown here.
  */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Eye, Pause, Play, Power } from 'lucide-react'
+import { Info, ListChecks, Server } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -25,16 +26,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
-import { DataTable, ErrorState, RelativeTime, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  DataTableRowActions,
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  MetaLine,
+  RelativeTime,
+} from '@/features/shared'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import {
   actOnSharedSensor,
   useSharedFleet,
@@ -63,9 +66,13 @@ const JOB_STATUSES = [
   'canceled',
   'expired',
 ]
-const ALL = 'all'
 
-export function SharedFleetPanel() {
+/**
+ * The fleet as the page's list: its title row (name, one count, and an info
+ * mark for `note` when there is one), the table, then the one line on what
+ * pausing and retiring do.
+ */
+export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
   const { t } = useTranslation()
   const me = useAdmin()
   const isSuper = adminHas(me, 'platform.sensors.manage')
@@ -75,23 +82,70 @@ export function SharedFleetPanel() {
     action: SharedSensorAction
   } | null>(null)
 
+  // The row menu: the same items in a table row and on a phone card.
+  const fleetMenu = useCallback(
+    (s: SharedFleetSensor) => {
+      if (!isSuper || s.status === 'revoked') return null
+      return (
+        <DataTableRowActions
+          label={t('admin.sharedFleet.rowActions', 'Actions for the sensor {name}', {
+            name: s.name,
+          })}
+          actions={[
+            s.status === 'active'
+              ? {
+                  label: t('admin.sharedFleet.pause'),
+                  onClick: () => setActing({ sensor: s, action: 'pause' }),
+                }
+              : {
+                  label: t('admin.sharedFleet.resume'),
+                  onClick: () => setActing({ sensor: s, action: 'resume' }),
+                },
+            {
+              label: t('admin.sharedFleet.retire'),
+              onClick: () => setActing({ sensor: s, action: 'retire' }),
+              destructive: true,
+              separatorBefore: true,
+            },
+          ]}
+        />
+      )
+    },
+    [t, isSuper]
+  )
+
   const sensorColumns = useMemo<ColumnDef<SharedFleetSensor>[]>(
     () => [
       {
         accessorKey: 'name',
         header: t('admin.sharedFleet.col.sensor'),
-        cell: ({ row }) => (
-          <StackedCell
-            primary={row.original.name}
-            secondary={row.original.region || t('admin.sharedFleet.noRegion')}
-          />
-        ),
+        // The sensor is the row's name: its name, then its region, on one
+        // line. It stays in view while the table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 180,
+          label: t('admin.sharedFleet.col.sensor'),
+        },
+        cell: ({ row }) => {
+          const region = row.original.region || t('admin.sharedFleet.noRegion')
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate font-medium" title={row.original.name}>
+                {row.original.name}
+              </span>
+              <span className="shrink-0 text-cap text-muted-foreground">{region}</span>
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'status',
         header: t('admin.sharedFleet.col.status'),
+        // Two badges (state and health); Vietnamese needs the room.
+        meta: { kind: 'status', width: 232, label: t('admin.sharedFleet.col.status') },
         cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex min-w-0 gap-1 overflow-hidden">
             <Badge variant={row.original.status === 'active' ? 'secondary' : 'outline'}>
               {t(`admin.sharedFleet.status.${row.original.status}`, row.original.status)}
             </Badge>
@@ -106,28 +160,46 @@ export function SharedFleetPanel() {
       {
         accessorKey: 'version',
         header: t('admin.sharedFleet.col.version'),
-        cell: ({ row }) => <span className="font-mono text-xs">{row.original.version || '-'}</span>,
+        meta: {
+          kind: 'text',
+          width: 120,
+          hideBelow: 900,
+          label: t('admin.sharedFleet.col.version'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-code">{row.original.version || '-'}</span>
+        ),
       },
       {
         id: 'tools',
         header: t('admin.sharedFleet.col.tools'),
-        cell: ({ row }) => (
-          <div className="flex max-w-xs flex-wrap gap-1">
-            {row.original.tools.length === 0 ? (
-              <span className="text-xs text-muted-foreground">-</span>
-            ) : (
-              row.original.tools.map((tool) => (
-                <span key={tool} className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                  {tool}
-                </span>
-              ))
-            )}
-          </div>
-        ),
+        meta: {
+          kind: 'tags',
+          width: 240,
+          hideBelow: 1000,
+          label: t('admin.sharedFleet.col.tools'),
+        },
+        cell: ({ row }) =>
+          row.original.tools.length === 0 ? (
+            <span className="text-cap text-muted-foreground">-</span>
+          ) : (
+            <span
+              className="block truncate font-mono text-code"
+              title={row.original.tools.join(', ')}
+            >
+              {row.original.tools.join(', ')}
+            </span>
+          ),
       },
       {
         accessorKey: 'current_jobs',
         header: t('admin.sharedFleet.col.jobs'),
+        meta: {
+          kind: 'number',
+          width: 96,
+          hideBelow: 700,
+          label: t('admin.sharedFleet.col.jobs'),
+        },
         cell: ({ row }) => (
           <span className="tabular-nums">
             {row.original.max_jobs > 0
@@ -139,55 +211,23 @@ export function SharedFleetPanel() {
       {
         accessorKey: 'last_seen_at',
         header: t('admin.sharedFleet.col.lastSeen'),
+        meta: { kind: 'datetime-recent', width: 152, label: t('admin.sharedFleet.col.lastSeen') },
         cell: ({ row }) =>
           row.original.last_seen_at ? (
-            <RelativeTime date={row.original.last_seen_at} className="text-sm" />
+            <RelativeTime date={row.original.last_seen_at} />
           ) : (
-            <span className="text-sm text-muted-foreground">{t('admin.sharedFleet.never')}</span>
+            <span className="text-muted-foreground">{t('admin.sharedFleet.never')}</span>
           ),
       },
       {
         id: 'actions',
         header: '',
-        cell: ({ row }) => {
-          const s = row.original
-          if (!isSuper || s.status === 'revoked') return null
-          return (
-            <div className="flex flex-wrap justify-end gap-1">
-              {s.status === 'active' ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setActing({ sensor: s, action: 'pause' })}
-                >
-                  <Pause className="me-1 size-4" aria-hidden />
-                  {t('admin.sharedFleet.pause')}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setActing({ sensor: s, action: 'resume' })}
-                >
-                  <Play className="me-1 size-4" aria-hidden />
-                  {t('admin.sharedFleet.resume')}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="destructive"
-                className="ms-2"
-                onClick={() => setActing({ sensor: s, action: 'retire' })}
-              >
-                <Power className="me-1 size-4" aria-hidden />
-                {t('admin.sharedFleet.retire')}
-              </Button>
-            </div>
-          )
-        },
+        enableSorting: false,
+        meta: { kind: 'actions' },
+        cell: ({ row }) => fleetMenu(row.original),
       },
     ],
-    [t, isSuper]
+    [t, fleetMenu]
   )
 
   const actionText: Record<
@@ -216,34 +256,62 @@ export function SharedFleetPanel() {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.sharedFleet.fleetTitle')}</CardTitle>
-          <CardDescription>{t('admin.sharedFleet.fleetDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {fleet.error ? (
-            <ErrorState
-              title={t('admin.sharedFleet.fleetTitle')}
-              error={fleet.error}
-              onRetry={() => void fleet.mutate()}
+      <div className="flex min-w-0 flex-col gap-3" data-testid="sensors-fleet">
+        {/* On a phone the info mark is a 36 px touch target: the row has that
+            height from the first frame, so the mark appearing once the setting
+            is read moves nothing. */}
+        <ListTitleRow
+          className="max-md:min-h-control-touch"
+          title={t('admin.sharedFleet.fleetTitle')}
+          count={
+            <ListCount
+              total={fleet.data?.sensors?.length ?? 0}
+              loading={!fleet.data && !fleet.error}
+              label={t('admin.sharedFleet.total', undefined, {
+                count: fleet.data?.sensors?.length ?? 0,
+              })}
             />
-          ) : (
-            <DataTable
-              columns={sensorColumns}
-              data={fleet.data?.sensors ?? []}
-              getRowId={(s) => s.id}
-              isLoading={fleet.isLoading}
-              showSearch={false}
-              showColumnToggle={false}
-              showSelectionCount={false}
-              showPagination={false}
-              mobileCards
-              emptyMessage={t('admin.sharedFleet.noSensors')}
-            />
-          )}
-        </CardContent>
-      </Card>
+          }
+        >
+          {note ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('admin.sharedFleet.aboutShared')}
+                  data-testid="sensors-shared-scanning-closed"
+                >
+                  <Info aria-hidden />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="max-w-xs text-body text-muted-foreground">
+                {note}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </ListTitleRow>
+        <DataTable
+          columns={sensorColumns}
+          data={fleet.data?.sensors ?? []}
+          caption={t('admin.sharedFleet.fleetTitle')}
+          getRowId={(s) => s.id}
+          error={fleet.error}
+          onRetry={() => void fleet.mutate()}
+          errorTitle={t('admin.sharedFleet.fleetTitle')}
+          // The first read: skeleton rows; a failed read shows in the table with Retry.
+          isLoading={fleet.isLoading && !fleet.data}
+          showSearch={false}
+          showSelectionCount={false}
+          showPagination={false}
+          // A phone card with fixed slots, not the automatic label/value card.
+          mobileRow={(s) => <SharedFleetMobileCard sensor={s} actions={fleetMenu(s)} />}
+          emptyState={{
+            nothingYet: <EmptyState icon={Server} title={t('admin.sharedFleet.noSensors')} />,
+          }}
+        />
+        <p className="text-body text-muted-foreground">{t('admin.sharedFleet.fleetDesc')}</p>
+      </div>
 
       {acting && (
         <TypedAdminConfirmDialog
@@ -273,6 +341,93 @@ export function SharedFleetPanel() {
   )
 }
 
+/**
+ * A fleet sensor on a phone. Fixed slots, one fact per element, never a
+ * label/value grid:
+ *
+ *   shared-eu-1  eu                                   [...]
+ *   Active  Online                  (wraps, never cut)
+ *   v1.2.3   1 of 4 jobs   Seen 2 hours ago
+ *   nuclei, httpx                   (only when it has tools)
+ *
+ * An item with no value (region, version, tools) is left out instead of
+ * showing a dash or a placeholder.
+ */
+export function SharedFleetMobileCard({
+  sensor,
+  actions,
+}: {
+  sensor: SharedFleetSensor
+  /** The row menu, the same one the table row has. */
+  actions?: ReactNode
+}) {
+  const { t } = useTranslation()
+  return (
+    <div data-slot="fleet-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div data-slot="fleet-card-title" className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate font-medium" title={sensor.name}>
+            {sensor.name}
+          </span>
+          {sensor.region ? (
+            <span className="shrink-0 text-cap text-muted-foreground">{sensor.region}</span>
+          ) : null}
+        </div>
+        <div data-slot="fleet-card-state" className="flex flex-wrap items-center gap-1">
+          <Badge variant={sensor.status === 'active' ? 'secondary' : 'outline'}>
+            {t(`admin.sharedFleet.status.${sensor.status}`, sensor.status)}
+          </Badge>
+          {sensor.health && (
+            <Badge variant="outline">
+              {t(`admin.sharedFleet.health.${sensor.health}`, sensor.health)}
+            </Badge>
+          )}
+        </div>
+        <MetaLine
+          className="items-center"
+          items={[
+            sensor.version ? (
+              <span key="version">
+                {t('admin.sharedFleet.card.version', 'v{version}', {
+                  version: sensor.version.replace(/^v/i, ''),
+                })}
+              </span>
+            ) : null,
+            <span key="jobs" className="tabular-nums">
+              {sensor.max_jobs > 0
+                ? t('admin.sharedFleet.card.jobsOf', '{current} of {max} jobs', {
+                    current: sensor.current_jobs,
+                    max: sensor.max_jobs,
+                  })
+                : t('admin.sharedFleet.card.jobs', '{count, plural, one {# job} other {# jobs}}', {
+                    count: sensor.current_jobs,
+                  })}
+            </span>,
+            sensor.last_seen_at ? (
+              <span key="seen">
+                {t('admin.sharedFleet.card.seen', 'Seen')}{' '}
+                <RelativeTime date={sensor.last_seen_at} />
+              </span>
+            ) : (
+              <span key="seen">{t('admin.sharedFleet.card.neverSeen', 'Not seen yet')}</span>
+            ),
+          ]}
+        />
+        {sensor.tools.length > 0 && (
+          <p
+            data-slot="fleet-card-tools"
+            className="truncate font-mono text-code text-muted-foreground"
+            title={sensor.tools.join(', ')}
+          >
+            {sensor.tools.join(', ')}
+          </p>
+        )}
+      </div>
+      {actions && <div className="-my-1 shrink-0">{actions}</div>}
+    </div>
+  )
+}
+
 export function SharedQueuePanel() {
   const { t } = useTranslation()
   const me = useAdmin()
@@ -289,18 +444,37 @@ export function SharedQueuePanel() {
       {
         accessorKey: 'tenant_name',
         header: t('admin.sharedFleet.col.organization'),
-        cell: ({ row }) => <span>{row.original.tenant_name || row.original.tenant_id}</span>,
+        // The organization is the row's name; it stays in view while the
+        // table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 180,
+          label: t('admin.sharedFleet.col.organization'),
+        },
+        cell: ({ row }) => {
+          const org = row.original.tenant_name || row.original.tenant_id
+          return (
+            <span className="block truncate font-medium" title={org}>
+              {org}
+            </span>
+          )
+        },
       },
       {
         accessorKey: 'tool',
         header: t('admin.sharedFleet.col.tool'),
+        meta: { kind: 'text', width: 176, label: t('admin.sharedFleet.col.tool') },
         cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.tool || row.original.type}</span>
+          <span className="block truncate font-mono text-code">
+            {row.original.tool || row.original.type}
+          </span>
         ),
       },
       {
         accessorKey: 'status',
         header: t('admin.sharedFleet.col.status'),
+        meta: { kind: 'status', width: 136, label: t('admin.sharedFleet.col.status') },
         cell: ({ row }) => (
           <Badge variant="outline">
             {t(`admin.sharedFleet.jobStatus.${row.original.status}`, row.original.status)}
@@ -310,22 +484,40 @@ export function SharedQueuePanel() {
       {
         accessorKey: 'sensor_name',
         header: t('admin.sharedFleet.col.sensor'),
-        cell: ({ row }) => <span className="text-sm">{row.original.sensor_name || '-'}</span>,
+        meta: {
+          kind: 'text',
+          width: 176,
+          hideBelow: 900,
+          label: t('admin.sharedFleet.col.sensor'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate">{row.original.sensor_name || '-'}</span>
+        ),
       },
       {
         accessorKey: 'created_at',
         header: t('admin.sharedFleet.col.created'),
-        cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+        meta: { kind: 'datetime-recent', width: 152, label: t('admin.sharedFleet.col.created') },
+        cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
       },
       {
         id: 'view',
         header: '',
+        enableSorting: false,
+        meta: { kind: 'actions' },
         cell: ({ row }) =>
           canView ? (
-            <Button size="sm" variant="ghost" onClick={() => setViewing(row.original)}>
-              <Eye className="me-1 size-4" aria-hidden />
-              {t('admin.sharedFleet.viewJob')}
-            </Button>
+            <DataTableRowActions
+              label={t('admin.sharedFleet.jobActions', 'Actions for the job of {org}', {
+                org: row.original.tenant_name || row.original.tenant_id,
+              })}
+              actions={[
+                {
+                  label: t('admin.sharedFleet.viewJob'),
+                  onClick: () => setViewing(row.original),
+                },
+              ]}
+            />
           ) : null,
       },
     ],
@@ -410,54 +602,50 @@ export function SharedQueuePanel() {
             <CardDescription>{t('admin.sharedFleet.jobsDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
-            {jobs.error ? (
-              <ErrorState
-                title={t('admin.sharedFleet.jobsTitle')}
-                error={jobs.error}
-                onRetry={() => void jobs.mutate()}
-              />
-            ) : (
-              <DataTable
-                columns={jobColumns}
-                data={jobs.data?.data ?? []}
-                getRowId={(j) => j.id}
-                isLoading={jobs.isLoading}
-                showSearch={false}
-                showColumnToggle={false}
-                showSelectionCount={false}
-                manualPagination
-                pageCount={jobs.data?.total_pages ?? 1}
-                rowCount={jobs.data?.total ?? 0}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-                pageSizeOptions={[20]}
-                mobileCards
-                toolbarStart={
-                  <Select
-                    value={status || ALL}
-                    onValueChange={(v) => {
-                      list.setFilter('status', v === ALL ? '' : v)
-                    }}
-                  >
-                    <SelectTrigger
-                      className="w-44"
-                      aria-label={t('admin.sharedFleet.statusFilter')}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{t('admin.sharedFleet.allStatuses')}</SelectItem>
-                      {JOB_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {t(`admin.sharedFleet.jobStatus.${s}`)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                }
-                emptyMessage={t('admin.sharedFleet.noJobs')}
-              />
-            )}
+            <DataTable
+              columns={jobColumns}
+              data={jobs.data?.data ?? []}
+              caption={t('admin.sharedFleet.jobsTitle')}
+              getRowId={(j) => j.id}
+              error={jobs.error}
+              onRetry={() => void jobs.mutate()}
+              errorTitle={t('admin.sharedFleet.jobsTitle')}
+              // The first read: skeleton rows under a toolbar that stays mounted.
+              isLoading={jobs.isLoading && !jobs.data}
+              isRefreshing={jobs.isValidating && !!jobs.data}
+              refreshingLabel={t('admin.sharedFleet.refreshingJobs', 'Refreshing jobs')}
+              showSearch={false}
+              showSelectionCount={false}
+              manualPagination
+              pageCount={jobs.data?.total_pages ?? 1}
+              rowCount={jobs.data?.total ?? 0}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+              pageSizeOptions={[20]}
+              paginationNoun={t('admin.sharedFleet.jobsNoun', 'jobs')}
+              mobileCards
+              toolbarStart={
+                <FilterSelect
+                  label={t('admin.sharedFleet.col.status')}
+                  value={status}
+                  foldLabel
+                  allLabel={t('admin.sharedFleet.allStatuses')}
+                  options={JOB_STATUSES.map((s) => ({
+                    value: s,
+                    label: t(`admin.sharedFleet.jobStatus.${s}`),
+                  }))}
+                  onChange={(v) => list.setFilter('status', v)}
+                />
+              }
+              isFiltered={!!status}
+              onClearFilters={() => list.setFilter('status', '')}
+              emptyState={{
+                nothingYet: <EmptyState icon={ListChecks} title={t('admin.sharedFleet.noJobs')} />,
+                noMatch: {
+                  title: t('admin.sharedFleet.noJobsMatch', 'No job in this status'),
+                },
+              }}
+            />
           </CardContent>
         </Card>
       </div>
