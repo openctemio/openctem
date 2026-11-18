@@ -138,6 +138,10 @@ function PendingRequest({
             onReject={() => decision.openReject(approval)}
             approveLabel={t('findings.approvals.action.approve', 'Approve')}
             rejectLabel={t('findings.approvals.action.reject', 'Reject')}
+            stepUpHint={t(
+              'myWork.review.stepUpHint',
+              'You confirm your sign-in before the approval is saved.'
+            )}
           />
         ) : undefined
       }
