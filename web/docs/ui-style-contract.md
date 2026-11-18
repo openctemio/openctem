@@ -491,7 +491,9 @@ reference.
     `toolbarStart`: a token that reads "Status: Pending", opens a menu of every
     value with its count (counted in the viewer's scope), can be cleared to
     all rows, and keeps its value in the URL (`useUrlFilter`, the page's
-    default value when the parameter is absent);
+    default value when the parameter is absent); the room of its clear button
+    is kept while nothing is chosen, so choosing a value never changes the
+    token's width;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
@@ -507,10 +509,10 @@ reference.
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
   - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a list whose end actions would need more shows them as icons
-    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
-    a tooltip with the same name), so the filter tokens neither shrink nor
-    wrap to a third line.
+    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+    `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
+    tooltip below it, so the filter tokens neither shrink nor wrap to a third
+    line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -528,6 +530,10 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
+- **A switch is a value on a phone card.** A field of the automatic phone card
+  whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
+  beside it, kept in step with the switch, so no card shows a label over a
+  bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with

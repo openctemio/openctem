@@ -29,6 +29,46 @@ describe('DataTable empty and error states', () => {
   })
 })
 
+describe('DataTable beforeRows', () => {
+  it('draws page content after the toolbar and its chips row, before the rows', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={[{ name: 'a row' }]}
+        toolbarStart={<input aria-label="my search" />}
+        toolbarBelow={<span>chip</span>}
+        beforeRows={<section aria-label="summary">summary block</section>}
+      />
+    )
+    const chip = screen.getByText('chip')
+    const block = screen.getByLabelText('summary')
+    const row = screen.getAllByText('a row')[0]
+    // Document order: chips row, then the block, then the rows.
+    expect(chip.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(block.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('takes no box (and no gap of the frame) while the block renders nothing', () => {
+    function NoBenchmarks() {
+      return null
+    }
+    const { container } = render(
+      <DataTable columns={columns} data={[{ name: 'a row' }]} beforeRows={<NoBenchmarks />} />
+    )
+    const slot = container.querySelector('[data-slot="table-before-rows"]')!
+    expect(slot).toBeEmptyDOMElement()
+    // The frame is `flex flex-col gap-4`: an empty child with a box would
+    // still take a 16px gap. `empty:hidden` gives it display: none.
+    expect(slot.parentElement!.className).toContain('gap-4')
+    expect(slot.className.split(/\s+/)).toContain('empty:hidden')
+  })
+
+  it('reserves nothing without it', () => {
+    const { container } = render(<DataTable columns={columns} data={[]} />)
+    expect(container.querySelector('[data-slot="table-before-rows"]')).toBeNull()
+  })
+})
+
 describe('DataTable error prop', () => {
   it('error with no rows shows the shared error state, Retry calls onRetry, the toolbar stays', async () => {
     const onRetry = vi.fn()
