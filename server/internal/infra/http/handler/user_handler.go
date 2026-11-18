@@ -365,11 +365,14 @@ type MembershipAdmitter interface {
 // GET /users/me/tenants.
 func (h *UserHandler) SetMembershipAdmission(a MembershipAdmitter) { h.admission = a }
 
+// admissionOpen: the organization's token request would admit the session.
+const admissionOpen = "open"
+
 // admissionCode is the token request's own answer as a code: "open", the
 // refusal's API code, or "" for an error the table does not know.
 func admissionCode(err error) string {
 	if err == nil {
-		return "open"
+		return admissionOpen
 	}
 	if entry, ok := lookupAuthError(err); ok {
 		return string(entry.Code)
