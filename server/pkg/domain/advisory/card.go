@@ -654,11 +654,13 @@ type Applied struct {
 // heldRevision in state heldState: a higher revision always does; at the
 // same revision only a withdrawal of a card that still stands does. A
 // withdrawn card comes back only with a higher revision, so a replayed or
-// unchecked stream can never undo a withdrawal.
+// unchecked stream can never undo a withdrawal. A reported card (no
+// person's review) never replaces a reviewed or withdrawn one: reported is
+// only a first publication or a successor of a reported card.
 func Supersedes(heldRevision int, heldState string, c *Card) bool {
 	switch {
 	case c.Revision > heldRevision:
-		return true
+		return !(c.Reported() && (heldState == StateReviewed || heldState == StateWithdrawn))
 	case c.Revision == heldRevision:
 		return heldState != StateWithdrawn && c.Withdrawn()
 	}

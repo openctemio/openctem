@@ -402,7 +402,7 @@ func LevelFor(b Breakdown, tier Tier, v Vuln, assets []Asset, s tenant.EmergingT
 // affected only, a critical vulnerability with a public exploit, and an
 // internet-facing crown-jewel asset among the possibly affected ones.
 func CheckNeeded(tier Tier, v Vuln, assets []Asset) bool {
-	if tier != TierPossible || !strings.EqualFold(v.Severity, "critical") || !v.PublicExploit() {
+	if v.CardReported || tier != TierPossible || !strings.EqualFold(v.Severity, "critical") || !v.PublicExploit() {
 		return false
 	}
 	for _, a := range assets {
@@ -573,6 +573,21 @@ func StrongestSeverity(levels ...string) string {
 		}
 	}
 	return best
+}
+
+// CardSeverity is the severity of a card's alert: the strongest of the
+// card's own level and the severity of the CVE records it groups. A
+// reported card (no person has reviewed it) never raises it by its own
+// claim: when any record has a severity, only the records count, and the
+// card's level is used only on day 0, before any record exists.
+func CardSeverity(reported bool, own string, records ...string) string {
+	if reported {
+		if s := StrongestSeverity(records...); s != "" {
+			return s
+		}
+		return StrongestSeverity(own)
+	}
+	return StrongestSeverity(append(append([]string{}, records...), own)...)
 }
 
 // StrongerTriage is the stronger of two open triage states (remediating

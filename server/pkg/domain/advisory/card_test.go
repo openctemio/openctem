@@ -232,6 +232,10 @@ func TestSupersedes(t *testing.T) {
 		{1, StateReviewed, card(1, StateReviewed), false},
 		{2, StateReviewed, card(1, StateWithdrawn), false},
 		{1, StateWithdrawn, card(2, StateReviewed), true},
+		{1, StateWithdrawn, card(2, StateReported), false},
+		{1, StateReviewed, card(2, StateReported), false},
+		{1, StateReported, card(2, StateReported), true},
+		{1, StateReported, card(2, StateReviewed), true},
 	}
 	for _, c := range cases {
 		if got := Supersedes(c.heldRev, c.heldState, c.in); got != c.want {
