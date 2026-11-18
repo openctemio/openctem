@@ -31,6 +31,13 @@ interface SettingsSectionProps {
 export const SETTINGS_SECTION_FRAME =
   '@container min-w-0 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0'
 
+/**
+ * The actions box of a section heading. It may shrink to the column (no
+ * `shrink-0`): when it wraps under the title on a phone, two long buttons
+ * wrap inside it instead of running past the column's edge.
+ */
+export const SETTINGS_SECTION_ACTIONS = 'flex min-w-0 max-w-full flex-wrap items-center gap-2'
+
 /** The heading row of a framed section. */
 export const SETTINGS_SECTION_HEAD =
   'flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-4'
@@ -73,7 +80,7 @@ export function SettingsSection({
             )}
           </div>
           {meta && <div className="min-w-0 text-cap text-muted-foreground">{meta}</div>}
-          {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+          {actions && <div className={SETTINGS_SECTION_ACTIONS}>{actions}</div>}
         </div>
         {children}
       </section>
@@ -93,7 +100,7 @@ export function SettingsSection({
             <p className="mt-0.5 text-sm text-muted-foreground text-pretty">{description}</p>
           )}
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+        {actions && <div className={SETTINGS_SECTION_ACTIONS}>{actions}</div>}
       </div>
       {children}
     </section>
