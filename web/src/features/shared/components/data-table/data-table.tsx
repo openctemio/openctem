@@ -569,6 +569,10 @@ const CARD_TITLE_CLASS =
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
+/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+const CARD_CHIP_SELECTOR =
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
+
 /**
  * One field value of the automatic phone card. A value that is only a switch
  * (an "Enabled" column) counts as a value: the card writes "On" or "Off"
@@ -631,7 +635,9 @@ const PHONE_CARD_FOCUS_CLASS =
  *   says nothing or repeats the title;
  * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
  *   other columns that say something (no empty or dash-only value, no repeat
- *   of the title; a switch counts as a value), chosen before paint.
+ *   of the title; a switch counts as a value), chosen before paint. A chip
+ *   value is never cut: a field whose chip does not fit half the line takes
+ *   the whole line and the other field goes on the line under it.
  * Every line but the title is one line high whatever its cell draws.
  */
 function AutoMobileCard<TData>({
@@ -674,6 +680,8 @@ function AutoMobileCard<TData>({
   const [chosen, setChosen] = React.useState<{
     of: TData
     fields: string[]
+    // Fields whose chip does not fit half the line: they take the whole line.
+    wide: string[]
     subtitle: boolean
     statusLine: boolean
     actionsLine: boolean
@@ -683,16 +691,24 @@ function AutoMobileCard<TData>({
     if (pick) return
     const titleText = normalText(titleRef.current?.textContent)
     const fields: string[] = []
+    const wide: string[] = []
     for (const field of Array.from(fieldsRef.current?.children ?? [])) {
       const id = field.getAttribute('data-column') ?? ''
       if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
         fields.push(id)
+        // A chip is never cut (it has no ellipsis): one that overflows its half
+        // of the line gets the whole line, and the other field moves under it.
+        const dd = field.querySelector('dd')
+        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+          wide.push(id)
+        }
       }
     }
     const statusEl = statusRef.current
     setChosen({
       of: row.original,
       fields,
+      wide,
       subtitle: valueSays(subtitleRef.current, titleText),
       statusLine: !!statusEl && statusEl.scrollWidth > statusEl.clientWidth + 1,
       actionsLine:
@@ -784,7 +800,8 @@ function AutoMobileCard<TData>({
         <dl
           ref={fieldsRef}
           className={cn(
-            'mt-1 grid h-5 grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            'mt-1 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
         >
@@ -793,7 +810,10 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
-              className="flex min-w-0 items-baseline gap-1.5"
+              className={cn(
+                'flex min-w-0 items-baseline gap-1.5',
+                pick?.wide.includes(cell.column.id) && 'col-span-2'
+              )}
             >
               <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}

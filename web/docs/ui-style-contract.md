@@ -541,6 +541,9 @@ reference.
     say something. A value that draws nothing or only a dash, or repeats the
     title, is left out (never a label over an empty value), so a later column
     takes its place. "0" is a value and stays; a switch is a value too.
+    A chip value (a badge, chip or tag) is never cut: a field whose chip does
+    not fit half the line takes the whole line, and the other field goes on
+    the line under it.
     A list whose card needs more than that passes its own `mobileRow`.
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
