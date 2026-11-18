@@ -4,6 +4,8 @@ import { Input } from '@/components/ui/input'
 import { DangerZone, DangerZoneItem } from '../danger-zone'
 import { SecretField } from '../secret-field'
 import {
+  SETTINGS_ROW_BESIDE,
+  SETTINGS_ROW_TEXT,
   SettingsBlock,
   SettingsField,
   SettingsFieldGrid,
@@ -96,6 +98,39 @@ describe('SettingsRow and SettingsSwitchRow', () => {
     fireEvent.click(sw)
     expect(onChange).toHaveBeenCalledWith(true)
   })
+
+  it('keeps a switch beside its label on a phone, at the end of the first line', () => {
+    render(
+      <SettingsSwitchRow
+        label="Allow out-of-band interaction checks"
+        hint="A long hint that wraps over several lines on a phone"
+        checked
+        onCheckedChange={() => {}}
+      />
+    )
+    const row = screen.getByRole('switch').closest('[data-slot=settings-row]') as HTMLElement
+    // One wrapping line (no flex-col stack below 45rem), items at the top: the
+    // switch sits beside the text's 13rem basis, level with the label.
+    expect(row.className).toContain(SETTINGS_ROW_BESIDE)
+    expect(row.className).not.toContain('flex-col')
+    expect(row.firstElementChild?.className).toBe(SETTINGS_ROW_TEXT)
+    const box = screen.getByRole('switch').parentElement as HTMLElement
+    expect(box.className).toContain('shrink-0')
+    expect(box.className).toContain('max-w-full')
+  })
+
+  it('puts a wide control under the text on a phone', () => {
+    render(
+      <SettingsRow label="Time zone" wide>
+        <button>Pick</button>
+      </SettingsRow>
+    )
+    const row = screen
+      .getByRole('button', { name: 'Pick' })
+      .closest('[data-slot=settings-row]') as HTMLElement
+    expect(row.className).toContain('flex-col')
+    expect(row.className).not.toContain(SETTINGS_ROW_BESIDE)
+  })
 })
 
 describe('SecretField', () => {
@@ -185,9 +220,20 @@ describe('SettingsPage', () => {
     expect(onRetry).toHaveBeenCalled()
   })
 
-  it('lets a list page take the full width', () => {
+  it('lets a list page take the full width, header included', () => {
     render(<SettingsPage title="Members" wide />)
     const column = document.querySelector('[data-slot="settings-column"]') as HTMLElement
     expect(column.className).not.toContain('max-w-settings')
+    const header = document.querySelector('[data-slot="page-header"]') as HTMLElement
+    expect(header.className).not.toContain('max-w-settings')
+  })
+
+  it('puts a form page header in the same reading column as the form', () => {
+    render(<SettingsPage title="General" />)
+    const column = document.querySelector('[data-slot="settings-column"]') as HTMLElement
+    const header = document.querySelector('[data-slot="page-header"]') as HTMLElement
+    // One width per page: header actions end where the form ends (880px).
+    expect(column.className).toContain('max-w-settings')
+    expect(header.className).toContain('max-w-settings')
   })
 })

@@ -2,10 +2,10 @@
 
 /** A searchable IANA timezone picker (the zones the browser knows). */
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Check, ChevronDownIcon } from 'lucide-react'
+import { SELECT_TRIGGER_CLASS } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -36,25 +36,30 @@ export function TimezoneSelect({
 }: TimezoneSelectProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const listId = useId()
   const zones = useMemo(() => timeZoneOptions(value), [value])
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
+        {/* The select field's look (border, height, 16px text on a phone,
+            chevron), so it matches the other fields of the form. */}
+        <button
           id={id}
           type="button"
-          variant="outline"
           role="combobox"
+          data-slot="select-trigger"
+          data-size="default"
           aria-expanded={open}
+          aria-controls={listId}
           aria-describedby={describedBy}
           disabled={disabled}
-          className="w-full justify-between font-normal"
+          className={cn(SELECT_TRIGGER_CLASS, 'w-full')}
         >
-          <span className="truncate">{value}</span>
-          <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
-        </Button>
+          <span className="min-w-0 truncate">{value}</span>
+          <ChevronDownIcon className="size-4 opacity-50" aria-hidden />
+        </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-64 p-0">
+      <PopoverContent id={listId} className="w-[--radix-popover-trigger-width] min-w-64 p-0">
         <Command>
           <CommandInput placeholder={t('scans.timezone.search')} />
           <CommandList className="max-h-64">

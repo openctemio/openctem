@@ -731,21 +731,29 @@ Every settings page is built from the same parts (`@/features/shared`):
   (header and skeleton rows), `state="error"` (the failure with Retry; saved
   values are never replaced by defaults) and `readOnly` (the "View only"
   notice; the page disables its own controls). A settings page that is a list
-  passes `wide` and uses the list kit unchanged.
+  passes `wide` and uses the list kit unchanged. The header shares the column:
+  on a form page it is as wide as the form (its actions end where the form
+  ends), on a `wide` list page both use the full width.
 - **`SettingsSection framed`** is a section: no card and no fill, a hairline
   above every section but the first, the title (`text-section`), one line of
   description, an optional quiet `meta` note ("Last changed by ...") and
-  actions. Its children draw their own dividers:
+  actions. The title keeps a 12rem basis, so a chevron, a switch or one short
+  button stays on the title line of a phone; only actions that do not fit
+  (two long buttons) wrap under it. Its children draw their own dividers:
   - `SettingsRow`: one setting per line, label and hint at the start, the
-    control at the end (`wide` for a text field or select); stacked when the
-    section is narrower than 45rem. `SettingsSwitchRow` is the row of an
-    on / off setting: the label names the switch, the hint describes it.
+    control at the end. Below 45rem a switch or a short button stays at the
+    end of the label's first line (the text keeps a 13rem basis); a control
+    that does not fit beside it, and a `wide` control (a text field or
+    select), goes under the text. `SettingsSwitchRow`
+    is the row of an on / off setting: the label names the switch, the hint
+    describes it.
   - `SettingsBlock` with `SettingsFieldGrid` and `SettingsField`: fields with
     the label above, as many columns as fit. `SettingsField` ties the label,
     the hint and the error to the control (`aria-describedby`,
     `aria-invalid`); an error is `role="alert"` text under the field.
 - **Fields** are the kit's at the kit's sizes (32px; 36px with 16px text
-  below 768px). A secret the user types is a `SecretField` (masked, Show
+  below 768px). A picker with a popover of its own (the time zone search)
+  draws its trigger with `SELECT_TRIGGER_CLASS`, the select field's look. A secret the user types is a `SecretField` (masked, Show
   value / Hide value; a stored secret is never read back). A secret the
   server shows once is a `OneTimeSecretField` (masked, reveal, copy).
 - **`SettingsSaveBar`** is the one save of a page: shown only while there are
