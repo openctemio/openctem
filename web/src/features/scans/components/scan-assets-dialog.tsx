@@ -189,7 +189,11 @@ export function ScanAssetsDialog({
             </p>
             <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-md border p-3">
               {cappedTargets.slice(0, PREVIEW_LIMIT).map((target) => (
-                <Badge key={target} variant="secondary" className="font-mono">
+                <Badge // label-ok: a scan target (host name, address or range) is an identifier
+                  key={target}
+                  variant="secondary"
+                  className="font-mono"
+                >
                   {target}
                 </Badge>
               ))}

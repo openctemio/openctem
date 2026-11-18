@@ -10,3 +10,4 @@
 - New scan and Edit scan: a missing name, scanner or workflow is marked at its field once the What step shows its
   problems, so "Go to What" puts focus on the field to fix. The scanner, workflow and Tenable.sc connector pickers are
   as wide as their field.
+- Docs: none (the console dialogs keep their fields, checks and requests; user guides describe them by field)
