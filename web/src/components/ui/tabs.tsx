@@ -103,7 +103,18 @@ export function useTabStripScroll(
     // The strip keeps its own size when a tab grows (a count arrives, a label
     // is translated, a web font loads), so each tab is observed too: watching
     // only the strip left the end fade off while the last tab was cut.
-    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined
+    // When the strip's own width changes the active tab is revealed again: a
+    // strip mounted while hidden (inside a `SettleGroup` that has not settled,
+    // a closed sheet) measures 0 px wide on load, so the first reveal had
+    // nothing to scroll and the active tab stayed off screen on a phone.
+    let width = el.clientWidth
+    const onResize = () => {
+      if (el.clientWidth !== width) {
+        width = el.clientWidth
+        revealActive()
+      } else update()
+    }
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : undefined
     const observeTabs = () => {
       if (!ro) return
       ro.disconnect()
