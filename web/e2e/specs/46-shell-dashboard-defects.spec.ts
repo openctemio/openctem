@@ -54,6 +54,9 @@ for (const vp of VIEWPORTS) {
             .locator('tr:visible', { hasText: name })
             .or(page.locator('[data-slot=mobile-card]:visible', { hasText: name }))
           await expect(row).toBeVisible({ timeout: 30_000 })
+          // The row menu's trigger is a placeholder until the menu's code has
+          // loaded: measure the real one, not a node about to be replaced.
+          await expect(page.locator('[data-action-menu-pending]')).toHaveCount(0)
           const more = row.getByRole('button', { name: `Actions for ${name}` })
           const link = row.getByRole('link', { name })
           await expect(more).toBeVisible()
