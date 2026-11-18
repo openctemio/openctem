@@ -19,6 +19,22 @@ export async function legalTranslator(): Promise<LegalT> {
   return (key, fallback, vars) => translate(dict, key, fallback, vars)
 }
 
+/**
+ * The legal text is published in English only (whether to translate it is
+ * an open owner decision): a reader in another language is told so in one line.
+ */
+export async function legalLanguageNote(t: LegalT): Promise<string | undefined> {
+  let locale = 'en'
+  try {
+    locale = (await headers()).get('x-locale') ?? 'en'
+  } catch {
+    // No request: English.
+  }
+  return locale === 'en'
+    ? undefined
+    : t('legal.frame.publishedInEnglish', 'This document is published in English.')
+}
+
 export function legalFrameLabels(t: LegalT): StaticPageLabels {
   return {
     signIn: t('legal.frame.signIn', 'Sign in'),

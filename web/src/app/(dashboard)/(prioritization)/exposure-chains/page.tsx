@@ -1,7 +1,7 @@
 'use client'
 
 import { PossiblePathLabel } from '@/components/ui/possible-path-label'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import {
@@ -22,6 +22,7 @@ import {
 import { KevBadge } from '@/components/ui/kev-badge'
 import { useExposureChains, PathGraph } from '@/features/attack-surface'
 import { attackPathHref } from '@/features/attack-surface/lib/attack-path-model'
+import { ExposureChainStepSheet } from '@/features/attack-surface/components/exposure-chain-step-sheet'
 import type { ExposureChain, PathGraphPath, PathGraphNode } from '@/features/attack-surface'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -165,13 +166,20 @@ export default function ExposureChainsPage() {
   }, [paths, search, only])
   const filtered = search.trim() !== '' || only !== ''
 
+  // A node opens its step detail over the page; closing it returns focus to
+  // the node that opened it.
+  const [step, setStep] = useState<{ pathId: string; index: number } | null>(null)
+  const [stepOpen, setStepOpen] = useState(false)
+  const opener = useRef<HTMLElement | null>(null)
+  const stepPath = step ? (paths.find((p) => p.id === step.pathId) ?? null) : null
+
   const legendItems: GraphLegendItem[] = [
     {
       key: 'asset',
       mark: <span className="h-3 w-5 rounded-sm border-2 bg-card" />,
       label: t(
         'prioritization.exposureChains.legendAsset',
-        'An asset on the chain; opens its findings'
+        'An asset on the chain; opens its detail'
       ),
     },
     {
@@ -233,7 +241,9 @@ export default function ExposureChainsPage() {
           <NoRelationshipData />
         ) : (
           <>
+            {/* On a phone the chains come first (list-first): the totals follow them. */}
             <MetricStrip
+              className="max-sm:order-last"
               items={[
                 {
                   key: 'entries',
@@ -359,15 +369,20 @@ export default function ExposureChainsPage() {
                 <h2 className="text-section">
                   {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
                 </h2>
-                <p className="text-body text-muted-foreground">
+                <p className="text-body text-muted-foreground max-sm:hidden">
                   {t(
                     'prioritization.exposureChains.rankedHint',
-                    'Each chain is the shortest path. Click a node to open its findings.'
+                    'Each chain is the shortest path. Select a step to see its detail and findings.'
                   )}
                 </p>
               </div>
               <PathGraph
                 paths={shownPaths}
+                onOpenNode={(path, index) => {
+                  opener.current = document.activeElement as HTMLElement | null
+                  setStep({ pathId: path.id, index })
+                  setStepOpen(true)
+                }}
                 empty={
                   filtered ? (
                     <EmptyState
@@ -406,6 +421,13 @@ export default function ExposureChainsPage() {
           </>
         )}
       </PageStack>
+      <ExposureChainStepSheet
+        open={stepOpen && stepPath !== null}
+        onOpenChange={setStepOpen}
+        path={stepPath}
+        index={step?.index ?? 0}
+        returnFocus={() => opener.current}
+      />
     </Main>
   )
 }

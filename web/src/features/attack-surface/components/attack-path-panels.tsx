@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ArrowDown, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { ArrowDown, ChevronLeft, ChevronRight, Crown, Globe, Zap } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Counter } from '@/components/ui/counter'
@@ -48,9 +48,12 @@ export function FindingsLink({ node, className }: { node: PathNode; className?: 
 export function ChokePointsCard({
   detail,
   onFocus,
+  action,
 }: {
   detail: AttackPathDetail
   onFocus: (focus: Focus) => void
+  /** An action on the choke points, in the card's title row (the phone's task button). */
+  action?: React.ReactNode
 }) {
   const { t } = useTranslation()
   const rows = chokeRows(detail)
@@ -61,6 +64,7 @@ export function ChokePointsCard({
           {t('prioritization.attackPath.chokeTitle', 'Choke points')}
           <Counter value={rows.length} />
         </h2>
+        {action}
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -401,10 +405,36 @@ export function AttackPathList({
   )
 }
 
-/** The legend's marks: the kind dots, the edge states and the KEV chip, in the shared label language. */
+/** A small chip drawn like the graph's step chips (the label on an edge). */
+function StepChipMark({ danger, children }: { danger?: boolean; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'flex items-center gap-0.5 rounded border bg-card px-1 text-cap whitespace-nowrap',
+        danger ? 'border-tone-danger-fg/40 text-tone-danger-fg' : 'text-muted-foreground'
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * The legend's marks: every mark the graph draws (the internet, the kind dots,
+ * the target's crown and criticality, the step chips, the edge states and the
+ * dashed node of another path), in the shared label language.
+ */
 export function useAttackPathLegendItems(): GraphLegendItem[] {
   const { t } = useTranslation()
   return [
+    {
+      key: 'internet',
+      mark: <Globe className="size-3.5" />,
+      label: t(
+        'prioritization.attackPath.legendInternet',
+        'The internet; on an entry point, internet-facing'
+      ),
+    },
     {
       key: 'entry',
       mark: <span className={cn('size-2 rounded-sm', ROLE_DOT.entry)} />,
@@ -421,6 +451,31 @@ export function useAttackPathLegendItems(): GraphLegendItem[] {
       label: t('prioritization.attackPath.role.target', 'Target'),
     },
     {
+      key: 'crown',
+      mark: <Crown className="size-3" />,
+      label: t(
+        'prioritization.attackPath.legendCrown',
+        "Crown jewel; beside it, the target's business criticality"
+      ),
+    },
+    {
+      key: 'step',
+      mark: <StepChipMark>0.4</StepChipMark>,
+      label: t(
+        'prioritization.attackPath.legendStep',
+        'Finding that allows the step, with its weight'
+      ),
+    },
+    {
+      key: 'kev',
+      mark: (
+        <StepChipMark danger>
+          <Zap className="size-2.5" />
+        </StepChipMark>
+      ),
+      label: t('prioritization.attackPath.legendKev', 'Known exploited step'),
+    },
+    {
       key: 'selected',
       mark: <span className="h-0.5 w-5 rounded bg-signal" />,
       label: t('prioritization.attackPath.legendSelected', 'Selected path'),
@@ -431,14 +486,17 @@ export function useAttackPathLegendItems(): GraphLegendItem[] {
       label: t('prioritization.attackPath.legendAlt', 'Other path'),
     },
     {
+      key: 'alt-node',
+      mark: <span className="h-3 w-5 rounded-sm border border-dashed border-border-strong" />,
+      label: t(
+        'prioritization.attackPath.legendAltNode',
+        'Asset only on another path, or hidden from you'
+      ),
+    },
+    {
       key: 'width',
       mark: <span className="h-1 w-5 rounded bg-border-strong" />,
       label: t('prioritization.attackPath.legendWidth', 'Thicker line, likelier step'),
-    },
-    {
-      key: 'kev',
-      mark: <KevBadge />,
-      label: t('prioritization.attackPath.legendKev', 'Known exploited step'),
     },
   ]
 }
