@@ -145,6 +145,11 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
 
     const federated = j.m !== 'password' && j.m !== 'password-totp'
     let access = ''
+    if (j.mb === 'returning-member' && j.m === 'other-org-idp') {
+      // The person joined with their own account; the other organization's
+      // provider signs them in later (it never opens this organization).
+      await person.p.ok('POST', '/api/v1/invitations/accept-with-refresh', { token: invitation })
+    }
     if (federated) {
       federate(env, person, j.m as FederatedKind, orgId, homeOrgId)
       // The callback's access token is an account token (no organization yet).
@@ -152,7 +157,7 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
       if (at.status === 200) access = String(at.body.access_token)
     }
     let tenantCookie = ''
-    if (j.mb === 'returning-member') {
+    if (j.mb === 'returning-member' && j.m !== 'other-org-idp') {
       await person.p.ok('POST', '/api/v1/invitations/accept-with-refresh', { token: invitation })
       if (j.m === 'org-oidc') {
         // The organization's provider signs in to that organization: its
@@ -244,9 +249,13 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
     await page.goto(start)
     let outcome = await drive(page, j, person, watch, env)
     expect(outcome.kind).toBe('in-org')
-    await owner.ok('POST', `/api/v1/tenants/${env.slug}/members/${person.id}/suspend`, {
-      reason: 'journey',
-    })
+    await owner.ok(
+      'POST',
+      `/api/v1/tenants/${env.slug}/members/${membershipId(env, person)}/suspend`,
+      {
+        reason: 'journey',
+      }
+    )
     await page.reload()
     outcome = await drive(page, j, person, watch, env)
     const problems = watch.problems(outcome)
@@ -354,6 +363,7 @@ async function drive(
 ): Promise<Outcome> {
   let signedIn = false
   let accepted = 0
+  let opened = 0
   for (let i = 0; i < 16; i++) {
     await settle(page)
     const url = new URL(page.url())
@@ -396,6 +406,13 @@ async function drive(
         continue
       }
       if (await visible(page, open)) {
+        if (opened > 0) {
+          return {
+            kind: 'stuck',
+            detail: 'the invitation page still offers Open after opening failed',
+          }
+        }
+        opened += 1
         await open.first().click()
         continue
       }
@@ -471,4 +488,13 @@ async function drive(
   }
   void env
   return { kind: 'stuck', detail: `still at ${page.url()} after 16 steps` }
+}
+
+/** The person's membership id in the journeys organization (member routes take it). */
+function membershipId(env: JourneyEnv, person: Person): string {
+  return sql(
+    env,
+    `SELECT m.id FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
+      WHERE t.slug = ${lit(env.slug)} AND m.user_id = ${lit(person.id)}`
+  )
 }
