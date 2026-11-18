@@ -31,6 +31,35 @@ describe('FilterSelect', () => {
     expect(screen.queryByRole('button', { name: 'Clear Status' })).not.toBeInTheDocument()
   })
 
+  it("keeps the clear button's room while nothing is filtered, so a value never resizes it", () => {
+    const { rerender } = render(
+      <FilterSelect label="Status" value="" options={options} onChange={() => {}} />
+    )
+    const room = document.querySelector('[data-slot=filter-select-clear-room]')
+    expect(room).toHaveClass('size-7', 'me-1', 'shrink-0')
+    expect(room).toHaveAttribute('aria-hidden')
+    rerender(<FilterSelect label="Status" value="pending" options={options} onChange={() => {}} />)
+    expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
+    expect(document.querySelector('[data-slot=filter-select-clear]')).toHaveClass(
+      'size-7',
+      'me-1',
+      'shrink-0'
+    )
+  })
+
+  it('keeps no room for a clear button it never shows', () => {
+    render(
+      <FilterSelect
+        label="Show"
+        value="pending"
+        options={options}
+        clearable={false}
+        onChange={() => {}}
+      />
+    )
+    expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
+  })
+
   it('lists every value with its count and picks one', async () => {
     const onChange = vi.fn()
     render(

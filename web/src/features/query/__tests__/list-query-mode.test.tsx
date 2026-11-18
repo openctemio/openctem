@@ -288,7 +288,13 @@ describe('the list search field Query mode', () => {
     await settle()
     // The problem: one line of the chips row's height under the toolbar.
     expect(status).toHaveAttribute('data-drawn', '')
-    expect(status).toHaveClass('h-control', 'max-md:h-control-touch', 'shrink-0')
+    // A row of its own under the toolbar (after line 2 on a phone).
+    expect(status).toHaveClass(
+      'h-control',
+      'max-md:h-control-touch',
+      'basis-full',
+      '@max-md/toolbar:order-last'
+    )
     expect(box()).toHaveAttribute('aria-invalid', 'true')
     // The same live region as before, so the problem is announced.
     expect(line()).toBe(atRest)

@@ -130,7 +130,7 @@ for (const width of [1440, 390] as const) {
             axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
           }
           return w.axe.run(
-            { include: [['main [data-slot="list-toolbar"]']] },
+            { include: [['main [data-slot="list-toolbar-region"]']] },
             { resultTypes: ['violations'] }
           )
         })) as AxeResult
@@ -140,7 +140,8 @@ for (const width of [1440, 390] as const) {
         expect(serious).toEqual([])
 
         await testInfo.attach(`toolbar${p.route.replace(/\//g, '-')}-${width}.png`, {
-          body: await toolbar.screenshot(),
+          // The region: on a phone the toolbar lends its controls to it (no box).
+          body: await page.locator('main [data-slot="list-toolbar-region"]').first().screenshot(),
           contentType: 'image/png',
         })
       }

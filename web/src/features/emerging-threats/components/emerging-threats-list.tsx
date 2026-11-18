@@ -394,7 +394,7 @@ export function EmergingThreatsList() {
 
   return (
     <PageStack>
-      <MetricStrip items={strip} loading={isLoading && !data} />
+      <MetricStrip items={strip} loading={isLoading && !data} listFirst />
       {!neverAny && (
         <ListTitleRow
           title={t('emergingThreats.list.viewAll', 'All emerging threats')}
