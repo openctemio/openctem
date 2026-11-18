@@ -51,8 +51,8 @@ for (const vp of VIEWPORTS) {
           await page.reload()
           // A table row from 768px, a card on a phone.
           const row = page
-            .locator('tr', { hasText: name })
-            .or(page.locator('[data-slot=mobile-card]', { hasText: name }))
+            .locator('tr:visible', { hasText: name })
+            .or(page.locator('[data-slot=mobile-card]:visible', { hasText: name }))
           await expect(row).toBeVisible({ timeout: 30_000 })
           const more = row.getByRole('button', { name: `Actions for ${name}` })
           const link = row.getByRole('link', { name })
