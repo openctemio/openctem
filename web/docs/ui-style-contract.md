@@ -294,7 +294,8 @@ Every page, top to bottom:
      of the strip. The current tab is always one of the shown tabs; a label is
      never cut at the edge and the strip never scrolls sideways. In-page
      `<Tabs>` scroll with a fade on the hidden side and keep the active tab in
-     view.
+     full view: a tab under an edge's 2.5rem fade counts as hidden and is
+     scrolled to the middle (at the ends, the strip stops at its edge).
 5. **Sidebar**: the main sidebar collapses and its width can be resized
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
