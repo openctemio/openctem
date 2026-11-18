@@ -249,13 +249,10 @@ export function GroupQuickView({
             title={group.name}
             badges={
               <>
-                <Badge variant="secondary" className="capitalize">
+                <Badge variant="secondary">
                   {t(`assetGroups.environment.${group.environment}`, group.environment)}
                 </Badge>
-                <Badge
-                  variant="outline"
-                  className={cn('capitalize', CRITICALITY_BADGE_SOFT[criticality])}
-                >
+                <Badge variant="outline" className={CRITICALITY_BADGE_SOFT[criticality]}>
                   {t(CRITICALITY_LABEL_KEYS[criticality] ?? '', group.criticality)}
                 </Badge>
               </>
