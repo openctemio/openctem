@@ -15,7 +15,7 @@ const EN_DIR = join(process.cwd(), 'src', 'lib', 'i18n', 'dictionaries', 'en')
 const COUNT_BEFORE_NOUN =
   /\{(count|n|total|days|hours|minutes|seconds|weeks|months|added|removed|max|min|selected|remaining|done|failed|skipped|created|updated|deleted|matched)\} (?:(?:new|open|more|other|unique|active|failed|closed|resolved|selected|matching|affected|related|known|existing|skipped|blocked|recent|duplicate) )?([a-z]+s)\b/g
 /** Words ending in s that are not plural nouns. */
-const NOT_NOUN = new Set(['is', 'as', 'does', 'pass', 'status', 'stays', 'uses', 'creates', 'was', 'has', 'its', 'always', 'waits', 'breaks', 'ms', 'goes', 'needs', 'gets'])
+const NOT_NOUN = new Set(['is', 'this', 'as', 'does', 'pass', 'status', 'stays', 'uses', 'creates', 'was', 'has', 'its', 'always', 'waits', 'breaks', 'ms', 'goes', 'needs', 'gets'])
 const PLURAL_BLOCK = /\{\w+,\s*plural,(?:\s*(?:=\d+|\w+)\s*\{[^{}]*\})+\s*\}/g
 
 function withoutPluralBlocks(s: string): string {
