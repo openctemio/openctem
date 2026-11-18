@@ -143,7 +143,6 @@ export function MfaSessionStep({
       <div className="flex flex-col gap-3.5">
         <EntryBanner
           tone="info"
-          role="alert"
           title={t('auth.mfaSession.reauthTitle', 'Sign in again')}
         >
           {t(

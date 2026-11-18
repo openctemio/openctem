@@ -421,7 +421,6 @@ export function LoginForm({
             key={notice.text}
             id={noticeId}
             tone={notice.tone}
-            role="alert"
             data-testid="login-notice"
           >
             <p>{notice.text}</p>
@@ -431,7 +430,6 @@ export function LoginForm({
         {accountExists && (
           <EntryBanner
             tone="warn"
-            role="alert"
             data-testid="login-account-exists"
             title={t('auth.accountExists.title')}
           >
@@ -445,7 +443,6 @@ export function LoginForm({
         {useOrgSso && (
           <EntryBanner
             tone="info"
-            role="alert"
             data-testid="login-use-org-sso"
             title={t('auth.useOrgSso.title')}
           >
