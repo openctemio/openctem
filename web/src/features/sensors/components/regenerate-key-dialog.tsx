@@ -162,7 +162,7 @@ export function RegenerateKeyDialog({
           <div className="space-y-2">
             <Label htmlFor={typedId} className="block font-normal">
               {typeBefore}
-              <span className="font-semibold break-all">{expected}</span>
+              <span className="font-semibold break-words">{expected}</span>
               {typeAfter}
             </Label>
             <Input

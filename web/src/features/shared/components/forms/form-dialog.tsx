@@ -124,20 +124,26 @@ export function FormDialog({
           <DialogBody>{children}</DialogBody>
           <DialogSubmitError message={error} requestId={requestId} testId="form-dialog-error" />
           <DialogFooter>
-            {(footerStart || (reason && !canSubmit)) && (
+            {footerStart && (
               <div className="flex min-w-0 flex-wrap items-center gap-2 sm:me-auto">
                 {footerStart}
-                {reason && !canSubmit && (
-                  <p id={reasonId} className="min-w-0 text-cap text-muted-foreground">
-                    {reason}
-                  </p>
-                )}
               </div>
             )}
             {cancelLabel !== null && (
               <Button type="button" variant="ghost" onClick={requestClose} disabled={submitting}>
                 {cancelLabel ?? t('common.cancel')}
               </Button>
+            )}
+            {/* The reason sits beside the off main button: before it on a wide footer, right under
+                it on a phone (the footer stacks in reverse there), never under Cancel. */}
+            {reason && !canSubmit && (
+              <p
+                id={reasonId}
+                data-slot="form-dialog-reason"
+                className="min-w-0 self-center text-cap text-muted-foreground max-sm:text-center sm:max-w-[18rem] sm:text-end"
+              >
+                {reason}
+              </p>
             )}
             <Button
               type="submit"

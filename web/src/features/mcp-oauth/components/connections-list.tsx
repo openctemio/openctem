@@ -153,7 +153,7 @@ export function ConnectionsList({
                 )}
               </div>
               {showUser && (
-                <p className="text-muted-foreground text-sm break-all">
+                <p className="text-muted-foreground text-sm break-words">
                   {c.user_name || c.user_email}
                 </p>
               )}

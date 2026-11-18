@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import useSWR from 'swr'
-import { AlertCircle, CheckCircle2, SkipForward } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, SkipForward } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -48,6 +48,48 @@ export function skipText(
   return t(key, skipped.message, { capability: capability ?? '' })
 }
 
+/**
+ * Step refusals a run turns into skips, on a required step as on an optional
+ * one (server step_support.go): no tool runs the capability, the pinned tool
+ * is not installed or is turned off, or no sensor may run the tool. The
+ * preview reports them on a required step as blocking; the run skips the
+ * step and goes on with the others, so they show as skips and never stop a
+ * scan from being created (a scan runs what is supported).
+ */
+const TOOL_SKIP_CODES: Record<string, string> = {
+  NO_MATCHING_TOOL: 'NO_MATCHING_TOOL',
+  TOOL_NOT_FOUND: 'TOOL_NOT_INSTALLED',
+  TOOL_NOT_INSTALLED: 'TOOL_NOT_INSTALLED',
+  TOOL_DISABLED: 'TOOL_DISABLED',
+  NO_SENSOR_FOR_TOOL: 'NO_SENSOR_FOR_TOOL',
+}
+
+/** A workflow preview as the run would go: tool and sensor gaps are skips. */
+export interface RunPreview extends WorkflowPreview {
+  /** Steps skipped for a missing tool or sensor, required ones included. */
+  toolSkips: number
+  /** No step can run: a start is refused until a tool or sensor is there. */
+  noStepRuns: boolean
+}
+
+export function asRunPreview(preview: WorkflowPreview | RunPreview): RunPreview {
+  if ('toolSkips' in preview) return preview
+  let toolSkips = 0
+  const nodes = (preview.nodes ?? []).map((n) => {
+    const code = n.blocking?.code ? TOOL_SKIP_CODES[n.blocking.code] : undefined
+    if (!code) return n
+    toolSkips++
+    return { ...n, blocking: undefined, skipped: { code, message: n.blocking?.message } }
+  })
+  return {
+    ...preview,
+    nodes,
+    blocking: !!preview.targets?.error || nodes.some((n) => !!n.blocking),
+    toolSkips,
+    noStepRuns: nodes.length > 0 && nodes.every((n) => !!n.skipped),
+  }
+}
+
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value)
   useEffect(() => {
@@ -74,7 +116,8 @@ export function useWorkflowPreview(request: WorkflowPreviewRequest, enabled = tr
     () => post<WorkflowPreview>(scanEndpoints.workflowPreview(), debounced),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
-  return { data, error, isLoading, ready }
+  const run = useMemo(() => (data ? asRunPreview(data) : undefined), [data])
+  return { data: run, error, isLoading, ready }
 }
 
 export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRequest }) {
@@ -112,8 +155,9 @@ export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRe
   )
 }
 
-export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
+export function WorkflowPreviewBody({ preview: raw }: { preview: WorkflowPreview }) {
   const { t } = useTranslation()
+  const preview = asRunPreview(raw)
   const targets = preview.targets
   return (
     <div className="space-y-3">
@@ -123,6 +167,22 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
           <AlertTitle>{t('scans.wfPreview.wouldNotStart')}</AlertTitle>
           <AlertDescription>{t('scans.wfPreview.fixProblems')}</AlertDescription>
         </Alert>
+      ) : preview.noStepRuns ? (
+        <p
+          className="flex items-start gap-1.5 text-sm text-foreground"
+          data-testid="preview-no-step-runs"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+          {t('scans.wfPreview.noStepRuns')}
+        </p>
+      ) : preview.toolSkips > 0 ? (
+        <p
+          className="flex items-start gap-1.5 text-sm text-foreground"
+          data-testid="preview-runs-in-part"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+          {t('scans.wfPreview.runsInPart', undefined, { count: preview.toolSkips })}
+        </p>
       ) : (
         <p className="flex items-center gap-1.5 text-sm text-success">
           <CheckCircle2 className="h-4 w-4" /> {t('scans.wfPreview.everyStep')}

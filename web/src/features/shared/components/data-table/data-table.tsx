@@ -251,6 +251,12 @@ interface DataTableProps<TData, TValue> {
    */
   toolbarBelow?: React.ReactNode
   /**
+   * Page content between the toolbar (with its chips row) and the rows, such
+   * as a summary block that loads on its own. It is content, not chrome:
+   * whatever it does, the title row and the toolbar above it never move.
+   */
+  beforeRows?: React.ReactNode
+  /**
    * Keep the selection checkbox and the row's identifying columns
    * (`meta.pin: 'start'`, else the first data column) in view while the
    * table scrolls sideways, so a row can be identified at any scroll
@@ -269,7 +275,10 @@ interface DataTableProps<TData, TValue> {
    * next tick brought the stale selection back).
    */
   resetSelectionKey?: string | number
-  /** Hide the "N of M selected" note, e.g. when a bulk-action bar shows it. */
+  /**
+   * Hide the "N of M selected" note, e.g. when a bulk-action bar shows it.
+   * The note is drawn under the rows, never in the toolbar.
+   */
   showSelectionCount?: boolean
   /**
    * Phone layout: below `md` each row renders through this as a stacked card
@@ -470,6 +479,9 @@ const PINNED_START_EDGE_CLASS =
 const PINNED_END_EDGE_CLASS =
   "before:pointer-events-none before:absolute before:inset-y-0 before:-start-3 before:w-3 before:bg-gradient-to-l before:from-foreground/10 before:to-transparent before:opacity-0 before:transition-opacity before:content-[''] rtl:before:bg-gradient-to-r group-data-[hidden-end=true]/table:before:opacity-100"
 
+/** The pinned actions column while no row has an action: no box, no edge. */
+const ACTIONS_COLLAPSED_CLASS = 'overflow-hidden border-0 p-0'
+
 /** Columns the automatic phone card treats as controls rather than fields. */
 const CONTROL_COLUMN_IDS = new Set(['select', 'actions'])
 /** Fields shown under the title on an automatic phone card. */
@@ -492,7 +504,10 @@ const MOBILE_CARD_FIELDS = 4
  * `overflow-wrap: anywhere` (not `break-word`) lets a word longer than the
  * card (an 88-character e-mail address, a URL) break, AND stops it from
  * setting the minimum width of its flex item: with `break-word` the address
- * kept its one-line width and ran under the row's menu button.
+ * kept its one-line width and ran under the row's menu button. It is only the
+ * last resort: cells that show a name or an address render it through
+ * `BreakText`, whose break opportunities at `.`, `@`, `-`, `_`, `/` are taken
+ * first, so an address wraps at a separator and never inside a word.
  */
 const CARD_WRAP_CLASS =
   '[overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
@@ -518,6 +533,59 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
   }
   const id = header.column.id.replace(/[_.-]+/g, ' ').trim()
   return id.charAt(0).toUpperCase() + id.slice(1)
+}
+
+const CARD_VALUE_CLASS =
+  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal'
+
+/**
+ * One field value of the automatic phone card. A value that is only a switch
+ * (an "Enabled" column) counts as a value: the card writes "On" or "Off"
+ * beside it, kept in step with the switch, so a field never shows a label
+ * over a bare control. The switch keeps its own name and state for a screen
+ * reader; the word is for the eye only.
+ */
+function CardFieldValue({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
+  const cellRef = React.useRef<HTMLSpanElement>(null)
+  const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
+  React.useLayoutEffect(() => {
+    const cell = cellRef.current
+    if (!cell) return
+    const read = () => {
+      const control = cell.querySelector('[role=switch]')
+      const text = (cell.textContent ?? '').replace(/\s+/g, '')
+      setSwitchOn(control && !text ? control.getAttribute('aria-checked') === 'true' : null)
+    }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(cell, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['aria-checked'],
+    })
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <dd
+      className={cn(
+        CARD_VALUE_CLASS,
+        CARD_WRAP_CLASS,
+        switchOn !== null && 'flex items-center gap-2'
+      )}
+    >
+      <span ref={cellRef} className="contents">
+        {children}
+      </span>
+      {switchOn !== null && (
+        <span data-slot="card-switch-text" aria-hidden="true">
+          {switchOn ? t('common.table.switchOn') : t('common.table.switchOff')}
+        </span>
+      )}
+    </dd>
+  )
 }
 
 /**
@@ -602,14 +670,9 @@ function AutoMobileCard<TData>({
               {/* Cells are written for a wide table row: whatever they keep on
                   one line may wrap here, as in the title, so a value never runs
                   into the next column (CARD_WRAP_CLASS). */}
-              <dd
-                className={cn(
-                  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal',
-                  CARD_WRAP_CLASS
-                )}
-              >
+              <CardFieldValue>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </dd>
+              </CardFieldValue>
             </div>
           ))}
         </dl>
@@ -686,6 +749,7 @@ export function DataTable<TData, TValue>({
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
+  beforeRows,
   stickyFirstColumn = true,
   pinActions = false,
   resetSelectionKey,
@@ -766,6 +830,9 @@ export function DataTable<TData, TValue>({
   // the pinned columns — drives the edge shadows.
   const tableWrapRef = React.useRef<HTMLDivElement>(null)
   const [hiddenEdges, setHiddenEdges] = React.useState({ start: false, end: false })
+  // No row of the page has an action (cells render nothing): the pinned
+  // actions column collapses instead of covering the column before it.
+  const [actionsEmpty, setActionsEmpty] = React.useState(false)
   // Mode A (`clip`): the table fits, the page scrolls, the header sticks under
   // the app header. Mode B (`scroll`): the table is wider than its frame (the
   // viewer turned on many columns), the frame scrolls on both axes and the
@@ -1003,7 +1070,10 @@ export function DataTable<TData, TValue>({
       : {}
     if (columnId === 'actions' && actionsPinned) {
       return {
-        className: cn(PINNED_CELL_CLASS, PINNED_END_EDGE_CLASS),
+        // While no row has an action the pinned column has no box at all.
+        className: actionsEmpty
+          ? cn(PINNED_CELL_CLASS, ACTIONS_COLLAPSED_CLASS)
+          : cn(PINNED_CELL_CLASS, PINNED_END_EDGE_CLASS, 'whitespace-nowrap'),
         style: { insetInlineEnd: 0 },
       }
     }
@@ -1038,6 +1108,18 @@ export function DataTable<TData, TValue>({
       ?.primary
     return primary ? { ...props, className: cn(props.className, NAME_COLUMN_FLOOR) } : props
   }
+
+  // After every render: does any row of the page draw an action? (A page's
+  // actions cell returns nothing for a row that has none.)
+  React.useLayoutEffect(() => {
+    if (!actionsPinned) return
+    const cells = tableWrapRef.current?.querySelectorAll('tbody td[data-pinned-actions]')
+    const empty =
+      !!cells &&
+      cells.length > 0 &&
+      Array.from(cells).every((td) => td.childElementCount === 0 && !td.textContent?.trim())
+    setActionsEmpty((prev) => (prev === empty ? prev : empty))
+  })
 
   // Re-measure when the rows, visible columns or container size change.
   React.useEffect(() => {
@@ -1176,11 +1258,22 @@ export function DataTable<TData, TValue>({
     const pin = pinnedProps(columnId)
     const layout = layoutOf(columnId)
     const narrowed = fitted.get(columnId)
-    const style =
+    const declared =
       narrowed !== undefined
         ? { ...layout.style, width: narrowed, maxWidth: narrowed }
         : layout.style
+    // The pinned actions column is as wide as its widest real content (one
+    // line, `whitespace-nowrap`), never wider than the declared width: a
+    // width of 1px in the automatic table layout grows to the widest cell, so
+    // rows without actions add nothing.
+    const style =
+      columnId === 'actions' && actionsPinned
+        ? actionsEmpty
+          ? { width: 0, minWidth: 0, maxWidth: 0 }
+          : { width: 1, maxWidth: declared?.maxWidth ?? declared?.width }
+        : declared
     return {
+      'data-pinned-actions': columnId === 'actions' && actionsPinned ? '' : undefined,
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
@@ -1286,6 +1379,18 @@ export function DataTable<TData, TValue>({
 
   // A stale read says so in the footer, with a refresh.
   const pagerShown = showPagination && !errorState && paginationTotal > 0
+  // "N of M selected", for a table without a bulk bar. Under the rows (in the
+  // pager's line, or a line of its own without a pager), never in the toolbar:
+  // selecting a row moves no control above the list.
+  const selectionNote =
+    showSelectionCount && !bulk && selectedCount > 0 ? (
+      <span data-slot="table-selected-count" className="max-sm:hidden">
+        {t('common.table.selectedOf', '{selected} of {total} selected', {
+          selected: selectedCount,
+          total: totalCount,
+        })}
+      </span>
+    ) : null
   const staleNote = (block: boolean) =>
     staleAt ? (
       <TableStaleNote readAt={staleAt} failed={refreshFailed} onRefresh={onRefresh} block={block} />
@@ -1331,15 +1436,6 @@ export function DataTable<TData, TValue>({
           end={
             <>
               {toolbarEnd}
-              {/* Selection info - hidden on mobile when no selection */}
-              {showSelectionCount && !bulk && selectedCount > 0 && (
-                <span className="text-sm text-muted-foreground hidden sm:inline">
-                  {t('common.table.selectedOf', '{selected} of {total} selected', {
-                    selected: selectedCount,
-                    total: totalCount,
-                  })}
-                </span>
-              )}
 
               {/* Phone: cards have no header checkbox; More turns select mode on
                 (the page's own More when it holds the mode). */}
@@ -1430,6 +1526,15 @@ export function DataTable<TData, TValue>({
             </>
           }
         />
+      )}
+
+      {beforeRows != null && beforeRows !== false && (
+        // No box while the block renders nothing (Compliance with no
+        // benchmark): the frame is a flex column with a gap, and an empty
+        // child would still take a gap and push the rows 16px down.
+        <div data-slot="table-before-rows" className="empty:hidden">
+          {beforeRows}
+        </div>
       )}
 
       {phoneCards && (
@@ -1845,6 +1950,9 @@ export function DataTable<TData, TValue>({
 
       {/* A stale read with no pager (an empty list) still says how old it is. */}
       {!pagerShown && staleNote(true)}
+      {!(pagerShown && !phoneMore) && selectionNote && (
+        <div className="text-cap text-muted-foreground tabular-nums">{selectionNote}</div>
+      )}
 
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
@@ -1889,6 +1997,7 @@ export function DataTable<TData, TValue>({
             return (
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-cap text-muted-foreground tabular-nums sm:justify-start">
                 {staleNote(false)}
+                {selectionNote}
                 {countUnavailable ? (
                   <>
                     <span>

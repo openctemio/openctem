@@ -492,7 +492,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
               {m.finding_id && (
                 <Link
                   href={`/findings/${m.finding_id}`}
-                  className="mt-1 inline-block break-all text-primary hover:underline"
+                  className="mt-1 inline-block break-words text-primary hover:underline"
                 >
                   {m.finding_title || m.finding_id}
                 </Link>

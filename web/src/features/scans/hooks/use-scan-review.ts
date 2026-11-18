@@ -4,7 +4,7 @@
  * Everything the Review step shows and the reasons Start is disabled, from
  * the server's answers only: the scope check of the direct targets (the same
  * request the selection summary made, so it is cached), the workflow preview
- * (readiness, blocking steps, targets waiting for their scan windows) and the form's own
+ * (readiness, skipped and blocking steps, targets waiting for their scan windows) and the form's own
  * completeness. The create request is re-validated by the API anyway.
  */
 
@@ -93,34 +93,29 @@ export function useScanReview(
     }
     const wf = workflow.data
     if (wf?.blocking) {
-      const reasons = (wf.nodes ?? [])
-        .map((n) => n.blocking?.message)
-        .filter((m): m is string => !!m)
-      const why = reasons[0] ?? wf.targets?.error?.message
-      // Only sensors that are offline right now: a scan saved for later or
-      // scheduled is accepted (the API saves it; its run waits for a
-      // sensor), so it is a warning, not a blocker. A scan that runs now
-      // would be refused at its start, so it still blocks.
-      const onlyOffline =
-        !wf.targets?.error &&
-        (wf.nodes ?? []).every(
-          (n) =>
-            !n.blocking ||
-            (n.blocking.code === 'NO_SENSOR_FOR_TOOL' && n.availability?.status === 'offline_only')
-        )
-      if (onlyOffline && !form.schedule.runImmediately) {
-        warnings.push(
-          t('scans.review.sensorsOffline', undefined, {
-            why: why ?? t('scans.review.workflowWouldNotStart'),
-          })
-        )
-      } else {
-        const msg = why
-          ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
-          : t('scans.review.workflowWouldNotStart')
-        blockers.push(msg)
-        otherBlockers.push(msg)
-      }
+      // What a run cannot get past (targets that cannot be resolved, a step
+      // that is not valid). Missing tools and sensors are not here: the
+      // preview already reads them as skips (asRunPreview).
+      const why =
+        (wf.nodes ?? []).map((n) => n.blocking?.message).find((m): m is string => !!m) ??
+        wf.targets?.error?.message
+      const msg = why
+        ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
+        : t('scans.review.workflowWouldNotStart')
+      blockers.push(msg)
+      otherBlockers.push(msg)
+    } else if (wf && wf.toolSkips > 0) {
+      // A scan runs what is supported: steps no tool or sensor here runs are
+      // skipped, never a reason to refuse the scan.
+      const why =
+        (wf.nodes ?? [])
+          .map((n) => (n.skipped?.code !== 'DEPTH_SKIPPED' ? n.skipped?.message : undefined))
+          .find((m): m is string => !!m) ?? ''
+      warnings.push(
+        wf.noStepRuns
+          ? t('scans.review.noStepRuns', undefined, { why })
+          : t('scans.review.stepsSkipped', undefined, { count: wf.toolSkips, why })
+      )
     }
     const windows = wf?.targets?.windows
     if ((windows?.never_count ?? 0) > 0) {

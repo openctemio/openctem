@@ -394,7 +394,7 @@ export function SensorsSection({
   )
 
   // Zones, for grouping and the coverage metric.
-  const { data: zonesData } = useScanZones(canReadZones)
+  const { data: zonesData, error: zonesError } = useScanZones(canReadZones)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
 
   // Mutations. Each takes the target sensor's id when triggered: the row
@@ -1147,11 +1147,15 @@ export function SensorsSection({
         >
           <TabsList>
             <TabsTrigger value="sensors">
-              {t('sensors.list.tab.sensors')} <TabsCount value={isLoading ? null : roleCount} />
+              {t('sensors.list.tab.sensors')} <TabsCount value={roleCount} pending={isLoading} />
             </TabsTrigger>
             {canReadZones && (
               <TabsTrigger value="zones">
-                {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
+                {t('sensors.list.tab.zones')}{' '}
+                <TabsCount
+                  value={zonesData ? zones.length : null}
+                  pending={!zonesData && !zonesError}
+                />
               </TabsTrigger>
             )}
             {canReadSensors && (

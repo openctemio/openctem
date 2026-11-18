@@ -19,6 +19,7 @@ import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/acce
 import { useState, useEffect } from 'react'
 import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { BreakText } from '@/features/shared/components/break-text'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -152,8 +153,8 @@ export function MembersTab({
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-sm font-medium break-words">{name}</p>
-                    <p className="text-xs break-all text-muted-foreground">
-                      {email}
+                    <p className="text-xs break-words text-muted-foreground">
+                      <BreakText>{email}</BreakText>
                       {(member.added_by_name || member.added_by) && (
                         <span className="ms-2 text-xs text-muted-foreground">
                           {t('org.teamMembers.addedBy', 'Added by {name}', {

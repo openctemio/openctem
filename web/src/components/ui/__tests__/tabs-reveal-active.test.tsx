@@ -76,3 +76,62 @@ describe('useTabStripScroll reveals the active tab', () => {
     expect(onScrollBy).not.toHaveBeenCalled()
   })
 })
+
+describe('useTabStripScroll after the strip was mounted hidden', () => {
+  it('reveals the active tab once the strip gets its width (SettleGroup releases it)', () => {
+    let fire: () => void = () => {}
+    class FakeResizeObserver {
+      constructor(cb: () => void) {
+        fire = cb
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+    const onScrollBy = vi.fn()
+    let el: HTMLDivElement | null = null
+    let shown = false
+    function HiddenStrip() {
+      const ref = React.useRef<HTMLDivElement | null>(null)
+      const setRef = (node: HTMLDivElement | null) => {
+        if (node && !ref.current) {
+          el = node
+          Object.defineProperty(node, 'scrollWidth', {
+            get: () => (shown ? 600 : 0),
+            configurable: true,
+          })
+          Object.defineProperty(node, 'clientWidth', {
+            get: () => (shown ? 358 : 0),
+            configurable: true,
+          })
+          Object.defineProperty(node, 'scrollLeft', { value: 0, configurable: true })
+          node.getBoundingClientRect = () =>
+            rect(shown ? { left: 0, right: 358 } : { left: 0, right: 0 })
+          node.scrollBy = ((o: ScrollToOptions) => onScrollBy(o.left ?? 0)) as typeof node.scrollBy
+          const tab = node.querySelector<HTMLElement>('[data-state="active"]')
+          if (tab)
+            tab.getBoundingClientRect = () =>
+              rect(shown ? { left: 500, right: 580 } : { left: 0, right: 0 })
+        }
+        ref.current = node
+      }
+      useTabStripScroll(ref)
+      return (
+        <div ref={setRef}>
+          <button data-state="inactive">Overview</button>
+          <button data-state="active">Activity</button>
+        </div>
+      )
+    }
+    render(<HiddenStrip />)
+    expect(el).not.toBeNull()
+    // Hidden: 0 px wide, nothing to scroll yet.
+    expect(onScrollBy).not.toHaveBeenCalled()
+    shown = true
+    fire()
+    expect(onScrollBy).toHaveBeenCalled()
+    expect(onScrollBy.mock.calls[0][0]).toBeGreaterThan(0)
+    vi.unstubAllGlobals()
+  })
+})

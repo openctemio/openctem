@@ -1064,7 +1064,7 @@ export default function CrownJewelsPage() {
                   {viewJewel.owner || t('crownJewels.unassigned', 'Unassigned')}
                 </p>
                 {viewJewel.ownerEmail ? (
-                  <p className="flex items-center gap-1 text-sm break-all text-muted-foreground">
+                  <p className="flex items-center gap-1 text-sm break-words text-muted-foreground">
                     <Mail className="h-3 w-3 shrink-0" />
                     {viewJewel.ownerEmail}
                   </p>
