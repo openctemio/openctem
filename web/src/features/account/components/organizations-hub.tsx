@@ -213,13 +213,20 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
           <EntryHeader
             level={2}
             title={t('auth.welcome.verifyTitle', 'Verify your email address')}
-            description={t(
-              'auth.welcome.verifyDesc',
-              'Verify {email} to see the invitations sent to it.',
-              {
-                email: email ?? '',
-              }
-            )}
+            description={
+              email
+                ? t(
+                    'auth.welcome.verifyDesc',
+                    'Verify {email} to see the invitations sent to it.',
+                    {
+                      email,
+                    }
+                  )
+                : t(
+                    'auth.welcome.verifyDescNoEmail',
+                    'Verify your email address to see the invitations sent to it.'
+                  )
+            }
           />
           <ResendVerification email={email} />
         </EntryCard>
@@ -237,9 +244,10 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
                 </Badge>
               </>
             }
-            description={t('auth.welcome.invitationsDesc', 'Sent to {email}', {
-              email: email ?? '',
-            })}
+            // A label without its value reads as broken: no address, no line.
+            description={
+              email ? t('auth.welcome.invitationsDesc', 'Sent to {email}', { email }) : undefined
+            }
           />
           <div className="divide-y">
             {view.invitations.map((inv) => (
