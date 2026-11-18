@@ -75,6 +75,7 @@ import {
 } from './detail/finding-code-location'
 import { FindingIntelSection } from './detail/finding-intel-section'
 import { FindingRetestSection } from './detail/finding-retest'
+import { showsProofOfFix } from '../lib/closure'
 import { VerificationPanel } from './detail/verification-panel'
 import { FindingRetestCheckSection } from './detail/finding-retest-check'
 import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
@@ -425,10 +426,14 @@ export function FindingDetailDrawer({
               <FindingIntelSection finding={detail} />
               <FindingProvenanceSection finding={detail} />
               <FindingIdentitySection findingId={detail.id} />
-              <VerificationPanel findingId={detail.id} />
-              <FindingRetestSection finding={{ ...detail, status: triage.status }} />
-              <FindingRetestCheckSection finding={detail} />
-              <FindingTenableRescanSection finding={detail} />
+              {showsProofOfFix(triage.status, detail.closureReason) && (
+                <>
+                  <VerificationPanel findingId={detail.id} />
+                  <FindingRetestSection finding={{ ...detail, status: triage.status }} />
+                  <FindingRetestCheckSection finding={detail} />
+                  <FindingTenableRescanSection finding={detail} />
+                </>
+              )}
               <FindingIssueGroupSection findingId={detail.id} />
 
               {descriptionText && (

@@ -1,18 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import Link from '@/components/link'
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
@@ -76,14 +69,10 @@ export function ConfirmView({ id }: { id: string | null }) {
     )
   if (item === undefined && !error) {
     return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-2/3" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-20 w-full" />
-        </CardContent>
-      </Card>
+      <EntryCard aria-busy="true">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-20 w-full" />
+      </EntryCard>
     )
   }
   if (!item) {
@@ -127,82 +116,76 @@ export function ConfirmView({ id }: { id: string | null }) {
   const open = item.status === 'pending' && !item.expired
 
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <CardTitle className="text-xl break-words">
-          {t('mcp.confirm.title', '{client} wants to make a change', { client: item.client_name })}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'mcp.confirm.description',
-            'Check exactly what it will do. It acts as you, in {org}.',
-            {
-              org: orgName,
-            }
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <pre className="bg-muted max-h-96 overflow-auto rounded-md p-4 text-sm whitespace-pre-wrap break-words">
-          {item.summary}
-        </pre>
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            {t(
-              'mcp.confirm.warning',
-              'Only confirm if you asked the application to do this. An application can be tricked by content it reads.'
-            )}
-          </AlertDescription>
-        </Alert>
-        {!open && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {item.expired
-                ? t('mcp.confirm.expired', 'This request expired.')
-                : t('mcp.confirm.alreadyDecided', 'This request was already answered.')}
-            </AlertDescription>
-          </Alert>
+    <EntryCard>
+      <EntryHeader
+        className="break-words"
+        title={t('mcp.confirm.title', '{client} wants to make a change', {
+          client: item.client_name,
+        })}
+        description={t(
+          'mcp.confirm.description',
+          'Check exactly what it will do. It acts as you, in {org}.',
+          {
+            org: orgName,
+          }
         )}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{errorText}</AlertDescription>
-          </Alert>
+      />
+      <pre className="bg-surface-sunken text-dense max-h-96 overflow-auto rounded-md p-3 break-words whitespace-pre-wrap">
+        {item.summary}
+      </pre>
+      <EntryBanner tone="warn" role="alert">
+        {t(
+          'mcp.confirm.warning',
+          'Only confirm if you asked the application to do this. An application can be tricked by content it reads.'
         )}
-      </CardContent>
-      <CardFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button
-          variant="outline"
-          disabled={busy || !open}
-          onClick={() => void decide(false)}
-          className="w-full sm:w-auto"
-        >
+      </EntryBanner>
+      {!open && (
+        <EntryBanner tone="danger" role="alert">
+          {item.expired
+            ? t('mcp.confirm.expired', 'This request expired.')
+            : t('mcp.confirm.alreadyDecided', 'This request was already answered.')}
+        </EntryBanner>
+      )}
+      {error && (
+        <EntryBanner tone="danger" role="alert">
+          {errorText}
+        </EntryBanner>
+      )}
+      <EntryActions layout="row">
+        <Button variant="outline" disabled={busy || !open} onClick={() => void decide(false)}>
           {t('mcp.confirm.refuse', 'Refuse')}
         </Button>
-        <Button
-          disabled={busy || !open}
-          onClick={() => void decide(true)}
-          className="w-full sm:w-auto"
-        >
-          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+        <Button variant="signal" disabled={busy || !open} onClick={() => void decide(true)}>
+          {busy && <Loader2 className="size-4 animate-spin" aria-hidden />}
           {t('mcp.confirm.confirm', 'Confirm')}
         </Button>
-      </CardFooter>
-    </Card>
+      </EntryActions>
+    </EntryCard>
   )
 }
 
 function Message({ title, text, icon }: { title: string; text: string; icon?: 'ok' | 'no' }) {
+  const { t } = useTranslation()
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          {icon === 'ok' && <CheckCircle2 className="text-success h-5 w-5" aria-hidden />}
-          {icon === 'no' && <XCircle className="text-muted-foreground h-5 w-5" aria-hidden />}
-          {title}
-        </CardTitle>
-        <CardDescription>{text}</CardDescription>
-      </CardHeader>
-    </Card>
+    <EntryCard>
+      <EntryHeader
+        title={
+          <span className="flex items-center gap-2">
+            {icon === 'ok' && <CheckCircle2 className="text-success size-5 shrink-0" aria-hidden />}
+            {icon === 'no' && (
+              <XCircle className="text-muted-foreground size-5 shrink-0" aria-hidden />
+            )}
+            {title}
+          </span>
+        }
+        description={text}
+      />
+      {/* Every end state has a way on: nothing is left to do on this page. */}
+      <EntryActions>
+        <Button asChild variant="outline">
+          <Link href="/">{t('common.access.toDashboard', 'Go to the dashboard')}</Link>
+        </Button>
+      </EntryActions>
+    </EntryCard>
   )
 }

@@ -1,4 +1,4 @@
-import { Card, CardContent } from '@/components/ui/card'
+import { EntryCard } from '@/components/entry'
 import { TwoFactorSetup } from '@/features/auth/components/two-factor-setup'
 
 interface TwoFactorSetupPageProps {
@@ -13,10 +13,8 @@ interface TwoFactorSetupPageProps {
 export default async function TwoFactorSetupPage({ searchParams }: TwoFactorSetupPageProps) {
   const { next } = await searchParams
   return (
-    <Card className="gap-4">
-      <CardContent>
-        <TwoFactorSetup next={next} />
-      </CardContent>
-    </Card>
+    <EntryCard>
+      <TwoFactorSetup next={next} />
+    </EntryCard>
   )
 }

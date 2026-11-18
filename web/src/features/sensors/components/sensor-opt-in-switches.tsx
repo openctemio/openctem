@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { Label } from '@/components/ui/label'
+import { SettingsRow } from '@/features/shared'
 import { Switch } from '@/components/ui/switch'
 
 import { SensorOptInBanner } from './sensor-opt-in-banner'
@@ -43,16 +43,19 @@ export function SensorOptInSwitches({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-4" data-testid="sensor-opt-in-switches">
+    <div data-testid="sensor-opt-in-switches">
       <SensorOptInBanner showSettingsLink={false} />
       {ITEMS.map((item) => (
-        <div key={item.key} className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label htmlFor={item.id}>{t(item.label)}</Label>
-            <p className="text-sm text-muted-foreground" id={`${item.id}-desc`}>
+        <SettingsRow
+          key={item.key}
+          label={<label htmlFor={item.id}>{t(item.label)}</label>}
+          hintId={`${item.id}-desc`}
+          hint={
+            <>
               {t(item.help)} {t('sensors.optIns.audited')}
-            </p>
-          </div>
+            </>
+          }
+        >
           <Switch
             id={item.id}
             aria-describedby={`${item.id}-desc`}
@@ -60,7 +63,7 @@ export function SensorOptInSwitches({
             onCheckedChange={(checked) => onChange({ ...value, [item.key]: checked })}
             disabled={disabled}
           />
-        </div>
+        </SettingsRow>
       ))}
     </div>
   )

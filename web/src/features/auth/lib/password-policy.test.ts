@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { translate } from '@/lib/i18n'
+import viAuth from '@/lib/i18n/dictionaries/vi/auth.json'
+
 import {
   describePasswordPolicy,
   formatLinkLifetime,
@@ -69,5 +72,20 @@ describe('formatLinkLifetime', () => {
     expect(formatLinkLifetime(1440)).toBe('1 day')
     expect(formatLinkLifetime(2880)).toBe('2 days')
     expect(formatLinkLifetime(180)).toBe('3 hours')
+  })
+})
+
+describe('the texts go through the translator', () => {
+  // The Vietnamese catalog, through the same interpolation as the app (plural blocks included).
+  const vi = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+    translate(viAuth, key, fallback, vars)
+
+  it('words the rules, the issue and the link lifetime in the reader’s language', () => {
+    expect(describePasswordPolicy(policy, vi)).toBe(
+      'Ít nhất 12 ký tự, gồm một chữ hoa, một chữ thường và một chữ số.'
+    )
+    expect(passwordPolicyIssue('short', policy, vi)).toBe('Mật khẩu phải có ít nhất 12 ký tự')
+    expect(formatLinkLifetime(30, vi)).toBe('30 phút')
+    expect(formatLinkLifetime(1440, vi)).toBe('1 ngày')
   })
 })

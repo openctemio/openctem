@@ -4,8 +4,8 @@ import type { Page } from '@playwright/test'
 /**
  * How we found this (api docs/architecture/exploration.md, the story chain):
  * a subdomain under a domain shows the chain root first, the domain as a
- * link, at desktop and phone width without sideways scroll. Each run uses
- * its own names under example.com.
+ * link, on the asset page's "How we found this" tab, at desktop and phone
+ * width without sideways scroll. Each run uses its own names under example.com.
  */
 
 type ApiResult = { status: number; body: string }
@@ -55,6 +55,10 @@ test('the asset page shows how a subdomain was found', { tag: ['@assets'] }, asy
     ]) {
       await page.setViewportSize(viewport)
       await page.goto(`/assets/${childId}`)
+      // The story is on the page's "How we found this" tab (the page opens on Overview).
+      const tab = page.getByRole('tab', { name: 'How we found this' })
+      await tab.click({ timeout: 30_000 })
+      await expect(tab).toHaveAttribute('aria-selected', 'true')
       const section = page.getByRole('region', { name: 'How we found this' })
       await expect(section).toBeVisible({ timeout: 30_000 })
       const chain = section.getByRole('list', { name: 'How we found this' })
