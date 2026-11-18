@@ -380,7 +380,7 @@ func recordSightings(rows *[]HistoryRow, merged []Sighting, at time.Time, known 
 		}
 		// A superseded version seen again after it was superseded is a
 		// candidate again (a rollback); an older reading only adds history.
-		if r.Superseded && at.After(r.SupersededAt) && !(known && s.Normalized == "") {
+		if r.Superseded && at.After(r.SupersededAt) && (!known || s.Normalized != "") {
 			r.Superseded, r.SupersededAt = false, time.Time{}
 			r.State, r.Streak, r.StreakSince = VersionCandidate, 0, time.Time{}
 		}
