@@ -16,7 +16,7 @@ reason, critical audit, every administrator told):
 | Floor | Covers |
 |---|---|
 | `none` | nobody: organizations decide |
-| `admins` | owners, administrators, and members holding a privileged role (`permission.IsPrivilegedRole`, by direct or team grant) |
+| `admins` | owners, administrators, and members whose grants are above the built-in member role (`permission.IsAboveMember`, by direct or team grant) |
 | `everyone` | every member |
 
 Defaults while nothing is stored (`AUTH_MFA_FLOOR` overrides the code default `admins`):
@@ -38,6 +38,19 @@ refresh, tenant switch), in the account status and in credential creation:
 
 1. The organization requires it for everyone, or for administrators and the member is one by effective privilege
    (the base-role-only check missed a member holding a privileged role): required, no grace.
+
+"Administrator" (the organization's "2FA for administrators" and the `admins` floor alike) is effective
+privilege above the built-in member role, `permission.IsAboveMember` over every grant (direct roles and team
+bindings):
+
+- the owner or admin role;
+- full data access, or a permission that counts as such (organization dashboards);
+- a privileged permission (people, teams, roles, API keys, the secret store, integrations, settings) that the
+  built-in member role does not carry.
+
+The member role's own permissions never count: it carries a privileged permission of its own (reading the
+secret store), and counting it made "2FA for administrators" gate every plain member. A custom role with only
+member-level permissions is not an administrator either.
 2. Otherwise the floor covers the member: required from their due date.
 
 Due date = the later of `effective_from` plus 14 days (existing members) and the account's creation plus 7 days

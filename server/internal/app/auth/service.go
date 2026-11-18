@@ -990,6 +990,9 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 type ExchangeTokenInput struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 	TenantID     string `json:"tenant_id" validate:"required"`
+	// UserAgent identifies the client for the rotation grace (as for
+	// RefreshToken); empty means no grace.
+	UserAgent string `json:"-"`
 }
 
 // ExchangeTokenResult represents the result of token exchange.
@@ -1224,10 +1227,23 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 // session, active account that may use the main site) and returns the stored
 // token, its session and the account. The caller spends the token.
 func (s *AuthService) refreshForMint(ctx context.Context, refreshToken string, flow string) (*sessiondom.RefreshToken, *sessiondom.Session, *userdom.User, error) {
+	stored, _, sess, u, err := s.refreshForMintWithGrace(ctx, refreshToken, flow, "", false)
+	return stored, sess, u, err
+}
+
+// refreshForMintWithGrace is refreshForMint with the rotation grace of
+// RefreshToken: when allowGrace is set, a token already rotated is accepted
+// only as the immediately previous token of its session, re-presented by the
+// same client (fingerprint) within RefreshReuseGrace while its successor is
+// still unused; the successor is returned and the caller hands it out again
+// instead of rotating. Every other reuse ends the session.
+func (s *AuthService) refreshForMintWithGrace(ctx context.Context, refreshToken, flow, fingerprint string, allowGrace bool) (
+	*sessiondom.RefreshToken, *sessiondom.RefreshToken, *sessiondom.Session, *userdom.User, error,
+) {
 	// Validate the refresh token JWT
 	claims, err := s.tokenGenerator.ValidateRefreshToken(refreshToken)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid refresh token: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
 
 	// Get the refresh token hash and verify it exists in database
@@ -1235,56 +1251,61 @@ func (s *AuthService) refreshForMint(ctx context.Context, refreshToken string, f
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
-			return nil, nil, nil, sessiondom.ErrRefreshTokenNotFound
+			return nil, nil, nil, nil, sessiondom.ErrRefreshTokenNotFound
 		}
-		return nil, nil, nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
 	// Replay-attack detection: a token that was already used (rotated) being
 	// presented again means it was stolen — revoke the entire family so
 	// neither the attacker nor the legitimate chain can continue. Mirrors
 	// RefreshToken; without it, theft replayed via this endpoint went
-	// undetected.
+	// undetected. With allowGrace, the one exception is the rotation grace
+	// (rotationGraceSuccessor): two tabs of one browser, or a tab that missed a
+	// rotation by seconds.
+	var graceSuccessor *sessiondom.RefreshToken
 	if storedToken.IsUsed() {
-		s.onRefreshTokenReuse(ctx, storedToken)
-		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
-	}
-
-	// Check if token is valid (not used, not revoked, not expired)
-	if !storedToken.IsValid() {
-		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
+		if allowGrace {
+			graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, fingerprint)
+		}
+		if graceSuccessor == nil {
+			s.onRefreshTokenReuse(ctx, storedToken)
+			return nil, nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
+		}
+	} else if !storedToken.IsValid() {
+		return nil, nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session and verify it's still active
 	sess, err := s.sessionRepo.GetByID(ctx, storedToken.SessionID())
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get session: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	if !sess.IsActive() {
-		return nil, nil, nil, sessiondom.ErrSessionExpired
+		return nil, nil, nil, nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
 	userID, err := shared.IDFromString(claims.UserID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid user id in token: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("invalid user id in token: %w", err)
 	}
 
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, flow) {
-		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
+		return nil, nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	// A blocked or suspended account mints nothing, whatever way its session
 	// was opened (a federated sign-in does not pass the password checks).
 	if !u.IsActive() {
-		return nil, nil, nil, ErrAccountSuspended
+		return nil, nil, nil, nil, ErrAccountSuspended
 	}
 
-	return storedToken, sess, u, nil
+	return storedToken, graceSuccessor, sess, u, nil
 }
 
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
@@ -1294,7 +1315,8 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantRequired
 	}
 
-	storedToken, sess, u, err := s.refreshForMint(ctx, input.RefreshToken, "token_exchange")
+	fingerprint := refreshClientFingerprint(input.UserAgent)
+	storedToken, graceSuccessor, sess, u, err := s.refreshForMintWithGrace(ctx, input.RefreshToken, "token_exchange", fingerprint, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1349,8 +1371,13 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Rotate before minting: the presented token is spent first, and a
 	// failure to record that refuses the exchange. Marking it after minting
 	// (and only logging a failure) could leave the old token usable next to
-	// the new one.
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
+	// the new one. Every refusal above happens first, so a person held back
+	// by a policy keeps a usable session to meet it. A token re-presented
+	// within the rotation grace (two tabs switching organizations at once, a
+	// tab that missed the rotation) gets the successor already issued, so the
+	// session stays one chain.
+	newRefreshTokenStr, graceSuccessor, err := s.rotateOrReuseSuccessor(ctx, storedToken, graceSuccessor, u, sess, fingerprint)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1387,9 +1414,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		s.logger.Error("failed to update session activity", "error", err)
 	}
 
-	newRefreshTokenStr, err := s.issueSuccessorRefreshToken(ctx, u.ID().String(), u.Email(), u.Name(), sess.ID().String(), storedToken)
-	if err != nil {
-		return nil, err
+	if graceSuccessor != nil {
+		s.logger.Info("refresh token re-presented within the rotation grace; successor handed out again",
+			"session_id", sess.ID().String(), "flow", "token_exchange")
 	}
 
 	s.logger.Debug("token exchanged",
@@ -1586,6 +1613,34 @@ func (s *AuthService) rederiveSuccessor(rotated, successor *sessiondom.RefreshTo
 		return "", false
 	}
 	return token, true
+}
+
+// rotateOrReuseSuccessor rotates storedToken (rotateRefreshToken), or, when
+// the token was already rotated and the grace allows it (graceSuccessor set
+// by the caller, or found when this request lost the rotation race), hands
+// out the successor already issued: the same token string, re-derived from
+// its row and checked against its stored hash. A successor that does not
+// re-derive ends the session as any reuse does. It returns the token string
+// and the successor it re-used (nil after a normal rotation).
+func (s *AuthService) rotateOrReuseSuccessor(
+	ctx context.Context, storedToken, graceSuccessor *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, fingerprint string,
+) (string, *sessiondom.RefreshToken, error) {
+	if graceSuccessor == nil {
+		token, _, lost, err := s.rotateRefreshToken(ctx, storedToken, u, sess, fingerprint)
+		if err != nil {
+			return "", nil, err
+		}
+		if lost == nil {
+			return token, nil, nil
+		}
+		graceSuccessor = lost
+	}
+	token, ok := s.rederiveSuccessor(storedToken, graceSuccessor, u, sess)
+	if !ok {
+		s.onRefreshTokenReuse(ctx, storedToken)
+		return "", nil, sessiondom.ErrRefreshTokenUsed
+	}
+	return token, graceSuccessor, nil
 }
 
 // onRefreshTokenReuse handles a refresh token presented after it was already
@@ -2547,41 +2602,13 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		"tenant_id", t.ID().String(),
 	)
 
-	// Mark old refresh token as used (token rotation)
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
-		return nil, err
-	}
-
-	// Generate new refresh token
-	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
-		u.ID().String(),
-		u.Email(),
-		u.Name(),
-		sess.ID().String(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
-	}
-
-	// Save new refresh token
-	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
-		u.ID(),
-		sess.ID(),
-		newRefreshTokenStr,
-		storedToken.Family(),
-		s.config.RefreshTokenDuration,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create refresh token: %w", err)
-	}
-	if err := s.refreshTokenRepo.Create(ctx, newRefreshToken); err != nil {
-		return nil, fmt.Errorf("failed to save refresh token: %w", err)
-	}
-
 	// Determine if user is admin (only owner/admin bypass permissions)
 	isAdminRole := membership.Role() == tenantdom.RoleOwner || membership.Role() == tenantdom.RoleAdmin
 
-	// Generate tenant-scoped access token
+	// Mint the access token before the refresh token is spent: a refusal
+	// here (for example the organization was suspended a moment ago) must
+	// leave the person a usable session, not a spent token whose next use
+	// reads as theft and ends the session.
 	accessToken, err := s.generateTenantScopedAccessToken(
 		ctx,
 		u.ID().String(),
@@ -2598,6 +2625,15 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	// Mark old refresh token as used (token rotation)
+	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
+		return nil, err
+	}
+	newRefreshTokenStr, err := s.issueSuccessorRefreshToken(ctx, u.ID().String(), u.Email(), u.Name(), sess.ID().String(), storedToken)
+	if err != nil {
+		return nil, err
 	}
 
 	return &AcceptInvitationWithRefreshTokenResult{

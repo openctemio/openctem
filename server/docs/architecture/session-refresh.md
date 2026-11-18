@@ -36,11 +36,15 @@ sequenceDiagram
     end
 ```
 
-Only `/auth/refresh` has the grace. `/auth/token` (organization switch),
+`/auth/refresh` and `/auth/token` (organization switch) have the grace, with
+the same rules: two tabs of one browser opening two organizations at the same
+moment, or a tab that missed a rotation by seconds, get the successor the first
+request issued, each with an access token for the organization it asked for.
+`/auth/token` checks the organization's rules first and rotates through
+`rotateRefreshToken` (a derived successor), so a grace request can rebuild it.
 `/auth/account-token`, `/auth/create-first-team`,
 `/invitations/accept-with-refresh` and `/auth/mfa/enroll/session` spend the
-token with `spendRefreshToken` (`MarkUsedIfUnused`), so two tabs switching
-organization at the same moment end the session as a reuse.
+token with `spendRefreshToken` (`MarkUsedIfUnused`) and have no grace.
 
 ## CSRF
 
