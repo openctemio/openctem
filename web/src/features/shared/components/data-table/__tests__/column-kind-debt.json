@@ -53,8 +53,6 @@
   "src/features/ci-runners/components/ci-pipeline-sheet.tsx": 3,
   "src/features/ci-runners/components/ci-pipelines-panel.tsx": 4,
   "src/features/ci-runners/components/ci-runs-view.tsx": 6,
-  "src/features/closure-review/components/auto-closed-list.tsx": 3,
-  "src/features/closure-review/components/ready-to-close-list.tsx": 4,
   "src/features/content-catalog/components/catalog-tab.tsx": 5,
   "src/features/content-catalog/components/installed-tab.tsx": 5,
   "src/features/content-catalog/components/requests-tab.tsx": 5,
