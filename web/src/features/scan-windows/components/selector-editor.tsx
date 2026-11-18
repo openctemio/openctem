@@ -88,7 +88,7 @@ export function SelectorEditor({ value, onChange, sources, disabled }: SelectorE
           </Label>
           <MultiSelect
             id="selector-asset_types"
-            options={STORED_ASSET_TYPES.map((v) => ({ value: v, label: getAssetTypeLabel(v) }))}
+            options={STORED_ASSET_TYPES.map((v) => ({ value: v, label: getAssetTypeLabel(v, t) }))}
             value={value.asset_types ?? []}
             onChange={(v) => set('asset_types', v)}
             {...common}
