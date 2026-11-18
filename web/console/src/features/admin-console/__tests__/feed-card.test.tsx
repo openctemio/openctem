@@ -23,6 +23,21 @@ function feed(patch: Partial<ThreatIntelFeed>): ThreatIntelFeed {
 }
 
 describe('feedProblem', () => {
+  it('names an old copy carried by the release (source_stale)', () => {
+    const p = feedProblem(
+      feed({
+        state: 'failing',
+        error_code: 'source_stale',
+        error_params: { fetched_at: '2026-11-18T06:00:00Z' },
+      }),
+      t
+    )
+    expect(p?.message).toBe(
+      'The signed release carries an old copy: the collector last read this source at 2026-11-18T06:00:00Z.'
+    )
+    expect(p?.action).toMatch(/collector cannot read the source/)
+  })
+
   it('maps each code to a message and an action, with its parameters', () => {
     const p = feedProblem(
       feed({
