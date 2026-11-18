@@ -31,6 +31,34 @@ type TrustConfigInput struct {
 	// ManageScope: add the trusted repositories to scope (nil: on for a new
 	// trust, unchanged for an existing one).
 	ManageScope *bool
+	// KeySource: fetch (default) or pasted (nil: fetch for a new trust,
+	// unchanged for an existing one).
+	KeySource *string
+	// SigningKeys: the provider's JWKS document, pasted (nil: none for a new
+	// trust, unchanged for an existing one; empty clears it).
+	SigningKeys *string
+}
+
+// applySigningKeys sets the key source and the pasted keys from the input
+// and stamps when the keys changed.
+func applySigningKeys(c *cirun.TrustConfig, in TrustConfigInput, now time.Time) {
+	if in.KeySource != nil {
+		c.KeySource = cirun.KeySource(strings.TrimSpace(*in.KeySource))
+	}
+	if in.SigningKeys == nil {
+		return
+	}
+	keys := strings.TrimSpace(*in.SigningKeys)
+	if keys == c.SigningKeys {
+		return
+	}
+	c.SigningKeys = keys
+	if keys == "" {
+		c.SigningKeysUpdatedAt = nil
+		return
+	}
+	at := now
+	c.SigningKeysUpdatedAt = &at
 }
 
 // ListTrustConfigs returns the tenant's trust configurations.
@@ -69,6 +97,7 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		c.CreatedBy = &uid
 	}
+	applySigningKeys(c, in, now)
 	c.Normalize()
 	if err := c.Validate(); err != nil {
 		return nil, err
@@ -103,6 +132,7 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if in.ManageScope != nil {
 		next.ManageScope = *in.ManageScope
 	}
+	applySigningKeys(&next, in, s.now().UTC())
 	next.Normalize()
 	if err := next.Validate(); err != nil {
 		return nil, err
@@ -197,8 +227,10 @@ func (s *Service) revokePipelines(ctx context.Context, tenantID shared.ID, c *ci
 }
 
 func trustSnapshot(c *cirun.TrustConfig) map[string]any {
+	// The pasted keys are recorded by their kids, never the whole document.
 	return map[string]any{"name": c.Name, "provider": string(c.Provider), "issuer": c.Issuer, "audience": c.Audience,
-		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules, "manage_scope": c.ManageScope}
+		"default_branch": c.DefaultBranch, "enabled": c.Enabled, "rules": c.Rules, "manage_scope": c.ManageScope,
+		"key_source": string(c.KeySource), "signing_key_ids": c.SigningKeyIDs()}
 }
 
 // -------------------------------------------------------------------- runs --
