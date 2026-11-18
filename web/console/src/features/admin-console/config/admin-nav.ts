@@ -326,7 +326,16 @@ const coreAdminNav: AdminNavSection[] = [
         i18nKey: 'admin.nav.privateNetworks',
         url: '/system/private-networks',
         icon: Network,
-        keywords: ['private', 'network', 'cidr', 'egress', 'gitlab', 'internal', 'ssrf', 'rfc 1918'],
+        keywords: [
+          'private',
+          'network',
+          'cidr',
+          'egress',
+          'gitlab',
+          'internal',
+          'ssrf',
+          'rfc 1918',
+        ],
       },
       {
         title: 'Legal',
