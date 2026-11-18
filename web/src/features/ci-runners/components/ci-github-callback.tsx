@@ -100,7 +100,7 @@ export function CIGitHubCallback() {
         </EntryBanner>
         <div>
           <Button asChild variant="outline">
-            <Link href="/ci-cd?tab=setup&section=feedback">
+            <Link href="/ci-cd?tab=feedback">
               {t('scans.ci.callback.back', 'Back to CI/CD settings')}
             </Link>
           </Button>

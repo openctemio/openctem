@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CICDIntegration, cicdTab } from '../components/ci-cd-integration'
+import {
+  CICDIntegration,
+  LEGACY_SETUP_SECTIONS,
+  canonicalCICDSearch,
+  cicdTab,
+} from '../components/ci-cd-integration'
 import { CIPipelinesHint, pipelineHintCounts } from '../components/ci-pipelines-hint'
 import { DOCS } from '@/lib/docs-links'
 import { Permission } from '@/lib/permissions'
@@ -24,10 +29,14 @@ vi.mock('@/lib/permissions', async (importOriginal) => ({
 vi.mock('../components/ci-pipelines-panel', () => ({
   CIPipelinesPanel: () => <div data-testid="pipelines-panel" />,
 }))
-vi.mock('../components/ci-trust-settings', () => ({
-  CITrustSettings: ({ embedded }: { embedded?: boolean }) => (
-    <div data-testid="trust-settings" data-embedded={String(!!embedded)} />
-  ),
+vi.mock('../components/ci-connections', () => ({
+  CIConnections: () => <div data-testid="connections" />,
+}))
+vi.mock('../components/ci-gate-settings', () => ({
+  CIGateSettings: () => <div data-testid="gate" />,
+}))
+vi.mock('../components/ci-pr-feedback', () => ({
+  CIPRFeedback: () => <div data-testid="feedback" />,
 }))
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -47,37 +56,91 @@ describe('CI/CD integration page', () => {
     render(<CICDIntegration />)
     expect(screen.getByRole('heading', { name: 'CI/CD integration' })).toBeInTheDocument()
     expect(screen.getByTestId('pipelines-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('trust-settings')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('connections')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /ci integration guide/i })).toHaveAttribute(
       'href',
       DOCS.ci.guide
     )
   })
 
-  it('offers Connect a pipeline in the header to a CI writer only, on every tab', async () => {
+  it('offers Connect a CI provider in the header to a CI writer only, on every tab', async () => {
     const { unmount } = render(<CICDIntegration />)
-    expect(screen.queryByRole('button', { name: 'Connect a pipeline' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect a CI provider' })).not.toBeInTheDocument()
     // A reader gets no "ask an administrator" line in the header either.
     expect(screen.queryByText(/ask an administrator/i)).not.toBeInTheDocument()
     unmount()
     perms = [Permission.CIWrite]
     render(<CICDIntegration />)
-    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
-    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect a CI provider' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Connections' }))
+    expect(screen.getByRole('button', { name: 'Connect a CI provider' })).toBeInTheDocument()
+    // One way in: the header's button, no second filled action on the tab.
+    expect(screen.getAllByRole('button', { name: 'Connect a CI provider' })).toHaveLength(1)
   })
 
-  it('shows trust, gate policy and break-glass under Settings, without a second header', async () => {
+  it('has one tab per setup job: Connections, Gate and Pull request feedback', async () => {
     render(<CICDIntegration />)
-    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
-    expect(screen.getByTestId('trust-settings')).toHaveAttribute('data-embedded', 'true')
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Pipelines',
+      'Runs',
+      'Coverage',
+      'Connections',
+      'Gate',
+      'Pull request feedback',
+    ])
+    await userEvent.click(screen.getByRole('tab', { name: 'Connections' }))
+    expect(window.location.search).toBe('?tab=connections')
+    expect(screen.getByTestId('connections')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Gate' }))
+    expect(screen.getByTestId('gate')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Pull request feedback' }))
+    expect(screen.getByTestId('feedback')).toBeInTheDocument()
     expect(screen.queryByTestId('pipelines-panel')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
   it('reads the tab from the URL', () => {
-    expect(cicdTab('setup')).toBe('setup')
+    expect(cicdTab('connections')).toBe('connections')
+    expect(cicdTab('gate')).toBe('gate')
+    expect(cicdTab('feedback')).toBe('feedback')
+    expect(cicdTab('', 'runs')).toBe('runs')
     expect(cicdTab('')).toBe('pipelines')
     expect(cicdTab('anything')).toBe('pipelines')
+  })
+
+  // Server alerts and e-mails, the GitHub App callback, the scope page and
+  // bookmarks carry the old single Settings tab and its sections.
+  it.each([
+    ['?tab=setup', 'tab=connections'],
+    ['?tab=setup&section=trust', 'tab=connections'],
+    ['?tab=setup&section=refused', 'tab=connections&refused=1'],
+    ['?tab=setup&section=gate', 'tab=gate'],
+    ['?tab=setup&section=feedback', 'tab=feedback'],
+    ['?tab=setup&section=break-glass', 'view=runs&section=break-glass'],
+    ['?tab=setup&section=unknown', 'tab=connections'],
+    ['?org=t-1&tab=setup', 'org=t-1&tab=connections'],
+  ])('rewrites the old link %s to %s', (from, to) => {
+    expect(canonicalCICDSearch(from)).toBe(to)
+    const params = new URLSearchParams(from)
+    const want = new URLSearchParams(to)
+    expect(cicdTab(params.get('tab') ?? '', '', params.get('section') ?? '')).toBe(
+      want.get('tab') ?? 'runs'
+    )
+  })
+
+  it('leaves a current address alone, and covers every old section', () => {
+    expect(canonicalCICDSearch('?tab=gate')).toBeNull()
+    expect(canonicalCICDSearch('?view=runs&run=r1')).toBeNull()
+    expect(Object.keys(LEGACY_SETUP_SECTIONS).sort()).toEqual(
+      ['', 'break-glass', 'feedback', 'gate', 'refused', 'trust'].sort()
+    )
+  })
+
+  it('opens an old Settings link on its new tab and rewrites the address', () => {
+    window.history.replaceState(null, '', '/ci-cd?tab=setup&section=gate')
+    render(<CICDIntegration />)
+    expect(screen.getByTestId('gate')).toBeInTheDocument()
+    expect(window.location.search).toBe('?tab=gate')
   })
 })
 
