@@ -19,6 +19,10 @@ export function useAttackPathLabels() {
             ? t('prioritization.attackPath.role.crownJewel', 'Crown jewel')
             : t('prioritization.attackPath.role.target', 'Target')
           : t('prioritization.attackPath.role.hop', 'Hop')
+    // Raw enum values from the API never show: an unknown one keeps its word, capitalised.
+    const word = (v: string) => (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : v)
+    const exposure = (e: string) => t(`assets.exposure.${e}`, word(e))
+    const criticality = (c: string) => t(`criticality.${c}`, word(c))
     const hiddenTitle = t('prioritization.attackPath.hidden', 'Outside your access')
     const basis = (b: PathBasis | null) =>
       b === 'epss'
@@ -43,6 +47,15 @@ export function useAttackPathLabels() {
       'prioritization.attackPath.canvasHelp',
       'Tab moves into the graph. Arrow keys follow the edges: right to the next step, left to the previous one, up and down within a column. Square brackets switch the selected path. Enter opens the detail of a step. Escape clears the highlight.'
     )
-    return { assetType, role, hiddenTitle, basis, nodeDescription, canvasHelp }
+    return {
+      assetType,
+      exposure,
+      criticality,
+      role,
+      hiddenTitle,
+      basis,
+      nodeDescription,
+      canvasHelp,
+    }
   }, [t])
 }
