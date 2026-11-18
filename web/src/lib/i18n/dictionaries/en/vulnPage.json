@@ -203,7 +203,7 @@
   "vulnPage.list.source.sca": "Dependencies (SCA)",
   "vulnPage.list.source.va": "Vulnerability scan",
   "vulnPage.list.state.all": "All",
-  "vulnPage.list.state.dispositioned": "Accepted or false positive",
+  "vulnPage.list.state.dispositioned": "Dismissed",
   "vulnPage.list.state.fixed": "Fixed",
   "vulnPage.list.state.label": "Findings",
   "vulnPage.list.state.open": "Open",
