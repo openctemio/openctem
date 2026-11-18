@@ -25,6 +25,8 @@ export type ActionMenuAction = ActionBase & {
   destructive?: boolean
   /** Keyboard shortcut hint (desktop with a fine pointer only). */
   shortcut?: string
+  /** The current choice of a set (a language, a theme): shown with a check. */
+  checked?: boolean
 }
 
 export type ActionMenuSubmenu = ActionBase & {

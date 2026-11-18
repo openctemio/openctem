@@ -9,8 +9,9 @@ import { ICON_CONTRAST_FLOOR, iconContrast } from '../helpers/icon-contrast'
  *     the ink colour, contrast >= 4.5:1 in light and dark, 8 apart;
  *   - every control answers touches in a 44 x 44 square around it, and no two
  *     of those squares overlap;
- *   - Create, Full screen and Theme are not in the bar; Theme is in the account
- *     menu (a label and Light / Dark / System rows of 44, above Sign out);
+ *   - Create, Full screen and Theme are not in the bar; the account menu is a
+ *     bottom sheet whose Language and Theme are steps inside it (rows of 48,
+ *     every row inside the screen, Sign out last);
  *   - the drawer: 288 wide, "Close sidebar" 36 with a 44 touch square, org
  *     trigger and nav rows 44 with 16/24 text and 20 px icons;
  *   - nothing scrolls sideways.
@@ -143,40 +144,53 @@ for (const width of [360, 390, 414, 767]) {
 }
 
 test(
-  'phone account menu carries Theme above Sign out',
+  'phone account menu is a bottom sheet with Language and Theme steps',
   { tag: ['@shell', '@phone'] },
   async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/findings')
     await page.getByRole('button', { name: /^Open user menu/ }).click()
-    const menu = page.getByRole('menu')
-    await expect(menu).toBeVisible()
-    // The open animation scales the menu: measure once it has settled.
-    await expect
-      .poll(() => menu.evaluate((el) => Math.round(el.getBoundingClientRect().left)))
-      .toBe(8)
-    const m = await menu.evaluate((el) => {
-      const b = el.getBoundingClientRect()
-      const items = [...el.querySelectorAll<HTMLElement>('[role=menuitem]')]
-      return {
-        left: Math.round(b.left),
-        right: Math.round(window.innerWidth - b.right),
-        labels: items.map((i) => i.textContent?.trim() ?? ''),
-        heights: [...new Set(items.map((i) => Math.round(i.getBoundingClientRect().height)))],
-        theme: [...el.querySelectorAll('[data-slot=dropdown-menu-label]')].some(
-          (l) => l.textContent?.trim() === 'Theme'
-        ),
-      }
-    })
-    expect(m.left, 'sheet 8 from the left edge').toBe(8)
-    expect(m.right, 'sheet 8 from the right edge').toBe(8)
-    expect(m.theme).toBe(true)
-    expect(m.heights).toEqual([44])
-    const signOut = m.labels.indexOf('Sign out')
-    expect(m.labels.slice(signOut - 3, signOut)).toEqual(['Light', 'Dark', 'System'])
-    await menu.getByRole('menuitem', { name: 'Dark' }).click()
+    const sheet = page.locator('[data-slot=action-sheet]')
+    await expect(sheet).toBeVisible()
+    const rows = sheet.locator('[data-slot=action-sheet-row]')
+    // Every row of every step lies inside the screen, 48 tall at least.
+    const inside = () =>
+      sheet.evaluate((el) => {
+        const sheetBox = el.getBoundingClientRect()
+        const items = [...el.querySelectorAll<HTMLElement>('[data-slot=action-sheet-row]')]
+        return {
+          bottom: Math.round(window.innerHeight - sheetBox.bottom),
+          labels: items.map((i) => i.textContent?.trim() ?? ''),
+          past: items.filter((i) => {
+            const b = i.getBoundingClientRect()
+            return b.left < 0 || b.right > window.innerWidth
+          }).length,
+          short: items.filter((i) => i.getBoundingClientRect().height < 48).length,
+        }
+      })
+    await expect.poll(async () => (await inside()).bottom).toBe(0)
+    const top = await inside()
+    expect(top.past).toBe(0)
+    expect(top.short).toBe(0)
+    expect(top.labels.at(-1)).toBe('Sign out')
+    expect(top.labels).toEqual(expect.arrayContaining(['Language', 'Theme', 'All settings']))
+
+    // Language is a step of the sheet, not a side submenu.
+    await rows.filter({ hasText: 'Language' }).click()
+    await expect(rows.filter({ hasText: 'Tiếng Việt' })).toBeVisible()
+    const lang = await inside()
+    expect(lang.labels).toEqual(['Back', 'English', 'Tiếng Việt'])
+    expect(lang.past).toBe(0)
+    await expect(rows.filter({ hasText: 'English' })).toHaveAttribute('aria-current', 'true')
+    await expect(page.locator('[role=menu]')).toHaveCount(0)
+
+    await rows.filter({ hasText: 'Back' }).click()
+    await rows.filter({ hasText: 'Theme' }).click()
+    expect((await inside()).labels).toEqual(['Back', 'Light', 'Dark', 'System'])
+    await rows.filter({ hasText: 'Dark' }).click()
     await expect(page.locator('html')).toHaveClass(/dark/)
+    await expect(sheet).toBeHidden()
   }
 )
 

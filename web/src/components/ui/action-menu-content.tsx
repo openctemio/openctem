@@ -6,6 +6,7 @@
  * trigger). Rows are 32 px, 44 on a phone and under a coarse pointer.
  */
 import * as React from 'react'
+import { Check } from 'lucide-react'
 
 import Link from '@/components/link'
 import { safeHref } from '@/lib/safe-href'
@@ -101,6 +102,9 @@ function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean 
       {icon}
       {item.label}
       {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
+      {item.checked !== undefined && (
+        <Check aria-hidden className={cn('ms-auto', !item.checked && 'invisible')} />
+      )}
     </>
   )
   if (item.href) {
@@ -111,7 +115,12 @@ function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean 
     )
   }
   return (
-    <DropdownMenuItem variant={variant} className={ROW} onSelect={item.onSelect}>
+    <DropdownMenuItem
+      variant={variant}
+      className={ROW}
+      aria-current={item.checked ? 'true' : undefined}
+      onSelect={item.onSelect}
+    >
       {content}
     </DropdownMenuItem>
   )

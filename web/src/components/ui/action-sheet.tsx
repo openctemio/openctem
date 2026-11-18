@@ -11,7 +11,7 @@
  * down or a chosen action.
  */
 import * as React from 'react'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 import Link from '@/components/link'
 import { safeHref } from '@/lib/safe-href'
@@ -263,10 +263,12 @@ function SheetRow({
     <button
       type="button"
       data-slot="action-sheet-row"
+      aria-current={item.checked ? 'true' : undefined}
       className={cn(ROW, tone)}
       onClick={() => onChoose(item)}
     >
-      {item.label}
+      <span className="min-w-0 flex-1">{item.label}</span>
+      {item.checked && <Check className="size-4 shrink-0" aria-hidden />}
     </button>
   )
 }
