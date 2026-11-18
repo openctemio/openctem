@@ -110,7 +110,7 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 	if err != nil || st.Active || st.Approvers != 1 {
 		t.Fatalf("single admin status = %+v, %v; want inactive with 1 approver", st, err)
 	}
-	g, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+	g, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 	if err != nil || g == nil || !g.SingleAdmin || g.ApprovalID != nil {
 		t.Fatalf("single admin gate = %+v, %v; want the single-admin fallback", g, err)
 	}
@@ -127,7 +127,7 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 	}
 	b = h.reload(b.ID().String())
 	req := requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 		return err
 	}())
 	if req.PendingID != nil {
@@ -155,7 +155,7 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 		t.Fatalf("second request for the same target = %v, %v; want the open one %s", again, err, p.ID)
 	}
 	req = requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 		return err
 	}())
 	if req.PendingID == nil || *req.PendingID != p.ID {
@@ -197,30 +197,33 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 
 	// Bound to requester and target.
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, b, admin.ApprovalGrantSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, b, admin.ApprovalGrantSuperAdmin, target, "", client)
 		return err
 	}())
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, "email:someone-else@example.com", client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, "email:someone-else@example.com", "", client)
 		return err
 	}())
-	requireApproval(t, func() error { _, err := h.svc.Require(ctx, a, admin.ApprovalConsoleMFAOff, "off", client); return err }())
+	requireApproval(t, func() error {
+		_, err := h.svc.Require(ctx, a, admin.ApprovalConsoleMFAOff, "off", "", client)
+		return err
+	}())
 
 	// Single use, handed back once after a failed action, then spent.
-	g, err = h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+	g, err = h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 	if err != nil || g.ApprovalID == nil || *g.ApprovalID != p.ID {
 		t.Fatalf("use = %+v, %v", g, err)
 	}
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 		return err
 	}())
 	h.svc.Release(ctx, a, g, client)
-	if g, err = h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client); err != nil || g.ApprovalID == nil {
+	if g, err = h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client); err != nil || g.ApprovalID == nil {
 		t.Fatalf("use after release = %+v, %v", g, err)
 	}
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalGrantSuperAdmin, target, "", client)
 		return err
 	}())
 	for action, want := range map[string]int{
@@ -247,7 +250,7 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if g, err := h.svc.Require(ctx, a, admin.ApprovalAuditChainRebaseline, tenantTarget, client); err == nil && g.ApprovalID != nil {
+			if g, err := h.svc.Require(ctx, a, admin.ApprovalAuditChainRebaseline, tenantTarget, "", client); err == nil && g.ApprovalID != nil {
 				mu.Lock()
 				wins++
 				mu.Unlock()
@@ -267,7 +270,10 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 	if r, err := h.svc.Reject(ctx, b, p3.ID, "use recovery codes instead", client); err != nil || r.Status(h.clock) != admin.ApprovalRejected {
 		t.Fatalf("reject = %+v, %v", r, err)
 	}
-	requireApproval(t, func() error { _, err := h.svc.Require(ctx, a, admin.ApprovalConsoleMFAOff, "off", client); return err }())
+	requireApproval(t, func() error {
+		_, err := h.svc.Require(ctx, a, admin.ApprovalConsoleMFAOff, "off", "", client)
+		return err
+	}())
 
 	// Labels are read on the server.
 	p4, err := h.svc.Request(ctx, a, admin.ApprovalRevokeSuperAdmin, "admin:"+b.ID().String(), "leaving the team", client)
@@ -293,7 +299,7 @@ func TestFourEyesApprovals_DB(t *testing.T) {
 	}
 	h.clock = h.clock.Add(admin.ApprovalTTL + time.Minute)
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalPlatformIdPRemove, "remove", client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalPlatformIdPRemove, "remove", "", client)
 		return err
 	}())
 	if _, err := h.svc.Approve(ctx, b, p6.ID, "", client); !errors.Is(err, admin.ErrApprovalNotPending) {
@@ -321,7 +327,7 @@ func TestFourEyesRevokeNeedsTheOtherAdmin_DB(t *testing.T) {
 	b := h.addAdmin(admin.AdminRoleSuperAdmin, true, false)
 	target := "admin:" + b.ID().String()
 	requireApproval(t, func() error {
-		_, err := h.svc.Require(ctx, a, admin.ApprovalRevokeSuperAdmin, target, client)
+		_, err := h.svc.Require(ctx, a, admin.ApprovalRevokeSuperAdmin, target, "", client)
 		return err
 	}())
 	p, err := h.svc.Request(ctx, a, admin.ApprovalRevokeSuperAdmin, target, "role change", client)
@@ -331,7 +337,72 @@ func TestFourEyesRevokeNeedsTheOtherAdmin_DB(t *testing.T) {
 	if _, err := h.svc.Approve(ctx, b, p.ID, "agreed", client); err != nil {
 		t.Fatalf("the admin being removed approves: %v", err)
 	}
-	if g, err := h.svc.Require(ctx, a, admin.ApprovalRevokeSuperAdmin, target, client); err != nil || g.ApprovalID == nil {
+	if g, err := h.svc.Require(ctx, a, admin.ApprovalRevokeSuperAdmin, target, "", client); err != nil || g.ApprovalID == nil {
 		t.Fatalf("use = %+v, %v", g, err)
+	}
+}
+
+// gateReason is the "reason" (and "request_reason") of the gate audit row of
+// action (for the approval approvalID, when given).
+func (h *harness) gateReason(action, approvalID string) (reason, requestReason sql.NullString) {
+	h.t.Helper()
+	if err := h.db.QueryRowContext(context.Background(), `SELECT request_body->>'reason', request_body->>'request_reason' FROM admin_audit_logs
+		WHERE action = $1 AND ($2 = '' OR resource_id::text = $2) ORDER BY created_at DESC LIMIT 1`, action, approvalID).Scan(&reason, &requestReason); err != nil {
+		h.t.Fatalf("gate audit row %s: %v", action, err)
+	}
+	return reason, requestReason
+}
+
+// The reason the actor gives for the protected action itself is kept in the
+// gate's audit row, beside the reason of the approval request it spends; no
+// reason leaves none.
+func TestFourEyesGateKeepsTheActionReason_DB(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	a := h.addAdmin(admin.AdminRoleSuperAdmin, true, false)
+	target := "admin:" + uuid.NewString()
+
+	// Single-admin fallback.
+	if _, err := h.svc.Require(ctx, a, admin.ApprovalResetCredentials, target, "  lost authenticator ", client); err != nil {
+		t.Fatalf("single admin gate: %v", err)
+	}
+	if r, _ := h.gateReason(adminapproval.ActionSingleAdmin, ""); r.String != "lost authenticator" {
+		t.Fatalf("single-admin row reason = %+v", r)
+	}
+
+	// With a second super admin the approval is requested, approved and used.
+	b := h.addAdmin(admin.AdminRoleSuperAdmin, true, false)
+	requireApproval(t, func() error {
+		_, err := h.svc.Require(ctx, a, admin.ApprovalResetCredentials, target, "lost authenticator", client)
+		return err
+	}())
+	p, err := h.svc.Request(ctx, a, admin.ApprovalResetCredentials, target, "phone lost, ticket 42", client)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if _, err := h.svc.Approve(ctx, b, p.ID, "checked", client); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if _, err := h.svc.Require(ctx, a, admin.ApprovalResetCredentials, target, "lost authenticator", client); err != nil {
+		t.Fatalf("approved gate: %v", err)
+	}
+	r, rr := h.gateReason(adminapproval.ActionUsed, p.ID.String())
+	if r.String != "lost authenticator" || rr.String != "phone lost, ticket 42" {
+		t.Fatalf("used row: reason %+v, request reason %+v", r, rr)
+	}
+
+	// No reason: the row has none.
+	p, err = h.svc.Request(ctx, a, admin.ApprovalResetCredentials, target, "again", client)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if _, err := h.svc.Approve(ctx, b, p.ID, "", client); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if _, err := h.svc.Require(ctx, a, admin.ApprovalResetCredentials, target, "", client); err != nil {
+		t.Fatalf("approved gate: %v", err)
+	}
+	if r, _ := h.gateReason(adminapproval.ActionUsed, p.ID.String()); r.Valid {
+		t.Fatalf("no reason given: the used row has %q", r.String)
 	}
 }
