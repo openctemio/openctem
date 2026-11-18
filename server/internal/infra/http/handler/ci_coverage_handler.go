@@ -357,6 +357,8 @@ func (h *CIAdminHandler) SetRefusalService(svc CIRefusalService) { h.refusals = 
 
 // CITokenRefusalResponse is one refused CI token exchange.
 type CITokenRefusalResponse struct {
+	// ID names the refusal for POST /ci/trust-configs/{id}/allow.
+	ID         string    `json:"id"`
 	At         time.Time `json:"at"`
 	Repository string    `json:"repository,omitempty"`
 	Provider   string    `json:"provider,omitempty"`
@@ -376,7 +378,8 @@ type CITokenRefusalResponse struct {
 	WorkflowDefinition string `json:"workflow_definition,omitempty"`
 	// Configs say which trust configuration refused with which code; a
 	// workflow_not_allowed or ref_not_allowed refusal can be fixed with POST
-	// /ci/trust-configs/{id}/allow on that configuration.
+	// /ci/trust-configs/{id}/allow on that configuration, naming this
+	// refusal's id.
 	Configs []cirun.RefusalConfig `json:"configs"`
 }
 
@@ -419,7 +422,7 @@ func (h *CIAdminHandler) ListTokenRefusals(w http.ResponseWriter, r *http.Reques
 		}
 		data = append(data, CITokenRefusalResponse{At: t.At, Repository: t.Repository, Provider: t.Provider, Ref: t.Ref,
 			Event: t.Event, Reasons: reasons, Message: t.Message, Issuer: t.Issuer, Owner: t.Owner,
-			Environment: t.Environment, WorkflowDefinition: t.WorkflowDefinition, Configs: configs})
+			Environment: t.Environment, WorkflowDefinition: t.WorkflowDefinition, Configs: configs, ID: t.ID})
 	}
 	ciWriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }

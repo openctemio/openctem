@@ -12,36 +12,61 @@ var _ cirun.UnverifiedRefusalStore = (*CIRunRepository)(nil)
 
 // RecordUnverifiedRefusal adds r.Count to the (tenant, issuer, reason)
 // record. Nothing is written for a tenant without a CI trust configuration
-// (a made-up or unrelated tenant id); the tenant keeps its
-// cirun.MaxUnverifiedRefusals newest records.
+// (a made-up or unrelated tenant id). A tenant keeps at most
+// cirun.MaxUnverifiedRefusals records: when full, a new record is written
+// only in place of one not seen for cirun.UnverifiedRefusalRetention, so an
+// anonymous caller cannot push a real record out (existing records keep
+// counting).
 func (r *CIRunRepository) RecordUnverifiedRefusal(ctx context.Context, u cirun.UnverifiedRefusal) error {
 	if u.TenantID.IsZero() || u.Count <= 0 {
 		return nil
 	}
-	res, err := r.db.ExecContext(ctx, `
-		INSERT INTO ci_unverified_refusals (tenant_id, issuer, reason, cause, first_seen, last_seen, count)
-		SELECT $1, $2, $3, $4, $5, $5, $6
-		WHERE EXISTS (SELECT 1 FROM ci_trust_configs WHERE tenant_id = $1)
-		ON CONFLICT (tenant_id, issuer, reason) DO UPDATE
-		SET count = ci_unverified_refusals.count + EXCLUDED.count,
-			last_seen = GREATEST(ci_unverified_refusals.last_seen, EXCLUDED.last_seen),
-			cause = EXCLUDED.cause`,
-		u.TenantID.String(), u.Issuer, u.Reason, u.Cause, u.LastSeen.UTC(), u.Count)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	tid := u.TenantID.String()
+	// One writer per tenant, so the bound holds under concurrent refusals.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('ci_unverified:' || $1))`, tid); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE ci_unverified_refusals SET count = count + $4, last_seen = GREATEST(last_seen, $5), cause = $6
+		WHERE tenant_id = $1 AND issuer = $2 AND reason = $3`,
+		tid, u.Issuer, u.Reason, u.Count, u.LastSeen.UTC(), u.Cause)
 	if err != nil {
 		return fmt.Errorf("record unverified ci refusal: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return nil
+		var held int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM ci_unverified_refusals WHERE tenant_id = $1`, tid).Scan(&held); err != nil {
+			return err
+		}
+		if held >= cirun.MaxUnverifiedRefusals {
+			res, err := tx.ExecContext(ctx, `
+				DELETE FROM ci_unverified_refusals
+				WHERE tenant_id = $1 AND (issuer, reason) IN (
+					SELECT issuer, reason FROM ci_unverified_refusals
+					WHERE tenant_id = $1 AND last_seen < $2 ORDER BY last_seen LIMIT 1)`,
+				tid, u.LastSeen.UTC().Add(-cirun.UnverifiedRefusalRetention))
+			if err != nil {
+				return fmt.Errorf("trim unverified ci refusals: %w", err)
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return tx.Commit() // full of records seen recently: no new one
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO ci_unverified_refusals (tenant_id, issuer, reason, cause, first_seen, last_seen, count)
+			SELECT $1, $2, $3, $4, $5, $5, $6
+			WHERE EXISTS (SELECT 1 FROM ci_trust_configs WHERE tenant_id = $1)
+			ON CONFLICT (tenant_id, issuer, reason) DO NOTHING`,
+			tid, u.Issuer, u.Reason, u.Cause, u.LastSeen.UTC(), u.Count); err != nil {
+			return fmt.Errorf("record unverified ci refusal: %w", err)
+		}
 	}
-	if _, err := r.db.ExecContext(ctx, `
-		DELETE FROM ci_unverified_refusals
-		WHERE tenant_id = $1 AND (issuer, reason) IN (
-			SELECT issuer, reason FROM ci_unverified_refusals
-			WHERE tenant_id = $1 ORDER BY last_seen DESC, issuer, reason OFFSET $2)`,
-		u.TenantID.String(), cirun.MaxUnverifiedRefusals); err != nil {
-		return fmt.Errorf("trim unverified ci refusals: %w", err)
-	}
-	return nil
+	return tx.Commit()
 }
 
 // ListUnverifiedRefusals lists the tenant's records, newest first.

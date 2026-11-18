@@ -49,8 +49,13 @@ const (
 	IssuerCauseUnreachable = "unreachable"
 )
 
-// IssuerUnavailableError is ErrIssuerUnavailable with its class.
-type IssuerUnavailableError struct{ Cause string }
+// IssuerUnavailableError is ErrIssuerUnavailable with its class. Withheld:
+// the issuer is a hosted service, where the caller may be anyone, so the job
+// is not told the class (the administrator's record keeps it).
+type IssuerUnavailableError struct {
+	Cause    string
+	Withheld bool
+}
 
 func (e *IssuerUnavailableError) Error() string { return ErrIssuerUnavailable.Error() + ": " + e.Cause }
 
@@ -137,6 +142,17 @@ const unverifiedThrottle = 30 * time.Second
 // unverifiedKeysMax bounds the throttle's memory; it is cleared when full.
 const unverifiedKeysMax = 4096
 
+// unverifiedNewPerHour bounds the records of keys not written before that one
+// tenant gets per hour (per server): an anonymous caller choosing issuers
+// close to a configured one cannot turn each into a database write.
+const unverifiedNewPerHour = 20
+
+// unverifiedBudget is one tenant's new-record budget in the current hour.
+type unverifiedBudget struct {
+	start time.Time
+	used  int
+}
+
 // maxUnverifiedIssuer bounds a stored issuer (an issuer the token claims,
 // so caller-chosen).
 const maxUnverifiedIssuer = 255
@@ -157,21 +173,46 @@ type unverifiedPending struct {
 type unverifiedRecorder struct {
 	mu      sync.Mutex
 	pending map[unverifiedKey]*unverifiedPending
+	budget  map[shared.ID]*unverifiedBudget
+}
+
+// takeNew spends one of the tenant's new-record budget (caller holds mu).
+func (u *unverifiedRecorder) takeNew(tenant shared.ID, now time.Time) bool {
+	if u.budget == nil || len(u.budget) >= unverifiedKeysMax {
+		u.budget = map[shared.ID]*unverifiedBudget{}
+	}
+	b := u.budget[tenant]
+	if b == nil || now.Sub(b.start) >= time.Hour {
+		b = &unverifiedBudget{start: now}
+		u.budget[tenant] = b
+	}
+	if b.used >= unverifiedNewPerHour {
+		return false
+	}
+	b.used++
+	return true
 }
 
 // recordUnverified notes one refusal before verification for the tenant's
 // administrators: issuer, reason, cause class, time and count, never token
 // contents. The issuer is the token's claim, so it is kept only when it is a
-// plain https issuer address of bounded length; the row is written only for
-// a tenant that has a trust configuration (the store checks), at most once
-// per unverifiedThrottle per (tenant, issuer, reason), and the store keeps a
-// bounded number per tenant.
+// plain https issuer address of bounded length and, for no_configuration,
+// close to an issuer the tenant configured (NearestIssuer: a typing mistake
+// worth showing); any other issuer is recorded as "" (another issuer), so
+// made-up issuers share one record. The row is written only for a tenant
+// that has a trust configuration (the store checks), at most once per
+// unverifiedThrottle per (tenant, issuer, reason), at most
+// unverifiedNewPerHour new keys per tenant and hour, and the store keeps a
+// bounded number per tenant without pushing recent ones out.
 func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issuer, reason, cause string) {
 	if tenantID.IsZero() || s.unverifiedStore == nil {
 		return
 	}
 	issuer = strings.TrimSpace(issuer)
 	if !plainIssuer(issuer) {
+		issuer = ""
+	}
+	if issuer != "" && reason == UnverifiedNoConfiguration && !s.nearConfiguredIssuer(ctx, tenantID, issuer) {
 		issuer = ""
 	}
 	key := unverifiedKey{tenant: tenantID, issuer: issuer, reason: reason}
@@ -190,6 +231,12 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 		s.unverified.mu.Unlock()
 		return
 	}
+	if p.written.IsZero() && !s.unverified.takeNew(tenantID, now) {
+		// Over the tenant's budget of new records: keep counting, retry
+		// with the next refusal.
+		s.unverified.mu.Unlock()
+		return
+	}
 	n := p.count
 	p.count, p.written = 0, now
 	s.unverified.mu.Unlock()
@@ -200,6 +247,22 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 		Reason: reason, Cause: cause, LastSeen: now, Count: n}); err != nil {
 		s.log.Warn("ci unverified refusal not recorded", "error", err)
 	}
+}
+
+// nearConfiguredIssuer reports whether issuer is close to one of the tenant's
+// configured issuers (same host or same path, NearestIssuer). A read error
+// counts as not close.
+func (s *Service) nearConfiguredIssuer(ctx context.Context, tenantID shared.ID, issuer string) bool {
+	configs, err := s.repo.ListTrustConfigs(ctx, tenantID)
+	if err != nil {
+		return false
+	}
+	issuers := make([]string, 0, len(configs))
+	for _, c := range configs {
+		issuers = append(issuers, c.Issuer)
+	}
+	near, _ := NearestIssuer(issuer, issuers)
+	return near != ""
 }
 
 // SetUnverifiedRefusalStore wires the unverified refusal records (nil: not

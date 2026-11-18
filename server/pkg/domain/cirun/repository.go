@@ -180,6 +180,10 @@ type CoverageRepository interface {
 	// RecentTokenRefusals lists the tenant's latest refused CI token
 	// exchanges, newest first, at most limit.
 	RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]TokenRefusal, error)
+	// TokenRefusal reads one refused exchange of the tenant by its audit
+	// record id (ErrTokenRefusalNotFound for another tenant's or an unknown
+	// id).
+	TokenRefusal(ctx context.Context, tenantID, id shared.ID) (*TokenRefusal, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }
@@ -246,6 +250,8 @@ type PipelineRepository interface {
 // only (an unverified token is never recorded), with the rule codes that
 // refused it.
 type TokenRefusal struct {
+	// ID is the audit record's id (the one-click fix names it).
+	ID         string
 	At         time.Time
 	Repository string
 	Provider   string
@@ -285,8 +291,18 @@ type UnverifiedRefusal struct {
 	Count     int
 }
 
-// MaxUnverifiedRefusals bounds the records kept per tenant (the oldest go).
+// MaxUnverifiedRefusals bounds the records kept per tenant. A full tenant
+// takes no new record (existing ones keep counting) until a record has not
+// been seen for UnverifiedRefusalRetention: an anonymous caller cannot push
+// a real record out.
 const MaxUnverifiedRefusals = 20
+
+// UnverifiedRefusalRetention is how long a record not seen again is kept
+// once the tenant's records are full.
+const UnverifiedRefusalRetention = 7 * 24 * time.Hour
+
+// ErrTokenRefusalNotFound: no refused exchange of the tenant has the id.
+var ErrTokenRefusalNotFound = fmt.Errorf("%w: CI token refusal not found", shared.ErrNotFound)
 
 // UnverifiedRefusalStore keeps the unverified refusal records.
 type UnverifiedRefusalStore interface {

@@ -21,7 +21,7 @@ import (
 // value to a trust configuration.
 type CIRefusalActions interface {
 	UnverifiedRefusals(ctx context.Context, tenantID shared.ID) ([]cirun.UnverifiedRefusal, []cirun.TrustConfig, error)
-	AllowInTrustConfig(ctx context.Context, tenantID, id shared.ID, kind, value string, a cirunapp.Actor) (*cirun.TrustConfig, bool, error)
+	AllowInTrustConfig(ctx context.Context, tenantID, id, refusalID shared.ID, a cirunapp.Actor) (*cirun.TrustConfig, cirunapp.Allowed, bool, error)
 }
 
 // SetRefusalActions wires the unverified refusals and the allow action (nil
@@ -108,26 +108,27 @@ func (h *CIAdminHandler) ListUnverifiedRefusals(w http.ResponseWriter, r *http.R
 	ciWriteJSON(w, http.StatusOK, resp)
 }
 
-// CIAllowRequest names the value to add.
+// CIAllowRequest names the refusal whose value is added.
 type CIAllowRequest struct {
-	// Kind: workflow_ref (Pipeline definitions) or ref (Branches and tags).
-	Kind string `json:"kind"`
-	// Value: the refused token's value, for example
-	// gitlab.example.com/group/project//.gitlab-ci.yml@refs/heads/main or
-	// refs/heads/release.
-	Value string `json:"value"`
+	// RefusalID is the id of a refused exchange (GET /ci/trust-refusals,
+	// data[].id) that this configuration refused with workflow_not_allowed
+	// or ref_not_allowed. The value comes from that record.
+	RefusalID string `json:"refusal_id"`
 }
 
 // CIAllowResponse is the configuration after the change.
 type CIAllowResponse struct {
 	// Changed is false when the value was already listed.
-	Changed bool                  `json:"changed"`
-	Config  CITrustConfigResponse `json:"config"`
+	Changed bool `json:"changed"`
+	// Kind (workflow_ref or ref) and Value are what was added.
+	Kind   string                `json:"kind"`
+	Value  string                `json:"value"`
+	Config CITrustConfigResponse `json:"config"`
 }
 
 // AllowInTrustConfig handles POST /api/v1/ci/trust-configs/{id}/allow
 // @Summary      Add a refused value to a CI trust configuration
-// @Description  Adds one value a refused token carried to the configuration: a pipeline definition to Pipeline definitions (kind workflow_ref) or a branch or tag to Branches and tags (kind ref). The same permission (ci:write), recent sign-in and audit (CI trust configuration changed, before and after) as changing the configuration. A value already listed changes nothing.
+// @Description  Adds the value a refused token carried to the configuration that refused it: the refusal (refusal_id from GET /ci/trust-refusals) must be this organization's and this configuration's refusal with workflow_not_allowed (its pipeline definition joins Pipeline definitions) or ref_not_allowed (its branch or tag joins Branches and tags). The value is read from the refusal record, never from the request. The same permission (ci:write), recent sign-in and audit (CI trust configuration changed, before and after) as changing the configuration. A value already listed changes nothing.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -159,10 +160,15 @@ func (h *CIAdminHandler) AllowInTrustConfig(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	c, changed, err := h.refusalActions.AllowInTrustConfig(r.Context(), tenantID, id, req.Kind, req.Value, h.actor(r))
+	refusalID, err := shared.IDFromString(req.RefusalID)
 	if err != nil {
-		if errors.Is(err, cirunapp.ErrAllowKind) {
-			apierror.BadRequest("kind must be workflow_ref or ref").WriteJSON(w)
+		apierror.BadRequest("refusal_id must be the id of a refused CI token exchange").WriteJSON(w)
+		return
+	}
+	c, allowed, changed, err := h.refusalActions.AllowInTrustConfig(r.Context(), tenantID, id, refusalID, h.actor(r))
+	if err != nil {
+		if errors.Is(err, cirunapp.ErrAllowNotApplicable) {
+			apierror.BadRequest("Only a pipeline definition or a branch or tag that this trust configuration refused can be added from a refusal; edit the configuration for anything else").WriteJSON(w)
 			return
 		}
 		h.writeErr(w, err, "change trust configuration", "CI trust configuration")
@@ -170,5 +176,5 @@ func (h *CIAdminHandler) AllowInTrustConfig(w http.ResponseWriter, r *http.Reque
 	}
 	resp := toCITrustResponse(c)
 	h.withScope(r.Context(), tenantID, &resp)
-	ciWriteJSON(w, http.StatusOK, CIAllowResponse{Changed: changed, Config: resp})
+	ciWriteJSON(w, http.StatusOK, CIAllowResponse{Changed: changed, Kind: allowed.Kind, Value: allowed.Value, Config: resp})
 }
