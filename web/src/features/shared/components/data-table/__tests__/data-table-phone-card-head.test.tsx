@@ -107,7 +107,7 @@ describe('automatic phone card: the title line', () => {
             ...c,
             cell: () => (
               <button type="button" data-testid="chip-control">
-                <span data-slot="badge">Runs in your CI pipeline</span>
+                <span data-slot="badge">Not ready</span>
               </button>
             ),
           }
