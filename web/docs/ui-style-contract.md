@@ -815,6 +815,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   IPs, ports, file paths, URLs, API keys, code snippets. Never for numbers,
   labels, statuses or prose.
 - Numbers that line up use `tabular-nums`.
+- Names and addresses (asset and host names, e-mail addresses, URLs, file and
+  package names) wrap only at their separators: render them through
+  `<BreakText>` with `break-words`. `break-all` breaks every word at any
+  letter ("Paym|ents") and is kept for mono machine values (hashes, keys,
+  tokens); `src/lib/__tests__/name-break-guard.test.ts` enforces it.
 - Sizes come from the type roles in `src/styles/theme.css` (each sets size,
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with

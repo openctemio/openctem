@@ -632,7 +632,7 @@ export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTa
                             </span>
                             <div className="flex-1 min-w-0">
                               {frame.location?.path && (
-                                <span className="text-primary break-all">
+                                <span className="text-primary break-words">
                                   {toDisplayText(frame.location.path)}
                                   {frame.location.start_line && (
                                     <span className="text-muted-foreground">
@@ -818,7 +818,7 @@ export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTa
                             {isExternal ? (
                               <SafeExternalLink
                                 href={uri}
-                                className="text-sm text-primary hover:underline break-all inline-flex items-center gap-1"
+                                className="text-sm text-primary hover:underline break-words inline-flex items-center gap-1"
                               >
                                 {uri}
                                 <ExternalLink className="h-3 w-3 flex-shrink-0" />

@@ -49,6 +49,7 @@ import {
 import { isWebAuthnSupported } from '../lib/webauthn'
 import { securityKeyErrorMessage } from '../lib/security-key-errors'
 import { formatDateTime } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const NAME_MAX = 64
 
@@ -165,7 +166,9 @@ export function SecurityKeysPanel({
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium break-all">{k.name}</span>
+                      <span className="font-medium break-words">
+                        <BreakText>{k.name}</BreakText>
+                      </span>
                       {k.synced ? (
                         <Badge variant="secondary">
                           {t('admin.keys.synced', 'Synced passkey')}
@@ -658,7 +661,7 @@ function RecoveryCodesDialog({ codes, onDone }: { codes: string[] | null; onDone
             aria-label={t('admin.keys.recoveryTitle', 'Recovery codes')}
           >
             {(codes ?? []).map((c) => (
-              <li key={c} className="break-all select-all">
+              <li key={c} className="break-words select-all">
                 {c}
               </li>
             ))}

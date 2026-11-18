@@ -74,7 +74,7 @@ function NoteCard({
           {hasUrl && (
             <SafeExternalLink
               href={note.url}
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline break-all"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline break-words"
             >
               {note.url}
               <ExternalLink className="h-3 w-3 shrink-0" />

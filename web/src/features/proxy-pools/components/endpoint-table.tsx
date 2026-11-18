@@ -24,6 +24,7 @@ import { describeProxyError } from '../lib/errors'
 import { endpointUrl, scorePercent } from '../lib/mask'
 import type { ProxyEndpoint, ProxyHealthState } from '../types'
 import { formatNumber } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const STATE_TONE: Record<ProxyHealthState, PillTone> = {
   healthy: 'success',
@@ -87,7 +88,11 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
             primary={<span className="break-words">{e.label || endpointUrl(e)}</span>}
             secondary={
               <span className="flex items-center gap-1.5 font-mono text-xs">
-                {e.label && <span className="break-all">{endpointUrl(e)}</span>}
+                {e.label && (
+                  <span className="break-words">
+                    <BreakText>{endpointUrl(e)}</BreakText>
+                  </span>
+                )}
                 {e.has_credentials && (
                   <Lock
                     role="img"

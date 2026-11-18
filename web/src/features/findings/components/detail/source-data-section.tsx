@@ -344,7 +344,7 @@ export function SourceDataSection({
               <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 {extra.map(([k, v]) => (
                   <div key={k} className="min-w-0">
-                    <dt className="text-xs break-all text-muted-foreground">{k}</dt>
+                    <dt className="text-xs break-words text-muted-foreground">{k}</dt>
                     <dd className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{v}</dd>
                   </div>
                 ))}

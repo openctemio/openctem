@@ -55,6 +55,7 @@ import { CriticalityBadge } from '../classification-badges'
 import type { Criticality } from '../../types'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { formatDateTime } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const PAGE_SIZE = 25
 /** Rows per group before "Show all" in the full view. */
@@ -641,12 +642,16 @@ function AssetName({
   const { t } = useTranslation()
   const a = item.asset
   if (!onNavigateToAsset)
-    return <span className={cn('min-w-0 break-all', className)}>{a.name}</span>
+    return (
+      <span className={cn('min-w-0 break-words', className)}>
+        <BreakText>{a.name}</BreakText>
+      </span>
+    )
   return (
     <button
       type="button"
       className={cn(
-        'min-w-0 break-all rounded text-left underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'min-w-0 break-words rounded text-left underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         className
       )}
       onClick={() => onNavigateToAsset(a.id, a.name)}

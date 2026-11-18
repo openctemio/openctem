@@ -20,6 +20,7 @@ import type {
   EmergingThreatHost,
   EmergingThreatHostService,
 } from '../types'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const TIER_ORDER: AssetTier[] = ['confirmed', 'likely', 'possible']
 const PAGE_SIZES = [25, 50, 100]
@@ -44,7 +45,9 @@ export function HostTitle({ row }: { row: HostRow }) {
           {row.host}
         </Link>
       ) : (
-        <span className="font-medium [overflow-wrap:anywhere]">{row.host}</span>
+        <span className="font-medium [overflow-wrap:anywhere]">
+          <BreakText>{row.host}</BreakText>
+        </span>
       )}
       {single ? (
         <span className="text-xs text-muted-foreground">{single.asset_type}</span>

@@ -574,7 +574,7 @@ export default function AuditLogPage() {
             <DetailSection title={t('auditLog.detail.whoWhen', 'Who and when')}>
               <DetailFieldGrid>
                 <DetailField label={t('auditLog.col.actor', 'Actor')}>
-                  <span className="break-all">
+                  <span className="break-words">
                     {selectedLog.actor_email || t('auditLog.system', 'System')}
                   </span>
                 </DetailField>
@@ -630,13 +630,15 @@ export default function AuditLogPage() {
                         key={field}
                         className="grid gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_2fr] sm:items-center sm:gap-4"
                       >
-                        <span className="font-medium break-all text-muted-foreground">{field}</span>
+                        <span className="font-medium break-words text-muted-foreground">
+                          {field}
+                        </span>
                         <span className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs break-all text-muted-foreground line-through">
+                          <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs break-words text-muted-foreground line-through">
                             {String(change.old)}
                           </span>
                           <span className="text-muted-foreground">→</span>
-                          <span className="inline-flex items-center rounded-md bg-accent px-2 py-1 text-xs font-medium break-all text-accent-foreground">
+                          <span className="inline-flex items-center rounded-md bg-accent px-2 py-1 text-xs font-medium break-words text-accent-foreground">
                             {String(change.new)}
                           </span>
                         </span>

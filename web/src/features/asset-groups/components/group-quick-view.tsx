@@ -42,6 +42,7 @@ import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
 import type { AssetGroup } from '../types'
 import { shareableLink } from '@/lib/org-link'
 import { formatDate } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 // ============================================
 // ASSETS IN THE GROUP
@@ -115,7 +116,9 @@ function QuickViewAssets({
                   className="group flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/50"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium break-all">{asset.name}</p>
+                    <p className="text-sm font-medium break-words">
+                      <BreakText>{asset.name}</BreakText>
+                    </p>
                     <p className="text-xs text-muted-foreground">{asset.type}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

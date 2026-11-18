@@ -505,7 +505,7 @@ export function ThreatActorDetailSheet({
                     href={sanitizeExternalUrl(ref.url)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm break-all text-primary hover:underline"
+                    className="inline-flex items-center gap-1 text-sm break-words text-primary hover:underline"
                   >
                     {ref.source || ref.url}
                     <ExternalLink className="h-3 w-3 shrink-0" />

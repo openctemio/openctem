@@ -50,6 +50,7 @@ import {
   type ChangeKind,
 } from '../lib/changes'
 import { formatDate } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const KIND_ICON: Record<ChangeKind, LucideIcon> = {
   dns_dangling: Link2Off,
@@ -110,19 +111,19 @@ function ChangeDetail({ change }: { change: EASMChange }) {
       {change.exposure_id &&
         change.new &&
         (exposureHref ? (
-          <Link href={exposureHref} className="break-all text-primary hover:underline">
+          <Link href={exposureHref} className="break-words text-primary hover:underline">
             {change.new}
           </Link>
         ) : (
-          <span className="break-all">{change.new}</span>
+          <span className="break-words">{change.new}</span>
         ))}
       {added.length > 0 && (
-        <span className="break-all">
+        <span className="break-words">
           {t('attackSurface.changes.added', 'Added: {values}', { values: added.join(', ') })}
         </span>
       )}
       {removed.length > 0 && (
-        <span className="break-all">
+        <span className="break-words">
           {t('attackSurface.changes.removed', 'Removed: {values}', { values: removed.join(', ') })}
         </span>
       )}
@@ -153,11 +154,13 @@ function ChangeRow({ change }: { change: EASMChange }) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium first-letter:uppercase">{label}</span>
           {isLinkableAssetId(change.asset_id) ? (
-            <AssetPeekLink assetId={change.asset_id} className="break-all text-primary">
+            <AssetPeekLink assetId={change.asset_id} className="break-words text-primary">
               {name}
             </AssetPeekLink>
           ) : (
-            <span className="break-all text-muted-foreground">{name}</span>
+            <span className="break-words text-muted-foreground">
+              <BreakText>{name}</BreakText>
+            </span>
           )}
         </div>
         <ChangeDetail change={change} />

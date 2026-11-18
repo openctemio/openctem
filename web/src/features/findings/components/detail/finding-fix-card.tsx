@@ -176,7 +176,7 @@ function ManifestRef({
   const { t } = useTranslation()
   const label = line ? `${file}:${line}` : file
   return (
-    <span className="min-w-0 break-all">
+    <span className="min-w-0 break-words">
       <span className="whitespace-pre">{`${t('findings.fixCard.inPrefix', 'in')} `}</span>
       {codeUrl ? (
         <SafeExternalLink
