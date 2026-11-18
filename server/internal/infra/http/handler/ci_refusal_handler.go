@@ -25,7 +25,7 @@ type CIRefusalActions interface {
 }
 
 // SetRefusalActions wires the unverified refusals and the allow action (nil
-// leaves them 404).
+// answers 503).
 func (h *CIAdminHandler) SetRefusalActions(svc CIRefusalActions) { h.refusalActions = svc }
 
 // CIConfiguredIssuer is one trust configuration's issuer.
@@ -81,7 +81,7 @@ func (h *CIAdminHandler) ListUnverifiedRefusals(w http.ResponseWriter, r *http.R
 		return
 	}
 	if h.refusalActions == nil {
-		apierror.NotFound("CI refusals").WriteJSON(w)
+		apierror.ServiceUnavailable("CI refusals are not available").WriteJSON(w)
 		return
 	}
 	list, configs, err := h.refusalActions.UnverifiedRefusals(r.Context(), tenantID)
@@ -144,7 +144,7 @@ func (h *CIAdminHandler) AllowInTrustConfig(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if h.refusalActions == nil {
-		apierror.NotFound("CI trust configuration").WriteJSON(w)
+		apierror.ServiceUnavailable("CI trust configuration changes are not available").WriteJSON(w)
 		return
 	}
 	id, ok := pathID(w, r, "CI trust configuration")

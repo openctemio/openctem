@@ -84,11 +84,19 @@ sequenceDiagram
   alt none
     S-->>H: ErrExchangeRefused (nothing audited)
   end
-  S->>V: per distinct provider and audience
-  V->>I: discovery + JWKS (SSRF-guarded, same host, TTL 1 h, stale up to 6 h, refetch at most every 30 s)
-  V-->>S: claims (sig, iss, aud, exp, nbf, iat, leeway 1 min, lifetime 24 h max, sub, jti)
-  alt keys unavailable
+  S->>V: per distinct provider and audience (and per configuration with pasted keys)
+  alt key_source fetch
+    V->>I: discovery + JWKS (SSRF-guarded, same host, TTL 1 h, stale up to 6 h, refetch at most every 30 s)
+  else key_source pasted
+    Note over V: signing_keys only, by kid; nothing is fetched
+  end
+  V-->>S: claims (sig, iss, aud, exp, nbf, iat, leeway 1 min, lifetime 24 h max, sub, jti), kid
+  alt keys unavailable (fetch)
     S-->>H: ErrIssuerUnavailable, 503 Retry-After 30
+  end
+  alt kid not among the pasted keys
+    S->>DB: audit ci_run.token_refused (unknown_key) + admin alert, once an hour per configuration
+    S-->>H: RefusedError unknown_key, 401 CI_TOKEN_UNKNOWN_KEY
   end
   S->>S: admit - Rules.Admit (owners, repos, refs, envs, events, forks, protected ref, workflow_refs)
   alt not admitted
@@ -101,7 +109,7 @@ sequenceDiagram
   S->>DB: ClaimReplay (issuer, jti) - the same token again at most 5 times, same run only
   S->>DB: resolveRepositoryAsset (repo id, then host/path), UpsertPipeline (advisory lock per tenant, caps)
   S->>DB: CountPipelineRunsSince 1 h (300 max), CreateRun or OpenAggregateRun + AddRunToken
-  S->>DB: audit ci_run.token_issued, CITrustSeen
+  S->>DB: TouchTrustConfig (last_used_at, last_key_id), audit ci_run.token_issued, CITrustSeen
   H-->>J: 201 run_id, octci_ token (TTL 15 min, SHA-256 stored), secret_key
 ```
 
@@ -283,7 +291,10 @@ to it like any other blocking reason.
 ## Data model
 
 - `ci_trust_configs`: per tenant; `rules` JSONB (owners, repositories, refs,
-  environments, events, fork and protected-ref switches).
+  environments, events, fork and protected-ref switches); `key_source`
+  (`fetch` or `pasted`), `signing_keys` (the pasted public JWKS, 64 KiB at
+  most, validated by `oidc.ParseStaticJWKS`), `signing_keys_updated_at` and
+  `last_key_id` (migration `ci_trust_signing_keys`, RFC-051 §3.2).
 - `ci_runs`: per tenant, composite FK to the tenant's repository asset
   (cascade) and to its trust configuration (`(tenant_id, trust_config_id)`,
   `SET NULL (trust_config_id)`: deleting a configuration keeps its runs as
