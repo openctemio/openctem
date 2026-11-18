@@ -241,7 +241,7 @@
   "attackSurface.discovery.run.skipped": "Skipped, run less than a minute ago: {stages}",
   "attackSurface.discovery.run.stage": "Run",
   "attackSurface.discovery.run.stageAria": "Run {stage}",
-  "attackSurface.discovery.run.started": "{stages}: {count, plural, one {# check} other {# checks}} are due and start with the next coverage pass.",
+  "attackSurface.discovery.run.started": "{stages}: {count, plural, one {# check is} other {# checks are}} due and start with the next coverage pass.",
   "attackSurface.discovery.runAll": "Run all",
   "attackSurface.discovery.stage.asset_discovery": "Asset discovery",
   "attackSurface.discovery.stage.exposure_scan": "Exposure scan",

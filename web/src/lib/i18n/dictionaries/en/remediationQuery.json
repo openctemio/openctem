@@ -70,7 +70,7 @@
   "remediationQuery.task.heading": "Created from a query",
   "remediationQuery.task.lastRun": "Last run {when}.",
   "remediationQuery.task.newMatches.one": "1 new finding matches and no other task holds it.",
-  "remediationQuery.task.newMatches.other": "{count, plural, one {# new finding} other {# new findings}} match and no other task holds them.",
+  "remediationQuery.task.newMatches.other": "{count, plural, one {# new finding matches} other {# new findings match}} and no other task holds them.",
   "remediationQuery.task.ownerGone": "a former member",
   "remediationQuery.task.pause": "Pause",
   "remediationQuery.task.paused": "Auto include paused",

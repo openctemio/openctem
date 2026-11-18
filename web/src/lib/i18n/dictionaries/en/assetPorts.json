@@ -5,7 +5,7 @@
   "assetPorts.col.service": "Service",
   "assetPorts.emptyHint": "No port scan has found an open port on the addresses this name resolves to.",
   "assetPorts.emptyTitle": "No open ports on record",
-  "assetPorts.hidden": "{count, plural, one {# more port} other {# more ports}} are on addresses or ports outside your data scope.",
+  "assetPorts.hidden": "{count, plural, one {# more port is} other {# more ports are}} on addresses or ports outside your data scope.",
   "assetPorts.hint": "Open ports of the addresses this name resolves to. A port scan of the name records each port on the address it was found on.",
   "assetPorts.title": "Ports on resolved addresses",
   "assetPorts.truncated": "Showing the first {count, plural, one {# port} other {# ports}}.",

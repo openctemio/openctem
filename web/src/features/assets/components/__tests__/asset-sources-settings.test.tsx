@@ -216,7 +216,7 @@ describe('AssetSourcesSettingsForm', () => {
     expect(onPreview.mock.calls[0][0].default[1].source).toBe('import')
     expect(onPreview.mock.calls[0][1]).toBeUndefined()
     const result = await screen.findByTestId('preview-result')
-    expect(result).toHaveTextContent('2 of 10 assets would change (3 values). 1 conflicts.')
+    expect(result).toHaveTextContent('2 of 10 assets would change (3 values). 1 conflict.')
     expect(result).toHaveTextContent('db.example.com')
     expect(onSave).not.toHaveBeenCalled()
   })

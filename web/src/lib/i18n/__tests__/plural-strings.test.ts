@@ -5,7 +5,7 @@
  * Vietnamese has no plural forms, so only the English catalog is checked.
  */
 import { describe, it, expect } from 'vitest'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { translate, registerDictionary } from '@/lib/i18n'
 
@@ -59,13 +59,29 @@ describe('plural strings', () => {
     expect(bad).toEqual([])
   })
 
+  it('keeps the verb with its counted subject (1 target has, 2 targets have)', () => {
+    // A plural block that starts a clause and is followed by a plural verb reads
+    // "1 target have" for one: the verb belongs inside the branches.
+    const verbAfterBlock =
+      /(?:^|: |; |, |\. |until )\{\w+, plural, one \{[^{}]*\} other \{[^{}]*\}\} (are|have|were|do|block|exceed|match|need|use|wait|run|stay|belong)\b/
+    const bad: string[] = []
+    for (const file of readdirSync(EN_DIR).filter((f) => f.endsWith('.json'))) {
+      const dict = JSON.parse(readFileSync(join(EN_DIR, file), 'utf8')) as Record<string, string>
+      for (const [key, value] of Object.entries(dict)) {
+        if (verbAfterBlock.test(value)) bad.push(`${key}: ${value}`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
   it('never fills a count by string replacement after t() (it would skip the plural)', () => {
     const src = join(process.cwd(), 'src')
     const offenders: string[] = []
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
         const full = join(dir, name)
-        if (statSync(full).isDirectory()) {
+        if (entry.isDirectory()) {
           if (name !== '__tests__' && name !== 'node_modules') walk(full)
         } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
           if (/\.replace\(\s*['"]\{(count|n|total)\}['"]/.test(readFileSync(full, 'utf8')))

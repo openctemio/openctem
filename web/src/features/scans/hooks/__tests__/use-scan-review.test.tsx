@@ -145,7 +145,7 @@ describe('useScanReview', () => {
       targets: { windows: { waiting_count: 0, never_count: 1, waiting: [], never: [] } },
     }
     const r = review(form({ mode: 'workflow', workflowId: 'w1' }))
-    expect(r.blockers.join(' ')).toMatch(/1 targets have scan windows that never open/)
+    expect(r.blockers.join(' ')).toMatch(/1 target has scan windows that never open/)
   })
 })
 

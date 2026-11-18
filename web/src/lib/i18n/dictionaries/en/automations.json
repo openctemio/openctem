@@ -105,7 +105,7 @@
   "automations.golive.needsPublish": "Needs the publish permission for automations",
   "automations.golive.noPermission": "Needs the publish permission",
   "automations.golive.pending": "Version {n} waits for a second publisher to approve it.",
-  "automations.golive.problems": "{n, plural, one {# problem} other {# problems}} block going live",
+  "automations.golive.problems": "{n, plural, one {# problem blocks} other {# problems block}} going live",
   "automations.golive.publish": "Publish",
   "automations.golive.publishChanges": "Publish changes",
   "automations.golive.risk": "Risk class: {risk}",

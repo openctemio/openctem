@@ -216,7 +216,7 @@
   "emergingThreats.summary.untriaged": "Untriaged",
   "emergingThreats.summary.untriagedHint": "Open threats nobody acknowledged yet",
   "emergingThreats.suppressedUntil": "Suppressed until {date}",
-  "emergingThreats.task.alreadyInTask": "{n, plural, one {# finding} other {# findings}} are already in a task and are left there.",
+  "emergingThreats.task.alreadyInTask": "{n, plural, one {# finding is} other {# findings are}} already in a task and are left there.",
   "emergingThreats.task.confirm": "Create task with {n, plural, one {# finding} other {# findings}}",
   "emergingThreats.task.create": "Create remediation task",
   "emergingThreats.task.created": "The task was created.",

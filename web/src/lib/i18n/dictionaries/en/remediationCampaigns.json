@@ -51,7 +51,7 @@
   "remediationCampaigns.description": "A campaign groups remediation tasks under one owner and one due date.",
   "remediationCampaigns.detail.back": "Back to campaigns",
   "remediationCampaigns.detail.completeBlocked.one": "1 task is still open",
-  "remediationCampaigns.detail.completeBlocked.other": "{count, plural, one {# task} other {# tasks}} are still open",
+  "remediationCampaigns.detail.completeBlocked.other": "{count, plural, one {# task is} other {# tasks are}} still open",
   "remediationCampaigns.detail.due": "Due",
   "remediationCampaigns.detail.emptyDescription": "Add open tasks, or create a task from findings and choose this campaign.",
   "remediationCampaigns.detail.emptyTitle": "This campaign has no tasks yet",

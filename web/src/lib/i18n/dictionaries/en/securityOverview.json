@@ -16,7 +16,7 @@
   "securityOverview.check.organization.verified_domain.desc.pass": "Your organization has a verified domain.",
   "securityOverview.check.organization.verified_domain.title": "Verified domain",
   "securityOverview.check.people.dormant_members.desc.pass": "Every member has signed in recently.",
-  "securityOverview.check.people.dormant_members.desc.warn": "{count, plural, one {# member} other {# members}} have not signed in for 90 days, or never signed in. Review their access.",
+  "securityOverview.check.people.dormant_members.desc.warn": "{count, plural, one {# member has} other {# members have}} not signed in for 90 days, or never signed in. Review their access.",
   "securityOverview.check.people.dormant_members.title": "Inactive members",
   "securityOverview.check.people.join_requests.desc.pass": "No one is waiting to join.",
   "securityOverview.check.people.join_requests.desc.warn": "{count} people are waiting for you to approve or reject their request to join.",

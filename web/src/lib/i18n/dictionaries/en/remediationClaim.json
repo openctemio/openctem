@@ -27,7 +27,7 @@
   "remediationClaim.conflict.hiddenTask": "In a task you cannot see",
   "remediationClaim.conflict.inTask": "In {task}, {owner}",
   "remediationClaim.conflict.intro.one": "1 finding is already in another open task.",
-  "remediationClaim.conflict.intro.other": "{count, plural, one {# finding} other {# findings}} are already in other open tasks.",
+  "remediationClaim.conflict.intro.other": "{count, plural, one {# finding is} other {# findings are}} already in other open tasks.",
   "remediationClaim.conflict.list": "Findings already in a task",
   "remediationClaim.conflict.move": "Move selected ({count})",
   "remediationClaim.conflict.moveHere": "Move here",

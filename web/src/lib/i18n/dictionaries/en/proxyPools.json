@@ -158,7 +158,7 @@
   "proxyPools.summary.quarantined": "{count} quarantined",
   "proxyPools.summary.sticky": "Sticky by target",
   "proxyPools.test.again": "Test again",
-  "proxyPools.test.blocked": "{count, plural, one {# other sensor} other {# other sensors}} are offline or cannot test proxies.",
+  "proxyPools.test.blocked": "{count, plural, one {# other sensor is} other {# other sensors are}} offline or cannot test proxies.",
   "proxyPools.test.button": "Test",
   "proxyPools.test.canceled": "Canceled",
   "proxyPools.test.class.echoFailed": "No answer from the test page",
