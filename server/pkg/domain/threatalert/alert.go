@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
@@ -109,6 +110,13 @@ const (
 	ReasonRejectedUpstream = "rejected_upstream"
 	// ReasonFixed resolves an alert whose affected assets are all gone.
 	ReasonFixed = "fixed"
+	// ReasonGroupedIntoCard resolves a vulnerability's alert once an
+	// advisory card groups it: the card's alert carries it on (the card id
+	// is in the state note; nothing is deleted).
+	ReasonGroupedIntoCard = "grouped_into_card"
+	// ReasonCardWithdrawn resolves a card's alerts when the card is
+	// withdrawn.
+	ReasonCardWithdrawn = "card_withdrawn"
 )
 
 // NotAffectedReasons are the reasons a person may give.
@@ -168,7 +176,9 @@ func ReopenedBy(reason string, wasTier, nowTier Tier, kevAdded bool) bool {
 
 // Vuln is what the platform knows of a vulnerability (public facts).
 type Vuln struct {
-	ID            string
+	ID string
+	// Title is the advisory card's title (empty for a CVE).
+	Title         string
 	Severity      string
 	CVSSScore     *float64
 	CVSSVector    string
@@ -179,6 +189,16 @@ type Vuln struct {
 	KEVRansomware bool
 	KEVDateAdded  *time.Time
 	EPSS          *float64
+	// Exploitation is the strongest status a reviewed advisory card states
+	// (none when no card names the vulnerability); ExploitationSources are
+	// the public sources the card cites for it.
+	Exploitation        advisory.Exploitation
+	ExploitationSources []string
+	// CardID is set when the alert key is an advisory card: the facts above
+	// then cover every vulnerability the card groups.
+	CardID string
+	// Grouped lists the vulnerability ids the card groups.
+	Grouped []string
 	// LastEventKind and LastEventAt are the newest material event; SourceAt
 	// is when the source says the triggering fact happened.
 	LastEventKind string
@@ -202,32 +222,65 @@ type Asset struct {
 
 // Breakdown is the Emerging Threat Score and its parts.
 type Breakdown struct {
-	Exploitation int     `json:"exploitation"`
-	Severity     int     `json:"severity"`
-	Exposure     int     `json:"exposure"`
-	Freshness    int     `json:"freshness"`
-	Confidence   float64 `json:"confidence"`
-	Total        int     `json:"total"`
+	Exploitation int `json:"exploitation"`
+	// ExploitationBasis names the evidence the exploitation points come
+	// from (an ExploitBasis value; empty when none).
+	ExploitationBasis string  `json:"exploitation_basis,omitempty"`
+	Severity          int     `json:"severity"`
+	Exposure          int     `json:"exposure"`
+	Freshness         int     `json:"freshness"`
+	Confidence        float64 `json:"confidence"`
+	Total             int     `json:"total"`
 }
 
 // Freshness window of the triggering event.
 const FreshFor = 72 * time.Hour
 
-func exploitationPoints(v Vuln) int {
-	p := 0
-	switch {
-	case v.InKEV:
-		p = 40
-	case v.EPSS != nil && *v.EPSS >= 0.5:
-		p = 20
-	case v.EPSS != nil && *v.EPSS >= 0.1:
-		p = 10
+// Exploitation evidence named in the score breakdown.
+const (
+	BasisKEV             = "kev"
+	BasisVendorConfirmed = "vendor_confirmed_exploited"
+	BasisInTheWild       = "exploited_itw"
+	BasisWeaponised      = "weaponised"
+	BasisPoCPublic       = "poc_public"
+	BasisEPSSHigh        = "epss_high"
+	BasisEPSS            = "epss"
+)
+
+// exploitationPoints scores the strongest exploitation evidence: KEV or a
+// reviewed card saying exploitation was confirmed by the vendor or seen in
+// the wild 40, a weaponised exploit 30, a public proof of concept or EPSS at
+// least 0.5 20, EPSS at least 0.1 10; KEV ransomware use adds 5. A day-0
+// vulnerability has no KEV entry and no EPSS score, so the card is what
+// lets it count.
+func exploitationPoints(v Vuln) (int, string) {
+	type cand struct {
+		p     int
+		basis string
 	}
+	best := cand{}
+	try := func(ok bool, p int, basis string) {
+		if ok && p > best.p {
+			best = cand{p, basis}
+		}
+	}
+	try(v.InKEV, 40, BasisKEV)
+	try(v.Exploitation == advisory.ExploitVendorConfirmed, 40, BasisVendorConfirmed)
+	try(v.Exploitation == advisory.ExploitInTheWild, 40, BasisInTheWild)
+	try(v.Exploitation == advisory.ExploitWeaponised, 30, BasisWeaponised)
+	try(v.Exploitation == advisory.ExploitPoCPublic, 20, BasisPoCPublic)
+	try(v.EPSS != nil && *v.EPSS >= 0.5, 20, BasisEPSSHigh)
+	try(v.EPSS != nil && *v.EPSS >= 0.1, 10, BasisEPSS)
 	if v.InKEV && v.KEVRansomware {
-		p += 5
+		best.p += 5
 	}
-	return p
+	return best.p, best.basis
 }
+
+// PublicExploit reports whether working exploitation of the vulnerability
+// is public: KEV, or a reviewed card stating a public proof of concept or
+// stronger. EPSS alone is a prediction, not evidence.
+func (v Vuln) PublicExploit() bool { return v.InKEV || v.Exploitation.PublicExploit() }
 
 func severityPoints(v Vuln) int {
 	p := 0
@@ -281,7 +334,8 @@ func Score(v Vuln, assets []Asset, now time.Time) (Breakdown, Tier) {
 			anyConfirmed = true
 		}
 	}
-	base := Breakdown{Exploitation: exploitationPoints(v), Severity: severityPoints(v)}
+	ep, basis := exploitationPoints(v)
+	base := Breakdown{Exploitation: ep, ExploitationBasis: basis, Severity: severityPoints(v)}
 	if v.LastEventAt != nil && now.Sub(*v.LastEventAt) < FreshFor {
 		base.Freshness = 10
 	}
@@ -315,6 +369,13 @@ func Score(v Vuln, assets []Asset, now time.Time) (Breakdown, Tier) {
 // the CVE is in KEV on an internet-facing asset, unless the organization
 // opts in. minSeverityPasses is the organization's vulnerability matching
 // minimum severity applied to the CVE.
+//
+// One narrow exception does not need the threshold: a critical
+// vulnerability with a public exploit (KEV or a reviewed card) on a possibly
+// affected asset that is both internet-facing and of critical business
+// criticality. The version is unknown, so the message is a "check needed"
+// (RecommendedAction confirm), and it is sent once per alert like any
+// immediate one.
 func LevelFor(b Breakdown, tier Tier, v Vuln, assets []Asset, s tenant.EmergingThreatSettings, minSeverityPasses bool) Level {
 	s = s.Effective()
 	if b.Total >= s.ImmediateThreshold && b.Exploitation >= 20 {
@@ -322,10 +383,28 @@ func LevelFor(b Breakdown, tier Tier, v Vuln, assets []Asset, s tenant.EmergingT
 			return LevelImmediate
 		}
 	}
+	if CheckNeeded(tier, v, assets) {
+		return LevelImmediate
+	}
 	if b.Total >= s.DigestThreshold || minSeverityPasses {
 		return LevelDigest
 	}
 	return LevelListed
+}
+
+// CheckNeeded reports the "check needed" case of LevelFor: possibly
+// affected only, a critical vulnerability with a public exploit, and an
+// internet-facing crown-jewel asset among the possibly affected ones.
+func CheckNeeded(tier Tier, v Vuln, assets []Asset) bool {
+	if tier != TierPossible || !strings.EqualFold(v.Severity, "critical") || !v.PublicExploit() {
+		return false
+	}
+	for _, a := range assets {
+		if a.Kind == MatchPossible && a.InternetFacing && strings.EqualFold(a.Criticality, "critical") {
+			return true
+		}
+	}
+	return false
 }
 
 func anyInternetFacing(assets []Asset, kind MatchKind) bool {
@@ -459,3 +538,7 @@ func Title(vulnID, product string) string {
 	}
 	return PlainText(vulnID, 64) + " · " + p
 }
+
+// CardTitle is the title of an alert keyed by an advisory card: the card's
+// own title, as plain text.
+func CardTitle(title string) string { return PlainText(title, maxTitle) }

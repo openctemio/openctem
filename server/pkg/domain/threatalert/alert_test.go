@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
@@ -46,6 +47,23 @@ func TestScoreAndLevel(t *testing.T) {
 			[]Asset{edge}, false, 52, TierConfirmed, LevelDigest},
 		{"likely only scales by 0.8", Vuln{Severity: "critical", InKEV: true, LastEventAt: &fresh},
 			[]Asset{{Kind: MatchLikely, InternetFacing: true}}, false, 72, TierConfirmed, LevelImmediate},
+		// Advisory card exploitation (day 0: no KEV, no EPSS).
+		{"card public PoC, confirmed edge", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{edge}, false, 70, TierConfirmed, LevelImmediate},
+		{"card weaponised, confirmed edge", Vuln{Severity: "high", Exploitation: advisory.ExploitWeaponised, LastEventAt: &fresh},
+			[]Asset{edge}, false, 72, TierConfirmed, LevelImmediate},
+		{"card vendor-confirmed counts as KEV", Vuln{Severity: "critical", Exploitation: advisory.ExploitVendorConfirmed, LastEventAt: &fresh},
+			[]Asset{edge, edge}, false, 90, TierConfirmed, LevelImmediate},
+		{"card PoC, possible on a plain edge host: digest", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{banner}, false, 35, TierPossible, LevelDigest},
+		{"card PoC, possible on an internet-facing crown jewel: check needed", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 40, TierPossible, LevelImmediate},
+		{"no check needed for a high vulnerability", Vuln{Severity: "high", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 36, TierPossible, LevelDigest},
+		{"no check needed on an internal crown jewel", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, Criticality: "critical"}}, false, 33, TierPossible, LevelListed},
+		{"no check needed on EPSS alone", Vuln{Severity: "critical", EPSS: f64(0.9), LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 40, TierPossible, LevelDigest},
 		{"ransomware adds 5", Vuln{Severity: "critical", InKEV: true, KEVRansomware: true, LastEventAt: &fresh},
 			[]Asset{edge}, false, 95, TierConfirmed, LevelImmediate},
 	}
@@ -189,5 +207,32 @@ func TestSettings(t *testing.T) {
 	}
 	if (tenant.EmergingThreatSettings{}).InQuietHours(3) {
 		t.Error("quiet hours are off by default")
+	}
+}
+
+func TestExploitationBasis(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		v     Vuln
+		basis string
+		pts   int
+	}{
+		{Vuln{}, "", 0},
+		{Vuln{EPSS: f64(0.2)}, BasisEPSS, 10},
+		{Vuln{EPSS: f64(0.2), Exploitation: advisory.ExploitPoCPublic}, BasisPoCPublic, 20},
+		{Vuln{Exploitation: advisory.ExploitWeaponised, EPSS: f64(0.7)}, BasisWeaponised, 30},
+		{Vuln{Exploitation: advisory.ExploitInTheWild}, BasisInTheWild, 40},
+		{Vuln{InKEV: true, Exploitation: advisory.ExploitVendorConfirmed}, BasisKEV, 40},
+		{Vuln{InKEV: true, KEVRansomware: true}, BasisKEV, 45},
+		{Vuln{Exploitation: "bogus"}, "", 0},
+	}
+	for _, c := range cases {
+		b, _ := Score(c.v, []Asset{{Kind: MatchConfirmed}}, now)
+		if b.Exploitation != c.pts || b.ExploitationBasis != c.basis {
+			t.Errorf("%+v: got %d %q, want %d %q", c.v, b.Exploitation, b.ExploitationBasis, c.pts, c.basis)
+		}
+	}
+	if !(Vuln{InKEV: true}).PublicExploit() || (Vuln{EPSS: f64(0.99)}).PublicExploit() || !(Vuln{Exploitation: advisory.ExploitPoCPublic}).PublicExploit() {
+		t.Fatal("PublicExploit")
 	}
 }
