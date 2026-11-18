@@ -424,7 +424,11 @@ describe('InvitationView', () => {
     })
 
     it.each([
-      ['429 with Retry-After', { status: 429, retryAfter: '30' }, /Too many requests.*Try again in 30 seconds/],
+      [
+        '429 with Retry-After',
+        { status: 429, retryAfter: '30' },
+        /Too many requests.*Try again in 30 seconds/,
+      ],
       ['a server failure', { status: 503 }, /did not answer.*Try again in 2 seconds/],
       ['no answer', { status: 0 }, /did not answer.*Try again in 2 seconds/],
     ])(
