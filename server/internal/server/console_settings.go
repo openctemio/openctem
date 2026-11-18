@@ -110,6 +110,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.EmailRelay = svc.OrgRelay
 	h.LeakedSecretStorage = svc.LeakedSecretPolicy
 	h.ScopeNames = svc.ScopeNames
+	h.PrivateDestinations = svc.PrivateDestinations
 	return h
 }
 

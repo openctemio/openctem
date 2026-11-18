@@ -54,8 +54,10 @@ type CIAdminHandler struct {
 	baseline     CIGateBaselineService
 	repoSettings CIRepositorySettingsService
 	refusals     CIRefusalService
-	dataScope    DataScopeEnforcer
-	logger       *logger.Logger
+	// newRepos: new repositories of all-projects trust configurations.
+	newRepos  CINewRepositoryService
+	dataScope DataScopeEnforcer
+	logger    *logger.Logger
 }
 
 // SetStepUpGate passes the re-authentication gate to the service: a gate
@@ -103,6 +105,9 @@ type CITrustConfigResponse struct {
 	// patterns the configuration claims, the scope entry of each and the
 	// evidence of the first verified pipeline run under it.
 	ScopeEntries []CITrustScopeEntry `json:"scope_entries,omitempty"`
+	// Warnings are plain-words notes on a risky configuration (every project
+	// of a GitLab: rules.all_repositories).
+	Warnings []string `json:"warnings,omitempty"`
 	// KeySource is where the provider's signing keys come from: fetch (from
 	// the issuer) or pasted (SigningKeys only; nothing is fetched).
 	KeySource string `json:"key_source" enums:"fetch,pasted"`
@@ -121,6 +126,11 @@ type CITrustSigningKey struct {
 	KID string `json:"kid"`
 	Alg string `json:"alg" enums:"RS256,ES256"`
 }
+
+// AllRepositoriesWarning is the note on an all-projects configuration.
+const AllRepositoriesWarning = "This configuration accepts CI results from every project on this GitLab, including personal projects any of its users can create. " +
+	"A project seen for the first time is listed under New repositories and is not added to scope until you approve it; " +
+	"keep \"Protected branches and tags only\" on, and approve whole groups only when everyone who can create projects in them is trusted."
 
 // CITrustScopeEntry is one repository pattern a trust configuration claims.
 type CITrustScopeEntry struct {
@@ -202,7 +212,7 @@ func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 		ManageScope: c.ManageScope, LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil,
 		KeySource: string(c.KeySource), SigningKeys: c.SigningKeys, SigningKeysUpdatedAt: c.SigningKeysUpdatedAt,
-		LastKeyID: c.LastKeyID}
+		LastKeyID: c.LastKeyID, Warnings: trustWarnings(c)}
 	if out.KeySource == "" {
 		out.KeySource = string(cirun.KeySourceFetch)
 	}
@@ -210,6 +220,13 @@ func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 		out.SigningKeyList = append(out.SigningKeyList, CITrustSigningKey{KID: k.KID, Alg: k.Alg})
 	}
 	return out
+}
+
+func trustWarnings(c *cirun.TrustConfig) []string {
+	if c.Rules.AllRepositories {
+		return []string{AllRepositoriesWarning}
+	}
+	return nil
 }
 
 // CITrustConfigRequest creates or changes a trust configuration.
