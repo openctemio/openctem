@@ -189,9 +189,7 @@ function PathNode({ node, onOpen }: { node: PathGraphNode; onOpen?: () => void }
           </Badge>
         )}
         {node.exposure && !isEntry && (
-          <span className="text-muted-foreground text-[10px]">
-            {labels.exposure(node.exposure)}
-          </span>
+          <span className="text-cap text-muted-foreground">{labels.exposure(node.exposure)}</span>
         )}
         {node.kev && (
           <Badge
@@ -203,7 +201,7 @@ function PathNode({ node, onOpen }: { node: PathGraphNode; onOpen?: () => void }
           </Badge>
         )}
         {node.findingCount != null && node.findingCount > 0 && (
-          <span className="text-muted-foreground text-[10px]">
+          <span className="text-cap text-muted-foreground">
             {node.findingCount === 1
               ? t('prioritization.pathGraph.findingOne', '{count} finding', { count: 1 })
               : t('prioritization.pathGraph.findingOther', '{count} findings', {

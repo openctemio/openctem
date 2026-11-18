@@ -410,7 +410,7 @@ function StepChipMark({ danger, children }: { danger?: boolean; children: React.
   return (
     <span
       className={cn(
-        'flex items-center gap-0.5 rounded border bg-card px-1 text-[10px] leading-4 whitespace-nowrap',
+        'flex items-center gap-0.5 rounded border bg-card px-1 text-cap whitespace-nowrap',
         danger ? 'border-tone-danger-fg/40 text-tone-danger-fg' : 'text-muted-foreground'
       )}
     >
