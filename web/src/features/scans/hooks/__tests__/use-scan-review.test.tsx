@@ -12,9 +12,21 @@ vi.mock('@/features/scope', () => ({
   }),
 }))
 let wfData: unknown = undefined
-vi.mock('../../components/new-scan/workflow-preview', () => ({
-  useWorkflowPreview: () => ({ data: wfData, error: null, isLoading: false, ready: true }),
-}))
+vi.mock('../../components/new-scan/workflow-preview', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../components/new-scan/workflow-preview')>()
+  return {
+    ...real,
+    // The hook hands the preview over as a run would go (asRunPreview).
+    useWorkflowPreview: () => ({
+      data: wfData
+        ? real.asRunPreview(wfData as Parameters<typeof real.asRunPreview>[0])
+        : undefined,
+      error: null,
+      isLoading: false,
+      ready: true,
+    }),
+  }
+})
 vi.mock('@/hooks/use-debounce', () => ({ useDebounce: (v: unknown) => v }))
 
 import { useScanReview } from '../use-scan-review'
@@ -74,11 +86,10 @@ describe('useScanReview', () => {
     expect(r.blockers).toContain('The workflow would not start: no sensor runs httpx')
   })
 
-  // A workflow whose only problem is that its sensors are offline right now
-  // blocked "Save scan" too, although the API saves it (its runs wait for a
-  // sensor): nobody could save or schedule a workflow scan while their
-  // sensor was down.
-  it('only warns when the workflow waits for an offline sensor and the scan does not run now', () => {
+  // A scan runs what is supported (owner rule): a step that no tool or sensor
+  // here runs is skipped by the run, required or optional, so it never keeps
+  // a scan from being created, whether it runs now or later.
+  it('warns, never blocks, when a workflow step has no tool or sensor', () => {
     wfData = {
       blocking: true,
       nodes: [
@@ -86,40 +97,33 @@ describe('useScanReview', () => {
           blocking: { code: 'NO_SENSOR_FOR_TOOL', message: 'none is online now' },
           availability: { status: 'offline_only' },
         },
+        { name: 'probe', tool: 'httpx' },
       ],
     }
-    const saved = review(
-      form({
-        mode: 'workflow',
-        workflowId: 'w1',
-        schedule: { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, saveOnly: true },
-      })
-    )
-    expect(saved.blockers).toEqual([])
-    expect(saved.warnings.join(' ')).toContain('none is online now')
-
-    const now = review(form({ mode: 'workflow', workflowId: 'w1' }))
-    expect(now.blockers).toContain('The workflow would not start: none is online now')
+    for (const schedule of [
+      DEFAULT_NEW_SCAN.schedule,
+      { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, saveOnly: true },
+    ]) {
+      const r = review(form({ mode: 'workflow', workflowId: 'w1', schedule }))
+      expect(r.blockers).toEqual([])
+      expect(r.warnings).toContain('1 step is skipped (none is online now); the other steps run.')
+    }
   })
 
-  it('still blocks a step no sensor has at all, even when saved for later', () => {
+  it('still saves a workflow in which no step can run, and says its start waits', () => {
     wfData = {
       blocking: true,
-      nodes: [
-        {
-          blocking: { code: 'NO_SENSOR_FOR_TOOL', message: 'no sensor has it' },
-          availability: { status: 'no_sensor' },
-        },
-      ],
+      nodes: [{ blocking: { code: 'NO_MATCHING_TOOL', message: 'no tool provides portscan' } }],
     }
-    const r = review(
-      form({
-        mode: 'workflow',
-        workflowId: 'w1',
-        schedule: { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, saveOnly: true },
-      })
-    )
-    expect(r.blockers).toContain('The workflow would not start: no sensor has it')
+    const r = review(form({ mode: 'workflow', workflowId: 'w1' }))
+    expect(r.blockers).toEqual([])
+    expect(r.warnings.join(' ')).toMatch(/^No step can run here yet \(no tool provides portscan\)/)
+  })
+
+  it('still blocks what a run cannot get past: targets that cannot be resolved', () => {
+    wfData = { blocking: true, nodes: [], targets: { error: { message: 'no zone' } } }
+    const r = review(form({ mode: 'workflow', workflowId: 'w1' }))
+    expect(r.blockers).toContain('The workflow would not start: no zone')
   })
 
   it('warns about targets waiting for their windows and about groups resolved at run time', () => {
