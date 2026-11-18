@@ -188,6 +188,7 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
       isSubmitting={isSubmitting}
       isMutating={false}
       showCancel={showCancel}
+      entry
       bundles={bundles}
       isLoadingBundles={isLoadingBundles}
       selectedBundles={selected}
@@ -323,6 +324,8 @@ interface CreateTeamFormUIProps {
   isSubmitting: boolean
   isMutating: boolean
   showCancel: boolean
+  /** On an entry page (first organization): the card's one main action is teal. */
+  entry?: boolean
   onCancel?: () => void
   bundles: ModulePreset[]
   isLoadingBundles: boolean
@@ -339,6 +342,7 @@ function CreateTeamFormUI({
   isSubmitting,
   isMutating,
   showCancel,
+  entry = false,
   onCancel,
   bundles,
   isLoadingBundles,
@@ -360,7 +364,7 @@ function CreateTeamFormUI({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('org.createTeam.name', 'Team name')}</FormLabel>
+              <FormLabel>{t('org.createTeam.name', 'Organization name')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('org.createTeam.namePlaceholder', 'Acme Corporation')}
@@ -383,7 +387,7 @@ function CreateTeamFormUI({
           name="slug"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('org.createTeam.url', 'Team URL')}</FormLabel>
+              <FormLabel>{t('org.createTeam.url', 'Organization URL')}</FormLabel>
               <FormControl>
                 <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
                   <span
@@ -465,17 +469,17 @@ function CreateTeamFormUI({
           )}
           <Button
             type="submit"
-            size="lg"
+            variant={entry ? 'signal' : 'default'}
             disabled={isMutating || isSubmitting || !isFormValid}
             className="flex-1"
           >
             {isMutating || isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('org.createTeam.creating', 'Creating team…')}
+                {t('org.createTeam.creating', 'Creating organization…')}
               </>
             ) : (
-              t('org.createTeam.create', 'Create team')
+              t('org.createTeam.create', 'Create organization')
             )}
           </Button>
         </div>
