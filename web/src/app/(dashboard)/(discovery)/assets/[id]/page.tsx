@@ -10,7 +10,8 @@
  *  - Every other type follows the detail layout (docs/ui-style-contract.md,
  *    "Detail pages"): the header, the tab strip, the properties beside the
  *    panel from 1280 px and under the header below it. The panels are the
- *    drawer's own section components.
+ *    drawer's own section components, and the header's actions open the
+ *    drawer's and the inventory's own dialogs (`useAssetPageActions`).
  */
 
 'use client'
@@ -19,6 +20,8 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import {
   ArrowLeft,
+  Bug,
+  Cpu,
   Globe,
   Hash,
   History,
@@ -65,6 +68,10 @@ import { AssetIdentitySections } from '@/features/assets/components/asset-identi
 import { AssetLineageSection } from '@/features/assets/components/asset-lineage-section'
 import { RELATED_PREVIEW_ROWS } from '@/features/assets/components/relationships/related-assets-list'
 import { AssetTimeline } from '@/features/assets/components/asset-timeline'
+import { useAssetPageActions } from '@/features/assets/components/asset-page-actions'
+import { KeyFactsSection } from '@/features/assets/components/key-facts'
+import { RiskSummarySection } from '@/features/assets/components/asset-overview-sections'
+import type { Asset } from '@/features/assets/types/asset.types'
 import { useAssetPage } from '@/features/assets/hooks/use-assets'
 import { useRelatedAssets } from '@/features/assets/hooks/use-related-assets'
 import {
@@ -128,14 +135,37 @@ const AssetRelationshipsTab = dynamic(
     ),
   { ssr: false, loading: TabSkeleton }
 )
+// The open findings and the technologies read their own lists when their tab opens.
+const AssetFindings = dynamic(
+  () => import('@/features/assets/components/asset-findings').then((m) => m.AssetFindings),
+  { ssr: false, loading: TabSkeleton }
+)
+const AssetTechnologiesTab = dynamic(
+  () =>
+    import('@/features/assets/components/technologies/asset-technologies-tab').then(
+      (m) => m.AssetTechnologiesTab
+    ),
+  { ssr: false, loading: TabSkeleton }
+)
 
-type TabKey = 'overview' | 'relationships' | 'found' | 'ports' | 'web' | 'owners' | 'activity'
+type TabKey =
+  | 'overview'
+  | 'findings'
+  | 'relationships'
+  | 'found'
+  | 'ports'
+  | 'technologies'
+  | 'web'
+  | 'owners'
+  | 'activity'
 
 const TAB_LABEL: Record<TabKey, string> = {
   overview: 'Overview',
+  findings: 'Findings',
   relationships: 'Relationships',
   found: 'How we found this',
   ports: 'Ports and services',
+  technologies: 'Technologies',
   web: 'Web',
   owners: 'Owners and access',
   activity: 'Activity',
@@ -143,9 +173,11 @@ const TAB_LABEL: Record<TabKey, string> = {
 
 const TAB_ICON: Record<TabKey, LucideIcon> = {
   overview: LayoutGrid,
+  findings: Bug,
   relationships: Network,
   found: Route,
   ports: Plug,
+  technologies: Cpu,
   web: Globe,
   owners: Users,
   activity: History,
@@ -207,6 +239,83 @@ function SettleOn({ pending }: { pending: boolean }) {
   return null
 }
 
+/**
+ * The page's header: the asset's name and chips, its one main action and the
+ * More menu (the actions first, then the links).
+ */
+function AssetHeader({
+  asset,
+  typeLabel,
+  listingHref,
+  onChanged,
+}: {
+  asset: Asset
+  typeLabel: string
+  listingHref: string
+  onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const actions = useAssetPageActions(asset, onChanged)
+  const links: ActionMenuEntry[] = [
+    {
+      id: 'copy-link',
+      section: 'links',
+      label: t('assetDetail.copyLink', 'Copy link'),
+      icon: Link2,
+      onSelect: async () => {
+        const ok = await copyToClipboard(shareableLink(`/assets/${asset.id}`))
+        if (ok) toast.success(t('assetDetail.linkCopied', 'Link copied'))
+        else toast.error(t('common.copyFailed', 'Could not copy'))
+      },
+    },
+    {
+      id: 'copy-id',
+      section: 'links',
+      label: t('assets.sheet.copyId', 'Copy ID'),
+      icon: Hash,
+      onSelect: async () => {
+        const ok = await copyToClipboard(asset.id)
+        if (ok) toast.success(t('assets.sheet.idCopied', 'Asset ID copied'))
+        else toast.error(t('common.copyFailed', 'Could not copy'))
+      },
+    },
+    {
+      id: 'open-list',
+      section: 'links',
+      icon: List,
+      label: t('assetDetail.openList', 'Open {type} list', { type: typeLabel }),
+      href: listingHref,
+    },
+  ]
+
+  return (
+    <>
+      <DetailPageHeader
+        title={asset.name}
+        parent={{ href: '/assets', label: t('nav.item.assets', 'Assets') }}
+        chips={
+          <>
+            <Badge variant="outline">{typeLabel}</Badge>
+            <ClassificationBadges
+              scope={asset.scope}
+              exposure={asset.exposure}
+              criticality={asset.criticality}
+              size="md"
+              labelled
+              // The chips join the header's wrapping row, so on a phone
+              // they break onto lines instead of running off the screen.
+              className="contents"
+            />
+          </>
+        }
+        primary={actions.primary}
+        menu={[...actions.menu, ...links]}
+      />
+      {actions.dialogs}
+    </>
+  )
+}
+
 export default function AssetDetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -227,12 +336,16 @@ export default function AssetDetailPage() {
   })
   const webEvidence = useWebEvidence(backed ? (asset?.id ?? '') : '')
 
+  const technologyCount = asset?.technologies?.length ?? 0
   const tabs: TabKey[] = backed
     ? [
         'overview',
+        'findings',
         ...(relationshipsOn ? (['relationships'] as const) : []),
         'found',
         ...(hasResolvedPorts(asset?.type ?? '') ? (['ports'] as const) : []),
+        // What probes fingerprinted on the asset (RFC-112), when anything.
+        ...(technologyCount > 0 ? (['technologies'] as const) : []),
         // The web tab holds the origin's own section, or what a sensor saw
         // when it fetched the asset; hidden when neither applies.
         ...(isWebOriginType(asset?.type) || webEvidence.items.length > 0 ? (['web'] as const) : []),
@@ -322,59 +435,16 @@ export default function AssetDetailPage() {
   const listingHref = `/assets?${listingQuery}`
   const typeLabel = t(`assets.typeLabel.${asset.type}`, getAssetTypeLabel(asset.type))
 
-  const menu: ActionMenuEntry[] = [
-    {
-      id: 'copy-link',
-      label: t('assetDetail.copyLink', 'Copy link'),
-      icon: Link2,
-      onSelect: async () => {
-        const ok = await copyToClipboard(shareableLink(`/assets/${asset.id}`))
-        if (ok) toast.success(t('assetDetail.linkCopied', 'Link copied'))
-        else toast.error(t('common.copyFailed', 'Could not copy'))
-      },
-    },
-    {
-      id: 'copy-id',
-      label: t('assets.sheet.copyId', 'Copy ID'),
-      icon: Hash,
-      onSelect: async () => {
-        const ok = await copyToClipboard(asset.id)
-        if (ok) toast.success(t('assets.sheet.idCopied', 'Asset ID copied'))
-        else toast.error(t('common.copyFailed', 'Could not copy'))
-      },
-    },
-    {
-      id: 'open-list',
-      icon: List,
-      label: t('assetDetail.openList', 'Open {type} list', { type: typeLabel }),
-      href: listingHref,
-    },
-  ]
-
   const goToRelated = (id: string) => router.push(`/assets/${encodeURIComponent(id)}`)
 
   return (
     <Main>
       <PageStack>
-        <DetailPageHeader
-          title={asset.name}
-          parent={{ href: '/assets', label: t('nav.item.assets', 'Assets') }}
-          chips={
-            <>
-              <Badge variant="outline">{typeLabel}</Badge>
-              <ClassificationBadges
-                scope={asset.scope}
-                exposure={asset.exposure}
-                criticality={asset.criticality}
-                size="md"
-                labelled
-                // The chips join the header's wrapping row, so on a phone
-                // they break onto lines instead of running off the screen.
-                className="contents"
-              />
-            </>
-          }
-          menu={menu}
+        <AssetHeader
+          asset={asset}
+          typeLabel={typeLabel}
+          listingHref={listingHref}
+          onChanged={() => void mutate()}
         />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className={GRID}>
@@ -446,9 +516,13 @@ export default function AssetDetailPage() {
                     <TabsTrigger key={key} value={key}>
                       <Icon aria-hidden />
                       {t(`assetDetail.tab.${key}`, TAB_LABEL[key])}
+                      {key === 'findings' && asset.findingCount > 0 && (
+                        <TabsCount value={asset.findingCount} />
+                      )}
                       {key === 'relationships' && related.total > 0 && (
                         <TabsCount value={related.total} />
                       )}
+                      {key === 'technologies' && <TabsCount value={technologyCount} />}
                     </TabsTrigger>
                   )
                 })}
@@ -458,10 +532,21 @@ export default function AssetDetailPage() {
             <div data-slot="asset-panel" className={PANEL}>
               <TabsContent value="overview">
                 <DetailSectionList>
+                  {/* What it is and what runs on it; hidden when nothing was collected. */}
+                  <KeyFactsSection asset={asset} />
+                  <RiskSummarySection asset={asset} onViewFindings={() => setTab('findings')} />
                   <AssetNextSteps assetId={asset.id} />
                   {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
                   <AssetScanWindowCard assetId={asset.id} />
                 </DetailSectionList>
+              </TabsContent>
+              <TabsContent value="findings">
+                <AssetFindings
+                  assetId={asset.id}
+                  assetName={asset.name}
+                  findingCount={asset.findingCount}
+                  severityCounts={asset.findingSeverityCounts}
+                />
               </TabsContent>
               {relationshipsOn && (
                 <TabsContent value="relationships">
@@ -499,6 +584,11 @@ export default function AssetDetailPage() {
               <TabsContent value="ports">
                 <ResolvedPortsSection assetId={asset.id} />
               </TabsContent>
+              {technologyCount > 0 && (
+                <TabsContent value="technologies">
+                  <AssetTechnologiesTab assetId={asset.id} />
+                </TabsContent>
+              )}
               <TabsContent value="web">
                 <div className="flex min-w-0 flex-col gap-page">
                   {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}

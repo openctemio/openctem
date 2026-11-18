@@ -28,7 +28,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SNOOZE_PRESETS, MIN_THRESHOLD_DAYS, MAX_THRESHOLD_DAYS } from '../types'
 import { snoozeAssetLifecycle, unsnoozeAssetLifecycle } from '../api'
 
-interface LifecycleSnoozeMenuProps {
+interface LifecycleSnoozeOptions {
   assetID: string
   /**
    * True when this asset currently has a snooze active. Drives
@@ -47,6 +47,9 @@ interface LifecycleSnoozeMenuProps {
    * refetch the asset row and re-render the badge.
    */
   onUpdated?: () => void
+}
+
+interface LifecycleSnoozeMenuProps extends LifecycleSnoozeOptions {
   /**
    * Optional class for the trigger button.
    */
@@ -54,24 +57,23 @@ interface LifecycleSnoozeMenuProps {
 }
 
 /**
- * Snooze menu for a single asset. Operator picks a preset duration
- * (7 / 30 / 90 days / 1 year) or opens a custom-days dialog. When
- * the asset is currently stale/inactive the preset actions flag
- * `reactivate: true` so the worker does not immediately re-demote.
+ * The snooze of one asset's lifecycle worker: the preset durations, the
+ * custom-days dialog and clearing the snooze. `LifecycleSnoozeMenu` (a
+ * button with its own menu) and an asset page's More menu (a submenu) both
+ * run it, so the two offer the same choices with the same requests.
  */
-export function LifecycleSnoozeMenu({
+export function useLifecycleSnooze({
   assetID,
   isSnoozed,
   isStaleOrInactive,
   onUpdated,
-  className,
-}: LifecycleSnoozeMenuProps) {
+}: LifecycleSnoozeOptions) {
   const { t } = useTranslation()
   const [customOpen, setCustomOpen] = React.useState(false)
   const [customDays, setCustomDays] = React.useState('30')
   const [submitting, setSubmitting] = React.useState(false)
 
-  const handlePreset = React.useCallback(
+  const snooze = React.useCallback(
     async (days: number) => {
       try {
         setSubmitting(true)
@@ -104,11 +106,11 @@ export function LifecycleSnoozeMenu({
       )
       return
     }
-    await handlePreset(days)
+    await snooze(days)
     setCustomOpen(false)
-  }, [customDays, handlePreset, t])
+  }, [customDays, snooze, t])
 
-  const handleUnsnooze = React.useCallback(async () => {
+  const unsnooze = React.useCallback(async () => {
     try {
       setSubmitting(true)
       await unsnoozeAssetLifecycle(assetID)
@@ -121,12 +123,85 @@ export function LifecycleSnoozeMenu({
     }
   }, [assetID, onUpdated, t])
 
+  const presets = SNOOZE_PRESETS.map((preset) => ({
+    days: preset.days,
+    label: t(`assets.snooze.preset.${preset.days}`, preset.label),
+  }))
+
+  const dialog = (
+    <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>{t('assets.snooze.customTitle', 'Custom snooze duration')}</DialogTitle>
+          <DialogDescription>
+            {t(
+              'assets.snooze.customHint',
+              'Between {min} and {max} days. The lifecycle worker skips this asset until the snooze expires.',
+              { min: MIN_THRESHOLD_DAYS, max: MAX_THRESHOLD_DAYS }
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <div className="space-y-2">
+            <Label htmlFor="custom-days">{t('assets.snooze.days', 'Days')}</Label>
+            <Input
+              id="custom-days"
+              type="number"
+              min={MIN_THRESHOLD_DAYS}
+              max={MAX_THRESHOLD_DAYS}
+              value={customDays}
+              onChange={(e) => setCustomDays(e.target.value)}
+            />
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCustomOpen(false)}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            onClick={() => {
+              void handleCustomSubmit()
+            }}
+            disabled={submitting}
+          >
+            {t('assets.snooze.submit', 'Snooze')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  return {
+    submitting,
+    isSnoozed: !!isSnoozed,
+    /** The menu's heading: what a preset does for this asset now. */
+    heading: isStaleOrInactive
+      ? t('assets.snooze.reactivateFor', 'Reactivate and pause the worker for…')
+      : t('assets.snooze.pauseFor', 'Pause the lifecycle worker for…'),
+    presets,
+    snooze,
+    unsnooze,
+    openCustom: () => setCustomOpen(true),
+    dialog,
+  }
+}
+
+/**
+ * Snooze menu for a single asset. Operator picks a preset duration
+ * (7 / 30 / 90 days / 1 year) or opens a custom-days dialog. When
+ * the asset is currently stale/inactive the preset actions flag
+ * `reactivate: true` so the worker does not immediately re-demote.
+ */
+export function LifecycleSnoozeMenu({ className, ...options }: LifecycleSnoozeMenuProps) {
+  const { t } = useTranslation()
+  const s = useLifecycleSnooze(options)
+
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className={className} disabled={submitting}>
-            {isSnoozed ? (
+          <Button variant="outline" size="sm" className={className} disabled={s.submitting}>
+            {s.isSnoozed ? (
               <>
                 <ClockArrowDown />
                 {t('assets.snooze.isSnoozed', 'Snoozed')}
@@ -140,36 +215,32 @@ export function LifecycleSnoozeMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuLabel>
-            {isStaleOrInactive
-              ? t('assets.snooze.reactivateFor', 'Reactivate and pause the worker for…')
-              : t('assets.snooze.pauseFor', 'Pause the lifecycle worker for…')}
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>{s.heading}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {SNOOZE_PRESETS.map((preset) => (
+          {s.presets.map((preset) => (
             <DropdownMenuItem
               key={preset.days}
               onSelect={() => {
-                void handlePreset(preset.days)
+                void s.snooze(preset.days)
               }}
             >
-              {t(`assets.snooze.preset.${preset.days}`, preset.label)}
+              {preset.label}
             </DropdownMenuItem>
           ))}
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault()
-              setCustomOpen(true)
+              s.openCustom()
             }}
           >
             {t('assets.snooze.custom', 'Custom…')}
           </DropdownMenuItem>
-          {isSnoozed && (
+          {s.isSnoozed && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => {
-                  void handleUnsnooze()
+                  void s.unsnooze()
                 }}
               >
                 {t('assets.snooze.clear', 'Clear snooze')}
@@ -179,46 +250,7 @@ export function LifecycleSnoozeMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{t('assets.snooze.customTitle', 'Custom snooze duration')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'assets.snooze.customHint',
-                'Between {min} and {max} days. The lifecycle worker skips this asset until the snooze expires.',
-                { min: MIN_THRESHOLD_DAYS, max: MAX_THRESHOLD_DAYS }
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <div className="space-y-2">
-              <Label htmlFor="custom-days">{t('assets.snooze.days', 'Days')}</Label>
-              <Input
-                id="custom-days"
-                type="number"
-                min={MIN_THRESHOLD_DAYS}
-                max={MAX_THRESHOLD_DAYS}
-                value={customDays}
-                onChange={(e) => setCustomDays(e.target.value)}
-              />
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCustomOpen(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              onClick={() => {
-                void handleCustomSubmit()
-              }}
-              disabled={submitting}
-            >
-              {t('assets.snooze.submit', 'Snooze')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {s.dialog}
     </>
   )
 }
