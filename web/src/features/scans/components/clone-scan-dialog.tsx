@@ -3,22 +3,13 @@
 import * as React from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useState, useEffect } from 'react'
-import { Loader2, Copy, Calendar, Target, Settings } from 'lucide-react'
+import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogBody,
-} from '@/components/ui/dialog'
+import { FormDialog, FormField, FormSection, FormStack } from '@/features/shared/components/forms'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 
 import { useCloneScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -73,144 +64,99 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
 
   const assetGroupCount = scan.asset_group_ids?.length || (scan.asset_group_id ? 1 : 0)
   const targetCount = scan.targets?.length || 0
+  const targetParts = [
+    assetGroupCount > 0 &&
+      t(assetGroupCount > 1 ? 'scans.clone.groupMany' : 'scans.clone.groupOne', undefined, {
+        count: assetGroupCount,
+      }),
+    targetCount > 0 &&
+      t(targetCount > 1 ? 'scans.clone.directMany' : 'scans.clone.directOne', undefined, {
+        count: targetCount,
+      }),
+  ].filter((part): part is string => !!part)
+  const items = [
+    { key: 'type', label: t('scans.clone.type'), value: scanTypeName(t, scan.scan_type) },
+    {
+      key: 'schedule',
+      label: t('scans.clone.schedule'),
+      value: scheduleTypeName(t, scan.schedule_type),
+    },
+    {
+      key: 'targets',
+      label: t('scans.clone.targets'),
+      value:
+        targetParts.length > 0 ? (
+          targetParts.join(', ')
+        ) : (
+          <span className="text-muted-foreground">{t('scans.clone.noneConfigured')}</span>
+        ),
+    },
+    {
+      key: 'status',
+      label: t('scans.clone.status'),
+      value: (
+        <>
+          {configStatusName(t, scan.status)}{' '}
+          <span className="text-muted-foreground">{t('scans.clone.asPaused')}</span>
+        </>
+      ),
+    },
+    ...(scan.tags && scan.tags.length > 0
+      ? [
+          {
+            key: 'tags',
+            label: t('scans.clone.tags'),
+            value: (
+              <span className="flex flex-wrap gap-1">
+                {scan.tags.map((tag) => (
+                  <Badge key={tag} variant="outline">
+                    {tag}
+                  </Badge>
+                ))}
+              </span>
+            ),
+          },
+        ]
+      : []),
+  ]
+  const named = newName.trim().length > 0
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent size="sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Copy className="h-5 w-5" />
-            {t('scans.clone.title')}
-          </DialogTitle>
-          <DialogDescription>
-            {t('scans.clone.description', undefined, { name: scan.name })}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogBody>
-          <div className="space-y-4 py-4">
-            {/* New name input */}
-            <div className="space-y-2">
-              <Label htmlFor="clone-name">{t('scans.clone.newName')}</Label>
-              <Input
-                id="clone-name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder={t('scans.clone.namePlaceholder')}
-                autoFocus
-              />
-            </div>
-
-            {/* What will be cloned summary */}
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-sm font-medium">{t('scans.clone.toClone')}</p>
-
-              <div className="grid gap-2 text-sm">
-                {/* Scan Type */}
-                <div className="flex items-center gap-2">
-                  <Settings className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{t('scans.clone.type')}</span>
-                  <Badge variant="outline">{scanTypeName(t, scan.scan_type)}</Badge>
-                </div>
-
-                {/* Schedule */}
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{t('scans.clone.schedule')}</span>
-                  <Badge variant="secondary">{scheduleTypeName(t, scan.schedule_type)}</Badge>
-                </div>
-
-                {/* Targets */}
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{t('scans.clone.targets')}</span>
-                  <span>
-                    {assetGroupCount > 0 && (
-                      <Badge variant="secondary" className="me-1">
-                        {t(
-                          assetGroupCount > 1 ? 'scans.clone.groupMany' : 'scans.clone.groupOne',
-                          undefined,
-                          {
-                            count: assetGroupCount,
-                          }
-                        )}
-                      </Badge>
-                    )}
-                    {targetCount > 0 && (
-                      <Badge variant="secondary">
-                        {t(
-                          targetCount > 1 ? 'scans.clone.directMany' : 'scans.clone.directOne',
-                          undefined,
-                          {
-                            count: targetCount,
-                          }
-                        )}
-                      </Badge>
-                    )}
-                    {assetGroupCount === 0 && targetCount === 0 && (
-                      <span className="text-muted-foreground">
-                        {t('scans.clone.noneConfigured')}
-                      </span>
-                    )}
-                  </span>
-                </div>
-
-                {/* Status */}
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`h-2 w-2 rounded-full ${
-                      scan.status === 'active'
-                        ? 'bg-success'
-                        : scan.status === 'paused'
-                          ? 'bg-warning'
-                          : 'bg-muted-foreground'
-                    }`}
-                  />
-                  <span className="text-muted-foreground">{t('scans.clone.status')}</span>
-                  <span>{configStatusName(t, scan.status)}</span>
-                  <span className="text-xs text-muted-foreground">{t('scans.clone.asPaused')}</span>
-                </div>
-              </div>
-
-              {/* Tags */}
-              {scan.tags && scan.tags.length > 0 && (
-                <div className="pt-2 border-t">
-                  <span className="text-xs text-muted-foreground">{t('scans.clone.tags')} </span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {scan.tags.map((tag) => (
-                      <Badge key={tag} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Note */}
-            <p className="text-xs text-muted-foreground">{t('scans.clone.note')}</p>
-          </div>
-        </DialogBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isMutating}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleClone} disabled={!newName.trim() || isMutating}>
-            {isMutating ? (
-              <>
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('scans.clone.cloning')}
-              </>
-            ) : (
-              <>
-                <Copy className="me-2 h-4 w-4" />
-                {t('scans.clone.clone')}
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      size="sm"
+      title={t('scans.clone.title')}
+      description={t('scans.clone.description', undefined, { name: scan.name })}
+      onSubmit={() => void handleClone()}
+      submitting={isMutating}
+      canSubmit={named}
+      reason={t('scans.clone.nameRequired')}
+      submitLabel={
+        isMutating ? (
+          t('scans.clone.cloning')
+        ) : (
+          <>
+            <Copy aria-hidden />
+            {t('scans.clone.clone')}
+          </>
+        )
+      }
+      data-testid="clone-scan-dialog"
+    >
+      <FormStack>
+        <FormField id="clone-name" label={t('scans.clone.newName')}>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder={t('scans.clone.namePlaceholder')}
+            autoFocus
+          />
+        </FormField>
+        <FormSection title={t('scans.clone.toClone')}>
+          <KeyValueList items={items} />
+        </FormSection>
+      </FormStack>
+    </FormDialog>
   )
 }
