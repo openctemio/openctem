@@ -233,9 +233,10 @@ export function CriticalityBadge({
         level={CRITICALITY_LEVEL[criticality]}
         label={labelled ? named : label}
         title={showTooltip ? undefined : named}
-        // A header names the value and sits next to the actions: no solid
-        // fill (it would read as a button), and the whole text in any language.
-        levelOutline={labelled}
+        // One look wherever criticality shows (list, card, record header): the
+        // bars and the word on the neutral pill, never a solid fill, which
+        // reads as a button next to actions and outweighs severity in a row.
+        levelOutline
         className={cn(size === 'sm' && 'h-5', labelled && 'max-w-full', className)}
       />
     </span>
