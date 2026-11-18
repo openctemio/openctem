@@ -27,6 +27,24 @@ const (
 // owner and repository rules, so the token passed them.
 var ErrAllowNotApplicable = fmt.Errorf("%w: only a pipeline definition or a branch or tag this configuration refused can be added", shared.ErrValidation)
 
+// ErrAllowRepositoryNotApproved refuses a one-click fix for a project an
+// all-projects configuration has not approved: such a configuration skips the
+// owner and repository rules, so any project of the instance can produce a
+// ref or pipeline-file refusal, and adding its value would widen the rules of
+// every approved project.
+var ErrAllowRepositoryNotApproved = fmt.Errorf("%w: approve the project first, then add its branch or pipeline file", shared.ErrValidation)
+
+// AllowRepositoryGate says whether a refusal's repository may have its value
+// added to cur: false when cur admits every project and the repository is
+// not approved on it. The all-projects approval state lives with that
+// feature, which sets the gate (SetAllowRepositoryGate); without one every
+// refusal's repository is accepted (a configuration naming its owners and
+// repositories already admitted this one).
+type AllowRepositoryGate func(ctx context.Context, tenantID shared.ID, cur *cirun.TrustConfig, repository string) (bool, error)
+
+// SetAllowRepositoryGate wires the AllowRepositoryGate.
+func (s *Service) SetAllowRepositoryGate(g AllowRepositoryGate) { s.allowGate = g }
+
 // Allowed is what a one-click fix added.
 type Allowed struct {
 	Kind  string
@@ -67,6 +85,15 @@ func (s *Service) AllowInTrustConfig(ctx context.Context, tenantID, id, refusalI
 	// issuer (a configuration re-pointed since does not take the value).
 	if allowed.Value == "" || (ref.Issuer != "" && strings.TrimRight(ref.Issuer, "/") != strings.TrimRight(cur.Issuer, "/")) {
 		return nil, Allowed{}, false, ErrAllowNotApplicable
+	}
+	if s.allowGate != nil {
+		ok, err := s.allowGate(ctx, tenantID, cur, ref.Repository)
+		if err != nil {
+			return nil, Allowed{}, false, err
+		}
+		if !ok {
+			return nil, Allowed{}, false, ErrAllowRepositoryNotApproved
+		}
 	}
 	rules := cur.Rules
 	switch allowed.Kind {

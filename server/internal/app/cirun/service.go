@@ -168,6 +168,7 @@ func (c Config) caps() cirun.PipelineCaps {
 
 // Service is the CI run service.
 type Service struct {
+	allowGate AllowRepositoryGate
 	orgs      tenantdom.AccessGate
 	repo      cirun.Repository
 	verifier  TokenVerifier

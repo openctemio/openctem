@@ -230,6 +230,41 @@ func TestCIRefusal_UnverifiedBounded(t *testing.T) {
 	}
 }
 
+// Review finding R1: a tenant full of recent no_configuration records (caller
+// chosen issuers) must still get the keys_unavailable and not_verified records
+// of its real issuer: they are not part of the bound.
+func TestCIRefusal_UnverifiedRealIssuerRecordsAreNeverStarved(t *testing.T) {
+	r := newCIRig(t)
+	r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	ctx := context.Background()
+	base := time.Now().UTC()
+	for i := 0; i < cirun.MaxUnverifiedRefusals; i++ {
+		if err := r.repo.RecordUnverifiedRefusal(ctx, cirun.UnverifiedRefusal{TenantID: r.tenant,
+			Issuer: fmt.Sprintf("https://ci%02d.example.com", i), Reason: cirunapp.UnverifiedNoConfiguration,
+			LastSeen: base, Count: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, reason := range []string{cirunapp.UnverifiedKeysUnavailable, cirunapp.UnverifiedNotVerified} {
+		if err := r.repo.RecordUnverifiedRefusal(ctx, cirun.UnverifiedRefusal{TenantID: r.tenant, Issuer: r.idp.url,
+			Reason: reason, LastSeen: base, Count: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := r.repo.ListUnverifiedRefusals(ctx, r.tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, u := range list {
+		got[u.Reason]++
+	}
+	if got[cirunapp.UnverifiedNoConfiguration] != cirun.MaxUnverifiedRefusals || got[cirunapp.UnverifiedKeysUnavailable] != 1 ||
+		got[cirunapp.UnverifiedNotVerified] != 1 {
+		t.Fatalf("records by reason: %v", got)
+	}
+}
+
 // Review finding: for no_configuration the stored issuer was whatever the
 // anonymous token claimed, so 20 made-up issuers pushed a real record (a
 // mistyped issuer) out and chose the text administrators read. An issuer not
@@ -255,6 +290,7 @@ func TestCIRefusal_JunkIssuersDoNotEvict(t *testing.T) {
 	for i := 0; i < 25; i++ {
 		now = now.Add(time.Second)
 		send(withIssuer(fmt.Sprintf("https://junk%02d.example.org/oidc", i)))
+		send(withIssuer(fmt.Sprintf("https://junk%02d.example.org", i))) // pathless: same (empty) path as the configured issuer
 	}
 	list, _, err := r.svc.UnverifiedRefusals(context.Background(), r.tenant)
 	if err != nil {

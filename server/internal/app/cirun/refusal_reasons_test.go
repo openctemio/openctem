@@ -216,3 +216,83 @@ func TestRecordUnverified_ThrottleAndIssuerHygiene(t *testing.T) {
 		t.Fatalf("hygiene: %d rows, last %+v", n, last)
 	}
 }
+
+// cfgRepo answers only the configurations a test lists.
+type cfgRepo struct {
+	cirun.Repository
+	cfgs []cirun.TrustConfig
+}
+
+func (r cfgRepo) ListTrustConfigs(context.Context, shared.ID) ([]cirun.TrustConfig, error) {
+	return r.cfgs, nil
+}
+
+func newUnverifiedService(now *time.Time, issuers ...string) (*Service, *memUnverified) {
+	cfgs := make([]cirun.TrustConfig, 0, len(issuers))
+	for _, i := range issuers {
+		cfgs = append(cfgs, cirun.TrustConfig{Issuer: i})
+	}
+	s := &Service{log: logger.NewNop(), now: func() time.Time { return *now }, repo: cfgRepo{cfgs: cfgs}}
+	st := &memUnverified{}
+	s.SetUnverifiedRefusalStore(st)
+	return s, st
+}
+
+// Review finding R1: every usual configured issuer has an empty path, so a
+// made-up pathless issuer on another host counted as close (same path) and
+// was stored under its own name. Only the same host is close.
+func TestRecordUnverified_PathlessFarIssuerIsNotKept(t *testing.T) {
+	now := time.Date(2026, 11, 18, 8, 0, 0, 0, time.UTC)
+	s, st := newUnverifiedService(&now, "https://gitlab.example.com")
+	ctx := context.Background()
+	tenant := shared.NewID()
+	s.recordUnverified(ctx, tenant, "https://junk.example.org", UnverifiedNoConfiguration, "")
+	s.recordUnverified(ctx, tenant, "https://gitlab.example.com/gitlab", UnverifiedNoConfiguration, "") // same host, other path
+	s.recordUnverified(ctx, tenant, "https://GitLab.example.com", UnverifiedNoConfiguration, "")        // case
+	s.recordUnverified(ctx, tenant, "https://gitlab.example.com:8443", UnverifiedNoConfiguration, "")   // port
+	got := map[string]bool{}
+	for _, r := range st.rows {
+		got[r.Issuer] = true
+	}
+	if got["https://junk.example.org"] {
+		t.Fatalf("a made-up pathless issuer was stored under its name: %v", got)
+	}
+	for _, want := range []string{"", "https://gitlab.example.com/gitlab", "https://GitLab.example.com", "https://gitlab.example.com:8443"} {
+		if !got[want] {
+			t.Errorf("missing record for %q: %v", want, got)
+		}
+	}
+}
+
+// Review finding R1 (starvation): a flood of made-up issuers spends the new
+// record budget, but the keys_unavailable and not_verified records of the
+// tenant's real issuer are still written (not budgeted).
+func TestRecordUnverified_FloodDoesNotStarveRealIssuerRecords(t *testing.T) {
+	now := time.Date(2026, 11, 18, 8, 0, 0, 0, time.UTC)
+	s, st := newUnverifiedService(&now, "https://gitlab.example.com")
+	ctx := context.Background()
+	tenant := shared.NewID()
+	for i := 0; i < 3*unverifiedNewPerHour; i++ {
+		// Same host, distinct paths: the budget is what stops them.
+		s.recordUnverified(ctx, tenant, fmt.Sprintf("https://gitlab.example.com/p%03d", i), UnverifiedNoConfiguration, "")
+	}
+	_, before := st.total()
+	s.recordUnverified(ctx, tenant, "https://gitlab.example.com", UnverifiedKeysUnavailable, IssuerCauseKeyNotFound)
+	s.recordUnverified(ctx, tenant, "https://gitlab.example.com", UnverifiedNotVerified, "")
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var keys, notVerified, noCfg int
+	for _, r := range st.rows {
+		switch r.Reason {
+		case UnverifiedKeysUnavailable:
+			keys++
+		case UnverifiedNotVerified:
+			notVerified++
+		default:
+			noCfg++
+		}
+	}
+	if noCfg != unverifiedNewPerHour || keys != 1 || notVerified != 1 || before == 0 {
+		t.Fatalf("no_configuration writes %d (want %d), keys_unavailable %d, not_verified %d (want 1, 1)", noCfg, unverifiedNewPerHour, keys, notVerified)
+	}
+}

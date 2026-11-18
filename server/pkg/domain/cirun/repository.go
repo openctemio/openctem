@@ -295,7 +295,20 @@ type UnverifiedRefusal struct {
 // takes no new record (existing ones keep counting) until a record has not
 // been seen for UnverifiedRefusalRetention: an anonymous caller cannot push
 // a real record out.
+//
+// Only the no_configuration records (UnverifiedReasonNoConfiguration), whose
+// issuer a caller chooses, count toward the bound. The keys_unavailable and
+// not_verified records name an issuer a configuration already matched, so
+// they are bounded by the tenant's configurations and are never refused.
 const MaxUnverifiedRefusals = 20
+
+// UnverifiedReasonNoConfiguration is the reason of a refusal whose token
+// named an issuer no enabled trust configuration has.
+const UnverifiedReasonNoConfiguration = "no_configuration"
+
+// MaxUnverifiedListed bounds the records one list returns (the capped
+// no_configuration records plus the ones bounded by configurations).
+const MaxUnverifiedListed = 5 * MaxUnverifiedRefusals
 
 // UnverifiedRefusalRetention is how long a record not seen again is kept
 // once the tenant's records are full.
