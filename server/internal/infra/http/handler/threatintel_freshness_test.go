@@ -40,7 +40,7 @@ func staleWatch(t *testing.T) *feedwatch.Service {
 func TestGetFreshness_TenantSeesStateOnly(t *testing.T) {
 	h := NewThreatIntelHandler(nil, nil, logger.NewNop()).SetFreshness(staleWatch(t))
 	rec := httptest.NewRecorder()
-	h.GetFreshness(rec, httptest.NewRequest(http.MethodGet, "/api/v1/threat-intel/freshness", nil))
+	h.GetFreshness(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/threat-intel/freshness", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -63,7 +63,7 @@ func TestGetFreshness_TenantSeesStateOnly(t *testing.T) {
 func TestGetFreshnessAdmin_ListsConditions(t *testing.T) {
 	h := NewThreatIntelHandler(nil, nil, logger.NewNop()).SetFreshness(staleWatch(t))
 	rec := httptest.NewRecorder()
-	h.GetFreshnessAdmin(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/threat-intel/freshness", nil))
+	h.GetFreshnessAdmin(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/threat-intel/freshness", nil))
 	var got AdminFreshnessResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestGetFreshnessAdmin_ListsConditions(t *testing.T) {
 func TestGetFreshness_NoWatch(t *testing.T) {
 	h := NewThreatIntelHandler(nil, nil, logger.NewNop())
 	rec := httptest.NewRecorder()
-	h.GetFreshness(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.GetFreshness(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"stale":false`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
