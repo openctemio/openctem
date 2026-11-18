@@ -112,6 +112,16 @@ describe('Console support access', () => {
     expect(item.textContent).not.toContain(' · ')
   })
 
+  it('opens a session with an outline button: the grant cards add no filled button', async () => {
+    route(['findings', 'assets'])
+    renderPanel()
+    const item = await screen.findByTestId('support-grant')
+    expect(within(item).getByRole('button', { name: 'Open support session' })).toHaveAttribute(
+      'data-variant',
+      'outline'
+    )
+  })
+
   it('without support access: says so, and never reads the grants (the API would refuse)', async () => {
     route(['findings', 'assets'])
     renderPanel(false)

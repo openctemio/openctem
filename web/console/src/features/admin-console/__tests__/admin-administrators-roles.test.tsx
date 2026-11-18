@@ -122,6 +122,9 @@ describe('Administrators page', () => {
     for (const h of ['Administrator', 'Role', 'Sign-in', 'Last tested', 'Status', 'Last active'])
       expect(within(table).getByRole('columnheader', { name: new RegExp(h) })).toBeInTheDocument()
     expect(screen.getAllByText('Test overdue').length).toBeGreaterThan(0)
+    // The name keeps its room; the address gives way first.
+    expect(within(table).getByText('Break glass')).toHaveClass('shrink-0', 'max-w-[60%]')
+    expect(within(table).getByText('bg@op.test')).toHaveClass('min-w-0', 'truncate')
 
     // Your own row has no menu; the others are named by the address.
     const menus = screen.getAllByRole('button', { name: /^Actions for the administrator/ })
