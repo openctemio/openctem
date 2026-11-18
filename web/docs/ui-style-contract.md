@@ -803,7 +803,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   single-storey a and open digits) and JetBrains Mono (`font-mono`). The
   files and their OFL licences are in `web/public/fonts`, declared in
   `src/styles/fonts.css` with Latin, Latin Extended and Vietnamese subsets;
-  no font CDN (the CSP allows fonts from our own origin only).
+  no font CDN (the CSP allows fonts from our own origin only). `Inter
+Fallback` (a local Arial or Liberation Sans with Inter's average width,
+  ascent and descent) follows Inter in the stack, so the swap from the
+  fallback to Inter moves nothing; the console's root layout preloads the
+  Inter files its first paint uses.
 
 ## 6. Colour
 

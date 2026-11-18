@@ -5,7 +5,7 @@ import useSWR from 'swr'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Label } from '@/components/ui/label'
+import { SettingsRow } from '@/features/shared'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { get, put } from '@/lib/api/client'
@@ -61,22 +61,22 @@ export function SharedSensorsOptOutSwitch() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4" data-testid="shared-sensors-opt-out">
-        <div className="space-y-0.5">
-          <Label htmlFor={ID}>{t('sensors.sharedOptOut.label')}</Label>
-          <p className="text-sm text-muted-foreground" id={`${ID}-desc`}>
-            {isOwner()
-              ? t('sensors.sharedOptOut.description')
-              : t('sensors.sharedOptOut.ownerOnly')}
-          </p>
-        </div>
-        <Switch
-          id={ID}
-          aria-describedby={`${ID}-desc`}
-          checked={data?.opt_out ?? false}
-          onCheckedChange={(c) => (c ? void onChange(true) : setAskLoosen(true))}
-          disabled={!data || isLoading || saving || !isOwner()}
-        />
+      <div data-testid="shared-sensors-opt-out">
+        <SettingsRow
+          label={<label htmlFor={ID}>{t('sensors.sharedOptOut.label')}</label>}
+          hintId={`${ID}-desc`}
+          hint={
+            isOwner() ? t('sensors.sharedOptOut.description') : t('sensors.sharedOptOut.ownerOnly')
+          }
+        >
+          <Switch
+            id={ID}
+            aria-describedby={`${ID}-desc`}
+            checked={data?.opt_out ?? false}
+            onCheckedChange={(c) => (c ? void onChange(true) : setAskLoosen(true))}
+            disabled={!data || isLoading || saving || !isOwner()}
+          />
+        </SettingsRow>
       </div>
       <ConfirmDialog
         open={askLoosen}
