@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
+  EmptyCell,
   EmptyState,
   ErrorState,
   FilterSelect,
@@ -118,7 +119,7 @@ function ExploitCell({ row }: { row: TechnologyRow }) {
       />
     )
   }
-  return <span className="text-muted-foreground">-</span>
+  return <EmptyCell title={t('attackSurface.technologies.noExploit', 'No known exploit')} />
 }
 
 function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {

@@ -16,6 +16,7 @@
 import useSWR from 'swr'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useTranslation } from '@/context/i18n-provider'
+import { EmptyCell } from './empty-cell'
 import { useTenant } from '@/context/tenant-provider'
 import type { MemberListResponse } from '@/features/organization/types/member.types'
 import { fetcher } from '@/lib/api/client'
@@ -163,7 +164,13 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
   const needsLookup = ref?.kind === 'user' && !ref.name && !ref.former_member
   const lookup = useMemberName(ref?.id, needsLookup)
 
-  if (!ref) return <span className={cn('text-sm text-muted-foreground', className)}>-</span>
+  if (!ref)
+    return (
+      <EmptyCell
+        className={cn('text-sm', className)}
+        title={t('common.nobodyRecorded', 'Nobody recorded')}
+      />
+    )
 
   let label: string
   let system = false

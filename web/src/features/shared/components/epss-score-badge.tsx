@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { EmptyCell } from './empty-cell'
 import {
   epssScoreToPercent,
   formatEpssPercentile,
@@ -133,8 +134,9 @@ export function EPSSScoreMeter({
   showLabel = true,
   className,
 }: EPSSScoreMeterProps) {
+  const { t } = useTranslation()
   if (score === null || score === undefined) {
-    return <span className="text-muted-foreground text-sm">-</span>
+    return <EmptyCell className="text-sm" title={t('common.noScore', 'No score yet')} />
   }
 
   const percentage = epssScoreToPercent(score)
