@@ -13,12 +13,13 @@ import (
 // sign-up has the same exposure; there the pending approval of new projects
 // is what protects an all-projects configuration.
 var sharedIssuerHosts = []string{
-	"gitlab.com", "jihulab.com", "gitlab.cn", "github.com", "ghe.com",
+	"gitlab.com", "jihulab.com", "gitlab.cn", githubHost, "ghe.com",
 	githubActionsIssuerHost, azureIssuerHost, circleCIIssuerHost, bitbucketAPIHost,
 }
 
 // Hosts of hosted CI issuers.
 const (
+	githubHost              = "github.com"
 	githubActionsIssuerHost = "token.actions.githubusercontent.com"
 	azureIssuerHost         = "vstoken.dev.azure.com"
 	circleCIIssuerHost      = "oidc.circleci.com"
