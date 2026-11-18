@@ -370,7 +370,7 @@ describe('/attack-paths states', () => {
       mutate: vi.fn(),
     })
     render(<AttackPathsPage />)
-    expect(screen.getByText(/Failed to load attack paths/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load attack paths/i)).toBeInTheDocument()
   })
 
   it('shows an error state when the targets fail to load', () => {
@@ -387,7 +387,7 @@ describe('/attack-paths states', () => {
       mutate: vi.fn(),
     })
     render(<AttackPathsPage />)
-    expect(screen.getByText(/Failed to load attack paths/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load attack paths/i)).toBeInTheDocument()
     expect(detail).toHaveBeenCalledWith(null)
   })
 

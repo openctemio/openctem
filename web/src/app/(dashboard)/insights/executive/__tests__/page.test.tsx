@@ -124,7 +124,7 @@ describe('ExecutiveSummaryPage', () => {
     const retry = vi.fn()
     summary = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
     render(<ExecutiveSummaryPage />)
-    expect(screen.getByText(/Failed to load headline figures/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load headline figures/i)).toBeInTheDocument()
     expect(screen.getByText(/Report this problem/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
@@ -134,7 +134,7 @@ describe('ExecutiveSummaryPage', () => {
     const retry = vi.fn()
     process = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
     render(<ExecutiveSummaryPage />)
-    expect(screen.getByText(/Failed to load process health/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load process health/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
   })

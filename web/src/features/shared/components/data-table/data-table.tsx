@@ -2050,7 +2050,17 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
+                  {/* An error block is start-aligned like every alert: icon,
+                      title, sentence and buttons share one edge (a centred
+                      cell centred only its text). */}
+                  <TableCell
+                    colSpan={columns.length}
+                    data-slot={errorState ? 'table-error-cell' : undefined}
+                    className={cn(
+                      'h-48',
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                    )}
+                  >
                     {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>
