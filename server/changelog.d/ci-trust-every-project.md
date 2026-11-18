@@ -8,3 +8,4 @@
 - Approving a project binds it to the project and namespace ids it was seen with. A group holds at most 25 pending projects and a configuration 500; the list names full groups (`full_groups`, `list_full`). New-group notices are limited to 10 per configuration and hour.
 - jihulab.com, gitlab.cn and `*.ghe.com` count as shared issuers, so they cannot have an all-projects configuration.
 - Changing a trust configuration's owners or repositories now keeps the owner pins of the names still listed (before, every pin was dropped).
+- Approving a whole GitLab group trusts its name (a GitLab token carries no top-level group id); approve single projects when the group's owners can change. Documented in the CI docs and RFC-051.

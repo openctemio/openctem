@@ -234,6 +234,19 @@ branches, so "protected branches only" does not stop them. Therefore:
   (`CI_TOKEN_REPOSITORY_BLOCKED`), takes it out of the configuration and
   lists it as blocked; unblocking makes it new again. A block wins over an
   approved group.
+- Approving a whole group trusts its name, not an id: a GitLab token carries
+  no top-level group id, only the id of the project's direct namespace. The
+  approval pins the namespaces already seen in the group's pending rows, so a
+  group renamed or re-registered afterwards is refused for those names, but a
+  subgroup never seen before (`acme/new`) is pinned on its first use and
+  admitted if the top-level name has changed hands. Prefer approving single
+  projects where the group's owners can change. Follow-up (not in this
+  change): a configuration option "Approve projects one by one" as the
+  default, with "Approve whole groups" as the explicit choice.
+- A user allowed to create top-level groups (the self-managed default) can fill
+  the pending list with new groups (500 rows, 25 per group, 10 notices per
+  hour). Existing decisions are unaffected, and blocking a group in bulk
+  clears its pending rows; watch the held-back count in the notice.
 - Approval is never guessed from the namespace: a GitLab token does not say
   whether a namespace is a group or a personal namespace.
 - Saved with all_repositories, a new configuration turns on "Protected

@@ -172,6 +172,14 @@ listed until you decide some of them. "Protected branches and tags
 only" and "Notify me when a new group asks" are on by default for such a
 configuration.
 
+Approving a whole group trusts its name. A GitLab token carries no top-level
+group id, so if the group is renamed or deleted and its name is taken by
+someone else, a subgroup that was never seen before is accepted under the
+approved name. Approve single projects when you do not control who owns the
+group. Anyone who can create top-level groups on your GitLab can also fill the
+New repositories list with new groups; block such a group in one step to clear
+its rows.
+
 ## Security notes
 
 - Nothing reusable is stored in GitLab. Each ID token belongs to one run: it
