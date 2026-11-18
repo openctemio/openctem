@@ -373,7 +373,13 @@ export interface TriageProgress {
   total: number
   decided: number
   sentForApproval: number
+  /**
+   * Findings passed over: the person's own skips and the findings passed over
+   * because someone else changed them or they left the person's scope (the
+   * page says "Skipped" for those too, so the tally counts them).
+   */
   skipped: number
+  /** Of the skipped, those passed over because they changed elsewhere. */
   changed: number
 }
 
@@ -386,7 +392,10 @@ export function progress(s: TriageSession): TriageProgress {
     if (DECIDED.has(o)) decided++
     else if (SENT_FOR_APPROVAL.has(o)) sentForApproval++
     else if (o === 'skipped') skipped++
-    else if (o === 'changed') changed++
+    else if (o === 'changed') {
+      skipped++
+      changed++
+    }
   }
   return {
     position: s.index < s.items.length ? s.index + 1 : 0,
