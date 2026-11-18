@@ -26,14 +26,16 @@ type Translate = ReturnType<typeof useTranslation>['t']
 
 /** Widths in px: the longest en and vi value whole, plus the cell padding. */
 export const CLOSURE_WIDTH = {
-  findingMin: 192,
+  // Small enough that Ready to close keeps its other columns whole in a 698 px frame
+  // (1024 wide with the sidebar open).
+  findingMin: 176,
   // "Default-branch scan" / "Quét nhánh mặc định" and the Held mark.
   method: 200,
   tool: 120,
 } as const
 
 /** A table frame narrower than this drops the column (Display > Columns brings it back). */
-export const CLOSURE_HIDE_BELOW = { asset: 1300, tool: 1180, scan: 1300 } as const
+export const CLOSURE_HIDE_BELOW = { asset: 1300, tool: 1180, scan: 1300, method: 920 } as const
 
 const meta = (m: DataTableColumnMeta) => m
 
@@ -145,7 +147,13 @@ export function closureColumns<T extends ClosureRow>(
     },
     {
       id: 'method',
-      meta: meta({ kind: 'text', width: CLOSURE_WIDTH.method, label: opts.methodLabel }),
+      // The phone card and Display > Columns keep it below that frame.
+      meta: meta({
+        kind: 'text',
+        width: CLOSURE_WIDTH.method,
+        hideBelow: CLOSURE_HIDE_BELOW.method,
+        label: opts.methodLabel,
+      }),
       header: opts.methodLabel,
       enableSorting: false,
       cell: ({ row }) => (
