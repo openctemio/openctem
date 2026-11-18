@@ -1,24 +1,13 @@
 'use client'
 
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
+import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogForm,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { AdminConfirmDialog } from './admin-confirm-dialog'
 import {
   importCatalogBundle,
   publishInstancePackage,
@@ -26,113 +15,49 @@ import {
   type ContentImportResult,
 } from '../api/use-content-catalog'
 
-const REASON_MAX = 500
-
-/** A dialog that runs one guarded catalog action with a reason. */
-function ReasonActionDialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  confirm,
-  destructive,
-  ready,
-  run,
-  children,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  title: string
-  description: string
-  confirm: string
-  destructive?: boolean
-  ready: boolean
-  run: (reason: string) => Promise<void>
-  children?: ReactNode
-}) {
-  const { t } = useTranslation()
-  const reasonId = useId()
-  const [reason, setReason] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      await run(reason.trim())
-      setReason('')
-      onOpenChange(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('admin.catalog.failed', 'The action failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent size="md">
-        <DialogForm onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </DialogHeader>
-          <DialogBody className="space-y-4">
-            {children}
-            <div className="grid gap-1.5">
-              <Label htmlFor={reasonId}>{t('admin.catalog.reason', 'Reason')}</Label>
-              <Textarea
-                id={reasonId}
-                value={reason}
-                rows={2}
-                maxLength={REASON_MAX}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder={t('admin.catalog.reasonHint', 'Recorded in the admin audit log.')}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </DialogBody>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={busy}
-            >
-              {t('admin.catalog.cancel', 'Cancel')}
-            </Button>
-            <Button
-              type="submit"
-              variant={destructive ? 'destructive' : 'default'}
-              disabled={busy || !ready || reason.trim() === ''}
-            >
-              {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
-              {confirm}
-            </Button>
-          </DialogFooter>
-        </DialogForm>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
+/**
+ * A file chooser in the console's language: the browser's own file control
+ * labels itself in the browser's language ("Choose File / No file chosen"),
+ * so the native input stays hidden behind a translated button and the chosen
+ * file's name.
+ */
 function FileField({
   label,
   accept,
+  file,
   onFile,
 }: {
   label: string
   accept?: string
+  file: File | null
   onFile: (f: File | null) => void
 }) {
+  const { t } = useTranslation()
   const id = useId()
+  const input = useRef<HTMLInputElement>(null)
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input
+      <div className="flex min-w-0 items-center gap-3">
+        <Button type="button" variant="outline" onClick={() => input.current?.click()}>
+          <Upload className="size-4" aria-hidden />
+          {t('admin.catalog.chooseFile', 'Choose a file')}
+        </Button>
+        <span
+          className="min-w-0 truncate text-sm text-muted-foreground"
+          title={file?.name}
+          aria-live="polite"
+        >
+          {file ? file.name : t('admin.catalog.noFile', 'No file chosen')}
+        </span>
+      </div>
+      <input
+        ref={input}
         id={id}
         type="file"
         accept={accept}
+        className="sr-only"
+        tabIndex={-1}
         onChange={(e) => onFile(e.target.files?.[0] ?? null)}
       />
     </div>
@@ -152,18 +77,27 @@ export function ImportBundleDialog({
   const { t } = useTranslation()
   const [file, setFile] = useState<File | null>(null)
   return (
-    <ReasonActionDialog
+    <AdminConfirmDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(o) => {
+        if (!o) setFile(null)
+        onOpenChange(o)
+      }}
       title={t('admin.catalog.importTitle', 'Import a signed catalog bundle')}
       description={t(
         'admin.catalog.importDesc',
         'The bundle is verified against the trust roots set on the server (key set, signed index, revocation list, every package) before anything is stored. It changes what every organization can install.'
       )}
-      confirm={t('admin.catalog.import', 'Import')}
-      ready={!!file}
-      run={async (reason) => {
-        const r = await importCatalogBundle(file as File, reason)
+      confirmLabel={t('admin.catalog.import', 'Import')}
+      reasonPlaceholder={t(
+        'admin.catalog.reasonImport',
+        'Monthly catalog update from the offline mirror, change 2231'
+      )}
+      requireCode
+      canSubmit={!!file}
+      onConfirm={async ({ reason, totp_code }) => {
+        const r = await importCatalogBundle(file as File, reason, totp_code ?? '')
+        setFile(null)
         toast.success(
           r.unchanged
             ? t('admin.catalog.importUnchanged', 'Nothing new: this bundle was already imported')
@@ -178,9 +112,10 @@ export function ImportBundleDialog({
       <FileField
         label={t('admin.catalog.bundle', 'Bundle (tar or tar.gz)')}
         accept=".tar,.gz,.tgz,application/gzip,application/x-tar"
+        file={file}
         onFile={setFile}
       />
-    </ReasonActionDialog>
+    </AdminConfirmDialog>
   )
 }
 
@@ -199,24 +134,39 @@ export function PublishPackageDialog({
   const [manifest, setManifest] = useState<File | null>(null)
   const [artifact, setArtifact] = useState<File | null>(null)
   const [ack, setAck] = useState(false)
+  const clear = () => {
+    setManifest(null)
+    setArtifact(null)
+    setAck(false)
+  }
   return (
-    <ReasonActionDialog
+    <AdminConfirmDialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(o) => {
+        if (!o) clear()
+        onOpenChange(o)
+      }}
       title={t('admin.catalog.publishTitle', 'Publish an instance package')}
       description={t(
         'admin.catalog.publishDesc',
         'A package of this installation, offered to every organization next to the imported catalog. The manifest and artifact are checked like any package.'
       )}
-      confirm={t('admin.catalog.publish', 'Publish')}
-      ready={!!manifest && !!artifact}
-      run={async (reason) => {
+      confirmLabel={t('admin.catalog.publish', 'Publish')}
+      reasonPlaceholder={t(
+        'admin.catalog.reasonPublish',
+        'Our own login-page templates for every organization, change 2231'
+      )}
+      requireCode
+      canSubmit={!!manifest && !!artifact}
+      onConfirm={async ({ reason, totp_code }) => {
         const p = await publishInstancePackage({
           manifest: manifest as File,
           artifact: artifact as File,
           acknowledgeSecrets: ack,
           reason,
+          totpCode: totp_code ?? '',
         })
+        clear()
         toast.success(
           t('admin.catalog.published', '{id} {version} published', {
             id: p.package_id,
@@ -229,9 +179,14 @@ export function PublishPackageDialog({
       <FileField
         label={t('admin.catalog.manifest', 'Manifest (package.yaml)')}
         accept=".yaml,.yml"
+        file={manifest}
         onFile={setManifest}
       />
-      <FileField label={t('admin.catalog.artifact', 'Artifact')} onFile={setArtifact} />
+      <FileField
+        label={t('admin.catalog.artifact', 'Artifact')}
+        file={artifact}
+        onFile={setArtifact}
+      />
       <label htmlFor={ackId} className="flex items-start gap-2 text-sm">
         <Checkbox id={ackId} checked={ack} onCheckedChange={(v) => setAck(v === true)} />
         <span>
@@ -241,7 +196,7 @@ export function PublishPackageDialog({
           )}
         </span>
       </label>
-    </ReasonActionDialog>
+    </AdminConfirmDialog>
   )
 }
 
@@ -257,7 +212,7 @@ export function RevokeVersionDialog({
 }) {
   const { t } = useTranslation()
   return (
-    <ReasonActionDialog
+    <AdminConfirmDialog
       open={!!target}
       onOpenChange={onOpenChange}
       destructive
@@ -269,11 +224,17 @@ export function RevokeVersionDialog({
         'admin.catalog.revokeDesc',
         'Every organization’s installation of this version becomes revoked and stops being delivered to its sensors. This cannot be undone.'
       )}
-      confirm={t('admin.catalog.revoke', 'Revoke')}
-      ready={!!target}
-      run={async (reason) => {
+      confirmLabel={t('admin.catalog.revoke', 'Revoke')}
+      reasonPlaceholder={t(
+        'admin.catalog.reasonRevoke',
+        'The publisher withdrew this version: its rules flood findings, advisory 2231'
+      )}
+      requireCode
+      typeToConfirm={target?.version}
+      canSubmit={!!target}
+      onConfirm={async ({ reason, totp_code }) => {
         if (!target) return
-        await revokeCatalogVersion(target.packageId, target.version, reason)
+        await revokeCatalogVersion(target.packageId, target.version, reason, totp_code ?? '')
         toast.success(t('admin.catalog.revoked', 'Version revoked'))
         onDone()
       }}

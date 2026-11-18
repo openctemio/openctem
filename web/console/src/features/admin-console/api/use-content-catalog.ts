@@ -90,10 +90,14 @@ export function useCatalogVersions(packageId: string | null) {
   )
 }
 
-/** Imports a signed bundle (tar or tar.gz). The reason goes first: the API streams the bundle last. */
-export function importCatalogBundle(bundle: File, reason: string) {
+/**
+ * Imports a signed bundle (tar or tar.gz). The reason and the code go first:
+ * the API streams the bundle last.
+ */
+export function importCatalogBundle(bundle: File, reason: string, totpCode: string) {
   const form = new FormData()
   form.set('reason', reason)
+  if (totpCode) form.set('totp_code', totpCode)
   form.set('bundle', bundle)
   return adminFetch<ContentImportResult>(`${BASE}/import`, { method: 'POST', body: form })
 }
@@ -104,9 +108,11 @@ export function publishInstancePackage(input: {
   artifact: File
   acknowledgeSecrets: boolean
   reason: string
+  totpCode: string
 }) {
   const form = new FormData()
   form.set('reason', input.reason)
+  if (input.totpCode) form.set('totp_code', input.totpCode)
   form.set('acknowledge_secrets', input.acknowledgeSecrets ? 'true' : 'false')
   form.set('manifest', input.manifest)
   form.set('artifact', input.artifact)
@@ -114,9 +120,14 @@ export function publishInstancePackage(input: {
 }
 
 /** Revokes one version: every installation of it becomes revoked. */
-export function revokeCatalogVersion(packageId: string, version: string, reason: string) {
+export function revokeCatalogVersion(
+  packageId: string,
+  version: string,
+  reason: string,
+  totpCode: string
+) {
   return adminFetch<CatalogVersion>(`${BASE}/packages/revoke`, {
     method: 'POST',
-    body: { package_id: packageId, version, reason },
+    body: { package_id: packageId, version, reason, ...(totpCode ? { totp_code: totpCode } : {}) },
   })
 }

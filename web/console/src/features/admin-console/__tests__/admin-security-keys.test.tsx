@@ -303,6 +303,7 @@ describe('forms that carry the authenticator code', () => {
   const dialog = (onConfirm: () => Promise<void>) => (
     <AdminConfirmDialog
       open
+      reasonPlaceholder="Why, ticket 1"
       onOpenChange={vi.fn()}
       title="End the session?"
       description="It signs out."
