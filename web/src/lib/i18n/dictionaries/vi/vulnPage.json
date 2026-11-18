@@ -203,7 +203,7 @@
   "vulnPage.list.source.sca": "Thư viện phụ thuộc (SCA)",
   "vulnPage.list.source.va": "Quét lỗ hổng",
   "vulnPage.list.state.all": "Tất cả",
-  "vulnPage.list.state.dispositioned": "Chấp nhận hoặc dương tính giả",
+  "vulnPage.list.state.dispositioned": "Không cần sửa",
   "vulnPage.list.state.fixed": "Đã sửa",
   "vulnPage.list.state.label": "Phát hiện",
   "vulnPage.list.state.open": "Đang mở",
