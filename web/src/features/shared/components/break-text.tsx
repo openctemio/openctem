@@ -34,7 +34,10 @@ export function breakAtSeparators(text: string): React.ReactNode {
   return out
 }
 
-/** A name or address that wraps only at its separators (see `breakAtSeparators`). */
-export function BreakText({ children }: { children: string | null | undefined }) {
-  return <>{breakAtSeparators(children ?? '')}</>
+/**
+ * A name or address that wraps only at its separators (see
+ * `breakAtSeparators`). Anything that is not a string is rendered as given.
+ */
+export function BreakText({ children }: { children: React.ReactNode }) {
+  return <>{typeof children === 'string' ? breakAtSeparators(children) : children}</>
 }

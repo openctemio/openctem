@@ -108,7 +108,7 @@ export function AssetNameCell({
         </TooltipTrigger>
         <TooltipContent className="max-w-[min(28rem,90vw)] space-y-1 text-start">
           <p className="font-medium break-words" dir="auto">
-            {typeof title === 'string' ? <BreakText>{title}</BreakText> : title}
+            <BreakText>{title}</BreakText>
           </p>
           {isCert && issuer && (
             <p className="flex flex-wrap gap-x-2 text-xs opacity-80">
