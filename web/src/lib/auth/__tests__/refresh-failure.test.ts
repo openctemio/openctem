@@ -78,6 +78,7 @@ describe('welcomeNoticeHref', () => {
     ['ORGANIZATION_SUSPENDED', 'organization_suspended'],
     ['EMAIL_NOT_VERIFIED', 'email_not_verified'],
     ['PERSONAL_ACCOUNTS_BLOCKED', 'personal_accounts_blocked'],
+    ['OWN_SIGN_IN_REQUIRED', 'own_sign_in_required'],
   ])('names the reason of %s and the organization', (code, notice) => {
     expect(welcomeNoticeHref(code, 'acme')).toBe(`/welcome?notice=${notice}&org=acme`)
   })
