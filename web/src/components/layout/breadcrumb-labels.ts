@@ -70,7 +70,10 @@ const PATH_LABELS: Record<string, Named> = {
     label: 'External attack surface',
     key: 'attackSurface.external.title',
   },
-  '/ci-cd/github-app/callback': { label: 'GitHub App installation', key: 'scans.ci.callback.title' },
+  '/ci-cd/github-app/callback': {
+    label: 'GitHub App installation',
+    key: 'scans.ci.callback.title',
+  },
   '/control-testing': { label: 'Control testing', key: 'validation.controlTesting.title' },
   '/controls': { label: 'Compensating controls', key: 'validation.controls.title' },
   '/dashboards': { label: 'Dashboards', key: 'dashboards.manage.title' },
@@ -91,7 +94,10 @@ const PATH_LABELS: Record<string, Named> = {
     key: 'notificationChannels.outbox.title',
   },
   '/settings/integrations/scm': { label: 'SCM connections', key: 'scmIntegration.page.title' },
-  '/settings/integrations/ticketing': { label: 'Ticketing', key: 'ticketingIntegration.page.title' },
+  '/settings/integrations/ticketing': {
+    label: 'Ticketing',
+    key: 'ticketingIntegration.page.title',
+  },
   '/settings/pentest/checklists': { label: 'Checklists', key: 'pentestChecklists.page.title' },
   '/settings/pentest/report-templates': {
     label: 'Report templates',
@@ -151,7 +157,6 @@ function humanize(segment: string): string {
   const words = segment.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
-
 
 /** Label for the breadcrumb item at `path` whose last segment is `segment`. */
 export function breadcrumbLabel(path: string, segment: string): string {
