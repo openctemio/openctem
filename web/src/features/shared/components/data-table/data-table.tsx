@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
+import { OneFilledAction } from '../one-filled-action'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -94,6 +95,13 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import {
+  knownRowCount,
+  loadingRowCount,
+  rememberRowCount,
+  ROW_HEIGHT,
+  rowCountKey,
+} from './loading-rows'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -430,8 +438,14 @@ const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
   center: 'text-center',
 }
 
-/** Skeleton rows shown in an empty body while `isLoading`. */
-const LOADING_ROWS = 5
+/** Height of one phone placeholder card (two skeleton lines + padding). */
+const PHONE_LOADING_ROW_HEIGHT = 64
+
+const noSubscribe = () => () => {}
+const subscribeResize = (onChange: () => void) => {
+  window.addEventListener('resize', onChange)
+  return () => window.removeEventListener('resize', onChange)
+}
 
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
@@ -566,6 +580,15 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
  */
 const CARD_TITLE_CLASS =
   'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+
+/**
+ * A control in the card's title line (a chip that opens a popover beside the
+ * status) gets the row menu's 36 px box with its chip centred in it: every
+ * control of the line has one height and one centre, and the chip keeps its
+ * own size.
+ */
+const CARD_HEAD_CONTROL_CLASS =
+  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
@@ -738,8 +761,10 @@ function AutoMobileCard<TData>({
       }}
     >
       {/* Title line, never wrapped: the name (up to two lines), the status
-          chip and the row menu. */}
-      <div data-slot="mobile-card-head" className="flex items-start gap-x-3">
+          chip and the row menu, centred on one line. The menu and any control
+          in the status keep their 36 px box without making the line taller
+          (negative margins), so a chip and the menu share one centre. */}
+      <div data-slot="mobile-card-head" className="flex items-center gap-x-3">
         {select && (
           <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
@@ -749,7 +774,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
-            className={cn('min-w-0 flex-1 self-center', CARD_TITLE_CLASS)}
+            className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
@@ -758,7 +783,11 @@ function AutoMobileCard<TData>({
           <div
             ref={statusRef}
             data-slot="mobile-card-status"
-            className={cn('flex h-5 max-w-[45%] shrink-0 items-center', CARD_LINE_CLASS)}
+            className={cn(
+              '-my-2 flex h-9 max-w-[45%] shrink-0 items-center',
+              CARD_LINE_CLASS,
+              CARD_HEAD_CONTROL_CLASS
+            )}
           >
             {flexRender(status.column.columnDef.cell, status.getContext())}
           </div>
@@ -767,7 +796,7 @@ function AutoMobileCard<TData>({
           <div
             ref={actionsRef}
             data-slot="mobile-card-actions"
-            className="-my-1.5 flex shrink-0 items-center"
+            className="-my-2 flex h-9 shrink-0 items-center"
           >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
@@ -1025,9 +1054,14 @@ export function DataTable<TData, TValue>({
   // viewer turned on or off (the state has its key); a controlled one's state
   // names every column, so only the click counts there.
   const [frameWidth, setFrameWidth] = React.useState(0)
-  React.useEffect(() => {
+  // Read before the first paint (a layout effect), so the column widths that
+  // depend on the frame (fit, pins, dropped columns) are right on the first
+  // frame instead of settling a frame later (cells moved sideways on load).
+  React.useLayoutEffect(() => {
     const el = tableWrapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    if (!el) return
+    setFrameWidth(el.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
     ro.observe(el)
     return () => ro.disconnect()
@@ -1311,6 +1345,34 @@ export function DataTable<TData, TValue>({
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
+
+  // Placeholder rows while loading (loading-rows.ts): the last count this list
+  // showed, else five, capped to the page size and the viewport, so the list
+  // keeps its height when the rows arrive. Read through useSyncExternalStore:
+  // the server render (no storage, no viewport) draws five.
+  // Keyed by the page path (read from the location on the client only, so the
+  // table needs no router) and the table's name.
+  const tableName = caption ?? labelledBy ?? ''
+  const knownRows = React.useSyncExternalStore(
+    noSubscribe,
+    () => knownRowCount(rowCountKey(tableName)) ?? -1,
+    () => -1
+  )
+  const viewportHeight = React.useSyncExternalStore(
+    subscribeResize,
+    () => window.innerHeight,
+    () => 0
+  )
+  const settled = !isLoading && !error
+  React.useEffect(() => {
+    if (settled) rememberRowCount(rowCountKey(tableName), pageRows.length)
+  }, [settled, tableName, pageRows.length])
+  const loadingRows = loadingRowCount(
+    knownRows < 0 ? undefined : knownRows,
+    table.getState().pagination.pageSize,
+    viewportHeight,
+    phoneCards ? PHONE_LOADING_ROW_HEIGHT : ROW_HEIGHT[density]
+  )
   const displayGroups = !rowGroups
     ? [{ key: 'all', rows: pageRows }]
     : rowGroups.groups
@@ -1524,13 +1586,15 @@ export function DataTable<TData, TValue>({
   ) : (
     (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
   )
+  // One filled button per screen: the empty body's action is an outline
+  // button beside the page's main action (`OneFilledAction`).
   const emptyBody = (
-    <div
+    <OneFilledAction
       data-slot="table-empty"
       className="[&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none"
     >
       {emptyContent}
-    </div>
+    </OneFilledAction>
   )
 
   // A stale read says so in the footer, with a refresh.
@@ -1780,7 +1844,7 @@ export function DataTable<TData, TValue>({
             })
           ) : isLoading ? (
             <div aria-busy="true" aria-label={t('common.table.loading', 'Loading')}>
-              {Array.from({ length: LOADING_ROWS }).map((_, i) => (
+              {Array.from({ length: loadingRows }).map((_, i) => (
                 <div key={i} className="space-y-2 px-3 py-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />
@@ -1988,7 +2052,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableBody>
               {isLoading ? (
-                Array.from({ length: LOADING_ROWS }).map((_, i) => (
+                Array.from({ length: loadingRows }).map((_, i) => (
                   <TableRow key={`loading-${i}`} aria-busy="true" data-loading-row="">
                     {table.getVisibleLeafColumns().map((column) => (
                       <TableCell key={column.id}>
@@ -2001,7 +2065,17 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
+                  {/* An error block is start-aligned like every alert: icon,
+                      title, sentence and buttons share one edge (a centred
+                      cell centred only its text). */}
+                  <TableCell
+                    colSpan={columns.length}
+                    data-slot={errorState ? 'table-error-cell' : undefined}
+                    className={cn(
+                      'h-48',
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                    )}
+                  >
                     {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>

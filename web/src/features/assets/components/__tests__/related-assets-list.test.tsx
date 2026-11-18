@@ -227,7 +227,7 @@ describe('RelatedAssetsList (full)', () => {
   it('shows an error with retry instead of an empty list when the request fails', async () => {
     api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(GROUPED)
     render(wrap(<RelatedAssetsList assetId="a1" />))
-    expect(await screen.findByText('Failed to load related assets')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't load related assets")).toBeInTheDocument()
     expect(screen.queryByText('No related assets yet')).not.toBeInTheDocument()
   })
 
