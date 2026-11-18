@@ -164,7 +164,9 @@ A table that scrolls sideways freezes its identifying columns at the start: the 
 columns marked `pin: 'start'` (else the first data column), within 45 % of the table's frame; a frozen
 column without a fixed width keeps its floor and is capped at 420 px. The header cells freeze with the
 body cells. A soft edge shows after the frozen group only while content is hidden under it. The row
-actions column scrolls with the table as its last column (`pinActions` freezes it, off by default).
+actions column scrolls with the table as its last column (`pinActions` freezes it, off by default). A
+frozen actions column is as wide as its widest action on the page (one line), never wider than its
+declared width, and has no box while no row of the page has an action.
 
 Before a table scrolls sideways its columns give way: a column with a range (`minWidth` below its
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
@@ -393,6 +395,10 @@ reference.
 - **Phone**: compact tiles on a six-track grid, at most two rows (2 and 4
   tiles in halves, 3 in thirds, 5 as three thirds over two halves), a long
   label wraps to a second line; never a sideways scroll.
+- **List first on a phone**: a strip above a list takes `listFirst`, so on a
+  phone it follows the list (CSS order, nothing moves after hydration) and the
+  first row starts within the top 45% of a 390x844 screen. A list page's
+  description under the title is hidden on a phone for the same reason.
 - Never: pastel icon tiles, coloured card borders, coloured icons before the
   label, card-in-card stat grids.
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
@@ -491,7 +497,9 @@ reference.
     `toolbarStart`: a token that reads "Status: Pending", opens a menu of every
     value with its count (counted in the viewer's scope), can be cleared to
     all rows, and keeps its value in the URL (`useUrlFilter`, the page's
-    default value when the parameter is absent);
+    default value when the parameter is absent); the room of its clear button
+    is kept while nothing is chosen, so choosing a value never changes the
+    token's width;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
@@ -507,10 +515,10 @@ reference.
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
   - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a list whose end actions would need more shows them as icons
-    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
-    a tooltip with the same name), so the filter tokens neither shrink nor
-    wrap to a third line.
+    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+    `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
+    tooltip below it, so the filter tokens neither shrink nor wrap to a third
+    line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -528,6 +536,10 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
+- **A switch is a value on a phone card.** A field of the automatic phone card
+  whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
+  beside it, kept in step with the switch, so no card shows a label over a
+  bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with

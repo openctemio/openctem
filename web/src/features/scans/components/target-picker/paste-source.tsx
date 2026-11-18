@@ -77,16 +77,15 @@ function InvalidRow({
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(entry.input)
   const reason = targetReasonText(t, entry)
+  const save = () => {
+    setEditing(false)
+    if (text.trim() && text.trim() !== entry.input) onReplace(text.trim())
+  }
   if (editing) {
     return (
-      <form
-        className="flex h-full items-center gap-1.5 px-1"
-        onSubmit={(e) => {
-          e.preventDefault()
-          setEditing(false)
-          if (text.trim() && text.trim() !== entry.input) onReplace(text.trim())
-        }}
-      >
+      // Not a form of its own: the field sits inside dialogs that are forms
+      // (Quick scan), where a nested form's submit would also submit the dialog.
+      <div className="flex h-full items-center gap-1.5 px-1">
         <Input
           autoFocus
           value={text}
@@ -95,6 +94,9 @@ function InvalidRow({
             if (e.key === 'Escape') {
               e.stopPropagation()
               setEditing(false)
+            } else if (e.key === 'Enter') {
+              e.preventDefault()
+              save()
             }
           }}
           aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
@@ -102,10 +104,10 @@ function InvalidRow({
           autoCapitalize="none"
           spellCheck={false}
         />
-        <Button type="submit" size="sm">
+        <Button type="button" size="sm" onClick={save}>
           {t('scans.paste.save')}
         </Button>
-      </form>
+      </div>
     )
   }
   return (

@@ -15,6 +15,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Check, Copy, Download, ShieldX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
   EmptyState,
@@ -310,7 +311,7 @@ export function EASMCertificates() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ListTitleRow
         title={t('attackSurface.certificates.viewAll', 'All certificates')}
         count={
@@ -346,10 +347,12 @@ export function EASMCertificates() {
           />
         }
         toolbarEnd={
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting}>
-            <Download className="me-2 h-4 w-4" aria-hidden />
-            {t('attackSurface.certificates.export', 'Export CSV')}
-          </Button>
+          <ToolbarAction
+            icon={Download}
+            label={t('attackSurface.certificates.export', 'Export CSV')}
+            onClick={exportCsv}
+            disabled={exporting}
+          />
         }
         toolbarBelow={
           chips.length > 0 ? (

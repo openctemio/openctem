@@ -765,7 +765,7 @@ export default function ExposuresPage() {
                   onRetry={() => refreshStats()}
                 />
               ) : (
-                <MetricStrip loading={statsLoading} items={metrics} className="max-md:order-last" />
+                <MetricStrip loading={statsLoading} items={metrics} listFirst />
               )}
 
               {/* On a phone the list comes first: the tiles follow it. */}
