@@ -125,7 +125,7 @@ describe('SuggestionsInbox keyboard review', () => {
     expect(bulkApprove).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Accept 1 suggestion?')
-    await user.click(within(dialog).getByRole('button', { name: 'Accept 1 suggestions' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Accept 1 suggestion' }))
     await waitFor(() => expect(bulkApprove).toHaveBeenCalledTimes(1))
   })
 
