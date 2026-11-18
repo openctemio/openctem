@@ -78,6 +78,23 @@ describe('FleetHealthStrip', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
+  it('keeps every detail to one line above the list (from 768 px), whole in its tooltip', () => {
+    renderStrip()
+    const lines = document.querySelectorAll('[data-slot="fleet-detail-line"]')
+    expect(lines.length).toBeGreaterThanOrEqual(2)
+    for (const line of Array.from(lines)) {
+      expect(line).toHaveClass('block', 'md:truncate')
+      expect(line).toHaveAttribute('title', line.textContent)
+    }
+    const legend = document.querySelector('[data-slot="fleet-bar-legend"]')
+    // One 16px line from 768 px; an item that does not fit goes to a hidden second line, never cut.
+    expect(legend).toHaveClass('flex-wrap', 'md:h-4', 'md:overflow-hidden')
+    expect(legend).toHaveAttribute(
+      'title',
+      '3 online, 3 degraded, late or stale, 1 offline, 1 disabled'
+    )
+  })
+
   it('fleet health filters to the sensors that are not connected', () => {
     const p = renderStrip({ notConnectedActive: true })
     const btn = screen.getByRole('button', { name: /Fleet health/ })

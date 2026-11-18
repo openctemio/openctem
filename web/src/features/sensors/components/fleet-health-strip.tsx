@@ -30,6 +30,19 @@ function FleetBarSkeleton() {
   )
 }
 
+/**
+ * A tile's detail line: one line from 768 px, cut with an ellipsis and whole
+ * in its tooltip, so the strip is as tall loaded as while loading. On a
+ * phone, where the strip follows the list, it wraps.
+ */
+function oneLine(text: string, className?: string) {
+  return (
+    <span data-slot="fleet-detail-line" className={cn('block md:truncate', className)} title={text}>
+      {text}
+    </span>
+  )
+}
+
 /** The fleet's state mix as one small bar, with a legend (no colour-only meaning). */
 function FleetBar({ summary }: { summary: FleetSummary }) {
   const { t } = useTranslation()
@@ -69,10 +82,19 @@ function FleetBar({ summary }: { summary: FleetSummary }) {
           <span key={p.key} className={cn('block h-full', p.className)} style={{ flex: p.n }} />
         ))}
       </span>
-      <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5" aria-hidden>
+      {/* One line from 768 px (the strip sits above the list there, and a
+          second line arriving with the data would move it); the whole mix
+          is the bar's name and the line's tooltip. On a phone, below the
+          list, it wraps. */}
+      <span
+        data-slot="fleet-bar-legend"
+        className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 md:h-4 md:overflow-hidden"
+        title={label}
+        aria-hidden
+      >
         {parts.map((p) => (
           // A label wraps inside its own item rather than running past the tile.
-          <span key={p.key} className="inline-flex min-w-0 items-center gap-1">
+          <span key={p.key} className="inline-flex min-w-0 items-center gap-1 md:shrink-0">
             <span className={cn('size-2 shrink-0 rounded-sm', p.className)} />
             {p.label} <span className="font-medium tabular-nums text-foreground">{p.n}</span>
           </span>
@@ -145,10 +167,11 @@ export function FleetHealthStrip({
       label: t('sensors.health.attention'),
       value: summary.needsAttention,
       tone: 'warning',
-      detail:
+      detail: oneLine(
         summary.needsAttention > 0
           ? summary.attentionKinds.map((k) => t(ATTENTION_WORDS[k])).join(', ')
-          : t('sensors.health.nothingToFix'),
+          : t('sensors.health.nothingToFix')
+      ),
       onClick: onToggleAttention,
       active: attentionActive,
     },
@@ -160,19 +183,18 @@ export function FleetHealthStrip({
         ? t('sensors.health.latest', undefined, { version: scanner.latest })
         : undefined,
       detail:
-        summary.unsupported > 0 ? (
-          <span className="text-destructive">
-            {t('sensors.health.belowProductMin', undefined, { count: summary.unsupported })}
-          </span>
-        ) : (channel.products?.length ?? 0) > 0 ? (
-          summary.updates === 0 ? (
-            t('sensors.health.allLatest')
-          ) : (
-            t('sensors.health.olderRun')
-          )
-        ) : (
-          t('sensors.health.noChannel')
-        ),
+        summary.unsupported > 0
+          ? oneLine(
+              t('sensors.health.belowProductMin', undefined, { count: summary.unsupported }),
+              'text-destructive'
+            )
+          : oneLine(
+              (channel.products?.length ?? 0) > 0
+                ? summary.updates === 0
+                  ? t('sensors.health.allLatest')
+                  : t('sensors.health.olderRun')
+                : t('sensors.health.noChannel')
+            ),
       onClick: onToggleUpdates,
       active: updatesActive,
     },
@@ -185,15 +207,16 @@ export function FleetHealthStrip({
       value: z.covered,
       hint: t('sensors.health.ofZones', undefined, { count: z.total }),
       detail:
-        z.uncovered.length > 0 ? (
-          <span className="text-destructive">
-            {z.uncovered.length === 1
-              ? t('sensors.health.zoneUncovered.one', undefined, { zone: z.uncovered[0] })
-              : t('sensors.health.zoneUncovered.other', undefined, { count: z.uncovered.length })}
-          </span>
-        ) : (
-          t('sensors.health.zonesCovered')
-        ),
+        z.uncovered.length > 0
+          ? oneLine(
+              z.uncovered.length === 1
+                ? t('sensors.health.zoneUncovered.one', undefined, { zone: z.uncovered[0] })
+                : t('sensors.health.zoneUncovered.other', undefined, {
+                    count: z.uncovered.length,
+                  }),
+              'text-destructive'
+            )
+          : oneLine(t('sensors.health.zonesCovered')),
       onClick: onToggleZoneGrouping,
       active: zoneGroupingActive,
     })
@@ -205,10 +228,12 @@ export function FleetHealthStrip({
       label: t('sensors.health.protocolV1'),
       value: summary.protocolV1,
       tone: 'warning',
-      detail: t('sensors.health.upgrade', undefined, {
-        version: PROTOCOL_V2_SENSOR_VERSION,
-        date: PROTOCOL_V1_SUNSET,
-      }),
+      detail: oneLine(
+        t('sensors.health.upgrade', undefined, {
+          version: PROTOCOL_V2_SENSOR_VERSION,
+          date: PROTOCOL_V1_SUNSET,
+        })
+      ),
       onClick: onToggleProtocolV1,
       active: protocolV1Active,
     })

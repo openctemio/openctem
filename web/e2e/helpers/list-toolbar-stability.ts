@@ -227,16 +227,20 @@ async function snap(page: Page): Promise<Snap> {
   return page.evaluate(() => {
     const shown = (el: Element | null | undefined): el is HTMLElement =>
       !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    const main = document.querySelector('main')!
+    // Page coordinates: typing in a field below the fold scrolls the page to
+    // it, which moves nothing in the layout (a phone list under a tall strip).
+    let scrolled = window.scrollY
+    for (let el: Element | null = main; el; el = el.parentElement) scrolled += el.scrollTop
     const box = (el: Element): { x: number; y: number; w: number; h: number } => {
       const r = el.getBoundingClientRect()
       return {
         x: Math.round(r.x),
-        y: Math.round(r.y),
+        y: Math.round(r.y + scrolled),
         w: Math.round(r.width),
         h: Math.round(r.height),
       }
     }
-    const main = document.querySelector('main')!
     const toolbar = main.querySelector('[data-slot="list-toolbar"]')!
     const region =
       toolbar.closest('[data-slot="list-toolbar-region"], [data-slot="list-toolbar-frame"]') ??
@@ -265,8 +269,14 @@ async function snap(page: Page): Promise<Snap> {
         !b.closest('[data-slot="list-toolbar-region"], [data-slot="list-toolbar"], nav, header')
     )
     const name = (b: HTMLElement) =>
-      // Without its numbers: a tile's count arrives after its label.
-      (b.getAttribute('aria-label') || b.textContent || '')
+      // A metric tile by its label: its count and detail line arrive after it.
+      // Without numbers otherwise: a count arrives after its label.
+      (
+        b.querySelector('[data-slot="metric-label"]')?.textContent ||
+        b.getAttribute('aria-label') ||
+        b.textContent ||
+        ''
+      )
         .replace(/\d[\d,.]*\+?/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
@@ -292,7 +302,7 @@ async function snap(page: Page): Promise<Snap> {
       for (let n = el.nextElementSibling; n; n = n.nextElementSibling) {
         const r = n.getBoundingClientRect()
         if (r.height > 0 && getComputedStyle(n).display !== 'none') {
-          listTop = Math.round(r.top)
+          listTop = Math.round(r.top + scrolled)
           break
         }
       }
