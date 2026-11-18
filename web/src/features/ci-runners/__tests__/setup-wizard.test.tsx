@@ -101,7 +101,7 @@ describe('Connect a CI provider', () => {
 
   it('warns before a private GitLab address that the platform must reach it', async () => {
     const dialog = await open()
-    await userEvent.type(within(dialog).getByLabelText(/your gitlab address/i), '192.168.8.10')
+    await userEvent.type(within(dialog).getByLabelText(/your gitlab address/i), '192.168.1.10')
     expect(within(dialog).getByTestId('ci-connect-private')).toHaveTextContent(
       /a platform administrator can allow it/i
     )

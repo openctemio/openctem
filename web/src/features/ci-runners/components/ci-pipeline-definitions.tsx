@@ -93,7 +93,10 @@ export function CIPipelineDefinitions({
         <ul className="flex flex-col gap-1" aria-labelledby="ci-defs-title">
           {value.map((v) => (
             <li key={v} className="flex min-w-0 items-center gap-2">
-              <Badge variant="outline" className="min-w-0 font-mono">
+              <Badge // label-ok: a pipeline definition is a file path, an identifier
+                variant="outline"
+                className="min-w-0 font-mono"
+              >
                 <span className="truncate" title={v}>
                   {v}
                 </span>

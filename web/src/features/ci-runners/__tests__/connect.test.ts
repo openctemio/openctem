@@ -36,7 +36,7 @@ describe('looksPrivate', () => {
   it('flags private and local hosts', () => {
     for (const h of [
       'https://10.1.2.3',
-      'https://192.168.8.5',
+      'https://192.168.1.5',
       'https://172.20.0.1',
       'https://git.local',
     ])

@@ -11,4 +11,5 @@
 - Gate policies and break-glass overrides name a repository by its name and pick it by name, never by its internal id.
 - Old links (`?tab=setup` and its `?section=trust|refused|gate|feedback|break-glass`) open the new tab and the address is rewritten.
 - A private CI address now says that a platform administrator can allow it.
-- Docs: none in this repository (UI copy and in-app help only); the public CI guide is updated in the docs site.
+
+Docs: none (UI copy and in-app help only; the public CI guide is updated in the docs site)
