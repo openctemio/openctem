@@ -93,19 +93,29 @@ test(
     await expect(title(page)).toHaveText(/E2E triage/, { timeout: 30_000 })
     await expect(page.getByTestId('triage-position')).toHaveText(/^1 of 10$/)
 
-    // The decision panel: a labelled region with a visible button per key.
+    // A visible button per key: the decisions in the labelled decision region,
+    // Evidence and Full page on the finding, Undo, the keys and Exit in the header.
     const region = page.getByRole('region', { name: 'Decision' })
     for (const name of [
       /^Confirm/,
       /^Request false positive/,
       /^Request risk acceptance/,
       /^Assign$/,
+      /^Add to task$/,
+      /^Retest$/,
       /^Skip$/,
-      /^Evidence$/,
-      /^Full page$/,
-      /^All keys$/,
+      /^Previous$/,
+      /^Next$/,
     ]) {
       await expect(region.getByRole('button', { name })).toBeVisible()
+    }
+    const finding = page.getByRole('article')
+    for (const name of [/^Evidence$/, /^Full page$/]) {
+      await expect(finding.getByRole('button', { name })).toBeVisible()
+    }
+    const header = page.locator('main [data-slot=page-header]')
+    for (const name of [/^Undo last/, /^All keys$/, /^Exit$/]) {
+      await expect(header.getByRole('button', { name })).toBeVisible()
     }
     await page.addScriptTag({ path: AXE })
     const axe = (await page.evaluate(async () => {
