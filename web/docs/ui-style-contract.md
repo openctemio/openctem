@@ -962,6 +962,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
+  **One filled button per screen**: the empty state's action is filled only
+  when no other filled button is shown (`OneFilledAction`, before paint); beside
+  the page's main action in the header it is an outline button. A page whose
+  header has no main action in that state keeps it filled (Findings first run:
+  "Run a scan"). It reaches a kit `Button` written in the action (also inside
+  `Can`); a filled button drawn by a component of its own is reported by a
+  warning outside production. The table's empty body follows the same rule.
   Three kinds, each worded for its case:
   - **no data yet** (first use): the setup action;
   - **no results** (filters active): "Clear filters"; a list that wants its
