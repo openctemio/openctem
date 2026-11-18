@@ -10,4 +10,6 @@
 - New scan and Edit scan: a missing name, scanner or workflow is marked at its field once the What step shows its
   problems, so "Go to What" puts focus on the field to fix. The scanner, workflow and Tenable.sc connector pickers are
   as wide as their field.
+- When the primary action is off, its reason sits right beside it (under it on a phone), not beside Cancel. Quick
+  scan and its Start scan action are in sentence case; Clone scan says once that the copy starts paused.
 - Docs: none (the console dialogs keep their fields, checks and requests; user guides describe them by field)

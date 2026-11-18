@@ -891,7 +891,6 @@
   "scans.clone.nameRequired": "Đặt tên cho bản sao.",
   "scans.clone.newName": "Tên quét mới",
   "scans.clone.noneConfigured": "Chưa cấu hình",
-  "scans.clone.note": "Bản sao bắt đầu ở trạng thái tạm dừng.",
   "scans.clone.schedule": "Lịch chạy",
   "scans.clone.status": "Trạng thái",
   "scans.clone.tags": "Thẻ",

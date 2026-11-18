@@ -156,7 +156,6 @@ export function CloneScanDialog({ scan, open, onOpenChange, onSuccess }: CloneSc
         <FormSection title={t('scans.clone.toClone')}>
           <KeyValueList items={items} />
         </FormSection>
-        <p className="text-cap text-muted-foreground">{t('scans.clone.note')}</p>
       </FormStack>
     </FormDialog>
   )

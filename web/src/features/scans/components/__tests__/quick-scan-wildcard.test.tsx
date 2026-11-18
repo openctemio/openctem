@@ -76,7 +76,7 @@ describe('QuickScanDialog wildcard targets', () => {
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.example.net')
-    await user.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await user.click(screen.getByRole('button', { name: /Start scan/ }))
     expect(quickScan).toHaveBeenCalledWith({ targets: ['*.example.net'], scanner_name: 'nuclei' })
   })
 
@@ -89,7 +89,7 @@ describe('QuickScanDialog wildcard targets', () => {
     )
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     await fill('*.example.com')
-    await user.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await user.click(screen.getByRole('button', { name: /Start scan/ }))
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalled())
     const text = String(vi.mocked(toast.error).mock.calls[0][0])
     expect(text).toContain('*.example.com')

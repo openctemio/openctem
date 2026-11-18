@@ -59,7 +59,7 @@ describe('QuickScanDialog', () => {
       target_count: 2,
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
-    const start = screen.getByRole('button', { name: /Start Scan/ })
+    const start = screen.getByRole('button', { name: /Start scan/ })
     expect(start).toBeDisabled()
 
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com, api.example.com')
@@ -93,7 +93,7 @@ describe('QuickScanDialog', () => {
     await userEvent.type(screen.getByLabelText('Targets'), 'promo.net, old.example.com')
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
 
     expect(await screen.findByText('2 targets may not be scanned')).toBeInTheDocument()
     expect(screen.getByText('Not in scope')).toBeInTheDocument()
@@ -112,7 +112,7 @@ describe('QuickScanDialog', () => {
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com')
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
 
     const name = await screen.findByLabelText('Save as scan')
     expect(name).toHaveValue('nuclei — example.com')
@@ -146,7 +146,7 @@ describe('QuickScanDialog once started', () => {
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com')
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
     return screen.findByLabelText('Save as scan')
   }
 
