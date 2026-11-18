@@ -161,16 +161,21 @@ export function FilterSelect<V extends string>({
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      {filtered && (
+      {/* The clear button's room is kept while nothing is filtered, so
+          choosing a value never changes the token's width. */}
+      {filtered ? (
         <button
           type="button"
+          data-slot="filter-select-clear"
           onClick={() => onChange(allValue)}
           aria-label={t('common.filter.clearNamed', 'Clear {name}', { name: label })}
-          className="me-1 inline-flex size-7 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="me-1 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X aria-hidden className="size-4" />
         </button>
-      )}
+      ) : clearable ? (
+        <span aria-hidden data-slot="filter-select-clear-room" className="me-1 size-7 shrink-0" />
+      ) : null}
     </div>
   )
 }

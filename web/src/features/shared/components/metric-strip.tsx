@@ -34,6 +34,13 @@ export interface MetricStripItem {
    * breakdown bar). Keep it short: the strip is a summary, not a card.
    */
   detail?: React.ReactNode
+  /**
+   * The detail's place while loading, for a detail taller than one line (a
+   * bar with a legend): the same shape with skeletons, so the strip keeps
+   * its height when the numbers arrive. Without it a one-line skeleton holds
+   * the place.
+   */
+  detailLoading?: React.ReactNode
   /** What the number counts, shown as the cell's tooltip. */
   description?: string
   /**
@@ -247,7 +254,11 @@ export function MetricStrip({
               />
             ) : null}
             {item.detail && !error ? (
-              loading ? (
+              loading && item.detailLoading ? (
+                <span data-slot="metric-detail" className="mt-1 block min-w-0 text-xs" aria-hidden>
+                  {item.detailLoading}
+                </span>
+              ) : loading ? (
                 // Holds the detail line's place (12px text, 16px line).
                 <span data-slot="metric-detail" className="mt-1 flex h-4 items-center">
                   <Skeleton className="h-3 w-24" />

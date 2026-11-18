@@ -251,6 +251,12 @@ interface DataTableProps<TData, TValue> {
    */
   toolbarBelow?: React.ReactNode
   /**
+   * Page content between the toolbar (with its chips row) and the rows, such
+   * as a summary block that loads on its own. It is content, not chrome:
+   * whatever it does, the title row and the toolbar above it never move.
+   */
+  beforeRows?: React.ReactNode
+  /**
    * Keep the selection checkbox and the row's identifying columns
    * (`meta.pin: 'start'`, else the first data column) in view while the
    * table scrolls sideways, so a row can be identified at any scroll
@@ -269,7 +275,10 @@ interface DataTableProps<TData, TValue> {
    * next tick brought the stale selection back).
    */
   resetSelectionKey?: string | number
-  /** Hide the "N of M selected" note, e.g. when a bulk-action bar shows it. */
+  /**
+   * Hide the "N of M selected" note, e.g. when a bulk-action bar shows it.
+   * The note is drawn under the rows, never in the toolbar.
+   */
   showSelectionCount?: boolean
   /**
    * Phone layout: below `md` each row renders through this as a stacked card
@@ -520,6 +529,59 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
+const CARD_VALUE_CLASS =
+  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal'
+
+/**
+ * One field value of the automatic phone card. A value that is only a switch
+ * (an "Enabled" column) counts as a value: the card writes "On" or "Off"
+ * beside it, kept in step with the switch, so a field never shows a label
+ * over a bare control. The switch keeps its own name and state for a screen
+ * reader; the word is for the eye only.
+ */
+function CardFieldValue({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
+  const cellRef = React.useRef<HTMLSpanElement>(null)
+  const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
+  React.useLayoutEffect(() => {
+    const cell = cellRef.current
+    if (!cell) return
+    const read = () => {
+      const control = cell.querySelector('[role=switch]')
+      const text = (cell.textContent ?? '').replace(/\s+/g, '')
+      setSwitchOn(control && !text ? control.getAttribute('aria-checked') === 'true' : null)
+    }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(cell, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['aria-checked'],
+    })
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <dd
+      className={cn(
+        CARD_VALUE_CLASS,
+        CARD_WRAP_CLASS,
+        switchOn !== null && 'flex items-center gap-2'
+      )}
+    >
+      <span ref={cellRef} className="contents">
+        {children}
+      </span>
+      {switchOn !== null && (
+        <span data-slot="card-switch-text" aria-hidden="true">
+          {switchOn ? t('common.table.switchOn') : t('common.table.switchOff')}
+        </span>
+      )}
+    </dd>
+  )
+}
+
 /**
  * Phone layout for a table with no `mobileRow`: the first data column is the
  * title, the next few become label/value fields, and the row's checkbox and
@@ -602,14 +664,9 @@ function AutoMobileCard<TData>({
               {/* Cells are written for a wide table row: whatever they keep on
                   one line may wrap here, as in the title, so a value never runs
                   into the next column (CARD_WRAP_CLASS). */}
-              <dd
-                className={cn(
-                  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal',
-                  CARD_WRAP_CLASS
-                )}
-              >
+              <CardFieldValue>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </dd>
+              </CardFieldValue>
             </div>
           ))}
         </dl>
@@ -686,6 +743,7 @@ export function DataTable<TData, TValue>({
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
+  beforeRows,
   stickyFirstColumn = true,
   pinActions = false,
   resetSelectionKey,
@@ -1286,6 +1344,18 @@ export function DataTable<TData, TValue>({
 
   // A stale read says so in the footer, with a refresh.
   const pagerShown = showPagination && !errorState && paginationTotal > 0
+  // "N of M selected", for a table without a bulk bar. Under the rows (in the
+  // pager's line, or a line of its own without a pager), never in the toolbar:
+  // selecting a row moves no control above the list.
+  const selectionNote =
+    showSelectionCount && !bulk && selectedCount > 0 ? (
+      <span data-slot="table-selected-count" className="max-sm:hidden">
+        {t('common.table.selectedOf', '{selected} of {total} selected', {
+          selected: selectedCount,
+          total: totalCount,
+        })}
+      </span>
+    ) : null
   const staleNote = (block: boolean) =>
     staleAt ? (
       <TableStaleNote readAt={staleAt} failed={refreshFailed} onRefresh={onRefresh} block={block} />
@@ -1331,15 +1401,6 @@ export function DataTable<TData, TValue>({
           end={
             <>
               {toolbarEnd}
-              {/* Selection info - hidden on mobile when no selection */}
-              {showSelectionCount && !bulk && selectedCount > 0 && (
-                <span className="text-sm text-muted-foreground hidden sm:inline">
-                  {t('common.table.selectedOf', '{selected} of {total} selected', {
-                    selected: selectedCount,
-                    total: totalCount,
-                  })}
-                </span>
-              )}
 
               {/* Phone: cards have no header checkbox; More turns select mode on
                 (the page's own More when it holds the mode). */}
@@ -1430,6 +1491,15 @@ export function DataTable<TData, TValue>({
             </>
           }
         />
+      )}
+
+      {beforeRows != null && beforeRows !== false && (
+        // No box while the block renders nothing (Compliance with no
+        // benchmark): the frame is a flex column with a gap, and an empty
+        // child would still take a gap and push the rows 16px down.
+        <div data-slot="table-before-rows" className="empty:hidden">
+          {beforeRows}
+        </div>
       )}
 
       {phoneCards && (
@@ -1845,6 +1915,9 @@ export function DataTable<TData, TValue>({
 
       {/* A stale read with no pager (an empty list) still says how old it is. */}
       {!pagerShown && staleNote(true)}
+      {!(pagerShown && !phoneMore) && selectionNote && (
+        <div className="text-cap text-muted-foreground tabular-nums">{selectionNote}</div>
+      )}
 
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
@@ -1889,6 +1962,7 @@ export function DataTable<TData, TValue>({
             return (
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-cap text-muted-foreground tabular-nums sm:justify-start">
                 {staleNote(false)}
+                {selectionNote}
                 {countUnavailable ? (
                   <>
                     <span>
