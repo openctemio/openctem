@@ -30,6 +30,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { provisionAdministrator } from '../api/use-admin-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { AdminRole } from '../types'
+import { BreakText } from '@/features/shared/components/break-text'
 
 export const ADMIN_ROLE_OPTIONS: {
   value: AdminRole
@@ -151,7 +152,9 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 <dt className="text-muted-foreground">
                   {t('admin.createAdminDialog.email', 'Email')}
                 </dt>
-                <dd className="min-w-0 break-all">{created.email}</dd>
+                <dd className="min-w-0 break-words">
+                  <BreakText>{created.email}</BreakText>
+                </dd>
                 {created.link && (
                   <>
                     <dt className="text-muted-foreground">

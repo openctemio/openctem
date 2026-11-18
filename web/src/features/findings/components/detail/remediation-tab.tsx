@@ -610,7 +610,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                 <li key={index}>
                   <SafeExternalLink
                     href={ref}
-                    className="flex items-center gap-2 text-sm text-primary hover:underline break-all"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline break-words"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
                     {ref}

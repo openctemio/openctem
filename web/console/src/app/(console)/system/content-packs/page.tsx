@@ -405,7 +405,7 @@ export default function ContentPacksPage() {
                 </DetailField>
                 <DetailField label={t('admin.cp.source', 'Source')} full>
                   {opened.source === 'https' ? (
-                    <span className="text-xs break-all">
+                    <span className="text-xs break-words">
                       {opened.source_ref} <code>{opened.source_digest}</code>
                     </span>
                   ) : (

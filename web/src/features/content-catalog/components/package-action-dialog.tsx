@@ -175,7 +175,7 @@ export function PackageActionDialog({
     <Dialog open onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent size={kind === 'update' ? 'lg' : 'md'}>
         <DialogHeader>
-          <DialogTitle className="break-all">{titles[kind]}</DialogTitle>
+          <DialogTitle className="break-words">{titles[kind]}</DialogTitle>
           <DialogDescription>{descriptions[kind]}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">

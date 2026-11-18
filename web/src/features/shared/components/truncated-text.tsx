@@ -86,7 +86,7 @@ export function TruncatedText({
           {middle ? middleEllipsis(shown, middle) : shown}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[min(32rem,90vw)] whitespace-pre-wrap break-all text-start [unicode-bidi:isolate]">
+      <TooltipContent className="max-w-[min(32rem,90vw)] whitespace-pre-wrap break-words text-start [unicode-bidi:isolate]">
         <span dir="auto">{shown}</span>
         {extra && (
           <span dir="auto" className="mt-1 block font-mono opacity-80">

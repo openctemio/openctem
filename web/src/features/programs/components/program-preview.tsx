@@ -132,7 +132,7 @@ function NotScannable({ items }: { items: ProgramItem[] }) {
       </h4>
       <ul className="text-muted-foreground space-y-0.5 text-xs">
         {items.map((it) => (
-          <li key={`${it.in_scope}:${it.raw}`} className="break-all">
+          <li key={`${it.in_scope}:${it.raw}`} className="break-words">
             <span className="font-mono">{it.raw}</span>
             {it.note && <span> ({it.note})</span>}
           </li>

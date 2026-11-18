@@ -130,7 +130,7 @@ function AttributeRow({
     <li className="space-y-1.5 py-2" aria-label={ATTRIBUTE_LABEL[a.attribute]}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="w-40 shrink-0 text-muted-foreground">{ATTRIBUTE_LABEL[a.attribute]}</span>
-        <span className="font-medium break-all">{displayValue(a.value)}</span>
+        <span className="font-medium break-words">{displayValue(a.value)}</span>
         {a.locked && (
           <Badge variant="outline" className="gap-1">
             <Lock className="h-3 w-3" aria-hidden />
@@ -172,7 +172,7 @@ function AttributeRow({
                 {SOURCE_KIND_LABEL[s.kind]}
                 {s.name ? ` (${s.name})` : ''}
               </span>
-              <span className="break-all">
+              <span className="break-words">
                 {t('assets.attrSources.says', 'says {value}', { value: displayValue(s.value) })}
               </span>
               <span>

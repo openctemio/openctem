@@ -152,10 +152,10 @@ export function MappingHistory({
                     <span className="font-mono">{c.key}</span>
                   </div>
                   {c.kind !== 'added' && (
-                    <p className="mt-1 break-all text-destructive">− {short(c.from)}</p>
+                    <p className="mt-1 break-words text-destructive">− {short(c.from)}</p>
                   )}
                   {c.kind !== 'removed' && (
-                    <p className="mt-1 break-all text-success">+ {short(c.to)}</p>
+                    <p className="mt-1 break-words text-success">+ {short(c.to)}</p>
                   )}
                 </li>
               ))}
