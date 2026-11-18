@@ -54,17 +54,17 @@ describe('CI/CD integration page', () => {
     )
   })
 
-  it('offers Connect a pipeline in the header to a CI writer only, on every tab', async () => {
+  it('offers Connect a CI provider in the header to a CI writer only, on every tab', async () => {
     const { unmount } = render(<CICDIntegration />)
-    expect(screen.queryByRole('button', { name: 'Connect a pipeline' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Connect a CI provider' })).not.toBeInTheDocument()
     // A reader gets no "ask an administrator" line in the header either.
     expect(screen.queryByText(/ask an administrator/i)).not.toBeInTheDocument()
     unmount()
     perms = [Permission.CIWrite]
     render(<CICDIntegration />)
-    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect a CI provider' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
-    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect a CI provider' })).toBeInTheDocument()
   })
 
   it('shows trust, gate policy and break-glass under Settings, without a second header', async () => {

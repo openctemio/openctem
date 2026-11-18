@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTrustRefusals } from '../api/use-ci'
 import { PROVIDER_LABEL, isKnownRefusal } from '../lib/ci'
+import { refusalFixes, type RefusalFix } from '../lib/connect'
 import type { CITokenRefusal } from '../types'
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -46,9 +47,37 @@ export function RefusalReasons({ reasons }: { reasons?: string[] }) {
   )
 }
 
-/** One refusal: where it came from, when, and why with the fix. */
-export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
+/** The button text of a one-click fix. */
+export function fixLabel(fix: RefusalFix, t: TFn): string {
+  switch (fix.kind) {
+    case 'allowBranch':
+      return t('scans.ci.fix.allowBranch', 'Allow branch {value}', { value: fix.value })
+    case 'allowRepository':
+      return t('scans.ci.fix.allowRepository', 'Allow project {value}', { value: fix.value })
+    case 'addDefinition':
+      return t('scans.ci.fix.addDefinition', 'Add this pipeline file')
+    case 'openDefinitions':
+      return t('scans.ci.fix.openDefinitions', 'Open pipeline files')
+    case 'protectedBranch':
+      return t('scans.ci.fix.protectedBranch', 'Change the branch rule')
+  }
+}
+
+/**
+ * One refusal: where it came from, when, and why with the fix. With
+ * `onFix`, each fix that changes a configuration is a button; the change is
+ * shown in the configuration's editor and saved only from there.
+ */
+export function RefusalDetail({
+  refusal,
+  onFix,
+}: {
+  refusal: CITokenRefusal
+  onFix?: (fix: RefusalFix) => void
+}) {
   const { t } = useTranslation()
+  const fixButtons = onFix ? refusalFixes(refusal) : []
+  const definition = fixButtons.find((f) => f.kind === 'addDefinition')
   const fixes = (refusal.reasons ?? [])
     .map((code) => refusalText(code, t).fix)
     .filter((f): f is string => !!f)
@@ -75,6 +104,26 @@ export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
             <li key={f}>{f}</li>
           ))}
         </ul>
+      )}
+      {definition?.kind === 'addDefinition' && (
+        <p className="break-all text-xs text-muted-foreground" data-testid="ci-refusal-definition">
+          {t('scans.ci.fix.tokenSays', 'The job names: {value}', { value: definition.value })}
+        </p>
+      )}
+      {fixButtons.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {fixButtons.map((f) => (
+            <Button
+              key={f.kind}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onFix?.(f)}
+            >
+              {fixLabel(f, t)}
+            </Button>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -142,7 +191,17 @@ export function CIRefusalNotice({ canWrite }: { canWrite: boolean }) {
  * Recent refused pipelines under Trusted pipelines (CI write only): the
  * latest few, newest first, each with why and how to fix it.
  */
-export function CITrustRefusals({ canWrite }: { canWrite: boolean }) {
+export function CITrustRefusals({
+  canWrite,
+  onFix,
+  canFix,
+}: {
+  canWrite: boolean
+  /** Open the configuration a refusal's fix edits. */
+  onFix?: (refusal: CITokenRefusal, fix: RefusalFix) => void
+  /** Whether a configuration exists for the fix to edit. */
+  canFix?: (refusal: CITokenRefusal) => boolean
+}) {
   const { t } = useTranslation()
   const [all, setAll] = useState(false)
   const { data, error, isLoading, mutate } = useTrustRefusals({ enabled: canWrite })
@@ -180,7 +239,10 @@ export function CITrustRefusals({ canWrite }: { canWrite: boolean }) {
           <ul className="divide-y rounded-lg border">
             {shown.map((r, i) => (
               <li key={`${r.at}-${i}`} className="p-3" data-testid="ci-refusal">
-                <RefusalDetail refusal={r} />
+                <RefusalDetail
+                  refusal={r}
+                  onFix={onFix && canFix?.(r) ? (f) => onFix(r, f) : undefined}
+                />
               </li>
             ))}
           </ul>

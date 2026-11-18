@@ -356,7 +356,7 @@ describe('CIRunsView', () => {
     perms = ['scans:ci:write']
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /connect a ci provider/i })).toBeInTheDocument()
     perms = []
   })
 
@@ -365,7 +365,7 @@ describe('CIRunsView', () => {
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs you can see')).toBeInTheDocument()
     expect(screen.queryByText('No CI runs yet')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /connect a ci provider/i })).not.toBeInTheDocument()
   })
 
   it('says no run matches when a verdict filter hides them', () => {
@@ -876,6 +876,7 @@ describe('CITrustSettings', () => {
     perms = ['scans:ci:read', 'scans:ci:write']
     render(<CITrustSettings />)
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
   })
@@ -909,10 +910,12 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.type(screen.getByLabelText('Name'), 'GitHub org')
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     await userEvent.type(
-      screen.getByLabelText('Pipeline definitions'),
+      screen.getByLabelText(/paste the value shown in a refusal/i),
       'acme/security/.github/workflows/scan.yml@refs/heads/main'
     )
+    await userEvent.click(screen.getByRole('button', { name: /^add value$/i }))
     mockSaveTrust.mockResolvedValue({
       id: 'c3',
       name: 'GitHub org',
@@ -942,10 +945,11 @@ describe('CITrustSettings', () => {
     perms = ['scans:ci:read', 'scans:ci:write']
     render(<CITrustSettings />)
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
-    expect(screen.getByLabelText('Pipeline definitions')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
+    expect(screen.getByTestId('ci-pipeline-definitions')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Jenkins' }))
-    expect(screen.queryByLabelText('Pipeline definitions')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ci-pipeline-definitions')).not.toBeInTheDocument()
   })
 
   it('guides a Bitbucket trust: workspace, its UUID, repositories by UUID', async () => {
@@ -983,6 +987,7 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Azure Pipelines' }))
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     expect(screen.getByTestId('ci-fixed-audience')).toHaveTextContent('api://AzureADTokenExchange')
     expect(screen.queryByLabelText('Audience')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Protected branches and tags only')).not.toBeInTheDocument()

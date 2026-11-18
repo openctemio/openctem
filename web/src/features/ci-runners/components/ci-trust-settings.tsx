@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import Link from '@/components/link'
 import {
   PageHeader,
@@ -90,9 +90,19 @@ import {
 } from '../lib/ci'
 import { CITrustPreview } from './ci-trust-preview'
 import { CIOverrideDialog } from './ci-override-dialog'
-import { CITrustRefusals } from './ci-refusals'
 import { CISetupEntry } from './ci-setup-wizard'
 import { CITrustScopeEntries, manageScopeSupported } from './ci-trust-scope'
+import { CIPipelineDefinitions } from './ci-pipeline-definitions'
+import { CITrustRefusals, RefusalDetail, fixLabel, recentRefusals } from './ci-refusals'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  configNames,
+  issuerHost,
+  normaliseIssuer,
+  refusalsOf,
+  type RefusalFix,
+} from '../lib/connect'
+import type { CITokenRefusal } from '../types'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 import {
   GATE_FIELDS,
@@ -195,8 +205,22 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<CITrustConfig | 'new' | null>(null)
   const [snippetOf, setSnippetOf] = useState<CITrustConfig | null>(null)
   const [deleting, setDeleting] = useState<CITrustConfig | null>(null)
+  const [healthOf, setHealthOf] = useState<CITrustConfig | null>(null)
+  const [fixing, setFixing] = useState<{ config: CITrustConfig; fix: RefusalFix } | null>(null)
   const { t, locale } = useTranslation()
   const configs = data?.data ?? []
+  // The same read the refused list below makes (one request).
+  const refusals = useTrustRefusals({ enabled: canWrite })
+  const refusedList = refusals.data?.data ?? []
+  // The clock is read once per mount; a render must not change the answer.
+  const [now] = useState(() => Date.now())
+  /** The configuration a refusal's fix edits: the one naming its project, else the only one of its provider. */
+  const targetOf = (r: CITokenRefusal): CITrustConfig | undefined => {
+    const named = configs.find((c) => configNames(c, r.repository ?? '', r.provider))
+    if (named) return named
+    const same = configs.filter((c) => c.provider === r.provider)
+    return same.length === 1 ? same[0] : undefined
+  }
 
   return (
     <SettingsSection
@@ -270,16 +294,11 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                       {summary ? `, ${summary}` : ''}
                     </span>
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {c.last_used_at ? (
-                      <>
-                        {t('scans.ci.trust.lastUsed', 'Last used')}{' '}
-                        <RelativeTime date={c.last_used_at} />
-                      </>
-                    ) : (
-                      t('scans.ci.trust.neverUsed', 'Not used yet')
-                    )}
-                  </p>
+                  <TrustHealthLine
+                    config={c}
+                    refused={canWrite ? recentRefusals(refusalsOf(c, refusedList), now).length : 0}
+                    onOpen={() => setHealthOf(c)}
+                  />
                   {c.legacy_audience && c.legacy_audience_until && (
                     <p
                       className="break-words text-sm text-warning"
@@ -342,7 +361,37 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           }}
         />
       )}
-      <CITrustRefusals canWrite={canWrite} />
+      {fixing && (
+        <TrustConfigDialog
+          config={fixing.config}
+          prefill={fixing.fix}
+          onClose={() => setFixing(null)}
+          onSaved={() => {
+            setFixing(null)
+            void mutate()
+          }}
+        />
+      )}
+      {healthOf && (
+        <TrustHealthDialog
+          config={healthOf}
+          refusals={refusalsOf(healthOf, refusedList)}
+          onClose={() => setHealthOf(null)}
+          onFix={(fix) => {
+            const config = healthOf
+            setHealthOf(null)
+            setFixing({ config, fix })
+          }}
+        />
+      )}
+      <CITrustRefusals
+        canWrite={canWrite}
+        onFix={(r, fix) => {
+          const config = targetOf(r)
+          if (config) setFixing({ config, fix })
+        }}
+        canFix={(r) => !!targetOf(r)}
+      />
       {snippetOf && <SnippetDialog config={snippetOf} onClose={() => setSnippetOf(null)} />}
       <ConfirmDialog
         open={!!deleting}
@@ -373,12 +422,106 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   )
 }
 
+/** A list with one more entry (kept once). */
+function withEntry(list: string[] | undefined, v: string): string[] {
+  const l = list ?? []
+  return l.includes(v) ? l : [...l, v]
+}
+
+/** A configuration's health: the last accepted job, and recent refusals as a way into why. */
+function TrustHealthLine({
+  config,
+  refused,
+  onOpen,
+}: {
+  config: CITrustConfig
+  refused: number
+  onOpen: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+      data-testid="ci-trust-health"
+    >
+      <span>
+        {config.last_used_at ? (
+          <>
+            {t('scans.ci.health.lastAccepted', 'Last accepted job')}{' '}
+            <RelativeTime date={config.last_used_at} />
+          </>
+        ) : (
+          t('scans.ci.health.noneAccepted', 'No job accepted yet')
+        )}
+      </span>
+      {refused > 0 && (
+        <Button type="button" variant="link" size="sm" onClick={onOpen}>
+          {t(
+            refused === 1 ? 'scans.ci.health.refused.one' : 'scans.ci.health.refused.other',
+            refused === 1 ? '1 job refused, see why' : '{count} jobs refused, see why',
+            { count: refused }
+          )}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** The refusals of one configuration, each with why and its one-click fix. */
+function TrustHealthDialog({
+  config,
+  refusals,
+  onClose,
+  onFix,
+}: {
+  config: CITrustConfig
+  refusals: CITokenRefusal[]
+  onClose: () => void
+  onFix: (fix: RefusalFix) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>
+            {t('scans.ci.health.title', 'Refused jobs of {name}', { name: config.name ?? '' })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(
+              'scans.ci.health.description',
+              'Each job with the rule that refused it. A fix opens the configuration with the change filled in; nothing changes until you save.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <ul className="divide-y" data-testid="ci-health-refusals">
+            {refusals.map((r, i) => (
+              <li key={`${r.at}-${i}`} className="py-3 first:pt-0">
+                <RefusalDetail refusal={r} onFix={onFix} />
+              </li>
+            ))}
+          </ul>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.close', 'Close')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function TrustConfigDialog({
   config,
+  prefill,
   onClose,
   onSaved,
 }: {
   config: CITrustConfig | null
+  /** A refused pipeline's fix: the change is shown here and saved only by Save. */
+  prefill?: RefusalFix
   onClose: () => void
   onSaved: (c: CITrustConfig) => void
 }) {
@@ -397,11 +540,27 @@ function TrustConfigDialog({
   const [audience, setAudience] = useState(config?.audience ?? '')
   const [defaultBranch, setDefaultBranch] = useState(config?.default_branch ?? 'main')
   const [owners, setOwners] = useState(joinList(config?.rules?.owners))
-  const [repositories, setRepositories] = useState(joinList(config?.rules?.repositories))
-  const [refs, setRefs] = useState(joinList(config?.rules?.refs))
+  const [repositories, setRepositories] = useState(
+    joinList(
+      prefill?.kind === 'allowRepository'
+        ? withEntry(config?.rules?.repositories, prefill.value)
+        : config?.rules?.repositories
+    )
+  )
+  const [refs, setRefs] = useState(
+    joinList(
+      prefill?.kind === 'allowBranch'
+        ? withEntry(config?.rules?.refs, prefill.value)
+        : config?.rules?.refs
+    )
+  )
   const [environments, setEnvironments] = useState(joinList(config?.rules?.environments))
   const [events, setEvents] = useState(joinList(config?.rules?.events))
-  const [workflowRefs, setWorkflowRefs] = useState(joinList(config?.rules?.workflow_refs))
+  const [workflowRefs, setWorkflowRefs] = useState<string[]>(
+    prefill?.kind === 'addDefinition'
+      ? withEntry(config?.rules?.workflow_refs, prefill.value)
+      : (config?.rules?.workflow_refs ?? [])
+  )
   const [allowForks, setAllowForks] = useState(!!config?.rules?.allow_fork_pull_requests)
   const [protectedRef, setProtectedRef] = useState(!!config?.rules?.require_protected_ref)
   const [enabled, setEnabled] = useState(config?.enabled ?? true)
@@ -420,7 +579,7 @@ function TrustConfigDialog({
     if (!PROVIDER_TRAITS[p].events) setEvents('')
     if (!PROVIDER_TRAITS[p].environments) setEnvironments('')
     if (PROVIDER_TRAITS[p].protectedRef === 'none') setProtectedRef(false)
-    if (!PROVIDER_TRAITS[p].workflowRefs) setWorkflowRefs('')
+    if (!PROVIDER_TRAITS[p].workflowRefs) setWorkflowRefs([])
   }
 
   const body = (): CITrustConfigRequest => ({
@@ -429,9 +588,11 @@ function TrustConfigDialog({
     issuer:
       provider === 'github'
         ? organization.trim() || undefined
-        : traits.issuerInput === 'fixed'
-          ? undefined
-          : issuerFor(provider, organization),
+        : provider === 'gitlab'
+          ? normaliseIssuer(organization) || undefined
+          : traits.issuerInput === 'fixed'
+            ? undefined
+            : issuerFor(provider, organization),
     audience: traits.fixedAudience ? undefined : audience.trim() || undefined,
     default_branch: defaultBranch.trim() || undefined,
     enabled,
@@ -442,7 +603,7 @@ function TrustConfigDialog({
       refs: parseList(refs),
       environments: traits.environments ? parseList(environments) : [],
       events: traits.events ? parseList(events) : [],
-      workflow_refs: traits.workflowRefs ? parseList(workflowRefs) : [],
+      workflow_refs: traits.workflowRefs ? workflowRefs : [],
       allow_fork_pull_requests: allowForks,
       require_protected_ref: traits.protectedRef === 'none' ? false : protectedRef,
       workspace_uuid: provider === 'bitbucket' ? workspaceUUID.trim() || undefined : undefined,
@@ -470,6 +631,18 @@ function TrustConfigDialog({
   }
 
   const tenantAudience = defaultAudience(currentTenant?.id ?? '<tenant id>')
+  const gitlabIssuer = normaliseIssuer(organization) || 'https://gitlab.com'
+  // Rules past the basics are folded; open when one is set or a fix needs it.
+  const [more, setMore] = useState(
+    prefill?.kind === 'addDefinition' ||
+      prefill?.kind === 'openDefinitions' ||
+      !!config?.rules?.environments?.length ||
+      !!config?.rules?.events?.length ||
+      !!config?.rules?.workflow_refs?.length ||
+      !!config?.rules?.allow_fork_pull_requests
+  )
+  const wholeGroup =
+    parseList(owners).length > 0 || parseList(repositories).some((r) => r.endsWith('*'))
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -488,6 +661,13 @@ function TrustConfigDialog({
         </DialogHeader>
         <DialogBody>
           <div className="space-y-3">
+            {prefill && (
+              <p className="rounded-md border p-3 text-sm" data-testid="ci-fix-note">
+                {t('scans.ci.fix.review', '{fix}: check the change below, then save.', {
+                  fix: fixLabel(prefill, t),
+                })}
+              </p>
+            )}
             <Field label={t('scans.ci.trust.name', 'Name')} id="ci-name">
               <Input id="ci-name" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
@@ -530,7 +710,11 @@ function TrustConfigDialog({
               <Field
                 label={t('scans.ci.trust.gitlabIssuer', 'GitLab URL (issuer)')}
                 id="ci-issuer"
-                hint={t('scans.ci.trust.gitlabIssuerHint', 'Leave empty for gitlab.com.')}
+                hint={t(
+                  'scans.ci.connect.addressShown',
+                  'Leave empty for gitlab.com. Tokens must name exactly: {issuer}',
+                  { issuer: gitlabIssuer }
+                )}
               >
                 <Input
                   id="ci-issuer"
@@ -671,110 +855,6 @@ function TrustConfigDialog({
                 onChange={(e) => setRefs(e.target.value)}
               />
             </Field>
-            {traits.environments && (
-              <Field
-                label={t('scans.ci.trust.environments', 'Environments')}
-                id="ci-envs"
-                hint={
-                  provider === 'bitbucket'
-                    ? t(
-                        'scans.ci.trust.environmentsBitbucket',
-                        'Optional: deployment environment UUIDs.'
-                      )
-                    : t(
-                        'scans.ci.trust.environmentsHint',
-                        'Optional: require a deployment environment.'
-                      )
-                }
-              >
-                <Input
-                  id="ci-envs"
-                  value={environments}
-                  onChange={(e) => setEnvironments(e.target.value)}
-                />
-              </Field>
-            )}
-            {traits.events && (
-              <Field
-                label={t('scans.ci.trust.events', 'Events')}
-                id="ci-events"
-                hint={t(
-                  'scans.ci.trust.eventsHint',
-                  'Optional: push, pull_request, merge_request_event, schedule...'
-                )}
-              >
-                <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
-              </Field>
-            )}
-            {traits.workflowRefs && (
-              <Field
-                label={t('scans.ci.trust.workflowRefs', 'Pipeline definitions')}
-                id="ci-workflow-refs"
-                hint={
-                  provider === 'gitlab'
-                    ? t(
-                        'scans.ci.trust.workflowRefsGitlab',
-                        'Optional: admit only pipelines that use this configuration, as <host>/<project>//<file>@<ref> (the ci_config_ref_uri claim). A project that edits its own configuration is refused.'
-                      )
-                    : t(
-                        'scans.ci.trust.workflowRefsHint',
-                        'Optional: admit only jobs that run your central workflow, as owner/repo/.github/workflows/<file>@<ref> (the job_workflow_ref claim; * in the ref). A pull request that edits or adds a workflow is refused.'
-                      )
-                }
-              >
-                <Input
-                  id="ci-workflow-refs"
-                  placeholder={
-                    provider === 'gitlab'
-                      ? 'gitlab.com/acme/ci//scan.yml@refs/heads/main'
-                      : 'acme/security/.github/workflows/scan.yml@refs/heads/main'
-                  }
-                  value={workflowRefs}
-                  onChange={(e) => setWorkflowRefs(e.target.value)}
-                />
-              </Field>
-            )}
-            <Field
-              label={t('scans.ci.col.defaultBranch', 'Default branch')}
-              id="ci-default"
-              hint={t(
-                'scans.ci.trust.defaultBranchHint',
-                "The baseline when the platform does not know the repository's default branch yet."
-              )}
-            >
-              <Input
-                id="ci-default"
-                value={defaultBranch}
-                onChange={(e) => setDefaultBranch(e.target.value)}
-              />
-            </Field>
-            {traits.fixedAudience ? (
-              <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
-                {t(
-                  'scans.ci.trust.fixedAudience',
-                  'Audience: {audience}, the only one Azure Pipelines issues. Tokens are pinned to this organization id and accepted once.',
-                  { audience: traits.fixedAudience }
-                )}
-              </p>
-            ) : (
-              <Field
-                label={t('scans.ci.trust.audience', 'Audience')}
-                id="ci-aud"
-                hint={
-                  traits.tenantAudience
-                    ? t(
-                        'scans.ci.trust.audienceTenantHint',
-                        'Default: {audience}. Must contain your organization id.',
-                        { audience: tenantAudience }
-                      )
-                    : t('scans.ci.trust.audienceHint', 'Default: {audience}', {
-                        audience: tenantAudience,
-                      })
-                }
-              >
-                <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
-              </Field>
-            )}
             {traits.protectedRef !== 'none' && (
               <SwitchRow
                 id="ci-protected"
@@ -792,77 +872,193 @@ function TrustConfigDialog({
                 )}
               </p>
             )}
-            <SwitchRow
-              id="ci-forks"
-              label={
-                traits.pullRequestsAsForks
-                  ? t('scans.ci.trust.admitPullRequests', 'Admit pull request builds')
-                  : t('scans.ci.trust.admitForks', 'Admit fork pull requests')
-              }
-              checked={allowForks}
-              onChange={setAllowForks}
-            />
-            {traits.pullRequestsAsForks && !allowForks && (
-              <p className="text-muted-foreground text-xs">
-                {t(
-                  'scans.ci.trust.forksIndistinguishable',
-                  "{provider} tokens cannot tell a fork's pull request from your own, so pull request builds are refused.",
-                  { provider: PROVIDER_LABEL[provider] }
+            <Field
+              label={t('scans.ci.col.defaultBranch', 'Default branch')}
+              id="ci-default"
+              hint={t(
+                'scans.ci.trust.defaultBranchHint',
+                "The baseline when the platform does not know the repository's default branch yet."
+              )}
+            >
+              <Input
+                id="ci-default"
+                value={defaultBranch}
+                onChange={(e) => setDefaultBranch(e.target.value)}
+              />
+            </Field>
+            <Collapsible open={more} onOpenChange={setMore}>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" aria-expanded={more}>
+                  <ChevronDown
+                    className={more ? 'rotate-180 transition-transform' : 'transition-transform'}
+                    aria-hidden
+                  />
+                  {t('scans.ci.trust.moreRules', 'More rules')}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 pt-2">
+                {traits.workflowRefs && (
+                  <CIPipelineDefinitions
+                    provider={provider}
+                    host={provider === 'gitlab' ? issuerHost(gitlabIssuer) : ''}
+                    value={workflowRefs}
+                    onChange={setWorkflowRefs}
+                    wholeGroup={wholeGroup}
+                  />
                 )}
-              </p>
-            )}
-            {allowForks && (
-              // submit-error-ok: a warning about the choice, not a failed submit
-              <Alert variant="destructive">
-                <ShieldAlert />
-                <AlertTitle>
-                  {t(
-                    'scans.ci.trust.forkWarningTitle',
-                    "Fork code would act with this repository's identity"
-                  )}
-                </AlertTitle>
-                <AlertDescription>
-                  {traits.pullRequestsAsForks
-                    ? t(
-                        'scans.ci.trust.forkWarningAll',
-                        'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
-                      )
-                    : t(
-                        'scans.ci.trust.forkWarningEvents',
-                        'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'
-                      )}
-                </AlertDescription>
-              </Alert>
-            )}
-            {manageScopeSupported(provider) && (
-              <div className="space-y-1">
+                {traits.environments && (
+                  <Field
+                    label={t('scans.ci.trust.environments', 'Environments')}
+                    id="ci-envs"
+                    hint={
+                      provider === 'bitbucket'
+                        ? t(
+                            'scans.ci.trust.environmentsBitbucket',
+                            'Optional: deployment environment UUIDs.'
+                          )
+                        : t(
+                            'scans.ci.trust.environmentsHint',
+                            'Optional: require a deployment environment.'
+                          )
+                    }
+                  >
+                    <Input
+                      id="ci-envs"
+                      value={environments}
+                      onChange={(e) => setEnvironments(e.target.value)}
+                    />
+                  </Field>
+                )}
+                {traits.events && (
+                  <Field
+                    label={t('scans.ci.trust.events', 'Events')}
+                    id="ci-events"
+                    hint={t(
+                      'scans.ci.trust.eventsHint',
+                      'Optional: push, pull_request, merge_request_event, schedule...'
+                    )}
+                  >
+                    <Input
+                      id="ci-events"
+                      value={events}
+                      onChange={(e) => setEvents(e.target.value)}
+                    />
+                  </Field>
+                )}
+                {traits.fixedAudience ? (
+                  <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
+                    {t(
+                      'scans.ci.trust.fixedAudience',
+                      'Audience: {audience}, the only one Azure Pipelines issues. Tokens are pinned to this organization id and accepted once.',
+                      { audience: traits.fixedAudience }
+                    )}
+                  </p>
+                ) : (
+                  <Field
+                    label={t('scans.ci.trust.audience', 'Audience')}
+                    id="ci-aud"
+                    hint={
+                      traits.tenantAudience
+                        ? t(
+                            'scans.ci.trust.audienceTenantHint',
+                            'Default: {audience}. Must contain your organization id.',
+                            { audience: tenantAudience }
+                          )
+                        : t('scans.ci.trust.audienceHint', 'Default: {audience}', {
+                            audience: tenantAudience,
+                          })
+                    }
+                  >
+                    <Input
+                      id="ci-aud"
+                      value={audience}
+                      onChange={(e) => setAudience(e.target.value)}
+                    />
+                  </Field>
+                )}
                 <SwitchRow
-                  id="ci-manage-scope"
-                  label={t('scans.ci.trust.manageScope', 'Trust and add to scope')}
-                  checked={manageScope}
-                  onChange={setManageScope}
-                  disabled={!canScope}
+                  id="ci-forks"
+                  label={
+                    traits.pullRequestsAsForks
+                      ? t('scans.ci.trust.admitPullRequests', 'Admit pull request builds')
+                      : t('scans.ci.trust.admitForks', 'Admit fork pull requests')
+                  }
+                  checked={allowForks}
+                  onChange={setAllowForks}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {canScope
-                    ? t(
-                        'scans.ci.trust.manageScopeHint',
-                        "Each owner or repository becomes a repository scope entry (for example gitlab.com/your-group/*), kept in step with this trust and removed with it. The entries follow your organization's scope approval rules."
-                      )
-                    : t(
-                        'scans.ci.trust.manageScopeNoPermission',
-                        'Adding repositories to scope needs the scope write permission.'
+                {traits.pullRequestsAsForks && !allowForks && (
+                  <p className="text-muted-foreground text-xs">
+                    {t(
+                      'scans.ci.trust.forksIndistinguishable',
+                      "{provider} tokens cannot tell a fork's pull request from your own, so pull request builds are refused.",
+                      { provider: PROVIDER_LABEL[provider] }
+                    )}
+                  </p>
+                )}
+                {allowForks && (
+                  // submit-error-ok: a warning about the choice, not a failed submit
+                  <Alert variant="destructive">
+                    <ShieldAlert />
+                    <AlertTitle>
+                      {t(
+                        'scans.ci.trust.forkWarningTitle',
+                        "Fork code would act with this repository's identity"
                       )}
-                </p>
-              </div>
-            )}
+                    </AlertTitle>
+                    <AlertDescription>
+                      {traits.pullRequestsAsForks
+                        ? t(
+                            'scans.ci.trust.forkWarningAll',
+                            'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
+                          )
+                        : t(
+                            'scans.ci.trust.forkWarningEvents',
+                            'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'
+                          )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {manageScopeSupported(provider) && (
+                  <div className="space-y-1">
+                    <SwitchRow
+                      id="ci-manage-scope"
+                      label={t('scans.ci.trust.manageScope', 'Trust and add to scope')}
+                      checked={manageScope}
+                      onChange={setManageScope}
+                      disabled={!canScope}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {canScope
+                        ? t(
+                            'scans.ci.trust.manageScopeHint',
+                            "Each owner or repository becomes a repository scope entry (for example gitlab.com/your-group/*), kept in step with this trust and removed with it. The entries follow your organization's scope approval rules."
+                          )
+                        : t(
+                            'scans.ci.trust.manageScopeNoPermission',
+                            'Adding repositories to scope needs the scope write permission.'
+                          )}
+                    </p>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
             <SwitchRow
               id="ci-enabled"
               label={t('scans.ci.enabled', 'Enabled')}
               checked={enabled}
               onChange={setEnabled}
             />
-            {!needsIssuer && <CITrustPreview provider={provider} draft={body} />}
+            {!needsIssuer && (
+              <CITrustPreview
+                provider={provider}
+                draft={body}
+                onUseIssuer={
+                  traits.issuerInput === 'url' || provider === 'github' || provider === 'gitlab'
+                    ? setOrganization
+                    : undefined
+                }
+              />
+            )}
           </div>
         </DialogBody>
         <DialogFooter>
