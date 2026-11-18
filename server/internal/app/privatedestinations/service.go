@@ -95,6 +95,10 @@ type Service struct {
 	apply func([]string) error
 	// applyMu orders a save's apply after a concurrent refresh's.
 	applyMu sync.Mutex
+	// generation counts saves on this server (guarded by applyMu). A refresh
+	// that read the store before a save applies nothing: its copy is older
+	// than the list the save applied.
+	generation uint64
 	// signupOpen: SIGNUP_MODE=open; no range is opened (Update refuses one,
 	// Refresh applies none).
 	signupOpen bool
@@ -200,6 +204,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, entries []
 		s.applyMu.Unlock()
 		return View{}, err
 	}
+	s.generation++
 	if err := s.apply(cidrs(next)); err != nil {
 		// Canonical accepted the list, so the guard cannot refuse it; the
 		// stored value is reapplied on the next refresh either way.
@@ -229,6 +234,9 @@ func entryDetails(entries []Entry) []Entry {
 // keeps the list in force (a database blip must not cut every private
 // integration off, nor open anything new).
 func (s *Service) Refresh(ctx context.Context) error {
+	s.applyMu.Lock()
+	gen := s.generation
+	s.applyMu.Unlock()
 	st, _, err := s.store.Fresh(ctx)
 	if err != nil {
 		return err
@@ -236,6 +244,11 @@ func (s *Service) Refresh(ctx context.Context) error {
 	list, cerr := Canonical(st.Ranges)
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
+	if s.generation != gen {
+		// A save ran while this refresh read the store: the save's list is
+		// newer, and the next refresh reads it again.
+		return nil
+	}
 	if cerr != nil {
 		s.log.Error("stored private destinations are invalid; no console range is open", "error", logger.SanitizeError(cerr))
 		return s.apply(nil)

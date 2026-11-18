@@ -218,6 +218,9 @@ func SetConsolePrivateCIDRs(raws []string) error {
 			next.all, next.env = cur.all, cur.env
 		}
 		if policy.CompareAndSwap(cur, next) {
+			if cur != nil && narrows(cur.console, nets) {
+				closeGuardedIdleConnections()
+			}
 			return nil
 		}
 	}

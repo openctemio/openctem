@@ -165,3 +165,50 @@ func TestOpenSignup(t *testing.T) {
 		t.Fatal("view does not say sign-up is open")
 	}
 }
+
+// getHookRepo runs onGet once, after the first read it serves.
+type getHookRepo struct {
+	*cst.Repo
+	onGet func()
+}
+
+func (r *getHookRepo) Get(ctx context.Context, key string) (platformsetting.State, error) {
+	st, err := r.Repo.Get(ctx, key)
+	if f := r.onGet; f != nil {
+		r.onGet = nil
+		f()
+	}
+	return st, err
+}
+
+// A refresh that read the stored list before a save on this server must not
+// apply its older copy over the save: a range the administrator just closed
+// would stay open until the next refresh.
+func TestRefresh_ReadBeforeSaveDoesNotReapplyOldList(t *testing.T) {
+	ctx := context.Background()
+	repo := &getHookRepo{Repo: cst.NewRepo()}
+	ap := &applied{}
+	svc := NewService(repo, cst.Recorder(&cst.Audit{}, &cst.Notifier{}), logger.NewNop())
+	svc.SetApplier(ap.apply)
+	v, err := svc.Update(ctx, cst.SuperAdmin(t), []Entry{{CIDR: "10.20.0.0/16"}, {CIDR: "192.168.77.0/24"}}, "open", 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The refresh reads {10.20/16, 192.168.77/24}; before it applies, an
+	// administrator closes 10.20/16.
+	repo.onGet = func() {
+		if _, err := svc.Update(ctx, cst.SuperAdmin(t), []Entry{{CIDR: "192.168.77.0/24"}}, "incident", v.Meta.Version, "", ""); err != nil {
+			t.Error(err)
+		}
+	}
+	if err := svc.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := ap.last(); got != "192.168.77.0/24" {
+		t.Fatalf("after the racing refresh the guard holds %q, want the saved list", got)
+	}
+	// The next refresh applies the stored list as usual.
+	if err := svc.Refresh(ctx); err != nil || ap.last() != "192.168.77.0/24" {
+		t.Fatalf("next refresh: %v %q", err, ap.last())
+	}
+}

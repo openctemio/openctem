@@ -112,7 +112,7 @@ func TestSetConsolePrivateCIDRs_ReplacesConsoleOnly(t *testing.T) {
 	if err := SetConsolePrivateCIDRs([]string{"192.168.7.0/24"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetConsolePrivateCIDRs([]string{"192.168.8.0/24", "203.0.113.0/24"}); err == nil {
+	if err := SetConsolePrivateCIDRs([]string{"192.168.9.0/24", "203.0.113.0/24"}); err == nil {
 		t.Fatal("a public range was accepted")
 	}
 	if got := strings.Join(ConsolePrivateCIDRs(), ","); got != "192.168.7.0/24" {
@@ -139,7 +139,7 @@ func TestIsIPBlocked_ServerUnionConsole(t *testing.T) {
 	for ip, blocked := range map[string]bool{
 		"10.20.1.5":       false, // server
 		"192.168.7.20":    false, // console
-		"192.168.8.1":     true,
+		"192.168.9.1":     true,
 		"172.16.0.1":      true,
 		"fd00:ec2::1":     false,
 		"fd00:ec2::254":   true, // metadata over IPv6, inside the console range

@@ -243,3 +243,16 @@ func TestSafeHTTPClientWithHeaderTimeout(t *testing.T) {
 		t.Fatalf("default header timeout lost: %s", d)
 	}
 }
+
+// Every never-reachable range has a reason, and the reasons name no range
+// that is not in the table.
+func TestHardBlockedReason_CoversTable(t *testing.T) {
+	for _, c := range hardBlockedIPRanges {
+		if hardBlockedReason[c] == "" {
+			t.Errorf("%s has no hard-block reason", c)
+		}
+	}
+	if len(hardBlockedReason) != len(hardBlockedIPRanges) {
+		t.Errorf("%d reasons for %d ranges", len(hardBlockedReason), len(hardBlockedIPRanges))
+	}
+}
