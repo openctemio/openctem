@@ -65,6 +65,24 @@ export const ACCOUNT_ONLY_PAGES = [
   '/two-factor-setup',
 ] as const
 
+/**
+ * Pages a signed-in person opens before an organization is selected (besides
+ * ACCOUNT_ONLY_PAGES): the organization picker, organization creation, the
+ * ownership invitation and the sign-in consent pages. Every other page works
+ * inside an organization: a session that has none selected goes to
+ * CONTINUE_PATH first, which picks it from the memberships.
+ */
+export const NO_ORGANIZATION_PAGES = [
+  '/select-tenant',
+  '/onboarding',
+  '/ownership-invitations',
+  '/oauth',
+  '/mcp',
+] as const
+
+/** Decides the landing of a session that has no organization selected. */
+export const CONTINUE_PATH = '/auth/continue'
+
 /** Where an account-only session lands. */
 export const WELCOME_PATH = '/welcome'
 
