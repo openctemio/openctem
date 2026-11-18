@@ -895,11 +895,7 @@ export default function CredentialsPage() {
             }
           />
 
-          <MetricStrip
-            loading={statsLoading && !credentialStats}
-            items={metrics}
-            className="max-md:order-last"
-          />
+          <MetricStrip loading={statsLoading && !credentialStats} items={metrics} listFirst />
           {titleRow}
 
           {noAccess ? (
