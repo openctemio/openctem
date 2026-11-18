@@ -26,6 +26,8 @@ type UserHandler struct {
 	logger        *logger.Logger
 	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
 	accountDeletion *accountdeletion.Service
+	// admission reports what each organization says about this session.
+	admission MembershipAdmitter
 }
 
 // NewUserHandler creates a new user handler.
@@ -344,6 +346,35 @@ type TenantMembershipResponse struct {
 	Kind            string     `json:"kind"`
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	BlockedReason   string     `json:"blocked_reason,omitempty"`
+	// Admission is what this organization answers the caller's current
+	// session: "open" when its token request would succeed, otherwise the
+	// code that request would be refused with (MFA_ENROLLMENT_REQUIRED,
+	// SSO_REQUIRED, OWN_SIGN_IN_REQUIRED, MFA_IDP_EVIDENCE_REQUIRED,
+	// EMAIL_NOT_VERIFIED, ORGANIZATION_SUSPENDED, ...), so the account space
+	// shows the one next step. Empty when it could not be worked out.
+	Admission string `json:"admission,omitempty"`
+}
+
+// MembershipAdmitter answers, per organization of the caller, what the
+// organization's rules say about the current session (auth.AuthService).
+type MembershipAdmitter interface {
+	MembershipAdmission(ctx context.Context, userID, sessionID string) (map[string]error, error)
+}
+
+// SetMembershipAdmission wires the per-membership admission of
+// GET /users/me/tenants.
+func (h *UserHandler) SetMembershipAdmission(a MembershipAdmitter) { h.admission = a }
+
+// admissionCode is the token request's own answer as a code: "open", the
+// refusal's API code, or "" for an error the table does not know.
+func admissionCode(err error) string {
+	if err == nil {
+		return "open"
+	}
+	if entry, ok := lookupAuthError(err); ok {
+		return string(entry.Code)
+	}
+	return ""
 }
 
 // GetMyTenants returns all tenants the current user belongs to.
@@ -368,6 +399,19 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to list user tenants", "error", err, "user_id", localUser.ID().String())
 		apierror.InternalError(err).WriteJSON(w)
 		return
+	}
+	// The caller's own session only: the session id and the user both come
+	// from the verified access token.
+	if h.admission != nil {
+		if sid := middleware.GetSessionID(r.Context()); sid != "" {
+			if byTenant, aerr := h.admission.MembershipAdmission(r.Context(), localUser.ID().String(), sid); aerr == nil {
+				for i := range response {
+					if verdict, ok := byTenant[response[i].ID]; ok {
+						response[i].Admission = admissionCode(verdict)
+					}
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
