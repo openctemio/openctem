@@ -27,7 +27,7 @@ export function ModulesLastChange() {
   const last = logs[0]
   if (isLoading) return null
   return (
-    <p className="text-sm text-muted-foreground" data-testid="modules-last-change">
+    <p className="text-cap text-muted-foreground" data-testid="modules-last-change">
       {last
         ? t('settings.modules.lastChange', 'Last change by {actor}, {date}.', {
             actor: last.actor_email,
