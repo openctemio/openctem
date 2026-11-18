@@ -1292,11 +1292,13 @@ widget kit's frame, with its own error boundary.
   More menu (accessible names; 44px touch targets on a phone). The refresh
   schedule is a submenu of More at every width. The dashboard description is
   hidden on a phone.
-- **Freshness line**: one muted line under the dashboard's name, "Your scope · Updated
-  2m ago · Next in 58m" (narrow relative times, full dates on hover); below
-  640px, where it shares the title row with Refresh now and More, the next
-  refresh is visually left out (a screen reader still reads it) so it stays
-  one line; a status line appears under it only when the
+- **Freshness line**: one muted line under the dashboard's name with three
+  items, "Your scope", "Updated 2m ago" and "Next in 58m" (narrow relative
+  times, full dates on hover); below 640px, where it shares the title row with
+  Refresh now and More, it never wraps: the next refresh and "Refreshed on
+  request only" are visually left out (a screen reader still reads them) and
+  a long scope label is shortened before the time, so the header keeps its
+  height as the minutes tick; a status line appears under it only when the
   figures are stale, the last refresh failed, or the data is being built for
   the first time. Refresh now answers a 429 with a message. The schedule
   submenu is offered to the owner of a personal dashboard or a manager of an
