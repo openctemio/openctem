@@ -555,11 +555,7 @@ export function ComponentsListView() {
           )}
         </PageHeader>
 
-        <MetricStrip
-          loading={summaryLoading && !summary}
-          items={metrics}
-          listFirst
-        />
+        <MetricStrip loading={summaryLoading && !summary} items={metrics} listFirst />
         {titleRow}
 
         {noAccess ? (

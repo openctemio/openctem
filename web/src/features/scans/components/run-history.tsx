@@ -74,10 +74,10 @@ export function RunHistory({
               )
             })}
           </span>
-{rateText !== null && (
-          <span className="shrink-0 text-meta tabular-nums text-foreground" aria-hidden>
-            {rateText}
-          </span>
+          {rateText !== null && (
+            <span className="shrink-0 text-meta tabular-nums text-foreground" aria-hidden>
+              {rateText}
+            </span>
           )}
         </span>
       </TooltipTrigger>
