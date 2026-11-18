@@ -901,7 +901,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
   `info` (running, informational) and `destructive` (failed, errors). Use them
   as `text-success` or a tint such as `bg-warning/15 text-warning`.
 - Errors that replace content use the shared `ErrorState` (a destructive
-  `Alert` with Retry), never a hand-made red box.
+  `Alert` with Retry), never a hand-made red box. It reads "Couldn't load
+  {what}" and, for a server failure or a bare code, "The server did not
+  answer. Nothing was changed." (never the server's code). Inside a table
+  frame it is start-aligned like every alert: icon, title, sentence and
+  buttons share one edge.
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:

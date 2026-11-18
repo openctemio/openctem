@@ -68,7 +68,7 @@ describe('/exposures stats', () => {
       mutate: vi.fn(),
     })
     render(<ExposuresPage />)
-    expect(screen.getByText(/Failed to load exposure statistics/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load exposure statistics/i)).toBeInTheDocument()
   })
 })
 
