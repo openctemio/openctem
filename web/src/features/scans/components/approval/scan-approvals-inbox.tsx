@@ -47,8 +47,8 @@ import {
   decideByState,
   useQueueAnnouncer,
 } from '@/features/shared/components/queue'
-import { useDisplayUser } from '@/hooks/use-display-user'
 import { useListParams } from '@/hooks/use-list-params'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { accessStateOf } from '@/lib/api/access-state'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
@@ -239,10 +239,7 @@ function RunMarks({ req }: { req: ScanApprovalRequest }) {
 
 export function ScanApprovalsInbox() {
   const { t, locale } = useTranslation()
-  // The signed-in person's id from the profile (the same source as Approval
-  // requests): the session token is not readable by the page, so the auth
-  // store alone can be empty and "your request" would never show.
-  const me = useDisplayUser()?.id
+  const me = useMyUserId()
   const list = useListParams({ filters: { status: '' } })
   const lens: Lens =
     list.filters.status === 'all'

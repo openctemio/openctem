@@ -75,7 +75,14 @@ import {
 import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
 import { pinStartColumns, PIN_SELECT_WIDTH, type StartPin } from './pin-columns'
 import { fitColumnWidths } from './fit-columns'
-import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } from './column-meta'
+import {
+  ariaSort,
+  columnKind,
+  columnLayout,
+  type ColumnKind,
+  type ColumnLayout,
+  type DataTableColumnMeta,
+} from './column-meta'
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
@@ -485,33 +492,49 @@ const ACTIONS_COLLAPSED_CLASS = 'overflow-hidden border-0 p-0'
 
 /** Columns the automatic phone card treats as controls rather than fields. */
 const CONTROL_COLUMN_IDS = new Set(['select', 'actions'])
-/** Fields shown under the title on an automatic phone card. */
-const MOBILE_CARD_FIELDS = 4
+/** Inline fields on the line under the subtitle of an automatic phone card. */
+const MOBILE_CARD_FIELDS = 2
+
+/** Column kinds that make the card's status chip (beside the title). */
+const CARD_STATUS_KINDS = new Set<ColumnKind>(['status', 'status-edit'])
+/** Column kinds that may make the card's muted subtitle line. */
+const CARD_SUBTITLE_KINDS = new Set<ColumnKind>(['asset', 'owner', 'id', 'text'])
 
 /**
- * How a table cell's one-line text behaves inside an automatic phone card
- * (the title and every field value). A cut text (`truncate`) and a
- * `whitespace-nowrap` text wrap, as the card has the height, but a cut text
- * stops at three lines; and a cell's flex row wraps, so a long text moves
- * under the chip beside it and gets the whole field width. Only rows: a
- * wrapping column (`flex-col`) sizes its items to their longest line instead
- * of the field, and they stick out of it.
- *
- * Without the last two, a long text beside a chip (a run's message beside its
- * state) wrapped in the sliver of width the chip left: one field became
- * thousands of pixels tall, with the chip centred far down and the rest of
- * the card empty (/scans/runs at 390 px, owner report 2026-11-17).
- *
- * `overflow-wrap: anywhere` (not `break-word`) lets a word longer than the
- * card (an 88-character e-mail address, a URL) break, AND stops it from
- * setting the minimum width of its flex item: with `break-word` the address
- * kept its one-line width and ran under the row's menu button. It is only the
- * last resort: cells that show a name or an address render it through
- * `BreakText`, whose break opportunities at `.`, `@`, `-`, `_`, `/` are taken
- * first, so an address wraps at a separator and never inside a word.
+ * Widest actions cell kept on a phone card's title line: one icon button (the
+ * row menu, 44 px touch target at most). A wider cell (labelled buttons, two
+ * icons) moves to one trailing line at the card's end.
  */
-const CARD_WRAP_CLASS =
-  '[overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
+const CARD_INLINE_ACTIONS_MAX = 48
+
+/** A value that only marks "nothing here": a dash of any width. */
+const EMPTY_MARK = /^[-‐-―−]$/
+
+/** Text as read on screen: trimmed, inner runs of white space as one. */
+function normalText(text: string | null | undefined): string {
+  return (text ?? '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Whether a drawn value says something: text that is not only a dash and
+ * not the card's title again, or a switch (a switch is a value: "On"/"Off").
+ */
+function valueSays(el: Element | null | undefined, titleText: string): boolean {
+  if (!el) return false
+  if (el.querySelector('[role=switch]')) return true
+  const value = normalText(el.textContent)
+  return value !== '' && !EMPTY_MARK.test(value) && value !== titleText
+}
+
+/**
+ * One line of the automatic phone card: whatever a cell draws stays on one
+ * line, cut with an ellipsis, inside a fixed line height. So every card of a
+ * list has the same height, and a long text beside a chip can never make a
+ * tall sliver (a run's message beside its state once made one field thousands
+ * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17).
+ */
+const CARD_LINE_CLASS =
+  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row'
 
 /**
  * A column's readable label for the phone card: `meta.label`, a string
@@ -563,8 +586,20 @@ function columnHasName<TData>(
   )
 }
 
-const CARD_VALUE_CLASS =
-  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal'
+/**
+ * The phone card's title: the name cell as drawn in the table, allowed to
+ * wrap to two lines (then cut) instead of being cut on one. Widths a table
+ * cell sets for its column (`w-0 min-w-full`, a fixed `max-w-*`) give way
+ * to the card's width, so the name is never squeezed out of sight.
+ */
+const CARD_TITLE_CLASS =
+  'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+
+const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
+
+/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+const CARD_CHIP_SELECTOR =
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch
@@ -597,13 +632,7 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect()
   }, [])
   return (
-    <dd
-      className={cn(
-        CARD_VALUE_CLASS,
-        CARD_WRAP_CLASS,
-        switchOn !== null && 'flex items-center gap-2'
-      )}
-    >
+    <dd className={cn(CARD_VALUE_CLASS, switchOn !== null && 'flex items-center gap-2')}>
       <span ref={cellRef} className="contents">
         {children}
       </span>
@@ -616,15 +645,29 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
   )
 }
 
-/**
- * Phone layout for a table with no `mobileRow`: the first data column is the
- * title, the next few become label/value fields, and the row's checkbox and
- * actions stay reachable. Built from the same cells, so it needs no per-page code.
- */
 /** A card that takes the focus after "Show more" (never in the tab order). */
 const PHONE_CARD_FOCUS_CLASS =
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
 
+/**
+ * Phone layout for a table with no `mobileRow`, built from the same cells, so
+ * it needs no per-page code. A compact card of fixed lines:
+ * - the title line: the row's name (the column of kind `name`, else the
+ *   first data column; never guessed from the values), up to two lines, then
+ *   the status chip (the first `status` column) and the row's checkbox and
+ *   row menu. Nothing on it wraps under the title: a status cell too wide
+ *   for its place gets a line of its own under the title, and an actions
+ *   cell wider than one icon button gets one trailing line at the card's end;
+ * - one muted subtitle line: the first remaining column of a naming kind
+ *   (asset, owner, id, text), kept empty (same height) on a row where it
+ *   says nothing or repeats the title;
+ * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
+ *   other columns that say something (no empty or dash-only value, no repeat
+ *   of the title; a switch counts as a value), chosen before paint. A chip
+ *   value is never cut: a field whose chip does not fit half the line takes
+ *   the whole line and the other field goes on the line under it.
+ * Every line but the title is one line high whatever its cell draws.
+ */
 function AutoMobileCard<TData>({
   row,
   labels,
@@ -640,8 +683,70 @@ function AutoMobileCard<TData>({
   const cells = row.getVisibleCells()
   const select = showSelect ? cells.find((c) => c.column.id === 'select') : undefined
   const actions = cells.find((c) => c.column.id === 'actions')
-  const [title, ...rest] = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
-  const fields = rest.slice(0, MOBILE_CARD_FIELDS)
+  const kindOf = (c: (typeof cells)[number]) =>
+    columnKind(c.column.id, c.column.columnDef.meta as DataTableColumnMeta | undefined)
+  const data = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
+  const title = data.find((c) => kindOf(c) === 'name') ?? data[0]
+  const rest = data.filter((c) => c !== title)
+  const status = rest.find((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  // Only a column the page marked as a naming kind; an unmarked column stays a
+  // labelled field (its meaning would be lost on an unlabelled line).
+  const subtitle = rest.find((c) => {
+    const kind = (c.column.columnDef.meta as DataTableColumnMeta | undefined)?.kind
+    return c !== status && !!kind && CARD_SUBTITLE_KINDS.has(kind)
+  })
+  const candidates = rest.filter((c) => c !== status && c !== subtitle)
+
+  const titleRef = React.useRef<HTMLDivElement>(null)
+  const subtitleRef = React.useRef<HTMLDivElement>(null)
+  const fieldsRef = React.useRef<HTMLDListElement>(null)
+  const statusRef = React.useRef<HTMLDivElement>(null)
+  const actionsRef = React.useRef<HTMLDivElement>(null)
+  // Chosen before paint, once per row value: every candidate renders on the
+  // first pass (status and actions on the title line), the card measures
+  // which fields say something and what fits, then keeps that layout.
+  const [chosen, setChosen] = React.useState<{
+    of: TData
+    fields: string[]
+    // Fields whose chip does not fit half the line: they take the whole line.
+    wide: string[]
+    subtitle: boolean
+    statusLine: boolean
+    actionsLine: boolean
+  } | null>(null)
+  const pick = chosen && chosen.of === row.original ? chosen : null
+  React.useLayoutEffect(() => {
+    if (pick) return
+    const titleText = normalText(titleRef.current?.textContent)
+    const fields: string[] = []
+    const wide: string[] = []
+    for (const field of Array.from(fieldsRef.current?.children ?? [])) {
+      const id = field.getAttribute('data-column') ?? ''
+      if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
+        fields.push(id)
+        // A chip is never cut (it has no ellipsis): one that overflows its half
+        // of the line gets the whole line, and the other field moves under it.
+        const dd = field.querySelector('dd')
+        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+          wide.push(id)
+        }
+      }
+    }
+    const statusEl = statusRef.current
+    setChosen({
+      of: row.original,
+      fields,
+      wide,
+      subtitle: valueSays(subtitleRef.current, titleText),
+      statusLine: !!statusEl && statusEl.scrollWidth > statusEl.clientWidth + 1,
+      actionsLine:
+        (actionsRef.current?.getBoundingClientRect().width ?? 0) > CARD_INLINE_ACTIONS_MAX,
+    })
+  }, [pick, row.original])
+  const shownFields = pick
+    ? candidates.filter((c) => pick.fields.includes(c.column.id))
+    : candidates
+
   return (
     <div
       data-slot="mobile-card"
@@ -660,50 +765,101 @@ function AutoMobileCard<TData>({
         onRowClick?.(row.original)
       }}
     >
-      {/* Header: the title keeps at least 60% of the width, so a row menu
-          (the usual "...") sits beside it while wide action buttons wrap onto
-          their own line instead of covering the title. */}
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+      {/* Title line, never wrapped: the name (up to two lines), the status
+          chip and the row menu. */}
+      <div data-slot="mobile-card-head" className="flex items-start gap-x-3">
         {select && (
-          <div className="shrink-0 pt-0.5">
+          <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
           </div>
         )}
         {title && (
-          <div className={cn('min-w-0 flex-[1_1_60%] text-sm font-medium', CARD_WRAP_CLASS)}>
+          <div
+            ref={titleRef}
+            data-slot="mobile-card-title"
+            className={cn('min-w-0 flex-1 self-center', CARD_TITLE_CLASS)}
+          >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
         )}
-        {actions && (
-          <div className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+        {status && !pick?.statusLine && (
+          <div
+            ref={statusRef}
+            data-slot="mobile-card-status"
+            className={cn('flex h-5 max-w-[45%] shrink-0 items-center', CARD_LINE_CLASS)}
+          >
+            {flexRender(status.column.columnDef.cell, status.getContext())}
+          </div>
+        )}
+        {actions && !pick?.actionsLine && (
+          <div
+            ref={actionsRef}
+            data-slot="mobile-card-actions"
+            className="-my-1.5 flex shrink-0 items-center"
+          >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
         )}
       </div>
-      {fields.length > 0 && (
-        // Full card width, two equal columns (minmax(0,1fr): a long value
-        // cannot widen its column). The wrap rule only splits a word that is
-        // longer than the column; "High" stays whole.
-        <dl
+      {status && pick?.statusLine && (
+        <div
+          data-slot="mobile-card-status"
+          className={cn('mt-1 flex h-5 items-center', CARD_LINE_CLASS, select && 'ps-7')}
+        >
+          {flexRender(status.column.columnDef.cell, status.getContext())}
+        </div>
+      )}
+      {subtitle && (
+        <div
+          ref={subtitleRef}
+          data-slot="mobile-card-subtitle"
           className={cn(
-            'mt-2 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 gap-y-2',
+            'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
+            CARD_LINE_CLASS,
+            select && 'ps-7',
+            pick && !pick.subtitle && 'invisible'
+          )}
+          aria-hidden={pick && !pick.subtitle ? true : undefined}
+        >
+          {flexRender(subtitle.column.columnDef.cell, subtitle.getContext())}
+        </div>
+      )}
+      {candidates.length > 0 && (
+        <dl
+          ref={fieldsRef}
+          className={cn(
+            'mt-1 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
         >
-          {fields.map((cell) => (
-            <div key={cell.id} data-slot="mobile-card-field" className="min-w-0">
-              <dt className="truncate text-xs text-muted-foreground">
+          {shownFields.map((cell) => (
+            <div
+              key={cell.id}
+              data-slot="mobile-card-field"
+              data-column={cell.column.id}
+              className={cn(
+                'flex min-w-0 items-baseline gap-1.5',
+                pick?.wide.includes(cell.column.id) && 'col-span-2'
+              )}
+            >
+              <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
-              {/* Cells are written for a wide table row: whatever they keep on
-                  one line may wrap here, as in the title, so a value never runs
-                  into the next column (CARD_WRAP_CLASS). */}
               <CardFieldValue>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>
           ))}
         </dl>
+      )}
+      {actions && pick?.actionsLine && (
+        <div
+          data-slot="mobile-card-actions"
+          className="mt-2 flex items-center justify-end gap-2 overflow-hidden"
+        >
+          {flexRender(actions.column.columnDef.cell, actions.getContext())}
+        </div>
       )}
     </div>
   )

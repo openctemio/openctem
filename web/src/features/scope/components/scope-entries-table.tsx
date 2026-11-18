@@ -172,7 +172,7 @@ export function ScopeEntriesTable({
     }
   }
 
-  const ciTrustPage = '/ci-cd?tab=setup&section=trust'
+  const ciTrustPage = '/ci-cd?tab=connections'
 
   const actionsFor = (e: ApiScopeTarget): RowAction[] => {
     const id = e.id ?? ''

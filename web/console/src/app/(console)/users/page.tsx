@@ -1,5 +1,6 @@
 'use client'
 
+import { authProviderLabel } from '@console/features/admin-console/lib/value-labels'
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -119,7 +120,7 @@ export default function AdminUsersPage() {
           label: t('admin.users.col.signIn', 'Signs in with'),
         },
         cell: ({ row }) => (
-          <span className="block truncate capitalize">{row.original.auth_provider}</span>
+          <span className="block truncate">{authProviderLabel(t, row.original.auth_provider)}</span>
         ),
       },
       {

@@ -258,8 +258,11 @@ export function SecretStoreSection() {
   return (
     <PageStack>
       <PageHeader
-        title="Source credentials"
-        description="Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more)."
+        title={t('settings.item.source-credentials', 'Source credentials')}
+        description={t(
+          'settings.page.sourceCredentials.description',
+          'Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more).'
+        )}
       >
         <Can permission={Permission.SecretStoreWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>

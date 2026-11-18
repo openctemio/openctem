@@ -28,6 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminElevate, adminEndElevation } from '../api/use-admin-session'
 import { useConsoleFactors } from '../api/use-console-factors'
+import { roleName } from '../lib/role-name'
 import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
@@ -230,9 +231,7 @@ function ElevateDialog({
                   <SelectContent>
                     {roles.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {r.includes('_admin') && !r.startsWith('platform_')
-                          ? t(`admin.role.${r}`, r)
-                          : t(`admin.platformRole.${r}`, r)}
+                        {roleName(t, r)}
                       </SelectItem>
                     ))}
                   </SelectContent>
