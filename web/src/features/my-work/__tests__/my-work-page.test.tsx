@@ -251,6 +251,8 @@ describe('My Work page', () => {
     expect(within(row).getByText('Changed since the request: now in CISA KEV')).toBeInTheDocument()
     expect(within(row).getByText('90 days')).toBeInTheDocument()
     expect(within(row).getByText('edge-proxy')).toBeInTheDocument()
+    // The short label beside it never breaks over two lines ("Tài sản" did).
+    expect(within(row).getByText('Asset')).toHaveClass('whitespace-nowrap', 'shrink-0')
     expect(within(row).getByText('Requested by Linh')).toBeInTheDocument()
     expect(screen.getByText(/Four-eyes/)).toBeInTheDocument()
 
