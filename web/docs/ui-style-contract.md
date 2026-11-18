@@ -535,7 +535,8 @@ reference.
   - the title line: the row's name (the column of kind `name`, else the first
     column; never guessed from the values), up to two lines whatever width the
     table cell set for itself, then the status chip (the first column of kind
-    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    `status` or `status-edit` the table keeps at every width, i.e. without
+    `hideBelow`; else the first one), the row's checkbox and its row menu. Nothing
     wraps under the title: a status cell too wide for its place gets a line of
     its own under the title, and an actions cell wider than one icon button
     gets one trailing line at the end of the card;

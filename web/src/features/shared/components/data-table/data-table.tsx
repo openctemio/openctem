@@ -680,7 +680,15 @@ function AutoMobileCard<TData>({
   const data = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
   const title = data.find((c) => kindOf(c) === 'name') ?? data[0]
   const rest = data.filter((c) => c !== title)
-  const status = rest.find((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  // The title line's chip is the row's own state: a status column the table
+  // keeps at every width wins over one the page lets a narrow table drop
+  // (`hideBelow`, e.g. an environment beside the criticality); the dropped
+  // one is then a field candidate like any other column.
+  const statusCells = rest.filter((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  const status =
+    statusCells.find(
+      (c) => !(c.column.columnDef.meta as DataTableColumnMeta | undefined)?.hideBelow
+    ) ?? statusCells[0]
   // Only a column the page marked as a naming kind; an unmarked column stays a
   // labelled field (its meaning would be lost on an unlabelled line).
   const subtitle = rest.find((c) => {

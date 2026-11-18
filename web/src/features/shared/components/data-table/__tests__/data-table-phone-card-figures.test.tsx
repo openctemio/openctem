@@ -3,7 +3,10 @@
  * count, a risk, a severity, a priority, a due date) take those places before
  * descriptive columns, whatever their column order. Regression (2026-11-18):
  * the asset groups card showed Criticality and Assets and left out
- * "Findings 0", the figure the list is about.
+ * "Findings 0", the figure the list is about. The row's own state chip
+ * (Criticality) stays on the title line beside the name, so nothing it showed
+ * is lost; a status column the table drops on narrow screens (Environment)
+ * gives it that place.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
@@ -25,7 +28,8 @@ const columns: ColumnDef<Group>[] = [
   {
     accessorKey: 'environment',
     header: 'Environment',
-    meta: { kind: 'status', label: 'Environment' },
+    // The page lets a narrow table drop it, as on the asset groups list.
+    meta: { kind: 'status', hideBelow: 760, label: 'Environment' },
   },
   {
     accessorKey: 'criticality',
@@ -89,6 +93,27 @@ describe('automatic phone card: key figures first', () => {
       { accessorKey: 'note', header: 'Note', meta: { label: 'Note' } },
     ]
     const { container } = render(<DataTable columns={text} data={[row]} />)
-    expect(fieldLabels(container)).toEqual(['Criticality', 'Note'])
+    expect(fieldLabels(container)).toEqual(['Environment', 'Note'])
+  })
+
+  it('keeps the criticality chip on the title line, not a status the table drops', () => {
+    const { container } = render(<DataTable columns={columns} data={[row]} />)
+    const head = container.querySelector<HTMLElement>('[data-slot="mobile-card-head"]')!
+    const status = head.querySelector<HTMLElement>('[data-slot="mobile-card-status"]')
+    expect(status?.textContent).toBe('High')
+    expect(fieldLabels(container)).not.toContain('Criticality')
+  })
+
+  it('takes the first status column when every one may be dropped', () => {
+    const all = columns.map((c) =>
+      (c.meta as { kind?: string } | undefined)?.kind === 'status'
+        ? { ...c, meta: { ...c.meta, hideBelow: 900 } }
+        : c
+    )
+    const { container } = render(<DataTable columns={all} data={[row]} />)
+    expect(
+      container.querySelector('[data-slot="mobile-card-head"] [data-slot="mobile-card-status"]')
+        ?.textContent
+    ).toBe('Production')
   })
 })
