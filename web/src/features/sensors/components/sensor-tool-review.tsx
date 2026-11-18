@@ -169,7 +169,7 @@ export function SensorFirstReport({
         <DetailFieldGrid className="grid-cols-2 gap-x-4 rounded-lg border bg-background p-3">
           <DetailField label={t('sensors.review.host', 'Host')}>
             <span className="flex flex-col gap-0.5">
-              <span className="break-all">
+              <span className="break-words">
                 {sensor.hostname || t('sensors.review.notReported', 'Not reported')}
               </span>
               {platform && <span className="text-xs text-muted-foreground">{platform}</span>}

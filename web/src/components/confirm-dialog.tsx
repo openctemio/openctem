@@ -249,7 +249,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
               <div className="space-y-2">
                 <Label htmlFor={inputId} className="block font-normal">
                   {typeBefore}
-                  <span className="font-semibold break-all">{typeToConfirm}</span>
+                  <span className="font-semibold break-words">{typeToConfirm}</span>
                   {typeAfter}
                 </Label>
                 <Input

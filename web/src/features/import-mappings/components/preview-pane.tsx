@@ -303,7 +303,7 @@ function PreviewResultView({ result }: { result: PreviewResult }) {
                   <pre
                     className={cn(
                       'max-h-80 overflow-auto rounded bg-muted p-2 text-xs',
-                      'whitespace-pre-wrap break-all'
+                      'whitespace-pre-wrap break-words'
                     )}
                   >
                     {JSON.stringify(item.record, null, 2)}
