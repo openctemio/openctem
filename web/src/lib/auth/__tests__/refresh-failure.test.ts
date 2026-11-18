@@ -56,5 +56,9 @@ describe('twoFactorSetupHref', () => {
       '/two-factor-setup?next=%2Ffindings%3Fx%3D1&org=0b1e2c3d-0000-4000-8000-000000000001'
     )
     expect(twoFactorSetupHref('/')).toBe('/two-factor-setup?next=%2F')
+    // The literal link of Account > Security (two-factor-card.tsx).
+    expect(twoFactorSetupHref('/account/security')).toBe(
+      '/two-factor-setup?next=%2Faccount%2Fsecurity'
+    )
   })
 })

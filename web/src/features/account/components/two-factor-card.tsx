@@ -35,7 +35,6 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
-import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
 import Link from '@/components/link'
 
 import {
@@ -87,9 +86,6 @@ function useRequiredByLabel(status?: TwoFactorStatus): string | null {
 /**
  * Two-factor authentication section of My account -> Security.
  */
-/** Where the session setup comes back to. */
-const ACCOUNT_SECURITY_PATH = '/account/security'
-
 export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCardProps) {
   const { t } = useTranslation()
   const { status, isLoading, mutate } = useTwoFactorStatus()
@@ -190,7 +186,7 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
               {throughSession ? (
                 !status.enabled && (
                   <Button size="sm" asChild>
-                    <Link href={twoFactorSetupHref(ACCOUNT_SECURITY_PATH)}>
+                    <Link href="/two-factor-setup?next=%2Faccount%2Fsecurity">
                       {t('settings.twoFactor.setUp', 'Set up')}
                     </Link>
                   </Button>
