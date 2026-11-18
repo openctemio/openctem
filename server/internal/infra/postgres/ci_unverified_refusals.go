@@ -13,7 +13,7 @@ var _ cirun.UnverifiedRefusalStore = (*CIRunRepository)(nil)
 // RecordUnverifiedRefusal adds r.Count to the (tenant, issuer, reason)
 // record. Nothing is written for a tenant without a CI trust configuration
 // (a made-up or unrelated tenant id). A tenant keeps at most
-// cirun.MaxUnverifiedRefusals records: when full, a new record is written
+// cirun.MaxUnverifiedRefusals no_configuration records (the others are bounded by its configurations): when full, a new record is written
 // only in place of one not seen for cirun.UnverifiedRefusalRetention, so an
 // anonymous caller cannot push a real record out (existing records keep
 // counting).
@@ -39,17 +39,22 @@ func (r *CIRunRepository) RecordUnverifiedRefusal(ctx context.Context, u cirun.U
 		return fmt.Errorf("record unverified ci refusal: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
+		// Only no_configuration records (a caller-chosen issuer) are bounded;
+		// the others name a configured issuer and are never refused.
 		var held int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM ci_unverified_refusals WHERE tenant_id = $1`, tid).Scan(&held); err != nil {
-			return err
+		if u.Reason == cirun.UnverifiedReasonNoConfiguration {
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM ci_unverified_refusals WHERE tenant_id = $1 AND reason = $2`,
+				tid, cirun.UnverifiedReasonNoConfiguration).Scan(&held); err != nil {
+				return err
+			}
 		}
 		if held >= cirun.MaxUnverifiedRefusals {
 			res, err := tx.ExecContext(ctx, `
 				DELETE FROM ci_unverified_refusals
 				WHERE tenant_id = $1 AND (issuer, reason) IN (
 					SELECT issuer, reason FROM ci_unverified_refusals
-					WHERE tenant_id = $1 AND last_seen < $2 ORDER BY last_seen LIMIT 1)`,
-				tid, u.LastSeen.UTC().Add(-cirun.UnverifiedRefusalRetention))
+					WHERE tenant_id = $1 AND reason = $3 AND last_seen < $2 ORDER BY last_seen LIMIT 1)`,
+				tid, u.LastSeen.UTC().Add(-cirun.UnverifiedRefusalRetention), cirun.UnverifiedReasonNoConfiguration)
 			if err != nil {
 				return fmt.Errorf("trim unverified ci refusals: %w", err)
 			}
@@ -74,7 +79,7 @@ func (r *CIRunRepository) ListUnverifiedRefusals(ctx context.Context, tenantID s
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT issuer, reason, cause, first_seen, last_seen, count
 		FROM ci_unverified_refusals WHERE tenant_id = $1
-		ORDER BY last_seen DESC, issuer, reason LIMIT $2`, tenantID.String(), cirun.MaxUnverifiedRefusals)
+		ORDER BY last_seen DESC, issuer, reason LIMIT $2`, tenantID.String(), cirun.MaxUnverifiedListed)
 	if err != nil {
 		return nil, fmt.Errorf("list unverified ci refusals: %w", err)
 	}

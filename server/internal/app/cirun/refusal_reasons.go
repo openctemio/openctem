@@ -125,7 +125,7 @@ func IssuerUnavailableMessage(cause string) string {
 const (
 	// UnverifiedNoConfiguration: no enabled trust configuration has the
 	// token's issuer.
-	UnverifiedNoConfiguration = "no_configuration"
+	UnverifiedNoConfiguration = cirun.UnverifiedReasonNoConfiguration
 	// UnverifiedKeysUnavailable: the issuer's keys could not be had (Cause
 	// says why).
 	UnverifiedKeysUnavailable = "keys_unavailable"
@@ -197,7 +197,7 @@ func (u *unverifiedRecorder) takeNew(tenant shared.ID, now time.Time) bool {
 // administrators: issuer, reason, cause class, time and count, never token
 // contents. The issuer is the token's claim, so it is kept only when it is a
 // plain https issuer address of bounded length and, for no_configuration,
-// close to an issuer the tenant configured (NearestIssuer: a typing mistake
+// on the same host as an issuer the tenant configured (a typing mistake
 // worth showing); any other issuer is recorded as "" (another issuer), so
 // made-up issuers share one record. The row is written only for a tenant
 // that has a trust configuration (the store checks), at most once per
@@ -231,7 +231,10 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 		s.unverified.mu.Unlock()
 		return
 	}
-	if p.written.IsZero() && !s.unverified.takeNew(tenantID, now) {
+	// Only no_configuration records are budgeted: the others name an issuer a
+	// configuration already matched, so they are bounded by the tenant's
+	// configurations and must never be starved by caller-chosen issuers.
+	if p.written.IsZero() && reason == UnverifiedNoConfiguration && !s.unverified.takeNew(tenantID, now) {
 		// Over the tenant's budget of new records: keep counting, retry
 		// with the next refusal.
 		s.unverified.mu.Unlock()
@@ -250,7 +253,7 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 }
 
 // nearConfiguredIssuer reports whether issuer is close to one of the tenant's
-// configured issuers (same host or same path, NearestIssuer). A read error
+// configured issuers: the same host name. A read error
 // counts as not close.
 func (s *Service) nearConfiguredIssuer(ctx context.Context, tenantID shared.ID, issuer string) bool {
 	if s.repo == nil {
@@ -264,8 +267,21 @@ func (s *Service) nearConfiguredIssuer(ctx context.Context, tenantID shared.ID, 
 	for _, c := range configs {
 		issuers = append(issuers, c.Issuer)
 	}
-	near, _ := NearestIssuer(issuer, issuers)
-	return near != ""
+	// A claimed issuer is kept under its own name only when it has the same
+	// host name as a configured one (a trailing slash, case, scheme, port or
+	// path difference: the mistakes the record exists to show). Every usual
+	// configured issuer has an empty path, so a made-up issuer on another
+	// host must not count as close for having the same (empty) path.
+	tu, err := url.Parse(issuer)
+	if err != nil {
+		return false
+	}
+	for _, c := range issuers {
+		if cu, err := url.Parse(c); err == nil && cu.Hostname() != "" && strings.EqualFold(tu.Hostname(), cu.Hostname()) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetUnverifiedRefusalStore wires the unverified refusal records (nil: not
