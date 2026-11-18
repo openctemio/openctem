@@ -78,7 +78,7 @@ export function InstanceScanZonesCard({ zones, canEdit, onChanged }: InstanceSca
             <CardDescription>{t('admin.instanceZones.desc')}</CardDescription>
           </div>
           {canEdit && (
-            <Button size="sm" onClick={() => setEditing('new')}>
+            <Button size="sm" variant="outline" onClick={() => setEditing('new')}>
               <Plus className="me-2 size-4" />
               {t('admin.instanceZones.add')}
             </Button>

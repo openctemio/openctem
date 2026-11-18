@@ -1,16 +1,23 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition, type ReactNode } from 'react'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
-import { Building2, Check, Loader2, X, LogIn, Clock, AlertTriangle, UserPlus } from 'lucide-react'
+import { Clock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  EntryActions,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+  EntryLine,
+  EntryNote,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link'
+import { ToneChip } from '@/components/ui/tone-chip'
 import { csrfFetch } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import {
@@ -25,6 +32,7 @@ import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { selectTenantAction } from '@/features/auth/actions/local-auth-actions'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { useTranslation } from '@/context/i18n-provider'
+import { KeyValueList } from '@/features/shared'
 import {
   InvitationGrantsNotice,
   type InvitationGrants,
@@ -307,72 +315,49 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <Skeleton className="h-8 w-48 mx-auto mb-2" />
-            <Skeleton className="h-4 w-64 mx-auto" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
-      </div>
+      <EntryCard aria-busy="true">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-9 w-full" />
+      </EntryCard>
     )
   }
 
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-              <AlertTriangle className="h-6 w-6 text-destructive" />
-            </div>
-            <CardTitle className="text-xl">{t('org.acceptInvite.errorTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-            <div className="flex flex-col gap-2">
-              <Button variant="outline" className="w-full" onClick={() => router.push('/login')}>
-                <LogIn className="me-2 h-4 w-4" />
-                {t('org.acceptInvite.goToLogin')}
-              </Button>
-              <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
-                {t('org.acceptInvite.goHome')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <EntryCard>
+        <EntryHeader title={t('org.acceptInvite.errorTitle')} />
+        <EntryBanner tone="danger">{error}</EntryBanner>
+        <EntryActions>
+          <Button variant="outline" onClick={() => router.push('/login')}>
+            {t('org.acceptInvite.goToLogin')}
+          </Button>
+          <Button variant="ghost" onClick={() => router.push('/')}>
+            {t('org.acceptInvite.goHome')}
+          </Button>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   // Declined here: say so (the visitor may have no session to go anywhere).
   if (declined && invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <X className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <CardTitle className="text-xl">{t('org.acceptInvite.declinedTitle')}</CardTitle>
-            <CardDescription>
-              {t('org.acceptInvite.declinedBody', undefined, { org: invitation.tenant.name })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full" onClick={() => router.push('/')}>
-              {t('org.acceptInvite.goHome')}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <EntryCard>
+        <EntryHeader
+          title={t('org.acceptInvite.declinedTitle')}
+          description={t('org.acceptInvite.declinedBody', undefined, {
+            org: invitation.tenant.name,
+          })}
+        />
+        <EntryActions>
+          <Button variant="outline" onClick={() => router.push('/')}>
+            {t('org.acceptInvite.goHome')}
+          </Button>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
@@ -380,31 +365,22 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // here (the same step the sign-in page uses), then open the organization.
   if (joinedNeedsMfa && invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Check className="h-6 w-6 text-primary" />
-            </div>
-            <CardTitle className="text-xl">
-              {t('org.acceptInvite.joinedMfaTitle', undefined, { org: invitation.tenant.name })}
-            </CardTitle>
-            <CardDescription>{t('org.acceptInvite.joinedMfaBody')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MfaSessionStep
-              tenantId={invitation.tenant.id}
-              onComplete={() => landInOrganization(invitation.tenant.name)}
-              onSessionExpired={() => router.push(invitationLoginHref)}
-              onReauthRequired={() =>
-                router.push(
-                  `/login?reason=mfa_required&returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation.invitation.email || '')}`
-                )
-              }
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <EntryCard>
+        <EntryHeader
+          title={t('org.acceptInvite.joinedMfaTitle', undefined, { org: invitation.tenant.name })}
+          description={t('org.acceptInvite.joinedMfaBody')}
+        />
+        <MfaSessionStep
+          tenantId={invitation.tenant.id}
+          onComplete={() => landInOrganization(invitation.tenant.name)}
+          onSessionExpired={() => router.push(invitationLoginHref)}
+          onReauthRequired={() =>
+            router.push(
+              `/login?reason=mfa_required&returnTo=${encodeURIComponent(invitationPath)}&email=${encodeURIComponent(invitation.invitation.email || '')}`
+            )
+          }
+        />
+      </EntryCard>
     )
   }
 
@@ -414,206 +390,158 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
     // A signed-in person who accepted can open the organization from here
     // (the API refuses the selection to anyone who is not a member).
     const canOpen = hasSession && !isExpired
-    const StatusIcon = isExpired ? Clock : Check
 
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div
-              className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full ${isExpired ? 'bg-warning/10' : 'bg-success/10'}`}
-            >
-              <StatusIcon className={`h-6 w-6 ${isExpired ? 'text-warning' : 'text-success'}`} />
-            </div>
-            <CardTitle className="text-xl">
-              {isExpired ? t('org.acceptInvite.expiredTitle') : t('org.acceptInvite.acceptedTitle')}
-            </CardTitle>
-            <CardDescription>
-              {isExpired ? t('org.acceptInvite.expiredBody') : t('org.acceptInvite.acceptedBody')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-primary">
-                <Building2 className="h-5 w-5" />
-              </div>
-              <p className="font-medium">{invitation.tenant.name}</p>
-            </div>
+      <EntryCard>
+        <EntryHeader
+          title={
+            isExpired ? t('org.acceptInvite.expiredTitle') : t('org.acceptInvite.acceptedTitle')
+          }
+          description={
+            isExpired ? t('org.acceptInvite.expiredBody') : t('org.acceptInvite.acceptedBody')
+          }
+        />
+        <OrganizationRow name={invitation.tenant.name} />
 
-            {openError && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{openError}</AlertDescription>
-              </Alert>
-            )}
+        {openError && <EntryBanner tone="danger">{openError}</EntryBanner>}
 
-            <div className="flex flex-col gap-2">
-              {canOpen ? (
-                <Button className="w-full" onClick={handleOpenOrganization} disabled={isPending}>
-                  {isPending ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Building2 className="me-2 h-4 w-4" />
-                  )}
-                  {t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
-                </Button>
-              ) : (
-                !hasSession && (
-                  <Button className="w-full" onClick={() => router.push('/login')}>
-                    <LogIn className="me-2 h-4 w-4" />
-                    {t('org.acceptInvite.goToLogin')}
-                  </Button>
-                )
-              )}
-              <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
-                {t('org.acceptInvite.goHome')}
+        <EntryActions>
+          {canOpen ? (
+            <Button variant="signal" onClick={handleOpenOrganization} disabled={isPending}>
+              {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
+              {t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
+            </Button>
+          ) : (
+            !hasSession && (
+              <Button variant="signal" onClick={() => router.push('/login')}>
+                {t('org.acceptInvite.goToLogin')}
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            )
+          )}
+          <Button variant="ghost" onClick={() => router.push('/')}>
+            {t('org.acceptInvite.goHome')}
+          </Button>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   const daysUntilExpiry = getDaysUntilExpiry()
   const orgName = invitation?.tenant.name ?? ''
+  // The API names the inviter (display name only, never an email); an
+  // unnamed account falls back to a neutral label.
+  const inviterName =
+    invitation?.invitation.inviter_name?.trim() || t('org.acceptInvite.aTeamMember')
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-            <Building2 className="h-7 w-7 text-primary" />
-          </div>
-          <CardTitle className="text-xl">{t('org.acceptInvite.title')}</CardTitle>
-          <CardDescription>
-            {t('org.acceptInvite.subtitle', undefined, {
-              name:
-                invitation?.invitation.inviter_name?.trim() || t('org.acceptInvite.aTeamMember'),
-              org: orgName,
-            })}
-          </CardDescription>
-        </CardHeader>
+    <>
+      <EntryCard>
+        <EntryHeader
+          title={t('org.acceptInvite.title')}
+          description={t('org.acceptInvite.subtitle', undefined, {
+            name: inviterName,
+            org: orgName,
+          })}
+        />
 
-        <CardContent className="space-y-5">
-          {/* The organization */}
-          <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary text-primary-foreground font-semibold text-lg">
-                {orgName.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-lg truncate">{orgName}</p>
-                {daysUntilExpiry <= 3 && daysUntilExpiry > 0 && (
-                  <Badge variant="outline" className="mt-1 text-warning border-warning/50">
-                    <Clock className="h-3 w-3 me-1" />
-                    {daysUntilExpiry === 1
-                      ? t('org.acceptInvite.expiresInOne')
-                      : t('org.acceptInvite.expiresInDays', undefined, { days: daysUntilExpiry })}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </div>
+        {/* The organization, and how long the invitation stays open */}
+        <OrganizationRow
+          name={orgName}
+          expiry={
+            daysUntilExpiry <= 3 && daysUntilExpiry > 0 ? (
+              <ToneChip
+                tone="caution"
+                icon={Clock}
+                label={
+                  daysUntilExpiry === 1
+                    ? t('org.acceptInvite.expiresInOne')
+                    : t('org.acceptInvite.expiresInDays', undefined, { days: daysUntilExpiry })
+                }
+              />
+            ) : null
+          }
+        />
 
-          {/* Who and for whom */}
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between gap-4 py-2 border-b">
-              <span className="text-muted-foreground">{t('org.acceptInvite.invitedBy')}</span>
-              <span className="font-medium text-end">
-                {/* The API names the inviter (display name only, never an
-                    email); an unnamed account falls back to a neutral label. */}
-                {invitation?.invitation.inviter_name?.trim() || t('org.acceptInvite.aTeamMember')}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-4 py-2">
-              <span className="text-muted-foreground">{t('org.acceptInvite.invitationFor')}</span>
-              <span className="font-medium break-all text-end">{invitation?.invitation.email}</span>
-            </div>
-          </div>
+        {/* Who and for whom */}
+        <KeyValueList
+          items={[
+            { key: 'by', label: t('org.acceptInvite.invitedBy'), value: inviterName },
+            {
+              key: 'for',
+              label: t('org.acceptInvite.invitationFor'),
+              value: invitation?.invitation.email,
+            },
+          ]}
+        />
 
-          {/* What accepting gives */}
-          {invitation && (
-            <InvitationGrantsNotice grants={invitation.invitation} organization={orgName} />
-          )}
+        {/* What accepting gives */}
+        {invitation && (
+          <InvitationGrantsNotice grants={invitation.invitation} organization={orgName} />
+        )}
 
-          {/* Accept Error */}
-          {acceptError && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>{t('org.acceptInvite.cannotAccept')}</AlertTitle>
-              <AlertDescription>{acceptError}</AlertDescription>
-            </Alert>
-          )}
+        {acceptError && (
+          <EntryBanner tone="danger" title={t('org.acceptInvite.cannotAccept')}>
+            <p>{acceptError}</p>
+          </EntryBanner>
+        )}
 
+        <EntryActions>
           {/* No session: sign in, or create the account for the invited email. */}
           {!hasSession && invitation && (
-            <div className="flex flex-col gap-2">
-              <Button asChild className="w-full" size="lg">
-                <Link href={invitationLoginHref}>
-                  <LogIn className="me-2 h-4 w-4" />
-                  {t('org.acceptInvite.signInToAccept')}
-                </Link>
+            <>
+              <Button asChild variant="signal">
+                <Link href={invitationLoginHref}>{t('org.acceptInvite.signInToAccept')}</Link>
               </Button>
-              <Button asChild variant="outline" className="w-full">
+              <Button asChild variant="outline">
                 <Link
                   href={registerHref({
                     returnTo: invitationPath,
                     email: invitation.invitation.email,
                   })}
                 >
-                  <UserPlus className="me-2 h-4 w-4" />
                   {t('org.acceptInvite.createAccount')}
                 </Link>
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                {t('org.acceptInvite.newHere', undefined, { email: invitation.invitation.email })}
-              </p>
-            </div>
+            </>
           )}
 
-          {/* Accept */}
           {hasSession && (
-            <Button className="w-full" size="lg" onClick={handleAccept} disabled={isPending}>
-              {isPending ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="me-2 h-4 w-4" />
-              )}
+            <Button variant="signal" onClick={handleAccept} disabled={isPending}>
+              {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
               {t('org.acceptInvite.accept')}
             </Button>
           )}
 
           {/* Decline: always offered; it needs only the invitation. */}
           {invitation && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setConfirmDecline(true)}
-              disabled={isPending}
-            >
-              <X className="me-2 h-4 w-4" />
+            <Button variant="outline" onClick={() => setConfirmDecline(true)} disabled={isPending}>
               {t('org.acceptInvite.decline')}
             </Button>
           )}
+        </EntryActions>
 
-          {/* Switch account link */}
-          {hasSession && (
-            <p className="text-xs text-center text-muted-foreground">
-              {t('org.acceptInvite.notYou', undefined, {
-                email: invitation?.invitation.email ?? '',
-              })}{' '}
-              <button
-                type="button"
-                className="text-primary hover:underline"
-                onClick={() => router.push(invitationLoginHref)}
-              >
-                {t('org.acceptInvite.otherAccount')}
-              </button>
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        {!hasSession && invitation && (
+          <EntryNote className="text-center">
+            {t('org.acceptInvite.newHere', undefined, { email: invitation.invitation.email })}
+          </EntryNote>
+        )}
+
+        {/* Switch account */}
+        {hasSession && (
+          <EntryLine className="text-muted-foreground">
+            {t('org.acceptInvite.notYou', undefined, {
+              email: invitation?.invitation.email ?? '',
+            })}{' '}
+            <button
+              type="button"
+              className={TEXT_LINK_CLASS.inline}
+              onClick={() => router.push(invitationLoginHref)}
+            >
+              {t('org.acceptInvite.otherAccount')}
+            </button>
+          </EntryLine>
+        )}
+      </EntryCard>
 
       <ConfirmDialog
         open={confirmDecline}
@@ -625,6 +553,24 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
         isLoading={isPending}
         handleConfirm={handleDecline}
       />
+    </>
+  )
+}
+
+/** The invited organization: its initial, its name and an optional expiry chip. */
+function OrganizationRow({ name, expiry }: { name: string; expiry?: ReactNode }) {
+  return (
+    <div className="border-border flex items-center gap-3 rounded-lg border p-3">
+      <span
+        aria-hidden
+        className="bg-surface-sunken text-body flex size-8 shrink-0 items-center justify-center rounded-sm font-semibold"
+      >
+        {name.charAt(0).toUpperCase()}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="text-body truncate font-medium">{name}</p>
+        {expiry}
+      </div>
     </div>
   )
 }

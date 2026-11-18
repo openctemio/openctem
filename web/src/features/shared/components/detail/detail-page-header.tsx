@@ -8,6 +8,9 @@
  *   [type] [CVE] [CWE]                             ‹ 2 of 27 ›     (from 768 px)
  *   Title of the record                [More] [secondary] [primary]
  *
+ * On a phone the buttons take a full-width row under the title (the main
+ * action first); a More with no buttons stays at the end of the title's line.
+ *
  * One primary action, at most two secondary ones, everything else in the
  * More menu (docs/ui-style-contract.md, "Detail pages"). Status, owner and
  * dates are not here: they are rows of the page's `PropertyList`.
@@ -66,7 +69,8 @@ export function DetailPageHeader({
   const titleRef = useRef<HTMLHeadingElement>(null)
   usePhoneBarTitle(titleRef, title)
   const moreLabel = t('common.actionMenu.more', 'More actions')
-  const hasActions = !!primary || !!secondary || (menu?.length ?? 0) > 0
+  const hasButtons = !!primary || !!secondary
+  const hasActions = hasButtons || (menu?.length ?? 0) > 0
 
   return (
     <header
@@ -109,14 +113,22 @@ export function DetailPageHeader({
         <h1
           id={PAGE_TITLE_ID}
           ref={titleRef}
-          className="min-w-0 flex-1 basis-60 text-page tracking-tight break-words text-balance"
+          className={cn(
+            'min-w-0 flex-1 basis-60 text-page tracking-tight break-words text-balance',
+            !hasButtons && 'max-md:basis-0'
+          )}
         >
           {title}
         </h1>
         {hasActions && (
           <div
             data-slot="detail-actions"
-            className="flex max-w-full shrink-0 flex-wrap items-center gap-2 max-md:w-full"
+            // Phone: the buttons take their own full-width row under the
+            // title; More alone stays at the end of the title's line.
+            className={cn(
+              'flex max-w-full shrink-0 flex-wrap items-center gap-2',
+              hasButtons && 'max-md:w-full'
+            )}
           >
             {menu && menu.length > 0 && (
               // Phone: More closes the row, after the secondary actions.

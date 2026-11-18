@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { safeText } from '@/lib/api/error-message'
 
+import { EntryDivider } from '@/components/entry'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +22,11 @@ interface OnboardingForkProps {
   createSlot: React.ReactNode
   /** Shown when nothing at all is offered. */
   emptySlot: React.ReactNode
+  /**
+   * `cards` (default): each group is a card of its own (inside the app).
+   * `plain`: titled sections of the card the page already draws (entry pages).
+   */
+  variant?: 'cards' | 'plain'
 }
 
 /**
@@ -29,7 +35,42 @@ interface OnboardingForkProps {
  * email domain (join, or ask to join), then "create an organization". Every
  * offer is taken by its opaque reference; the server checks it again.
  */
-export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
+/** One group of offers: a card of its own, or a titled section of the page's card. */
+function Group({
+  plain,
+  title,
+  description,
+  children,
+}: {
+  plain: boolean
+  title: string
+  description?: string
+  children: React.ReactNode
+}) {
+  if (plain) {
+    return (
+      <section className="flex flex-col gap-2.5">
+        <div>
+          <h2 className="text-card-title">{title}</h2>
+          {description ? <p className="text-cap text-muted-foreground">{description}</p> : null}
+        </div>
+        {children}
+      </section>
+    )
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
+  )
+}
+
+export function OnboardingFork({ createSlot, emptySlot, variant = 'cards' }: OnboardingForkProps) {
+  const plain = variant === 'plain'
   const { t } = useTranslation()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
   const [failed, setFailed] = useState(false)
@@ -96,7 +137,7 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
   const nothing = invitations.length === 0 && organizations.length === 0 && !canCreate
 
   return (
-    <div className="space-y-6">
+    <div className={plain ? 'flex flex-col gap-3.5' : 'space-y-6'}>
       {options && !options.email_verified && (
         <p className="rounded-md border p-3 text-sm text-muted-foreground">
           {t('org.onboarding.verifyFirst')}
@@ -104,11 +145,8 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
       )}
 
       {invitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('org.onboarding.invitations')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <Group plain={plain} title={t('org.onboarding.invitations')}>
+          <>
             {invitations.map((inv) => (
               <div key={inv.ref} className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -131,17 +169,17 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
                 </Button>
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </>
+        </Group>
       )}
 
       {organizations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('org.onboarding.yourCompany')}</CardTitle>
-            <CardDescription>{t('org.onboarding.yourCompanyDesc')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <Group
+          plain={plain}
+          title={t('org.onboarding.yourCompany')}
+          description={t('org.onboarding.yourCompanyDesc')}
+        >
+          <>
             {organizations.map((org) => (
               <div key={org.ref} className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -167,17 +205,20 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
             {organizations.some((o) => o.pending) && (
               <p className="text-xs text-muted-foreground">{t('org.onboarding.waitingHint')}</p>
             )}
-          </CardContent>
-        </Card>
+          </>
+        </Group>
       )}
 
       {canCreate && (
         <div className="space-y-3">
-          {(invitations.length > 0 || organizations.length > 0) && (
-            <p className="text-center text-sm text-muted-foreground">
-              {t('org.onboarding.orCreate')}
-            </p>
-          )}
+          {(invitations.length > 0 || organizations.length > 0) &&
+            (plain ? (
+              <EntryDivider>{t('org.onboarding.orCreate')}</EntryDivider>
+            ) : (
+              <p className="text-center text-sm text-muted-foreground">
+                {t('org.onboarding.orCreate')}
+              </p>
+            ))}
           {createSlot}
         </div>
       )}

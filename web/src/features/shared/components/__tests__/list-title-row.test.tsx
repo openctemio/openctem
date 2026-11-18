@@ -96,6 +96,18 @@ describe('ListTitleRow', () => {
       'list-title-end'
     )
   })
+
+  it('a hidden name stays the heading for assistive technology, without a tooltip', () => {
+    render(
+      <ListTitleRow title="Assigned to me" titleHidden start={<span>what it holds</span>}>
+        <button type="button">Refresh</button>
+      </ListTitleRow>
+    )
+    const heading = screen.getByRole('heading', { level: 2, name: 'Assigned to me' })
+    expect(heading).toHaveClass('sr-only')
+    expect(heading).not.toHaveAttribute('title')
+    expect(screen.getByText('what it holds')).toBeVisible()
+  })
 })
 
 describe('ListViewChanged', () => {

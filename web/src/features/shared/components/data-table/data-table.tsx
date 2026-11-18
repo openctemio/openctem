@@ -476,6 +476,23 @@ const CONTROL_COLUMN_IDS = new Set(['select', 'actions'])
 const MOBILE_CARD_FIELDS = 4
 
 /**
+ * How a table cell's one-line text behaves inside an automatic phone card
+ * (the title and every field value). A cut text (`truncate`) and a
+ * `whitespace-nowrap` text wrap, as the card has the height, but a cut text
+ * stops at three lines; and a cell's flex row wraps, so a long text moves
+ * under the chip beside it and gets the whole field width. Only rows: a
+ * wrapping column (`flex-col`) sizes its items to their longest line instead
+ * of the field, and they stick out of it.
+ *
+ * Without the last two, a long text beside a chip (a run's message beside its
+ * state) wrapped in the sliver of width the chip left: one field became
+ * thousands of pixels tall, with the chip centred far down and the rest of
+ * the card empty (/scans/runs at 390 px, owner report 2026-11-17).
+ */
+const CARD_WRAP_CLASS =
+  '[&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
+
+/**
  * A column's readable label for the phone card: `meta.label`, a string
  * header, or the `title` of a `DataTableColumnHeader` header; else its id.
  */
@@ -552,7 +569,12 @@ function AutoMobileCard<TData>({
           </div>
         )}
         {title && (
-          <div className="min-w-0 flex-[1_1_60%] text-sm font-medium break-words [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal">
+          <div
+            className={cn(
+              'min-w-0 flex-[1_1_60%] text-sm font-medium break-words',
+              CARD_WRAP_CLASS
+            )}
+          >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
         )}
@@ -578,10 +600,14 @@ function AutoMobileCard<TData>({
                 {labels.get(cell.column.id)}
               </dt>
               {/* Cells are written for a wide table row: whatever they keep on
-                  one line (whitespace-nowrap) may wrap here, as in the title,
-                  so a value never runs into the next column. A truncated cell
-                  (ellipsis, one line) wraps too: the card has the room. */}
-              <dd className="mt-0.5 min-w-0 text-sm break-words [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words">
+                  one line may wrap here, as in the title, so a value never runs
+                  into the next column (CARD_WRAP_CLASS). */}
+              <dd
+                className={cn(
+                  'mt-0.5 min-w-0 text-sm break-words [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words',
+                  CARD_WRAP_CLASS
+                )}
+              >
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </dd>
             </div>
