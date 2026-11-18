@@ -458,13 +458,14 @@ func validateIssuerURL(raw string) error {
 // can run a pipeline: a rule that does not name owners or repositories
 // would admit strangers there.
 var sharedIssuerHosts = []string{
-	"gitlab.com", "github.com", githubActionsIssuerHost, "vstoken.dev.azure.com",
-	"oidc.circleci.com", bitbucketAPIHost,
+	"gitlab.com", "github.com", githubActionsIssuerHost, azureIssuerHost, circleCIIssuerHost, bitbucketAPIHost,
 }
 
 // Hosts of hosted CI issuers.
 const (
 	githubActionsIssuerHost = "token.actions.githubusercontent.com"
+	azureIssuerHost         = "vstoken.dev.azure.com"
+	circleCIIssuerHost      = "oidc.circleci.com"
 	bitbucketAPIHost        = "api.bitbucket.org"
 )
 
