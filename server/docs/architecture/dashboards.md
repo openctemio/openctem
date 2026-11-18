@@ -1295,7 +1295,8 @@ widget kit's frame, with its own error boundary.
 - **Freshness line**: one muted line under the dashboard's name, "Your scope · Updated
   2m ago · Next in 58m" (narrow relative times, full dates on hover); below
   640px, where it shares the title row with Refresh now and More, the next
-  refresh is left out so it stays one line; a status line appears under it only when the
+  refresh is visually left out (a screen reader still reads it) so it stays
+  one line; a status line appears under it only when the
   figures are stale, the last refresh failed, or the data is being built for
   the first time. Refresh now answers a 429 with a message. The schedule
   submenu is offered to the owner of a personal dashboard or a manager of an

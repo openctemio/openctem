@@ -116,10 +116,11 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
           ),
           data?.next_refresh_at ? (
             // Below 640px the line shares the title row's width with Refresh
-            // and More: the next refresh is left out so the line stays one line.
+            // and More: the next refresh is visually left out so the line stays
+            // one line; a screen reader still reads it.
             <span
               key="next"
-              className="hidden sm:inline"
+              className="sr-only sm:not-sr-only"
               title={formatAbsoluteTime(data.next_refresh_at, locale)}
             >
               {t('dashboards.freshness.next', 'Next {time}', {
