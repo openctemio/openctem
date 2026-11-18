@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { resetAdminCredentials, updateAdminUser, useAdminUsers } from '../api/use-admin-users'
@@ -138,12 +138,26 @@ describe('Administrators page', () => {
     expect(items.map((i) => i.textContent)).toContain('Deactivate')
     await user.click(items.find((i) => i.textContent === 'Deactivate')!)
     expect(updateAdminUser).not.toHaveBeenCalled()
-    const dialog = await screen.findByRole('alertdialog')
+    // A roster change asks a reason (with an example for this very action) and
+    // a fresh code; nothing is sent until both are there.
+    const dialog = await screen.findByRole('dialog')
     expect(
       within(dialog).getByText(/Deactivate the administrator ops@op\.test/)
     ).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'Deactivate' }))
-    expect(updateAdminUser).toHaveBeenCalledWith('a2', { is_active: false })
+    const reason = within(dialog).getByLabelText(/^Reason/)
+    expect(reason).toHaveAttribute('placeholder', 'Left the operations team, ticket 2231')
+    const deactivate = within(dialog).getByRole('button', { name: 'Deactivate' })
+    expect(deactivate).toBeDisabled()
+    await user.type(reason, 'Left the company, ticket 77')
+    await user.type(within(dialog).getByLabelText('Code from your authenticator app'), '123456')
+    await user.click(deactivate)
+    await waitFor(() =>
+      expect(updateAdminUser).toHaveBeenCalledWith(
+        'a2',
+        { is_active: false },
+        { reason: 'Left the company, ticket 77', totp_code: '123456' }
+      )
+    )
     expect(resetAdminCredentials).not.toHaveBeenCalled()
   })
 

@@ -102,6 +102,7 @@ describe('AdminConfirmDialog', () => {
     render(
       <AdminConfirmDialog
         open
+        reasonPlaceholder="Why, ticket 1"
         onOpenChange={onOpenChange}
         title="Do it"
         description="What happens"
@@ -124,6 +125,7 @@ describe('AdminConfirmDialog', () => {
     render(
       <AdminConfirmDialog
         open
+        reasonPlaceholder="Why, ticket 1"
         onOpenChange={vi.fn()}
         title="Do it"
         description="What happens"
