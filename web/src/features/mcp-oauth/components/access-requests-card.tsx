@@ -99,7 +99,7 @@ export function AccessRequestsCard({ canEdit }: AccessRequestsCardProps) {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-baseline gap-x-2">
                     <span className="font-medium break-words">{r.client_name}</span>
-                    <span className="text-muted-foreground text-xs break-all">
+                    <span className="text-muted-foreground text-xs break-words">
                       {t('mcp.client.publishedBy', 'Published by {host}', { host: r.client_host })}
                     </span>
                   </div>

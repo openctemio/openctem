@@ -694,7 +694,7 @@ function SecretChip({ placeholder }: { placeholder: string }) {
         className="inline-flex items-center gap-1 rounded border border-warning/50 bg-warning/10 px-1 align-baseline"
         data-testid="evidence-secret-revealed"
       >
-        <span className="break-all">{toDisplayText(value, 8192)}</span>
+        <span className="break-words">{toDisplayText(value, 8192)}</span>
         <button
           type="button"
           onClick={() => void onCopy()}
