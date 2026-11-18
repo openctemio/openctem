@@ -62,9 +62,15 @@ union of both:
 - The guard reads one immutable snapshot of the policy (an atomic pointer) on
   every check, and the dialer checks every connection again at connect time,
   so a change applies from the next connection and a check never mixes two
-  lists. Each server reloads the stored list every 15 seconds
-  (`privatedestinations.Service.Start`); a database error keeps the list in
-  force, and a stored list that no longer passes the checks opens nothing.
+  lists. When a change closes a range, the idle keep-alive connections of
+  every client built by `pkg/httpsec` are closed, so none is reused into the
+  closed range; requests in flight finish. A transport built elsewhere around
+  `SafeDialContext` keeps its idle connections until they time out. Each
+  server reloads the stored list every 15 seconds
+  (`privatedestinations.Service.Start`); a refresh that read the list before a
+  save on the same server does not apply its older copy over the save. A
+  database error keeps the list in force, and a stored list that no longer
+  passes the checks opens nothing.
 - Console rules: at most 32 ranges, each inside `10.0.0.0/8`,
   `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`; an IPv6 range must be
   `/48` or narrower (one site); a range inside a never-reachable range (the

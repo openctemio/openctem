@@ -42,37 +42,58 @@ import (
 //   - 0.0.0.0/8: "this" network. Not routable.
 //   - 224.0.0.0/4 / 240.0.0.0/4 / 255.255.255.255/32: multicast,
 //     reserved, broadcast. Never a legitimate outbound target.
-var hardBlockedIPRanges = []hardBlockedRange{
-	{"127.0.0.0/8", HardBlockLoopback},
-	{"169.254.0.0/16", HardBlockLinkLocal}, // incl. AWS/GCP/Azure IMDS
-	{"100.64.0.0/10", HardBlockSharedAddress},
-	{"0.0.0.0/8", HardBlockUnspecified}, // "this" network
-	{"224.0.0.0/4", HardBlockMulticast},
-	{"240.0.0.0/4", HardBlockReserved},
-	{"255.255.255.255/32", HardBlockBroadcast},
-	{"::1/128", HardBlockLoopback},
-	{"::/128", HardBlockUnspecified},
-	{"::/96", HardBlockEmbeddedIPv4}, // IPv4-compatible IPv6 (deprecated): ::7f00:1 embeds 127.0.0.1
-	{"fe80::/10", HardBlockLinkLocal},
-	{"ff00::/8", HardBlockMulticast},
-	{"fec0::/10", HardBlockReserved},         // IPv6 site-local (deprecated, still routed internally)
-	{"fd00:ec2::254/128", HardBlockMetadata}, // AWS IMDS over IPv6 (inside fc00::/7)
-	{"fd20:ce::254/128", HardBlockMetadata},  // GCP metadata server over IPv6 (inside fc00::/7)
+var hardBlockedIPRanges = []string{
+	"127.0.0.0/8",        // Loopback
+	"169.254.0.0/16",     // Link-local (incl. AWS/GCP/Azure IMDS)
+	"100.64.0.0/10",      // Carrier-grade NAT
+	"0.0.0.0/8",          // "This" network
+	"224.0.0.0/4",        // Multicast
+	"240.0.0.0/4",        // Reserved
+	"255.255.255.255/32", // Broadcast
+	"::1/128",            // IPv6 loopback
+	"::/128",             // IPv6 unspecified
+	"::/96",              // IPv4-compatible IPv6 (deprecated): ::7f00:1 embeds 127.0.0.1
+	"fe80::/10",          // IPv6 link-local
+	"ff00::/8",           // IPv6 multicast
+	"fec0::/10",          // IPv6 site-local (deprecated, still routed internally)
+	"fd00:ec2::254/128",  // AWS IMDS over IPv6 (inside fc00::/7)
+	"fd20:ce::254/128",   // GCP metadata server over IPv6 (inside fc00::/7)
 	// Ranges that embed an IPv4 address the network may translate to: on a
 	// NAT64/DNS64 or 6to4 network 64:ff9b::a9fe:a9fe reaches 169.254.169.254.
-	{"64:ff9b::/96", HardBlockEmbeddedIPv4},   // NAT64 well-known prefix
-	{"64:ff9b:1::/48", HardBlockEmbeddedIPv4}, // NAT64 local-use prefix
-	{"2002::/16", HardBlockEmbeddedIPv4},      // 6to4
-	{"2001::/32", HardBlockEmbeddedIPv4},      // Teredo
+	"64:ff9b::/96",   // NAT64 well-known prefix
+	"64:ff9b:1::/48", // NAT64 local-use prefix
+	"2002::/16",      // 6to4
+	"2001::/32",      // Teredo
 	// IPv4 special-purpose ranges that are never a tenant service.
-	{"192.0.0.0/24", HardBlockReserved},  // IETF protocol assignments (DS-Lite, NAT64 discovery)
-	{"198.18.0.0/15", HardBlockReserved}, // Benchmarking
+	"192.0.0.0/24",  // IETF protocol assignments (DS-Lite, NAT64 discovery)
+	"198.18.0.0/15", // Benchmarking
 }
 
-// hardBlockedRange is one never-reachable range and why.
-type hardBlockedRange struct {
-	cidr   string
-	reason HardBlockReason
+// hardBlockedReason says why each hardBlockedIPRanges entry is blocked. The
+// table above stays a plain string list: server/scripts/security-lint.sh
+// (Rule 6) compares it with the shared address-scope definition.
+var hardBlockedReason = map[string]HardBlockReason{
+	"127.0.0.0/8":        HardBlockLoopback,
+	"169.254.0.0/16":     HardBlockLinkLocal,
+	"100.64.0.0/10":      HardBlockSharedAddress,
+	"0.0.0.0/8":          HardBlockUnspecified,
+	"224.0.0.0/4":        HardBlockMulticast,
+	"240.0.0.0/4":        HardBlockReserved,
+	"255.255.255.255/32": HardBlockBroadcast,
+	"::1/128":            HardBlockLoopback,
+	"::/128":             HardBlockUnspecified,
+	"::/96":              HardBlockEmbeddedIPv4,
+	"fe80::/10":          HardBlockLinkLocal,
+	"ff00::/8":           HardBlockMulticast,
+	"fec0::/10":          HardBlockReserved,
+	"fd00:ec2::254/128":  HardBlockMetadata,
+	"fd20:ce::254/128":   HardBlockMetadata,
+	"64:ff9b::/96":       HardBlockEmbeddedIPv4,
+	"64:ff9b:1::/48":     HardBlockEmbeddedIPv4,
+	"2002::/16":          HardBlockEmbeddedIPv4,
+	"2001::/32":          HardBlockEmbeddedIPv4,
+	"192.0.0.0/24":       HardBlockReserved,
+	"198.18.0.0/15":      HardBlockReserved,
 }
 
 // HardBlockReason says why an address can never be reached, whatever ranges
@@ -245,10 +266,10 @@ var hardBlockedReasons []HardBlockReason
 var privateCIDRs []*net.IPNet
 
 func init() {
-	for _, r := range hardBlockedIPRanges {
-		if _, ipNet, err := net.ParseCIDR(r.cidr); err == nil {
+	for _, cidr := range hardBlockedIPRanges {
+		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
 			hardBlockedCIDRs = append(hardBlockedCIDRs, ipNet)
-			hardBlockedReasons = append(hardBlockedReasons, r.reason)
+			hardBlockedReasons = append(hardBlockedReasons, hardBlockedReason[cidr])
 		}
 	}
 	for _, cidr := range privateIPRanges {
@@ -576,6 +597,7 @@ func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 		ResponseHeaderTimeout: 15 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}
+	registerGuardedTransport(tr)
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     tr,
