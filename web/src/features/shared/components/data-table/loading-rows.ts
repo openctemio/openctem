@@ -25,6 +25,11 @@ export const ROW_HEIGHT: Record<TableDensity, number> = {
   comfortable: 52,
 }
 
+/** The key of a list: the page path and the table's name (client only). */
+export function rowCountKey(tableName: string): string {
+  return `${window.location.pathname}#${tableName}`
+}
+
 /** The last row count recorded for this list, if any. */
 export function knownRowCount(key: string): number | undefined {
   const inMemory = remembered.get(key)

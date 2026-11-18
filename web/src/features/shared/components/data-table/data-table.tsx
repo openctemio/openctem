@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useTranslation } from '@/context/i18n-provider'
@@ -88,7 +87,13 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
-import { knownRowCount, loadingRowCount, rememberRowCount, ROW_HEIGHT } from './loading-rows'
+import {
+  knownRowCount,
+  loadingRowCount,
+  rememberRowCount,
+  ROW_HEIGHT,
+  rowCountKey,
+} from './loading-rows'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -829,7 +834,6 @@ export function DataTable<TData, TValue>({
   // Cards replace the table on phones. Decided in JS rather than by hiding one
   // with CSS, so only one of the two is ever rendered.
   const isPhone = useIsMobile()
-  const pathname = usePathname()
   const phoneCards = isPhone && (!!mobileRow || mobileCards)
   // Cards have no numbered pager: their footer grows the page size ("Show 25
   // more"). A list with one fixed size keeps the pager.
@@ -1174,10 +1178,12 @@ export function DataTable<TData, TValue>({
   // showed, else five, capped to the page size and the viewport, so the list
   // keeps its height when the rows arrive. Read through useSyncExternalStore:
   // the server render (no storage, no viewport) draws five.
-  const rowCountKey = `${pathname ?? ''}#${caption ?? labelledBy ?? ''}`
+  // Keyed by the page path (read from the location on the client only, so the
+  // table needs no router) and the table's name.
+  const tableName = caption ?? labelledBy ?? ''
   const knownRows = React.useSyncExternalStore(
     noSubscribe,
-    () => knownRowCount(rowCountKey) ?? -1,
+    () => knownRowCount(rowCountKey(tableName)) ?? -1,
     () => -1
   )
   const viewportHeight = React.useSyncExternalStore(
@@ -1187,8 +1193,8 @@ export function DataTable<TData, TValue>({
   )
   const settled = !isLoading && !error
   React.useEffect(() => {
-    if (settled) rememberRowCount(rowCountKey, pageRows.length)
-  }, [settled, rowCountKey, pageRows.length])
+    if (settled) rememberRowCount(rowCountKey(tableName), pageRows.length)
+  }, [settled, tableName, pageRows.length])
   const loadingRows = loadingRowCount(
     knownRows < 0 ? undefined : knownRows,
     table.getState().pagination.pageSize,

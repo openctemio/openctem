@@ -16,8 +16,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
 import { loadingRowCount, resetRowCounts } from '../loading-rows'
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/things' }))
-
 type Row = { id: string; name: string; owner: string }
 const columns: ColumnDef<Row>[] = [
   { accessorKey: 'name', header: 'Name', enableHiding: false },
