@@ -126,7 +126,6 @@ the build, and so does a registered key missing from the table below.
 | `settings.api-keys` | `/settings/api-keys` | `integrations:api_keys:read` |
 | `settings.asset-sources` | `/settings/asset-sources` | `team:update` |
 | `settings.audit-log` | `/settings/audit-log` | `audit:read` |
-| `settings.domains` | `/settings/domains` | `team:update` |
 | `settings.integrations.import-mappings` | `/settings/integrations/import-mappings` | `integrations:read` |
 | `settings.integrations.notifications` | `/settings/integrations/notifications` | `integrations:read` |
 | `settings.integrations.notifications.history` | `/settings/integrations/notifications/history` | `integrations:manage` |
@@ -153,9 +152,7 @@ the build, and so does a registered key missing from the table below.
 | `settings.scanning.wordlists` | `/settings/scanning/wordlists` | `scans:content:read` |
 | `settings.service-accounts` | `/settings/service-accounts` | `team:members:read` |
 | `settings.sla-policies` | `/settings/sla-policies` | `settings:sla:read` |
-| `settings.sso-approvals` | `/settings/sso-approvals` | `team:update` |
 | `settings.teams` | `/settings/teams` | `team:groups:read` |
-| `settings.trusted-organizations` | `/settings/trusted-organizations` | `team:update` |
 | `threat-intel` | `/threat-intel` | `findings:vulnerabilities:read` |
 | `threat-intel.detections` | `/threat-intel/detections` | `threat_intel:read` |
 | `threat-intel.iocs` | `/threat-intel/iocs` | `threat_intel:read` |
