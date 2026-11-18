@@ -79,6 +79,9 @@ JWT_SECRET=$(rnd)
   # Social sign-in is enabled (no provider round trip happens in the suite:
   # federated sessions are seeded as the callback leaves them).
   export RATE_LIMIT_ENABLED=false RATE_LIMIT_READ_PER_MIN=1000000 RATE_LIMIT_WRITE_PER_MIN=1000000 AUTH_MAX_LOGIN_ATTEMPTS=1000000
+  # The API reads its schema expectations (migrations/) from the working
+  # directory: run it in the tree it was built from.
+  cd "$SERVER_DIR"
   exec "$WORK/server" >"$WORK/server.log" 2>&1
 ) &
 SERVER_PID=$!

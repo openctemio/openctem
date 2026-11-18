@@ -4,7 +4,7 @@ name: API Sign-in Scenarios
 # sign-in method, organization rule) scenario and the events while signed in,
 # against a scratch stack (Postgres and Redis from
 # server/tests/authscenarios/ci/compose.yml, the API built from this commit).
-# Expected outcomes are in server/tests/authscenarios/model.go; scenarios that
+# Expected outcomes are in server/tests/authscenarios/model_test.go; scenarios that
 # fail on the current code are listed in known-failures.txt and reported, not
 # failed (a listed scenario that passes fails the job until its line goes).
 # Design: server/docs/development/auth-scenarios.md.
