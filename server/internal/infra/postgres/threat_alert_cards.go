@@ -81,7 +81,7 @@ func (r *ThreatAlertRepository) cardVuln(ctx context.Context, cardID string, eve
 	if err != nil {
 		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
 	}
-	v.Severity = threatalert.StrongestSeverity(append(sevs, c.Severity.Level)...)
+	v.Severity = threatalert.CardSeverity(c.Reported(), c.Severity.Level, sevs...)
 	if score.Valid {
 		f := score.Float64
 		v.CVSSScore = &f

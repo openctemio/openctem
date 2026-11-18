@@ -285,3 +285,42 @@ func TestCardTitleMarksReported(t *testing.T) {
 		t.Fatalf("reviewed title %q", got)
 	}
 }
+
+func TestCardSeverityReportedNeverRaises(t *testing.T) {
+	cases := []struct {
+		reported bool
+		own      string
+		records  []string
+		want     string
+	}{
+		{true, "critical", []string{"medium"}, "medium"},
+		{true, "critical", nil, "critical"},
+		{true, "critical", []string{""}, "critical"},
+		{false, "critical", []string{"medium"}, "critical"},
+		{false, "medium", []string{"critical"}, "critical"},
+	}
+	for _, c := range cases {
+		if got := CardSeverity(c.reported, c.own, c.records...); got != c.want {
+			t.Fatalf("CardSeverity(%v, %q, %v) = %q, want %q", c.reported, c.own, c.records, got, c.want)
+		}
+	}
+}
+
+// A reported card claiming critical over a medium KEV record must not page.
+func TestReportedCardClaimDoesNotPage(t *testing.T) {
+	v := Vuln{Severity: CardSeverity(true, "critical", "medium"), InKEV: true, CardReported: true}
+	assets := []Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}
+	if CheckNeeded(TierPossible, v, assets) {
+		t.Fatal("a reported card opened check needed")
+	}
+	v.CardReported = false
+	v.Severity = "critical"
+	if !CheckNeeded(TierPossible, v, assets) {
+		t.Fatal("a reviewed critical card with a public exploit must still open check needed")
+	}
+	rep := v
+	rep.CardReported = true
+	if CheckNeeded(TierPossible, rep, assets) {
+		t.Fatal("check needed must be false for a reported card even at critical")
+	}
+}
