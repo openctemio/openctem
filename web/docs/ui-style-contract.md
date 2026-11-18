@@ -393,6 +393,10 @@ reference.
 - **Phone**: compact tiles on a six-track grid, at most two rows (2 and 4
   tiles in halves, 3 in thirds, 5 as three thirds over two halves), a long
   label wraps to a second line; never a sideways scroll.
+- **List first on a phone**: a strip above a list takes `listFirst`, so on a
+  phone it follows the list (CSS order, nothing moves after hydration) and the
+  first row starts within the top 45% of a 390x844 screen. A list page's
+  description under the title is hidden on a phone for the same reason.
 - Never: pastel icon tiles, coloured card borders, coloured icons before the
   label, card-in-card stat grids.
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
