@@ -17,8 +17,12 @@ let canApprove = true
 vi.mock('../exposure-state-actions', () => ({
   useCanApproveExposures: () => canApprove,
 }))
+// "Mine" is decided by the profile's id (useMyUserId); the auth store holds a
+// different id, so a regression to the store would fail these tests.
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => 'me' }))
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: 'me' } }),
+  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
+    sel({ user: { id: 'auth-store-id' } }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
