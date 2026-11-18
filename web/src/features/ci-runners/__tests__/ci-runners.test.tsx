@@ -825,6 +825,19 @@ describe('CITrustSettings', () => {
     expect(screen.getByRole('button', { name: 'Override a commit' })).toBeDisabled()
   })
 
+  it('every list field says it takes several values', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    const several = 'Several values: separate them with commas.'
+    for (const label of ['Owners', 'Repositories', 'Branches and tags', 'Environments', 'Events']) {
+      const hint = screen.getByLabelText(label).parentElement?.querySelector('p')
+      expect(hint?.textContent, label).toContain(several)
+    }
+    expect(screen.getByLabelText('Owners')).toHaveAttribute('placeholder', 'acme, acme-labs')
+    expect(screen.getByLabelText('Pipeline definitions').parentElement).toHaveTextContent(several)
+  })
+
   it('refuses a configuration that names no owner or repository', async () => {
     perms = ['scans:ci:read', 'scans:ci:write']
     render(<CITrustSettings />)
