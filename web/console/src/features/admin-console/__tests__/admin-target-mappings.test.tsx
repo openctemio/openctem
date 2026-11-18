@@ -108,7 +108,7 @@ describe('TargetMappingDialog', () => {
     render(
       <TargetMappingDialog open onOpenChange={() => {}} defaultTargetType="url" onSaved={vi.fn()} />
     )
-    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Website/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Web Application/)
     const submit = screen.getByRole('button', { name: 'Create mapping' })
     expect(submit).toBeDisabled()
     await user.click(submit)
@@ -308,7 +308,8 @@ describe('TargetMappingsPage', () => {
     asRole('super_admin')
     render(<TargetMappingsPage />)
     expect(
-      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Website$/ }).length
+      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Web Application$/ })
+        .length
     ).toBeGreaterThan(0)
   })
 
