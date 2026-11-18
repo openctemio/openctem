@@ -55,6 +55,7 @@ import { baselineCounts, missingCodeHost, runAttempts } from '../lib/gate-settin
 import { INFO_REASON_CODES, PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import { repositoryPath } from '../lib/pipeline'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
+import { CIOverrides } from './ci-overrides'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
 import { CISetupEntry } from './ci-setup-wizard'
@@ -260,7 +261,9 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
           )}
         >
           <Button asChild variant="outline" size="sm">
-            <Link href="/ci-cd?tab=setup">{t('scans.ci.trustAndGateLink', 'CI/CD settings')}</Link>
+            <Link href="/ci-cd?tab=connections">
+              {t('scans.ci.trustAndGateLink', 'CI/CD settings')}
+            </Link>
           </Button>
         </PageHeader>
       )}
@@ -333,6 +336,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
         />
       )}
 
+      <CIOverrides canOverride={can(Permission.CIOverride)} />
       <CIRunSheet id={selected} onClose={() => setSelected(null)} />
     </PageStack>
   )
@@ -696,7 +700,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                             className="mt-1.5 flex w-fit"
                             data-testid="ci-run-connect-host"
                           >
-                            <Link href="/ci-cd?tab=setup&section=feedback">
+                            <Link href="/ci-cd?tab=feedback">
                               <Plug className="size-3.5" aria-hidden />
                               {codeHost === 'gitlab'
                                 ? t('scans.ci.runDetail.connectGitLab', 'Connect GitLab')
