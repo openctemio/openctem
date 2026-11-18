@@ -1004,7 +1004,7 @@
   "assets.related.source.manual.hint": "Added by a person.",
   "assets.related.source.scanner": "Scanner",
   "assets.related.source.scanner.hint": "Recorded by a scan; refreshed each time a scan reports it again.",
-  "assets.related.summary": "{count, plural, one {# related asset} other {# related assets}} in {groups} groups",
+  "assets.related.summary": "{count, plural, one {# related asset} other {# related assets}} in {groups, plural, one {# group} other {# groups}}",
   "assets.related.title": "Related assets",
   "assets.related.toast.allExist": "Already recorded",
   "assets.related.toast.controlPlanePartial": "Created, but some relationships could not be marked as control plane. Edit them to set it.",

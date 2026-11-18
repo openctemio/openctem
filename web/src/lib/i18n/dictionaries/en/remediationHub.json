@@ -199,7 +199,7 @@
   "remediationHub.ownerAccess.requestComment": "Access requested for {name}, who cannot see {findings, plural, one {# open finding} other {# open findings}} on {assets, plural, one {# asset} other {# assets}} of this work. Someone who may assign findings can share them.",
   "remediationHub.ownerAccess.requestFailed": "The request could not be sent.",
   "remediationHub.ownerAccess.requested": "Access requested: a comment was left on the finding. Nothing was shared.",
-  "remediationHub.ownerAccess.teamGap": "{missing} of {members} members need access to {findings, plural, one {# finding} other {# findings}}",
+  "remediationHub.ownerAccess.teamGap": "{missing} of {members, plural, one {# member} other {# members}} need access to {findings, plural, one {# finding} other {# findings}}",
   "remediationHub.ownerPicker.noMatch": "No team or person matches",
   "remediationHub.ownerPicker.people.empty": "No members found.",
   "remediationHub.ownerPicker.people.error": "People could not be loaded. Close and open the list to retry.",

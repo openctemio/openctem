@@ -142,7 +142,7 @@
   "prioritization.dryRun.evaluating": "Evaluating rule",
   "prioritization.dryRun.floored": "{count, plural, one {# matching finding} other {# matching findings}} stay at P1 or above: known exploited (KEV) or validated findings cannot go below P1.",
   "prioritization.dryRun.impact": "Impact",
-  "prioritization.dryRun.matchedOf": "of {evaluated} findings would be reclassified to",
+  "prioritization.dryRun.matchedOf": "of {evaluated, plural, one {# finding} other {# findings}} would be reclassified to",
   "prioritization.dryRun.noMatch": "No findings match this rule, so nothing would be reclassified.",
   "prioritization.dryRun.none.desc": "There are no findings in scope for this rule right now, so it would have no effect.",
   "prioritization.dryRun.none.title": "No findings to evaluate",

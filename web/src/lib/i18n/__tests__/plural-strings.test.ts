@@ -12,8 +12,11 @@ import { translate, registerDictionary } from '@/lib/i18n'
 const EN_DIR = join(process.cwd(), 'src', 'lib', 'i18n', 'dictionaries', 'en')
 
 /** Count variables, then an optional adjective, then a word ending in s. */
-const COUNT_BEFORE_NOUN =
-  /\{(count|n|total|days|hours|minutes|seconds|weeks|months|added|removed|max|min|selected|remaining|done|failed|skipped|created|updated|deleted|matched)\} (?:(?:new|open|more|other|unique|active|failed|closed|resolved|selected|matching|affected|related|known|existing|skipped|blocked|recent|duplicate) )?([a-z]+s)\b/g
+const COUNT_BEFORE_NOUN = new RegExp(
+  '\\{(count|n|total|days|hours|minutes|seconds|weeks|months|added|removed|max|min|selected|remaining|done|failed|skipped|created|updated|deleted|matched|cap|limit|required|evaluated|closed|used|cols|received|requested|[a-z][a-zA-Z]*(?:Count|Total|Created|Updated)|(?!(?:status|alias|address|class|process|access|this|its|is|has|was|does|as)\\b)[a-z]+s)\\} ' +
+    '(?:(?:new|open|more|other|unique|active|failed|closed|resolved|selected|matching|affected|related|known|existing|skipped|blocked|recent|duplicate) )?([a-z]+s)\\b',
+  'g'
+)
 /** Words ending in s that are not plural nouns. */
 const NOT_NOUN = new Set([
   'is',
