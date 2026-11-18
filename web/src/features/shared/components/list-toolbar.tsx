@@ -216,6 +216,8 @@ function useEmptyGroups(
       }
     }
     mark()
+    // No observers (an old browser, a test without them): the first mark stays.
+    if (typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
     const resize = new ResizeObserver(mark)
     resize.observe(root)
     const mutation = new MutationObserver(mark)
