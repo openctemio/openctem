@@ -460,6 +460,17 @@ export default function TargetMappingsPage() {
 
         {pending && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              pending.kind === 'delete'
+                ? t(
+                    'admin.targetMappings.reasonDelete',
+                    'Replaced by the built-in pair, change 2231'
+                  )
+                : t(
+                    'admin.targetMappings.reasonToggle',
+                    'Paused while the new scanner version is checked, change 2231'
+                  )
+            }
             key={`${pending.kind}-${pending.mapping.id}`}
             open
             onOpenChange={(open) => !open && setPending(null)}

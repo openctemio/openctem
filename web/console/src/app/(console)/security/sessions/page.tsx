@@ -219,6 +219,7 @@ export default function AdminSessionsPage() {
         )}
         {ending && (
           <AdminConfirmDialog
+            reasonPlaceholder={t('admin.sessions.reasonEnd', 'Laptop reported lost, ticket 2231')}
             open
             onOpenChange={(open) => !open && setEnding(null)}
             title={t('admin.sessions.endTitle', 'End this console session')}

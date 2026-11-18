@@ -36,6 +36,9 @@ interface ActionSpec {
   what: string
   doneKey: string
   done: string
+  /** An example reason for this action (the reason field's placeholder). */
+  reasonKey: string
+  reason: string
   destructive?: boolean
   /** Super admin only (the API refuses ops_admin). */
   superOnly?: boolean
@@ -57,6 +60,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Ends every session of {email} in every organization and on every device. They sign in again; nothing else changes.',
     doneKey: 'admin.users.action.revokeDone',
     done: 'Signed out everywhere.',
+    reasonKey: 'admin.users.action.revokeReason',
+    reason: 'Phone stolen, the user called the help desk, ticket 2231',
     destructive: true,
     available: (u) => u.sessions.length > 0,
   },
@@ -69,6 +74,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Clears the lockout after failed sign-ins for {email}, so they can try again now.',
     doneKey: 'admin.users.action.unlockDone',
     done: 'Account unlocked.',
+    reasonKey: 'admin.users.action.unlockReason',
+    reason: 'Locked out after a password manager mix-up, ticket 2231',
     available: (u) => u.locked || u.failed_logins > 0,
   },
   {
@@ -80,6 +87,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Emails {email} a password reset link, the same as "Forgot password". You never see the link.',
     doneKey: 'admin.users.action.resetDone',
     done: 'Password reset link emailed.',
+    reasonKey: 'admin.users.action.resetReason',
+    reason: 'Forgot the password and asked by phone, ticket 2231',
     available: (u) => u.auth_provider === 'local' && emailOn(u),
   },
   {
@@ -91,6 +100,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Emails {email} a new verification link; the previous one stops working.',
     doneKey: 'admin.users.action.verifyDone',
     done: 'Verification email sent.',
+    reasonKey: 'admin.users.action.verifyReason',
+    reason: 'The first email went to spam, ticket 2231',
     available: (u) => !u.email_verified && emailOn(u),
   },
   {
@@ -102,6 +113,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'This server cannot send email. Creates a one-hour password reset link for {email} and shows it once, for you to hand over over a channel you trust. Any earlier reset link stops working. They still need their second factor to sign in.',
     doneKey: 'admin.users.action.resetLinkDone',
     done: 'Reset link created.',
+    reasonKey: 'admin.users.action.resetLinkReason',
+    reason: 'No email on this server; link handed over in person, ticket 2231',
     superOnly: true,
     available: (u) => u.auth_provider === 'local' && emailOff(u),
   },
@@ -114,6 +127,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'This server cannot send the verification link. Marks the email address of {email} as verified; only do this once you have confirmed the address is theirs.',
     doneKey: 'admin.users.action.markVerifiedDone',
     done: 'Email marked verified.',
+    reasonKey: 'admin.users.action.markVerifiedReason',
+    reason: 'Address confirmed by their manager in writing, ticket 2231',
     superOnly: true,
     available: (u) => u.auth_provider === 'local' && !u.email_verified && emailOff(u),
   },
@@ -126,6 +141,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Turns off two-factor authentication for {email} and ends every session. Use it for someone who lost their device and recovery codes and has no organization administrator above them. Another super admin must approve first.',
     doneKey: 'admin.users.action.mfaResetDone',
     done: 'Two-factor authentication reset.',
+    reasonKey: 'admin.users.action.mfaResetReason',
+    reason: 'Lost their phone and recovery codes, identity checked by video call, ticket 2231',
     destructive: true,
     superOnly: true,
     available: (u) => u.auth_provider === 'local' && u.mfa_enabled,
@@ -139,6 +156,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Blocks {email} in every organization: they cannot sign in, their sessions end now, and their API keys and MCP tokens stop working. Nothing they made is removed.',
     doneKey: 'admin.users.action.blockDone',
     done: 'Account blocked.',
+    reasonKey: 'admin.users.action.blockReason',
+    reason: 'Account used for abuse, report 2231',
     destructive: true,
     available: (u) => !u.blocked && u.status === 'active',
   },
@@ -151,6 +170,8 @@ const ACTIONS: ActionSpec[] = [
     what: 'Lets {email} sign in again. Their old sessions stay ended.',
     doneKey: 'admin.users.action.unblockDone',
     done: 'Account unblocked.',
+    reasonKey: 'admin.users.action.unblockReason',
+    reason: 'Report 2231 closed: the account was not involved',
     available: (u) => u.blocked,
   },
 ]
@@ -207,6 +228,7 @@ export function PlatformUserActions({
             title={t(open.labelKey, open.label)}
             description={<p>{t(open.whatKey, open.what, { email: user.email })}</p>}
             confirmLabel={t(open.labelKey, open.label)}
+            reasonPlaceholder={t(open.reasonKey, open.reason)}
             destructive
             onConfirm={async ({ reason }) => {
               await runPlatformUserAction(user.id, open.action, reason)
@@ -261,6 +283,7 @@ export function PlatformUserActions({
           title={t(open.labelKey, open.label)}
           description={<p>{t(open.whatKey, open.what, { email: user.email })}</p>}
           confirmLabel={t(open.labelKey, open.label)}
+          reasonPlaceholder={t(open.reasonKey, open.reason)}
           destructive={open.destructive}
           onConfirm={async ({ reason }) => {
             if (open.labelKey === 'admin.users.action.resetLink') {

@@ -337,6 +337,11 @@ export default function AdminRolesPage() {
         )}
         {change && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              change.kind === 'assign'
+                ? t('admin.roles.reasonGive', 'Joins the content team, change 2231')
+                : t('admin.roles.reasonTake', 'Moved to another team, ticket 2231')
+            }
             open
             onOpenChange={(open) => !open && setChange(null)}
             title={

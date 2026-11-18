@@ -236,25 +236,28 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
 
   const actionText: Record<
     SharedSensorAction,
-    { title: string; desc: string; confirm: string; done: string }
+    { title: string; desc: string; confirm: string; done: string; reason: string }
   > = {
     pause: {
       title: 'admin.sharedFleet.pauseTitle',
       desc: 'admin.sharedFleet.pauseDesc',
       confirm: 'admin.sharedFleet.pause',
       done: 'admin.sharedFleet.paused',
+      reason: 'admin.sharedFleet.reasonPause',
     },
     resume: {
       title: 'admin.sharedFleet.resumeTitle',
       desc: 'admin.sharedFleet.resumeDesc',
       confirm: 'admin.sharedFleet.resume',
       done: 'admin.sharedFleet.resumed',
+      reason: 'admin.sharedFleet.reasonResume',
     },
     retire: {
       title: 'admin.sharedFleet.retireTitle',
       desc: 'admin.sharedFleet.retireDesc',
       confirm: 'admin.sharedFleet.retireButton',
       done: 'admin.sharedFleet.retired',
+      reason: 'admin.sharedFleet.reasonRetire',
     },
   }
 
@@ -319,6 +322,7 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
 
       {acting && (
         <TypedAdminConfirmDialog
+          reasonPlaceholder={t(actionText[acting.action].reason)}
           typeToConfirm={
             acting.action === 'retire'
               ? nameToType(acting.sensor.name, acting.sensor.id)
@@ -659,6 +663,10 @@ export function SharedQueuePanel() {
 
       {viewing && (
         <AdminConfirmDialog
+          reasonPlaceholder={t(
+            'admin.sharedFleet.reasonView',
+            'The organization reports a stuck scan, ticket 2231'
+          )}
           open
           onOpenChange={(open) => !open && setViewing(null)}
           title={t('admin.sharedFleet.viewTitle')}

@@ -6,7 +6,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ShieldCheck } from 'lucide-react'
 import {
   DataTable,
@@ -25,8 +24,11 @@ import {
   updateAdminUser,
   useAdminUsers,
 } from '@console/features/admin-console/api/use-admin-users'
-import { AdminApiError } from '@console/lib/admin-api/client'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
+import {
+  AdminConfirmDialog,
+  type AdminConfirmProof,
+} from '@console/features/admin-console/components/admin-confirm-dialog'
 import {
   ADMIN_ROLE_OPTIONS,
   CreateAdminDialog,
@@ -117,86 +119,80 @@ export default function AdministratorsPage() {
   const isSuper = adminHas(me, 'platform.admins.read')
   const { data, error, isLoading, mutate } = useAdminUsers(1, isSuper)
   const [pending, setPending] = useState<Pending | null>(null)
-  const [busy, setBusy] = useState(false)
   const admins = useMemo(() => data?.data ?? [], [data])
 
-  const confirm = async () => {
+  // Every roster change is a step-up route: the dialog asks the reason and a
+  // fresh code, sends them with the request and stays open on a refusal
+  // (AdminConfirmDialog shows it), so nothing here catches.
+  const confirm = async (proof: AdminConfirmProof) => {
     if (!pending) return
-    setBusy(true)
-    try {
-      if (pending.kind === 'reset') {
-        await resetAdminCredentials(pending.admin.id)
-        toast.success(
-          t(
-            'admin.securityAdministratorsPage.willSetUpTwoStep',
-            '{email} will set up two-step verification again when they next open the console',
-            { email: pending.admin.email }
-          )
+    if (pending.kind === 'reset') {
+      await resetAdminCredentials(pending.admin.id, proof)
+      toast.success(
+        t(
+          'admin.securityAdministratorsPage.willSetUpTwoStep',
+          '{email} will set up two-step verification again when they next open the console',
+          { email: pending.admin.email }
         )
-      } else if (pending.kind === 'toggle') {
-        await updateAdminUser(pending.admin.id, { is_active: !pending.admin.is_active })
-        toast.success(
-          pending.admin.is_active
-            ? t(
-                'admin.securityAdministratorsPage.administratorDeactivated',
-                'Administrator deactivated'
-              )
-            : t(
-                'admin.securityAdministratorsPage.administratorReactivated',
-                'Administrator reactivated'
-              )
-        )
-      } else if (pending.kind === 'role') {
-        await updateAdminUser(pending.admin.id, { role: pending.role })
-        toast.success(
-          t('admin.securityAdministratorsPage.isNowRole', '{email} is now {role}', {
-            email: pending.admin.email,
-            role: roleLabel(t, pending.role),
-          })
-        )
-      } else if (pending.kind === 'breakglass') {
-        await updateAdminUser(pending.admin.id, { is_break_glass: !pending.admin.is_break_glass })
-        toast.success(
-          pending.admin.is_break_glass
-            ? t(
-                'admin.securityAdministratorsPage.isNoLongerABreak',
-                '{email} is no longer a break-glass account',
-                { email: pending.admin.email }
-              )
-            : t(
-                'admin.securityAdministratorsPage.isNowABreakGlass',
-                '{email} is now a break-glass account',
-                { email: pending.admin.email }
-              )
-        )
-      } else if (pending.kind === 'test') {
-        await confirmBreakGlassTest(pending.admin.id)
-        toast.success(
-          t('admin.securityAdministratorsPage.testOfRecorded', 'Test of {email} recorded', {
-            email: pending.admin.email,
-          })
-        )
-      } else {
-        await unbindAdminIdP(pending.admin.id)
-        toast.success(
-          t(
-            'admin.securityAdministratorsPage.isBoundAgainOnTheir',
-            '{email} is bound again on their next IdP sign-in',
-            { email: pending.admin.email }
-          )
-        )
-      }
-      void mutate()
-      setPending(null)
-    } catch (e) {
-      toast.error(
-        e instanceof AdminApiError
-          ? e.message
-          : t('admin.securityAdministratorsPage.theChangeFailed', 'The change failed')
       )
-    } finally {
-      setBusy(false)
+    } else if (pending.kind === 'toggle') {
+      await updateAdminUser(pending.admin.id, { is_active: !pending.admin.is_active }, proof)
+      toast.success(
+        pending.admin.is_active
+          ? t(
+              'admin.securityAdministratorsPage.administratorDeactivated',
+              'Administrator deactivated'
+            )
+          : t(
+              'admin.securityAdministratorsPage.administratorReactivated',
+              'Administrator reactivated'
+            )
+      )
+    } else if (pending.kind === 'role') {
+      await updateAdminUser(pending.admin.id, { role: pending.role }, proof)
+      toast.success(
+        t('admin.securityAdministratorsPage.isNowRole', '{email} is now {role}', {
+          email: pending.admin.email,
+          role: roleLabel(t, pending.role),
+        })
+      )
+    } else if (pending.kind === 'breakglass') {
+      await updateAdminUser(
+        pending.admin.id,
+        { is_break_glass: !pending.admin.is_break_glass },
+        proof
+      )
+      toast.success(
+        pending.admin.is_break_glass
+          ? t(
+              'admin.securityAdministratorsPage.isNoLongerABreak',
+              '{email} is no longer a break-glass account',
+              { email: pending.admin.email }
+            )
+          : t(
+              'admin.securityAdministratorsPage.isNowABreakGlass',
+              '{email} is now a break-glass account',
+              { email: pending.admin.email }
+            )
+      )
+    } else if (pending.kind === 'test') {
+      await confirmBreakGlassTest(pending.admin.id, proof)
+      toast.success(
+        t('admin.securityAdministratorsPage.testOfRecorded', 'Test of {email} recorded', {
+          email: pending.admin.email,
+        })
+      )
+    } else {
+      await unbindAdminIdP(pending.admin.id, proof)
+      toast.success(
+        t(
+          'admin.securityAdministratorsPage.isBoundAgainOnTheir',
+          '{email} is bound again on their next IdP sign-in',
+          { email: pending.admin.email }
+        )
+      )
     }
+    void mutate()
   }
 
   const columns = useMemo<ColumnDef<AdminUserRecord>[]>(
@@ -407,7 +403,7 @@ export default function AdministratorsPage() {
 
   // Title, consequence and a confirm button that repeats the verb, per action.
   const copy = (() => {
-    if (!pending) return { title: '', desc: '', confirm: '' }
+    if (!pending) return { title: '', desc: '', confirm: '', reason: '' }
     const email = pending.admin.email
     switch (pending.kind) {
       case 'reset':
@@ -420,6 +416,10 @@ export default function AdministratorsPage() {
             "They are signed out of the console and must set up two-step verification again the next time they open it. Use this when they lose their authenticator. Their password is their account's and is reset from the sign-in page."
           ),
           confirm: t('confirm.admin.reset', 'Reset'),
+          reason: t(
+            'admin.securityAdministratorsPage.reasonReset',
+            'Lost their authenticator, request 2231 confirmed by phone'
+          ),
         }
       case 'toggle':
         return pending.admin.is_active
@@ -429,6 +429,10 @@ export default function AdministratorsPage() {
               }),
               desc: t('confirm.admin.deactivateDesc', 'They can no longer open the console.'),
               confirm: t('confirm.admin.deactivate', 'Deactivate'),
+              reason: t(
+                'admin.securityAdministratorsPage.reasonDeactivate',
+                'Left the operations team, ticket 2231'
+              ),
             }
           : {
               title: t('confirm.admin.reactivateTitle', 'Reactivate the administrator {email}?', {
@@ -436,6 +440,10 @@ export default function AdministratorsPage() {
               }),
               desc: t('confirm.admin.reactivateDesc', 'They can sign in again.'),
               confirm: t('confirm.admin.reactivate', 'Reactivate'),
+              reason: t(
+                'admin.securityAdministratorsPage.reasonReactivate',
+                'Back from leave, approved in ticket 2231'
+              ),
             }
       case 'role':
         return {
@@ -444,6 +452,10 @@ export default function AdministratorsPage() {
             role: roleLabel(t, pending.role),
           }),
           confirm: t('confirm.admin.role', 'Change role'),
+          reason: t(
+            'admin.securityAdministratorsPage.reasonRole',
+            'Takes over on-call duty, change 2231'
+          ),
         }
       case 'breakglass':
         return pending.admin.is_break_glass
@@ -454,6 +466,10 @@ export default function AdministratorsPage() {
                 'It becomes a normal administrator: it can be bound to the identity provider and is subject to "require IdP".'
               ),
               confirm: t('confirm.admin.unmark', 'Unmark'),
+              reason: t(
+                'admin.securityAdministratorsPage.reasonUnmark',
+                'Replaced by the new emergency account, change 2231'
+              ),
             }
           : {
               title: t('confirm.admin.markTitle', 'Mark {email} as break-glass?', { email }),
@@ -462,6 +478,10 @@ export default function AdministratorsPage() {
                 'It becomes a local emergency-access account: never bound to the identity provider, allowed to use its password when the IdP is required, and every sign-in alerts all administrators.'
               ),
               confirm: t('confirm.admin.mark', 'Mark as break-glass'),
+              reason: t(
+                'admin.securityAdministratorsPage.reasonMark',
+                'Kept in the safe as the emergency account, change 2231'
+              ),
             }
       case 'test':
         return {
@@ -473,6 +493,10 @@ export default function AdministratorsPage() {
             'Records its last sign-in as its periodic test. Confirm only if that sign-in was a planned test, not an emergency or an unexpected use.'
           ),
           confirm: t('confirm.admin.test', 'Record test'),
+          reason: t(
+            'admin.securityAdministratorsPage.reasonTest',
+            'Quarterly break-glass drill, change 2231'
+          ),
         }
       case 'unbind':
         return {
@@ -488,9 +512,13 @@ export default function AdministratorsPage() {
             'They are signed out of the console. Their next identity-provider sign-in binds them again by verified email.'
           ),
           confirm: t('confirm.remove', 'Remove'),
+          reason: t(
+            'admin.securityAdministratorsPage.reasonUnbind',
+            'Signed in with the wrong directory account, ticket 2231'
+          ),
         }
       default:
-        return { title: '', desc: '', confirm: '' }
+        return { title: '', desc: '', confirm: '', reason: '' }
     }
   })()
 
@@ -552,19 +580,20 @@ export default function AdministratorsPage() {
             },
           }}
         />
-        <ConfirmDialog
+        <AdminConfirmDialog
           open={pending !== null}
           onOpenChange={(open) => !open && setPending(null)}
           title={copy.title}
-          desc={copy.desc}
-          confirmText={copy.confirm}
+          description={copy.desc}
+          confirmLabel={copy.confirm}
+          reasonPlaceholder={copy.reason}
           destructive={
             pending?.kind === 'reset' ||
             pending?.kind === 'unbind' ||
             (pending?.kind === 'toggle' && pending.admin.is_active)
           }
-          isLoading={busy}
-          handleConfirm={() => void confirm()}
+          requireCode
+          onConfirm={confirm}
         />
       </PageStack>
     </Main>
