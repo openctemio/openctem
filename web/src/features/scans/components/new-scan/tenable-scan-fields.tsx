@@ -68,6 +68,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           >
             <SelectTrigger
               {...control}
+              className="w-full"
               aria-label={t('scans.tenable.connector', 'Tenable.sc connector')}
             >
               <SelectValue

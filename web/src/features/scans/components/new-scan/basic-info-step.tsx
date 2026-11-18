@@ -72,9 +72,20 @@ interface BasicInfoStepProps {
    * (scan_type is fixed), so the mode switch is not offered.
    */
   lockMode?: boolean
+  /**
+   * The step's problems are shown (the person left the step, or tried to
+   * create): each missing value is marked at its field, so "Go to What"
+   * lands on the field to fix.
+   */
+  showErrors?: boolean
 }
 
-export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
+export function BasicInfoStep({
+  data,
+  onChange,
+  lockMode = false,
+  showErrors = false,
+}: BasicInfoStepProps) {
   const { t } = useTranslation()
   // Workflow scans are a module: when it is off for the organization the
   // API refuses them, so none is offered (an existing workflow scan being
@@ -179,7 +190,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
   return (
     <FormStack className="px-4 py-4 sm:px-6">
       {/* Scan Name */}
-      <FormField id="scan-name" label={t('scans.basic.name')}>
+      <FormField
+        id="scan-name"
+        label={t('scans.basic.name')}
+        error={showErrors && !data.name.trim() ? t('scans.err.name') : undefined}
+      >
         <Input
           placeholder={t('scans.basic.namePlaceholder')}
           value={data.name}
@@ -236,6 +251,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         <FormField
           id="scan-scanner"
           label={t('scans.basic.scanner')}
+          error={showErrors && !data.scannerName ? t('scans.err.scanner') : undefined}
           hint={
             <>
               {t('scans.basic.scannerHint')}
@@ -269,6 +285,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         <FormStack className="gap-3">
           <FormField
             label={t('scans.basic.selectWorkflow')}
+            error={showErrors && !data.workflowId ? t('scans.err.workflow') : undefined}
             hint={
               !isLoadingWorkflows && workflows.length === 0 ? (
                 <Link href="/scans/workflows" className="underline">
@@ -282,7 +299,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 value={data.workflowId || undefined}
                 onValueChange={(value) => onChange({ workflowId: value })}
               >
-                <SelectTrigger {...control} aria-label={t('scans.basic.workflow')}>
+                <SelectTrigger
+                  {...control}
+                  className="w-full"
+                  aria-label={t('scans.basic.workflow')}
+                >
                   <SelectValue
                     placeholder={
                       isLoadingWorkflows

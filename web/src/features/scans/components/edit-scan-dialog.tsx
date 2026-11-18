@@ -204,7 +204,14 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const renderStep = () => {
     switch (currentStep) {
       case 'basic':
-        return <BasicInfoStep data={formData} onChange={handleDataChange} lockMode />
+        return (
+          <BasicInfoStep
+            data={formData}
+            onChange={handleDataChange}
+            lockMode
+            showErrors={nav.attempted || nav.seen.has('basic')}
+          />
+        )
       case 'targets':
         return (
           <div>
