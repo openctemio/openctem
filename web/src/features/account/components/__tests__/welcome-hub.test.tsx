@@ -67,7 +67,10 @@ const INVITATIONS: OnboardingOptions['invitations'] = [
   },
 ]
 
-async function renderHub(opts: OnboardingOptions, notice?: { notice: 'sso_required'; org?: string }) {
+async function renderHub(
+  opts: OnboardingOptions,
+  notice?: { notice: 'sso_required'; org?: string }
+) {
   mocks.options.mockResolvedValue({ success: true, options: opts })
   render(<WelcomeHub needsSession={false} notice={notice} />)
   await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
