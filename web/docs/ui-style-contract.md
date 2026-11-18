@@ -530,6 +530,10 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
+- **A switch is a value on a phone card.** A field of the automatic phone card
+  whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
+  beside it, kept in step with the switch, so no card shows a label over a
+  bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with

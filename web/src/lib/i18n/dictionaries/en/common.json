@@ -275,6 +275,8 @@
   "common.table.sortAsc": "Asc",
   "common.table.sortDesc": "Desc",
   "common.table.sortedBy": "Sorted by {column}, {direction}",
+  "common.table.switchOff": "Off",
+  "common.table.switchOn": "On",
   "common.table.updated": "Updated",
   "common.tabs.more": "More",
   "common.templateSourceSyncFailed": "Could not sync the template source.",

@@ -524,6 +524,59 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
+const CARD_VALUE_CLASS =
+  'mt-0.5 min-w-0 text-sm break-words [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words'
+
+/**
+ * One field value of the automatic phone card. A value that is only a switch
+ * (an "Enabled" column) counts as a value: the card writes "On" or "Off"
+ * beside it, kept in step with the switch, so a field never shows a label
+ * over a bare control. The switch keeps its own name and state for a screen
+ * reader; the word is for the eye only.
+ */
+function CardFieldValue({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
+  const cellRef = React.useRef<HTMLSpanElement>(null)
+  const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
+  React.useLayoutEffect(() => {
+    const cell = cellRef.current
+    if (!cell) return
+    const read = () => {
+      const control = cell.querySelector('[role=switch]')
+      const text = (cell.textContent ?? '').replace(/\s+/g, '')
+      setSwitchOn(control && !text ? control.getAttribute('aria-checked') === 'true' : null)
+    }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(cell, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['aria-checked'],
+    })
+    return () => observer.disconnect()
+  }, [])
+  return (
+    <dd
+      className={cn(
+        CARD_VALUE_CLASS,
+        CARD_WRAP_CLASS,
+        switchOn !== null && 'flex items-center gap-2'
+      )}
+    >
+      <span ref={cellRef} className="contents">
+        {children}
+      </span>
+      {switchOn !== null && (
+        <span data-slot="card-switch-text" aria-hidden="true">
+          {switchOn ? t('common.table.switchOn') : t('common.table.switchOff')}
+        </span>
+      )}
+    </dd>
+  )
+}
+
 /**
  * Phone layout for a table with no `mobileRow`: the first data column is the
  * title, the next few become label/value fields, and the row's checkbox and
@@ -611,14 +664,9 @@ function AutoMobileCard<TData>({
               {/* Cells are written for a wide table row: whatever they keep on
                   one line may wrap here, as in the title, so a value never runs
                   into the next column (CARD_WRAP_CLASS). */}
-              <dd
-                className={cn(
-                  'mt-0.5 min-w-0 text-sm break-words [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words',
-                  CARD_WRAP_CLASS
-                )}
-              >
+              <CardFieldValue>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </dd>
+              </CardFieldValue>
             </div>
           ))}
         </dl>
