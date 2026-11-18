@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 import { CIRepositorySettingsTab } from '../components/ci-repo-settings'
 import { CIRunSheet } from '../components/ci-runs-view'
-import { PolicyLocks } from '../components/ci-trust-settings'
+import { PolicyLocks } from '../components/ci-gate-settings'
 import { pipelineTab } from '../components/ci-pipeline-sheet'
 import {
   allowedCapabilityModes,
@@ -410,10 +410,7 @@ describe('CIRunSheet baseline and code host', () => {
     // An informational reason is a note, never listed as blocking.
     expect(screen.queryByRole('heading', { name: 'Blocking' })).not.toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Notes' })).toHaveTextContent('Baseline recorded')
-    expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute(
-      'href',
-      '/ci-cd?tab=setup&section=feedback'
-    )
+    expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute('href', '/ci-cd?tab=feedback')
   })
 
   it('hides Connect GitLab from a reader and has no baseline line without a baseline', () => {

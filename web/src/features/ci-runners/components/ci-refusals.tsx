@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTrustRefusals } from '../api/use-ci'
 import { PROVIDER_LABEL, isKnownRefusal } from '../lib/ci'
+import { refusalFixes, type RefusalFix } from '../lib/connect'
 import type { CITokenRefusal } from '../types'
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -29,26 +30,52 @@ export function refusalText(code: string, t: TFn): { reason: string; fix: string
   }
 }
 
-/** The reasons of one refusal as chips with the fix in the title. */
+/** The reasons of one refusal in plain words, one line each (they wrap on a phone). */
 export function RefusalReasons({ reasons }: { reasons?: string[] }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap gap-1">
-      {(reasons ?? []).map((code) => {
-        const { reason, fix } = refusalText(code, t)
-        return (
-          <Badge key={code} variant="outline" title={fix || undefined}>
-            {reason}
-          </Badge>
-        )
-      })}
-    </div>
+    <ul className="space-y-0.5" data-testid="ci-refusal-reasons">
+      {(reasons ?? []).map((code) => (
+        <li key={code} className="flex items-start gap-1.5 font-medium">
+          <ShieldX className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <span className="min-w-0 break-words">{refusalText(code, t).reason}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
-/** One refusal: where it came from, when, and why with the fix. */
-export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
+/** The button text of a one-click fix. */
+export function fixLabel(fix: RefusalFix, t: TFn): string {
+  switch (fix.kind) {
+    case 'allowBranch':
+      return t('scans.ci.fix.allowBranch', 'Allow branch {value}', { value: fix.value })
+    case 'allowRepository':
+      return t('scans.ci.fix.allowRepository', 'Allow project {value}', { value: fix.value })
+    case 'addDefinition':
+      return t('scans.ci.fix.addDefinition', 'Add this pipeline file')
+    case 'openDefinitions':
+      return t('scans.ci.fix.openDefinitions', 'Open pipeline files')
+    case 'protectedBranch':
+      return t('scans.ci.fix.protectedBranch', 'Change the branch rule')
+  }
+}
+
+/**
+ * One refusal: where it came from, when, and why with the fix. With
+ * `onFix`, each fix that changes a configuration is a button; the change is
+ * shown in the configuration's editor and saved only from there.
+ */
+export function RefusalDetail({
+  refusal,
+  onFix,
+}: {
+  refusal: CITokenRefusal
+  onFix?: (fix: RefusalFix) => void
+}) {
   const { t } = useTranslation()
+  const fixButtons = onFix ? refusalFixes(refusal) : []
+  const definition = fixButtons.find((f) => f.kind === 'addDefinition')
   const fixes = (refusal.reasons ?? [])
     .map((code) => refusalText(code, t).fix)
     .filter((f): f is string => !!f)
@@ -75,6 +102,29 @@ export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
             <li key={f}>{f}</li>
           ))}
         </ul>
+      )}
+      {definition?.kind === 'addDefinition' && (
+        <p
+          className="break-words text-xs text-muted-foreground"
+          data-testid="ci-refusal-definition"
+        >
+          {t('scans.ci.fix.tokenSays', 'The job names: {value}', { value: definition.value })}
+        </p>
+      )}
+      {fixButtons.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {fixButtons.map((f) => (
+            <Button
+              key={f.kind}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onFix?.(f)}
+            >
+              {fixLabel(f, t)}
+            </Button>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -128,7 +178,7 @@ export function CIRefusalNotice({ canWrite }: { canWrite: boolean }) {
         )}
       </span>
       <Link
-        href="/ci-cd?tab=setup&section=refused"
+        href="/ci-cd?tab=connections&refused=1"
         className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {t('scans.ci.refusals.noticeLink', 'See why')}
@@ -142,16 +192,29 @@ export function CIRefusalNotice({ canWrite }: { canWrite: boolean }) {
  * Recent refused pipelines under Trusted pipelines (CI write only): the
  * latest few, newest first, each with why and how to fix it.
  */
-export function CITrustRefusals({ canWrite }: { canWrite: boolean }) {
+export function CITrustRefusals({
+  canWrite,
+  onFix,
+  canFix,
+  bare = false,
+}: {
+  canWrite: boolean
+  /** Without its heading (inside a sheet that names it). */
+  bare?: boolean
+  /** Open the configuration a refusal's fix edits. */
+  onFix?: (refusal: CITokenRefusal, fix: RefusalFix) => void
+  /** Whether a configuration exists for the fix to edit. */
+  canFix?: (refusal: CITokenRefusal) => boolean
+}) {
   const { t } = useTranslation()
   const [all, setAll] = useState(false)
   const { data, error, isLoading, mutate } = useTrustRefusals({ enabled: canWrite })
   if (!canWrite) return null
   const list = data?.data ?? []
-  const shown = all ? list : list.slice(0, REFUSALS_SHOWN)
+  const shown = all || bare ? list : list.slice(0, REFUSALS_SHOWN)
   return (
     <section aria-labelledby={REFUSALS_ID} className="space-y-2" data-testid="ci-refusals">
-      <div>
+      <div className={bare ? 'sr-only' : undefined}>
         <h3 id={REFUSALS_ID} className="flex items-center gap-2 text-sm font-medium">
           <ShieldX className="size-4 text-muted-foreground" aria-hidden />
           {t('scans.ci.refusals.title', 'Recent refused pipelines')}
@@ -180,11 +243,14 @@ export function CITrustRefusals({ canWrite }: { canWrite: boolean }) {
           <ul className="divide-y rounded-lg border">
             {shown.map((r, i) => (
               <li key={`${r.at}-${i}`} className="p-3" data-testid="ci-refusal">
-                <RefusalDetail refusal={r} />
+                <RefusalDetail
+                  refusal={r}
+                  onFix={onFix && canFix?.(r) ? (f) => onFix(r, f) : undefined}
+                />
               </li>
             ))}
           </ul>
-          {list.length > REFUSALS_SHOWN && (
+          {!bare && list.length > REFUSALS_SHOWN && (
             <Button variant="ghost" size="sm" onClick={() => setAll((v) => !v)}>
               {all
                 ? t('scans.ci.refusals.showFewer', 'Show fewer')
