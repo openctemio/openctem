@@ -6,6 +6,8 @@
  * never a person. Organization events link to the organization.
  */
 
+import { authProviderLabel } from '../lib/value-labels'
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
@@ -40,6 +42,13 @@ const SUMMARY_DAYS = 30
 // word so secret scanners do not read the catalog line as a credential.
 function sourceKey(source: string): string {
   return source === 'password' ? 'emailAndPassword' : source
+}
+
+// A sign-up path: its own label, else the sign-in provider's name ("google"
+// reads as Google), else its words. Never the raw value.
+function sourceLabel(t: ReturnType<typeof useTranslation>['t'], source: string): string {
+  const own = t(`admin.signups.source.${sourceKey(source)}`, '\u0000')
+  return own !== '\u0000' ? own : authProviderLabel(t, source)
 }
 
 export function summarize(counts: SignupDailyCount[], today: string) {
@@ -135,11 +144,7 @@ export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
       <MetaLine
         items={[
           <RelativeTime key="when" date={event.occurred_at} />,
-          event.source ? (
-            <span key="source">
-              {t(`admin.signups.source.${sourceKey(event.source)}`, event.source)}
-            </span>
-          ) : null,
+          event.source ? <span key="source">{sourceLabel(t, event.source)}</span> : null,
         ]}
       />
       <MetaLine
@@ -191,20 +196,21 @@ export function SignupEventsPanel() {
           label: t('admin.signups.col.source'),
         },
         cell: ({ row }) => (
-          <span className="block truncate">
-            {t(`admin.signups.source.${sourceKey(row.original.source)}`, row.original.source)}
-          </span>
+          <span className="block truncate">{sourceLabel(t, row.original.source)}</span>
         ),
       },
       {
         id: 'domain',
         header: t('admin.signups.col.domain'),
         meta: { kind: 'text', width: 176, label: t('admin.signups.col.domain') },
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-code" title={row.original.email_domain}>
-            {row.original.email_domain || '—'}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.email_domain ? (
+            <span className="block truncate font-mono text-code" title={row.original.email_domain}>
+              {row.original.email_domain}
+            </span>
+          ) : (
+            <EmptyCell title={t('admin.signups.noDomain', 'No e-mail domain')} />
+          ),
       },
       {
         id: 'network',
@@ -215,11 +221,12 @@ export function SignupEventsPanel() {
           hideBelow: 900,
           label: t('admin.signups.col.network'),
         },
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-code">
-            {row.original.ip_prefix || '—'}
-          </span>
-        ),
+        cell: ({ row }) =>
+          row.original.ip_prefix ? (
+            <span className="block truncate font-mono text-code">{row.original.ip_prefix}</span>
+          ) : (
+            <EmptyCell title={t('admin.signups.noNetwork', 'No network recorded')} />
+          ),
       },
       {
         id: 'organization',
@@ -234,7 +241,7 @@ export function SignupEventsPanel() {
               {t('admin.signups.openOrganization')}
             </Link>
           ) : (
-            '—'
+            <EmptyCell title={t('admin.signups.noOrganization', 'No organization yet')} />
           ),
       },
     ],

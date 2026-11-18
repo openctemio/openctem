@@ -98,7 +98,7 @@ export function buildAttention(
       detail:
         '{count, plural, one {# break-glass sign-in} other {# break-glass sign-ins}} in the last 7 days. Confirm each was expected.',
       vars: { count: o.security.break_glass_sign_ins_7d },
-      href: '/security/activity?action=console.break_glass_sign_in',
+      href: '/security/activity?kind=all&action=console.break_glass_sign_in',
       actionKey: 'admin.attention.review',
       action: 'Review',
     })
@@ -153,7 +153,7 @@ export function buildAttention(
       detailKey: 'admin.attention.failedActions.detail',
       detail: '{count} refused or failed in the last 24 hours (wrong codes, denied roles, errors).',
       vars: { count: o.security.failed_admin_actions_24h },
-      href: '/security/activity?outcome=failure',
+      href: '/security/activity?kind=all&outcome=failure',
       actionKey: 'admin.attention.review',
       action: 'Review',
     })
