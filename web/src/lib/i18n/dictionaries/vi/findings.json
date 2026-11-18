@@ -272,6 +272,7 @@
   "findings.closureReview.confirmTitle": "Đóng {count} phát hiện là đã khắc phục?",
   "findings.closureReview.confirmed": "Đã đóng {count} phát hiện",
   "findings.closureReview.critical": "Nghiêm trọng: do một người đóng",
+  "findings.closureReview.criticalShort": "Người đóng",
   "findings.closureReview.description": "Phát hiện mà lần quét bao phủ không còn thấy. Lần quét bị chặn, không tới được hoặc chưa đầy đủ không bao giờ đưa phát hiện vào đây.",
   "findings.closureReview.emptyDescription": "Khi một lần quét bao phủ không còn thấy vấn đề và chế độ đóng của bạn yêu cầu xem xét, phát hiện sẽ chờ ở đây.",
   "findings.closureReview.emptyTitle": "Không có gì chờ xem xét",

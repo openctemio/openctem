@@ -56,8 +56,8 @@ const REASON_LABEL: Record<DismissReason, string> = {
 
 // Confirm close + Keep open in en and vi, and the cell padding.
 const ACTIONS_WIDTH = 236
-// "Critical: a person closes it" / its vi form whole.
-const REVIEW_WIDTH = 216
+// "A person closes" / "Người đóng" whole as a mark.
+const REVIEW_WIDTH = 148
 
 type Pending = { kind: 'confirm' | 'dismiss'; rows: ClosureProposal[] } | null
 
@@ -168,7 +168,8 @@ export function ReadyToCloseList({
       row.tier === 'critical' ? (
         <TonePill
           tone="destructive"
-          label={t('findings.closureReview.critical', 'Critical: a person closes it')}
+          label={t('findings.closureReview.criticalShort', 'A person closes')}
+          title={t('findings.closureReview.critical', 'Critical: a person closes it')}
         />
       ) : null,
     [t]
@@ -180,6 +181,8 @@ export function ReadyToCloseList({
       at: (r) => r.evidence_at,
       methodLabel: t('findings.closureReview.col.why', 'Why it can close'),
       atLabel: t('findings.closureReview.col.scanned', 'Scanned'),
+      // Five columns and the selection: the time goes first on a narrower frame.
+      atHideBelow: 1060,
     })
     const reviewLabel = t('findings.closureReview.col.review', 'Review')
     const actionsLabel = t('findings.closureReview.col.actions', 'Actions')

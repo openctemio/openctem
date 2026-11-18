@@ -73,7 +73,9 @@ describe('ReadyToCloseList', () => {
     wrap(<ReadyToCloseList {...listProps} />)
     expect(await screen.findAllByText('Exposed admin panel')).not.toHaveLength(0)
     expect(screen.getAllByText('Held for review').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Critical: a person closes it').length).toBeGreaterThan(0)
+    // A critical close waits for a person: the short mark, the whole sentence on hover.
+    expect(screen.getAllByText('A person closes').length).toBeGreaterThan(0)
+    expect(document.querySelector('[title="Critical: a person closes it"]')).not.toBeNull()
     // Each decision is named with its finding.
     await userEvent.click(
       screen.getAllByRole('button', { name: 'Confirm close Exposed admin panel' })[0]

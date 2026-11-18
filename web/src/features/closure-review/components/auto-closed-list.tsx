@@ -29,7 +29,7 @@ import { closureColumns } from './closure-columns'
 import { ClosureEvidence } from './closure-evidence'
 
 // "Reopen: not fixed" / its vi form whole, and the cell padding.
-const ACTIONS_WIDTH = 196
+const ACTIONS_WIDTH = 224
 
 /**
  * Recently auto-closed: what the platform closed by itself in the last 7

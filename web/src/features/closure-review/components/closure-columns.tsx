@@ -33,7 +33,7 @@ export const CLOSURE_WIDTH = {
 } as const
 
 /** A table frame narrower than this drops the column (Display > Columns brings it back). */
-export const CLOSURE_HIDE_BELOW = { asset: 1100, tool: 1180, scan: 1300 } as const
+export const CLOSURE_HIDE_BELOW = { asset: 1300, tool: 1180, scan: 1300 } as const
 
 const meta = (m: DataTableColumnMeta) => m
 
@@ -86,6 +86,8 @@ export function closureColumns<T extends ClosureRow>(
     at: (row: T) => string | undefined
     methodLabel: string
     atLabel: string
+    /** Drop the time column below this frame width (a list with more columns). */
+    atHideBelow?: number
   }
 ): ColumnDef<T>[] {
   const label = {
@@ -171,7 +173,7 @@ export function closureColumns<T extends ClosureRow>(
     },
     {
       id: 'at',
-      meta: meta({ kind: 'datetime-recent', label: opts.atLabel }),
+      meta: meta({ kind: 'datetime-recent', hideBelow: opts.atHideBelow, label: opts.atLabel }),
       header: opts.atLabel,
       enableSorting: false,
       cell: ({ row }) => <ClosureTime value={opts.at(row.original)} />,

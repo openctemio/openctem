@@ -272,6 +272,7 @@
   "findings.closureReview.confirmTitle": "Close {count} findings as fixed?",
   "findings.closureReview.confirmed": "Closed {count} findings",
   "findings.closureReview.critical": "Critical: a person closes it",
+  "findings.closureReview.criticalShort": "A person closes",
   "findings.closureReview.description": "Findings a covered scan no longer finds. Blocked, unreachable or partial scans never put a finding here.",
   "findings.closureReview.emptyDescription": "When a covered scan no longer finds an issue and your closing mode asks for review, the finding waits here.",
   "findings.closureReview.emptyTitle": "Nothing waits for review",
