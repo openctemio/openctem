@@ -40,8 +40,9 @@ describe('FilterSelect', () => {
     expect(room).toHaveAttribute('aria-hidden')
     rerender(<FilterSelect label="Status" value="pending" options={options} onChange={() => {}} />)
     expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
+    // Same width as the room (7 = size-7); the height is the token's own.
     expect(document.querySelector('[data-slot=filter-select-clear]')).toHaveClass(
-      'size-7',
+      'w-7',
       'me-1',
       'shrink-0'
     )
@@ -168,5 +169,18 @@ describe('FilterSelect', () => {
     )
     expect(document.querySelector('[data-slot=filter-select-key]')).toBeNull()
     expect(document.querySelector('[data-slot=toolbar-slot] [data-label="State"]')).toBeNull()
+  })
+
+  // The token is the control height with a 1 px border; a trigger of h-full
+  // stopped inside it (34 px on a phone, under the 36 px touch height).
+  it("gives the trigger and the clear button the token's full height, border included", () => {
+    render(<FilterSelect label="Status" value="pending" options={options} onChange={() => {}} />)
+    const trigger = screen.getByRole('button', { name: 'Status: Pending' })
+    const clear = screen.getByRole('button', { name: 'Clear Status' })
+    for (const el of [trigger, clear]) {
+      expect(el).toHaveClass('-my-px', 'h-[calc(100%+2px)]')
+      expect(el).not.toHaveClass('h-full')
+      expect(el).not.toHaveClass('size-7')
+    }
   })
 })

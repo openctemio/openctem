@@ -74,6 +74,13 @@ export interface FilterSelectProps<V extends string> {
 /** Hidden while the toolbar is narrow (under 56rem) or folds its labels. */
 const FOLD_HIDDEN = '@max-4xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
 
+/**
+ * The trigger and the clear button span the whole token, its 1 px border
+ * included: the box is the control height (36 px on a phone), so their hit
+ * area is too, instead of the 34 px left inside the border.
+ */
+const FULL_BOX_HEIGHT = '-my-px h-[calc(100%+2px)]'
+
 export function FilterSelect<V extends string>({
   label,
   value,
@@ -111,7 +118,10 @@ export function FilterSelect<V extends string>({
     >
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="inline-flex h-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            FULL_BOX_HEIGHT,
+            'inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          )}
           aria-label={`${label}: ${current?.label ?? all}`}
         >
           <span className={cn('text-muted-foreground', foldLabel && FOLD_HIDDEN)}>{label}:</span>
@@ -169,9 +179,15 @@ export function FilterSelect<V extends string>({
           data-slot="filter-select-clear"
           onClick={() => onChange(allValue)}
           aria-label={t('common.filter.clearNamed', 'Clear {name}', { name: label })}
-          className="me-1 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            FULL_BOX_HEIGHT,
+            'group/clear me-1 inline-flex w-7 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none'
+          )}
         >
-          <X aria-hidden className="size-4" />
+          {/* The look stays a 28 px square; the button is the full height. */}
+          <span className="inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground group-hover/clear:bg-accent group-hover/clear:text-foreground group-focus-visible/clear:ring-2 group-focus-visible/clear:ring-ring">
+            <X aria-hidden className="size-4" />
+          </span>
         </button>
       ) : clearable ? (
         <span aria-hidden data-slot="filter-select-clear-room" className="me-1 size-7 shrink-0" />

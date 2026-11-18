@@ -500,6 +500,9 @@ reference.
     default value when the parameter is absent); the room of its clear button
     is kept while nothing is chosen, so choosing a value never changes the
     token's width;
+    its trigger and its clear button are the full height of the token, border
+    included (36 px on a phone, 32 px from 768px), so neither is a smaller hit
+    area than the controls beside it;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
