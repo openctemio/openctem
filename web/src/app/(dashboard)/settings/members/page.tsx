@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatCalendarDate } from '@/lib/format-metric'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
 import { useJoinRequests } from '@/features/organization/api/use-domain-signup'
 import type { RowAction } from '@/features/shared/components/data-table-row-actions'
@@ -166,17 +167,12 @@ const roleFilters: { value: RoleFilter; key: string; en: string }[] = [
 type MemberTab = 'members' | 'invitations' | 'requests'
 
 // Helper functions
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+// In the console language ("25 thg 11, 2026" in Vietnamese), not always English.
+const formatDate = (dateString: string, locale: string) => formatCalendarDate(dateString, locale)
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
-const formatLastActive = (t: TFn, lastLoginAt?: string) => {
+const formatLastActive = (t: TFn, locale: string, lastLoginAt?: string) => {
   if (!lastLoginAt) return t('org.membersPage.never', 'Never')
   const date = new Date(lastLoginAt)
   const now = new Date()
@@ -198,7 +194,7 @@ const formatLastActive = (t: TFn, lastLoginAt?: string) => {
     return t('org.membersPage.daysAgo', '{count, plural, one {# day ago} other {# days ago}}', {
       count: diffDays,
     })
-  return formatDate(lastLoginAt)
+  return formatDate(lastLoginAt, locale)
 }
 
 // Role chips are neutral: a role is a label, not a state, so it gets no colour of
@@ -733,7 +729,7 @@ export default function UsersPage() {
     expiresAt: string
   } | null>(null)
   const emailUnavailable = useEmailUnavailable()
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
   // strips every access source and asks for a new owner of their work.
@@ -854,7 +850,9 @@ export default function UsersPage() {
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.joined', 'Joined')} />
       ),
       cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm">{formatDate(row.original.joined_at)}</span>
+        <span className="text-muted-foreground text-sm">
+          {formatDate(row.original.joined_at, locale)}
+        </span>
       ),
     },
     {
@@ -868,7 +866,7 @@ export default function UsersPage() {
       ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">
-          {formatLastActive(t, row.original.last_login_at)}
+          {formatLastActive(t, locale, row.original.last_login_at)}
         </span>
       ),
     },
@@ -1307,7 +1305,9 @@ export default function UsersPage() {
            show that rather than a confusing "No roles". */
         return (
           <Badge variant="secondary" className="text-xs capitalize">
-            {invitation.role || t('org.membersPage.noRoles', 'No roles')}
+            {invitation.role
+              ? t(`org.role.${invitation.role}`, invitation.role)
+              : t('org.membersPage.noRoles', 'No roles')}
           </Badge>
         )
       },
@@ -1335,7 +1335,7 @@ export default function UsersPage() {
                       count: daysUntilExpiry,
                     })
                   : t('org.membersPage.expiresInOne', 'In {count} day', { count: daysUntilExpiry })
-                : formatDate(row.original.expires_at)}
+                : formatDate(row.original.expires_at, locale)}
           </span>
         )
       },
@@ -1690,11 +1690,11 @@ export default function UsersPage() {
                 <DetailStatGrid aria-label={t('org.membersPage.keyDates', 'Key dates')}>
                   <DetailStat
                     label={t('org.membersPage.col.joined', 'Joined')}
-                    value={formatDate(member.joined_at)}
+                    value={formatDate(member.joined_at, locale)}
                   />
                   <DetailStat
                     label={t('org.membersPage.col.lastActive', 'Last active')}
-                    value={formatLastActive(t, member.last_login_at)}
+                    value={formatLastActive(t, locale, member.last_login_at)}
                   />
                 </DetailStatGrid>
 
