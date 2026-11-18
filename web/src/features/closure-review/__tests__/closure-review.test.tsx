@@ -25,9 +25,15 @@ vi.mock('@/lib/api/client', () => api)
 const perms = vi.hoisted(() => ({ allowed: new Set<string>() }))
 vi.mock('@/lib/permissions', () => ({
   usePermissions: () => ({ can: (p: string) => perms.allowed.has(p) }),
-  Permission: { FindingsVerify: 'findings:verify', FindingsStatus: 'findings:status' },
+  Permission: {
+    FindingsVerify: 'findings:verify',
+    FindingsStatus: 'findings:status',
+    FindingsRead: 'findings:read',
+  },
 }))
 
+// The queue's one status region (the table has its own for refreshes).
+const announcer = () => document.querySelector('[data-slot=queue-announcer]')
 const wrap = (ui: ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
 const listProps = {
@@ -55,6 +61,8 @@ beforeEach(() => {
   api.get.mockReset()
   api.post.mockReset()
   toast.success.mockReset()
+  toast.warning.mockReset()
+  toast.error.mockReset()
   perms.allowed = new Set(['findings:verify', 'findings:status'])
 })
 
@@ -66,7 +74,10 @@ describe('ReadyToCloseList', () => {
     expect(await screen.findAllByText('Exposed admin panel')).not.toHaveLength(0)
     expect(screen.getAllByText('Held for review').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Critical: a person closes it').length).toBeGreaterThan(0)
-    await userEvent.click(screen.getAllByRole('button', { name: 'Confirm close' })[0])
+    // Each decision is named with its finding.
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Confirm close Exposed admin panel' })[0]
+    )
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm close' }))
     await waitFor(() =>
@@ -75,13 +86,79 @@ describe('ReadyToCloseList', () => {
         decision: 'confirm',
       })
     )
+    // The toast's sentence is said in the status region too.
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Closed 1 findings'))
+    expect(announcer()).toHaveTextContent('Closed 1 findings')
+  })
+
+  it('confirms the selected rows in one decision and says what was skipped', async () => {
+    const second = {
+      ...proposal,
+      id: 'p2',
+      finding_id: 'f2',
+      finding_title: 'Old TLS',
+      tier: 'standard',
+    }
+    api.get.mockResolvedValue({
+      data: [proposal, second],
+      total: 2,
+      page: 1,
+      per_page: 20,
+      total_pages: 1,
+    })
+    api.post.mockResolvedValue({
+      applied: ['p1'],
+      skipped: { p2: 'not_eligible' },
+      finding_ids: ['f1'],
+    })
+    wrap(<ReadyToCloseList {...listProps} />)
+    await screen.findAllByText('Old TLS')
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /Exposed admin panel/ })[0])
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /Old TLS/ })[0])
+    const bar = await screen.findByRole('toolbar')
+    await userEvent.click(within(bar).getByRole('button', { name: 'Confirm close' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm close' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/findings/closure/proposals/decide', {
+        proposal_ids: ['p1', 'p2'],
+        decision: 'confirm',
+      })
+    )
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled())
+    expect(announcer()).toHaveTextContent('1 were not changed')
+  })
+
+  it('a refused read says no access, without Retry', async () => {
+    api.get.mockRejectedValue(Object.assign(new Error('forbidden'), { statusCode: 403 }))
+    wrap(<ReadyToCloseList {...listProps} />)
+    expect(await screen.findByText(/access/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('a failed read keeps the title row and offers Retry', async () => {
+    api.get.mockRejectedValue(Object.assign(new Error('boom'), { statusCode: 500 }))
+    wrap(<ReadyToCloseList {...listProps} />)
+    expect(await screen.findByRole('button', { name: /Retry/ })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot=list-title-row]')).toHaveTextContent(
+      'Closes waiting for review'
+    )
+  })
+
+  it('an empty queue says nothing waits', async () => {
+    api.get.mockResolvedValue({ data: [], total: 0, page: 1, per_page: 20, total_pages: 0 })
+    wrap(<ReadyToCloseList {...listProps} />)
+    expect(await screen.findByText('Nothing waits for review')).toBeInTheDocument()
   })
 
   it('keeps a proposal open with the chosen reason', async () => {
     api.get.mockResolvedValue({ data: [proposal], total: 1, page: 1, per_page: 20, total_pages: 1 })
     api.post.mockResolvedValue({ applied: ['p1'], skipped: {}, finding_ids: ['f1'] })
     wrap(<ReadyToCloseList {...listProps} />)
-    await userEvent.click((await screen.findAllByRole('button', { name: 'Keep open' }))[0])
+    await userEvent.click(
+      (await screen.findAllByRole('button', { name: 'Keep open Exposed admin panel' }))[0]
+    )
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Keep open' }))
     await waitFor(() =>
@@ -99,7 +176,9 @@ describe('ReadyToCloseList', () => {
     api.get.mockResolvedValue({ data: [proposal], total: 1, page: 1, per_page: 20, total_pages: 1 })
     wrap(<ReadyToCloseList {...listProps} />)
     expect(await screen.findAllByText('Exposed admin panel')).not.toHaveLength(0)
-    expect(screen.queryByRole('button', { name: 'Confirm close' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Confirm close/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Keep open/ })).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
   })
 })
 
@@ -123,11 +202,39 @@ describe('AutoClosedList', () => {
     })
     api.post.mockResolvedValue(undefined)
     wrap(<AutoClosedList {...listProps} />)
-    await userEvent.click((await screen.findAllByRole('button', { name: 'Reopen: not fixed' }))[0])
+    await userEvent.click(
+      (await screen.findAllByRole('button', { name: 'Reopen: not fixed Old TLS' }))[0]
+    )
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reopen: not fixed' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/findings/f2/reopen-not-fixed', {})
     )
+    await waitFor(() =>
+      expect(announcer()).toHaveTextContent('Reopened. The finding is open again.')
+    )
+  })
+
+  it('offers no reopen without findings:status', async () => {
+    perms.allowed = new Set(['findings:verify'])
+    api.get.mockResolvedValue({
+      data: [
+        {
+          finding_id: 'f2',
+          finding_title: 'Old TLS',
+          severity: 'medium',
+          verification: 'covered_scan',
+          resolved_at: '2026-10-29T10:00:00Z',
+          evidence: {},
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 20,
+      total_pages: 1,
+    })
+    wrap(<AutoClosedList {...listProps} />)
+    expect(await screen.findAllByText('Old TLS')).not.toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /^Reopen/ })).toBeNull()
   })
 })
