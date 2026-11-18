@@ -44,7 +44,7 @@ function FileField({
           {t('admin.catalog.chooseFile', 'Choose a file')}
         </Button>
         <span
-          className="min-w-0 truncate text-sm text-muted-foreground"
+          className="min-w-0 truncate text-body text-muted-foreground"
           title={file?.name}
           aria-live="polite"
         >
