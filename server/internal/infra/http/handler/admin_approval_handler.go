@@ -33,7 +33,8 @@ const CodeSecondApprovalRequired apierror.Code = "SECOND_APPROVAL_REQUIRED"
 type approvalGate interface {
 	// Active reports whether approvals are in force; it consumes nothing.
 	Active(ctx context.Context, actor *admin.AdminUser) (bool, error)
-	Require(ctx context.Context, actor *admin.AdminUser, action admin.ApprovalAction, target string, client adminconsole.ClientInfo) (*adminapproval.Grant, error)
+	// reason is the actor's reason for the action itself (may be empty).
+	Require(ctx context.Context, actor *admin.AdminUser, action admin.ApprovalAction, target, reason string, client adminconsole.ClientInfo) (*adminapproval.Grant, error)
 	Release(ctx context.Context, actor *admin.AdminUser, g *adminapproval.Grant, client adminconsole.ClientInfo)
 }
 
@@ -50,10 +51,17 @@ type SecondApprovalDetails struct {
 // wire approvals) allows; the server always wires it.
 func requireSecondApproval(w http.ResponseWriter, r *http.Request, gate approvalGate, actor *admin.AdminUser,
 	action admin.ApprovalAction, target string, log *logger.Logger) (*adminapproval.Grant, bool) {
+	return requireSecondApprovalWithReason(w, r, gate, actor, action, target, "", log)
+}
+
+// requireSecondApprovalWithReason is requireSecondApproval for an action that
+// carries the actor's reason: the gate's audit row keeps it.
+func requireSecondApprovalWithReason(w http.ResponseWriter, r *http.Request, gate approvalGate, actor *admin.AdminUser,
+	action admin.ApprovalAction, target, reason string, log *logger.Logger) (*adminapproval.Grant, bool) {
 	if gate == nil {
 		return nil, true
 	}
-	g, err := gate.Require(r.Context(), actor, action, target, clientInfo(r))
+	g, err := gate.Require(r.Context(), actor, action, target, reason, clientInfo(r))
 	if err == nil {
 		return g, true
 	}

@@ -349,6 +349,14 @@ How it works for the administrators:
    A, the action and its exact target (the e-mail address, administrator or
    organization), and works once.
 
+The roster actions (role or active-state change, new administrator, reset of
+the console second factor, break-glass test, identity-provider unbind) take an
+optional `reason` (1 to 1000 characters after trimming; longer is refused with
+400). It is kept in the action's admin audit row and in the gate's
+`approval.used` or `approval.single_admin` row, next to the reason of the
+approval request. The redesigned console sends it with every one of these
+actions; it becomes required once that console ships.
+
 With only one named super admin (break-glass accounts do not count), the
 actions run on the super admin's own step-up, each recorded as critical
 (`approval.single_admin`) and e-mailed to every administrator; the

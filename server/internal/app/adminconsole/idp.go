@@ -353,8 +353,9 @@ func (s *Service) DeletePlatformIdP(ctx context.Context, actor *admin.AdminUser,
 
 // UnbindIdP removes an administrator's IdP binding (super admin), e.g. when
 // their IdP account was recreated. They are bound again on their next IdP
-// sign-in, once they confirm it with their own console second factor.
-func (s *Service) UnbindIdP(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, client ClientInfo) error {
+// sign-in, once they confirm it with their own console second factor. reason
+// (may be empty) is kept in the audit row.
+func (s *Service) UnbindIdP(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, reason string, client ClientInfo) error {
 	target, err := s.admins.GetByID(ctx, targetID)
 	if err != nil {
 		return err
@@ -370,6 +371,7 @@ func (s *Service) UnbindIdP(ctx context.Context, actor *admin.AdminUser, targetI
 		entry := admin.NewAuditLogBuilder(actor, ActionIdPUnbound).
 			Resource("admin_user", ptr(target.ID()), target.Email()).
 			Context(client.IP, client.UserAgent).
+			Request("", "", addReason(nil, reason)).
 			High().
 			Build()
 		s.writeAudit(ctx, ActionIdPUnbound, entry)
