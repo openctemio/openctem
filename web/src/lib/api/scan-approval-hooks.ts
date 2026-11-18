@@ -5,9 +5,9 @@
  */
 
 import useSWR, { type SWRConfiguration } from 'swr'
-import useSWRInfinite from 'swr/infinite'
 import { get, post, put } from './client'
 import { useTenant } from '@/context/tenant-provider'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 
 export type ScanApprovalMode = 'off' | 'on' | 'strict'
 export type ScanApprovalValidity = 'run' | 'days' | 'definition'
@@ -195,12 +195,12 @@ export interface ScanRuleTestResult {
 const SETTINGS = '/api/v1/organization/settings/scan-governance'
 const APPROVALS = '/api/v1/scan-approvals'
 /** The API caps a page at 100 requests. */
-export const APPROVALS_PER_PAGE = 100
+export const APPROVALS_MAX_PER_PAGE = 100
 
 export const scanApprovalKeys = {
   settings: SETTINGS,
-  list: (status: string, page = 1) =>
-    `${APPROVALS}?status=${encodeURIComponent(status)}&page=${page}&per_page=${APPROVALS_PER_PAGE}`,
+  list: (status: string, page = 1, perPage = 25) =>
+    `${APPROVALS}?status=${encodeURIComponent(status)}&page=${page}&per_page=${Math.min(perPage, APPROVALS_MAX_PER_PAGE)}`,
   scan: (scanId: string) => `/api/v1/scans/${encodeURIComponent(scanId)}/approval`,
 }
 
@@ -264,29 +264,25 @@ export function submitScanApproval(
   return post<ScanApprovalRequest>(scanApprovalKeys.scan(scanId), input)
 }
 
-type ApprovalsPage = { data: ScanApprovalRequest[]; total: number }
+export type ScanApprovalsPage = { data: ScanApprovalRequest[]; total: number }
 
 /**
- * The approvals inbox, a page of 100 at a time: `loadMore` appends the next
- * page, so older requests are reachable and `total` says how many exist.
+ * One page of the approvals queue (newest first). `status` is one status,
+ * a comma list, or '' for every request; `total` counts them all, so the
+ * pager reaches every request.
  */
-export function useScanApprovals(status: string) {
+export function useScanApprovals(status: string, page: number, perPage: number) {
   const { currentTenant } = useTenant()
-  const { data, error, isLoading, isValidating, size, setSize, mutate } =
-    useSWRInfinite<ApprovalsPage>(
-      (index) => (currentTenant ? scanApprovalKeys.list(status, index + 1) : null),
-      (url: string) => get<ApprovalsPage>(url)
-    )
-  const items = (data ?? []).flatMap((p) => p.data ?? [])
-  const merged = data ? { data: items, total: data[0]?.total ?? items.length } : undefined
-  return {
-    data: merged,
-    error,
-    isLoading,
-    isLoadingMore: isValidating && size > (data?.length ?? 0),
-    loadMore: () => void setSize(size + 1),
-    mutate: () => mutate(),
-  }
+  return useSWR<ScanApprovalsPage>(
+    currentTenant ? scanApprovalKeys.list(status, page, perPage) : null,
+    (url: string) => get<ScanApprovalsPage>(url),
+    { revalidateOnFocus: false, keepPreviousData: true }
+  )
+}
+
+/** Re-reads every page of the approvals queue (after a decision). */
+export function refreshScanApprovals() {
+  return globalMutate((key) => typeof key === 'string' && key.startsWith(`${APPROVALS}?`))
 }
 
 export function approveScanRequest(id: string, note: string) {

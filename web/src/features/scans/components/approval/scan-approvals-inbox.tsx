@@ -2,21 +2,23 @@
 
 /**
  * Scans > Approvals: the scan approval requests of the organization
- * (RFC-073). Approvers see what each scan will do (targets, intensity,
- * tools, schedule, the rule that caught it and what changed since the last
- * approval) and approve or reject it; requesters remind or withdraw. The
- * backend decides who may act: these buttons only follow `can_approve` and
- * `self_approval_available`.
+ * (RFC-073), as a queue. Approvers see what each scan will do (targets,
+ * intensity, tools, schedule, the rule that caught it and what changed since
+ * the last approval) and approve or reject it; requesters remind or withdraw.
+ * The backend decides who may act: these controls only follow `can_approve`
+ * and `self_approval_available`.
  */
 
-import { useState } from 'react'
-import Link from '@/components/link'
-import { CheckCheck, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
+import { type ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
+
+import Link from '@/components/link'
 import { StepUpDialog } from '@/components/security'
 import { Badge } from '@/components/ui/badge'
-import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
 import { Button } from '@/components/ui/button'
+import { type ActionMenuEntry } from '@/components/ui/action-menu'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Dialog,
   DialogBody,
@@ -27,27 +29,79 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { RefreshButton } from '@/components/list-page-parts'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState } from '@/features/shared'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
+import { DataTable } from '@/features/shared/components/data-table/data-table'
+import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { PageStack } from '@/features/shared/components/page-stack'
+import {
+  QueueCard,
+  QueueDecideBy,
+  QueueDecisionActions,
+  QueueEmpty,
+  decideByState,
+  useQueueAnnouncer,
+} from '@/features/shared/components/queue'
+import { useListParams } from '@/hooks/use-list-params'
+import { accessStateOf } from '@/lib/api/access-state'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { formatRelative } from '@/lib/format-date'
+import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
+import { Permission } from '@/lib/permissions'
 import {
   approveScanRequest,
   cancelScanRequest,
+  refreshScanApprovals,
   rejectScanRequest,
   remindScanApprovers,
   selfApproveScanRequest,
   useScanApprovals,
   type ScanApprovalRequest,
+  type ScanApprovalStatus,
 } from '@/lib/api/scan-approval-hooks'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { useAuthStore } from '@/stores/auth-store'
 import { approversText } from './approval-requirement'
 
 type Action = 'approve' | 'reject' | 'self'
 
 const PREVIEW_TARGETS = 10
+
+const STATUSES: ScanApprovalStatus[] = [
+  'pending',
+  'approved',
+  'rejected',
+  'expired',
+  'superseded',
+  'canceled',
+]
+type Lens = ScanApprovalStatus | 'all'
+
+const STATUS_LABEL: Record<ScanApprovalStatus, [string, string]> = {
+  pending: ['scans.approval.statusPending', 'Awaiting approval'],
+  approved: ['scans.approval.statusApproved', 'Approved'],
+  rejected: ['scans.approval.statusRejected', 'Rejected'],
+  expired: ['scans.approval.statusExpired', 'Expired'],
+  superseded: ['scans.approval.statusSuperseded', 'Superseded'],
+  canceled: ['scans.approval.statusCanceled', 'Withdrawn'],
+}
+
+/** Widths in px: the longest en and vi value whole, plus the cell padding. */
+const WIDTH = {
+  scanMin: 192,
+  // "Awaiting approval" / "Đang chờ phê duyệt" as a lozenge.
+  status: 168,
+  requester: 140,
+  // "Overdue, 15 Nov" / "Quá hạn, 15 thg 11" whole.
+  decideBy: 148,
+  // Approve + Reject (or "Your request") + More in en and vi.
+  actions: 236,
+} as const
+const HIDE_BELOW = { rule: 1120, requested: 1260, left: 1360 } as const
 
 function formatValue(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—'
@@ -56,12 +110,16 @@ function formatValue(v: unknown): string {
   return String(v)
 }
 
+const scanName = (req: ScanApprovalRequest) => toDisplayText(req.scan_name || req.scan_id, 120)
+const ruleNames = (req: ScanApprovalRequest) =>
+  (req.evaluation.matched ?? []).map((r) => r.name).join(', ')
+
 function RequestDetails({ req }: { req: ScanApprovalRequest }) {
   const { t } = useTranslation()
   const targets = req.definition.targets ?? []
   const groups = req.definition.asset_group_ids ?? []
   return (
-    <div className="grid gap-3 border-t bg-muted/30 p-4 text-sm md:grid-cols-2">
+    <div className="grid gap-4 text-sm md:grid-cols-2">
       <div className="space-y-1">
         <p className="font-medium">{t('scans.approval.targets', 'Targets')}</p>
         <p className="text-muted-foreground">
@@ -140,45 +198,75 @@ function RequestDetails({ req }: { req: ScanApprovalRequest }) {
   )
 }
 
-function StatusBadge({ status }: { status: ScanApprovalRequest['status'] }) {
+function StatusBadge({ status }: { status: ScanApprovalStatus }) {
   const { t } = useTranslation()
-  const label: Record<ScanApprovalRequest['status'], string> = {
-    pending: t('scans.approval.statusPending', 'Awaiting approval'),
-    approved: t('scans.approval.statusApproved', 'Approved'),
-    rejected: t('scans.approval.statusRejected', 'Rejected'),
-    expired: t('scans.approval.statusExpired', 'Expired'),
-    superseded: t('scans.approval.statusSuperseded', 'Superseded'),
-    canceled: t('scans.approval.statusCanceled', 'Withdrawn'),
-  }
-  return <ApprovalStatusLozenge status={status} label={label[status]} />
+  const [key, fallback] = STATUS_LABEL[status]
+  return <ApprovalStatusLozenge status={status} label={t(key, fallback)} />
+}
+
+/** Emergency run and intensity: the marks a reviewer weighs first. */
+function RunMarks({ req }: { req: ScanApprovalRequest }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {req.emergency && (
+        <Badge variant="destructive">{t('scans.approval.emergency', 'Emergency run')}</Badge>
+      )}
+      {req.definition.intensity && <Badge variant="outline">{req.definition.intensity}</Badge>}
+    </>
+  )
 }
 
 export function ScanApprovalsInbox() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const me = useAuthStore((s) => s.user?.id)
-  const [filter, setFilter] = useState<'pending' | 'all'>('pending')
-  const { data, error, isLoading, isLoadingMore, loadMore, mutate } = useScanApprovals(
-    filter === 'pending' ? 'pending' : ''
+  const list = useListParams({ filters: { status: '' } })
+  const lens: Lens =
+    list.filters.status === 'all'
+      ? 'all'
+      : (STATUSES as string[]).includes(list.filters.status) && list.filters.status !== ''
+        ? (list.filters.status as ScanApprovalStatus)
+        : 'pending'
+  const { data, error, isLoading, isValidating, mutate } = useScanApprovals(
+    lens === 'all' ? '' : lens,
+    list.page,
+    list.perPage
   )
-  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const announcer = useQueueAnnouncer()
   const [action, setAction] = useState<{ kind: Action; req: ScanApprovalRequest } | null>(null)
+  const [details, setDetails] = useState<ScanApprovalRequest | null>(null)
+  const [withdraw, setWithdraw] = useState<ScanApprovalRequest | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const { announce } = announcer
 
-  const run = async (fn: () => Promise<unknown>, ok: string) => {
-    setBusy(true)
-    try {
-      await fn()
-      toast.success(ok)
-      setAction(null)
-      setNote('')
-      await mutate()
-    } catch (e) {
-      toast.error(getErrorMessage(e, t('scans.approval.actionFailed', 'The action failed')))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { setFilter } = list
+  const changeLens = useCallback(
+    (next: Lens) => setFilter('status', next === 'pending' ? '' : next),
+    [setFilter]
+  )
+
+  const run = useCallback(
+    async (fn: () => Promise<unknown>, ok: string) => {
+      setBusy(true)
+      try {
+        await fn()
+        toast.success(ok)
+        announce(ok)
+        setAction(null)
+        setWithdraw(null)
+        setNote('')
+        await refreshScanApprovals()
+      } catch (e) {
+        const msg = getErrorMessage(e, t('scans.approval.actionFailed', 'The action failed'))
+        toast.error(msg)
+        announce(msg)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [announce, t]
+  )
 
   const confirm = () => {
     if (!action) return
@@ -199,191 +287,425 @@ export function ScanApprovalsInbox() {
   const selfApprove = async (code: string) => {
     if (action?.kind !== 'self') return
     await selfApproveScanRequest(action.req.id, note.trim(), code)
-    toast.success(t('scans.approval.selfApprovedToast', 'Approved with your authenticator code'))
+    const ok = t('scans.approval.selfApprovedToast', 'Approved with your authenticator code')
+    toast.success(ok)
+    announce(ok)
     setAction(null)
     setNote('')
-    await mutate()
+    await refreshScanApprovals()
   }
 
-  const items = data?.data ?? []
+  // The row's controls; the table cell and the phone card share them.
+  const actionsCell = useCallback(
+    (req: ScanApprovalRequest, layout: 'row' | 'card' = 'row') => {
+      const pending = req.status === 'pending'
+      const mine = req.requested_by?.id === me
+      const menu: ActionMenuEntry[] = [
+        {
+          id: 'details',
+          label: t('scans.approval.details', 'Details'),
+          onSelect: () => setDetails(req),
+        },
+      ]
+      if (pending && req.self_approval_available)
+        menu.push({
+          id: 'self',
+          label: t('scans.approval.selfApprove', 'Approve my own scan'),
+          onSelect: () => setAction({ kind: 'self', req }),
+        })
+      if (pending && mine) {
+        menu.push({
+          id: 'remind',
+          label: t('scans.approval.remind', 'Remind'),
+          disabledReason: busy ? t('scans.approval.busy', 'Saving') : undefined,
+          onSelect: () =>
+            void run(
+              () => remindScanApprovers(req.id),
+              t('scans.approval.remindedToast', 'Approvers reminded')
+            ),
+        })
+        menu.push({
+          id: 'withdraw',
+          label: t('scans.approval.withdraw', 'Withdraw'),
+          destructive: true,
+          onSelect: () => setWithdraw(req),
+        })
+      }
+      return (
+        <QueueDecisionActions
+          name={scanName(req)}
+          itemId={req.id}
+          canDecide={pending && (req.can_approve || mine)}
+          own={pending && mine && !req.can_approve}
+          ownReason={t(
+            'scans.approval.ownReason',
+            'Another approver decides a scan you asked for.'
+          )}
+          busy={busy}
+          approveLabel={t('scans.approval.approve', 'Approve')}
+          rejectLabel={t('scans.approval.reject', 'Reject')}
+          onApprove={() => setAction({ kind: 'approve', req })}
+          onReject={() => setAction({ kind: 'reject', req })}
+          menu={menu}
+          layout={layout}
+        />
+      )
+    },
+    [busy, me, run, t]
+  )
+
+  const showStatus = lens !== 'pending'
+  const columns = useMemo<ColumnDef<ScanApprovalRequest>[]>(() => {
+    const label = {
+      scan: t('scans.approval.col.scan', 'Scan'),
+      status: t('scans.approval.col.status', 'Status'),
+      run: t('scans.approval.col.run', 'Run'),
+      requester: t('scans.approval.col.requester', 'Requested by'),
+      rule: t('scans.approval.col.rule', 'Rule'),
+      left: t('scans.approval.col.left', 'Approvals left'),
+      decideBy: t('scans.approval.col.decideBy', 'Decide by'),
+      requested: t('scans.approval.col.requested', 'Requested'),
+      actions: t('scans.approval.col.actions', 'Decision'),
+    }
+    const meta = (m: DataTableColumnMeta) => m
+    const cols: ColumnDef<ScanApprovalRequest>[] = [
+      {
+        id: 'scan',
+        meta: meta({ kind: 'name', pin: 'start', minWidth: WIDTH.scanMin, label: label.scan }),
+        header: label.scan,
+        enableHiding: false,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="w-0 min-w-full">
+            <Link
+              href={`/scans/${encodeURIComponent(row.original.scan_id)}`}
+              className="block truncate font-medium hover:underline"
+              title={scanName(row.original)}
+            >
+              {scanName(row.original)}
+            </Link>
+          </div>
+        ),
+      },
+      ...(showStatus
+        ? [
+            {
+              id: 'status',
+              meta: meta({ kind: 'status', width: WIDTH.status, label: label.status }),
+              header: label.status,
+              enableSorting: false,
+              cell: ({ row }) => <StatusBadge status={row.original.status} />,
+            } satisfies ColumnDef<ScanApprovalRequest>,
+          ]
+        : []),
+      {
+        id: 'run',
+        meta: meta({ kind: 'text', label: label.run, maxWidth: 220 }),
+        header: label.run,
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.emergency || row.original.definition.intensity ? (
+            <span className="flex items-center gap-1.5">
+              <RunMarks req={row.original} />
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: 'requester',
+        meta: meta({ kind: 'owner', width: WIDTH.requester, label: label.requester }),
+        header: label.requester,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="block truncate">
+            {row.original.requested_by?.id === me
+              ? t('scans.approval.you', 'You')
+              : (row.original.requested_by?.name ?? '-')}
+          </span>
+        ),
+      },
+      {
+        id: 'rule',
+        meta: meta({ kind: 'text', hideBelow: HIDE_BELOW.rule, maxWidth: 240, label: label.rule }),
+        header: label.rule,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="block truncate text-muted-foreground" title={ruleNames(row.original)}>
+            {ruleNames(row.original) || '-'}
+          </span>
+        ),
+      },
+      {
+        id: 'left',
+        meta: meta({ kind: 'text', hideBelow: HIDE_BELOW.left, maxWidth: 240, label: label.left }),
+        header: label.left,
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.status === 'pending' ? (
+            <span
+              className="block truncate text-muted-foreground"
+              title={approversText(t, row.original.evaluation)}
+            >
+              {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
+                count: row.original.remaining,
+                who: approversText(t, row.original.evaluation),
+              })}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: 'decideBy',
+        meta: meta({ kind: 'due', width: WIDTH.decideBy, label: label.decideBy }),
+        header: label.decideBy,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <QueueDecideBy
+            value={row.original.status === 'pending' ? row.original.expires_at : undefined}
+          />
+        ),
+      },
+      {
+        id: 'requested',
+        meta: meta({
+          kind: 'datetime-recent',
+          hideBelow: HIDE_BELOW.requested,
+          label: label.requested,
+        }),
+        header: label.requested,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <time
+            dateTime={row.original.requested_at}
+            title={formatAbsoluteTime(row.original.requested_at, locale)}
+            className="whitespace-nowrap text-muted-foreground"
+          >
+            {formatRelativeTime(row.original.requested_at, locale)}
+          </time>
+        ),
+      },
+      {
+        id: 'actions',
+        meta: meta({ kind: 'actions', width: WIDTH.actions, label: label.actions }),
+        header: () => <span className="sr-only">{label.actions}</span>,
+        enableHiding: false,
+        enableSorting: false,
+        cell: ({ row }) => actionsCell(row.original),
+      },
+    ]
+    return cols
+  }, [actionsCell, locale, me, showStatus, t])
+
+  const statusLens = (
+    <FilterSelect<ScanApprovalStatus>
+      label={t('scans.approval.col.status', 'Status')}
+      value={lens === 'all' ? '' : lens}
+      onChange={(next) => changeLens(next === '' ? 'all' : next)}
+      allLabel={t('scans.approval.filterAll', 'All requests')}
+      options={STATUSES.map((value) => ({
+        value,
+        label: t(STATUS_LABEL[value][0], STATUS_LABEL[value][1]),
+      }))}
+    />
+  )
+
+  const noAccess = !data && accessStateOf(error) === 'no_access'
+  const total = data?.total ?? 0
+  const viewTitle =
+    lens === 'all'
+      ? t('scans.approval.viewName.all', 'All scan requests')
+      : t(`scans.approval.viewName.${lens}`, 'Scan requests')
+  const showAll = (
+    <Button variant="outline" size="sm" onClick={() => changeLens('all')}>
+      {t('scans.approval.showAll', 'Show all requests')}
+    </Button>
+  )
+  const emptyHint = t(
+    'scans.approval.emptyDesc',
+    'Scans the organization’s approval rules catch appear here when someone submits them.'
+  )
+  const emptyState =
+    lens === 'pending' ? (
+      <QueueEmpty
+        kind="nothing-waiting"
+        title={t('scans.approval.emptyTitle', 'No scan waits for approval')}
+        hint={emptyHint}
+        action={showAll}
+      />
+    ) : lens === 'all' ? (
+      <QueueEmpty
+        kind="first-run"
+        title={t('scans.approval.emptyAll', 'No scan approval requests')}
+        hint={emptyHint}
+      />
+    ) : (
+      <QueueEmpty
+        kind="no-match"
+        title={t('scans.approval.emptyStatus', 'No requests with the status {status}.', {
+          status: t(STATUS_LABEL[lens][0], STATUS_LABEL[lens][1]),
+        })}
+        action={showAll}
+      />
+    )
 
   return (
-    <div className="mt-5 space-y-4">
-      <div className="flex gap-2" role="group" aria-label={t('scans.approval.filter', 'Filter')}>
-        <Button
-          size="sm"
-          variant={filter === 'pending' ? 'default' : 'outline'}
-          aria-pressed={filter === 'pending'}
-          onClick={() => setFilter('pending')}
+    <>
+      <PageStack>
+        <ListTitleRow
+          title={viewTitle}
+          count={
+            <ListCount
+              total={total}
+              loading={(isLoading && !data) || noAccess}
+              label={t(
+                'scans.approval.total',
+                '{count, plural, one {# request} other {# requests}}',
+                { count: total }
+              )}
+            />
+          }
         >
-          {t('scans.approval.filterPending', 'Awaiting approval')}
-        </Button>
-        <Button
-          size="sm"
-          variant={filter === 'all' ? 'default' : 'outline'}
-          aria-pressed={filter === 'all'}
-          onClick={() => setFilter('all')}
-        >
-          {t('scans.approval.filterAll', 'All requests')}
-        </Button>
-      </div>
-
-      {error ? (
-        <ErrorState
-          title={t('scans.approval.errorTitle', 'scan approvals')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      ) : isLoading ? (
-        <Skeleton className="h-48 w-full" />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={CheckCheck}
-          title={t('scans.approval.emptyTitle', 'No scan waits for approval')}
-          description={t(
-            'scans.approval.emptyDesc',
-            'Scans the organization’s approval rules catch appear here when someone submits them.'
-          )}
-        />
-      ) : (
-        <>
-          <ul className="divide-y rounded-md border" data-testid="scan-approvals">
-            {items.map((req) => {
-              const expanded = !!open[req.id]
-              const mine = req.requested_by?.id === me
-              const pending = req.status === 'pending'
-              return (
-                <li key={req.id}>
-                  <div className="flex flex-wrap items-center gap-3 p-3">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-expanded={expanded}
-                      aria-label={t('scans.approval.toggleDetails', 'Show details')}
-                      onClick={() => setOpen((o) => ({ ...o, [req.id]: !expanded }))}
-                    >
-                      {expanded ? (
-                        <ChevronDown className="size-4" />
-                      ) : (
-                        <ChevronRight className="size-4" />
-                      )}
-                    </Button>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/scans/${req.scan_id}`}
-                          className="font-medium hover:underline"
-                        >
-                          {req.scan_name || req.scan_id}
-                        </Link>
-                        <StatusBadge status={req.status} />
-                        {req.emergency && (
-                          <Badge variant="destructive">
-                            {t('scans.approval.emergency', 'Emergency run')}
-                          </Badge>
+          <RefreshButton
+            onClick={() => void mutate()}
+            loading={isValidating}
+            label={t('scans.approval.refresh', 'Refresh')}
+          />
+        </ListTitleRow>
+        {noAccess ? (
+          <NoAccessState
+            title={t('scans.approval.errorTitle', 'scan approvals')}
+            permission={Permission.ScansRead}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={data?.data ?? []}
+            caption={viewTitle}
+            isLoading={isLoading && !data}
+            isRefreshing={isValidating && !!data}
+            refreshingLabel={t('scans.approval.refreshing', 'Refreshing requests')}
+            error={data ? undefined : error}
+            onRetry={() => void mutate()}
+            errorTitle={t('scans.approval.errorTitle', 'scan approvals')}
+            manualPagination
+            showSearch={false}
+            pageCount={data ? Math.max(1, Math.ceil(total / list.perPage)) : 1}
+            rowCount={total}
+            pagination={list.pagination}
+            onPaginationChange={list.setPagination}
+            paginationNoun={t('scans.approval.paginationNoun', 'requests')}
+            getRowId={(r) => r.id}
+            pinActions
+            toolbarStart={statusLens}
+            emptyState={emptyState}
+            mobileRow={(req) => (
+              <QueueCard
+                data-testid="scan-approval-card"
+                title={
+                  <Link
+                    href={`/scans/${encodeURIComponent(req.scan_id)}`}
+                    className="font-medium hover:underline"
+                  >
+                    {scanName(req)}
+                  </Link>
+                }
+                marks={
+                  <>
+                    {showStatus && <StatusBadge status={req.status} />}
+                    <RunMarks req={req} />
+                  </>
+                }
+                meta={
+                  <>
+                    <span>
+                      {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
+                        name:
+                          req.requested_by?.id === me
+                            ? t('scans.approval.you', 'You')
+                            : (req.requested_by?.name ?? '—'),
+                        when: formatRelativeTime(req.requested_at, locale),
+                      })}
+                    </span>
+                    {req.status === 'pending' && (
+                      <span>
+                        {decideByState(req.expires_at) !== 'overdue' && (
+                          <>{t('scans.approval.col.decideBy', 'Decide by')} </>
                         )}
-                        {req.definition.intensity && (
-                          <Badge variant="outline">{req.definition.intensity}</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
-                          name: req.requested_by?.name ?? '—',
-                          when: formatRelative(req.requested_at),
-                        })}
-                        {', '}
-                        {(req.evaluation.matched ?? []).map((r) => r.name).join(', ')}
-                      </p>
-                      {pending && (
-                        <p className="text-xs text-muted-foreground">
-                          {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
-                            count: req.remaining,
-                            who: approversText(t, req.evaluation),
-                          })}
-                        </p>
-                      )}
-                    </div>
-                    {pending && (
-                      <div className="flex flex-wrap gap-2">
-                        {req.can_approve && (
-                          <>
-                            <Button size="sm" onClick={() => setAction({ kind: 'approve', req })}>
-                              {t('scans.approval.approve', 'Approve')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setAction({ kind: 'reject', req })}
-                            >
-                              {t('scans.approval.reject', 'Reject')}
-                            </Button>
-                          </>
-                        )}
-                        {req.self_approval_available && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAction({ kind: 'self', req })}
-                          >
-                            <ShieldCheck className="me-1 size-4" />
-                            {t('scans.approval.selfApprove', 'Approve my own scan')}
-                          </Button>
-                        )}
-                        {mine && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                void run(
-                                  () => remindScanApprovers(req.id),
-                                  t('scans.approval.remindedToast', 'Approvers reminded')
-                                )
-                              }
-                            >
-                              {t('scans.approval.remind', 'Remind')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                void run(
-                                  () => cancelScanRequest(req.id),
-                                  t('scans.approval.canceledToast', 'Request withdrawn')
-                                )
-                              }
-                            >
-                              {t('scans.approval.withdraw', 'Withdraw')}
-                            </Button>
-                          </>
-                        )}
-                      </div>
+                        <QueueDecideBy value={req.expires_at} className="text-xs" />
+                      </span>
                     )}
-                  </div>
-                  {expanded && <RequestDetails req={req} />}
-                </li>
-              )
-            })}
-          </ul>
-          {items.length < (data?.total ?? 0) && (
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-sm text-muted-foreground" data-testid="scan-approvals-count">
-                {t('scanApprovals.showing', 'Showing {shown} of {total}', {
-                  shown: items.length,
-                  total: data?.total ?? 0,
-                })}
-              </p>
-              <Button variant="outline" size="sm" onClick={loadMore} disabled={isLoadingMore}>
-                {isLoadingMore
-                  ? t('scanApprovals.loadingMore', 'Loading')
-                  : t('scanApprovals.loadMore', 'Load more')}
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+                  </>
+                }
+                reason={
+                  <span className="text-xs text-muted-foreground">
+                    {ruleNames(req)}
+                    {req.status === 'pending' && (
+                      <>
+                        {ruleNames(req) ? '. ' : ''}
+                        {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
+                          count: req.remaining,
+                          who: approversText(t, req.evaluation),
+                        })}
+                      </>
+                    )}
+                  </span>
+                }
+                actions={actionsCell(req, 'card')}
+              />
+            )}
+          />
+        )}
+      </PageStack>
+      {announcer.region}
+
+      <Dialog open={!!details} onOpenChange={(o) => !o && setDetails(null)}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>{details ? scanName(details) : ''}</DialogTitle>
+            <DialogDescription>
+              {details && (
+                <>
+                  <StatusBadge status={details.status} />{' '}
+                  {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
+                    name: details.requested_by?.name ?? '—',
+                    when: details ? formatRelativeTime(details.requested_at, locale) : '',
+                  })}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>{details && <RequestDetails req={details} />}</DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetails(null)}>
+              {t('scans.approval.close', 'Close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!withdraw}
+        onOpenChange={(o) => !busy && !o && setWithdraw(null)}
+        title={t('scans.approval.withdrawTitle', 'Withdraw this request?')}
+        desc={t(
+          'scans.approval.withdrawDesc',
+          'The scan does not run. To run it later, submit it for approval again.'
+        )}
+        cancelBtnText={t('scans.approval.keepRequest', 'Keep request')}
+        confirmText={t('scans.approval.withdraw', 'Withdraw')}
+        destructive
+        isLoading={busy}
+        handleConfirm={() => {
+          const req = withdraw
+          if (!req) return
+          void run(
+            () => cancelScanRequest(req.id),
+            t('scans.approval.canceledToast', 'Request withdrawn')
+          )
+        }}
+      />
 
       <StepUpDialog
         open={action?.kind === 'self'}
@@ -426,7 +748,7 @@ export function ScanApprovalsInbox() {
                 ? t('scans.approval.rejectTitle', 'Reject this scan?')
                 : t('scans.approval.approveTitle', 'Approve this scan?')}
             </DialogTitle>
-            <DialogDescription>{action?.req.scan_name ?? ''}</DialogDescription>
+            <DialogDescription>{action ? scanName(action.req) : ''}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
             <div className="space-y-1">
@@ -458,6 +780,6 @@ export function ScanApprovalsInbox() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
