@@ -93,6 +93,7 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	cfg := &cirun.TrustConfig{TenantID: tenantID, Name: in.Config.Name, Provider: cirun.Provider(in.Config.Provider),
 		Issuer: in.Config.Issuer, Audience: in.Config.Audience, DefaultBranch: in.Config.DefaultBranch,
 		Rules: in.Config.Rules, Enabled: true}
+	applySigningKeys(cfg, in.Config, s.now().UTC())
 	if strings.TrimSpace(cfg.Name) == "" {
 		cfg.Name = "preview"
 	}
@@ -108,8 +109,16 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	if s.verifier == nil {
 		return nil, errors.New("no token verifier")
 	}
+	keys, err := cfg.PastedKeys()
+	if err != nil {
+		return nil, errPreviewWrap(err)
+	}
 	tok, err := s.verifier.VerifyWorkloadToken(ctx, in.IDToken, oidc.WorkloadExpectations{Issuer: cfg.Issuer,
-		Audience: cfg.Audience, JTIOptional: cirun.JTIOptional(cfg.Provider), IgnoreTimes: true})
+		Audience: cfg.Audience, JTIOptional: cirun.JTIOptional(cfg.Provider), IgnoreTimes: true, Keys: keys})
+	if errors.Is(err, oidc.ErrPastedKeyUnknown) {
+		out.VerifyError = UnknownKeyMessage
+		return out, nil
+	}
 	if err != nil {
 		out.VerifyError = previewError(err)
 		return out, nil
