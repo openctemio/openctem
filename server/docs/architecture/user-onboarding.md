@@ -593,12 +593,12 @@ after that the console value wins.
   its owner for a second factor, so the person enrols at that sign-in). A
   social sign-in to an account with no password makes the organization only
   while the platform two-factor floor is `none` (an unreadable floor counts as
-  applying): a social session cannot enrol a factor, so an owner made under a
+  applying): a social session cannot enroll a factor, so an owner made under a
   floor could never open the organization. Otherwise the mark stays pending,
   the person keeps the normal "create your organization" step, and the
   password sign-in makes it once they have a password and a factor. The guard
-  goes away when a social-session owner can enrol (`SocialSignInMayCreate`).
-  A mark older than 30 days is no longer honoured. Google
+  goes away when a social-session owner can enroll (`SocialSignInMayCreate`).
+  A mark older than 30 days is no longer honored. Google
   and Microsoft addresses count as verified; a GitHub address only when GitHub
   marks it verified. `signup.Admit` with the intent `personal_organization`
   decides again at that moment: switch on and self-service in force, verified,

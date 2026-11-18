@@ -37,7 +37,7 @@ const (
 	PersonalOrgSkipped PersonalOrgStatus = "skipped"
 )
 
-// PersonalOrgMarkLifetime is how long a pending mark is honoured, counted
+// PersonalOrgMarkLifetime is how long a pending mark is honored, counted
 // from the sign-up. A person who never signed in again for this long (or who
 // joined an organization and was removed from it months later) keeps the
 // normal "create your organization" step instead of getting one by surprise.

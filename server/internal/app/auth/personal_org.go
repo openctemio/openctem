@@ -85,7 +85,7 @@ func (p *PersonalOrganizations) SetOwnerMFAApplies(f func(ctx context.Context) (
 // personal organization now.
 //
 // A social session counts as federated, so the platform 2FA floor refuses it
-// a tenant token whether or not the person enrolled, and it cannot enrol
+// a tenant token whether or not the person enrolled, and it cannot enroll
 // (the challenge needs a password). An owner made here with a floor that
 // covers owners would be locked out of the organization it owns. So the
 // social path makes it only for a password account (its password sign-in
@@ -95,7 +95,7 @@ func (p *PersonalOrganizations) SetOwnerMFAApplies(f func(ctx context.Context) (
 // it. An unreadable floor counts as applying (fail closed).
 //
 // REMOVE this guard when a person who signed in through a social provider can
-// enrol 2FA (for example set a password and enrol from the account space)
+// enroll 2FA (for example set a password and enroll from the account space)
 // and the floor accepts that enrolment.
 func (p *PersonalOrganizations) SocialSignInMayCreate(ctx context.Context, u *userdom.User) bool {
 	if p == nil {
