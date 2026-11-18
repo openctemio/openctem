@@ -22,7 +22,7 @@ function sources(dir: string): string[] {
 
 describe('MetricStrip listFirst', () => {
   it('orders the strip after the list below the md breakpoint', () => {
-    const { container } = render(<MetricStrip items={[{ label: 'Runs', value: 3 }]} listFirst />)
+    const { container } = render(<MetricStrip items={[{ key: 'runs', label: 'Runs', value: 3 }]} listFirst />)
     expect(container.querySelector('[data-slot="metric-strip"]')).toHaveClass('max-md:order-last')
   })
 
@@ -34,7 +34,7 @@ describe('MetricStrip listFirst', () => {
       })
       .flatMap((file) => {
         const s = readFileSync(file, 'utf8')
-        const tags = s.match(/<MetricStrip\b[^>]*?\/>/gs) ?? []
+        const tags = s.match(/<MetricStrip\b[^>]*?\/>/g) ?? []
         return tags
           .filter((tag) => !/\blistFirst\b|max-md:hidden/.test(tag))
           .map(() => relative(SRC, file))
