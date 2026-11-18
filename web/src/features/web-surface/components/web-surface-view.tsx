@@ -169,13 +169,21 @@ export function WebSurfaceView() {
 
   const s = stats.data
   const metrics: MetricStripItem[] = [
-    { key: 'endpoints', label: 'Endpoints', value: num(s?.total), onClick: () => go('endpoints') },
+    {
+      key: 'endpoints',
+      label: t('attackSurface.originWeb.metric.endpoints', 'Endpoints'),
+      value: num(s?.total),
+      onClick: () => go('endpoints'),
+    },
     {
       key: 'unauth_sensitive',
-      label: 'Sensitive, no auth',
+      label: t('attackSurface.originWeb.metric.unauth', 'Sensitive, no auth'),
       value: num(s?.unauth_sensitive),
       tone: 'danger',
-      hint: 'Sensitive paths answering without authentication',
+      hint: t(
+        'attackSurface.web.metric.unauthHint',
+        'Sensitive paths answering without authentication'
+      ),
       onClick: () => {
         setSensitive('true')
         go('endpoints')
@@ -183,10 +191,10 @@ export function WebSurfaceView() {
     },
     {
       key: 'excluded_untested',
-      label: 'Excluded, untested',
+      label: t('attackSurface.originWeb.metric.untested', 'Excluded, untested'),
       value: num(s?.excluded_untested),
       tone: 'warning',
-      hint: 'Under a scope exclusion: never tested',
+      hint: t('attackSurface.web.metric.untestedHint', 'Under a scope exclusion: never tested'),
       active: excluded === 'true',
       onClick: () => {
         setExcluded(excluded === 'true' ? 'false' : 'true')
@@ -195,10 +203,13 @@ export function WebSurfaceView() {
     },
     {
       key: 'excluded_sensitive',
-      label: 'Sensitive and untested',
+      label: t('attackSurface.web.metric.sensitiveUntested', 'Sensitive and untested'),
       value: num(s?.excluded_sensitive),
       tone: 'danger',
-      hint: 'Sensitive paths behind an exclusion',
+      hint: t(
+        'attackSurface.web.metric.sensitiveUntestedHint',
+        'Sensitive paths behind an exclusion'
+      ),
       onClick: () => {
         setSensitive('true')
         setExcluded('true')
@@ -211,7 +222,7 @@ export function WebSurfaceView() {
     () => [
       {
         id: 'origin',
-        header: 'Origin',
+        header: t('attackSurface.web.col.origin', 'Origin'),
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
@@ -222,13 +233,16 @@ export function WebSurfaceView() {
                 {row.original.origin}
               </Link>
             }
-            secondary={`${num(row.original.active_count)} active of ${num(row.original.endpoint_count)}`}
+            secondary={t('attackSurface.web.col.activeOf', '{active} active of {total}', {
+              active: num(row.original.active_count),
+              total: num(row.original.endpoint_count),
+            })}
           />
         ),
       },
       {
         id: 'new',
-        header: 'New (7 days)',
+        header: t('attackSurface.web.col.new7', 'New (7 days)'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="tabular-nums">{num(row.original.new_last_7_days)}</span>
@@ -236,7 +250,7 @@ export function WebSurfaceView() {
       },
       {
         id: 'unauth',
-        header: 'Sensitive, no auth',
+        header: t('attackSurface.originWeb.metric.unauth', 'Sensitive, no auth'),
         enableSorting: false,
         cell: ({ row }) =>
           num(row.original.unauth_sensitive) > 0 ? (
@@ -249,17 +263,27 @@ export function WebSurfaceView() {
       },
       {
         id: 'gap',
-        header: 'Coverage gap',
+        header: t('attackSurface.web.col.gap', 'Coverage gap'),
         enableSorting: false,
         cell: ({ row }) => {
           const o = row.original
           if (num(o.excluded_untested) === 0)
-            return <span className="text-muted-foreground">None</span>
+            return (
+              <span className="text-muted-foreground">
+                {t('attackSurface.web.col.none', 'None')}
+              </span>
+            )
           return (
             <span className="text-sm">
-              {o.excluded_untested} untested
+              {t('attackSurface.web.col.gapUntested', '{count} untested', {
+                count: o.excluded_untested ?? 0,
+              })}
               {num(o.excluded_sensitive) > 0 && (
-                <span className="text-warning"> ({o.excluded_sensitive} sensitive)</span>
+                <span className="text-warning">
+                  {` ${t('attackSurface.web.col.gapSensitive', '({count} sensitive)', {
+                    count: o.excluded_sensitive ?? 0,
+                  })}`}
+                </span>
               )}
             </span>
           )
@@ -267,7 +291,7 @@ export function WebSurfaceView() {
       },
       {
         id: 'last_seen',
-        header: 'Last seen',
+        header: t('attackSurface.web.col.lastSeen', 'Last seen'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
       },
@@ -281,12 +305,12 @@ export function WebSurfaceView() {
             size="sm"
             onClick={() => go('endpoints', { origin: row.original.origin_asset_id ?? '' })}
           >
-            Endpoints
+            {t('attackSurface.web.view.endpoints', 'Endpoints')}
           </Button>
         ),
       },
     ],
-    [go]
+    [go, t]
   )
 
   const endpointColumns = useEndpointColumns()
@@ -295,7 +319,7 @@ export function WebSurfaceView() {
     () => [
       {
         id: 'pattern',
-        header: 'Path',
+        header: t('attackSurface.originWeb.csv.path', 'Path'),
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
@@ -308,13 +332,13 @@ export function WebSurfaceView() {
       },
       {
         id: 'origins',
-        header: 'Origins',
+        header: t('attackSurface.web.col.origins', 'Origins'),
         enableSorting: false,
         cell: ({ row }) => <span className="tabular-nums">{num(row.original.origin_count)}</span>,
       },
       {
         id: 'reachable',
-        header: 'Answers 2xx',
+        header: t('attackSurface.web.col.reachable', 'Answers 2xx'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="tabular-nums">{num(row.original.reachable_count)}</span>
@@ -322,13 +346,13 @@ export function WebSurfaceView() {
       },
       {
         id: 'unauth',
-        header: 'No auth',
+        header: t('attackSurface.web.auth.none', 'No auth'),
         enableSorting: false,
         cell: ({ row }) => <span className="tabular-nums">{num(row.original.unauth_count)}</span>,
       },
       {
         id: 'untested',
-        header: 'Untested',
+        header: t('attackSurface.web.col.untested', 'Untested'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="tabular-nums">{num(row.original.excluded_untested)}</span>
@@ -336,7 +360,7 @@ export function WebSurfaceView() {
       },
       {
         id: 'catalog',
-        header: 'Sensitive',
+        header: t('attackSurface.web.col.sensitive', 'Sensitive'),
         enableSorting: false,
         cell: ({ row }) => <CatalogBadge entry={row.original.catalog} />,
       },
@@ -350,12 +374,12 @@ export function WebSurfaceView() {
             size="sm"
             onClick={() => go('endpoints', { pathHash: row.original.path_hash ?? '', origin: '' })}
           >
-            Where
+            {t('attackSurface.web.col.where', 'Where')}
           </Button>
         ),
       },
     ],
-    [go]
+    [go, t]
   )
 
   const eventColumns = useEventColumns(catalogByKey)
@@ -373,8 +397,11 @@ export function WebSurfaceView() {
           />
           <EmptyState
             icon={ShieldX}
-            title="Access denied"
-            description="You don't have permission to view assets. Ask your administrator for access."
+            title={t('attackSurface.web.denied.title', 'Access denied')}
+            description={t(
+              'attackSurface.web.denied.description',
+              "You don't have permission to view assets. Ask your administrator for access."
+            )}
           />
         </PageStack>
       </Main>
@@ -408,7 +435,11 @@ export function WebSurfaceView() {
   const loadingRows = active.isLoading && active.rows.length === 0
   const errorState =
     active.error && !active.isLoading ? (
-      <ErrorState title="web surface" error={active.error} onRetry={() => active.mutate()} />
+      <ErrorState
+        title={t('attackSurface.originWeb.errorTitle', 'web surface')}
+        error={active.error}
+        onRetry={() => active.mutate()}
+      />
     ) : undefined
 
   const search =
@@ -429,11 +460,16 @@ export function WebSurfaceView() {
       {tab === 'endpoints' && (
         <>
           <Select value={method || 'all'} onValueChange={(v) => setMethod(v === 'all' ? '' : v)}>
-            <SelectTrigger className="w-[120px]" aria-label="Method">
+            <SelectTrigger
+              className="w-[120px]"
+              aria-label={t('attackSurface.originWeb.csv.method', 'Method')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Any method</SelectItem>
+              <SelectItem value="all">
+                {t('attackSurface.web.filter.anyMethod', 'Any method')}
+              </SelectItem>
               {METHODS.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
@@ -442,11 +478,16 @@ export function WebSurfaceView() {
             </SelectContent>
           </Select>
           <Select value={kind || 'all'} onValueChange={(v) => setKind(v === 'all' ? '' : v)}>
-            <SelectTrigger className="w-[120px]" aria-label="Kind">
+            <SelectTrigger
+              className="w-[120px]"
+              aria-label={t('attackSurface.originWeb.csv.kind', 'Kind')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Any kind</SelectItem>
+              <SelectItem value="all">
+                {t('attackSurface.web.filter.anyKind', 'Any kind')}
+              </SelectItem>
               {KINDS.map((k) => (
                 <SelectItem key={k} value={k} className="capitalize">
                   {k}
@@ -461,11 +502,16 @@ export function WebSurfaceView() {
           value={eventKind || 'all'}
           onValueChange={(v) => setEventKind(v === 'all' ? '' : v)}
         >
-          <SelectTrigger className="w-[160px]" aria-label="Change">
+          <SelectTrigger
+            className="w-[160px]"
+            aria-label={t('attackSurface.originWeb.changes.kind', 'Change')}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any change</SelectItem>
+            <SelectItem value="all">
+              {t('attackSurface.web.filter.anyChange', 'Any change')}
+            </SelectItem>
             {Object.entries(EVENT_KINDS).map(([k, label]) => (
               <SelectItem key={k} value={k}>
                 {t(`attackSurface.web.event.${k}`, label)}
@@ -484,7 +530,7 @@ export function WebSurfaceView() {
           }}
         />
         <Label htmlFor="sensitive-only" className="cursor-pointer text-sm font-normal">
-          Sensitive only
+          {t('attackSurface.web.filter.sensitiveOnly', 'Sensitive only')}
         </Label>
       </div>
       {(origin || pathHash) && (
@@ -497,7 +543,9 @@ export function WebSurfaceView() {
             paging.reset()
           }}
         >
-          Clear {origin ? 'origin' : 'path'} filter
+          {origin
+            ? t('attackSurface.web.filter.clearOrigin', 'Clear origin filter')
+            : t('attackSurface.web.filter.clearPath', 'Clear path filter')}
         </Button>
       )}
     </div>
@@ -532,8 +580,11 @@ export function WebSurfaceView() {
               pagination={paging.pagination}
               onPaginationChange={paging.setPagination}
               pageSizeOptions={PAGE_SIZES}
-              emptyMessage="No web origins yet"
-              emptyDescription="Crawl a web service (a workflow with a web crawl step) to record what it serves."
+              emptyMessage={t('attackSurface.web.empty.origins', 'No web origins yet')}
+              emptyDescription={t(
+                'attackSurface.web.empty.originsHint',
+                'Crawl a web service (a workflow with a web crawl step) to record what it serves.'
+              )}
             />
           ) : tab === 'endpoints' ? (
             <DataTable
@@ -552,8 +603,11 @@ export function WebSurfaceView() {
               pagination={paging.pagination}
               onPaginationChange={paging.setPagination}
               pageSizeOptions={PAGE_SIZES}
-              emptyMessage="No endpoints match"
-              emptyDescription="Clear a filter, or crawl the origin again."
+              emptyMessage={t('attackSurface.web.empty.endpoints', 'No endpoints match')}
+              emptyDescription={t(
+                'attackSurface.web.empty.endpointsHint',
+                'Clear a filter, or crawl the origin again.'
+              )}
             />
           ) : tab === 'patterns' ? (
             <DataTable
@@ -571,8 +625,11 @@ export function WebSurfaceView() {
               pagination={paging.pagination}
               onPaginationChange={paging.setPagination}
               pageSizeOptions={PAGE_SIZES}
-              emptyMessage="No path patterns"
-              emptyDescription="Paths appear here once an origin is crawled; the same path on many origins is listed once."
+              emptyMessage={t('attackSurface.web.empty.patterns', 'No path patterns')}
+              emptyDescription={t(
+                'attackSurface.web.empty.patternsHint',
+                'Paths appear here once an origin is crawled; the same path on many origins is listed once.'
+              )}
             />
           ) : (
             <DataTable
@@ -591,8 +648,11 @@ export function WebSurfaceView() {
               pagination={paging.pagination}
               onPaginationChange={paging.setPagination}
               pageSizeOptions={PAGE_SIZES}
-              emptyMessage="No changes"
-              emptyDescription="New, gone and changed endpoints appear here after each crawl."
+              emptyMessage={t('attackSurface.web.noChanges', 'No changes')}
+              emptyDescription={t(
+                'attackSurface.web.noChangesHint',
+                'New, gone and changed endpoints appear here after each crawl.'
+              )}
             />
           )}
         </div>

@@ -386,11 +386,18 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
 /**
  * Display label for an audit action, the one used wherever an action is
  * shown (audit log, account activity, sensor activity). A sensor event
- * written before the sensor rename reads the same as a new one.
+ * written before the sensor rename reads the same as a new one. Pass `t` where
+ * the label is shown, so it reads in the reader's language.
  */
-export function getActionLabel(action: AuditAction | string): string {
+export function getActionLabel(
+  action: AuditAction | string,
+  t?: (key: string, fallback: string) => string
+): string {
   const canonical = canonicalAuditAction(action)
-  return ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
+  const english = ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
+  // Every known action has an `auditLog.action.<action>` key in en and vi;
+  // an action the console does not know yet reads in English.
+  return t ? t(`auditLog.action.${canonical}`, english) : english
 }
 
 /**

@@ -127,7 +127,7 @@ export default function ActivityPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium">{formatAction(activity.action)}</p>
+                        <p className="font-medium">{formatAction(activity.action, t)}</p>
                         {result && (
                           <Badge className={`${result.bgColor} ${result.color} border-0 text-xs`}>
                             {t(`auditLog.result.${activity.result}`, result.label)}

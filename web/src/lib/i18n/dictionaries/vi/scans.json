@@ -2473,7 +2473,7 @@
   "scans.targetGroups.urls": "URL",
   "scans.targetGroups.wildcards": "Ký tự đại diện",
   "scans.targetList.all": "Tất cả",
-  "scans.targetList.attention": "Cần xử lý",
+  "scans.targetList.attention": "Cần chú ý",
   "scans.targetList.checking": "Đang kiểm tra phạm vi…",
   "scans.targetList.inScopeVia": "Trong phạm vi, theo {rule}",
   "scans.targetList.label": "Mục tiêu đã nhập",

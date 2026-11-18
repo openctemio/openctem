@@ -334,7 +334,7 @@ export function LoginForm({
       console.error(`Social login error (${provider}):`, error)
       setFailure(
         t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }
@@ -356,7 +356,7 @@ export function LoginForm({
       console.error(`SSO login error (${provider}):`, error)
       setFailure(
         t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }
