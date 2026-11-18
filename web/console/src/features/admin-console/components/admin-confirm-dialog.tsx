@@ -58,6 +58,12 @@ export interface AdminConfirmDialogProps {
   title: string
   description: ReactNode
   confirmLabel: string
+  /**
+   * An example reason for this very action (translated), e.g. "Left the
+   * company, ticket 2231" for deactivating an administrator. Every action has
+   * its own: one generic example fits none of them.
+   */
+  reasonPlaceholder: string
   /** Red confirm button for an action that takes something away. */
   destructive?: boolean
   /** Ask for a fresh authenticator code too (the API demands step-up). */
@@ -87,6 +93,7 @@ export function AdminConfirmDialog({
   title,
   description,
   confirmLabel,
+  reasonPlaceholder,
   destructive,
   requireCode,
   children,
@@ -173,10 +180,7 @@ export function AdminConfirmDialog({
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={REASON_MAX}
                 rows={3}
-                placeholder={t(
-                  'admin.confirm.reasonPlaceholder',
-                  'Ticket or request and why, e.g. "Support case 4411: owner left the company"'
-                )}
+                placeholder={reasonPlaceholder}
                 aria-describedby={`${reasonId}-hint`}
                 required
               />

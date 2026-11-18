@@ -14,6 +14,7 @@
  */
 
 import { useSettleSignal } from '@/features/shared/components/settle-group'
+import { QueueDecisionActions } from '@/features/shared/components/queue'
 import {
   AwaitingApprovalBand,
   AwaitingApprovalRequest,
@@ -28,7 +29,6 @@ import { formatRelative } from '@/lib/format-date'
 import { Permission } from '@/lib/permissions'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
-import { QueueDecisionActions } from '@/features/shared/components/queue'
 import { useApprovalDecision } from '../approval-decision'
 import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
@@ -126,21 +126,22 @@ function PendingRequest({
       }
       actions={
         mayDecide ? (
-          // Named with the status it asks for ("Approve False positive").
+          // The queue's decision controls (outline, named "Approve {request}"):
+          // the page header keeps the one filled main action.
           <QueueDecisionActions
-            name={target}
+            name={t('findings.approvalBand.requestName', '{status} request', { status: target })}
             itemId={approval.id}
+            layout="card"
             canDecide
             busy={decision.busyId === approval.id}
             onApprove={() => decision.openApprove(approval)}
             onReject={() => decision.openReject(approval)}
-            approveLabel={t('myWork.review.approve', 'Approve')}
-            rejectLabel={t('myWork.review.reject', 'Reject')}
+            approveLabel={t('findings.approvals.action.approve', 'Approve')}
+            rejectLabel={t('findings.approvals.action.reject', 'Reject')}
             stepUpHint={t(
               'myWork.review.stepUpHint',
               'You confirm your sign-in before the approval is saved.'
             )}
-            layout="card"
           />
         ) : undefined
       }

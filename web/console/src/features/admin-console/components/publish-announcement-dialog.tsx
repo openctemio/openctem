@@ -65,6 +65,10 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
         {t('admin.ann.publish', 'Publish announcement')}
       </Button>
       <AdminConfirmDialog
+        reasonPlaceholder={t(
+          'admin.ann.reasonPublish',
+          'Planned maintenance on Saturday night, change 2231'
+        )}
         open={open}
         onOpenChange={setOpen}
         title={t('admin.ann.publishTitle', 'Publish an announcement')}

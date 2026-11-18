@@ -103,6 +103,13 @@ describe('Sessions page', () => {
     await renderPage('super_admin')
 
     expect(screen.getAllByText('This session').length).toBeGreaterThan(0)
+    // The mark of the own session is plain text beside the name, not a badge
+    // that squeezes the name column; the address is the part that gives way.
+    const mark = screen.getAllByText('This session')[0]
+    expect(mark.closest('[data-slot="badge"]')).toBeNull()
+    const nameCell = mark.parentElement!
+    expect(nameCell.firstElementChild).toHaveClass('shrink-0', 'max-w-[60%]')
+    expect(nameCell.lastElementChild).toHaveClass('min-w-0', 'truncate')
     expect(screen.getAllByText('Break-glass').length).toBeGreaterThan(0)
     // The list says its count once and names its table.
     expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)

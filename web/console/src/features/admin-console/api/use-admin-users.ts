@@ -36,27 +36,54 @@ export function provisionAdministrator(input: {
   })
 }
 
+/**
+ * The administrator's reason and fresh authenticator code for a roster
+ * change. The code rides in the step-up header (the route confirms it once);
+ * the reason goes in the body.
+ */
+export interface AdminRosterProof {
+  reason: string
+  totp_code?: string
+}
+
 export function updateAdminUser(
   id: string,
-  input: { role?: AdminRole; is_active?: boolean; is_break_glass?: boolean }
+  input: { role?: AdminRole; is_active?: boolean; is_break_glass?: boolean },
+  proof: AdminRosterProof
 ) {
-  return adminFetch<AdminUserRecord>(`/users/${id}`, { method: 'PATCH', body: input })
+  return adminFetch<AdminUserRecord>(`/users/${id}`, {
+    method: 'PATCH',
+    body: { ...input, reason: proof.reason },
+    stepUpCode: proof.totp_code || undefined,
+  })
 }
 
 /** Remove another admin's two-step verification and end their console sessions. */
-export function resetAdminCredentials(id: string) {
-  return adminFetch<void>(`/users/${id}/reset-credentials`, { method: 'POST' })
+export function resetAdminCredentials(id: string, proof: AdminRosterProof) {
+  return adminFetch<void>(`/users/${id}/reset-credentials`, {
+    method: 'POST',
+    body: { reason: proof.reason },
+    stepUpCode: proof.totp_code || undefined,
+  })
 }
 
 /**
  * Records a break-glass account's last sign-in as its periodic test. Another
  * super admin confirms it; an account cannot vouch for its own use.
  */
-export function confirmBreakGlassTest(id: string) {
-  return adminFetch<AdminUserRecord>(`/users/${id}/break-glass-test`, { method: 'POST' })
+export function confirmBreakGlassTest(id: string, proof: AdminRosterProof) {
+  return adminFetch<AdminUserRecord>(`/users/${id}/break-glass-test`, {
+    method: 'POST',
+    body: { reason: proof.reason },
+    stepUpCode: proof.totp_code || undefined,
+  })
 }
 
 /** Removes an administrator's identity-provider binding (rebound on next IdP sign-in). */
-export function unbindAdminIdP(id: string) {
-  return adminFetch<void>(`/users/${id}/idp-binding`, { method: 'DELETE' })
+export function unbindAdminIdP(id: string, proof: AdminRosterProof) {
+  return adminFetch<void>(`/users/${id}/idp-binding`, {
+    method: 'DELETE',
+    body: { reason: proof.reason },
+    stepUpCode: proof.totp_code || undefined,
+  })
 }

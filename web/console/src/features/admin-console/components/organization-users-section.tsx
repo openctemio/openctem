@@ -229,6 +229,10 @@ export function OrganizationUsersSection({
       )}
       {linkFor && (
         <AdminConfirmDialog
+          reasonPlaceholder={t(
+            'admin.org.users.reasonSetupLink',
+            'The first link expired before they opened it, ticket 2231'
+          )}
           open
           onOpenChange={(next) => !next && setLinkFor(null)}
           title={t('admin.org.users.setupLink', 'New setup link')}
