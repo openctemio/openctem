@@ -73,3 +73,38 @@
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
+/*
+ * Fallback faces sized to Inter (in --font-sans right after 'Inter'). With
+ * font-display: swap a page that paints before Inter arrives draws these
+ * first; size-adjust gives a local Arial (or its metric twin Liberation Sans)
+ * Inter's average advance and the overrides give it Inter's ascent and
+ * descent, so the swap changes the glyphs and moves (almost) nothing. Arial
+ * has no medium weight: 100-550 use its regular face, 551-900 its bold.
+ * Measured in Chromium from the files above against Liberation Sans, on
+ * English and Vietnamese console text (2026-11-17): regular 105.8% (400) to
+ * 106.9% (500), bold 100.4%; Inter ascent 96.9%, descent 24.1% of the size.
+ */
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 100 550;
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('LiberationSans');
+  size-adjust: 106.3%;
+  ascent-override: 91.2%;
+  descent-override: 22.7%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 551 900;
+  src:
+    local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'),
+    local('LiberationSans-Bold');
+  size-adjust: 100.4%;
+  ascent-override: 96.5%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
