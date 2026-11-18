@@ -31,7 +31,34 @@ its snippet. The fields:
   platform fetches the issuer's keys over HTTPS through the outbound-request
   guard; an issuer on a private address needs its subnet in
   `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API. When the issuer cannot be
-  reached, keys fetched earlier keep verifying for at most 6 hours.
+  reached, keys fetched earlier keep verifying for at most 6 hours. When the
+  platform cannot or must not reach the provider, paste its keys instead
+  (**Signing keys**, below).
+- **Signing keys**: **Fetch from the provider** (the default: the platform
+  fetches the issuer's discovery document and keys, so it needs to reach the
+  provider) or **Use keys I paste**. With pasted keys, job tokens are verified
+  with those keys only and the platform never contacts the provider, even
+  when it could. Paste the provider's whole key document (a JWKS,
+  `{"keys":[...]}`, all keys):
+  - GitLab: `https://<your GitLab>/oauth/discovery/keys`;
+  - GitHub Actions: `<issuer>/.well-known/jwks`
+    (`https://token.actions.githubusercontent.com/.well-known/jwks` for github.com);
+  - other providers: the `jwks_uri` in `<issuer>/.well-known/openid-configuration`.
+
+  The document is public key material and is shown back on the trust. It is
+  checked when saved: at most 64 KiB and 10 keys, each an RSA key of at least
+  2048 bits (RS256) or an EC P-256 key (ES256), with a unique `kid`, `use`
+  absent or `sig`. A key carrying private parameters (`d`, `p`, `q`, `dp`,
+  `dq`, `qi`, `k`) is refused. The trust card lists the key ids, their
+  algorithm, when they were pasted and the last key that verified a token.
+  **Rotation**: providers rotate their keys. A token signed with a key that is
+  not pasted is refused with `CI_TOKEN_UNKNOWN_KEY` (never retried), the audit
+  log records `ci_run.token_refused` (`unknown_key`, with the token's and the
+  pasted key ids) and the organization's administrators get an alert (CI
+  token refusals channel, e-mail), at most once an hour per trust. Paste the
+  provider's current document again; pasting all its keys, including the next
+  one it publishes ahead of a rotation, avoids the gap. The change is audited
+  with the old and new key ids.
 - **Check a sample token** (in the dialog): paste a token from a job of that
   pipeline. The platform verifies its signature against the issuer's keys and
   shows its claims, the repository, ref, commit and run it reads from them,
@@ -74,6 +101,16 @@ The same through the API:
 curl -X POST "$API/api/v1/ci/trust-configs" -H "Authorization: Bearer $SESSION" \
   -H 'Content-Type: application/json' \
   -d '{"name":"acme on GitHub","provider":"github","rules":{"owners":["acme"],"refs":["main","feature/*"]}}'
+```
+
+With pasted keys (a self-managed GitLab the platform does not reach):
+
+```bash
+KEYS=$(curl -s https://gitlab.example.com/oauth/discovery/keys)   # run where GitLab is reachable
+jq -n --arg keys "$KEYS" '{name:"acme on GitLab", provider:"gitlab", issuer:"https://gitlab.example.com",
+  rules:{owners:["acme"]}, key_source:"pasted", signing_keys:$keys}' |
+curl -X POST "$API/api/v1/ci/trust-configs" -H "Authorization: Bearer $SESSION" \
+  -H 'Content-Type: application/json' -d @-
 ```
 
 ## 2. Run the scan in CI
@@ -265,6 +302,8 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 | Symptom | Cause |
 |---|---|
 | `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** under **Settings > Trusted pipelines** lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_UNKNOWN_KEY` | The trust uses pasted signing keys and the token is signed with another key: the provider rotated its keys. Paste its current key document in the trust (**Signing keys**) |
+| `503 CI_ISSUER_UNAVAILABLE` | The trust fetches the provider's keys and the platform cannot reach the provider: allow the address (`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`) or switch the trust to pasted keys |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `CI_TOKEN_PIPELINE_IDENTITY` | The token carries no repository/project id or no usable workflow path |
