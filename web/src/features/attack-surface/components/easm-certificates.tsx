@@ -311,7 +311,7 @@ export function EASMCertificates() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ListTitleRow
         title={t('attackSurface.certificates.viewAll', 'All certificates')}
         count={
