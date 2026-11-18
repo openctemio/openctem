@@ -135,11 +135,7 @@ export function ProfileDropdown() {
     <>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        <DropdownMenuContent
-          className={cn(HEADER_MENU, 'w-64')}
-          align="end"
-          forceMount
-        >
+        <DropdownMenuContent className={cn(HEADER_MENU, 'w-64')} align="end" forceMount>
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col gap-1.5">
               <p className="text-dense truncate font-medium">
