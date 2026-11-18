@@ -13,8 +13,8 @@ import (
 )
 
 // TestAdminAuditChangesOnly_DB: the "changes" view of the administrator audit
-// log leaves out successful reads and write-ahead rows, and keeps writes,
-// sign-ins, refused reads and rows without a request (host commands). The
+// log leaves out successful reads, write-ahead rows and routine successful
+// session events, and keeps writes, refused reads and rows without a request (host commands). The
 // full list still returns every row.
 func TestAdminAuditChangesOnly_DB(t *testing.T) {
 	db := testdb.PrivateDatabase(t, "admin_audit_changes", "../../../migrations")
@@ -35,7 +35,15 @@ func TestAdminAuditChangesOnly_DB(t *testing.T) {
 	write("organization.suspend", "POST", true)
 	write("console.login", "POST", true)
 	write("console.elevated", "POST", true)
+	write("console.step_up", "POST", true)
+	write("console.login_failed", "POST", false)
+	write("console.session_ended", "POST", true)
+	write("console.password_changed", "POST", true)
 	write("organization.view_refused", "GET", false)
+	write("console.webauthn_counter_regressed", "POST", true)
+	write("console.break_glass_sign_in", "POST", true)
+	write("console.recovery_code_used", "POST", true)
+	write("console.logout", "POST", false)
 	write("bootstrap.admin_created", "", true)
 
 	list := func(changes bool) []string {
@@ -53,8 +61,13 @@ func TestAdminAuditChangesOnly_DB(t *testing.T) {
 	}
 
 	got := list(true)
-	want := []string{"bootstrap.admin_created", "console.elevated", "console.login",
-		"organization.suspend", "organization.view_refused"}
+	// A successful console.login is left out; failures, anomalies and a failed
+	// row with a routine action (console.logout, success=false) stay.
+	want := []string{"bootstrap.admin_created", "console.break_glass_sign_in",
+		"console.elevated", "console.login_failed", "console.logout",
+		"console.password_changed", "console.recovery_code_used",
+		"console.webauthn_counter_regressed", "organization.suspend",
+		"organization.view_refused"}
 	if len(got) != len(want) {
 		t.Fatalf("changes view = %v, want %v", got, want)
 	}
@@ -63,7 +76,7 @@ func TestAdminAuditChangesOnly_DB(t *testing.T) {
 			t.Fatalf("changes view = %v, want %v", got, want)
 		}
 	}
-	if all := list(false); len(all) != 8 {
-		t.Fatalf("full list has %d rows, want 8: %v", len(all), all)
+	if all := list(false); len(all) != 16 {
+		t.Fatalf("full list has %d rows, want 16: %v", len(all), all)
 	}
 }

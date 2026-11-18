@@ -92,7 +92,7 @@ function readText(file: File): Promise<string> {
 const NAMED_COMPONENTS: ReadonlySet<string> = new Set(['sensor', 'connector-tenable', 'sdk'])
 
 function dateOnly(iso: string | undefined) {
-  return iso ? formatDate(new Date(iso)) : '-'
+  return iso ? formatDate(new Date(iso)) : ''
 }
 
 interface Props {
@@ -245,25 +245,29 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
             <Field label={t('admin.versionCheck.running', 'Running version')}>
               <span className="font-mono">{status.running}</span>
             </Field>
-            <Field label={t('admin.versionCheck.latest', 'Latest release')}>
-              <span className="font-mono">{status.latest ?? '-'}</span>
-            </Field>
-            <Field label={t('admin.versionCheck.sourceLabel', 'Information from')}>
-              {status.source === 'online'
-                ? t('admin.versionCheck.source.online', 'Daily online check')
-                : status.source === 'import'
-                  ? t('admin.versionCheck.source.import', 'Imported file')
-                  : '-'}
-              {status.applied_at && (
-                <>
-                  {' · '}
-                  <RelativeTime date={status.applied_at} />
-                </>
-              )}
-            </Field>
-            <Field label={t('admin.versionCheck.validUntil', 'Valid until')}>
-              {dateOnly(status.feed_expires_at)}
-            </Field>
+            {status.latest && (
+              <Field label={t('admin.versionCheck.latest', 'Latest release')}>
+                <span className="font-mono">{status.latest}</span>
+              </Field>
+            )}
+            {(status.source === 'online' || status.source === 'import') && (
+              <Field label={t('admin.versionCheck.sourceLabel', 'Information from')}>
+                {status.source === 'online'
+                  ? t('admin.versionCheck.source.online', 'Daily online check')
+                  : t('admin.versionCheck.source.import', 'Imported file')}
+                {status.applied_at && (
+                  <>
+                    {', '}
+                    <RelativeTime date={status.applied_at} />
+                  </>
+                )}
+              </Field>
+            )}
+            {status.feed_expires_at && (
+              <Field label={t('admin.versionCheck.validUntil', 'Valid until')}>
+                {dateOnly(status.feed_expires_at)}
+              </Field>
+            )}
             <Field label={t('admin.versionCheck.onlineCheck', 'Online check')}>
               <span className="flex flex-wrap items-center gap-3">
                 {canImport && !status.locked_by_environment && (
@@ -295,15 +299,19 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
             </Field>
             {status.enabled && status.configured && (
               <>
-                <Field label={t('admin.versionCheck.lastCheck', 'Last check')}>
-                  {status.last_attempt_at ? <RelativeTime date={status.last_attempt_at} /> : '-'}
-                  {status.last_error && (
-                    <span className="block text-destructive">{errorText(status.last_error)}</span>
-                  )}
-                </Field>
-                <Field label={t('admin.versionCheck.nextCheck', 'Next check')}>
-                  {status.next_check_at ? <RelativeTime date={status.next_check_at} /> : '-'}
-                </Field>
+                {(status.last_attempt_at || status.last_error) && (
+                  <Field label={t('admin.versionCheck.lastCheck', 'Last check')}>
+                    {status.last_attempt_at && <RelativeTime date={status.last_attempt_at} />}
+                    {status.last_error && (
+                      <span className="block text-destructive">{errorText(status.last_error)}</span>
+                    )}
+                  </Field>
+                )}
+                {status.next_check_at && (
+                  <Field label={t('admin.versionCheck.nextCheck', 'Next check')}>
+                    <RelativeTime date={status.next_check_at} />
+                  </Field>
+                )}
               </>
             )}
           </dl>

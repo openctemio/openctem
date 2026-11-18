@@ -1,5 +1,11 @@
 'use client'
 
+import {
+  accountStatusLabel,
+  authProviderLabel,
+  memberRoleLabel,
+} from '@console/features/admin-console/lib/value-labels'
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { use } from 'react'
 import Link from '@/components/link'
 import { ChevronLeft } from 'lucide-react'
@@ -76,7 +82,7 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
               <CardContent className="pt-6">
                 <DetailFieldGrid>
                   <DetailField label={t('admin.users.field.signIn', 'Signs in with')}>
-                    <span className="capitalize">{user.auth_provider}</span>
+                    <span>{authProviderLabel(t, user.auth_provider)}</span>
                   </DetailField>
                   <DetailField label={t('admin.users.field.mfa', 'Two-step verification')}>
                     {user.mfa_enabled
@@ -139,13 +145,9 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                             {m.tenant_name}
                           </Link>
                           <div className="flex shrink-0 items-center gap-2">
-                            <Badge variant="secondary" className="capitalize">
-                              {m.role}
-                            </Badge>
+                            <Badge variant="secondary">{memberRoleLabel(t, m.role)}</Badge>
                             {m.status !== 'active' && (
-                              <Badge variant="outline" className="capitalize">
-                                {m.status}
-                              </Badge>
+                              <Badge variant="outline">{accountStatusLabel(t, m.status)}</Badge>
                             )}
                           </div>
                         </li>
@@ -219,9 +221,11 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                         {user.sessions.map((s) => (
                           <tr key={s.id}>
                             <td className="py-2 pe-3 tabular-nums" title={s.user_agent}>
-                              {s.ip_address || '-'}
+                              {s.ip_address || (
+                                <EmptyCell title={t('admin.users.noIp', 'No address recorded')} />
+                              )}
                             </td>
-                            <td className="py-2 pe-3 capitalize">{s.auth_method}</td>
+                            <td className="py-2 pe-3">{authProviderLabel(t, s.auth_method)}</td>
                             <td className="py-2 pe-3">
                               <RelativeTime date={s.created_at} />
                             </td>
