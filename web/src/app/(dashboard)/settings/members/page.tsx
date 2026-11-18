@@ -1621,7 +1621,7 @@ export default function UsersPage() {
                       <>
                         <UserRolesCell userId={m.user_id} />
                         <MemberStatusBadge status={m.status} pendingSetup={m.pending_setup} />
-                        {m.mfa_status ? <MemberMfaBadge status={m.mfa_status} /> : null}
+                        {m.mfa_status ? <MemberMfaBadge status={m.mfa_status} labelled /> : null}
                         <MemberBadges
                           member={m}
                           ssoExceptionUntil={ssoExceptionUntil.get(m.user_id)}
