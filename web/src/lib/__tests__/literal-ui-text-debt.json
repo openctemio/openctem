@@ -7,7 +7,7 @@
   "app/(dashboard)/(mobilization)/automations/page.tsx": 1,
   "app/(dashboard)/(mobilization)/error.tsx": 5,
   "app/(dashboard)/(prioritization)/priority-rules/page.tsx": 7,
-  "app/(dashboard)/(scoping)/compliance/page.tsx": 71,
+  "app/(dashboard)/(scoping)/compliance/page.tsx": 69,
   "app/(dashboard)/(scoping)/error.tsx": 5,
   "app/(dashboard)/(scoping)/programs/page.tsx": 1,
   "app/(dashboard)/(scoping)/scope/letters/page.tsx": 1,
