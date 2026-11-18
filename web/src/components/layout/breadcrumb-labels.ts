@@ -74,6 +74,10 @@ const PATH_LABELS: Record<string, Named> = {
     label: 'GitHub App installation',
     key: 'scans.ci.callback.title',
   },
+  '/settings/scanning/content': {
+    label: 'Scanner content',
+    key: 'sensors.contentPolicy.page.title',
+  },
   '/control-testing': { label: 'Control testing', key: 'validation.controlTesting.title' },
   '/controls': { label: 'Compensating controls', key: 'validation.controls.title' },
   '/dashboards': { label: 'Dashboards', key: 'dashboards.manage.title' },
@@ -142,6 +146,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   'api-keys': 'API keys',
   'service-accounts': 'Service accounts',
   cicd: 'CI/CD',
+  'github-app': 'GitHub App',
   siem: 'SIEM',
   scm: 'SCM',
   saml: 'SAML',

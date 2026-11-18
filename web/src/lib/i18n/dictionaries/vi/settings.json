@@ -914,6 +914,8 @@
   "settings.page.loadFailed": "Không tải được {page}",
   "settings.page.loadFailedHint": "Máy chủ không phản hồi. Không có gì bị thay đổi.",
   "settings.page.loading": "Đang tải {page}",
+  "settings.page.sourceCredentials.description": "Thông tin xác thực được mã hóa mà các nguồn mẫu dùng để xác thực (token Git, khóa đám mây và các loại khác).",
+  "settings.page.tools.description": "Các công cụ mà cảm biến của bạn báo cáo, và việc quét bằng từng công cụ có chạy được ngay không. Thêm công cụ tùy chỉnh cho bộ quét của riêng bạn.",
   "settings.page.viewOnly": "Chỉ xem. Chỉ chủ sở hữu và quản trị viên mới thay đổi được các cài đặt này.",
   "settings.pentest.addMethodology": "Thêm phương pháp",
   "settings.pentest.addType": "Thêm loại",
