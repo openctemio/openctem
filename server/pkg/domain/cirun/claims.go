@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Claims are the verified OIDC claims of a CI job, normalized across
@@ -184,6 +186,10 @@ func ReportBranchName(branch, event, pullRequest string, fork bool) string {
 type Refusal struct {
 	Code   string
 	Detail string
+	// ConfigID and ConfigName: the trust configuration that refused (set
+	// when several configurations were tried; audit metadata only).
+	ConfigID   shared.ID
+	ConfigName string
 }
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Detail }

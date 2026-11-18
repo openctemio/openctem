@@ -1,0 +1,8 @@
+### Added: why a CI token was refused, where the organization's administrators work
+
+- A verified token that no trust rule admits now tells the job the rule in plain words and its own value that did not match, for example the exact pipeline file (`gitlab.example.com/grp/proj//.gitlab-ci.yml@refs/heads/main`) or branch, with the rule codes in `details.reasons`. The configuration's name and listed values are never shown to the job. The response code stays `CI_TOKEN_NOT_TRUSTED`.
+- The refusal audit records keep the token's issuer, owner, environment and pipeline definition, and which configuration refused with which code; `GET /api/v1/ci/trust-refusals` returns them.
+- `POST /api/v1/ci/trust-configs/{id}/allow` adds a refused pipeline file or branch to the configuration in one step (CI write permission, recent sign-in, audited like any change of the configuration).
+- Tokens refused before verification (no configuration for the issuer, issuer keys unavailable, a token that did not verify) still never reach the audit log; a bounded record per issuer (issuer, reason, cause, first and last time, count; no token contents; at most 20 per organization, only for organizations with a trust configuration) is listed by `GET /api/v1/ci/trust-refusals/unverified`, with the nearest configured issuer and how it differs (for example a trailing slash). Migration `20261118075036_ci_unverified_refusals`.
+- `503 CI_ISSUER_UNAVAILABLE` now names the cause class in its message and `details.cause` (blocked private address, DNS, TLS, timeout, issuer mismatch, HTTP status, key rotation, unreachable), never an address.
+- Docs: server/docs/how-to/connect-ci-pipelines.md#troubleshooting

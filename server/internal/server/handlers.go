@@ -2065,6 +2065,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
 	}
 	admin.SetRefusalService(ciSvc)
+	admin.SetRefusalActions(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	if svc.ImportMapping != nil {
 		runner.SetMappingResolver(svc.ImportMapping)
@@ -2126,6 +2127,9 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
+	// Refusals before verification: a bounded per-issuer record the
+	// organization's administrators see (never the tenant audit log).
+	ciSvc.SetUnverifiedRefusalStore(repos.CIRun)
 	if svc.Suppression != nil {
 		ciSvc.SetSuppressionRules(svc.Suppression)
 	}

@@ -184,6 +184,37 @@ The job exits 0 on pass, 1 on fail and 2 when it cannot trust the result
 (gate unreachable without `--fail-on`, or a local failure). The job asks again
 on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 
+### Refusal reasons
+
+What a refused job and the organization's administrators are told, without
+telling a stranger anything about the organization's configuration:
+
+| Refusal | Job (`POST /api/v1/ci/oidc/exchange`) | Organization |
+|---|---|---|
+| Token did not verify, or no enabled configuration has its issuer | `401 CI_TOKEN_NOT_TRUSTED`, generic text | Not in the audit log (an anonymous caller must not fill it). A bounded record per tenant, issuer and reason (`ci_unverified_refusals`): issuer (kept only when a plain https address of at most 255 characters), reason `no_configuration` or `not_verified`, first and last time, count. Written only for a tenant that has a trust configuration, at most once per 30 seconds per (tenant, issuer, reason) per server (repeats are counted), at most 20 rows per tenant (the oldest go). No token contents |
+| Issuer keys unavailable | `503 CI_ISSUER_UNAVAILABLE`, `details.cause` and a message per class: `blocked_address`, `dns`, `tls`, `timeout`, `issuer_mismatch`, `http_status`, `key_not_found`, `unreachable`. Never an address | Same record, reason `keys_unavailable` with the cause |
+| Verified, refused by a rule | `401 CI_TOKEN_NOT_TRUSTED`, the rule in plain words and the token's own value that did not match (pipeline file, ref, repository, group, environment, event), `details.reasons`. Never the configuration's name or listed values | Audit row `ci_run.token_refused` with the codes, the token's issuer, owner, environment and pipeline definition, and which configuration refused with which code (`configs`) |
+| After admission (binding, pin, cap, ...) | `401 CI_TOKEN_<reason>` | Audit row, as before |
+
+The cause class comes from the error chain (`cirun.IssuerCause`): the OIDC
+client wraps its fetch errors (`%w`), the outbound guard's
+`ErrBlockedDestination` and `ErrUnresolvable`, TLS and x509 errors, timeouts,
+and the client's own `ErrIssuerMismatch` and `ErrHTTPStatus`.
+
+API for the CI/CD page (CI write, `scans:ci:write`):
+
+- `GET /api/v1/ci/trust-refusals`: verified refusals from the audit log, now
+  with `issuer`, `owner`, `environment`, `workflow_definition` and `configs`
+  (`[{id, name, code}]`).
+- `GET /api/v1/ci/trust-refusals/unverified`: `{data: [{issuer, reason, cause,
+  first_seen, last_seen, count, nearest_issuer, difference}],
+  configured_issuers: [{config_id, name, provider, issuer, enabled}]}`;
+  `difference` is `trailing_slash`, `case`, `scheme`, `host` or `path`.
+- `POST /api/v1/ci/trust-configs/{id}/allow` (step-up): `{kind: workflow_ref |
+  ref, value}` adds the refused value to Pipeline definitions or Branches and
+  tags; an ordinary audited change of the configuration (`changed: false`
+  when it was already listed).
+
 ## Request chains
 
 | Route | Chain |
@@ -193,7 +224,7 @@ on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit (10/s, burst 100) → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit (2/s, burst 30) → ingest per-tenant limit (20/s, burst 40, when rate limiting is on) and concurrency cap (8 per tenant) → body 50 MB as sent → decompression (`gzip`/`zstd`, at most 20 MB compressed, 100 MB decompressed, ratio 200) → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
 | `GET /api/v1/ci/runs/{id}/results/{report_id}` | per-IP limit → `AuthenticateRun` → per-run limit; `wait` at most 10 s (`ingestqueue.MaxWait`) |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
-| `/api/v1/ci/{settings,trust-configs,runs,pipelines,coverage,gate-policies,gate-settings,gate-baselines,gate-overrides,trust-refusals,code-scanning}` | session tenant chain (`buildTokenTenantMiddlewares`) → `scans` module → `scans:ci:*`; `PUT /settings`, `POST`/`PUT /trust-configs`, `PUT /gate-baselines/{id}` and `POST /gate-overrides` add step-up |
+| `/api/v1/ci/{settings,trust-configs,runs,pipelines,coverage,gate-policies,gate-settings,gate-baselines,gate-overrides,trust-refusals,code-scanning}` | session tenant chain (`buildTokenTenantMiddlewares`) → `scans` module → `scans:ci:*`; `PUT /settings`, `POST`/`PUT /trust-configs`, `POST /trust-configs/{id}/allow`, `PUT /gate-baselines/{id}` and `POST /gate-overrides` add step-up |
 
 ### Uploads are applied by the ingest worker
 
