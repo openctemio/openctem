@@ -1,8 +1,10 @@
 /**
  * Workflow readiness, as the API computes it for the caller's organization
  * (GET /scan-workflows?include=readiness): whether a workflow can run now
- * and why not, per step. The API refuses a scan of a workflow that cannot
- * run; the UI only shows the same answer.
+ * and why not, per step. A scan of any workflow is saved; a run skips the
+ * steps that no tool or sensor here runs and goes on with the others (only a
+ * run in which no step can run is refused). A CI-only workflow runs in a CI
+ * pipeline, not from a scan.
  */
 
 export type ReadinessState = 'ready' | 'waiting' | 'ci_only' | 'blocked'
@@ -52,6 +54,15 @@ export function isRunnable(r: WorkflowReadiness | undefined | null): boolean {
   return !r || r.state === 'ready' || r.state === 'waiting'
 }
 
+/**
+ * A scan of the workflow can be created here: every workflow but a CI-only
+ * one. A blocked workflow runs in part (its steps without a tool or sensor
+ * are skipped), so it is offered with that notice instead of turned off.
+ */
+export function canScan(r: WorkflowReadiness | undefined | null): boolean {
+  return r?.state !== 'ci_only'
+}
+
 /** The first step that keeps the workflow from running as it is. */
 export function firstProblem(r: WorkflowReadiness | undefined | null): StepReadiness | undefined {
   return problemSteps(r)[0]
@@ -81,7 +92,7 @@ export function readinessLabel(
     case 'ci_only':
       return tr('scans.readiness.label.ciOnly', 'Runs in your CI pipeline')
     case 'blocked':
-      return tr('scans.readiness.label.blocked', 'Not available')
+      return tr('scans.readiness.label.blocked', 'Runs in part')
     default:
       return undefined
   }

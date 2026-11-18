@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-import { WorkflowPreviewBody, type WorkflowPreview } from '../new-scan/workflow-preview'
+import {
+  WorkflowPreviewBody,
+  asRunPreview,
+  type WorkflowPreview,
+} from '../new-scan/workflow-preview'
 
 const base: WorkflowPreview = {
   blocking: false,
@@ -82,8 +86,8 @@ describe('WorkflowPreviewBody', () => {
               pinned: true,
               availability: { status: 'no_sensor', sensors_online: 0, sensors_total: 0 },
               blocking: {
-                code: 'NO_SENSOR_FOR_TOOL',
-                message: 'Step "iac": No sensor has checkov.',
+                code: 'INVALID',
+                message: 'Step "iac": its params are not valid.',
               },
             },
           ],
@@ -91,7 +95,7 @@ describe('WorkflowPreviewBody', () => {
       />
     )
     expect(screen.getByText('The scan would not start as it is')).toBeInTheDocument()
-    expect(screen.getByText('Step "iac": No sensor has checkov.')).toBeInTheDocument()
+    expect(screen.getByText('Step "iac": its params are not valid.')).toBeInTheDocument()
     expect(screen.getByText('runs checkov')).toBeInTheDocument()
     expect(screen.getByText('no sensor')).toBeInTheDocument()
     expect(screen.getByTestId('window-waits-waiting').textContent).toContain('app.example.com')
@@ -160,5 +164,52 @@ describe('WorkflowPreviewBody', () => {
     const lines = screen.getAllByTestId('preview-skipped').map((e) => e.textContent)
     expect(lines[0]).toBe('Skipped: no installed tool provides capture.screenshot yet.')
     expect(lines[1]).toBe('Skipped: it needs the results of a step that is skipped.')
+  })
+
+  // A scan runs what is supported: a run skips a required step that no tool
+  // or sensor here runs (server step_support.go) although the preview calls
+  // it blocking, so it reads as a skip and the scan is not "refused".
+  it('reads a step with no tool or sensor as skipped, required or not', () => {
+    const node = { ...base.nodes![0], tool: 'checkov', pinned: true }
+    render(
+      <WorkflowPreviewBody
+        preview={{
+          ...base,
+          blocking: true,
+          nodes: [
+            {
+              ...node,
+              blocking: {
+                code: 'NO_SENSOR_FOR_TOOL',
+                message: 'Step "iac": No sensor has checkov.',
+              },
+            },
+            { ...node, step_key: 'second', name: 'Second', blocking: undefined },
+          ],
+        }}
+      />
+    )
+    expect(screen.queryByText('The scan would not start as it is')).toBeNull()
+    expect(screen.getByTestId('preview-skipped').textContent).toBe(
+      'Skipped: no sensor can run its tool.'
+    )
+    expect(screen.getByTestId('preview-runs-in-part').textContent).toContain('1 step is skipped')
+  })
+
+  it('says when no step can run: the scan is saved, its start waits', () => {
+    const preview = asRunPreview({
+      ...base,
+      blocking: true,
+      nodes: [
+        {
+          ...base.nodes![0],
+          blocking: { code: 'TOOL_NOT_FOUND', message: 'tool gone' },
+        },
+      ],
+    })
+    expect(preview).toMatchObject({ blocking: false, toolSkips: 1, noStepRuns: true })
+    expect(preview.nodes?.[0].skipped?.code).toBe('TOOL_NOT_INSTALLED')
+    render(<WorkflowPreviewBody preview={preview} />)
+    expect(screen.getByTestId('preview-no-step-runs')).toBeInTheDocument()
   })
 })
