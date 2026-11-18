@@ -321,6 +321,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   toolbarEnd?: React.ReactNode
   /** A full-width row under the toolbar (the active context-filter chips). */
   toolbarBelow?: React.ReactNode
+  /** Page content between the toolbar and the rows (`DataTable` `beforeRows`). */
+  beforeRows?: React.ReactNode
   /** Bump to reload groups and their rows after a change. */
   reloadKey?: number
   /** Called with the groups on screen (e.g. to decide on page-level actions). */
@@ -352,6 +354,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
+  beforeRows,
   reloadKey = 0,
   onGroupsLoaded,
   emptyMessage,
@@ -639,6 +642,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       toolbarBelow={toolbarBelow}
+      beforeRows={beforeRows}
       getRowId={(r) => r.id}
       manualPagination
       rowCount={data?.pagination?.total ?? 0}

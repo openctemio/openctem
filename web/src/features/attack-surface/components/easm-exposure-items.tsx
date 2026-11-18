@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
   DataTableColumnHeader,
@@ -718,25 +719,12 @@ export function EASMExposureItems() {
           },
         ]}
       />
-      {/* On a phone the end actions are icons (named, with a tooltip), so
-          they never take more than about 40% of the toolbar's second line. */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            iconOnlyBelow="@2xl/toolbar"
-            onClick={exportCsv}
-            disabled={exporting}
-          >
-            <Download className="h-4 w-4 @2xl/toolbar:me-2" aria-hidden />
-            <span className="sr-only @2xl/toolbar:not-sr-only">
-              {t('attackSurface.exposures.export', 'Export CSV')}
-            </span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t('attackSurface.exposures.export', 'Export CSV')}</TooltipContent>
-      </Tooltip>
+      <ToolbarAction
+        icon={Download}
+        label={t('attackSurface.exposures.export', 'Export CSV')}
+        onClick={exportCsv}
+        disabled={exporting}
+      />
     </>
   )
   const toolbarBelow =
@@ -787,7 +775,7 @@ export function EASMExposureItems() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ExposureTypeSummary
         counts={s?.by_category}
         selected={categories}

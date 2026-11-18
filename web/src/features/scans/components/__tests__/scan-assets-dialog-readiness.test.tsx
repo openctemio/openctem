@@ -35,7 +35,7 @@ const candidates = [{ id: 'a1', label: 'go.example.com', target: 'go.example.com
 describe('ScanAssetsDialog start button follows the preflight', () => {
   it('is disabled when nothing can be scanned and enabled again when something can', async () => {
     render(<ScanAssetsDialog open onOpenChange={vi.fn()} candidates={candidates} />)
-    const start = screen.getByRole('button', { name: /Start Scan/ })
+    const start = screen.getByRole('button', { name: /Start scan/ })
     expect(start).toBeEnabled()
 
     await act(async () =>
