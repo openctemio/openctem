@@ -25,7 +25,7 @@ import { submitSignIn } from '../helpers/auth'
 const env = process.env
 const enabled = !!env.E2E_FAKE_GOOGLE
 
-test.describe('first sign-in', () => {
+test.describe('first sign-in', { tag: ['@auth'] }, () => {
   test.skip(!enabled, 'needs the Google stand-in (E2E_FAKE_GOOGLE)')
   // The member case signs in with the account the invitation case created.
   test.describe.configure({ mode: 'serial' })
@@ -87,9 +87,9 @@ test.describe('first sign-in', () => {
       .first()
     await expect(key).toBeVisible({ timeout: 30_000 })
     const secret = (await key.textContent())!.replace(/\s/g, '')
+    // A full code submits itself.
     await page.getByLabel('Authentication code').fill(totp(secret))
-    await page.getByRole('button', { name: 'Turn on and continue' }).click()
-    await page.getByLabel('I have saved my recovery codes').check()
+    await page.getByLabel('I have saved my recovery codes').check({ timeout: 30_000 })
     await page.getByRole('button', { name: 'Continue' }).click()
   }
 

@@ -42,6 +42,8 @@ describe('landingHref', () => {
   })
   it('an invited person without an organization goes back to the invitation', () => {
     expect(landingHref({ kind: 'account' }, '/invitations')).toBe('/invitations')
+    expect(landingHref({ kind: 'account' }, '/account/security/')).toBe('/account/security/')
+    expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/welcome')
   })
   it('an organization that requires 2FA opens its setup, then the organization', () => {
     expect(landingHref({ kind: 'two_factor', tenantId: ORG }, '/findings')).toBe(

@@ -5,8 +5,7 @@
  */
 
 import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
-import { isAccountOnlyPage } from '@/lib/middleware/auth'
-import { WELCOME_PATH } from '@/lib/middleware/config'
+import { ACCOUNT_ONLY_PAGES, WELCOME_PATH } from '@/lib/middleware/config'
 import { validateRedirectUrl } from '@/lib/redirect'
 
 import type { Landing } from './sign-in-landing'
@@ -22,10 +21,16 @@ export function continueHref(next: string): string {
   return safe === '/' ? CONTINUE_PATH : `${CONTINUE_PATH}?next=${encodeURIComponent(safe)}`
 }
 
-/** Pages an account-only session may land on besides the account pages. */
+/**
+ * Pages an account-only session may land on: the account pages and the
+ * invitation page. Plain string work on the (already validated, same-origin)
+ * path, no pattern that could run long on a crafted value.
+ */
 function accountSessionMayOpen(path: string): boolean {
-  const bare = path.split(/[?#]/)[0]
-  return isAccountOnlyPage(bare) || bare === '/invitations' || bare.startsWith('/invitations/')
+  const cut = Math.min(...['?', '#'].map((c) => path.indexOf(c)).filter((i) => i >= 0), path.length)
+  let bare = path.slice(0, cut)
+  while (bare.length > 1 && bare.endsWith('/')) bare = bare.slice(0, -1)
+  return (ACCOUNT_ONLY_PAGES as readonly string[]).includes(bare) || bare === '/invitations'
 }
 
 export function landingHref(landing: Landing, rawNext: string | null | undefined): string {
