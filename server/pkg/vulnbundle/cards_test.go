@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 )
 
-func cardLine(t *testing.T, id string) string {
+func cardLine(t testing.TB, id string) string {
 	t.Helper()
 	raw, err := os.ReadFile("../domain/advisory/testdata/OCA-2026-9001.json")
 	if err != nil {
@@ -64,4 +64,25 @@ func TestParseIntelCardsRefusals(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FuzzParseIntelCards: any cards file under a manifest that matches it
+// either parses into valid, ordered cards or is refused, never a panic.
+func FuzzParseIntelCards(f *testing.F) {
+	f.Add(cardLine(f, "OCA-2026-9001"))
+	f.Add(strings.Replace(cardLine(f, "OCA-2026-9002"), `"state":"reviewed"`, `"state":"withdrawn","withdrawn_reason":"Retracted."`, 1))
+	f.Add(`{"schema":"openctem.advisory-card/v1"}`)
+	f.Fuzz(func(t *testing.T, body string) {
+		lines := strings.Split(body, "\n")
+		gz, s := cardsStream(t, lines...)
+		got, err := ParseIntelCards(gz, s)
+		if err != nil {
+			return
+		}
+		for i, c := range got {
+			if c.Validate() != nil || (i > 0 && got[i-1].ID >= c.ID) {
+				t.Fatal("parsed an invalid or unordered card")
+			}
+		}
+	})
 }

@@ -66,7 +66,15 @@ const (
 )
 
 // Review states a published card can have.
+//
+// StateReported is the corroborated fast lane: a card no person has
+// reviewed yet, published because every fact cites a vendor, CNA or CERT
+// source. It is shown as "reported, not yet reviewed" and used for alerts
+// only: its exploitation status adds no score and opens no "check needed",
+// it does not group the alerts of its vulnerabilities, and it creates no
+// finding and no scan.
 const (
+	StateReported  = "reported"
 	StateReviewed  = "reviewed"
 	StateWithdrawn = "withdrawn"
 )
@@ -252,6 +260,10 @@ type Card struct {
 // Withdrawn reports whether the card no longer stands.
 func (c *Card) Withdrawn() bool { return c.Review.State == StateWithdrawn }
 
+// Reported reports whether the card is in the fast lane (not yet reviewed
+// by a person).
+func (c *Card) Reported() bool { return c.Review.State == StateReported }
+
 // ExploitationStatus is the card's exploitation as a typed value.
 func (c *Card) ExploitationStatus() Exploitation { return Exploitation(c.Exploitation.Status) }
 
@@ -428,26 +440,33 @@ func (c *Card) Validate() error {
 			return fail("%v", err)
 		}
 	}
-	src := map[string]bool{}
+	src := map[string]string{} // id -> tier
 	for _, s := range c.Sources {
-		if !sourceIDRe.MatchString(s.ID) || src[s.ID] || !slices.Contains([]string{"vendor", "cna", "cert", "researcher", "press"}, s.Tier) {
+		if !sourceIDRe.MatchString(s.ID) || src[s.ID] != "" || !slices.Contains([]string{"vendor", "cna", "cert", "researcher", "press"}, s.Tier) {
 			return fail("source %q", s.ID)
 		}
-		src[s.ID] = true
+		src[s.ID] = s.Tier
 		if err := errors.Join(HTTPSURL(s.URL), Text(s.Publisher, maxName, true), Text(s.Title, maxTitle, true)); err != nil {
 			return fail("source %s: %v", s.ID, err)
 		}
 	}
+	// A reported card stands only on first-hand sources: every fact cites
+	// a vendor, CNA or CERT document.
+	reported := c.Reported()
 	cited := func(ids []string) bool {
 		if len(ids) == 0 {
 			return false
 		}
+		firstHand := false
 		for _, id := range ids {
-			if !src[id] {
+			switch src[id] {
+			case "":
 				return false
+			case "vendor", "cna", "cert":
+				firstHand = true
 			}
 		}
-		return true
+		return firstHand || !reported
 	}
 	if !slices.Contains([]string{"critical", "high", "medium", "low"}, c.Severity.Level) || !cited(c.Severity.Sources) {
 		return fail("severity")
@@ -554,9 +573,15 @@ func (c *Card) Validate() error {
 
 func (c *Card) validateReview(fail func(string, ...any) error) error {
 	r := c.Review
+	if r.State == StateReported {
+		if !handleRe.MatchString(r.Author) || r.ReviewedBy != "" || r.ReviewedAt != nil || r.Mode != "" || r.WithdrawnReason != "" {
+			return fail("a reported card has an author and no reviewer yet")
+		}
+		return nil
+	}
 	switch {
 	case r.State != StateReviewed && r.State != StateWithdrawn:
-		return fail("only reviewed or withdrawn cards are published")
+		return fail("only reported, reviewed or withdrawn cards are published")
 	case !handleRe.MatchString(r.Author) || !handleRe.MatchString(r.ReviewedBy) || r.ReviewedAt == nil:
 		return fail("review record")
 	case r.Mode == ModeTwoPerson && strings.EqualFold(r.Author, r.ReviewedBy):
@@ -572,10 +597,22 @@ func (c *Card) validateReview(fail func(string, ...any) error) error {
 }
 
 // Text checks display text from a card: valid UTF-8 within its cap, no
-// control, bidirectional-override or zero-width characters and no markup
-// brackets. Card text is shown to people as plain text; it must not be able
-// to restyle, reorder or hide anything.
+// control, bidirectional-override, zero-width, line or paragraph separator
+// characters, no markup brackets and no link (a scheme or a www. host).
+// Card text is shown to people as plain text and reaches chat titles; it
+// must not be able to restyle, reorder or hide anything, and links come only
+// from the vetted url fields.
 func Text(s string, maxLen int, required bool) error {
+	if err := plainText(s, maxLen, required); err != nil {
+		return err
+	}
+	if l := strings.ToLower(s); strings.Contains(l, "://") || strings.Contains(l, "www.") {
+		return errors.New("a text holds a link; links belong in url fields")
+	}
+	return nil
+}
+
+func plainText(s string, maxLen int, required bool) error {
 	if s == "" {
 		if required {
 			return errors.New("a required text is empty")
@@ -586,7 +623,7 @@ func Text(s string, maxLen int, required bool) error {
 		return fmt.Errorf("a text is over %d characters or not UTF-8", maxLen)
 	}
 	for _, r := range s {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '<' || r == '>' {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) || r == '<' || r == '>' {
 			return fmt.Errorf("a text holds a forbidden character (U+%04X)", r)
 		}
 	}
@@ -602,7 +639,7 @@ func HTTPSURL(raw string) error {
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" {
 		return errors.New("a link is not an absolute https URL without credentials")
 	}
-	return Text(raw, maxURL, true)
+	return plainText(raw, maxURL, true)
 }
 
 // Applied says what one import of the cards stream changed.
@@ -613,16 +650,44 @@ type Applied struct {
 	Unchanged int
 }
 
+// Supersedes reports whether an incoming card replaces the stored revision
+// heldRevision in state heldState: a higher revision always does; at the
+// same revision only a withdrawal of a card that still stands does. A
+// withdrawn card comes back only with a higher revision, so a replayed or
+// unchecked stream can never undo a withdrawal.
+func Supersedes(heldRevision int, heldState string, c *Card) bool {
+	switch {
+	case c.Revision > heldRevision:
+		return true
+	case c.Revision == heldRevision:
+		return heldState != StateWithdrawn && c.Withdrawn()
+	}
+	return false
+}
+
+// StreamApplied identifies one cards stream the platform applied.
+type StreamApplied struct {
+	Sequence uint64
+	// FileSHA256 is the SHA-256 of the cards file from the verified
+	// manifest: the stream is applied whenever it differs from the last one
+	// applied (never by data date: a card reviewed earlier but merged later,
+	// or a withdrawal without a later timestamp, keeps the date).
+	FileSHA256 string
+	// AsOf is the stream's data date, kept for the freshness status only.
+	AsOf time.Time
+}
+
 // Store keeps the cards (platform-wide, public facts).
 type Store interface {
-	// AsOf is the newest card data the platform holds (zero when none).
-	AsOf(ctx context.Context) (time.Time, error)
-	// Apply writes the cards in one transaction: a card that is new or has
-	// a higher revision (or a changed review state) replaces the stored one,
-	// its earlier revision is kept, and a card event (published, updated or
-	// withdrawn, keyed by the card id) is logged for the alert planner. A
-	// card the stream no longer holds is kept as it is.
-	Apply(ctx context.Context, cards []*Card, sequence uint64, now time.Time) (Applied, error)
+	// AppliedFile is the SHA-256 of the last cards file applied (empty
+	// when none).
+	AppliedFile(ctx context.Context) (string, error)
+	// Apply writes the cards and records the stream in one transaction: a
+	// card that Supersedes the stored one replaces it, every revision body
+	// is kept, and a card event (published, updated or withdrawn, keyed by
+	// the card id) is logged for the alert planner. A card the stream no
+	// longer holds is kept as it is.
+	Apply(ctx context.Context, cards []*Card, stream StreamApplied, now time.Time) (Applied, error)
 	// ExploitationFor maps each vulnerability id to the strongest
 	// exploitation a stored card states for it (ids without a card are
 	// absent). Withdrawn cards state nothing.

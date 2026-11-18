@@ -1,7 +1,7 @@
 package vulnbundle
 
 // The advisory cards travel as the "cards" stream of the signed intel side
-// manifest (intel.go): one card per line, ids ascending, only reviewed or
+// manifest (intel.go): one card per line, ids ascending, only reported, reviewed or
 // withdrawn cards. A platform that does not know the stream skips it.
 
 import (

@@ -193,3 +193,38 @@ func TestFanOutGroupsByCardAndWithdraws(t *testing.T) {
 		t.Fatalf("withdrawn card not resolved: %v", st.log)
 	}
 }
+
+// A revision that drops a vulnerability from the card (or a card that is no
+// longer reviewed) queues the alerts grouped into it for that vulnerability
+// on their own again; the ones the card still groups stay with the card.
+func TestFanOutCardUpdateRequeuesRemovedVulns(t *testing.T) {
+	now := time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC)
+	a := shared.NewID()
+	st := &fanOutStore{
+		events:   []vulnevent.Event{{ID: 1, VulnID: "OCA-2026-9001", Kind: vulnevent.KindCardUpdated, At: now.Add(-time.Hour)}},
+		affected: map[string][]shared.ID{"OCA-2026-9001": {a}},
+		// Revision 2 keeps CVE-2026-90001 and drops CVE-2026-90002.
+		groups: map[string]string{"CVE-2026-90001": "OCA-2026-9001"},
+		grouped: map[string][]threatalert.QueueItem{"OCA-2026-9001": {
+			{TenantID: a, VulnID: "CVE-2026-90001"}, {TenantID: a, VulnID: "CVE-2026-90002"}}},
+	}
+	p := NewPlanner(st, nil, logger.NewNop())
+	SetClockForTest(p, func() time.Time { return now })
+	var stats Stats
+	if err := p.fanOut(context.Background(), &stats, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, it := range st.queued {
+		got[it.VulnID] = true
+	}
+	if !got["CVE-2026-90002"] {
+		t.Fatalf("a vulnerability removed from the card was not requeued: %v", st.queued)
+	}
+	if got["CVE-2026-90001"] {
+		t.Fatalf("a vulnerability the card still groups was requeued on its own: %v", st.queued)
+	}
+	if !got["OCA-2026-9001"] {
+		t.Fatalf("the card itself was not replanned: %v", st.queued)
+	}
+}

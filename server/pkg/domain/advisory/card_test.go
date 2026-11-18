@@ -1,6 +1,7 @@
 package advisory
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
@@ -84,6 +85,10 @@ func TestDecodeRefusals(t *testing.T) {
 		},
 		"withdrawn no reason": func(m map[string]any) { m["review"].(map[string]any)["state"] = "withdrawn" },
 		"long title":          func(m map[string]any) { m["title"] = strings.Repeat("x", 161) },
+		"line separator":      func(m map[string]any) { m["title"] = "x\u2028Patch now" },
+		"paragraph separator": func(m map[string]any) { m["summary"] = "x\u2029Patch now" },
+		"link in title":       func(m map[string]any) { m["title"] = "Patch now at https://evil.example" },
+		"www in a note":       func(m map[string]any) { m["severity"].(map[string]any)["note"] = "see www.evil.example" },
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -110,5 +115,127 @@ func TestExploitation(t *testing.T) {
 	}
 	if Stronger(ExploitWeaponised, ExploitPoCPublic) != ExploitWeaponised || Stronger("", ExploitInTheWild) != ExploitInTheWild {
 		t.Fatal("Stronger")
+	}
+}
+
+// seedCards are a reviewed and a withdrawn card with links, workarounds and
+// detection ideas, so the fuzzer starts on the review and list paths.
+func seedCards(t testing.TB) [][]byte {
+	raw, err := os.ReadFile("testdata/OCA-2026-9001.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	reviewed, _ := json.Marshal(m)
+	r := m["review"].(map[string]any)
+	r["state"], r["withdrawn_reason"] = "withdrawn", "The vendor retracted the advisory."
+	withdrawn, _ := json.Marshal(m)
+	return [][]byte{reviewed, withdrawn, reportedCard(t)}
+}
+
+func reportedCard(t testing.TB) []byte {
+	raw, err := os.ReadFile("testdata/OCA-2026-9001.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["review"] = map[string]any{"state": "reported", "author": "author1"}
+	out, _ := json.Marshal(m)
+	return out
+}
+
+// FuzzDecode: the lenient platform decoder never panics, and a card it
+// accepts encodes back to a card it accepts with the same content.
+func FuzzDecode(f *testing.F) {
+	for _, b := range seedCards(f) {
+		f.Add(b)
+	}
+	f.Add([]byte(`{"schema":"openctem.advisory-card/v1"}`))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		c, err := Decode(b)
+		if err != nil {
+			return
+		}
+		again, err := json.Marshal(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		back, err := Decode(again)
+		if err != nil {
+			t.Fatalf("re-encoded card refused: %v", err)
+		}
+		if b2, _ := json.Marshal(back); !bytes.Equal(again, b2) {
+			t.Fatal("round trip changed the card")
+		}
+	})
+}
+
+func TestSeedCardsDecode(t *testing.T) {
+	for _, b := range seedCards(t) {
+		if _, err := Decode(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestReportedCard(t *testing.T) {
+	c, err := Decode(reportedCard(t))
+	if err != nil || !c.Reported() || c.Withdrawn() {
+		t.Fatal(c, err)
+	}
+	cases := map[string]func(m map[string]any){
+		"names a reviewer": func(m map[string]any) { m["review"].(map[string]any)["reviewed_by"] = "reviewer1" },
+		"names a mode":     func(m map[string]any) { m["review"].(map[string]any)["mode"] = "two_person" },
+		"exploitation from a blog only": func(m map[string]any) {
+			m["sources"] = append(m["sources"].([]any), map[string]any{"id": "blog", "url": "https://example.org/b",
+				"publisher": "Blog", "tier": "researcher", "title": "b", "retrieved_at": "2026-11-18T18:00:00Z"})
+			m["exploitation"].(map[string]any)["sources"] = []any{"blog"}
+		},
+	}
+	for name, mut := range cases {
+		t.Run(name, func(t *testing.T) {
+			var m map[string]any
+			if err := json.Unmarshal(reportedCard(t), &m); err != nil {
+				t.Fatal(err)
+			}
+			mut(m)
+			raw, _ := json.Marshal(m)
+			if _, err := Decode(raw); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}
+
+// At an equal revision only a withdrawal of a standing card is applied: a
+// withdrawn card never comes back without a higher revision.
+func TestSupersedes(t *testing.T) {
+	card := func(rev int, state string) *Card { return &Card{Revision: rev, Review: Review{State: state}} }
+	cases := []struct {
+		heldRev   int
+		heldState string
+		in        *Card
+		want      bool
+	}{
+		{1, StateReviewed, card(2, StateReviewed), true},
+		{1, StateReviewed, card(1, StateWithdrawn), true},
+		{1, StateReported, card(1, StateWithdrawn), true},
+		{1, StateWithdrawn, card(1, StateReviewed), false},
+		{1, StateWithdrawn, card(1, StateReported), false},
+		{1, StateReported, card(1, StateReviewed), false},
+		{1, StateReviewed, card(1, StateReviewed), false},
+		{2, StateReviewed, card(1, StateWithdrawn), false},
+		{1, StateWithdrawn, card(2, StateReviewed), true},
+	}
+	for _, c := range cases {
+		if got := Supersedes(c.heldRev, c.heldState, c.in); got != c.want {
+			t.Fatalf("held r%d %s, in r%d %s: %v, want %v", c.heldRev, c.heldState, c.in.Revision, c.in.Review.State, got, c.want)
+		}
 	}
 }

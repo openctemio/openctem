@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,25 @@ func testCard(t *testing.T) *advisory.Card {
 func cleanupCards(db *sql.DB) {
 	_, _ = db.ExecContext(context.Background(), `DELETE FROM vuln_events WHERE vuln_id LIKE 'OCA-2026-9%';
 		DELETE FROM advisory_cards WHERE card_id LIKE 'OCA-2026-9%';
+		DELETE FROM advisory_card_stream;
+		DELETE FROM cve_records WHERE cve_id LIKE 'CVE-2026-9000%';
 		DELETE FROM threat_alerts WHERE vuln_id LIKE 'OCA-2026-9%' OR vuln_id LIKE 'CVE-2026-9000%'`)
+}
+
+func stream(seq uint64, sum string) advisory.StreamApplied {
+	return advisory.StreamApplied{Sequence: seq, FileSHA256: strings.Repeat(sum, 64), AsOf: time.Date(2026, 11, 18, 19, 0, 0, 0, time.UTC)}
+}
+
+// reportedTestCard is the fixture in the fast lane: reported, no reviewer.
+func reportedTestCard(t *testing.T, id string) *advisory.Card {
+	t.Helper()
+	c := testCard(t)
+	c.ID = id
+	c.Review = advisory.Review{State: advisory.StateReported, Author: "author1"}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 // A card is stored once per revision: a replay changes nothing, a new
@@ -43,16 +62,18 @@ func TestAdvisoryCardApply_DB(t *testing.T) {
 	now := time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC)
 
 	c := testCard(t)
-	res, err := repo.Apply(ctx, []*advisory.Card{c}, 42, now)
+	if sum, err := repo.AppliedFile(ctx); err != nil || sum != "" {
+		t.Fatalf("applied file before any stream: %q %v", sum, err)
+	}
+	res, err := repo.Apply(ctx, []*advisory.Card{c}, stream(42, "a"), now)
 	if err != nil || res.Published != 1 {
 		t.Fatal(res, err)
 	}
-	if res, _ = repo.Apply(ctx, []*advisory.Card{c}, 43, now); res.Unchanged != 1 {
+	if res, _ = repo.Apply(ctx, []*advisory.Card{c}, stream(43, "b"), now); res.Unchanged != 1 {
 		t.Fatalf("replay: %+v", res)
 	}
-	asOf, err := repo.AsOf(ctx)
-	if err != nil || !asOf.Equal(*c.Review.ReviewedAt) {
-		t.Fatalf("as of %v %v", asOf, err)
+	if sum, err := repo.AppliedFile(ctx); err != nil || sum != strings.Repeat("b", 64) {
+		t.Fatalf("applied file %q %v", sum, err)
 	}
 	ex, err := repo.ExploitationFor(ctx, []string{"CVE-2026-90001", "CVE-2099-0001"})
 	if err != nil || ex["CVE-2026-90001"] != advisory.ExploitPoCPublic || len(ex) != 1 {
@@ -62,16 +83,16 @@ func TestAdvisoryCardApply_DB(t *testing.T) {
 	c2 := testCard(t)
 	c2.Revision, c2.Exploitation.Status = 2, string(advisory.ExploitInTheWild)
 	c2.History = append(c2.History, advisory.Change{Revision: 2, At: now, Note: "Exploited."})
-	if res, err = repo.Apply(ctx, []*advisory.Card{c2}, 44, now); err != nil || res.Updated != 1 {
+	if res, err = repo.Apply(ctx, []*advisory.Card{c2}, stream(44, "c"), now); err != nil || res.Updated != 1 {
 		t.Fatal(res, err)
 	}
 	// An older revision never rolls the card back.
-	if res, _ = repo.Apply(ctx, []*advisory.Card{c}, 45, now); res.Unchanged != 1 {
+	if res, _ = repo.Apply(ctx, []*advisory.Card{c}, stream(45, "d"), now); res.Unchanged != 1 {
 		t.Fatalf("rollback: %+v", res)
 	}
 	c3 := testCard(t)
 	c3.Revision, c3.Review.State, c3.Review.WithdrawnReason = 3, advisory.StateWithdrawn, "Vendor retracted."
-	if res, err = repo.Apply(ctx, []*advisory.Card{c3}, 46, now); err != nil || res.Withdrawn != 1 {
+	if res, err = repo.Apply(ctx, []*advisory.Card{c3}, stream(46, "e"), now); err != nil || res.Withdrawn != 1 {
 		t.Fatal(res, err)
 	}
 	if ex, _ = repo.ExploitationFor(ctx, []string{"CVE-2026-90001"}); len(ex) != 0 {
@@ -102,7 +123,8 @@ func TestThreatAlertCardKey_DB(t *testing.T) {
 	cleanupCards(db)
 	t.Cleanup(func() { cleanupCards(db) })
 	c := testCard(t)
-	if _, err := NewAdvisoryCardRepository(&DB{DB: db}).Apply(ctx, []*advisory.Card{c}, 1, time.Now()); err != nil {
+	c.Severity.Level = "medium" // under the critical CVE record it groups
+	if _, err := NewAdvisoryCardRepository(&DB{DB: db}).Apply(ctx, []*advisory.Card{c}, stream(1, "a"), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,10 +135,16 @@ func TestThreatAlertCardKey_DB(t *testing.T) {
 		AND cpe_vendor = 'example' AND cpe_product = 'examplehttpd'`).Scan(&product); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM asset_software WHERE product_id = $1;
-			DELETE FROM software_versions WHERE product_id = $1; DELETE FROM software_products WHERE id = $1`, product)
-	})
+	// One statement per call: a parameterised query cannot hold several.
+	dropProduct := func() {
+		for _, q := range []string{`DELETE FROM asset_software WHERE product_id = $1`,
+			`DELETE FROM software_versions WHERE product_id = $1`, `DELETE FROM software_products WHERE id = $1`} {
+			_, _ = db.ExecContext(context.Background(), q, product)
+		}
+	}
+	t.Cleanup(dropProduct)
+	exec(`DELETE FROM software_versions WHERE product_id = $1 AND NOT EXISTS (
+		SELECT 1 FROM asset_software s WHERE s.software_version_id = software_versions.id)`, product)
 	unknownV, inRange, fixed := shared.NewID(), shared.NewID(), shared.NewID()
 	exec(`INSERT INTO software_versions (id, product_id, raw, normalized) VALUES ($1, $2, '', NULL), ($3, $2, '2.4.8', '2.4.8'), ($4, $2, '2.4.9', '2.4.9')`,
 		unknownV.String(), product, inRange.String(), fixed.String())
@@ -152,6 +180,7 @@ func TestThreatAlertCardKey_DB(t *testing.T) {
 		t.Fatalf("B (fixed version) sees %+v %v", assetsB, err)
 	}
 
+	exec(`INSERT INTO cve_records (cve_id, severity) VALUES ('CVE-2026-90001', 'critical')`)
 	v, err := repo.Vuln(ctx, c.ID, time.Time{})
 	if err != nil || v == nil || v.CardID != c.ID || v.Exploitation != advisory.ExploitPoCPublic || len(v.Grouped) != 2 ||
 		v.Severity != "critical" || len(v.ExploitationSources) != 1 || v.LastEventKind != "card_published" {
@@ -162,13 +191,30 @@ func TestThreatAlertCardKey_DB(t *testing.T) {
 		t.Fatalf("%v %v", groups, err)
 	}
 
-	for _, tenant := range []shared.ID{tA, tB} {
-		exec(`INSERT INTO threat_alerts (tenant_id, vuln_id, level, tier, state, ets)
-			VALUES ($1, 'CVE-2026-90001', 'digest', 'possible', 'new', 30)`, tenant.String())
+	actor := shared.NewID()
+	exec(`INSERT INTO threat_alerts (tenant_id, vuln_id, level, tier, state, state_note, state_changed_by, ets)
+		VALUES ($1, 'CVE-2026-90001', 'digest', 'possible', 'remediating', 'Patch window on Friday.', $2, 30)`, tA.String(), actor.String())
+	exec(`INSERT INTO threat_alerts (tenant_id, vuln_id, level, tier, state, ets)
+		VALUES ($1, 'CVE-2026-90001', 'digest', 'possible', 'new', 30)`, tB.String())
+	// The card's alert carries on the strongest open triage, per
+	// organization.
+	if st, err := repo.GroupedTriage(ctx, tA, v.Grouped); err != nil || st != threatalert.StateRemediating {
+		t.Fatalf("triage A %s %v", st, err)
+	}
+	if st, err := repo.GroupedTriage(ctx, tB, v.Grouped); err != nil || st != threatalert.StateNew {
+		t.Fatalf("triage B %s %v", st, err)
 	}
 	n, err := repo.ResolveGrouped(ctx, tA, c.ID, v.Grouped, time.Now())
 	if err != nil || n != 1 {
 		t.Fatalf("resolved %d %v", n, err)
+	}
+	var note, grouped string
+	var by sql.NullString
+	var digest bool
+	_ = db.QueryRowContext(ctx, `SELECT state_note, state_changed_by, COALESCE(grouped_into_card, ''), digest_pending FROM threat_alerts
+		WHERE tenant_id = $1 AND vuln_id = 'CVE-2026-90001'`, tA.String()).Scan(&note, &by, &grouped, &digest)
+	if note != "Patch window on Friday." || by.String != actor.String() || grouped != c.ID || !digest {
+		t.Fatalf("grouping lost the person's triage: note %q by %q card %q digest %v", note, by.String, grouped, digest)
 	}
 	var stateB string
 	_ = db.QueryRowContext(ctx, `SELECT state FROM threat_alerts WHERE tenant_id = $1 AND vuln_id = 'CVE-2026-90001'`, tB.String()).Scan(&stateB)
@@ -178,5 +224,61 @@ func TestThreatAlertCardKey_DB(t *testing.T) {
 	items, err := repo.GroupedInto(ctx, c.ID)
 	if err != nil || len(items) != 1 || items[0].TenantID != tA {
 		t.Fatalf("%v %v", items, err)
+	}
+}
+
+// At an equal revision only a withdrawal is applied, and both bodies are
+// kept; a withdrawn card never comes back at the same revision.
+// Requires DATABASE_URL.
+func TestAdvisoryCardSameRevision_DB(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	cleanupCards(db)
+	t.Cleanup(func() { cleanupCards(db) })
+	repo := NewAdvisoryCardRepository(&DB{DB: db})
+	now := time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC)
+
+	c := testCard(t)
+	if _, err := repo.Apply(ctx, []*advisory.Card{c}, stream(1, "a"), now); err != nil {
+		t.Fatal(err)
+	}
+	w := testCard(t)
+	w.Review.State, w.Review.WithdrawnReason = advisory.StateWithdrawn, "Vendor retracted."
+	if res, err := repo.Apply(ctx, []*advisory.Card{w}, stream(2, "b"), now); err != nil || res.Withdrawn != 1 {
+		t.Fatal(res, err)
+	}
+	if res, err := repo.Apply(ctx, []*advisory.Card{testCard(t)}, stream(3, "c"), now); err != nil || res.Unchanged != 1 {
+		t.Fatalf("withdrawn -> reviewed at an equal revision applied: %+v %v", res, err)
+	}
+	var state string
+	var bodies int
+	_ = db.QueryRowContext(ctx, `SELECT review_state FROM advisory_cards WHERE card_id = $1`, c.ID).Scan(&state)
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM advisory_card_revisions WHERE card_id = $1 AND revision = 1`, c.ID).Scan(&bodies)
+	if state != advisory.StateWithdrawn || bodies != 2 {
+		t.Fatalf("state %s, revision-1 bodies %d; want withdrawn and 2", state, bodies)
+	}
+}
+
+// A reported card (fast lane) alerts but scores nothing from its own
+// exploitation and groups nothing. Requires DATABASE_URL.
+func TestAdvisoryCardReported_DB(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	cleanupCards(db)
+	t.Cleanup(func() { cleanupCards(db) })
+	c := reportedTestCard(t, "OCA-2026-9003")
+	if res, err := NewAdvisoryCardRepository(&DB{DB: db}).Apply(ctx, []*advisory.Card{c}, stream(1, "a"), time.Now()); err != nil || res.Published != 1 {
+		t.Fatal(res, err)
+	}
+	repo := NewThreatAlertRepository(&DB{DB: db})
+	if ex, err := exploitationFor(ctx, &DB{DB: db}, c.VulnIDs()); err != nil || len(ex) != 0 {
+		t.Fatalf("a reported card's exploitation counted: %v %v", ex, err)
+	}
+	if g, err := repo.CardsGrouping(ctx, c.VulnIDs()); err != nil || len(g) != 0 {
+		t.Fatalf("a reported card groups CVE alerts: %v %v", g, err)
+	}
+	v, err := repo.Vuln(ctx, c.ID, time.Time{})
+	if err != nil || v == nil || !v.CardReported || v.Exploitation != "" || len(v.ExploitationSources) != 0 {
+		t.Fatalf("%+v %v", v, err)
 	}
 }

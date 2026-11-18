@@ -158,11 +158,17 @@ ignores fields it does not know and reads an unknown condition as `other`.
 
 - **Import.** The bundle importer verifies the side manifest as for KEV and
   EPSS, then validates every card (caps, citations, review record, display
-  text without control, bidirectional or zero-width characters or markup
-  brackets, https links without credentials) and applies the stream only when
-  its data date is newer than the newest card held. A new card, a higher
-  revision or a withdrawal replaces the stored card; every revision is kept;
-  a replay or an older revision changes nothing. Each change is a
+  text without control, bidirectional, zero-width, line or paragraph
+  separator characters, markup brackets or links, https links without
+  credentials only in url fields) and applies the stream whenever its file
+  (SHA-256 from the verified manifest) differs from the last one applied;
+  never by data date, since a card reviewed earlier but merged later, or a
+  withdrawal without a later timestamp, keeps the stream's date. The date is
+  kept for the freshness status. A new card or a higher revision replaces
+  the stored card; at an equal revision only a withdrawal of a standing card
+  does (a withdrawn card comes back only with a higher revision); every
+  revision body is kept and never overwritten; a replay or an older revision
+  changes nothing. Each change is a
   `card_published`, `card_updated` or `card_withdrawn` event keyed by the
   card id. A platform without this support skips the stream (it is signed).
 - **One alert per organization and card.** The vulnerabilities a reviewed
@@ -174,8 +180,22 @@ ignores fields it does not know and reads an unknown condition as `other`.
   (confidence 60, no finding is created), versions not published yet
   possible, outside every range left out. When the card's alert is planned,
   the organization's open alerts of the grouped vulnerabilities are resolved
-  with the reason `grouped_into_card` and the card id in the note (nothing is
-  deleted).
+  with the reason `grouped_into_card` and the card id in `grouped_into_card`;
+  the person's note and the actor stay, the change is marked for the digest,
+  and nothing is deleted. A new card alert starts with the strongest open
+  triage state of the alerts it groups (acknowledged or remediating). Its
+  severity is the strongest of the card's level and its vulnerabilities'
+  records, and its exploitation the strongest a reviewed card states for any
+  of them: a card never rates a grouped vulnerability lower.
+- **Revision.** A revision that no longer groups a vulnerability (or a card
+  that is no longer reviewed) plans that vulnerability on its own again.
+- **Reported (fast lane).** A card in the `reported` state has no person's
+  review yet; every fact cites a vendor, CNA or CERT source. It is shown as
+  "reported, not yet reviewed" (alert titles start with that), and used for
+  alerts only: its exploitation status adds no score and opens no "check
+  needed", it does not group the alerts of its vulnerabilities, and it
+  creates no finding and no scan. A person's review makes it `reviewed` in a
+  new revision.
 - **Withdrawal.** A withdrawn card resolves its alerts (`card_withdrawn`) and
   the vulnerabilities it grouped are planned on their own again (their
   earlier alerts reopen when still affected).
@@ -185,7 +205,14 @@ ignores fields it does not know and reads an unknown condition as `other`.
   its vulnerabilities.
 
 Review is a role, not a person: the card records its author and reviewer, and
-a card its own author published says `single_review`, visibly. The review
+a card its own author published says `single_review`, visibly. The producer
+accepts a reviewer only from a code-owned allowlist in the card repository.
+
+Planned (P1): a card whose every fact comes from structured, signed or
+authoritative machine-readable vendor data (CSAF, OSV or GHSA records with
+explicit ranges) may be published as reviewed by rule, recorded as such and
+never as a person. Facts taken from free text keep needing a person's
+review. The review
 queue, the reviewer permission, notifications and review metrics are planned
 (§6).
 
@@ -217,7 +244,7 @@ cannot see). Out of scope answers 404.
 | Cross-organization leak | `tenant_id` on every alert row with composite foreign keys; every query filters on the authenticated organization; tests prove another organization's alerts and assets are never returned. |
 | Out-of-scope leak | Alert visibility, counts, assets and findings filtered by the caller's data scope; tests prove an out-of-scope asset never appears and its alert answers 404. |
 | Existence oracle ("some organization runs X") | No API returns how many organizations an event affects; messages never mention other organizations. |
-| Feed poisoning (fake urgency) | Immediate needs exploitation evidence from signed records (KEV, EPSS, reviewed cards); per-organization rate cap; one message per level. A card is accepted only from the signed manifest built for the applied sequence, only when reviewed or withdrawn, and only with every fact cited; the "check needed" exception needs a critical vulnerability, a public exploit and an internet-facing crown-jewel asset. |
+| Feed poisoning (fake urgency) | Immediate needs exploitation evidence from signed records (KEV, EPSS, reviewed cards); per-organization rate cap; one message per level. A card is accepted only from the signed manifest built for the applied sequence, only when reported (every fact from a vendor, CNA or CERT source; alerts only, no score), reviewed or withdrawn, and only with every fact cited; a card's severity never lowers a grouped vulnerability's; the "check needed" exception needs a critical vulnerability, a public exploit and an internet-facing crown-jewel asset. |
 | Hostile card text | Card text is validated twice (collector and platform): no control, bidirectional or zero-width characters, no markup brackets, per-field caps, at most 64 KiB per card and 2,000 cards; links https only without credentials; returned as plain text; channel messages use the card title through the same markup stripping as product names. |
 | Card rollback or silent change | The collector refuses a set that drops a card or changes one without a new revision; the platform keeps the highest revision and every revision it saw. |
 | Hostile text in messages | Titles built from ids, catalog product names and counts; control characters and channel markup (`<>&@`) stripped; length capped; no CVE description in channel messages. |

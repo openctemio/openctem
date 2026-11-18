@@ -180,14 +180,16 @@ func (im *Importer) applyIntelStream(ctx context.Context, f smallFetcher, source
 	return err
 }
 
-// applyCards applies the cards stream when it holds newer data than the
-// platform.
+// applyCards applies the cards stream whenever its file differs from the
+// last one applied. Apply is idempotent per card (revision compare), so a
+// replay is safe; a data-date gate would drop a new card reviewed before
+// the newest one, or a withdrawal published without a later timestamp.
 func (im *Importer) applyCards(ctx context.Context, f smallFetcher, s *vulnbundle.IntelStream, sequence uint64) error {
-	held, err := im.cards.AsOf(ctx)
+	held, err := im.cards.AppliedFile(ctx)
 	if err != nil {
 		return err
 	}
-	if !s.AsOf.After(held) {
+	if held != "" && held == s.File.SHA256 {
 		return nil
 	}
 	gz, err := f.Small(ctx, s.File.Name, vulnbundle.MaxIntelCardsBytes)
@@ -198,7 +200,7 @@ func (im *Importer) applyCards(ctx context.Context, f smallFetcher, s *vulnbundl
 	if err != nil {
 		return err
 	}
-	res, err := im.cards.Apply(ctx, cards, sequence, im.now())
+	res, err := im.cards.Apply(ctx, cards, advisory.StreamApplied{Sequence: sequence, FileSHA256: s.File.SHA256, AsOf: s.AsOf}, im.now())
 	if err != nil {
 		return err
 	}

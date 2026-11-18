@@ -236,3 +236,52 @@ func TestExploitationBasis(t *testing.T) {
 		t.Fatal("PublicExploit")
 	}
 }
+
+// A card's alert never rates lower than a vulnerability it groups: a card
+// that says medium over a critical CVE keeps the CVE's critical, and with it
+// the severity points and the "check needed" case.
+func TestStrongestSeverity(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"medium", "critical"}, "critical"},
+		{[]string{"HIGH", "low"}, "high"},
+		{[]string{"medium"}, "medium"},
+		{[]string{"", "bogus"}, ""},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := StrongestSeverity(c.in...); got != c.want {
+			t.Fatalf("StrongestSeverity(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	medium := Vuln{Severity: "medium", InKEV: true, CVSSVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}
+	grouped := medium
+	grouped.Severity = StrongestSeverity("medium", "critical")
+	if severityPoints(grouped) <= severityPoints(medium) {
+		t.Fatal("the grouped critical CVE did not keep its severity points")
+	}
+	assets := []Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}
+	if CheckNeeded(TierPossible, medium, assets) || !CheckNeeded(TierPossible, grouped, assets) {
+		t.Fatal("check needed must follow the strongest severity")
+	}
+}
+
+func TestStrongerTriage(t *testing.T) {
+	if StrongerTriage(StateNew, StateAcknowledged) != StateAcknowledged ||
+		StrongerTriage(StateAcknowledged, StateRemediating) != StateRemediating ||
+		StrongerTriage(StateRemediating, StateAcknowledged) != StateRemediating ||
+		StrongerTriage(StateRemediating, StateNew) != StateRemediating {
+		t.Fatal("triage order")
+	}
+}
+
+func TestCardTitleMarksReported(t *testing.T) {
+	if got := CardTitle("NGINX2Root", true); got != ReportedPrefix+"NGINX2Root" {
+		t.Fatalf("reported title %q", got)
+	}
+	if got := CardTitle("NGINX2Root", false); got != "NGINX2Root" {
+		t.Fatalf("reviewed title %q", got)
+	}
+}
