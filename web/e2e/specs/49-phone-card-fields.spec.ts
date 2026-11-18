@@ -36,18 +36,31 @@ async function textBoxes(root: Locator): Promise<Box[]> {
       for (const r of Array.from(range.getClientRects())) {
         if (r.width < 1 || r.height < 1) continue
         // A line cut off by a clipping box (a text clamped to two lines) is
-        // not drawn: it cannot overlap anything.
+        // not drawn: it cannot overlap anything. A value cut at its end (one
+        // line with an ellipsis, as a compact card draws every value: #4147,
+        // ui-style-contract "An automatic phone card is compact") draws only
+        // the part inside its box.
         let hidden = false
+        let left = r.left
+        let right = r.right
         for (let a: Element | null = parent; a && a !== el; a = a.parentElement) {
-          if (getComputedStyle(a).overflowY === 'visible') continue
+          const style = getComputedStyle(a)
+          if (style.overflowY === 'visible' && style.overflowX === 'visible') continue
           const box = a.getBoundingClientRect()
-          if (r.top >= box.bottom - 1 || r.bottom <= box.top + 1) {
+          if (
+            style.overflowY !== 'visible' &&
+            (r.top >= box.bottom - 1 || r.bottom <= box.top + 1)
+          ) {
             hidden = true
             break
           }
+          if (style.overflowX !== 'visible') {
+            left = Math.max(left, box.left)
+            right = Math.min(right, box.right)
+          }
         }
-        if (hidden) continue
-        out.push({ x: r.left, y: r.top, right: r.right, bottom: r.bottom, text, owner: i })
+        if (hidden || right - left < 1) continue
+        out.push({ x: left, y: r.top, right, bottom: r.bottom, text, owner: i })
       }
       i += 1
     }

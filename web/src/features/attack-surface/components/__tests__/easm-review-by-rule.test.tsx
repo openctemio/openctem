@@ -85,7 +85,7 @@ describe('suggested rules', () => {
   it('a failing suggestions read shows an error with a retry, not nothing', async () => {
     api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(suggestions)
     wrap(<EASMRuleSuggestions onApplied={() => {}} />)
-    expect(await screen.findByText('Failed to load suggested rules')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't load suggested rules")).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('*.dev.example.com.au')).toBeInTheDocument()
   })
