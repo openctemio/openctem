@@ -275,6 +275,9 @@ var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy t
 	"/api/v1/invitations",
 	"/api/v1/oauth",
 	"/api/v1/mcp-access",
+	// The stale-data banner of the signed-in console (no permission gate):
+	// not an integration surface.
+	"/api/v1/threat-intel/freshness",
 }
 
 // APIKeyDeniedPrefixes returns the route prefixes an API key may never reach.
