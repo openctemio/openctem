@@ -20,7 +20,8 @@ export default function ReadyToClosePage() {
   const list = useListParams({ filters: { view: '' } })
   const view: 'ready' | 'auto_closed' =
     list.filters.view === 'auto_closed' ? 'auto_closed' : 'ready'
-  const readyCount = useReadyToCloseCount(can(Permission.FindingsVerify))
+  const canVerify = can(Permission.FindingsVerify)
+  const readyCount = useReadyToCloseCount(canVerify)
   const changeView = (v: string) => list.setFilter('view', v === 'auto_closed' ? v : '')
   const listProps = {
     page: list.page,
@@ -43,7 +44,8 @@ export default function ReadyToClosePage() {
           <TabsList aria-label={t('findings.closureReview.viewLabel', 'Closes')}>
             <TabsTrigger value="ready">
               {t('findings.closureReview.tabReady', 'Ready to close')}
-              <TabsCount value={readyCount || null} />
+              {/* "…" until the count arrives, so the tab does not widen under the pointer. */}
+              <TabsCount value={canVerify && readyCount === undefined ? '…' : readyCount || null} />
             </TabsTrigger>
             <TabsTrigger value="auto_closed">
               {t('findings.closureReview.tabAutoClosed', 'Recently auto-closed')}
