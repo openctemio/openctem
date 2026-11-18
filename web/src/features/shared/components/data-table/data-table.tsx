@@ -9,6 +9,7 @@ import {
   ColumnFiltersState,
   type Column,
   type Header,
+  type HeaderContext,
   type Table as TanstackTable,
   type Row,
   SortingState,
@@ -516,14 +517,21 @@ const CARD_WRAP_CLASS =
  * A column's readable label for the phone card: `meta.label`, a string
  * header, or the `title` of a `DataTableColumnHeader` header; else its id.
  */
-function columnLabel<TData>(header: Header<TData, unknown>): string {
-  const def = header.column.columnDef
+function columnLabel<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>,
+  header?: Header<TData, unknown>
+): string {
+  const def = column.columnDef
   const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
   if (typeof metaLabel === 'string') return metaLabel
   if (typeof def.header === 'string') return def.header
   if (typeof def.header === 'function') {
     try {
-      const el = def.header(header.getContext())
+      // A hidden column has no header object: its header still reads its
+      // column (the usual `DataTableColumnHeader column title`).
+      const ctx = header?.getContext() ?? ({ column, table } as HeaderContext<TData, unknown>)
+      const el = def.header(ctx)
       if (React.isValidElement<{ title?: unknown }>(el) && typeof el.props.title === 'string') {
         return el.props.title
       }
@@ -531,7 +539,7 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
       // A header that needs React context cannot be read here; fall through.
     }
   }
-  const id = header.column.id.replace(/[_.-]+/g, ' ').trim()
+  const id = column.id.replace(/[_.-]+/g, ' ').trim()
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
@@ -1032,13 +1040,25 @@ export function DataTable<TData, TValue>({
     },
   })
 
-  // Field labels for the automatic phone cards.
-  const mobileLabels = new Map<string, string>()
-  if (phoneCards && !mobileRow) {
-    for (const header of table.getFlatHeaders()) {
-      mobileLabels.set(header.column.id, columnLabel(header as Header<TData, unknown>))
+  // Readable column labels (the header the user sees, in their language):
+  // field labels of the automatic phone cards and the Display > Columns list.
+  const columnLabels = new Map<string, string>()
+  if ((phoneCards && !mobileRow) || showColumnToggle) {
+    const headers = new Map(table.getFlatHeaders().map((h) => [h.column.id, h]))
+    // Every column, hidden ones too (Display lists them to turn them back on).
+    for (const column of table.getAllLeafColumns()) {
+      const header = headers.get(column.id)
+      columnLabels.set(
+        column.id,
+        columnLabel(
+          column as Column<TData, unknown>,
+          table,
+          header as Header<TData, unknown> | undefined
+        )
+      )
     }
   }
+  const mobileLabels = columnLabels
 
   // Frozen columns: the checkbox (if first) and the row's identifying
   // columns (`meta.pin`, else the first data column), within a share of the
@@ -1299,7 +1319,13 @@ export function DataTable<TData, TValue>({
       const s = sorting[0]
       if (!s) return ''
       const header = table.getFlatHeaders().find((h) => h.column.id === s.id)
-      const label = header ? columnLabel(header as Header<TData, unknown>) : s.id
+      const label = header
+        ? columnLabel(
+            header.column as Column<TData, unknown>,
+            table,
+            header as Header<TData, unknown>
+          )
+        : s.id
       return t('common.table.sortedBy', 'Sorted by {column}, {direction}', {
         column: label,
         direction: s.desc
@@ -1512,12 +1538,10 @@ export function DataTable<TData, TValue>({
                         return (
                           <DropdownMenuCheckboxItem
                             key={column.id}
-                            className="capitalize"
                             checked={column.getIsVisible()}
                             onCheckedChange={(value) => column.toggleVisibility(!!value)}
                           >
-                            {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                              column.id.replace(/_/g, ' ')}
+                            {columnLabels.get(column.id) ?? column.id}
                           </DropdownMenuCheckboxItem>
                         )
                       })}
