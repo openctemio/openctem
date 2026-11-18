@@ -99,7 +99,9 @@ describe('POST /api/auth/refresh without an organization', () => {
     expect(res.status).toBe(403)
     expect(res.cookies.get(env.cookies.tenant)?.value).toBe('')
     expect(res.cookies.get(env.auth.refreshCookieName)).toBeUndefined()
-    expect(res.cookies.get(env.auth.cookieName)).toBeUndefined()
+    // That organization's access token goes with it, like every other
+    // account-space refusal (refresh-failure.ts).
+    expect(res.cookies.get(env.auth.cookieName)?.value).toBe('')
   })
 })
 
