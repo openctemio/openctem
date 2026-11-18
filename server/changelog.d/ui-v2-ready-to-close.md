@@ -9,3 +9,4 @@
   shared table selection (ranges, the x key, Select on a phone) for one decision on many.
 - Every decision and its result is also said in a status region; Recently auto-closed does the same for
   Reopen: not fixed. The tab count shows "…" while it loads.
+- Docs: none (no guide describes this layout).
