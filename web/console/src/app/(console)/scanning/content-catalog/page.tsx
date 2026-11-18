@@ -210,6 +210,17 @@ export default function ContentCatalogPage() {
   const tr = trust.data
   const stale = trustBanner(tr)?.tone === 'warning'
   const total = pkgs.data?.total ?? 0
+  // The "nothing imported yet" notice says the catalog is empty: it is only
+  // true when no package is listed (instance packages exist without an import),
+  // and it is only drawn once the package list is known, never before.
+  const listKnown = !!pkgs.data || !!pkgs.error
+  const hasPackages = total > 0 || !!q || !!list.filters.type
+  const bannerReason = trustBanner(tr)
+  const showBanner = !(
+    bannerReason?.tone === 'info' &&
+    bannerReason.reason === 'no-import' &&
+    hasPackages
+  )
   return (
     <Main>
       <PageStack>
@@ -334,86 +345,89 @@ export default function ContentCatalogPage() {
           paginationNoun={t('admin.catalog.noun', 'packages')}
         />
 
-        <section id="catalog-trust" className="flex min-w-0 flex-col gap-4 scroll-mt-4">
-          {trust.error ? (
-            <ErrorState
-              title={t('admin.catalog.trustError', 'the catalog trust state')}
-              error={trust.error}
-              onRetry={() => void trust.mutate()}
-            />
-          ) : !tr ? (
-            <Skeleton className="h-32 w-full" />
-          ) : (
-            <>
-              <TrustBanner trust={tr} />
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    {t('admin.catalog.trustTitle', 'Trust')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t(
-                      'admin.catalog.rootsReadOnly',
-                      'Trust roots: {n}. They are set on the server (CONTENT_TRUST_ROOT_KEY_IDS) and cannot be changed from this console: a stolen console session must not be able to trust new content.',
-                      { n: tr.roots_configured }
-                    )}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                      <dt className="text-muted-foreground">
-                        {t('admin.catalog.keyset', 'Key set version')}
-                      </dt>
-                      <dd className="font-mono">{tr.keyset_version || '—'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">
-                        {t('admin.catalog.index', 'Signed index')}
-                      </dt>
-                      <dd className="font-mono">
-                        {tr.index_sequence || '—'}
-                        {tr.index_expires_at && (
-                          <span className="ms-2 font-sans text-xs text-muted-foreground">
-                            {tr.index_expired
-                              ? t('admin.catalog.expired', 'expired')
-                              : t('admin.catalog.expires', 'expires')}{' '}
-                            <RelativeTime date={tr.index_expires_at} />
-                          </span>
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">
-                        {t('admin.catalog.revocations', 'Revocation list')}
-                      </dt>
-                      <dd className="font-mono">
-                        {tr.revocations_sequence || '—'}
-                        {tr.revocations_stale && (
-                          <Badge variant="destructive" className="ms-2">
-                            {t('admin.catalog.stale', 'Out of date')}
-                          </Badge>
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">
-                        {t('admin.catalog.importedAt', 'Last import')}
-                      </dt>
-                      <dd>
-                        {tr.imported_at ? (
-                          <RelativeTime date={tr.imported_at} />
-                        ) : (
-                          t('admin.catalog.never', 'Never')
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </section>
+        {/* Under the list: nothing is drawn (not even an empty block that would
+            take a gap) until the trust state and the package list are both
+            known, so nothing above it moves when this block arrives. */}
+        {(trust.error || (tr && listKnown)) && (
+          <section id="catalog-trust" className="flex min-w-0 flex-col gap-4 scroll-mt-4">
+            {trust.error ? (
+              <ErrorState
+                title={t('admin.catalog.trustError', 'the catalog trust state')}
+                error={trust.error}
+                onRetry={() => void trust.mutate()}
+              />
+            ) : !tr ? null : (
+              <>
+                {showBanner && <TrustBanner trust={tr} />}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {t('admin.catalog.trustTitle', 'Trust')}
+                    </CardTitle>
+                    <CardDescription>
+                      {t(
+                        'admin.catalog.rootsReadOnly',
+                        'Trust roots: {n}. They are set on the server (CONTENT_TRUST_ROOT_KEY_IDS) and cannot be changed from this console: a stolen console session must not be able to trust new content.',
+                        { n: tr.roots_configured }
+                      )}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {t('admin.catalog.keyset', 'Key set version')}
+                        </dt>
+                        <dd className="font-mono">{tr.keyset_version || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {t('admin.catalog.index', 'Signed index')}
+                        </dt>
+                        <dd className="font-mono">
+                          {tr.index_sequence || '—'}
+                          {tr.index_expires_at && (
+                            <span className="ms-2 font-sans text-xs text-muted-foreground">
+                              {tr.index_expired
+                                ? t('admin.catalog.expired', 'expired')
+                                : t('admin.catalog.expires', 'expires')}{' '}
+                              <RelativeTime date={tr.index_expires_at} />
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {t('admin.catalog.revocations', 'Revocation list')}
+                        </dt>
+                        <dd className="font-mono">
+                          {tr.revocations_sequence || '—'}
+                          {tr.revocations_stale && (
+                            <Badge variant="destructive" className="ms-2">
+                              {t('admin.catalog.stale', 'Out of date')}
+                            </Badge>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {t('admin.catalog.importedAt', 'Last import')}
+                        </dt>
+                        <dd>
+                          {tr.imported_at ? (
+                            <RelativeTime date={tr.imported_at} />
+                          ) : (
+                            t('admin.catalog.never', 'Never')
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </section>
+        )}
 
         <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
           <SheetContent className="w-full sm:max-w-lg">
