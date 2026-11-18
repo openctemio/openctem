@@ -24,6 +24,10 @@ func TestMembershipAdmission(t *testing.T) {
 		{TenantID: strict.ID().String(), TenantSlug: strict.Slug(), TenantName: "Strict", Role: "member"},
 	}
 	uid := h.seedUser(t, "adm@example.com")
+	for _, tn := range []*tenant.Tenant{open, strict} {
+		ms, _ := tenant.NewMembership(uid, tn.ID(), tenant.RoleMember, nil)
+		h.tenants.memberships = append(h.tenants.memberships, ms)
+	}
 	res := h.login(t, "adm@example.com")
 	st := strict.TypedSettings()
 	st.Security.MFARequired = true
