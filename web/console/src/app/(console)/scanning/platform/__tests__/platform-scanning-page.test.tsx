@@ -156,6 +156,16 @@ describe('Platform scanning console page', () => {
     expect(screen.getByText('Blocked target names')).toBeInTheDocument()
   })
 
+  it('opens a Blocked names link on the exceptions list while shared sensors are not available', () => {
+    state.ready = false
+    state.tab = 'blocked'
+    render(<PlatformScanningPage />)
+    const list = screen.getByTestId('blocked-names-exceptions')
+    const notice = screen.getByTestId('shared-sensors-unavailable')
+    // The list first; the notice and the domain-proof policy follow it.
+    expect(list.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('offers the six tabs once shared sensors are available', () => {
     render(<PlatformScanningPage />)
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
@@ -185,6 +195,7 @@ describe('Platform scanning console page', () => {
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Retire/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Targets and logs/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for the job/ })).not.toBeInTheDocument()
   })
 
   it('lets an operations administrator view a job only with a reason', async () => {
@@ -192,7 +203,9 @@ describe('Platform scanning console page', () => {
     state.tab = 'queue'
     render(<PlatformScanningPage />)
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getAllByRole('button', { name: /Targets and logs/ })[0])
+    // The job's one action is in its row menu.
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for the job of / })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Targets and logs' }))
     await userEvent.type(screen.getByLabelText(/reason/i), 'abuse report 42 from the operator')
     await userEvent.click(screen.getByRole('button', { name: 'View' }))
     await waitFor(() =>
