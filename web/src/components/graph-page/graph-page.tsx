@@ -136,10 +136,10 @@ export function GraphNote({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" data-testid="graph-note-trigger">
+        <Button type="button" variant="ghost" iconOnlyBelow="sm" data-testid="graph-note-trigger">
           <CircleHelp aria-hidden />
-          {/* On a phone the question mark alone, so the toolbar keeps to two rows; the label stays its name. */}
-          <span className="max-sm:sr-only">{label}</span>
+          {/* On a phone the question mark alone (a square), so the toolbar keeps to two rows; the label stays its name. */}
+          <span className="sr-only sm:not-sr-only">{label}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 text-dense">
