@@ -697,7 +697,10 @@ export interface Finding {
 
   // Timestamps
   discoveredAt: string
+  /** When it was closed (any closed status, not only resolved). */
   resolvedAt?: string
+  /** When an accepted risk ends and the finding reopens (accepted only). */
+  acceptanceExpiresAt?: string
   /** Why it is closed (lib/closure.ts); absent while open. */
   closureReason?: string
   /** The organization's sub-status inside the status; absent: the status itself. */

@@ -40,6 +40,7 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
+import { findingDetailHref } from '../../lib/finding-link'
 import { findingSourceText, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
@@ -105,6 +106,77 @@ export function SlaDue({
         </span>
       )}
     </span>
+  )
+}
+
+/**
+ * A closed finding's state row, in place of the SLA countdown: the words of
+ * its closed status and the day it was closed. An accepted risk says until
+ * when (the day the finding reopens); a duplicate links the finding it
+ * duplicates.
+ */
+export function ClosedStateRow({ finding, status }: { finding: FindingDetail; status: string }) {
+  const { t, locale } = useTranslation()
+  const closedOn = formatDate(finding.resolvedAt, locale)
+  const on = closedOn ? (
+    <span className="block text-xs text-muted-foreground tabular-nums">
+      {t('findings.properties.closedOn', 'On {date}', { date: closedOn })}
+    </span>
+  ) : null
+
+  if (status === 'accepted') {
+    const until = formatDate(finding.acceptanceExpiresAt, locale)
+    return (
+      <PropertyRow label={t('findings.properties.riskAccepted', 'Risk accepted')}>
+        <span data-slot="finding-closed-state">
+          {until ? (
+            <span className="tabular-nums">
+              {t('findings.properties.acceptedUntil', 'Until {date}', { date: until })}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {t('findings.properties.acceptedNoEnd', 'No end date')}
+            </span>
+          )}
+          {on}
+        </span>
+      </PropertyRow>
+    )
+  }
+  if (status === 'duplicate') {
+    return (
+      <PropertyRow label={t('findings.properties.duplicateOf', 'Duplicate of')}>
+        <span data-slot="finding-closed-state">
+          {finding.duplicateOf ? (
+            <Link
+              href={findingDetailHref(finding.duplicateOf)}
+              className="rounded-sm font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              {t('findings.properties.originalFinding', 'The original finding')}
+              <ArrowUpRight className="ms-0.5 inline h-3.5 w-3.5 align-text-top" aria-hidden />
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">
+              {t('findings.properties.originalUnknown', 'Original not recorded')}
+            </span>
+          )}
+          {on}
+        </span>
+      </PropertyRow>
+    )
+  }
+  const label =
+    status === 'false_positive'
+      ? t('findings.properties.markedFalsePositive', 'Marked false positive')
+      : status === 'resolved'
+        ? t('findings.properties.resolved', 'Resolved')
+        : t('findings.properties.closed', 'Closed')
+  return (
+    <PropertyRow label={label}>
+      <span data-slot="finding-closed-state" className="tabular-nums">
+        {closedOn || <span className="text-muted-foreground">-</span>}
+      </span>
+    </PropertyRow>
   )
 }
 
@@ -247,21 +319,24 @@ export function FindingProperties({
             )}
           </PropertyRow>
         )}
-        <PropertyRow label={t('findings.properties.slaDue', 'SLA due')}>
-          <div className="flex flex-col items-start gap-0.5">
-            <SlaDue
-              deadline={finding.slaDeadline}
-              status={finding.slaStatus}
-              closed={closed}
-              kevCapped={finding.slaKevCapped}
-            />
-            <SlaWhyThisDate
-              basis={finding.slaBasis}
-              priorityClass={finding.priorityClass}
-              severity={finding.severity}
-            />
-          </div>
-        </PropertyRow>
+        {closed ? (
+          <ClosedStateRow finding={finding} status={triage.status} />
+        ) : (
+          <PropertyRow label={t('findings.properties.slaDue', 'SLA due')}>
+            <div className="flex flex-col items-start gap-0.5">
+              <SlaDue
+                deadline={finding.slaDeadline}
+                status={finding.slaStatus}
+                kevCapped={finding.slaKevCapped}
+              />
+              <SlaWhyThisDate
+                basis={finding.slaBasis}
+                priorityClass={finding.priorityClass}
+                severity={finding.severity}
+              />
+            </div>
+          </PropertyRow>
+        )}
       </PropertyGroup>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 
@@ -337,11 +412,6 @@ export function FindingProperties({
                   count: finding.occurrenceCount ?? 0,
                 })}
               </span>
-            </PropertyRow>
-          )}
-          {finding.resolvedAt && (
-            <PropertyRow label={t('findings.properties.resolved', 'Resolved')}>
-              <span className="tabular-nums">{formatDate(finding.resolvedAt, locale)}</span>
             </PropertyRow>
           )}
           {finding.observation === 'stale' && (
