@@ -17,11 +17,17 @@ describe('breadcrumbLabel', () => {
     expect(breadcrumbLabel('/x/some-new-page', 'some-new-page')).toBe('Some new page')
     // A generic menu title is not a useful trail label.
     expect(breadcrumbLabel('/settings/integrations', 'integrations')).toBe('Integrations')
-    expect(breadcrumbLabel('/account', 'account')).toBe('Account')
+    // /account is the Profile page: the crumb says what its heading says.
+    expect(breadcrumbLabel('/account', 'account')).toBe('Profile')
   })
 
-  it('names sub-pages the sidebar does not list', () => {
+  it('names sub-pages after their tab or their own heading', () => {
     expect(breadcrumbLabel('/crown-jewels', 'crown-jewels')).toBe('Crown jewels')
+    expect(breadcrumbLabel('/attack-surface/posture', 'posture')).toBe('Posture')
+    expect(breadcrumbLabel('/assets/attention/validate-primary', 'validate-primary')).toBe(
+      'Validate primary assets'
+    )
+    expect(breadcrumbLabel('/findings/approvals', 'approvals')).toBe('Approval requests')
   })
 
   it('names settings pages as the settings rail does', () => {
