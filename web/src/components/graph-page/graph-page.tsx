@@ -152,12 +152,14 @@ export function GraphNote({
 /**
  * The frame of the graph: a bordered surface that takes what is left of the
  * window under the title row and the toolbar, never less than a readable
- * height. `footer` is the line of facts under the graph (when it was computed,
- * what is shown).
+ * height. `header` is the selection line over the graph (what is selected
+ * and its facts), so the page title never changes with the selection; `footer`
+ * is the line of facts under the graph (when it was computed, what is shown).
  */
 export function GraphFrame({
   label,
   children,
+  header,
   footer,
   fill = true,
   className,
@@ -165,6 +167,7 @@ export function GraphFrame({
 }: {
   label: string
   children: React.ReactNode
+  header?: React.ReactNode
   footer?: React.ReactNode
   /** False for content that has its own height (the list view). */
   fill?: boolean
@@ -185,6 +188,11 @@ export function GraphFrame({
         className
       )}
     >
+      {header && (
+        <div className="border-b border-border-subtle px-4 py-2" data-slot="graph-frame-header">
+          {header}
+        </div>
+      )}
       <div className={cn('min-w-0', fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
       {footer && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border-subtle px-4 py-2 text-cap text-muted-foreground">

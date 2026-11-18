@@ -106,7 +106,9 @@ export default function AttackPathsPage() {
     return [...out.filter((o) => o.crown), ...out.filter((o) => !o.crown)]
   }, [chains])
   const targetId = params.get('target') || targets[0]?.id || null
-  const mode: PathMode = params.get('paths') === 'all' ? 'all' : 'shortest'
+  // All paths by default: the graph opens on the whole picture (entry, foothold,
+  // pivot, target); "Shortest" narrows it to one route.
+  const mode: PathMode = params.get('paths') === 'shortest' ? 'shortest' : 'all'
   const view: View = isMobile ? 'list' : params.get('view') === 'list' ? 'list' : 'canvas'
 
   const { detail, error, isLoading, mutate } = useAttackPathDetail(targetId)
@@ -130,7 +132,10 @@ export default function AttackPathsPage() {
   const target = detail ? byKey.get(detail.target) : undefined
   const sel = detail?.paths[selected]
   const chokes = useMemo(() => (detail ? chokeRows(detail) : []), [detail])
-  const firstChoke = chokes[0]
+  // The task goes to the first choke point that has a finding to fix; a step
+  // that has none (an identity, a relationship alone) cannot be a task, so with
+  // no such choke point the action is not offered at all.
+  const taskChoke = chokes.find((c) => c.node.finding)
   const canTask = can(Permission.RemediationWrite) && remediationOn
 
   const cycle = useCallback(
@@ -174,14 +179,32 @@ export default function AttackPathsPage() {
       ? computedAt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
       : ''
 
-  const title =
-    target && !target.hidden
-      ? t('prioritization.attackPath.titleTo', 'Path to {name}', { name: target.name })
-      : t('prioritization.attackPaths.title', 'Attack paths')
+  // The title and the line under it never change with the data, so the header
+  // holds still while the paths load; the selected path is named in the
+  // selection line over the graph.
+  const description = (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span>
+        {t(
+          'prioritization.attackPath.description',
+          'How the internet could reach your assets, and which fix cuts the most paths.'
+        )}
+      </span>
+      <PossiblePathLabel />
+    </span>
+  )
 
-  const description =
+  const selection =
     sel && detail ? (
-      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div
+        data-slot="graph-selection"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-dense text-muted-foreground"
+      >
+        {target && !target.hidden && (
+          <span className="font-medium text-foreground">
+            {t('prioritization.attackPath.titleTo', 'Path to {name}', { name: target.name })}
+          </span>
+        )}
         <span className="tabular-nums">
           {sel.length === 1
             ? t('prioritization.attackPath.hopOne', '1 hop')
@@ -197,29 +220,25 @@ export default function AttackPathsPage() {
             })}
           </span>
         )}
-        <span>
-          {t(
-            'prioritization.attackPath.descriptionTail',
-            'The product of the step weights, so every step is traceable.'
-          )}
-        </span>
-        <PossiblePathLabel />
-      </span>
-    ) : (
-      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span>
-          {t(
-            'prioritization.attackPath.description',
-            'How the internet could reach your assets, and which fix cuts the most paths.'
-          )}
-        </span>
-        <PossiblePathLabel />
-      </span>
-    )
+      </div>
+    ) : null
+
+  const taskButton = (size?: 'sm') => (
+    <Button
+      type="button"
+      size={size}
+      variant={size ? 'outline' : 'default'}
+      onClick={() => setTaskOpen(true)}
+      data-testid="choke-task"
+    >
+      {t('prioritization.attackPath.createTask', 'Create task for choke point')}
+    </Button>
+  )
+  const offerTask = canTask && !!detail && detail.paths.length > 0 && !!taskChoke
 
   const header = (
     <PageHeader
-      title={title}
+      title={t('prioritization.attackPaths.title', 'Attack paths')}
       description={description}
       viewSwitcher={
         !isMobile && detail && detail.paths.length > 0 ? (
@@ -242,16 +261,8 @@ export default function AttackPathsPage() {
         ) : undefined
       }
     >
-      {canTask && detail && detail.paths.length > 0 && (
-        <Button
-          type="button"
-          disabled={!firstChoke?.node.finding}
-          onClick={() => setTaskOpen(true)}
-          data-testid="choke-task"
-        >
-          {t('prioritization.attackPath.createTask', 'Create task for choke point')}
-        </Button>
-      )}
+      {/* On a phone the action sits on the choke points card, so the header does not grow. */}
+      {offerTask && !isMobile && taskButton()}
     </PageHeader>
   )
 
@@ -350,7 +361,7 @@ export default function AttackPathsPage() {
             label={t('prioritization.attackPath.pathsLabel', 'Paths')}
             value={mode}
             clearable={false}
-            onChange={(v) => setParam('paths', v === 'all' ? 'all' : null)}
+            onChange={(v) => setParam('paths', v === 'shortest' ? 'shortest' : null)}
             options={[
               { value: 'shortest', label: t('prioritization.attackPath.shortest', 'Shortest') },
               {
@@ -443,6 +454,7 @@ export default function AttackPathsPage() {
         {view === 'canvas' ? (
           <GraphFrame
             label={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
+            header={selection}
             footer={graphFacts(more)}
           >
             <FlowFullscreen
@@ -484,6 +496,7 @@ export default function AttackPathsPage() {
           <GraphFrame
             fill={false}
             label={t('prioritization.attackPath.listLabel', 'Attack paths as a list')}
+            header={selection}
             footer={graphFacts(more)}
           >
             <AttackPathList
@@ -497,7 +510,11 @@ export default function AttackPathsPage() {
         )}
         {/* What to fix and how the selected path scores: under the graph, never beside it. */}
         <div className="grid items-start gap-4 md:grid-cols-2">
-          <ChokePointsCard detail={detail} onFocus={setFocus} />
+          <ChokePointsCard
+            detail={detail}
+            onFocus={setFocus}
+            action={offerTask && isMobile ? taskButton('sm') : undefined}
+          />
           <PathScoreCard
             detail={detail}
             selected={selected}
@@ -538,7 +555,7 @@ export default function AttackPathsPage() {
           }
         />
       )}
-      {taskOpen && firstChoke?.node.finding && (
+      {taskOpen && taskChoke?.node.finding && (
         <AddFindingsToTaskDialog
           open
           onOpenChange={(o) => {
@@ -546,8 +563,8 @@ export default function AttackPathsPage() {
           }}
           findings={[
             {
-              id: firstChoke.node.finding.id,
-              title: firstChoke.node.finding.title || stepText(firstChoke.node),
+              id: taskChoke.node.finding.id,
+              title: taskChoke.node.finding.title || stepText(taskChoke.node),
             },
           ]}
         />

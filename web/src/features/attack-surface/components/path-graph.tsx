@@ -7,6 +7,7 @@ import { safeInternalHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAttackPathLabels } from './attack-path-labels'
 import {
   CRITICALITY_BADGE_SOFT,
   CRITICALITY_TEXT_COLORS,
@@ -79,10 +80,6 @@ function normalizeCriticality(value?: string): CriticalityLevel | undefined {
   return toCriticality(value)
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')
-}
-
 function assetTypeIcon(assetType: string): LucideIcon {
   switch (assetType) {
     case 'host':
@@ -116,8 +113,9 @@ function nodeAccent(node: PathGraphNode): string | undefined {
 // Single node card
 // ============================================================
 
-function PathNode({ node }: { node: PathGraphNode }) {
+function PathNode({ node, onOpen }: { node: PathGraphNode; onOpen?: () => void }) {
   const { t } = useTranslation()
+  const labels = useAttackPathLabels()
   const isEntry = node.role === 'entry'
   const isTarget = node.role === 'target'
   const iconCmp = isEntry ? Globe : assetTypeIcon(node.assetType)
@@ -191,7 +189,9 @@ function PathNode({ node }: { node: PathGraphNode }) {
           </Badge>
         )}
         {node.exposure && !isEntry && (
-          <span className="text-muted-foreground text-[10px]">{capitalize(node.exposure)}</span>
+          <span className="text-muted-foreground text-[10px]">
+            {labels.exposure(node.exposure)}
+          </span>
         )}
         {node.kev && (
           <Badge
@@ -220,6 +220,34 @@ function PathNode({ node }: { node: PathGraphNode }) {
   // Border colour is set inline from a shared token so no palette class is added.
   const style = accent ? { borderColor: accent } : undefined
 
+  // The graph-page rule: a node opens its step detail (a sheet over the page),
+  // where "View findings" is the way on.
+  if (onOpen && node.id) {
+    return (
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        data-testid="chain-node"
+        onClick={onOpen}
+        aria-label={t(
+          'prioritization.pathGraph.nodeOpen',
+          '{name}, {type}. Open the step detail.',
+          {
+            name: node.name,
+            type: labels.assetType(node.assetType),
+          }
+        )}
+        style={style}
+        className={cn(
+          baseClass,
+          'text-start hover:ring-ring/60 focus-visible:ring-ring hover:shadow-sm hover:ring-1 focus-visible:ring-2 focus-visible:outline-none'
+        )}
+      >
+        {inner}
+      </button>
+    )
+  }
+
   if (node.href && node.id) {
     return (
       <Link
@@ -227,11 +255,11 @@ function PathNode({ node }: { node: PathGraphNode }) {
         aria-label={t(
           'prioritization.pathGraph.nodeLabel',
           '{name} — {type}. View findings for this asset.',
-          { name: node.name, type: capitalize(node.assetType) }
+          { name: node.name, type: labels.assetType(node.assetType) }
         )}
         title={t('prioritization.pathGraph.nodeTitle', '{name} ({type}) — view findings', {
           name: node.name,
-          type: capitalize(node.assetType),
+          type: labels.assetType(node.assetType),
         })}
         style={style}
         className={cn(
@@ -273,7 +301,13 @@ function Connector({ kevOnPath }: { kevOnPath: boolean }) {
 // One path row
 // ============================================================
 
-function PathRow({ path }: { path: PathGraphPath }) {
+function PathRow({
+  path,
+  onOpenNode,
+}: {
+  path: PathGraphPath
+  onOpenNode?: (path: PathGraphPath, index: number) => void
+}) {
   const { t } = useTranslation()
   const kevOnPath = (path.kevCount ?? 0) > 0
   const scorePct = Math.max(0, Math.min(100, path.scorePct ?? 0))
@@ -333,7 +367,7 @@ function PathRow({ path }: { path: PathGraphPath }) {
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-0">
         {path.nodes.map((node, idx) => (
           <Fragment key={`${node.id || node.name}-${idx}`}>
-            <PathNode node={node} />
+            <PathNode node={node} onOpen={onOpenNode ? () => onOpenNode(path, idx) : undefined} />
             {idx < path.nodes.length - 1 && <Connector kevOnPath={kevOnPath} />}
           </Fragment>
         ))}
@@ -362,6 +396,8 @@ interface PathGraphProps {
   paths: PathGraphPath[]
   /** Optional empty slot when `paths` is []. */
   empty?: React.ReactNode
+  /** A node opens its step detail (a sheet) instead of linking to its findings. */
+  onOpenNode?: (path: PathGraphPath, index: number) => void
   className?: string
 }
 
@@ -377,7 +413,7 @@ interface PathGraphProps {
  * both stay on-theme. Wide chains scroll inside their own container on desktop
  * and fold into a vertical stack on mobile.
  */
-export function PathGraph({ paths, empty, className }: PathGraphProps) {
+export function PathGraph({ paths, empty, onOpenNode, className }: PathGraphProps) {
   if (paths.length === 0) {
     return empty ? <>{empty}</> : null
   }
@@ -388,7 +424,7 @@ export function PathGraph({ paths, empty, className }: PathGraphProps) {
         // overflow-x-auto keeps an unusually long chain scrollable on desktop
         // instead of forcing the whole page to scroll sideways.
         <div key={path.id} className="overflow-x-auto">
-          <PathRow path={path} />
+          <PathRow path={path} onOpenNode={onOpenNode} />
         </div>
       ))}
     </div>
