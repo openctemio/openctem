@@ -96,6 +96,26 @@ describe('Settings › Sign-in', () => {
     )
   })
 
+  it('lists the two-factor switches in the board order: administrators, everyone, SSO proof', () => {
+    open()
+    const ids = ['tenant-mfa-admins', 'tenant-mfa-required', 'tenant-sso-mfa-proof'].map(
+      (id) => document.getElementById(id) as HTMLElement
+    )
+    for (let i = 1; i < ids.length; i++) {
+      expect(
+        ids[i - 1].compareDocumentPosition(ids[i]) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    }
+  })
+
+  it('shows the email verification mode by name only in its 36px field', () => {
+    open()
+    const field = document.getElementById('email-verification-mode') as HTMLElement
+    expect(field).toHaveTextContent('Auto (recommended)')
+    // The mode's hint is in the open list, not squeezed into the field.
+    expect(field.textContent).toBe('Auto (recommended)')
+  })
+
   it('shows two tabs, Sign-in first', () => {
     open()
     const tabs = within(screen.getByRole('tablist')).getAllByRole('tab')

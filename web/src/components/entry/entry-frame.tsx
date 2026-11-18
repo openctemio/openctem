@@ -6,13 +6,12 @@ import { Languages } from 'lucide-react'
 import { BrandLogoFull, PoweredBy } from '@/components/brand-logo'
 import { LocaleMenuItems } from '@/components/language-switcher'
 import Link from '@/components/link'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { TextLink } from '@/components/ui/text-link'
+import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { Overridable } from '@/lib/extension/overridable'
 import { safeHref } from '@/lib/safe-href'
@@ -97,16 +96,27 @@ export function EntryFrame({
   )
 }
 
-/** The language menu of the footer: the same cookie and reload as the app's. */
+/**
+ * The language menu of the footer: the same cookie and reload as the app's.
+ * Drawn as one more footer link (same size and colour as the legal links),
+ * not a button of its own size.
+ */
 function EntryLanguageSwitch() {
   const { t } = useTranslation()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" data-slot="entry-language">
-          <Languages aria-hidden />
+        <button
+          type="button"
+          data-slot="entry-language"
+          className={cn(
+            TEXT_LINK_CLASS.nav,
+            'inline-flex items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-ring'
+          )}
+        >
+          <Languages className="size-3.5" aria-hidden />
           {t('common.language', 'Language')}
-        </Button>
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center">
         <LocaleMenuItems />

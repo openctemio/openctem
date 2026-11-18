@@ -68,3 +68,18 @@ describe('SidebarBrand, collapsed', () => {
     expect(tip.length).toBeGreaterThan(0)
   })
 })
+
+describe('SidebarBrand, expanded', () => {
+  it('names the home link by the brand (its lockup is a picture)', () => {
+    render(
+      <TooltipProvider>
+        <SidebarProvider defaultOpen>
+          <SidebarBrand />
+        </SidebarProvider>
+      </TooltipProvider>
+    )
+    const link = screen.getByRole('link', { name: 'OpenCTEM home' })
+    expect(link).toHaveAttribute('href', '/')
+    expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  })
+})

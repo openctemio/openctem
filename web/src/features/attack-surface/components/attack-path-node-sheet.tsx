@@ -14,6 +14,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { GraphNodeSheet } from '@/components/graph-page/graph-page'
 import { KeyValueList, type KeyValueItem } from '@/features/shared'
 import type { AttackPathDetail, PathNode } from '../hooks/use-attack-path-detail'
+import { useAttackPathLabels } from './attack-path-labels'
 import { assetFindingsHref, chokeRows, formatWeight, stepText } from '../lib/attack-path-model'
 
 export interface AttackPathNodeSheetProps {
@@ -42,6 +43,7 @@ export function AttackPathNodeSheet({
   returnFocus,
 }: AttackPathNodeSheetProps) {
   const { t } = useTranslation()
+  const labels = useAttackPathLabels()
   if (!node) return null
 
   const roleLabel = node.isCrownJewel
@@ -58,7 +60,7 @@ export function AttackPathNodeSheet({
               {
                 key: 'type',
                 label: t('prioritization.attackPath.node.assetType', 'Asset type'),
-                value: node.assetType,
+                value: labels.assetType(node.assetType),
               },
             ]
           : []),
@@ -67,7 +69,7 @@ export function AttackPathNodeSheet({
               {
                 key: 'exposure',
                 label: t('prioritization.attackPath.node.exposure', 'Exposure'),
-                value: node.exposure,
+                value: labels.exposure(node.exposure),
               },
             ]
           : []),
@@ -76,7 +78,7 @@ export function AttackPathNodeSheet({
               {
                 key: 'criticality',
                 label: t('prioritization.attackPath.node.criticality', 'Criticality'),
-                value: node.criticality,
+                value: labels.criticality(node.criticality),
               },
             ]
           : []),

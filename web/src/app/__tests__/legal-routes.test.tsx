@@ -82,16 +82,27 @@ describe('legal pages', () => {
         'aria-current',
         'page'
       )
-      // One entry in the table of contents per section, each pointing at it.
-      const toc = screen.getByRole('navigation', { name: 'On this page' })
+      // One entry in the table of contents per section, each pointing at it:
+      // the list beside the text (768 px and up) and the folded one under the
+      // title (phone). A page of one section lists no contents.
       const headings = screen.getAllByRole('heading', { level: 2 })
-      const links = within(toc).getAllByRole('link')
-      expect(links.map((a) => a.textContent)).toEqual(headings.map((h) => h.textContent))
-      for (const a of links) {
-        const id = a.getAttribute('href')!.slice(1)
-        expect(document.getElementById(id)?.tagName).toBe('SECTION')
+      const tocs = screen.queryAllByRole('navigation', { name: 'On this page' })
+      if (headings.length < 2) {
+        expect(tocs).toHaveLength(0)
+      } else {
+        expect(tocs).toHaveLength(2)
+        for (const toc of tocs) {
+          const links = within(toc).getAllByRole('link')
+          expect(links.map((a) => a.textContent)).toEqual(headings.map((h) => h.textContent))
+          for (const a of links) {
+            const id = a.getAttribute('href')!.slice(1)
+            expect(document.getElementById(id)?.tagName).toBe('SECTION')
+          }
+          expect(
+            within(toc).getByRole('button', { name: 'Print or save as PDF' })
+          ).toBeInTheDocument()
+        }
       }
-      expect(within(toc).getByRole('button', { name: 'Print or save as PDF' })).toBeInTheDocument()
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
       expect(screen.getByRole('main')).toContainElement(headings[0])
       expect(screen.getByRole('link', { name: 'Skip to the document' })).toHaveAttribute(
