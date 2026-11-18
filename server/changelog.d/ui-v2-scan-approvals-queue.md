@@ -7,3 +7,4 @@
 - Approve and Reject stay on the row; Details (targets, what runs, what changed since the last approval),
   Approve my own scan, Remind and Withdraw are in its More menu. Withdraw now asks first.
 - Every decision is also said in a status region; a refused read says so instead of offering Retry.
+- Docs: none (no guide describes this layout).
