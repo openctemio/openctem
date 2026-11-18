@@ -17,10 +17,16 @@ export default function AttackSurfaceCertificatesPage() {
       <PageStack>
         <PageHeader
           title={t('attackSurface.title', 'Attack surface')}
-          description={t(
-            'attackSurface.certificates.pageDescription',
-            'The TLS certificates found on your external assets: who they were issued to, who issued them, and when they expire.'
-          )}
+          // A list page: on a phone the list comes first, so the sentence
+          // under the title is left to wider screens (as on Scans).
+          description={
+            <span className="max-md:hidden">
+              {t(
+                'attackSurface.certificates.pageDescription',
+                'The TLS certificates found on your external assets: who they were issued to, who issued them, and when they expire.'
+              )}
+            </span>
+          }
         />
         <AttackSurfaceSectionTabs />
         <EASMCertificates />
