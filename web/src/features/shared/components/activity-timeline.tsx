@@ -116,7 +116,7 @@ export function ActivityTimeline({
   className,
 }: ActivityTimelineProps) {
   const compact = density === 'compact'
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
 
   const toggle = (value: string) => {
     if (!onSelectedFiltersChange) return

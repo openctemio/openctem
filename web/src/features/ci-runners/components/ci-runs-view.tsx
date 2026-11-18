@@ -396,7 +396,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canOverride = can(Permission.CIOverride)
   // Code-host connections are managed with scans:ci:write (Pull request feedback).

@@ -432,7 +432,7 @@ export default function ExceptionsPage() {
         },
       },
     ],
-    [openApprove, openReject, openEdit, openDelete, can, t]
+    [openApprove, openReject, openEdit, openDelete, can, t, locale]
   )
 
   const metrics: MetricStripItem[] = [

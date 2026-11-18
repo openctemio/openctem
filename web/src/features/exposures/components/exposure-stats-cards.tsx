@@ -81,7 +81,11 @@ export function ExposureStateBreakdown({ byState, className }: ExposureStateBrea
             const percentage = total > 0 ? ((count / total) * 100).toFixed(0) : '0'
             return (
               <div key={key} className="px-3 py-2 text-center">
-                <p className="text-2xl font-semibold tabular-nums">{formatNumber(count)}</p>
+                <p
+                  className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing figure; only its number format changes
+                >
+                  {formatNumber(count)}
+                </p>
                 <p className="text-xs text-muted-foreground">{t(`exposures.state.${key}`)}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">{percentage}%</p>
               </div>

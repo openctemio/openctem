@@ -231,7 +231,7 @@ export function SuggestionsInbox() {
         setBusy(false)
       }
     },
-    [done, t, locale, openId, setOpenId]
+    [done, t, openId, setOpenId]
   )
 
   const bulkAccept = useCallback(async () => {
