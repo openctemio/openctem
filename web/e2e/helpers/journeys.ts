@@ -351,7 +351,8 @@ export async function handOver(
   context: BrowserContext,
   env: JourneyEnv,
   person: Person,
-  access: string
+  access: string,
+  tenant = ''
 ): Promise<void> {
   const url = new URL(env.baseURL)
   const base = {
@@ -363,6 +364,7 @@ export async function handOver(
   }
   const cookies = [{ ...base, name: 'refresh_token', value: person.p.refreshToken }]
   if (access) cookies.push({ ...base, name: 'auth_token', value: access })
+  if (tenant) cookies.push({ ...base, httpOnly: false, name: 'app_tenant', value: tenant })
   await context.addCookies(cookies)
 }
 
