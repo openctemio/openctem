@@ -65,7 +65,14 @@ export function SettingsPage({
   return (
     <Main>
       <PageStack className={className}>
-        <PageHeader title={title} description={description}>
+        {/* A form page's header shares the form's reading column, so its
+            actions end where the form ends; a list page (wide) keeps the
+            full width for both. */}
+        <PageHeader
+          title={title}
+          description={description}
+          className={cn(!wide && 'w-full max-w-settings')}
+        >
           {actions}
         </PageHeader>
         {state === 'loading' && (
