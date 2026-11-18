@@ -246,7 +246,7 @@
   "dashboards.manage.useTemplate": "Dùng mẫu",
   "dashboards.manage.widgetCount": "{n} widget",
   "dashboards.manage.widgets": "{n} tiện ích",
-  "dashboards.manage.widgetsCol": "Tiện ích",
+  "dashboards.manage.widgetsCol": "Widget",
   "dashboards.manage.yours": "Bảng điều khiển của bạn",
   "dashboards.manage.yoursWhat": "các bảng điều khiển của bạn",
   "dashboards.metric.attack_paths_to_crown_jewels.definition": "Tài sản trọng yếu trong phạm vi mà một điểm truy cập công khai có thể đến qua các quan hệ đã biết, hoặc chính là điểm truy cập, xếp theo điểm đường tấn công.",
