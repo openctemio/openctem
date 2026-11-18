@@ -6,8 +6,6 @@
   "console/src/app/(console)/system/announcements/page.tsx": 5,
   "console/src/app/(console)/system/content-packs/page.tsx": 6,
   "console/src/features/admin-console/components/organization-users-section.tsx": 5,
-  "console/src/features/admin-console/components/scope-blocked-names-panel.tsx": 8,
-  "console/src/features/admin-console/components/shared-fleet-panels.tsx": 13,
   "console/src/features/verified-domains/components/verified-domains-list.tsx": 4,
   "src/app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx": 13,
   "src/app/(dashboard)/(discovery)/credentials/page.tsx": 7,
