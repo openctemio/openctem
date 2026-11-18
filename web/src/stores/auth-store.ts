@@ -27,6 +27,7 @@ import {
   refreshFailureAction,
   TWO_FACTOR_SETUP_PATH,
   twoFactorSetupHref,
+  welcomeNoticeHref,
 } from '@/lib/auth/refresh-failure'
 import { routeToWelcomeOnce } from '@/lib/api/tenant-required'
 import { csrfHeaders } from '@/lib/csrf-client'
@@ -431,6 +432,9 @@ async function attemptTokenRefresh(): Promise<void> {
     `[Auth] Token expiring soon, refreshing... (attempt ${refreshRetryCount + 1}/${MAX_REFRESH_RETRIES})`
   )
   isRefreshingToken = true
+  // The organization being refreshed, read before a refused refresh drops its
+  // cookie: the account space names it.
+  const refreshedSlug = currentTenantSlug()
 
   try {
     // One refresh for the whole browser (refreshSessionShared): tabs take
@@ -468,10 +472,13 @@ async function attemptTokenRefresh(): Promise<void> {
         return
       }
       if (action === 'account_space') {
-        // The organization does not admit this session (suspended, its own
-        // sign-in required): the account space says what is missing.
+        // The organization does not admit this session (suspended, its
+        // identity provider required, a verified address or a work account
+        // needed): the account space names the reason and its one next step.
         authPermanentlyFailed = true
-        if (typeof window !== 'undefined') routeToWelcomeOnce(window.location)
+        if (typeof window !== 'undefined') {
+          routeToWelcomeOnce(window.location, welcomeNoticeHref(outcome.code, refreshedSlug))
+        }
         return
       }
       if (action === 'sign_out') {

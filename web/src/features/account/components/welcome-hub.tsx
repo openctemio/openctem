@@ -32,10 +32,14 @@ import { ResendVerification } from '@/features/auth/components/resend-verificati
 import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
 import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { safeText } from '@/lib/api/error-message'
+import { useMyTenants } from '@/lib/api/user-tenant-hooks'
 import { formatRelative } from '@/lib/format-date'
+
+import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
 
 import { useProfile } from '../api'
 import { welcomeView } from '../lib/welcome-view'
+import { WelcomeNotice } from './welcome-notice'
 
 interface WelcomeHubProps {
   /**
@@ -43,6 +47,12 @@ interface WelcomeHubProps {
    * ask the API for the account-only token first, then load.
    */
   needsSession: boolean
+  /**
+   * Why the account space opened instead of an organization (a refused
+   * refresh), already validated by the page: it shows the reason and its one
+   * next step.
+   */
+  notice?: { notice: Notice; org?: string }
 }
 
 const ACCOUNT_LINKS: Array<{
@@ -95,7 +105,7 @@ const ACCOUNT_LINKS: Array<{
  * address (accept or decline), offers "Create an organization" only when the
  * API's policy allows it for this person, and links the account pages.
  */
-export function WelcomeHub({ needsSession }: WelcomeHubProps) {
+export function WelcomeHub({ needsSession, notice }: WelcomeHubProps) {
   const { t, locale } = useTranslation()
   const { profile } = useProfile()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
@@ -137,6 +147,14 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
 
   const view = welcomeView(options)
   const email = profile?.email
+
+  // The organization a notice names comes from the page URL, which anyone can
+  // write: it is shown, and its identity-provider button offered, only when
+  // it is one of this person's own memberships. Otherwise the notice is the
+  // generic one (no name, no button).
+  const { data: myTenants } = useMyTenants({ skip: !notice?.org })
+  const noticeOrg =
+    notice?.org && myTenants?.some((m) => m.slug === notice.org) ? notice.org : undefined
 
   const accept = (ref: string) => {
     setBusyRef(ref)
@@ -202,6 +220,10 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
           'You are signed in, but you are not in an organization yet.'
         )}
       />
+
+      {notice && (
+        <WelcomeNotice notice={notice.notice} org={noticeOrg} email={email ?? undefined} />
+      )}
 
       {loading && (
         <div

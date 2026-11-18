@@ -11,9 +11,18 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { WelcomeHub } from '@/features/account/components/welcome-hub'
+import { readWelcomeNotice } from '@/lib/auth/refresh-failure'
 import { env } from '@/lib/env'
 
-export default async function WelcomePage() {
+type SearchParams = Record<string, string | string[] | undefined>
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+
+export default async function WelcomePage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>
+}) {
   const jar = await cookies()
   if (!jar.get(env.auth.cookieName)?.value && !jar.get(env.auth.refreshCookieName)?.value) {
     redirect('/login?next=%2Fwelcome')
@@ -21,5 +30,8 @@ export default async function WelcomePage() {
   if (jar.get(env.cookies.tenant)?.value) {
     redirect('/')
   }
-  return <WelcomeHub needsSession={!jar.get(env.cookies.accountOnly)?.value} />
+  // Why the account space opened (a refused refresh): a known value only.
+  const sp = await searchParams
+  const notice = readWelcomeNotice(first(sp.notice), first(sp.org))
+  return <WelcomeHub needsSession={!jar.get(env.cookies.accountOnly)?.value} notice={notice} />
 }

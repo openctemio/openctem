@@ -24,8 +24,10 @@ import { safeInternalHref } from '@/lib/safe-href'
 import {
   ACCOUNT_ONLY_PAGES,
   API_PREFIX,
+  CONTINUE_PATH,
   LOGIN_PATH,
   NEXT_PARAM,
+  NO_ORGANIZATION_PAGES,
   PUBLIC_ROUTES,
   WELCOME_PATH,
 } from './config'
@@ -109,6 +111,30 @@ export function isAccountOnlyPage(pathname: string): boolean {
   return (ACCOUNT_ONLY_PAGES as readonly string[]).includes(path)
 }
 
+/**
+ * The session has not chosen an organization yet: a refresh token, no
+ * organization selected, and none of the markers the landing leaves (the
+ * account-only marker, the picker's list). The callback's account token
+ * alone is such a session: only /auth/continue knows where it belongs.
+ */
+export function needsLanding(read: CookieReader): boolean {
+  const names = sessionCookieNames()
+  return (
+    looksLikeJwt(read(names.refresh)) &&
+    !read(names.tenant) &&
+    !read(names.accountOnly) &&
+    !read(names.pendingTenants)
+  )
+}
+
+/** A page that opens without an organization (picker, onboarding, account pages). */
+export function isNoOrganizationPage(pathname: string): boolean {
+  return (
+    isAccountOnlyPage(pathname) ||
+    NO_ORGANIZATION_PAGES.some((prefix) => underPrefix(pathname, prefix))
+  )
+}
+
 /** Request helper kept for route handlers (GET /api/version). */
 export function isAuthenticated(req: NextRequest): boolean {
   return hasSessionCookie((name) => req.cookies.get(name)?.value)
@@ -164,6 +190,16 @@ export function decideAuth({ pathname, search, cookie }: AuthRequest): AuthDecis
     // No organization: the account space is the only app page there is.
     if (isAccountOnlySession(cookie) && !isAccountOnlyPage(pathname)) {
       return { type: 'redirect', location: WELCOME_PATH, clearCookies: [] }
+    }
+    // No organization chosen yet: the landing picks it (or the account space
+    // with the reason the organization refused), then comes back here. It
+    // always leaves one of the cookies needsLanding reads, so this runs once.
+    if (needsLanding(cookie) && !isNoOrganizationPage(pathname)) {
+      return {
+        type: 'redirect',
+        location: withNext(CONTINUE_PATH, returnPath(pathname, search)),
+        clearCookies: [],
+      }
     }
     return { type: 'allow' }
   }
