@@ -26,6 +26,7 @@ vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
   mine: [] as Dashboard[],
+  mineLoading: false,
   org: [] as Dashboard[],
   orgEnabled: [] as boolean[],
   orgError: undefined as Error | undefined,
@@ -40,7 +41,10 @@ vi.mock('../api/use-dashboards-api', () => ({
     hasOrg: perms.list.some((p) => p.startsWith('dashboards:org:')),
     dataKey: null,
   }),
-  useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
+  useMyDashboards: () =>
+    api.mineLoading
+      ? { data: undefined, isLoading: true }
+      : { data: { data: api.mine }, isLoading: false },
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
     if (enabled && api.orgError) return { data: undefined, error: api.orgError, isLoading: false }
@@ -141,6 +145,7 @@ describe('DashboardHome', () => {
     window.localStorage.clear()
     perms.list = []
     api.mine = []
+    api.mineLoading = false
     api.org = []
     api.orgEnabled = []
     api.orgError = undefined
@@ -222,6 +227,17 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
     expect(await screen.findByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
+  })
+
+  it("holds the switcher's place on the title line while the lists load, hidden and inert", () => {
+    api.mineLoading = true
+    renderHome()
+    const line = document.querySelector('[data-slot="page-header-title-line"]')
+    const pending = screen.getByTestId('dashboard-switcher-pending')
+    expect(line).toContainElement(pending)
+    expect(pending).toBeDisabled()
+    expect(pending).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByRole('button', { name: /Switch dashboard/ })).toBeNull()
   })
 
   it("the dashboard's name is the switcher: a chevron on the title line, outside the h1", () => {

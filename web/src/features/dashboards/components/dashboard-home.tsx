@@ -76,7 +76,7 @@ import {
   RefreshButton,
   scheduleSubmenu,
 } from './dashboard-freshness'
-import { DashboardSwitcher } from './dashboard-switcher'
+import { DashboardSwitcher, DashboardSwitcherPending } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
 
 export function DashboardSkeleton() {
@@ -457,7 +457,9 @@ export function DashboardHome() {
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
           titleAction={
-            listsLoading ? undefined : (
+            listsLoading ? (
+              <DashboardSwitcherPending />
+            ) : (
               <DashboardSwitcher
                 personal={personal}
                 organization={organization}

@@ -157,3 +157,24 @@ export function DashboardSwitcher({
     </DropdownMenu>
   )
 }
+
+/**
+ * The switcher's place while the dashboard lists load: the same button box,
+ * inert and hidden from assistive technology, so the title row has its final
+ * height from the first paint and the name does not move when the lists
+ * arrive.
+ */
+export function DashboardSwitcherPending() {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      disabled
+      aria-hidden
+      tabIndex={-1}
+      data-testid="dashboard-switcher-pending"
+    >
+      <ChevronDown aria-hidden />
+    </Button>
+  )
+}
