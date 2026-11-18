@@ -528,7 +528,9 @@ reference.
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
-  does the same, and never shows a page count below 1.
+  does the same, and never shows a page count below 1. It also draws no
+  column headers and no select-all box at zero rows (empty or failed list);
+  the headers stay while the list loads.
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:

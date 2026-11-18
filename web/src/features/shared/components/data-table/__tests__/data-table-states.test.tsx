@@ -167,13 +167,13 @@ describe('DataTable without a toolbar or rows', () => {
     expect(screen.getAllByText('Nothing yet').length).toBeGreaterThan(0)
   })
 
-  it('an empty list offers no select-all and no sorting in its header', () => {
+  it('an empty list draws no header, so no select-all; it comes with the rows', () => {
     const bulk = { actions: null, rowLabel: (r: Row) => r.name }
     const sortable: ColumnDef<Row>[] = [
       { accessorKey: 'name', header: 'Name', enableSorting: true },
     ]
     const { rerender } = render(<DataTable columns={sortable} data={[]} bulk={bulk} />)
-    expect(screen.getByRole('checkbox', { name: 'Select all rows on this page' })).toBeDisabled()
+    expect(screen.queryByRole('checkbox', { name: 'Select all rows on this page' })).toBeNull()
     rerender(<DataTable columns={sortable} data={[{ name: 'row' }]} bulk={bulk} />)
     expect(screen.getByRole('checkbox', { name: 'Select all rows on this page' })).toBeEnabled()
   })
