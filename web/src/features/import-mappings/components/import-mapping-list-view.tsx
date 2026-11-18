@@ -73,7 +73,7 @@ export function ImportMappingListView() {
                     <div className="min-w-0 flex-1 basis-60">
                       <Link
                         href={`/settings/integrations/import-mappings/${encodeURIComponent(m.id)}`}
-                        className="break-all font-medium hover:underline"
+                        className="break-words font-medium hover:underline"
                       >
                         {m.name}
                       </Link>

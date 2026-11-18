@@ -248,7 +248,7 @@ function OverviewTab({
       <MetricStrip loading={stats.isLoading && !s} items={items} />
       {isUrl && (
         <p className="text-sm">
-          <SafeExternalLink href={assetName} className="break-all underline underline-offset-2">
+          <SafeExternalLink href={assetName} className="break-words underline underline-offset-2">
             {assetName}
           </SafeExternalLink>
         </p>

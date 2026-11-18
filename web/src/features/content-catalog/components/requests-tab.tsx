@@ -78,7 +78,7 @@ function DecisionDialog({
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle className="break-all">
+          <DialogTitle className="break-words">
             {approve
               ? t('contentCatalog.request.approveTitle', 'Approve the request for {id}', {
                   id: decision.req.package_id ?? '',

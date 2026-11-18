@@ -72,6 +72,7 @@ import {
   hasSurfaceFacts,
   surfaceCellsCovered,
 } from '../service-cells'
+import { BreakText } from '@/features/shared/components/break-text'
 
 /**
  * Column widths in px (each holds its cell padding). A width fits the column's
@@ -881,7 +882,9 @@ export function InventoryTable({
                     className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
+                    <p className="line-clamp-2 break-words text-sm font-medium">
+                      <BreakText>{a.name}</BreakText>
+                    </p>
                     <MetaLine
                       className="mt-0.5 flex-nowrap"
                       items={[
