@@ -37,6 +37,11 @@ export interface MembershipRow {
   role: string
   /** Set when the organization cannot be opened (suspended, expired, ...). */
   blocked_reason?: string
+  /**
+   * What the organization answers this session (account token only): `open`,
+   * or the code its token request would refuse with. Read-only on the API.
+   */
+  admission?: string
 }
 
 export type Landing =
@@ -67,6 +72,9 @@ export function landingFor(
   if (open.length > 1) return { kind: 'choose', open }
   return { kind: 'account' }
 }
+
+/** The admission of an organization that opens for this session. */
+const ADMISSION_OPEN = 'open'
 
 /** Codes of an organization that wants this session's second factor. */
 const TWO_FACTOR_CODES = new Set(['MFA_ENROLLMENT_REQUIRED'])
@@ -181,12 +189,26 @@ export async function prepareLanding(): Promise<Landing> {
     return { kind: 'choose' }
   }
 
+  // The listing already says this organization refuses the session for a
+  // reason the console cannot fix in place: no token request (the API would
+  // refuse it the same way), the account space names it.
+  const admission = first.row.admission
+  if (admission && admission !== ADMISSION_OPEN && !TWO_FACTOR_CODES.has(admission)) {
+    return { kind: 'account', refusal: { code: admission, slug: first.row.slug } }
+  }
+
   // The account token rotated the refresh token: only the new one is valid
   // (presenting the spent one would end the session as a replay).
   if (!account.refreshToken) return { kind: 'account' }
   const opened = await openOrganization(first.row, account.refreshToken)
   if (opened.ok) return { kind: 'organization', tenantId: first.row.id }
   if (opened.status === 401) return { kind: 'signed_out' }
+  // No answer, too many requests or a server failure decides nothing about
+  // the organization: say the landing could not start (never a plain account
+  // space that reads as "no organization").
+  if (opened.status === 0 || opened.status === 429 || opened.status >= 500) {
+    return { kind: 'unavailable' }
+  }
   if (opened.code && TWO_FACTOR_CODES.has(opened.code)) {
     return { kind: 'two_factor', tenantId: first.row.id }
   }

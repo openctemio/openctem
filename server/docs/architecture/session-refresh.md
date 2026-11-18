@@ -153,6 +153,9 @@ show anything.
 The sign-in landing (`/auth/continue`, `web/src/features/auth/lib/sign-in-landing.ts`)
 does the same for a person whose one organization refuses the new session: it
 keeps the account-only session and opens `/welcome?notice=<reason>&org=<slug>`.
+When the memberships listing already gives that organization a refusing `admission`, the landing
+uses it and sends no token request; a token request that gets no decision (no answer, 429, 5xx)
+lands on `/welcome?start_failed=1`, never on a plain account space.
 There `OWN_SIGN_IN_REQUIRED` (a session from another organization's identity
 provider) is a notice too, with "Sign in with your own account", since no
 organization was open yet and the account settings stay reachable. A page
