@@ -105,7 +105,6 @@
   "features/capabilities/components/create-capability-dialog.tsx": 35,
   "features/capabilities/components/edit-capability-dialog.tsx": 33,
   "features/ci-runners/components/ci-pipeline-sheet.tsx": 4,
-  "features/ci-runners/components/ci-trust-settings.tsx": 3,
   "features/components/components/component-detail-view.tsx": 2,
   "features/components/components/sbom-export-dialog.tsx": 2,
   "features/components/components/sbom-import-dialog.tsx": 2,
