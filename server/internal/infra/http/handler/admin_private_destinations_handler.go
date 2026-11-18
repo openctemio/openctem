@@ -203,7 +203,7 @@ func writePrivateRangeError(w http.ResponseWriter, err error) bool {
 	}
 	if errors.Is(err, httpsec.ErrTooManyRanges) {
 		apierror.New(http.StatusBadRequest, CodePrivateRangeInvalid, "At most 32 ranges can be listed").
-			WithDetails(map[string]any{"reason": "too_many"}).WriteJSON(w)
+			WithDetails(map[string]any{formReason: "too_many"}).WriteJSON(w)
 		return true
 	}
 	var re *httpsec.RangeError
@@ -218,7 +218,7 @@ func writePrivateRangeError(w http.ResponseWriter, err error) bool {
 		}
 	}
 	apierror.New(http.StatusBadRequest, CodePrivateRangeInvalid, "The range on line "+strconv.Itoa(re.Index+1)+" "+message).
-		WithDetails(map[string]any{"index": re.Index, "range": re.Range, "reason": code}).WriteJSON(w)
+		WithDetails(map[string]any{"index": re.Index, "range": re.Range, formReason: code}).WriteJSON(w)
 	return true
 }
 
