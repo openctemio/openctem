@@ -75,6 +75,7 @@ export type WelcomeNotice =
   | 'organization_suspended'
   | 'email_not_verified'
   | 'personal_accounts_blocked'
+  | 'own_sign_in_required'
 
 const NOTICE_FOR_CODE: Record<string, WelcomeNotice> = {
   SSO_REQUIRED: 'sso_required',
@@ -82,6 +83,9 @@ const NOTICE_FOR_CODE: Record<string, WelcomeNotice> = {
   ORGANIZATION_SUSPENDED: 'organization_suspended',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
   PERSONAL_ACCOUNTS_BLOCKED: 'personal_accounts_blocked',
+  // Only the sign-in landing (no organization open yet) shows it: a refresh
+  // refused with it still ends the session (SIGN_OUT_CODES), as before.
+  OWN_SIGN_IN_REQUIRED: 'own_sign_in_required',
 }
 
 const NOTICES: ReadonlySet<string> = new Set(Object.values(NOTICE_FOR_CODE))

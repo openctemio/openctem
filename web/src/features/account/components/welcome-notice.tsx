@@ -20,7 +20,9 @@ interface WelcomeNoticeProps {
 /**
  * Why the account space opened instead of the organization, with its one
  * next step: the organization's identity provider (signed out first, then
- * that organization's sign-in), verifying the address, or a work account.
+ * that organization's sign-in), the account's own sign-in (the session came
+ * from another organization's identity provider), verifying the address, or
+ * a work account.
  * A suspended organization has no step here: its administrator lifts it.
  */
 export function WelcomeNotice({ notice, org, email }: WelcomeNoticeProps) {
@@ -53,6 +55,17 @@ export function WelcomeNotice({ notice, org, email }: WelcomeNoticeProps) {
             {t('auth.welcome.notice.idpAction', undefined, vars)}
           </Button>
         ) : null
+      case 'own_sign_in_required':
+        return (
+          <Button onClick={() => signOutTo('/login')} disabled={pending}>
+            {pending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <LogIn className="size-4" aria-hidden />
+            )}
+            {t('auth.welcome.notice.ownSignInAction')}
+          </Button>
+        )
       case 'personal_accounts_blocked':
         return (
           <Button onClick={() => signOutTo('/login')} disabled={pending}>
@@ -77,6 +90,7 @@ export function WelcomeNotice({ notice, org, email }: WelcomeNoticeProps) {
     organization_suspended: 'suspended',
     email_not_verified: 'emailNotVerified',
     personal_accounts_blocked: 'personalBlocked',
+    own_sign_in_required: 'ownSignIn',
   }[notice]
 
   return (

@@ -149,3 +149,14 @@ that organization's access token and selection, and the browser opens
 step (that organization's identity provider, the verification link, a work
 account; nothing for a suspension). Only known notice values and a valid slug
 show anything.
+
+The sign-in landing (`/auth/continue`, `web/src/features/auth/lib/sign-in-landing.ts`)
+does the same for a person whose one organization refuses the new session: it
+keeps the account-only session and opens `/welcome?notice=<reason>&org=<slug>`.
+There `OWN_SIGN_IN_REQUIRED` (a session from another organization's identity
+provider) is a notice too, with "Sign in with your own account", since no
+organization was open yet and the account settings stay reachable. A page
+request with a session but no organization selected and none of the landing's
+cookies (the account-only marker, the picker's list) goes to `/auth/continue`
+first (`web/src/lib/middleware/auth.ts`), so an app page never loads without
+an organization and the client never guesses from a `TENANT_REQUIRED` answer.

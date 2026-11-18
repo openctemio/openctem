@@ -10,7 +10,10 @@
  * - exactly one: that organization's token. When the organization does not
  *   admit this session yet (it requires two-factor authentication), the
  *   person keeps the account-only token and goes to the two-factor setup,
- *   which opens the organization afterwards;
+ *   which opens the organization afterwards. When it refuses the session for
+ *   a reason the console cannot fix in place (its identity provider, the
+ *   account's own sign-in, a verified address, ...), the account space opens
+ *   with that reason and its one next step;
  * - several: the organization picker.
  *
  * Every token request is checked by the API (membership, the organization's
@@ -40,7 +43,15 @@ export type Landing =
   | { kind: 'organization'; tenantId: string }
   | { kind: 'choose' }
   | { kind: 'two_factor'; tenantId: string }
-  | { kind: 'account' }
+  | {
+      kind: 'account'
+      /**
+       * The one organization refused this session: the API's code and the
+       * organization's slug (from the person's own membership list), so the
+       * account space names the reason and its next step.
+       */
+      refusal?: { code: string; slug: string }
+    }
   | { kind: 'unavailable' }
   | { kind: 'signed_out' }
 
@@ -180,6 +191,8 @@ export async function prepareLanding(): Promise<Landing> {
     return { kind: 'two_factor', tenantId: first.row.id }
   }
   // The organization does not admit this session for another reason: the
-  // account space says what is missing.
-  return { kind: 'account' }
+  // account space says what is missing, and what to do about it.
+  return opened.code
+    ? { kind: 'account', refusal: { code: opened.code, slug: first.row.slug } }
+    : { kind: 'account' }
 }

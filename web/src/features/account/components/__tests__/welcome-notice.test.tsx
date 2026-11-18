@@ -33,6 +33,13 @@ describe('WelcomeNotice', () => {
     }
   )
 
+  it("own_sign_in_required: signs out to sign in with the account's own sign-in", async () => {
+    render(<WelcomeNotice notice="own_sign_in_required" org="acme" />)
+    expect(screen.getByRole('alert')).toHaveTextContent('acme asks for your own sign-in')
+    fireEvent.click(screen.getByRole('button', { name: /sign in with your own account/i }))
+    await waitFor(() => expect(localLogoutAction).toHaveBeenCalledWith('/login'))
+  })
+
   it('organization_suspended: says so, with no step to take here', () => {
     render(<WelcomeNotice notice="organization_suspended" org="acme" />)
     expect(screen.getByRole('alert')).toHaveTextContent('acme is suspended')
