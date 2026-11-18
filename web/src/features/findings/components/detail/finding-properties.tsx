@@ -212,7 +212,7 @@ export function FindingProperties({
   // Type, criticality and exposure as separate muted pieces (no middot join).
   const assetCaptionParts: string[] = asset
     ? [
-        findingAssetTypeLabel(asset.type),
+        findingAssetTypeLabel(asset.type, t),
         crit === 'critical'
           ? t('findings.properties.criticalAsset', 'Critical asset')
           : crit === 'none'

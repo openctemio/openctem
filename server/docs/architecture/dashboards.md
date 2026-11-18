@@ -1269,8 +1269,13 @@ widget kit's frame, with its own error boundary.
   - A full-width widget with no figure yet takes one row; a narrower one
     keeps its row height with its message centred, so no hole opens beside
     a taller neighbour.
-  `/dashboards` copies one into a personal dashboard ("Use
-  template"); the copy is a stored dashboard like any other. Stored
+  `/dashboards` lists the person's own dashboards in the shared table
+  (name with the default star, widgets, columns, last change; the name and
+  the row open the dashboard, the row menu holds Customize, Edit details,
+  Set as my default and Delete; a failed read shows the error state with
+  Retry), with New dashboard (blank) in the header and the templates below
+  it. "Use template" copies one into a personal dashboard; the copy is a
+  stored dashboard like any other. Stored
   dashboards are never rearranged when a template changes: copies get the
   new layout offer above.
   `server/pkg/domain/dashboard/templates_test.go` parses every template widget

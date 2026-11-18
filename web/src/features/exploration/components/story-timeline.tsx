@@ -97,7 +97,7 @@ function StepName({ step }: { step: StoryStep }) {
 function stepMeta(t: ReturnType<typeof useTranslation>['t'], step: StoryStep): ReactNode[] {
   const meta: ReactNode[] = []
   if (step.asset) {
-    if (step.asset.type) meta.push(<span key="type">{getAssetTypeLabel(step.asset.type)}</span>)
+    if (step.asset.type) meta.push(<span key="type">{getAssetTypeLabel(step.asset.type, t)}</span>)
     if (step.asset.discovery_source)
       meta.push(<span key="src">{discoverySourceLabel(t, step.asset.discovery_source)}</span>)
     if (step.asset.discovery_tool)

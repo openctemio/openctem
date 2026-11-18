@@ -238,7 +238,7 @@ export default function AuditLogPage() {
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('auditLog.col.action', 'Action')} />
         ),
-        cell: ({ row }) => <span className="text-sm">{formatAction(row.original.action)}</span>,
+        cell: ({ row }) => <span className="text-sm">{formatAction(row.original.action, t)}</span>,
       },
       {
         id: 'actor',
@@ -527,7 +527,7 @@ export default function AuditLogPage() {
           width="2xl"
           header={
             <DetailHeader
-              title={formatAction(selectedLog.action)}
+              title={formatAction(selectedLog.action, t)}
               badges={
                 <>
                   <ResultBadge result={selectedLog.result} />

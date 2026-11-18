@@ -36,6 +36,7 @@ import {
 } from '@/features/shared'
 import { copyToClipboard } from '@/lib/clipboard'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { CRITICALITY_LABEL_KEYS } from '@/lib/criticality'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
@@ -82,7 +83,7 @@ function QuickViewAssets({
 
   return (
     <DetailSection
-      title="Recent assets"
+      title={t('assetGroups.quickView.recentAssets', 'Recent assets')}
       icon={Package}
       count={isLoading ? undefined : (assets?.length ?? 0)}
       actions={
@@ -92,7 +93,7 @@ function QuickViewAssets({
           className="h-7 text-xs"
           onClick={() => router.push(`/assets/groups/${groupId}?tab=assets`)}
         >
-          Manage all
+          {t('assetGroups.quickView.manageAll', 'Manage all')}
           <ExternalLink className="ms-1 h-3 w-3" />
         </Button>
       }
@@ -104,7 +105,9 @@ function QuickViewAssets({
           ))}
         </div>
       ) : displayAssets.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No assets in this group</p>
+        <p className="text-sm text-muted-foreground">
+          {t('assetGroups.detail.emptyAssets', 'No assets in this group')}
+        </p>
       ) : (
         <ul className="divide-y rounded-lg border">
           {displayAssets.map(
@@ -134,7 +137,13 @@ function QuickViewAssets({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={`Remove ${asset.name} from the group`}
+                        aria-label={t(
+                          'assetGroups.quickView.removeAsset',
+                          'Remove {name} from the group',
+                          {
+                            name: asset.name,
+                          }
+                        )}
                         className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation()
@@ -198,29 +207,30 @@ export function GroupQuickView({
   const router = useRouter()
   const canWrite = useHasPermission(Permission.AssetGroupsWrite)
   const canDelete = useHasPermission(Permission.AssetGroupsDelete)
+  const { t } = useTranslation()
   if (!group) return null
 
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy ID',
+      label: t('assetGroups.action.copyId', 'Copy ID'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(group.id)
-        toast.success('Group ID copied')
+        toast.success(t('assetGroups.idCopied', 'Group ID copied'))
       },
     },
     {
-      label: 'Copy link',
+      label: t('assetGroups.action.copyLink', 'Copy link'),
       icon: LinkIcon,
       onSelect: () => {
         copyToClipboard(shareableLink(`/assets/groups/${group.id}`))
-        toast.success('Link copied to clipboard')
+        toast.success(t('assetGroups.linkCopied', 'Link copied'))
       },
     },
   ]
   if (canDelete) {
     menu.push({
-      label: 'Delete group',
+      label: t('assetGroups.detail.deleteGroup', 'Delete group'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -243,18 +253,20 @@ export function GroupQuickView({
             title={group.name}
             badges={
               <>
-                <Badge variant="secondary" className="capitalize">
-                  {group.environment}
+                <Badge variant="secondary">
+                  {t(`assetGroups.environment.${group.environment}`, group.environment)}
                 </Badge>
-                <Badge
-                  variant="outline"
-                  className={cn('capitalize', CRITICALITY_BADGE_SOFT[criticality])}
-                >
-                  {group.criticality}
+                <Badge variant="outline" className={CRITICALITY_BADGE_SOFT[criticality]}>
+                  {t(CRITICALITY_LABEL_KEYS[criticality] ?? '', group.criticality)}
                 </Badge>
               </>
             }
-            meta={['Asset group', group.owner ? `owner ${group.owner}` : 'no owner']}
+            meta={[
+              t('assetGroups.quickView.kind', 'Asset group'),
+              group.owner
+                ? t('assetGroups.quickView.ownerName', 'owner {name}', { name: group.owner })
+                : t('assetGroups.quickView.noOwner', 'no owner'),
+            ]}
             actions={
               <>
                 {canWrite && (
@@ -266,7 +278,7 @@ export function GroupQuickView({
                     }}
                   >
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('assetGroups.action.edit', 'Edit')}
                   </Button>
                 )}
               </>
@@ -277,19 +289,22 @@ export function GroupQuickView({
         }
       >
         <div className="space-y-5">
-          <DetailStatGrid aria-label="Key numbers">
-            <DetailStat label="Assets" value={group.assetCount} />
+          <DetailStatGrid aria-label={t('assetGroups.quickView.keyNumbers', 'Key numbers')}>
+            <DetailStat label={t('assetGroups.col.assets', 'Assets')} value={group.assetCount} />
             <DetailStat
-              label="Findings"
+              label={t('assetGroups.col.findings', 'Findings')}
               value={group.findingCount}
               tone={group.findingCount > 0 ? 'warning' : 'default'}
             />
-            <DetailStat label="Risk" value={<RiskScoreBadge score={group.riskScore} />} />
+            <DetailStat
+              label={t('assetGroups.quickView.risk', 'Risk')}
+              value={<RiskScoreBadge score={group.riskScore} />}
+            />
           </DetailStatGrid>
 
           <DetailSections>
             {group.description && (
-              <DetailSection title="Description">
+              <DetailSection title={t('assetGroups.basic.description', 'Description')}>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                   {group.description}
                 </p>
@@ -298,15 +313,19 @@ export function GroupQuickView({
 
             <QuickViewAssets groupId={group.id} groupName={group.name} onRefresh={onRefresh} />
 
-            <DetailSection title="Details">
+            <DetailSection title={t('assetGroups.quickView.details', 'Details')}>
               <DetailFieldGrid>
-                <DetailField label="Owner">{group.owner || 'Not assigned'}</DetailField>
-                <DetailField label="Created">{formatDate(new Date(group.createdAt))}</DetailField>
-                <DetailField label="Last updated">
+                <DetailField label={t('assetGroups.detail.owner', 'Owner')}>
+                  {group.owner || t('assetGroups.detail.notAssigned', 'Not assigned')}
+                </DetailField>
+                <DetailField label={t('assetGroups.detail.info.created', 'Created')}>
+                  {formatDate(new Date(group.createdAt))}
+                </DetailField>
+                <DetailField label={t('assetGroups.detail.stat.lastUpdated', 'Last updated')}>
                   {formatDate(new Date(group.updatedAt))}
                 </DetailField>
-                <DetailField label="ID" full>
-                  <DetailCopyId id={group.id} label="Group ID" />
+                <DetailField label={t('assetGroups.quickView.id', 'ID')} full>
+                  <DetailCopyId id={group.id} label={t('assetGroups.detail.info.id', 'Group ID')} />
                 </DetailField>
               </DetailFieldGrid>
             </DetailSection>
@@ -322,7 +341,7 @@ export function GroupQuickView({
             }}
           >
             <ExternalLink className="h-4 w-4" />
-            Open full page
+            {t('assetGroups.action.openFullPage', 'Open full page')}
           </Button>
         </DetailSheetFooter>
       </DetailSheet>

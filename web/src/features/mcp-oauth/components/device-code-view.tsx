@@ -104,7 +104,6 @@ export function DeviceCodeView() {
         </div>
         <EntryBanner
           tone="warn"
-          role="alert"
           title={t('mcp.device.warningTitle', 'Only enter a code you asked for')}
         >
           {t(

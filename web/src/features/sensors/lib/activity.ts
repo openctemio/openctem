@@ -417,7 +417,7 @@ export function describeSensorActivity(
       const action = canonicalAuditAction(item.action || str(d.action))
       const suffix = action.startsWith('sensor.') ? action.slice('sensor.'.length) : ''
       const known = AUDIT_LABELS[action]
-      const generic = action ? getActionLabel(action as AuditAction) : ''
+      const generic = action ? getActionLabel(action as AuditAction, t) : ''
       const title = known
         ? t(`sensors.activity.audit.${suffix}`, known)
         : generic && generic !== action
