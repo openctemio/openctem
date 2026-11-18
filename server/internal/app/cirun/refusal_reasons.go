@@ -253,6 +253,9 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 // configured issuers (same host or same path, NearestIssuer). A read error
 // counts as not close.
 func (s *Service) nearConfiguredIssuer(ctx context.Context, tenantID shared.ID, issuer string) bool {
+	if s.repo == nil {
+		return false
+	}
 	configs, err := s.repo.ListTrustConfigs(ctx, tenantID)
 	if err != nil {
 		return false

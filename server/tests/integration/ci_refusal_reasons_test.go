@@ -106,7 +106,7 @@ func TestCIRefusal_RefAllow(t *testing.T) {
 		t.Fatalf("refusals: %v %v", list, err)
 	}
 	if _, allowed, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, shared.MustIDFromString(list[0].ID),
-		cirunapp.Actor{Email: "admin@acme.test"}); err != nil || !changed || allowed.Kind != cirunapp.AllowRef || allowed.Value != "release" {
+		cirunapp.Actor{Email: "admin@acme.test"}); err != nil || !changed || allowed.Kind != cirunapp.AllowRef || allowed.Value != "refs/heads/release" {
 		t.Fatalf("allow ref: %v %v %+v", err, changed, allowed)
 	}
 	if code, ex := r.exchange(r.tenant, raw); code != http.StatusCreated {
@@ -262,10 +262,10 @@ func TestCIRefusal_JunkIssuersDoNotEvict(t *testing.T) {
 	}
 	var real, other int
 	for _, u := range list {
-		switch {
-		case u.Issuer == mistyped:
+		switch u.Issuer {
+		case mistyped:
 			real++
-		case u.Issuer == "":
+		case "":
 			other++
 		default:
 			t.Errorf("a made-up issuer was stored: %q", u.Issuer)
