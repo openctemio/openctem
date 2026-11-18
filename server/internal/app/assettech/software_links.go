@@ -90,8 +90,8 @@ func (b *SoftwareLinkBackfill) Run(ctx context.Context) (int, error) {
 	}
 	done := 0
 	for _, t := range tenants {
-		if ctx.Err() != nil {
-			return done, nil
+		if err := ctx.Err(); err != nil {
+			return done, err // the run's time is up: the rest resume next run
 		}
 		finished, err := b.RunTenant(ctx, t)
 		if err != nil {
@@ -114,8 +114,8 @@ func (b *SoftwareLinkBackfill) RunTenant(ctx context.Context, tenantID shared.ID
 	}
 	keys := software.CuratedAppNames()
 	for {
-		if ctx.Err() != nil {
-			return false, nil
+		if err := ctx.Err(); err != nil {
+			return false, err // the position is saved: the next run resumes here
 		}
 		rows, err := b.store.ScanVersionlessTechnologies(ctx, tenantID, p.AfterAsset, p.AfterKey, keys, softwareLinkBatch)
 		if err != nil {
