@@ -58,4 +58,21 @@ describe('AdminAuditChainStatus', () => {
     expect(screen.queryByText('Audit log intact')).not.toBeInTheDocument()
     expect(screen.getByText(/could not be checked/)).toBeInTheDocument()
   })
+
+  it('holds its place while the chain is checked, claiming nothing to a reader', () => {
+    state.current = { isLoading: true }
+    render(<AdminAuditChainStatus />)
+    const placeholder = screen.getByTestId('audit-chain-loading')
+    expect(placeholder).toHaveAttribute('aria-busy', 'true')
+    // The intact layout is drawn for its height only: hidden from assistive tech and invisible.
+    const parts = placeholder.querySelectorAll(
+      '[data-slot="alert-title"], [data-slot="alert-description"]'
+    )
+    expect(parts).toHaveLength(2)
+    for (const el of parts) {
+      expect(el).toHaveAttribute('aria-hidden', 'true')
+      expect(el.className).toMatch(/\binvisible\b/)
+    }
+    expect(screen.queryByRole('alert', { name: /intact/ })).toBeNull()
+  })
 })

@@ -23,3 +23,29 @@ for (const url of urls) {
     expect(res.headers()['content-type']).toContain('font/woff2')
   })
 }
+
+// The root layout preloads the Inter files of the first paint, per language,
+// so they arrive with the stylesheet (src/lib/first-paint-fonts.ts). Next.js
+// sends them as an HTTP Link header (or as <link> tags in the head).
+for (const [locale, files] of [
+  ['en', ['inter-latin-wght-normal.woff2']],
+  [
+    'vi',
+    [
+      'inter-latin-wght-normal.woff2',
+      'inter-latin-ext-wght-normal.woff2',
+      'inter-vietnamese-wght-normal.woff2',
+    ],
+  ],
+] as const) {
+  test(`preloads the first-paint fonts in ${locale}`, async ({ request }) => {
+    const res = await request.get('/login', { headers: { cookie: `locale=${locale}` } })
+    const header = (res.headers()['link'] ?? '').split(/,\s*(?=<)/)
+    const tags = [...(await res.text()).matchAll(/<link[^>]*rel="preload"[^>]*>/g)].map((m) => m[0])
+    const fonts = [...header, ...tags].filter((l) => /as="?font"?/.test(l))
+    for (const f of files) {
+      expect(fonts.some((l) => l.includes(`/fonts/${f}`) && /crossorigin/i.test(l))).toBe(true)
+    }
+    expect(fonts).toHaveLength(files.length)
+  })
+}

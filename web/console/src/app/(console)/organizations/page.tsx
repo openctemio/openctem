@@ -29,7 +29,7 @@ import {
   OrganizationStatePill,
   type OrgStatus,
 } from '@console/features/admin-console/components/organization-state-pill'
-import { organizationHref } from '@console/features/admin-console/lib/organization-links'
+import { organizationHref } from '@console/features/admin-console/lib/console-links'
 import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
 export default function AdminOrganizationsPage() {
