@@ -23,7 +23,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useAppHost } from '@/hooks/use-app-origin'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { apiErrorFields } from '@/lib/api/error-message'
+import { apiErrorFields, apiFieldMessage } from '@/lib/api/error-message'
 import { useCanMutate, usePermissions } from '@/lib/permissions'
 import { safeImageSrc } from '@/lib/safe-href'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
@@ -259,7 +259,9 @@ export function GeneralSettings() {
       )
       const marked = named.length > 0 ? named : sent.length === 1 ? sent : []
       if (marked.length > 0) {
-        setFieldErrors(Object.fromEntries(marked.map((f) => [f, message])))
+        setFieldErrors(
+          Object.fromEntries(marked.map((f) => [f, apiFieldMessage(err, f) ?? message]))
+        )
         document.getElementById(`org-${marked[0]}`)?.focus()
       } else {
         toast.error(message)

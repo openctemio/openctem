@@ -113,8 +113,10 @@ describe('Settings › General refused save', () => {
     open()
     await user.type(screen.getByLabelText('Website'), 'ftp://example.com')
     await user.click(screen.getByRole('button', { name: /save/i }))
-    await screen.findAllByRole('alert')
+    const alerts = await screen.findAllByRole('alert')
     expect(screen.getByLabelText('Website')).toHaveAttribute('aria-invalid', 'true')
+    // The field's own sentence, without the field name in front.
+    expect(alerts.some((a) => a.textContent === 'must be an http or https address')).toBe(true)
     expect(screen.getByLabelText('Organization name')).not.toHaveAttribute('aria-invalid')
   })
 })

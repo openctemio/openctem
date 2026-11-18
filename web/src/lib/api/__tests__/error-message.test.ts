@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { ApiClientError, getErrorMessage } from '../error-handler'
 import {
   apiErrorFields,
+  apiFieldMessage,
   describeApiError,
   describeCode,
   isSafeMessage,
@@ -211,5 +212,16 @@ describe('apiErrorFields', () => {
       apiErrorFields(refusal({ errors: [{ field: '0b8c4f3e-1d2a-4c5b-9e7f-112233445566' }] }))
     ).toEqual([])
     expect(apiErrorFields(new Error('boom'))).toEqual([])
+  })
+})
+
+describe('apiFieldMessage', () => {
+  it("gives the API's sentence for one field, only when it is safe to show", () => {
+    const err = new ApiClientError('Invalid', 'VALIDATION_ERROR', 400, {
+      errors: [{ field: 'website', message: 'must be an http or https address' }],
+    })
+    expect(apiFieldMessage(err, 'website')).toBe('must be an http or https address')
+    expect(apiFieldMessage(err, 'name')).toBeUndefined()
+    expect(apiFieldMessage(new Error('x'), 'website')).toBeUndefined()
   })
 })
