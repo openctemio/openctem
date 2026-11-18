@@ -114,7 +114,7 @@ The organizations evaluated are the active memberships of the token's user; the 
 token's own session (another person's or an unknown session gets no `admission`). Pending
 invitations are listed by `POST /auth/onboarding/options`.
 
-`POST /api/v1/me/memberships/{tenantId}/leave` (account route, step-up) leaves one of the
+`POST /api/v1/me/memberships/{id}/leave` (account route, step-up) leaves one of the
 caller's organizations by id: the way out of one that does not admit the session, where
 `POST /organization/leave` (which needs that organization's token) is out of reach. It runs the
 same offboarding and audit (`member.left`, in that organization), refuses the only owner and a

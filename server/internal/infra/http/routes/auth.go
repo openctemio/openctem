@@ -267,7 +267,7 @@ func registerUserRoutes(
 	// token /organization/leave needs). Only the caller's own membership;
 	// step-up, as for leaving from inside.
 	router.Group("/api/v1/me/memberships", func(r Router) {
-		r.POST("/{tenantId}/leave", h.LeaveMembership, requireStepUp())
+		r.POST("/{id}/leave", h.LeaveMembership, requireStepUp())
 	}, middlewares...)
 
 	// Ownership invitations addressed to this account

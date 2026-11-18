@@ -22,17 +22,17 @@ import (
 // @Summary      Leave one of my organizations
 // @Description  Account route (account or organization token). The same offboarding as leaving from inside the organization (keys revoked, access removed, history kept, audited in that organization). Step-up. 404 when the caller is not a member; 409 for the only owner (transfer ownership or delete the organization first) and for someone who still owns work an administrator must reassign.
 // @Tags         Users
-// @Param        tenantId  path  string  true  "Organization ID"
+// @Param        id        path  string  true  "Organization ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /me/memberships/{tenantId}/leave [post]
+// @Router       /me/memberships/{id}/leave [post]
 func (h *UserHandler) LeaveMembership(w http.ResponseWriter, r *http.Request) {
 	u, actx, ok := h.ownerInvitationActor(w, r)
 	if !ok {
 		return
 	}
-	tenantID, err := shared.IDFromString(r.PathValue("tenantId"))
+	tenantID, err := shared.IDFromString(r.PathValue("id"))
 	if err != nil {
 		apierror.NotFound("Membership not found").WriteJSON(w)
 		return
