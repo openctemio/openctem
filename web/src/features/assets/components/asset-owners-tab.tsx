@@ -82,7 +82,7 @@ import {
 } from '../hooks/use-asset-owners'
 import type { AssetOwner, OwnershipType } from '../types'
 import { AssetAccessGrantsSection } from './asset-access-grants-section'
-import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { OWNERSHIP_TYPES, ownershipTypeHint, ownershipTypeLabel } from '../lib/ownership-labels'
 import { Tag } from '@/components/ui/tag'
 
 // ============================================
@@ -125,8 +125,9 @@ const OWNERSHIP_TYPE_ICON: Record<OwnershipType, LucideIcon> = {
 }
 
 function OwnershipBadge({ type }: { type: OwnershipType }) {
+  const { t } = useTranslation()
   return (
-    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={OWNERSHIP_TYPE_LABELS[type]} />
+    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={ownershipTypeLabel(t, type)} />
   )
 }
 
@@ -445,7 +446,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       toast.success(
         t('assets.ownersTab.added', '{name} added as {role} owner', {
           name: selectedOption.label,
-          role: OWNERSHIP_TYPE_LABELS[addOwnershipType].toLowerCase(),
+          role: ownershipTypeLabel(t, addOwnershipType).toLowerCase(),
         })
       )
       setShowAddDialog(false)
@@ -875,21 +876,19 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                      ([value, label]) => (
-                        <SelectItem
-                          key={value}
-                          value={value}
-                          disabled={!canAssignGroups && VIEW_GRANTING_TYPES.has(value)}
-                        >
-                          {label}
-                        </SelectItem>
-                      )
-                    )}
+                    {OWNERSHIP_TYPES.map((value) => (
+                      <SelectItem
+                        key={value}
+                        value={value}
+                        disabled={!canAssignGroups && VIEW_GRANTING_TYPES.has(value)}
+                      >
+                        {ownershipTypeLabel(t, value)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {OWNERSHIP_TYPE_DESCRIPTIONS[addOwnershipType]}
+                  {ownershipTypeHint(t, addOwnershipType)}
                 </p>
                 {!canAssignGroups && (
                   <p className="text-xs text-muted-foreground">
@@ -949,7 +948,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(OWNERSHIP_TYPE_LABELS).map(([value, label]) => (
+                  {OWNERSHIP_TYPES.map((value) => (
                     <SelectItem
                       key={value}
                       value={value}
@@ -960,7 +959,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                         VIEW_GRANTING_TYPES.has(value)
                       }
                     >
-                      {label}
+                      {ownershipTypeLabel(t, value)}
                     </SelectItem>
                   ))}
                 </SelectContent>
