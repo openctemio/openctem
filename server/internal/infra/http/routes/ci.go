@@ -107,6 +107,11 @@ func registerCIRoutes(
 		r.GET("/trust-configs/{id}", admin.GetTrustConfig, middleware.Require(permission.CIRead))
 		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
 		r.DELETE("/trust-configs/{id}", admin.DeleteTrustConfig, middleware.Require(permission.CIWrite))
+		// New repositories of an all-projects trust: names repositories that
+		// may not be assets yet (write, like the refusals); a decision widens
+		// or narrows who may send results (step-up, like a change).
+		r.GET("/trust-configs/{id}/new-repositories", admin.ListNewRepositories, middleware.Require(permission.CIWrite))
+		r.POST("/trust-configs/{id}/new-repositories/decisions", admin.DecideNewRepositories, middleware.Require(permission.CIWrite), requireStepUp())
 
 		r.GET("/pipelines", admin.ListPipelines, middleware.Require(permission.CIRead))
 		r.GET("/pipelines/{id}", admin.GetPipeline, middleware.Require(permission.CIRead))

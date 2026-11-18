@@ -27,7 +27,7 @@ connection goes through.
 | Rule | How |
 |---|---|
 | Decision at dial time | The dialer resolves the host once, checks every answer, and connects to a checked address itself. It never hands the host name to the system dialer, so a second DNS answer (rebinding, TTL 0) cannot change the destination. Every connection is checked, including each redirect hop and every new connection of a pooled client. |
-| Blocked ranges | Always: loopback, link-local and cloud metadata (IPv4 and IPv6), CGNAT, `0.0.0.0/8` and `::`, multicast, reserved and broadcast, IPv4-compatible and IPv4-mapped forms, and the NAT64, 6to4 and Teredo carriers that embed an IPv4 address. Private ranges (RFC 1918, ULA) unless the installation opened them (`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`). The table agrees with the sensors' deny list (`ctis/addrscope`); the security lint fails when they drift. |
+| Blocked ranges | Always: loopback, link-local and cloud metadata (IPv4 and IPv6), CGNAT, `0.0.0.0/8` and `::`, multicast, reserved and broadcast, IPv4-compatible and IPv4-mapped forms, and the NAT64, 6to4 and Teredo carriers that embed an IPv4 address. Private ranges (RFC 1918, ULA) unless the installation opened them ("Private network destinations" below). The table agrees with the sensors' deny list (`ctis/addrscope`); the security lint fails when they drift. |
 | Blocked names | `localhost` and the metadata aliases, in any case and with a trailing dot, before any lookup. |
 | Schemes | http and https only. Rule sources: https only, and go-git has no ssh, `git://` or `file://` transport registered. |
 | Proxies | No guarded client takes a proxy from the environment (`HTTP_PROXY`, `HTTPS_PROXY`): the check would then vet the proxy instead of the destination. The one exception is the opt-in platform feed proxy below, used by `FeedHTTPClient` only. |
@@ -47,6 +47,71 @@ Clients:
   value.
 - `SafeDialContext` and `ResolveSafeHost`: the same checks for transports that
   are not plain HTTP (SMTP, a custom TLS client).
+
+## Private network destinations
+
+A self-managed install often has its GitLab, Jira or mail relay on a private
+address. Private ranges are opened in two places, and the guard allows the
+union of both:
+
+| Source | Where | Applied |
+|---|---|---|
+| Set on the server | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | at start-up; a change needs a restart |
+| Opened in the console | console System > Private networks (platform setting `network.private_destinations`) | at once on the server that saved it, within 15 seconds on the others |
+
+- The guard reads one immutable snapshot of the policy (an atomic pointer) on
+  every check, and the dialer checks every connection again at connect time,
+  so a change applies from the next connection and a check never mixes two
+  lists. When a change closes a range, the idle keep-alive connections of
+  every client built by `pkg/httpsec` are closed, so none is reused into the
+  closed range; requests in flight finish. A transport built elsewhere around
+  `SafeDialContext` keeps its idle connections until they time out. Each
+  server reloads the stored list every 15 seconds
+  (`privatedestinations.Service.Start`); a refresh that read the list before a
+  save on the same server does not apply its older copy over the save. A
+  database error keeps the list in force, and a stored list that no longer
+  passes the checks opens nothing.
+- Console rules: at most 32 ranges, each inside `10.0.0.0/8`,
+  `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`; an IPv6 range must be
+  `/48` or narrower (one site); a range inside a never-reachable range (the
+  IPv6 cloud metadata addresses) is refused. The widest IPv4 range is a whole
+  private block (`10.0.0.0/8`); the console asks for a second look at
+  anything wider than `/24` (IPv4) or `/64` (IPv6). Each range may carry a
+  note (plain text, one line, at most 100 characters).
+- Never reachable, whatever either source says: loopback, link-local and
+  cloud metadata, CGNAT and the other ranges in the table above. They are
+  checked before the opened ranges.
+- With `SIGNUP_MODE=open` (anyone may create an organization) the console
+  opens no range: a change that lists one answers 409
+  `PRIVATE_RANGE_OPEN_SIGNUP` and a stored list is not applied, the same rule
+  that refuses `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` at start-up.
+- `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` (every private range) stays a
+  development-only switch: the API refuses to start with it in any other
+  `APP_ENV`.
+
+Who may change it. An opened range is reachable by every organization's
+webhooks, integrations and CI connections, so the change is the platform
+owner's: permission `platform.settings.network` (granted to the platform owner
+role only), a fresh step-up code and a reason. The change is a critical
+admin audit row with the previous and new lists (`previous_ranges`,
+`ranges`, and the server's ranges for context), and every administrator is
+told. Tenant sessions never reach the console API; a console role without
+the permission reads the list but cannot change it.
+
+Test a destination. `POST /api/v1/admin/settings/private-destinations/test`
+with `{"host": "gitlab.example.com"}` resolves the name (or reads an IP
+literal) and reports each address: `allowed` (public), `allowed_private`
+(which range opens it and whether it is set on the server or in the
+console), `blocked_private` (the `/24` or `/64` that would open it) or
+`hard_blocked` (why: loopback, link-local, cloud metadata, ...). It only
+resolves: it never connects to the host. It takes the same permission as a
+change and is limited to 10 tests a minute per administrator.
+
+| Method | Path | Permission |
+|---|---|---|
+| GET | `/api/v1/admin/settings/private-destinations` | `platform.settings.read` (any administrator) |
+| PUT | `/api/v1/admin/settings/private-destinations` | `platform.settings.network` + fresh step-up + reason |
+| POST | `/api/v1/admin/settings/private-destinations/test` | `platform.settings.network`, rate limited |
 
 ## Platform feed proxy
 
@@ -77,6 +142,10 @@ reason in `server/scripts/security-lint.sh`.
 ## Key files
 
 - `server/pkg/httpsec/ssrf.go`: ranges, dialer, clients.
+- `server/pkg/httpsec/private_policy.go`: the private-range snapshot, console
+  range checks and the resolve-only destination test.
+- `server/internal/app/privatedestinations/`: the console setting (store,
+  audit, refresh on every server).
 - `server/pkg/httpsec/feed_proxy.go`: the platform feed proxy (`FeedHTTPClient`).
 - `server/pkg/httpsec/bypass_test.go`: the bypass suite (address spellings, host
   spellings, schemes, redirects, proxy environment, error text).
