@@ -432,23 +432,37 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	// The caller's own session only: the session id and the user both come
-	// from the verified access token.
-	if h.admission != nil {
-		if sid := middleware.GetSessionID(r.Context()); sid != "" {
-			if byTenant, aerr := h.admission.MembershipAdmission(r.Context(), localUser.ID().String(), sid); aerr == nil {
-				for i := range response {
-					if verdict, ok := byTenant[response[i].ID]; ok {
-						response[i].Admission = admissionCode(verdict)
-					}
-				}
-			}
-		}
-	}
+	h.addAdmission(r.Context(), localUser.ID().String(), response)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// addAdmission fills each row's Admission from the caller's own session: the
+// session id and the user both come from the verified access token. It runs
+// only for an account token (no organization claim): the landing and the
+// welcome page, which choose an organization, are its only readers. A token
+// bound to an organization already passed that organization's rules, and the
+// listing is a hot endpoint, so the per-organization policy chain is not run
+// for it.
+func (h *UserHandler) addAdmission(ctx context.Context, userID string, response []TenantMembershipResponse) {
+	if h.admission == nil || middleware.GetTenantID(ctx) != "" {
+		return
+	}
+	sid := middleware.GetSessionID(ctx)
+	if sid == "" {
+		return
+	}
+	byTenant, err := h.admission.MembershipAdmission(ctx, userID, sid)
+	if err != nil {
+		return
+	}
+	for i := range response {
+		if verdict, ok := byTenant[response[i].ID]; ok {
+			response[i].Admission = admissionCode(verdict)
+		}
+	}
 }
 
 // MyTenantsResponse lists the caller's own memberships as GET

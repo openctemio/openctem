@@ -38,7 +38,13 @@ const TWO_FACTOR_CODES = new Set(['MFA_ENROLLMENT_REQUIRED'])
 
 // The organization wants its own identity provider (or that provider's proof
 // of a second factor): our setup cannot help; the account space says what to do.
+//
+// ORGANIZATION_ACCESS_DENIED: the person is no longer a member of the
+// organization the tenant cookie names (removed, or left). The refresh route
+// clears that cookie, so the next refresh renews the account token and the
+// account space lists the organizations they still belong to.
 const ACCOUNT_SPACE_CODES = new Set([
+  'ORGANIZATION_ACCESS_DENIED',
   'ORGANIZATION_SUSPENDED',
   'SSO_REQUIRED',
   'MFA_IDP_EVIDENCE_REQUIRED',

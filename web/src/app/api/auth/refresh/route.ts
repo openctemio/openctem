@@ -188,6 +188,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
       }
 
+      // ORGANIZATION_ACCESS_DENIED (403): the person is no longer a member of
+      // the organization in the tenant cookie. Only that cookie goes: the
+      // session is alive, and without it the next refresh renews the account
+      // token instead of failing the same way every time.
+      if (result.code === 'ORGANIZATION_ACCESS_DENIED') {
+        errorResponse.cookies.set(TENANT_COOKIE, '', {
+          httpOnly: false,
+          secure: process.env.SECURE_COOKIES !== 'false',
+          sameSite: 'lax',
+          maxAge: 0,
+          path: '/',
+        })
+      }
+
       return errorResponse
     }
 

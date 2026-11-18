@@ -28,12 +28,14 @@ describe('refreshFailureAction', () => {
     }
   )
 
-  it.each(['ORGANIZATION_SUSPENDED', 'SSO_REQUIRED', 'MFA_IDP_EVIDENCE_REQUIRED'])(
-    'keeps the session and opens the account space: %s',
-    (code) => {
-      expect(refreshFailureAction(403, code)).toBe('account_space')
-    }
-  )
+  it.each([
+    'ORGANIZATION_ACCESS_DENIED',
+    'ORGANIZATION_SUSPENDED',
+    'SSO_REQUIRED',
+    'MFA_IDP_EVIDENCE_REQUIRED',
+  ])('keeps the session and opens the account space: %s', (code) => {
+    expect(refreshFailureAction(403, code)).toBe('account_space')
+  })
 
   it.each([
     [0, undefined],
