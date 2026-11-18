@@ -2,11 +2,9 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Check, CircleSlash, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -17,14 +15,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
+import { RefreshButton } from '@/components/list-page-parts'
 import { SeverityBadge } from '@/components/ui/severity-badge'
-import { TableSkeleton } from '@/components/list-page-parts'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
-import { BulkActionBar } from '@/features/shared/components/bulk-action-bar'
-import { EmptyState } from '@/features/shared/components/empty-state'
-import { ErrorState } from '@/features/shared/components/error-state'
+import type { DataTableBulk, DataTableSelection } from '@/features/shared/components/data-table'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { PageStack } from '@/features/shared/components/page-stack'
+import {
+  QueueCard,
+  QueueDecisionActions,
+  QueueEmpty,
+  useQueueAnnouncer,
+} from '@/features/shared/components/queue'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
+import { accessStateOf } from '@/lib/api/access-state'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { toDisplayText } from '@/lib/untrusted-text'
@@ -38,6 +44,7 @@ import {
   type DecideResult,
   type DismissReason,
 } from '../types'
+import { closureColumns } from './closure-columns'
 import { ClosureEvidence } from './closure-evidence'
 
 const REASON_LABEL: Record<DismissReason, string> = {
@@ -46,6 +53,11 @@ const REASON_LABEL: Record<DismissReason, string> = {
   wrong_asset: 'Wrong asset',
   other: 'Other',
 }
+
+// Confirm close + Keep open in en and vi, and the cell padding.
+const ACTIONS_WIDTH = 236
+// "A person closes" / "Người đóng" whole as a mark.
+const REVIEW_WIDTH = 148
 
 type Pending = { kind: 'confirm' | 'dismiss'; rows: ClosureProposal[] } | null
 
@@ -69,14 +81,23 @@ export function ReadyToCloseList({
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canDecide = can(Permission.FindingsVerify)
-  const { data, error, isLoading, mutate } = useClosureProposals(page, perPage)
+  const { data, error, isLoading, isValidating, mutate } = useClosureProposals(page, perPage)
+  const announcer = useQueueAnnouncer()
   const [selected, setSelected] = useState<ClosureProposal[]>([])
   const [resetKey, setResetKey] = useState(0)
   const [pending, setPending] = useState<Pending>(null)
   const [reason, setReason] = useState<DismissReason>('still_present_manual_check')
   const [note, setNote] = useState('')
 
-  const clearSelection = useCallback(() => setResetKey((k) => k + 1), [])
+  const clearSelection = useCallback(() => {
+    setSelected([])
+    setResetKey((k) => k + 1)
+  }, [])
+  const onSelectionChange = useCallback(
+    (selection: DataTableSelection<ClosureProposal> | null) =>
+      setSelected(selection?.kind === 'ids' ? selection.rows : []),
+    []
+  )
 
   const report = useCallback(
     (kind: 'confirm' | 'dismiss', res: DecideResult) => {
@@ -87,18 +108,19 @@ export function ReadyToCloseList({
           ? t('findings.closureReview.confirmed', 'Closed {count} findings', { count: done })
           : t('findings.closureReview.kept', 'Kept {count} findings open', { count: done })
       if (skipped > 0) {
-        toast.warning(
-          `${msg}. ${t(
-            'findings.closureReview.skipped',
-            '{count} were not changed: seen again, changed by someone, or no longer yours to decide.',
-            { count: skipped }
-          )}`
-        )
+        const text = `${msg}. ${t(
+          'findings.closureReview.skipped',
+          '{count} were not changed: seen again, changed by someone, or no longer yours to decide.',
+          { count: skipped }
+        )}`
+        toast.warning(text)
+        announcer.announce(text)
       } else {
         toast.success(msg)
+        announcer.announce(msg)
       }
     },
-    [t]
+    [t, announcer]
   )
 
   const run = useCallback(async () => {
@@ -116,162 +138,208 @@ export function ReadyToCloseList({
       clearSelection()
       await Promise.all([mutate(), refreshClosureReview()])
     } catch (err) {
-      toast.error(getErrorMessage(err))
+      const msg = getErrorMessage(err)
+      toast.error(msg)
+      announcer.announce(msg)
     }
-  }, [pending, reason, note, report, clearSelection, mutate])
+  }, [pending, reason, note, report, clearSelection, mutate, announcer])
+
+  const rowName = useCallback((r: ClosureProposal) => toDisplayText(r.finding_title, 80), [])
+
+  // The row's decision controls; the table cell and the phone card share them.
+  const actionsCell = useCallback(
+    (row: ClosureProposal, layout: 'row' | 'card' = 'row') => (
+      <QueueDecisionActions
+        name={rowName(row)}
+        itemId={row.id}
+        canDecide={canDecide}
+        approveLabel={t('findings.closureReview.confirm', 'Confirm close')}
+        rejectLabel={t('findings.closureReview.keepOpen', 'Keep open')}
+        onApprove={() => setPending({ kind: 'confirm', rows: [row] })}
+        onReject={() => setPending({ kind: 'dismiss', rows: [row] })}
+        layout={layout}
+      />
+    ),
+    [canDecide, rowName, t]
+  )
+
+  const criticalPill = useCallback(
+    (row: ClosureProposal) =>
+      row.tier === 'critical' ? (
+        <TonePill
+          tone="destructive"
+          label={t('findings.closureReview.criticalShort', 'A person closes')}
+          title={t('findings.closureReview.critical', 'Critical: a person closes it')}
+        />
+      ) : null,
+    [t]
+  )
 
   const columns = useMemo<ColumnDef<ClosureProposal>[]>(() => {
-    const cols: ColumnDef<ClosureProposal>[] = []
-    if (canDecide) {
-      cols.push({
-        id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-            aria-label={t('findings.closureReview.selectAll', 'Select all rows on this page')}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(v) => row.toggleSelected(!!v)}
-            aria-label={t('findings.closureReview.selectRow', 'Select {title}', {
-              title: toDisplayText(row.original.finding_title, 80),
-            })}
-          />
-        ),
+    const shared = closureColumns<ClosureProposal>(t, {
+      method: (r) => r.method,
+      at: (r) => r.evidence_at,
+      methodLabel: t('findings.closureReview.col.why', 'Why it can close'),
+      atLabel: t('findings.closureReview.col.scanned', 'Scanned'),
+      // Five columns and the selection: the time goes first on a narrower frame.
+      atHideBelow: 1060,
+    })
+    const reviewLabel = t('findings.closureReview.col.review', 'Review')
+    const actionsLabel = t('findings.closureReview.col.actions', 'Actions')
+    const cols: ColumnDef<ClosureProposal>[] = [
+      ...shared.slice(0, 2),
+      {
+        // Only a critical close waits for a person whatever the closing mode.
+        id: 'review',
+        meta: { kind: 'status', width: REVIEW_WIDTH, label: reviewLabel },
+        header: reviewLabel,
         enableSorting: false,
-        enableHiding: false,
-      })
-    }
-    cols.push(
-      {
-        id: 'finding',
-        header: t('findings.closureReview.col.finding', 'Finding'),
-        cell: ({ row }) => (
-          <div className="grid gap-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <SeverityBadge severity={row.original.severity} />
-              {row.original.tier === 'critical' && (
-                <TonePill
-                  tone="destructive"
-                  label={t('findings.closureReview.critical', 'Critical: a person closes it')}
-                />
-              )}
-            </div>
-            <ApprovalFindingLink
-              findingId={row.original.finding_id}
-              findingTitle={row.original.finding_title}
-            />
-            {row.original.asset_name && (
-              <span className="text-xs text-muted-foreground" dir="auto">
-                {toDisplayText(row.original.asset_name, 120)}
-              </span>
-            )}
-          </div>
-        ),
+        cell: ({ row }) =>
+          criticalPill(row.original) ?? <span className="text-muted-foreground">-</span>,
       },
-      {
-        id: 'evidence',
-        header: t('findings.closureReview.col.why', 'Why it can close'),
-        cell: ({ row }) => (
-          <ClosureEvidence
-            method={row.original.method}
-            evidence={row.original.evidence}
-            at={row.original.evidence_at}
-          />
-        ),
-      }
-    )
+      ...shared.slice(2),
+    ]
     if (canDecide) {
       cols.push({
         id: 'actions',
-        header: () => (
-          <span className="sr-only">{t('findings.closureReview.col.actions', 'Actions')}</span>
-        ),
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1.5">
-            <Button size="sm" onClick={() => setPending({ kind: 'confirm', rows: [row.original] })}>
-              <Check className="h-4 w-4" />
-              {t('findings.closureReview.confirm', 'Confirm close')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPending({ kind: 'dismiss', rows: [row.original] })}
-            >
-              <CircleSlash className="h-4 w-4" />
-              {t('findings.closureReview.keepOpen', 'Keep open')}
-            </Button>
-          </div>
-        ),
+        meta: { kind: 'actions', width: ACTIONS_WIDTH, label: actionsLabel },
+        header: () => <span className="sr-only">{actionsLabel}</span>,
+        enableHiding: false,
+        enableSorting: false,
+        cell: ({ row }) => actionsCell(row.original),
       })
     }
     return cols
-  }, [canDecide, t])
+  }, [actionsCell, canDecide, criticalPill, t])
 
-  if (error) {
-    return (
-      <ErrorState
-        title={t('findings.closureReview.errorName', 'Ready to close')}
-        error={error}
-        onRetry={() => void mutate()}
-      />
-    )
-  }
-  if (isLoading || !data) return <TableSkeleton />
+  const bulk: DataTableBulk<ClosureProposal> | undefined = canDecide
+    ? {
+        rowLabel: rowName,
+        noun: t('findings.closureReview.selectedNoun', 'selected'),
+        onSelectionChange,
+        actions: (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPending({ kind: 'confirm', rows: selected })}
+            >
+              {t('findings.closureReview.confirm', 'Confirm close')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPending({ kind: 'dismiss', rows: selected })}
+            >
+              {t('findings.closureReview.keepOpen', 'Keep open')}
+            </Button>
+          </>
+        ),
+      }
+    : undefined
 
-  const rows = data.data
+  // A refused read is "no access", not a failure with Retry.
+  const noAccess = !data && accessStateOf(error) === 'no_access'
+  const total = data?.total ?? 0
+  const viewTitle = t('findings.closureReview.viewName.ready', 'Closes waiting for review')
   const count = pending?.rows.length ?? 0
+
   return (
     <>
-      <DataTable
-        columns={columns}
-        data={rows}
-        manualPagination
-        showSearch={false}
-        pageCount={data.total_pages}
-        rowCount={data.total}
-        pagination={pagination}
-        onPaginationChange={onPaginationChange}
-        getRowId={(r) => r.id}
-        onSelectionChange={setSelected}
-        resetSelectionKey={resetKey}
-        emptyState={
-          <EmptyState
-            icon={ListChecks}
-            title={t('findings.closureReview.emptyTitle', 'Nothing waits for review')}
-            description={t(
-              'findings.closureReview.emptyDescription',
-              'When a covered scan no longer finds an issue and your closing mode asks for review, the finding waits here.'
+      <PageStack>
+        <ListTitleRow
+          title={viewTitle}
+          count={
+            <ListCount
+              total={total}
+              loading={(isLoading && !data) || noAccess}
+              label={t(
+                'findings.closureReview.total',
+                '{count, plural, one {# finding} other {# findings}}',
+                { count: total }
+              )}
+            />
+          }
+        >
+          <RefreshButton
+            onClick={() => void mutate()}
+            loading={isValidating}
+            label={t('findings.closureReview.refresh', 'Refresh')}
+          />
+        </ListTitleRow>
+        {noAccess ? (
+          <NoAccessState
+            title={t('findings.closureReview.errorName', 'Ready to close')}
+            permission={Permission.FindingsRead}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={data?.data ?? []}
+            caption={viewTitle}
+            // The first read: skeleton rows under a frame that stays.
+            isLoading={isLoading && !data}
+            isRefreshing={isValidating && !!data}
+            refreshingLabel={t('findings.closureReview.refreshing', 'Refreshing closes')}
+            error={data ? undefined : error}
+            onRetry={() => void mutate()}
+            errorTitle={t('findings.closureReview.errorName', 'Ready to close')}
+            manualPagination
+            showSearch={false}
+            pageCount={data?.total_pages ?? 0}
+            rowCount={total}
+            pagination={pagination}
+            onPaginationChange={onPaginationChange}
+            paginationNoun={t('findings.closureReview.paginationNoun', 'findings')}
+            getRowId={(r) => r.id}
+            pinActions
+            bulk={bulk}
+            resetSelectionKey={resetKey}
+            showSelectionCount={false}
+            emptyState={
+              <QueueEmpty
+                kind="nothing-waiting"
+                title={t('findings.closureReview.emptyTitle', 'Nothing waits for review')}
+                hint={t(
+                  'findings.closureReview.emptyDescription',
+                  'When a covered scan no longer finds an issue and your closing mode asks for review, the finding waits here.'
+                )}
+              />
+            }
+            mobileRow={(row) => (
+              <QueueCard
+                data-testid="closure-phone-card"
+                title={
+                  <ApprovalFindingLink
+                    findingId={row.finding_id}
+                    findingTitle={row.finding_title}
+                  />
+                }
+                marks={
+                  <>
+                    <SeverityBadge severity={row.severity} />
+                    {criticalPill(row)}
+                  </>
+                }
+                meta={
+                  row.asset_name ? (
+                    <span dir="auto">{toDisplayText(row.asset_name, 120)}</span>
+                  ) : undefined
+                }
+                reason={
+                  <ClosureEvidence
+                    method={row.method}
+                    evidence={row.evidence}
+                    at={row.evidence_at}
+                  />
+                }
+                actions={actionsCell(row, 'card')}
+              />
             )}
           />
-        }
-      />
-      {canDecide && (
-        <BulkActionBar
-          count={selected.length}
-          onClear={clearSelection}
-          noun={t('findings.closureReview.selectedNoun', 'selected')}
-        >
-          <Button size="sm" onClick={() => setPending({ kind: 'confirm', rows: selected })}>
-            <Check className="h-4 w-4" />
-            {t('findings.closureReview.confirm', 'Confirm close')}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPending({ kind: 'dismiss', rows: selected })}
-          >
-            <CircleSlash className="h-4 w-4" />
-            {t('findings.closureReview.keepOpen', 'Keep open')}
-          </Button>
-        </BulkActionBar>
-      )}
+        )}
+      </PageStack>
+      {announcer.region}
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
