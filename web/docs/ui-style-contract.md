@@ -546,6 +546,10 @@ reference.
     say something. A value that draws nothing or only a dash, or repeats the
     title, is left out (never a label over an empty value), so a later column
     takes its place. "0" is a value and stays; a switch is a value too.
+    Key figures (columns of kind `number`, `risk`, `severity`, `priority`,
+    `due`) take the two places before the other columns, so a count such as
+    "Findings 0" is never pushed out by a descriptive column before it; the
+    fields are still shown in column order.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
