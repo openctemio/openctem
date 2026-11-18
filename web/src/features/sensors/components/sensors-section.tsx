@@ -876,7 +876,7 @@ export function SensorsSection({
           rowLabel: (s) => s.name,
           checkboxLabel: (s) =>
             t('sensors.table.selectNamed', 'Select sensor {name}', { name: s.name }),
-          noun: (count) => t('sensors.list.selected', { count }),
+          noun: (count) => t('sensors.list.selected', 'sensors selected', { count }),
           actions: canWriteSensors ? (
             <Button
               variant="ghost"
