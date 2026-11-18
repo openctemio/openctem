@@ -134,7 +134,9 @@ export default function ActivityPage() {
                           </Badge>
                         )}
                       </div>
-                      {activity.message && (
+                      {/* The server's English message often only repeats the action
+                        name, which the line above already shows translated. */}
+                      {activity.message && activity.message !== formatAction(activity.action) && (
                         <p className="text-sm text-muted-foreground mt-0.5">{activity.message}</p>
                       )}
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
