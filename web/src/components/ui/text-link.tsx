@@ -3,6 +3,8 @@
 import * as React from 'react'
 import { ExternalLink } from 'lucide-react'
 
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link-class'
+
 import Link from '@/components/link'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
@@ -24,11 +26,7 @@ import { cn } from '@/lib/utils'
  * draws the external icon; an internal `href` goes through safeHref too, so a
  * data-driven path can never become a `javascript:` URL (RFC-040).
  */
-export const TEXT_LINK_CLASS = {
-  inline:
-    'text-signal-text underline decoration-signal-text/45 underline-offset-3 hover:decoration-current focus-visible:decoration-current',
-  nav: 'underline-offset-3 hover:underline focus-visible:underline',
-} as const
+export { TEXT_LINK_CLASS }
 
 export interface TextLinkProps extends Omit<
   React.AnchorHTMLAttributes<HTMLAnchorElement>,

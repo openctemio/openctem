@@ -57,6 +57,18 @@ describe('RegisterForm social buttons', () => {
     ).toEqual([])
   })
 
+  it('puts the providers after the form, as sign-in does', () => {
+    mockProviders({ google: true, github: true, microsoft: false })
+    render(<RegisterForm />)
+
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    const google = screen.getByRole('button', { name: /Google/ })
+    expect(submit.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(screen.getByText('Or sign up with')).toBeInTheDocument()
+  })
+
   it('renders only the providers the API advertises', () => {
     mockProviders({ google: true, github: false, microsoft: false })
     render(<RegisterForm />)
@@ -68,11 +80,13 @@ describe('RegisterForm social buttons', () => {
     mockUseAuthProviders.mockReturnValue({
       data: undefined,
     } as unknown as ReturnType<typeof useAuthProviders>)
-    render(<RegisterForm />)
+    const { container } = render(<RegisterForm />)
 
     expect(socialButtonNames(), 'buttons must not flash in before we know which ones work').toEqual(
       []
     )
+    // Their place is held (a skeleton of the grid), so the form below does not move.
+    expect(container.querySelector('[data-slot="social-providers-pending"]')).not.toBeNull()
   })
 
   // The API contract says `social` is always present, but a proxy error page or

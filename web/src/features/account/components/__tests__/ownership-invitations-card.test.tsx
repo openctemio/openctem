@@ -86,6 +86,25 @@ describe('OwnershipInvitationsCard', () => {
     await waitFor(() => expect(acceptOwnershipInvitation).toHaveBeenCalledWith('i1'))
   })
 
+  it('fills no Accept when several invitations wait: one filled button per screen at most', () => {
+    const two = [
+      { ...INV, organization_name: 'Example Org' },
+      { ...INV, id: 'i2', organization_id: 't2', organization_name: 'Example Two' },
+    ]
+    vi.mocked(useOwnershipInvitations).mockReturnValue(listing(two))
+    const { unmount } = render(<OwnershipInvitationsCard surface="entry" />)
+    for (const b of screen.getAllByRole('button', { name: /accept and become owner/i }))
+      expect(b).toHaveAttribute('data-variant', 'outline')
+    // Each organization carries the shared organization avatar (initials).
+    expect(
+      [...document.querySelectorAll('[data-slot="org-avatar"]')].map((a) => a.textContent)
+    ).toEqual(['EO', 'ET'])
+    unmount()
+    render(<OwnershipInvitationsCard />)
+    for (const b of screen.getAllByRole('button', { name: /accept and become owner/i }))
+      expect(b).toHaveAttribute('data-variant', 'outline')
+  })
+
   it('on My account keeps the card without a page heading', () => {
     vi.mocked(useOwnershipInvitations).mockReturnValue(listing([INV]))
     render(<OwnershipInvitationsCard />)
