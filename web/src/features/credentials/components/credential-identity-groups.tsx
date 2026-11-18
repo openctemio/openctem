@@ -22,6 +22,7 @@ import type { CredentialLeakRow } from '@/features/credentials/lib'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import { get } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type {
   ApiCredential,
   ApiCredentialListResponse,
@@ -47,10 +48,13 @@ export async function fetchIdentityLeaks(identity: string, limit: number) {
 }
 
 function IdentityTitle({ identity }: { identity: ApiIdentityExposure }) {
+  const { t } = useTranslation()
   const Icon = identity.identity_type === 'email' ? Mail : User
   const count = identity.exposure_count ?? 0
   const facts = [
-    `${count} ${count === 1 ? 'exposure' : 'exposures'}`,
+    t('credentials.identity.exposures', '{count, plural, one {# exposure} other {# exposures}}', {
+      count,
+    }),
     (identity.sources ?? []).length ? (identity.sources ?? []).join(', ') : null,
     (identity.credential_types ?? []).length ? (identity.credential_types ?? []).join(', ') : null,
   ].filter(Boolean)
@@ -66,6 +70,7 @@ function IdentityTitle({ identity }: { identity: ApiIdentityExposure }) {
 }
 
 function IdentitySummary({ identity }: { identity: ApiIdentityExposure }) {
+  const { t } = useTranslation()
   const active = identity.states?.active ?? 0
   const resolved = identity.states?.resolved ?? 0
   return (
@@ -79,7 +84,9 @@ function IdentitySummary({ identity }: { identity: ApiIdentityExposure }) {
               active > 0 ? 'bg-destructive' : 'bg-muted-foreground/30'
             )}
           />
-          <span className={cn(active > 0 && 'text-foreground')}>{active}</span> active
+          <span className={cn(active > 0 && 'text-foreground')}>
+            {t('credentials.identity.active', '{count} active', { count: active })}
+          </span>
         </span>
         <span className="flex items-center gap-1 whitespace-nowrap">
           <span
@@ -89,7 +96,9 @@ function IdentitySummary({ identity }: { identity: ApiIdentityExposure }) {
               resolved > 0 ? 'bg-success' : 'bg-muted-foreground/30'
             )}
           />
-          <span className={cn(resolved > 0 && 'text-foreground')}>{resolved}</span> resolved
+          <span className={cn(resolved > 0 && 'text-foreground')}>
+            {t('credentials.identity.resolved', '{count} resolved', { count: resolved })}
+          </span>
         </span>
       </span>
       {identity.highest_severity && (
@@ -112,6 +121,16 @@ interface CredentialIdentityGroupsProps {
   resetKey: string
   emptyMessage?: string
   emptyDescription?: string
+  /** The identities could not be read (and none are loaded). */
+  error?: unknown
+  onRetry?: () => void
+  /** What failed to load, for the error state ("credential identities"). */
+  errorTitle?: string
+  /** The rest of the list's table: filters toggle, chips, states, phone card. */
+  tableProps?: Omit<
+    Partial<React.ComponentProps<typeof DataTable<CredentialLeakRow, unknown>>>,
+    'columns' | 'data' | 'rowGroups' | 'pagination' | 'onPaginationChange' | 'rowCount'
+  >
 }
 
 export function CredentialIdentityGroups({
@@ -125,7 +144,12 @@ export function CredentialIdentityGroups({
   resetKey,
   emptyMessage = 'No identities found',
   emptyDescription,
+  error,
+  onRetry,
+  errorTitle,
+  tableProps,
 }: CredentialIdentityGroupsProps) {
+  const { t } = useTranslation()
   // Identities arrive all at once; the table pages through them.
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
@@ -208,26 +232,32 @@ export function CredentialIdentityGroups({
         if (st.error) {
           return (
             <span className="text-destructive">
-              Could not load these leaks.{' '}
+              {t('credentials.identity.loadFailed', 'Could not load these leaks.')}{' '}
               <Button
                 variant="link"
                 size="sm"
                 className="h-auto p-0 text-xs"
                 onClick={() => lazy.retry(key)}
               >
-                Retry
+                {t('common.retry', 'Retry')}
               </Button>
             </span>
           )
         }
         if (st.loading && shown.length === 0) return null
-        if (!st.loading && st.total === 0) return <span>No leaks recorded for this identity.</span>
+        if (!st.loading && st.total === 0)
+          return (
+            <span>{t('credentials.identity.noLeaks', 'No leaks recorded for this identity.')}</span>
+          )
         if (st.total <= shown.length) return null
         const canLoadMore = lazy.limitOf(key) < lazy.maxLimit
         return (
           <span className="flex flex-wrap items-center gap-x-3 tabular-nums">
             <span>
-              Showing {shown.length} of {st.total}
+              {t('credentials.identity.showing', 'Showing {shown} of {total}', {
+                shown: shown.length,
+                total: st.total,
+              })}
             </span>
             {canLoadMore && (
               <Button
@@ -237,14 +267,16 @@ export function CredentialIdentityGroups({
                 disabled={st.loading}
                 onClick={() => lazy.showMore(key, MORE_ROWS)}
               >
-                Show {Math.min(MORE_ROWS, st.total - shown.length)} more
+                {t('credentials.identity.showMore', 'Show {count} more', {
+                  count: Math.min(MORE_ROWS, st.total - shown.length),
+                })}
               </Button>
             )}
           </span>
         )
       },
     }),
-    [keys, keyOf, expandedKeys, setExpandedKeys, byKey, lazy]
+    [keys, keyOf, expandedKeys, setExpandedKeys, byKey, lazy, t]
   )
 
   return (
@@ -261,13 +293,17 @@ export function CredentialIdentityGroups({
       pagination={pagination}
       onPaginationChange={setPagination}
       pageSizeOptions={PAGE_SIZES}
-      paginationNoun="identities"
-      pageSizeLabel="Identities per page"
+      paginationNoun={t('credentials.identity.noun', 'identities')}
+      pageSizeLabel={t('credentials.identity.perPage', 'Identities per page')}
       isLoading={isLoading}
       onRowClick={onRowClick}
       rowGroups={rowGroups}
       emptyMessage={emptyMessage}
       emptyDescription={emptyDescription}
+      error={error}
+      onRetry={onRetry}
+      errorTitle={errorTitle}
+      {...tableProps}
     />
   )
 }

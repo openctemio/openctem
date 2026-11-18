@@ -109,6 +109,17 @@ const LISTS = {
     group: false,
     query: false,
   },
+  // Credential leaks: three multi-value filters, no query language; the
+  // grouping is a select of its own (not the Findings one).
+  '/credentials': {
+    filters: [
+      ['severity', 'critical'],
+      ['status', 'active'],
+      ['source', 'data_breach'],
+    ],
+    group: false,
+    query: false,
+  },
   // Searched by name on the page; no query language for workflows.
   '/scans/workflows': {
     filters: [
@@ -729,6 +740,10 @@ test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
 test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () => {
   headerHoldsStill('/vulnerabilities')
   saysItsCountOnce('/vulnerabilities')
+})
+test.describe('Credential leaks list header', { tag: ['@credentials'] }, () => {
+  headerHoldsStill('/credentials')
+  saysItsCountOnce('/credentials')
 })
 test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/workflows')
