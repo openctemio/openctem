@@ -274,6 +274,18 @@ describe('My Work page', () => {
     await vi.waitFor(() => expect(approveTrigger).toHaveBeenCalledTimes(1))
   })
 
+  it('Enter on Approve is the button, not the row: it never opens the finding', async () => {
+    search.value = 'tab=review'
+    approvalRows = [request()]
+    push.mockClear()
+    renderPage()
+    const row = screen.getByRole('listitem', { name: /Risk acceptance: Remote code execution/ })
+    fireEvent.keyDown(within(row).getByRole('button', { name: /^Approve / }), { key: 'Enter' })
+    expect(push).not.toHaveBeenCalled()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(push).toHaveBeenCalledWith('/findings/f1')
+  })
+
   it('never offers a decision on my own request', () => {
     search.value = 'tab=review'
     approvalRows = [request({ requested_by: 'me' })]

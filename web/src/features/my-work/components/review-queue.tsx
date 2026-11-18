@@ -73,6 +73,10 @@ export function ReviewQueue({
         move(focus - 1)
         break
       case 'Enter':
+        // Enter on a control in the row (Approve, Reject, a link) is that
+        // control's own; only Enter on the row opens the finding.
+        if (e.target instanceof HTMLElement && e.target.closest('button, a, input, textarea'))
+          return
         e.preventDefault()
         router.push(`/findings/${encodeURIComponent(row.finding_id)}`)
         break
