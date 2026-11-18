@@ -11,10 +11,10 @@ import { translate, registerDictionary } from '@/lib/i18n'
 
 const EN_DIR = join(process.cwd(), 'src', 'lib', 'i18n', 'dictionaries', 'en')
 
-/** Count variables, then an optional adjective, then a word ending in s. */
+/** Count variables, then an optional adjective, then a word ending in s ("assets", "CVEs"). */
 const COUNT_BEFORE_NOUN = new RegExp(
   '\\{(count|n|total|days|hours|minutes|seconds|weeks|months|added|removed|max|min|selected|remaining|done|failed|skipped|created|updated|deleted|matched|cap|limit|required|evaluated|closed|used|cols|received|requested|[a-z][a-zA-Z]*(?:Count|Total|Created|Updated)|(?!(?:status|alias|address|class|process|access|this|its|is|has|was|does|as)\\b)[a-z]+s)\\} ' +
-    '(?:(?:new|open|more|other|unique|active|failed|closed|resolved|selected|matching|affected|related|known|existing|skipped|blocked|recent|duplicate) )?([a-z]+s)\\b',
+    '(?:(?:new|open|more|other|unique|active|failed|closed|resolved|selected|matching|affected|related|known|existing|skipped|blocked|recent|duplicate) )?([a-z]+s|[A-Z][A-Z0-9]+s)\\b',
   'g'
 )
 /** Words ending in s that are not plural nouns. */
@@ -86,6 +86,15 @@ describe('plural strings', () => {
     expect(translate(en, 'k', undefined, { count: 12840 })).toBe('12,840 assets selected')
     expect(translate(vi, 'k', undefined, { count: 12840 })).toBe('12.840 tài sản đã chọn')
     expect(translate(en, 'k', undefined, { count: 12840 }, 'vi')).toBe('12.840 assets selected')
+  })
+
+  it('groups a count in a language without plural blocks', () => {
+    registerDictionary('en', { c: '{count, plural, one {# open finding} other {# open findings}}' })
+    const vi = { c: '{count} phát hiện đang mở', p: 'Cổng {port}' }
+    registerDictionary('vi', vi)
+    expect(translate(vi, 'c', undefined, { count: 12840 })).toBe('12.840 phát hiện đang mở')
+    // A number that is not a count in English stays as written.
+    expect(translate(vi, 'p', undefined, { port: 12840 })).toBe('Cổng 12840')
   })
 
   it('selects a branch for a count passed as text and shows that text', () => {

@@ -653,7 +653,7 @@
   "attackSurface.technologies.csv.topCve": "Top CVE",
   "attackSurface.technologies.csv.topCvss": "Top CVSS",
   "attackSurface.technologies.csv.vendor": "Vendor",
-  "attackSurface.technologies.cveCount": "{count} CVEs",
+  "attackSurface.technologies.cveCount": "{count, plural, one {# CVE} other {# CVEs}}",
   "attackSurface.technologies.empty.description": "Technologies appear here once a scan of your external assets fingerprints what they run.",
   "attackSurface.technologies.empty.title": "No technologies yet",
   "attackSurface.technologies.error": "technologies",

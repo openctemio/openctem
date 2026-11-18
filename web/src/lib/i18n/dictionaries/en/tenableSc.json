@@ -47,7 +47,7 @@
   "tenableSc.coverage.cycleValue": "Cycle {cycle}: {assessed} / {eligible}",
   "tenableSc.coverage.firstSync": "reported by the first successful sync",
   "tenableSc.coverage.freshnessHint": "{covered} of {total, plural, one {# host} other {# hosts}}, {never} never scanned",
-  "tenableSc.coverage.ips": "{count} IPs",
+  "tenableSc.coverage.ips": "{count, plural, one {# IP} other {# IPs}}",
   "tenableSc.coverage.keepsMargin": "keeps a margin of {margin} IPs",
   "tenableSc.coverage.lastBatch": "last batch {outcome}",
   "tenableSc.coverage.licenseFull": "license full: waits for Tenable.sc to age data out",

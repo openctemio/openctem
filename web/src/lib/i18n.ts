@@ -106,10 +106,26 @@ export function translate(
   // the instance brand (src/context/i18n-provider.tsx).
   const all = { product: DEFAULT_BRAND.name, productShort: DEFAULT_BRAND.shortName, ...vars }
   str = applyPlurals(str, all, locale)
+  // A variable the English string counts with (its plural selector) is a
+  // count in every language: a Vietnamese "{count} tài sản" shows "12.840",
+  // not "12840", though Vietnamese strings carry no plural block.
+  const counts = pluralNames(loaded.en?.[key] ?? fallback ?? '')
   for (const [name, value] of Object.entries(all)) {
-    str = str.split(`{${name}}`).join(String(value))
+    const shown =
+      typeof value === 'number' && counts.has(name) && Number.isFinite(value)
+        ? groupedNumber(value, locale)
+        : String(value)
+    str = str.split(`{${name}}`).join(shown)
   }
   return str
+}
+
+/** The variables a string selects plural branches with. */
+function pluralNames(str: string): Set<string> {
+  const names = new Set<string>()
+  if (!str.includes('plural,')) return names
+  for (const m of str.matchAll(PLURAL_BLOCK)) names.add(m[1])
+  return names
 }
 
 /** The locale a loaded catalog belongs to (English when it is not one of them). */

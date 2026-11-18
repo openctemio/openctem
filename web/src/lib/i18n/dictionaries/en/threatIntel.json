@@ -141,7 +141,7 @@
   "threatIntel.iocs.viewDetails": "View details",
   "threatIntel.landscape.catalogsTitle": "Catalogs",
   "threatIntel.landscape.epssCatalog": "EPSS",
-  "threatIntel.landscape.epssCatalogValue": "{count} CVEs scored",
+  "threatIntel.landscape.epssCatalogValue": "{count, plural, one {# CVE} other {# CVEs}} scored",
   "threatIntel.landscape.epssCritical": "EPSS 50% or more",
   "threatIntel.landscape.epssCriticalHint": "Open findings whose CVE has at least a 50% chance of exploitation in the next 30 days",
   "threatIntel.landscape.epssHigh": "EPSS 10% or more",
