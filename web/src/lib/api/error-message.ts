@@ -183,6 +183,47 @@ function validationReasons(details: unknown): string | undefined {
 }
 
 /**
+ * The request fields an API refusal names, from its validation details
+ * (`[{field, message}]`, `{errors: [...]}` or `{field}`), so a form can mark
+ * the field a refused save was about. Empty when the answer names none.
+ */
+export function apiErrorFields(err: unknown): string[] {
+  if (!(err instanceof ApiClientError)) return []
+  const details = err.details as { errors?: unknown; field?: unknown } | unknown[] | undefined
+  const list: unknown[] = Array.isArray(details)
+    ? details
+    : Array.isArray(details?.errors)
+      ? details.errors
+      : details && typeof details === 'object'
+        ? [details]
+        : []
+  const fields = list
+    .map((d) => (d as { field?: unknown } | null)?.field)
+    .filter((f): f is string => typeof f === 'string' && f !== '' && !UUID.test(f))
+  return [...new Set(fields)]
+}
+
+/**
+ * The API's own sentence about one field ("must be an http or https
+ * address"), without the field name the joined description puts in front:
+ * shown under that field. Undefined when the answer has no safe sentence for it.
+ */
+export function apiFieldMessage(err: unknown, field: string): string | undefined {
+  if (!(err instanceof ApiClientError)) return undefined
+  const details = err.details as { errors?: unknown } | unknown[] | undefined
+  const list: unknown[] = Array.isArray(details)
+    ? details
+    : Array.isArray(details?.errors)
+      ? details.errors
+      : details && typeof details === 'object'
+        ? [details]
+        : []
+  const hit = list.find((d) => (d as { field?: unknown } | null)?.field === field) as
+    { message?: unknown } | undefined
+  return hit && isSafeMessage(hit.message) ? hit.message : undefined
+}
+
+/**
  * Describe any thrown value. `fallback` is the caller's "Could not …"
  * sentence, used whenever the cause is not something the person can act on.
  */
