@@ -23,6 +23,8 @@ import budget from '../request-budget.json'
  */
 
 const APP_DIR = path.resolve(__dirname, '../../src/app/(dashboard)')
+// The account area (/account/*) lives in its own route group with its own shell.
+const ACCOUNT_DIR = path.resolve(__dirname, '../../src/app/(account)')
 const QUIET_MS = 1200
 const CAP_MS = 20_000
 
@@ -150,7 +152,7 @@ for (let part = 0; part < PARTS; part++) {
     { tag: ['@budget'] },
     async ({ page }) => {
       test.setTimeout(8 * 60_000)
-      const all = dashboardRoutes()
+      const all = [...dashboardRoutes(), ...dashboardRoutes(ACCOUNT_DIR)].sort()
       expect(all.length).toBeGreaterThan(50)
       // Budget entries must name real pages, so a removed page does not keep a
       // stale allowance.
