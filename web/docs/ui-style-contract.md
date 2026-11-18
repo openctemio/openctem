@@ -524,6 +524,24 @@ reference.
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
   does the same, and never shows a page count below 1.
+- **An automatic phone card is compact.** A table without `mobileRow` draws
+  short lines of 20 px each, whatever its cells draw (one line, cut with an
+  ellipsis); only the title may take two:
+  - the title line: the row's name (the column of kind `name`, else the first
+    column; never guessed from the values), up to two lines whatever width the
+    table cell set for itself, then the status chip (the first column of kind
+    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    wraps under the title: a status cell too wide for its place gets a line of
+    its own under the title, and an actions cell wider than one icon button
+    gets one trailing line at the end of the card;
+  - one muted subtitle line: the first other column the page marked `asset`,
+    `owner`, `id` or `text` (an unmarked column is never the subtitle); kept
+    empty at its height on a row where it says nothing or repeats the title;
+  - one line of at most two label/value fields: the first other columns that
+    say something. A value that draws nothing or only a dash, or repeats the
+    title, is left out (never a label over an empty value), so a later column
+    takes its place. "0" is a value and stays; a switch is a value too.
+    A list whose card needs more than that passes its own `mobileRow`.
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
   outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
