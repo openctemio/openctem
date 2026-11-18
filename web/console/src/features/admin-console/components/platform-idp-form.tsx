@@ -14,6 +14,7 @@ import { deletePlatformIdP, savePlatformIdP } from '../api/use-platform-idp'
 import { adminErrorMessage } from './totp-step-form'
 import type { PlatformIdP, PlatformIdPInput } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
+import { BreakText } from '@/features/shared/components/break-text'
 
 /** Splits a comma- or space-separated list. */
 export function parseList(raw: string): string[] {
@@ -432,15 +433,15 @@ export function PlatformIdPForm({
               <dt className="text-muted-foreground">
                 {t('admin.platformIdpForm.authorization', 'Authorization')}
               </dt>
-              <dd className="min-w-0 break-all">{idp.authorization_endpoint}</dd>
+              <dd className="min-w-0 break-words"><BreakText>{idp.authorization_endpoint}</BreakText></dd>
               <dt className="text-muted-foreground">{t('admin.platformIdpForm.token', 'Token')}</dt>
-              <dd className="min-w-0 break-all">
+              <dd className="min-w-0 break-words">
                 {idp.token_endpoint} ({idp.token_endpoint_auth_method})
               </dd>
               <dt className="text-muted-foreground">
                 {t('admin.platformIdpForm.signingKeys', 'Signing keys')}
               </dt>
-              <dd className="min-w-0 break-all">{idp.jwks_uri}</dd>
+              <dd className="min-w-0 break-words"><BreakText>{idp.jwks_uri}</BreakText></dd>
             </dl>
           </CardContent>
         </Card>

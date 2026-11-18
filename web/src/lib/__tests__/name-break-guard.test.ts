@@ -15,6 +15,7 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const SRC = join(__dirname, '..', '..')
+const CONSOLE_SRC = join(SRC, '..', 'console', 'src')
 const SKIP_DIR = new Set(['__tests__', '__mocks__', 'generated', 'dictionaries'])
 const ANYWHERE = /\bbreak-all\b|wordBreak:\s*['"]break-all/
 const MACHINE = /mono|<code|<pre/
@@ -42,7 +43,7 @@ describe('names break only at separators', () => {
   })
 
   it('no text outside mono/code values breaks at any letter', () => {
-    const hits = sources(SRC).flatMap((file) =>
+    const hits = [...sources(SRC), ...sources(CONSOLE_SRC)].flatMap((file) =>
       anywhereBreaks(readFileSync(file, 'utf8')).map((n) => `${relative(SRC, file)}:${n}`)
     )
     expect(hits).toEqual([])
