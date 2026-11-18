@@ -315,7 +315,11 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
                 </p>
               </div>
               {canSupport && (
-                <Button className="shrink-0 self-start" onClick={() => setOpening(g)}>
+                <Button
+                  variant="outline"
+                  className="shrink-0 self-start"
+                  onClick={() => setOpening(g)}
+                >
                   {t('admin.support.open', 'Open support session')}
                 </Button>
               )}
