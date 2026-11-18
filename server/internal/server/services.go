@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
 	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/server/internal/app/query"
@@ -1064,6 +1065,9 @@ type Services struct {
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
+	// FeedWatch alerts and raises the all-user banner when vulnerability
+	// data goes stale, in every feed mode; nil without platform settings.
+	FeedWatch *feedwatch.Service
 	// LookupJobs asks the platform's instance-scope sensors passive
 	// questions for an organization (lookup.ct@1).
 	LookupJobs    *lookupjobapp.Service
@@ -1584,6 +1588,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
 	// relayed release; the platform never calls CISA or FIRST.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
+	s.FeedWatch = newFeedWatch(repos, s, log)
 	if s.FeedRelay != nil && s.ThreatSource != nil {
 		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
 	}

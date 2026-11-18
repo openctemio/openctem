@@ -2463,6 +2463,9 @@ func (p platformRoleRoster) NotifyRosterChange(ctx context.Context, actor *admin
 // background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
+	if deps.Services.FeedWatch != nil {
+		h.SetFreshness(deps.Services.FeedWatch)
+	}
 	if runner, configured := newFeedRunner(deps, log); runner != nil {
 		h.SetFeedRunner(runner, configured)
 	}
