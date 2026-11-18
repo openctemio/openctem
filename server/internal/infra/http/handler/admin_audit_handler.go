@@ -82,7 +82,7 @@ type AdminAuditLogListResponse struct {
 // @Param action query string false "Filter by action"
 // @Param resource_type query string false "Filter by resource type"
 // @Param search query string false "Search term"
-// @Param kind query string false "changes: writes and refused requests only (no page views, write-ahead rows, sign-ins or session events)"
+// @Param kind query string false "changes: writes and refused requests only (no page views, write-ahead rows or routine successful session events; failures and anomalies stay)"
 // @Param admin_id query string false "Filter by admin ID"
 // @Param resource_id query string false "Filter by resource ID"
 // @Param success query boolean false "Filter by success status"
@@ -109,7 +109,7 @@ func (h *AdminAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		ResourceType: r.URL.Query().Get("resource_type"),
 		Search:       r.URL.Query().Get("search"),
 		// kind=changes: writes and refused requests only (no page views, no
-		// write-ahead rows, no sign-in or session events). Any other value
+		// write-ahead rows, no routine successful sign-in or session events; every failure and anomaly stays). Any other value
 		// lists everything.
 		ChangesOnly: r.URL.Query().Get("kind") == "changes",
 	}
