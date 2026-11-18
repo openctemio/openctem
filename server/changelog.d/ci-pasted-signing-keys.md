@@ -1,0 +1,7 @@
+### Added: a CI trust configuration can use pasted signing keys instead of fetching them
+
+- A CI trust configuration has a **Signing keys** choice: **Fetch from the provider** (the default, unchanged) or **Use keys I paste**. With pasted keys, CI job tokens are verified with the provider's public key document (JWKS) an administrator pasted, and the platform never contacts the provider. This serves a self-managed GitLab the platform cannot reach, or a platform that must make no outbound connections.
+- The document is checked when saved: at most 64 KiB and 10 keys, RSA (RS256, at least 2048 bits) or EC P-256 (ES256), a unique `kid` each; a key carrying private parameters is refused. The trust shows the key ids, their algorithm, when they were pasted and the last key that verified a token. Changes are audited with the old and new key ids.
+- After a provider rotates its keys, a token signed with a key that is not pasted is refused with `401 CI_TOKEN_UNKNOWN_KEY` (not the retryable `503 CI_ISSUER_UNAVAILABLE`), and the organization's administrators get an audit entry and an alert at most once an hour per trust.
+- API: `key_source` and `signing_keys` on `POST`/`PUT /api/v1/ci/trust-configs` and the preview; the answer adds `signing_key_list`, `signing_keys_updated_at` and `last_key_id`. Migration `20261118063549_ci_trust_signing_keys` (additive columns with defaults; existing trusts keep fetching).
+- Docs: server/docs/how-to/connect-ci-pipelines.md
