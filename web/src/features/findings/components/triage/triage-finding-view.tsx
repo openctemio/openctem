@@ -43,10 +43,10 @@ function displayLines(value: string, max: number): string {
     .join('\n')
 }
 
-/** One label and value row of the facts list (label column, value column; stacked on a phone). */
+/** One label and value row of the facts list: label column, value column, at every width. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid min-w-0 gap-x-4 gap-y-0.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+    <div className="grid min-w-0 grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-0.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
       <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-sm">{children}</dd>
     </div>

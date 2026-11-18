@@ -137,8 +137,13 @@ vi.mock('../../../api/use-findings-api', async () => {
     },
   }
 })
+async function notFoundError() {
+  const { ApiClientError: E } = await import('@/lib/api/error-handler')
+  return new E('not found', 'NOT_FOUND', 404)
+}
+let NotFound: Error | undefined
 function notFound() {
-  return Object.assign(new (class extends Error {})('not found'), { statusCode: 404 })
+  return NotFound ?? Object.assign(new (class extends Error {})('not found'), { statusCode: 404 })
 }
 
 const fetchTriageWindow = vi.fn()
@@ -372,7 +377,9 @@ describe('TriageMode', () => {
     press('s')
     await screen.findByRole('heading', { name: 'Finding 3' })
     const { toast } = await import('sonner')
-    expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/Changed by someone else/))
+    expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/Changed by someone else/), {
+      id: 'triage-passed-over',
+    })
   })
 
   it('moving on costs one read per finding', async () => {
@@ -600,31 +607,95 @@ describe('TriageMode decisions, part 2', () => {
     ).toHaveLength(0)
   })
 
-  it('a phone has Confirm and the counts in one bar at the bottom: one Confirm, the rest after the finding', async () => {
+  it('a phone has Previous, Skip and Confirm in one bar; the other decisions are folded; the counts stay in the status line', async () => {
     const width = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
     try {
       seed(3)
       await ready()
-      const bar = screen.getByRole('region', { name: 'Confirm and session summary' })
-      const confirm = within(bar).getByRole('button', { name: /^Confirm/ })
+      const bar = screen.getByRole('region', { name: 'Confirm, skip or go back' })
+      const confirm = within(bar).getByRole('button', { name: 'Confirm, a real issue' })
       expect(confirm).toHaveAttribute('data-variant', 'default')
+      expect(within(bar).getByRole('button', { name: 'Skip' })).toBeEnabled()
+      expect(within(bar).getByRole('button', { name: 'Previous' })).toBeDisabled()
       expect(screen.getAllByRole('button', { name: /^Confirm/ })).toHaveLength(1)
+      // The other decisions are folded under one row until asked for.
       const region = screen.getByRole('region', { name: 'Decision' })
-      expect(within(region).queryByRole('button', { name: /^Confirm/ })).toBeNull()
-      expect(within(region).getByRole('button', { name: /^Skip/ })).toBeEnabled()
-      // The item first, its decision panel next, the bar last.
+      const fold = within(region).getByRole('button', { name: /^Other decisions/ })
+      expect(fold).toHaveAttribute('aria-expanded', 'false')
+      expect(within(region).queryByRole('button', { name: /^Request false positive/ })).toBeNull()
+      fireEvent.click(fold)
+      expect(within(region).getByRole('button', { name: /^Request false positive/ })).toBeVisible()
+      // No queue list on the page: the queue opens on demand.
+      expect(screen.queryByTestId('triage-queue')).toBeNull()
+      // The item first, its folded decisions next, the bar last.
       const finding = screen.getByRole('article')
       expect(
         finding.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy()
       expect(region.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      fireEvent.click(confirm)
+      fireEvent.click(within(bar).getByRole('button', { name: 'Skip' }))
       await screen.findByRole('heading', { name: 'Finding 2' })
-      expect(writeFindingStatus).toHaveBeenCalledWith(id(1), { status: 'confirmed' }, 1)
-      expect(within(bar).getByTestId('triage-bar-counts')).toHaveTextContent('1 decided')
+      fireEvent.click(confirm)
+      await screen.findByRole('heading', { name: 'Finding 3' })
+      expect(writeFindingStatus).toHaveBeenCalledWith(id(2), { status: 'confirmed' }, 1)
+      expect(screen.getByTestId('triage-counts')).toHaveTextContent(
+        '1 decided, 0 sent for approval, 1 skipped'
+      )
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    }
+  })
+})
+
+describe('TriageMode layout and tally', () => {
+  it('shows one finding with its decision under it; the queue is an overlay opened by Queue or q', async () => {
+    seed(3)
+    await ready()
+    // No permanent queue column.
+    expect(screen.queryByTestId('triage-queue')).toBeNull()
+    const article = screen.getByRole('article')
+    const region = screen.getByRole('region', { name: 'Decision' })
+    expect(article.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const queueButton = screen.getByRole('button', { name: /^Queue/ })
+    expect(queueButton).toHaveAttribute('aria-expanded', 'false')
+    press('q')
+    const sheet = await screen.findByRole('dialog', { name: 'Queue' })
+    const items = within(sheet).getAllByRole('button', { name: /Finding \d/ })
+    expect(items).toHaveLength(3)
+    fireEvent.click(items[2])
+    await screen.findByRole('heading', { name: 'Finding 3' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Queue' })).toBeNull())
+  })
+
+  it('findings passed over because they are gone count as skipped, with one note instead of a stack', async () => {
+    NotFound = await notFoundError()
+    try {
+      seed(3)
+      // The window lists three findings that are no longer readable.
+      fetchTriageWindow.mockResolvedValueOnce({
+        items: [7, 8, 9].map((n) => ({
+          id: id(n),
+          title: `Gone ${n}`,
+          status: 'new',
+          rowVersion: 1,
+        })),
+        total: 3,
+        lastPage: true,
+      })
+      render(<TriageMode />)
+      const done = await screen.findByTestId('triage-done')
+      expect(done).toHaveTextContent('0 decided, 0 sent for approval, 3 skipped.')
+      expect(screen.getByTestId('triage-counts')).toHaveTextContent('3 skipped')
+      const { toast } = await import('sonner')
+      const notes = vi
+        .mocked(toast.info)
+        .mock.calls.filter(([text]) => /No longer available/.test(String(text)))
+      expect(notes).toHaveLength(3)
+      // Each replaces the last one: one id, so they never stack over the header.
+      for (const [, opts] of notes) expect(opts).toEqual({ id: 'triage-passed-over' })
+    } finally {
+      NotFound = undefined
     }
   })
 })

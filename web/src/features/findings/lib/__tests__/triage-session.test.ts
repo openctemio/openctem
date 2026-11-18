@@ -208,10 +208,16 @@ describe('queue mechanics', () => {
       total: 86,
       decided: 2,
       sentForApproval: 2,
-      skipped: 1,
+      // A finding passed over because it changed elsewhere was skipped too.
+      skipped: 2,
       changed: 1,
     })
     expect(progress(moveTo(s, 6)).position).toBe(0)
+  })
+  it('counts findings passed over because they changed or left your scope as skipped', () => {
+    let s = mergeWindow(newSession('status=new', '/findings', true), items(1, 3), 3, true).session
+    for (const n of [1, 2, 3]) s = setOutcome(s, id(n), 'changed')
+    expect(progress(moveTo(s, 3))).toMatchObject({ decided: 0, skipped: 3, changed: 3 })
   })
 })
 
