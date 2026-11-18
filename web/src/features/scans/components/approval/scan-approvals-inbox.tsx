@@ -704,7 +704,7 @@ export function ScanApprovalsInbox() {
                   <StatusBadge status={details.status} />{' '}
                   {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
                     name: details.requested_by?.name ?? '—',
-                    when: details ? formatRelativeTime(details.requested_at, locale) : '',
+                    when: formatRelativeTime(details.requested_at, locale),
                   })}
                 </>
               )}
