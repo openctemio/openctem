@@ -14,7 +14,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 
 import { EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
@@ -228,11 +228,7 @@ function VerifyStep({
       />
 
       <Button type="submit" variant="signal" disabled={!canSubmit || isPending}>
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-4 w-4" />
-        )}
+        {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t('auth.mfa.verify', 'Verify')}
       </Button>
 
@@ -417,11 +413,7 @@ function EnrollStep({
         variant="signal"
         disabled={!setup || code.length !== TOTP_CODE_LENGTH || isPending}
       >
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-4 w-4" />
-        )}
+        {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t('auth.mfa.turnOn', 'Turn on and continue')}
       </Button>
 

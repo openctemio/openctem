@@ -1,5 +1,6 @@
 'use client'
 
+import { EntryHeader } from '@/components/entry'
 import { useTranslation } from '@/context/i18n-provider'
 
 import { CreateTeamForm } from './create-team-form'
@@ -20,25 +21,23 @@ interface TeamOnboardingProps {
  */
 export function TeamOnboarding({ hasOtherTeams }: TeamOnboardingProps) {
   const { t } = useTranslation()
-  const create = (
-    <>
-      <div className="mb-8 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {hasOtherTeams ? t('org.onboarding.createAnother') : t('org.onboarding.createFirst')}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {hasOtherTeams
-            ? t('org.onboarding.createAnotherDesc')
-            : t('org.onboarding.createFirstDesc')}
-        </p>
-      </div>
-      <CreateTeamForm showCancel={false} isFirstTeam={true} />
-    </>
-  )
+  // The title stays while the offers load and in every outcome, so the page
+  // always has its h1; the form is one of the things under it.
   return (
-    <OnboardingFork
-      createSlot={create}
-      emptySlot={<NoOrganizationNotice hasOtherTeams={hasOtherTeams} />}
-    />
+    <>
+      <EntryHeader
+        title={hasOtherTeams ? t('org.onboarding.createAnother') : t('org.onboarding.createFirst')}
+        description={
+          hasOtherTeams
+            ? t('org.onboarding.createAnotherDesc')
+            : t('org.onboarding.createFirstDesc')
+        }
+      />
+      <OnboardingFork
+        variant="plain"
+        createSlot={<CreateTeamForm showCancel={false} isFirstTeam={true} />}
+        emptySlot={<NoOrganizationNotice hasOtherTeams={hasOtherTeams} />}
+      />
+    </>
   )
 }
