@@ -2,7 +2,8 @@
  * Display > Columns names each column as its header reads, in the user's
  * language. It listed `meta.label` or else the raw column id, capitalised by
  * CSS: "asset name", "last_seen" read as English ids on a Vietnamese page
- * (acceptance review 2026-11-18).
+ * (acceptance review 2026-11-18). A column with no header at all (the row
+ * menu) is not listed: its only name would be its English id.
  */
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -22,6 +23,8 @@ const columns: ColumnDef<Row>[] = [
   },
   // A plain string header, no meta.label.
   { accessorKey: 'last_seen', header: 'Lần thấy cuối' },
+  // The row menu: no header, no label.
+  { id: 'actions', cell: () => null },
 ]
 
 describe('DataTable Display > Columns labels', () => {

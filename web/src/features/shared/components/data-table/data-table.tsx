@@ -543,6 +543,26 @@ function columnLabel<TData>(
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
+/**
+ * A column with neither a header nor `meta.label` draws nothing in the
+ * header row: a control column (row menu, selection). Display > Columns does
+ * not offer it, since it has no name to show ("Actions" would be its English
+ * id) and hiding it would only take the row's actions away.
+ */
+function columnHasName<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>
+): boolean {
+  const def = column.columnDef
+  const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
+  // TanStack fills a missing header with its default (the id as text).
+  const header = def.header
+  return (
+    typeof metaLabel === 'string' ||
+    (header !== undefined && header !== table._getDefaultColumnDef().header)
+  )
+}
+
 const CARD_VALUE_CLASS =
   'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal'
 
@@ -1533,7 +1553,11 @@ export function DataTable<TData, TValue>({
                   {showColumnToggle &&
                     table
                       .getAllColumns()
-                      .filter((column) => column.getCanHide())
+                      .filter(
+                        (column) =>
+                          column.getCanHide() &&
+                          columnHasName(column as Column<TData, unknown>, table)
+                      )
                       .map((column) => {
                         return (
                           <DropdownMenuCheckboxItem
