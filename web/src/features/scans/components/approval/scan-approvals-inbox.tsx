@@ -63,8 +63,10 @@ import {
   type ScanApprovalRequest,
   type ScanApprovalStatus,
 } from '@/lib/api/scan-approval-hooks'
+import type { ScanIntensity } from '@/lib/api/scan-types'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { useAuthStore } from '@/stores/auth-store'
+import { IntensityBadge } from '../intensity-badge'
 import { approversText } from './approval-requirement'
 
 type Action = 'approve' | 'reject' | 'self'
@@ -101,7 +103,17 @@ const WIDTH = {
   // Approve + Reject (or "Your request") + More in en and vi.
   actions: 236,
 } as const
-const HIDE_BELOW = { rule: 1120, requested: 1260, left: 1360 } as const
+/**
+ * Frame widths below which a column leaves the table (Display > Columns brings
+ * it back), so the table fits its frame and the page never scrolls sideways:
+ * 1024 with the sidebar open leaves a 698 px frame. The scan, its status, the
+ * decide-by date and the decision stay at every width; the phone card and the
+ * Details dialog show every field. Run and Requested by leave first; with the
+ * Status column (every lens but Pending) they leave 168 px earlier, and Decide
+ * by, empty on every decided row, leaves too.
+ */
+const HIDE_BELOW = { rule: 1120, requested: 1260, left: 1360, run: 920, requester: 760 } as const
+const HIDE_BELOW_WITH_STATUS = { run: 1088, requester: 928, decideBy: 760 } as const
 
 function formatValue(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—'
@@ -204,6 +216,13 @@ function StatusBadge({ status }: { status: ScanApprovalStatus }) {
   return <ApprovalStatusLozenge status={status} label={t(key, fallback)} />
 }
 
+const INTENSITIES: readonly string[] = ['passive', 'active', 'intrusive'] satisfies ScanIntensity[]
+/** The request's intensity when it is one the console names, else undefined. */
+const knownIntensity = (req: ScanApprovalRequest): ScanIntensity | undefined =>
+  INTENSITIES.includes(req.definition.intensity ?? '')
+    ? (req.definition.intensity as ScanIntensity)
+    : undefined
+
 /** Emergency run and intensity: the marks a reviewer weighs first. */
 function RunMarks({ req }: { req: ScanApprovalRequest }) {
   const { t } = useTranslation()
@@ -212,7 +231,8 @@ function RunMarks({ req }: { req: ScanApprovalRequest }) {
       {req.emergency && (
         <Badge variant="destructive">{t('scans.approval.emergency', 'Emergency run')}</Badge>
       )}
-      {req.definition.intensity && <Badge variant="outline">{req.definition.intensity}</Badge>}
+      {/* The scans' own intensity mark: translated, the same on every scan page. */}
+      {knownIntensity(req) && <IntensityBadge intensity={knownIntensity(req)} />}
     </>
   )
 }
@@ -368,6 +388,7 @@ export function ScanApprovalsInbox() {
       actions: t('scans.approval.col.actions', 'Decision'),
     }
     const meta = (m: DataTableColumnMeta) => m
+    const narrow = showStatus ? HIDE_BELOW_WITH_STATUS : HIDE_BELOW
     const cols: ColumnDef<ScanApprovalRequest>[] = [
       {
         id: 'scan',
@@ -400,11 +421,11 @@ export function ScanApprovalsInbox() {
         : []),
       {
         id: 'run',
-        meta: meta({ kind: 'text', label: label.run, maxWidth: 220 }),
+        meta: meta({ kind: 'text', label: label.run, maxWidth: 220, hideBelow: narrow.run }),
         header: label.run,
         enableSorting: false,
         cell: ({ row }) =>
-          row.original.emergency || row.original.definition.intensity ? (
+          row.original.emergency || knownIntensity(row.original) ? (
             <span className="flex items-center gap-1.5">
               <RunMarks req={row.original} />
             </span>
@@ -414,7 +435,12 @@ export function ScanApprovalsInbox() {
       },
       {
         id: 'requester',
-        meta: meta({ kind: 'owner', width: WIDTH.requester, label: label.requester }),
+        meta: meta({
+          kind: 'owner',
+          width: WIDTH.requester,
+          hideBelow: narrow.requester,
+          label: label.requester,
+        }),
         header: label.requester,
         enableSorting: false,
         cell: ({ row }) => (
@@ -458,7 +484,12 @@ export function ScanApprovalsInbox() {
       },
       {
         id: 'decideBy',
-        meta: meta({ kind: 'due', width: WIDTH.decideBy, label: label.decideBy }),
+        meta: meta({
+          kind: 'due',
+          width: WIDTH.decideBy,
+          hideBelow: showStatus ? HIDE_BELOW_WITH_STATUS.decideBy : undefined,
+          label: label.decideBy,
+        }),
         header: label.decideBy,
         enableSorting: false,
         cell: ({ row }) => (

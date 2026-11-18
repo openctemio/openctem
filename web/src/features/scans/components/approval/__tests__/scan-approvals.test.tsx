@@ -206,6 +206,13 @@ describe('Approvals inbox', () => {
     expect(api.read).toHaveBeenLastCalledWith('expired', 2, 25)
   })
 
+  it("names the intensity with the scans' translated label, never the raw value", () => {
+    api.list = { data: [request()], total: 1 }
+    render(<ScanApprovalsInbox />)
+    expect(screen.getAllByText('Intrusive (full)').length).toBeGreaterThan(0)
+    expect(screen.queryByText('intrusive')).toBeNull()
+  })
+
   it('offers Show all when nothing waits', async () => {
     api.list = { data: [], total: 0 }
     render(<ScanApprovalsInbox />)
