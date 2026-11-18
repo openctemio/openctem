@@ -24,6 +24,7 @@ import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { selectTenantAction } from '@/features/auth/actions/local-auth-actions'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
+import { parseRetryAfter } from '@/lib/api/rate-limit-backoff'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   InvitationGrantsNotice,
@@ -109,6 +110,16 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // shows the accepted card with "Open <organization>".
   const [joined, setJoined] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
+  // Opening was refused for now (too many requests, a server failure, no
+  // answer): seconds left before "Open" is offered again, from the server's
+  // Retry-After.
+  const [openWait, setOpenWait] = useState(0)
+
+  useEffect(() => {
+    if (openWait <= 0) return
+    const timer = setTimeout(() => setOpenWait((s) => s - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [openWait])
 
   // The token never goes back into a URL: sign-in and sign-up return to the
   // bare invitation page, which finds the token kept for this tab.
@@ -185,17 +196,38 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       return
     }
     setJoined(true)
+    if (selected.status === 0 || selected.status === 429 || (selected.status ?? 0) >= 500) {
+      // Nothing was decided about the membership: say why and when to retry.
+      const seconds = Math.max(1, Math.ceil(parseRetryAfter(selected.retryAfter) / 1000))
+      setOpenWait(seconds)
+      setOpenError(
+        t(
+          selected.status === 429 ? 'org.acceptInvite.openBusy' : 'org.acceptInvite.openUnavailable',
+          undefined,
+          { org: data.tenant.name, seconds }
+        )
+      )
+      return
+    }
     setOpenError(t('org.acceptInvite.openFailed', undefined, { org: data.tenant.name }))
   }
 
   function handleOpenOrganization() {
     if (!invitation) return
     setOpenError(null)
+    setOpenWait(0)
     startTransition(async () => {
       try {
         await openInvitedOrganization(invitation)
       } catch {
-        setOpenError(t('org.acceptInvite.openFailed', undefined, { org: invitation.tenant.name }))
+        // The action itself did not answer: the same wait as no answer from the API.
+        setOpenWait(parseRetryAfter(null) / 1000)
+        setOpenError(
+          t('org.acceptInvite.openUnavailable', undefined, {
+            org: invitation.tenant.name,
+            seconds: parseRetryAfter(null) / 1000,
+          })
+        )
       }
     })
   }
@@ -449,13 +481,19 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
 
             <div className="flex flex-col gap-2">
               {canOpen ? (
-                <Button className="w-full" onClick={handleOpenOrganization} disabled={isPending}>
+                <Button
+                  className="w-full"
+                  onClick={handleOpenOrganization}
+                  disabled={isPending || openWait > 0}
+                >
                   {isPending ? (
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
                   ) : (
                     <Building2 className="me-2 h-4 w-4" />
                   )}
-                  {t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
+                  {openWait > 0
+                    ? t('org.acceptInvite.openRetryIn', undefined, { seconds: openWait })
+                    : t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
                 </Button>
               ) : (
                 !hasSession && (
