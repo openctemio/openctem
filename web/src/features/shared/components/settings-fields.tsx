@@ -11,8 +11,9 @@ import { cn } from '@/lib/utils'
  *
  * - `SettingsRow`: one setting on one line. What it is (label, hint) at the
  *   start, its control at the end. Below 45rem (a phone, a sheet) a switch or
- *   a short button stays at the end of the label's first line; a `wide`
- *   control (a field, a select) or a `stacked` group goes under the text.
+ *   a short button stays at the end of the label's first line; a control that
+ *   does not fit beside 13rem of text, and a `wide` control (a field, a
+ *   select), goes under the text.
  * - `SettingsSwitchRow`: a row whose control is a switch.
  * - `SettingsBlock`: a padded block for anything else (a field grid, a note).
  * - `SettingsFieldGrid` + `SettingsField`: text fields with the label above,
@@ -25,13 +26,16 @@ import { cn } from '@/lib/utils'
 const DIVIDER = 'border-t border-border-subtle'
 
 /**
- * A row whose control stays beside its text on a phone: two columns at every
- * width, the control at the top end (level with the label's first line). The
- * text keeps at least 10rem, so a control that is wider than the rest wraps
- * inside its own column instead of squeezing the label.
+ * A row whose control stays beside its text on a phone: the text and the
+ * control share a wrapping line, the control at the top end (level with the
+ * label's first line). The text keeps a 13rem basis, so a control wider than
+ * the rest of the line (a long button) moves under the text instead of
+ * squeezing it into a sliver. From 45rem the row is a two-column grid.
  */
-export const SETTINGS_ROW_BESIDE =
-  'grid grid-cols-[minmax(min(10rem,100%),1fr)_auto] items-start gap-x-4'
+export const SETTINGS_ROW_BESIDE = 'flex flex-wrap items-start justify-between gap-x-4 gap-y-3'
+
+/** The text box of a row: grows, and keeps 13rem beside a control on a phone. */
+export const SETTINGS_ROW_TEXT = 'min-w-0 max-w-[58ch] flex-[1_1_13rem]'
 
 export interface SettingsRowProps {
   /** What the setting is. A string is drawn as the row label. */
@@ -44,11 +48,6 @@ export interface SettingsRowProps {
   hintId?: string
   /** A text field or select as the control: it gets a column of its own width. */
   wide?: boolean
-  /**
-   * Several controls (a preview and two buttons): below 45rem they go under
-   * the text instead of beside it. A single switch or button never needs it.
-   */
-  stacked?: boolean
   /** The control(s) at the row end. */
   children?: ReactNode
   className?: string
@@ -61,12 +60,11 @@ export function SettingsRow({
   labelId,
   hintId,
   wide = false,
-  stacked = false,
   children,
   className,
   id,
 }: SettingsRowProps) {
-  const besideOnPhone = !wide && !stacked && children != null
+  const besideOnPhone = !wide && children != null
   return (
     <div
       id={id}
@@ -81,7 +79,7 @@ export function SettingsRow({
         className
       )}
     >
-      <div className="min-w-0 max-w-[58ch]">
+      <div className={besideOnPhone ? SETTINGS_ROW_TEXT : 'min-w-0 max-w-[58ch]'}>
         <div id={labelId} className="text-body font-medium">
           {label}
         </div>
@@ -95,7 +93,7 @@ export function SettingsRow({
         <div
           className={cn(
             'flex min-w-0 flex-wrap items-center gap-2',
-            besideOnPhone && 'justify-end justify-self-end',
+            besideOnPhone && 'max-w-full shrink-0',
             wide ? '@[45rem]:justify-self-stretch' : '@[45rem]:justify-self-end'
           )}
         >

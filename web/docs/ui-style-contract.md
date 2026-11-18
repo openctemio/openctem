@@ -740,8 +740,9 @@ Every settings page is built from the same parts (`@/features/shared`):
   (two long buttons) wrap under it. Its children draw their own dividers:
   - `SettingsRow`: one setting per line, label and hint at the start, the
     control at the end. Below 45rem a switch or a short button stays at the
-    end of the label's first line; a `wide` control (a text field or select)
-    and a `stacked` group of controls go under the text. `SettingsSwitchRow`
+    end of the label's first line (the text keeps a 13rem basis); a control
+    that does not fit beside it, and a `wide` control (a text field or
+    select), goes under the text. `SettingsSwitchRow`
     is the row of an on / off setting: the label names the switch, the hint
     describes it.
   - `SettingsBlock` with `SettingsFieldGrid` and `SettingsField`: fields with

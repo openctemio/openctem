@@ -11,7 +11,12 @@ describe('TimezoneSelect', () => {
     // the kit select (the outline button had its own border, icon and 14px text).
     expect(trigger).toHaveAttribute('data-slot', 'select-trigger')
     expect(trigger).toHaveAttribute('data-size', 'default')
-    for (const cls of ['border-input', 'text-body', 'data-[size=default]:h-control-field']) {
+    for (const cls of [
+      'border-input',
+      'text-body',
+      'max-md:data-[size=default]:text-base',
+      'data-[size=default]:h-control-field',
+    ]) {
       expect(SELECT_TRIGGER_CLASS).toContain(cls)
       expect(trigger.className).toContain(cls)
     }

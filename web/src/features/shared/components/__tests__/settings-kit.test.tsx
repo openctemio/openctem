@@ -5,6 +5,7 @@ import { DangerZone, DangerZoneItem } from '../danger-zone'
 import { SecretField } from '../secret-field'
 import {
   SETTINGS_ROW_BESIDE,
+  SETTINGS_ROW_TEXT,
   SettingsBlock,
   SettingsField,
   SettingsFieldGrid,
@@ -108,18 +109,19 @@ describe('SettingsRow and SettingsSwitchRow', () => {
       />
     )
     const row = screen.getByRole('switch').closest('[data-slot=settings-row]') as HTMLElement
-    // Two columns at every width (no flex-col stack below 45rem), control on top.
+    // One wrapping line (no flex-col stack below 45rem), items at the top: the
+    // switch sits beside the text's 13rem basis, level with the label.
     expect(row.className).toContain(SETTINGS_ROW_BESIDE)
     expect(row.className).not.toContain('flex-col')
-    expect(screen.getByRole('switch').parentElement?.className).toContain('justify-self-end')
+    expect(row.firstElementChild?.className).toBe(SETTINGS_ROW_TEXT)
+    const box = screen.getByRole('switch').parentElement as HTMLElement
+    expect(box.className).toContain('shrink-0')
+    expect(box.className).toContain('max-w-full')
   })
 
-  it.each([
-    ['wide', { wide: true }],
-    ['stacked', { stacked: true }],
-  ])('puts a %s control under the text on a phone', (_name, props) => {
+  it('puts a wide control under the text on a phone', () => {
     render(
-      <SettingsRow label="Time zone" {...props}>
+      <SettingsRow label="Time zone" wide>
         <button>Pick</button>
       </SettingsRow>
     )
