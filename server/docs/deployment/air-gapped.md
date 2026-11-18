@@ -172,10 +172,11 @@ firewall or the proxy, or replace them with a mirror or a local directory:
 | Host | Used for | Setting that replaces it |
 |---|---|---|
 | `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` | vulnerability bundles (the release download redirects to the asset hosts), release feed | `VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`, `VULNFEED_BUNDLE_DIR`; `VERSION_CHECK_URL` or admin import |
-| `www.cisa.gov`, then `raw.githubusercontent.com` | CISA KEV (fallback origin) | carried in the signed bundle (Console > Threat intelligence, source "bundle") |
-| `epss.empiricalsecurity.com` | EPSS | carried in the signed bundle |
 | `ctem.org` | CTEM-ID catalog | none yet (the catalog stays at the version shipped) |
 | your `PROGRAMFEED_URL` host | public program feed | `PROGRAMFEED_DIR` |
+
+CISA KEV and EPSS are not on this list: they arrive only inside the signed
+vulnerability bundle; the platform never calls CISA or FIRST itself.
 
 A host whose DNS answers include IPv6 is tried over both families; without an
 IPv6 route the IPv4 addresses are used, and a failure names every address
