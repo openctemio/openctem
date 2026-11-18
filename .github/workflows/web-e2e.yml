@@ -307,10 +307,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.base_ref || github.ref_name }}
+          UNDER_TEST: ${{ github.base_ref || github.ref_name }}
         run: |
           mkdir -p "$RUNNER_TEMP/timings"
-          for branch in "$BRANCH" develop; do
+          for branch in "$UNDER_TEST" develop; do
             for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch "$branch" --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
               if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
                 echo "timings from run $id ($branch)"; break 2
