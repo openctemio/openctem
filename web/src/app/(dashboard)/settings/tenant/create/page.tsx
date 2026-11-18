@@ -24,7 +24,7 @@ export default function CreateTeamPage() {
     <>
       <Main>
         <PageStack>
-          <PageHeader title={t('settings.createTeam.title', 'Create team')} />
+          <PageHeader title={t('settings.createTeam.title', 'Create organization')} />
 
           <div className="flex justify-center">
             {isLoading ? (
