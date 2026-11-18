@@ -63,7 +63,7 @@ export function CIOverrides({ canOverride }: { canOverride: boolean }) {
         <GatedButton
           allowed={canOverride}
           reason={t(
-            'scans.ci.breakGlass.noPermission', // anatomy-ok: the tooltip of a disabled button, not a page message
+            'scans.ci.breakGlass.ownersOnly',
             'Only owners and administrators can override the gate'
           )}
           size="sm"
