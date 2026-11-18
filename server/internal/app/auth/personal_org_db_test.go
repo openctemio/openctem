@@ -18,6 +18,7 @@ import (
 	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/password"
 )
@@ -310,6 +311,126 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		}
 	})
 
+	// H1 at the sign-in step: with a 2FA floor that covers owners, a social
+	// sign-up makes no organization and the mark stays pending; without a
+	// floor it does; a social sign-in to a linked password account still
+	// does (its password sign-in takes the second step).
+	t.Run("social sign-in and the platform 2FA floor", func(t *testing.T) {
+		authCfg := config.AuthConfig{JWTSecret: "test-secret-test-secret-test-secret!", AccessTokenDuration: time.Minute,
+			RefreshTokenDuration: time.Hour, SessionDuration: time.Hour}
+		newOAuth := func(floorApplies bool) *OAuthService {
+			oauth := NewOAuthService(users, postgres.NewSessionRepository(sqlDB), postgres.NewRefreshTokenRepository(sqlDB),
+				config.OAuthConfig{Enabled: true, Google: config.OAuthProviderConfig{Enabled: true, ClientID: "c", ClientSecret: "s"}},
+				authCfg, logger.NewNop())
+			oauth.SetIdentityRepo(postgres.NewUserIdentityRepository(db))
+			oauth.SetSignupPolicy(policy)
+			oauth.SetInvitationLookup(tenants)
+			p := newService()
+			p.SetOwnerMFAApplies(func(context.Context) (bool, error) { return floorApplies, nil })
+			oauth.SetPersonalOrganizations(p)
+			oauth.secondFactor = noChallenge{}
+			return oauth
+		}
+		cleanup := func(t *testing.T, id string) {
+			t.Cleanup(func() {
+				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE created_by = $1`, id)
+				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
+				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
+			})
+		}
+		signIn := func(t *testing.T, o *OAuthService, info *OAuthUserInfo) *userdom.User {
+			t.Helper()
+			res, err := o.signIn(WithClientInfo(ctx, "198.51.100.40", "test"), info, OAuthProviderGoogle, "")
+			if err != nil || res.User == nil {
+				t.Fatalf("social sign-in: %+v %v", res, err)
+			}
+			cleanup(t, res.User.ID().String())
+			return res.User
+		}
+
+		t.Run("floor admins: no organization, mark pending", func(t *testing.T) {
+			u := signIn(t, newOAuth(true), &OAuthUserInfo{Email: "po-f-" + shared.NewID().String() + "@example.com", Name: "Fay Lin", HD: "example.com"})
+			if ownedOrgs(t, u) != 0 || markStatus(t, u) != string(tenantdom.PersonalOrgPending) {
+				t.Fatalf("owned=%d mark=%s", ownedOrgs(t, u), markStatus(t, u))
+			}
+		})
+		t.Run("floor none: organization made", func(t *testing.T) {
+			u := signIn(t, newOAuth(false), &OAuthUserInfo{Email: "po-n-" + shared.NewID().String() + "@example.com", Name: "Noa Roy", HD: "example.com"})
+			if ownedOrgs(t, u) != 1 || markStatus(t, u) != string(tenantdom.PersonalOrgCreated) {
+				t.Fatalf("owned=%d mark=%s", ownedOrgs(t, u), markStatus(t, u))
+			}
+		})
+		t.Run("linked password account: organization made under a floor", func(t *testing.T) {
+			pu, err := userdom.NewLocalUser("po-l-"+shared.NewID().String()+"@example.com", "Lee Kim", "hash")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pu.VerifyEmail()
+			if err := users.Create(ctx, pu); err != nil {
+				t.Fatal(err)
+			}
+			cleanup(t, pu.ID().String())
+			newService().Reserve(ctx, pu.ID(), signupdom.OutcomeSelfService)
+			ident, err := useridentity.New(pu.ID(), useridentity.Key{Issuer: googleIssuer, Subject: "po-sub-" + shared.NewID().String()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := postgres.NewUserIdentityRepository(db).Create(ctx, ident); err != nil {
+				t.Fatal(err)
+			}
+			got := signIn(t, newOAuth(true), &OAuthUserInfo{Email: pu.Email(), Name: "Lee Kim", HD: "example.com",
+				Issuer: ident.Key.Issuer, Subject: ident.Key.Subject})
+			if got.ID() != pu.ID() || ownedOrgs(t, pu) != 1 {
+				t.Fatalf("owned=%d", ownedOrgs(t, pu))
+			}
+		})
+	})
+
+	// L1: a domain claimed after the service read the domain facts is
+	// caught inside the transaction.
+	t.Run("a domain claim is rechecked in the transaction", func(t *testing.T) {
+		owner := newAccount(t)
+		org := newOrg(t, owner, "po-claim")
+		domain := "po-claim-" + shared.NewID().String()[:8] + ".example.net"
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status, purpose, verified_at)
+			VALUES ($1, $2, $3, 'tok', 'verified', 'sso', now())`, shared.NewID().String(), org.ID().String(), domain); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		for _, host := range []string{domain, "mail." + domain} {
+			u := newAccount(t)
+			email := "po-c@" + host
+			p := newService()
+			p.Reserve(ctx, u.ID(), signupdom.OutcomeSelfService)
+			tn, _ := tenantdom.NewTenant("X", "po-c-"+shared.NewID().String()[:8], u.ID().String())
+			mm, _ := tenantdom.NewOwnerMembership(u.ID(), tn.ID())
+			err := tenants.CreatePersonalOrganization(ctx, tenantdom.PersonalOrgCreation{UserID: u.ID(), Email: email,
+				Tenant: tn, Membership: mm, At: time.Now()})
+			if !errors.Is(err, tenantdom.ErrPersonalOrgDomainClaimed) || ownedOrgs(t, u) != 0 ||
+				markStatus(t, u) != string(tenantdom.PersonalOrgPending) {
+				t.Fatalf("%s: %v", host, err)
+			}
+		}
+	})
+
+	// L3 in the store: an old mark is not honoured, in the read or the write.
+	t.Run("an old mark is not honoured", func(t *testing.T) {
+		u := newAccount(t)
+		newService().Reserve(ctx, u.ID(), signupdom.OutcomeSelfService)
+		if _, err := sqlDB.ExecContext(ctx, `UPDATE personal_organizations SET reserved_at = now() - interval '31 days' WHERE user_id = $1`, u.ID().String()); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := tenants.PersonalOrganizationPending(ctx, u.ID(), time.Now()); err != nil || ok {
+			t.Fatalf("pending: %v %v", ok, err)
+		}
+		tn, _ := tenantdom.NewTenant("X", "po-o-"+shared.NewID().String()[:8], u.ID().String())
+		mm, _ := tenantdom.NewOwnerMembership(u.ID(), tn.ID())
+		err := tenants.CreatePersonalOrganization(ctx, tenantdom.PersonalOrgCreation{UserID: u.ID(), Email: u.Email(),
+			Tenant: tn, Membership: mm, At: time.Now()})
+		if !errors.Is(err, tenantdom.ErrPersonalOrgNotPending) || ownedOrgs(t, u) != 0 {
+			t.Fatalf("create: %v", err)
+		}
+	})
+
 	t.Run("an unmarked account gets nothing", func(t *testing.T) {
 		u := newAccount(t)
 		tn, _ := tenantdom.NewTenant("X", "po-y-"+shared.NewID().String()[:8], u.ID().String())
@@ -327,4 +448,11 @@ func TestPersonalOrganization_DB(t *testing.T) {
 			t.Fatalf("owner mismatch: %v", err)
 		}
 	})
+}
+
+// noChallenge is a second-factor gate for an account with no factor.
+type noChallenge struct{}
+
+func (noChallenge) LinkedSignInChallenge(context.Context, *userdom.User, string, string) (*MFAChallengeInfo, error) {
+	return nil, nil
 }

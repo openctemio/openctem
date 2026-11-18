@@ -37,11 +37,11 @@ func (r *TenantRepository) ReservePersonalOrganization(ctx context.Context, user
 
 // PersonalOrganizationPending reports whether the account is marked and not
 // settled.
-func (r *TenantRepository) PersonalOrganizationPending(ctx context.Context, userID shared.ID) (bool, error) {
+func (r *TenantRepository) PersonalOrganizationPending(ctx context.Context, userID shared.ID, at time.Time) (bool, error) {
 	var ok bool
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT EXISTS (SELECT 1 FROM personal_organizations WHERE user_id = $1 AND status = 'pending')`,
-		userID.String()).Scan(&ok); err != nil {
+		SELECT EXISTS (SELECT 1 FROM personal_organizations WHERE user_id = $1 AND status = 'pending' AND reserved_at > $2)`,
+		userID.String(), at.Add(-tenant.PersonalOrgMarkLifetime)).Scan(&ok); err != nil {
 		return false, fmt.Errorf("read personal organization mark: %w", err)
 	}
 	return ok, nil
@@ -63,8 +63,9 @@ func (r *TenantRepository) CreatePersonalOrganization(ctx context.Context, c ten
 	// The mark's row lock: a second sign-in of the same account waits here
 	// and then finds the mark settled.
 	var status string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM personal_organizations WHERE user_id = $1 FOR UPDATE`,
-		c.UserID.String()).Scan(&status)
+	var reservedAt time.Time
+	err = tx.QueryRowContext(ctx, `SELECT status, reserved_at FROM personal_organizations WHERE user_id = $1 FOR UPDATE`,
+		c.UserID.String()).Scan(&status, &reservedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return tenant.ErrPersonalOrgNotPending
 	}
@@ -74,10 +75,13 @@ func (r *TenantRepository) CreatePersonalOrganization(ctx context.Context, c ten
 	if tenant.PersonalOrgStatus(status) != tenant.PersonalOrgPending {
 		return tenant.ErrPersonalOrgNotPending
 	}
+	if !reservedAt.After(c.At.Add(-tenant.PersonalOrgMarkLifetime)) {
+		return tenant.ErrPersonalOrgNotPending // too old to be honoured
+	}
 
 	// Rechecked under the lock: an organization joined or created another
 	// way settles the mark; a waiting invitation leaves it pending.
-	var member, invited bool
+	var member, invited, claimed bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM tenant_members WHERE user_id = $1),
 		       EXISTS (SELECT 1 FROM tenant_invitations
@@ -86,6 +90,19 @@ func (r *TenantRepository) CreatePersonalOrganization(ctx context.Context, c ten
 		                WHERE invitee_user_id = $1 AND status = 'pending' AND expires_at > $3)`,
 		c.UserID.String(), c.Email, c.At).Scan(&member, &invited); err != nil {
 		return fmt.Errorf("check personal organization conditions: %w", err)
+	}
+	// A domain claim verified after the service read the domain facts: the
+	// person joins that organization instead. Slightly wider than the
+	// service's own check (any verified SSO claim of the domain or a parent
+	// counts, whatever its include_subdomains setting), which only errs
+	// towards leaving the mark pending.
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM verified_domains v
+		                WHERE v.purpose = 'sso' AND v.status = 'verified'
+		                  AND (lower(substring($1 from '[^@]*$')) = v.domain
+		                    OR lower(substring($1 from '[^@]*$')) LIKE '%.' || replace(replace(v.domain, '_', '\_'), '%', '\%'))
+		)`, c.Email).Scan(&claimed); err != nil {
+		return fmt.Errorf("check personal organization domain claim: %w", err)
 	}
 	if member {
 		if _, err := tx.ExecContext(ctx, `
@@ -100,6 +117,9 @@ func (r *TenantRepository) CreatePersonalOrganization(ctx context.Context, c ten
 	}
 	if invited {
 		return tenant.ErrPersonalOrgInvited
+	}
+	if claimed {
+		return tenant.ErrPersonalOrgDomainClaimed
 	}
 
 	if err := r.withinPersonalOrgRates(ctx, tx, c); err != nil {

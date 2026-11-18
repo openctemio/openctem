@@ -25,26 +25,31 @@ type fakePersonalOrgs struct {
 	status   map[shared.ID]tenantdom.PersonalOrgStatus
 	members  map[shared.ID]bool
 	invited  map[shared.ID]bool
+	reserved map[shared.ID]time.Time
 	made     []tenantdom.PersonalOrgCreation
 	failNext error
 }
 
 func newFakePersonalOrgs() *fakePersonalOrgs {
-	return &fakePersonalOrgs{status: map[shared.ID]tenantdom.PersonalOrgStatus{}, members: map[shared.ID]bool{}, invited: map[shared.ID]bool{}}
+	return &fakePersonalOrgs{status: map[shared.ID]tenantdom.PersonalOrgStatus{}, members: map[shared.ID]bool{}, invited: map[shared.ID]bool{}, reserved: map[shared.ID]time.Time{}}
 }
 
-func (f *fakePersonalOrgs) ReservePersonalOrganization(_ context.Context, id shared.ID, _ time.Time) error {
+func (f *fakePersonalOrgs) ReservePersonalOrganization(_ context.Context, id shared.ID, at time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.status[id]; !ok {
 		f.status[id] = tenantdom.PersonalOrgPending
+		f.reserved[id] = at
 	}
 	return nil
 }
 
-func (f *fakePersonalOrgs) PersonalOrganizationPending(_ context.Context, id shared.ID) (bool, error) {
+func (f *fakePersonalOrgs) PersonalOrganizationPending(_ context.Context, id shared.ID, at time.Time) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if r, ok := f.reserved[id]; ok && !r.After(at.Add(-tenantdom.PersonalOrgMarkLifetime)) {
+		return false, nil
+	}
 	return f.status[id] == tenantdom.PersonalOrgPending, nil
 }
 
@@ -317,5 +322,75 @@ func TestPersonalOrgNameAndSlug(t *testing.T) {
 	b, _ := tenantdom.PersonalOrgSlug("Same", "s@example.com")
 	if a == b {
 		t.Error("two slugs for the same name must differ (random suffix)")
+	}
+}
+
+// L3: a pending mark is honoured only within its lifetime of the sign-up.
+func TestPersonalOrgMarkExpires(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name string
+		age  time.Duration
+		want bool
+	}{{"29 days old", 29 * 24 * time.Hour, true}, {"31 days old", 31 * 24 * time.Hour, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := newFakePersonalOrgs()
+			p := NewPersonalOrganizations(repo, personalOn, logger.NewNop())
+			u := verifiedUser(t, "old@example.com", "Old")
+			if err := repo.ReservePersonalOrganization(ctx, u.ID(), time.Now().Add(-c.age)); err != nil {
+				t.Fatal(err)
+			}
+			if got := p.Ensure(ctx, u, "", "") != nil; got != c.want {
+				t.Fatalf("made=%v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// H1: a social sign-in makes the organization only when the owner can later
+// reach it: a password account, or no platform 2FA floor. An unreadable
+// floor counts as applying.
+func TestSocialSignInMayCreate(t *testing.T) {
+	social := verifiedUser(t, "s@example.com", "S")
+	password, err := userdom.NewLocalUser("p@example.com", "P", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name  string
+		u     *userdom.User
+		floor func(context.Context) (bool, error)
+		want  bool
+	}{
+		{"social, floor applies", social, func(context.Context) (bool, error) { return true, nil }, false},
+		{"social, floor none", social, func(context.Context) (bool, error) { return false, nil }, true},
+		{"social, floor unreadable", social, func(context.Context) (bool, error) { return false, errors.New("down") }, false},
+		{"social, no floor source", social, nil, true},
+		{"password account, floor applies", password, func(context.Context) (bool, error) { return true, nil }, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := NewPersonalOrganizations(newFakePersonalOrgs(), personalOn, logger.NewNop())
+			p.SetOwnerMFAApplies(c.floor)
+			if got := p.SocialSignInMayCreate(context.Background(), c.u); got != c.want {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+	var none *PersonalOrganizations
+	if none.SocialSignInMayCreate(context.Background(), social) {
+		t.Fatal("nil service may create")
+	}
+}
+
+// L2: the per-domain bound does not apply to consumer mail domains; the
+// per-network bound does.
+func TestPersonalOrgRatesForConsumerDomain(t *testing.T) {
+	p := NewPersonalOrganizations(newFakePersonalOrgs(), personalOn, logger.NewNop())
+	if r := p.ratesFor("gmail.com"); r.PerDomain != 0 || r.PerPrefix != personalOrgPerPrefixPerHour {
+		t.Fatalf("gmail.com: %+v", r)
+	}
+	if r := p.ratesFor("example.com"); r.PerDomain != personalOrgPerDomainPerHour {
+		t.Fatalf("example.com: %+v", r)
 	}
 }

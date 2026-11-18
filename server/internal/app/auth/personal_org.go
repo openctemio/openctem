@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/signupevent"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/emaildomain"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -44,6 +45,9 @@ type PersonalOrganizations struct {
 	log         *logger.Logger
 	rates       tenantdom.PersonalOrgRates
 	now         func() time.Time
+	// ownerMFAApplies tells whether the platform 2FA floor would cover a
+	// new owner (see SocialSignInMayCreate). Nil means no floor source.
+	ownerMFAApplies func(ctx context.Context) (bool, error)
 }
 
 // NewPersonalOrganizations creates the service.
@@ -70,6 +74,46 @@ func (p *PersonalOrganizations) SetSignupRecorder(r signupevent.Recorder) { p.si
 
 // SetAuditService wires the tenant.created audit event.
 func (p *PersonalOrganizations) SetAuditService(a *auditapp.AuditService) { p.audit = a }
+
+// SetOwnerMFAApplies wires the platform 2FA floor: it reports whether a new
+// owner would be asked for a second factor. An error counts as "applies".
+func (p *PersonalOrganizations) SetOwnerMFAApplies(f func(ctx context.Context) (bool, error)) {
+	p.ownerMFAApplies = f
+}
+
+// SocialSignInMayCreate reports whether a social sign-in may make the
+// personal organization now.
+//
+// A social session counts as federated, so the platform 2FA floor refuses it
+// a tenant token whether or not the person enrolled, and it cannot enrol
+// (the challenge needs a password). An owner made here with a floor that
+// covers owners would be locked out of the organization it owns. So the
+// social path makes it only for a password account (its password sign-in
+// takes the second step) or while the floor is "none". Otherwise the mark
+// stays pending and the person keeps the normal "create your organization"
+// step; once they have a password and a factor, the password sign-in makes
+// it. An unreadable floor counts as applying (fail closed).
+//
+// REMOVE this guard when a person who signed in through a social provider can
+// enrol 2FA (for example set a password and enrol from the account space)
+// and the floor accepts that enrolment.
+func (p *PersonalOrganizations) SocialSignInMayCreate(ctx context.Context, u *userdom.User) bool {
+	if p == nil {
+		return false
+	}
+	if isPasswordAccount(u) {
+		return true
+	}
+	if p.ownerMFAApplies == nil {
+		return true
+	}
+	applies, err := p.ownerMFAApplies(ctx)
+	if err != nil {
+		p.log.Warn("read the platform 2FA floor for a personal organization", "error", err)
+		return false
+	}
+	return !applies
+}
 
 // SetRates replaces the rate bounds (tests).
 func (p *PersonalOrganizations) SetRates(r tenantdom.PersonalOrgRates) { p.rates = r }
@@ -100,7 +144,7 @@ func (p *PersonalOrganizations) Ensure(ctx context.Context, u *userdom.User, ip,
 	if u == nil || !p.enabled(ctx) || !u.EmailVerified() {
 		return nil
 	}
-	pending, err := p.repo.PersonalOrganizationPending(ctx, u.ID())
+	pending, err := p.repo.PersonalOrganizationPending(ctx, u.ID(), p.now().UTC())
 	if err != nil {
 		p.log.Warn("read personal organization mark", "error", err)
 		return nil
@@ -113,7 +157,8 @@ func (p *PersonalOrganizations) Ensure(ctx context.Context, u *userdom.User, ip,
 	case err == nil:
 	case errors.Is(err, tenantdom.ErrPersonalOrgNotPending), errors.Is(err, tenantdom.ErrPersonalOrgHasMembership):
 		return nil
-	case errors.Is(err, errPersonalOrgNotAdmitted), errors.Is(err, tenantdom.ErrPersonalOrgInvited):
+	case errors.Is(err, errPersonalOrgNotAdmitted), errors.Is(err, tenantdom.ErrPersonalOrgInvited),
+		errors.Is(err, tenantdom.ErrPersonalOrgDomainClaimed):
 		p.log.Info("personal organization not made: the account has another way in", "user_id", u.ID().String())
 		return nil
 	case errors.Is(err, tenantdom.ErrPersonalOrgRateLimited):
@@ -175,6 +220,7 @@ func (p *PersonalOrganizations) create(ctx context.Context, u *userdom.User, ip 
 		}
 	}
 
+	domain := signupevent.EmailDomain(u.Email())
 	name := tenantdom.PersonalOrgName(u.Name(), u.Email(), u.Preferences().Language)
 	for attempt := 0; ; attempt++ {
 		slug, err := tenantdom.PersonalOrgSlug(u.Name(), u.Email())
@@ -194,8 +240,8 @@ func (p *PersonalOrganizations) create(ctx context.Context, u *userdom.User, ip 
 		}
 		err = p.repo.CreatePersonalOrganization(ctx, tenantdom.PersonalOrgCreation{
 			UserID: u.ID(), Email: u.Email(), Tenant: t, Membership: m,
-			EmailDomain: signupevent.EmailDomain(u.Email()), IPPrefix: signupevent.IPPrefix(ip),
-			Rates: p.rates, At: p.now().UTC(),
+			EmailDomain: domain, IPPrefix: signupevent.IPPrefix(ip),
+			Rates: p.ratesFor(domain), At: p.now().UTC(),
 		})
 		if errors.Is(err, tenantdom.ErrPersonalOrgSlugTaken) && attempt+1 < personalOrgSlugAttempts {
 			continue
@@ -205,4 +251,15 @@ func (p *PersonalOrganizations) create(ctx context.Context, u *userdom.User, ip 
 		}
 		return t, nil
 	}
+}
+
+// ratesFor gives the rate bounds for an address domain: the per-domain bound
+// does not apply to a consumer mailbox provider (see PersonalOrgRates); the
+// list is pkg/emaildomain's, the one used by every sign-up rule.
+func (p *PersonalOrganizations) ratesFor(domain string) tenantdom.PersonalOrgRates {
+	r := p.rates
+	if emaildomain.IsConsumer(domain) {
+		r.PerDomain = 0
+	}
+	return r
 }

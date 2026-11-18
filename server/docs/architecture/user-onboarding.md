@@ -590,13 +590,22 @@ after that the console value wins.
   marked.
 - **When.** At the account's first sign-in (password or social) after its
   address is verified, before the second-factor step (a new organization asks
-  its owner for a second factor, so the person enrols at that sign-in). Google
+  its owner for a second factor, so the person enrols at that sign-in). A
+  social sign-in to an account with no password makes the organization only
+  while the platform two-factor floor is `none` (an unreadable floor counts as
+  applying): a social session cannot enrol a factor, so an owner made under a
+  floor could never open the organization. Otherwise the mark stays pending,
+  the person keeps the normal "create your organization" step, and the
+  password sign-in makes it once they have a password and a factor. The guard
+  goes away when a social-session owner can enrol (`SocialSignInMayCreate`).
+  A mark older than 30 days is no longer honoured. Google
   and Microsoft addresses count as verified; a GitHub address only when GitHub
   marks it verified. `signup.Admit` with the intent `personal_organization`
   decides again at that moment: switch on and self-service in force, verified,
   no pending invitation, no organization SSO admits the identity, and no
   organization claims the address's domain (joinable, SSO required, closed to
-  joining or blocking new organizations), and not a disposable address.
+  joining or blocking new organizations; rechecked inside the transaction),
+  and not a disposable address.
 - **Name and address.** "<Display name>'s organization" ("Tổ chức của <tên>"
   when the person chose Vietnamese; the e-mail's local part when there is no
   display name), renameable later. The address (slug) is the name's ASCII
@@ -614,7 +623,8 @@ after that the console value wins.
   `pending` (if the person declines, a later sign-in can still make one). An
   organization made and later deleted is never made again.
 - **Rate bounds.** At most 5 per client network prefix (/24, /48) and 50 per
-  registrable e-mail domain in a rolling hour, counted exactly under a
+  registrable e-mail domain in a rolling hour (the domain bound skips consumer
+  mailbox providers such as gmail.com, listed in `pkg/emaildomain`), counted exactly under a
   transaction-scoped advisory lock. Above a bound nothing is made and the mark
   stays pending.
 - **Never in the way.** Any refusal or error is logged and the sign-in goes
