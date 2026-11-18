@@ -11,4 +11,6 @@
   on a phone like text fields.
 - On a list's automatic phone card a word longer than the card, such as a long e-mail address, breaks inside the
   card and no longer runs under the row's menu button.
+- A settings form page's header now shares the form's reading column (880 px), so its actions end where the form
+  ends; list settings pages keep the full width, header included.
 - Docs: web/docs/ui-style-contract.md (Settings pages: rows on a phone, picker trigger)

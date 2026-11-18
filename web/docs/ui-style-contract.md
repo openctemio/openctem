@@ -731,7 +731,9 @@ Every settings page is built from the same parts (`@/features/shared`):
   (header and skeleton rows), `state="error"` (the failure with Retry; saved
   values are never replaced by defaults) and `readOnly` (the "View only"
   notice; the page disables its own controls). A settings page that is a list
-  passes `wide` and uses the list kit unchanged.
+  passes `wide` and uses the list kit unchanged. The header shares the column:
+  on a form page it is as wide as the form (its actions end where the form
+  ends), on a `wide` list page both use the full width.
 - **`SettingsSection framed`** is a section: no card and no fill, a hairline
   above every section but the first, the title (`text-section`), one line of
   description, an optional quiet `meta` note ("Last changed by ...") and

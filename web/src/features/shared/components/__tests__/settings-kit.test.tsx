@@ -220,9 +220,20 @@ describe('SettingsPage', () => {
     expect(onRetry).toHaveBeenCalled()
   })
 
-  it('lets a list page take the full width', () => {
+  it('lets a list page take the full width, header included', () => {
     render(<SettingsPage title="Members" wide />)
     const column = document.querySelector('[data-slot="settings-column"]') as HTMLElement
     expect(column.className).not.toContain('max-w-settings')
+    const header = document.querySelector('[data-slot="page-header"]') as HTMLElement
+    expect(header.className).not.toContain('max-w-settings')
+  })
+
+  it('puts a form page header in the same reading column as the form', () => {
+    render(<SettingsPage title="General" />)
+    const column = document.querySelector('[data-slot="settings-column"]') as HTMLElement
+    const header = document.querySelector('[data-slot="page-header"]') as HTMLElement
+    // One width per page: header actions end where the form ends (880px).
+    expect(column.className).toContain('max-w-settings')
+    expect(header.className).toContain('max-w-settings')
   })
 })
