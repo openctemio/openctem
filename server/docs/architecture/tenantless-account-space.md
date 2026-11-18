@@ -105,6 +105,11 @@ privilege, organization open), without minting or spending anything:
 | `EMAIL_NOT_VERIFIED` | Verify the e-mail address |
 | `ORGANIZATION_SUSPENDED` | Nothing to do; the organization is suspended |
 
+Each row also carries `requires`, what the organization asks of every sign-in of this member
+whatever the session, from its settings and the member's role: `two_factor` (two-factor
+authentication required) and `identity_provider` (its own SSO enforced; the owner keeps a
+password break-glass). The account space shows it before the person opens the organization.
+
 The organizations evaluated are the active memberships of the token's user; the session is the
 token's own session (another person's or an unknown session gets no `admission`). Pending
 invitations are listed by `POST /auth/onboarding/options`.

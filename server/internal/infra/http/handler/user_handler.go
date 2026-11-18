@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	"github.com/openctemio/openctem/server/pkg/domain/user"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/validator"
@@ -353,7 +354,35 @@ type TenantMembershipResponse struct {
 	// EMAIL_NOT_VERIFIED, ORGANIZATION_SUSPENDED, ...), so the account space
 	// shows the one next step. Empty when it could not be worked out.
 	Admission string `json:"admission,omitempty"`
+	// Requires lists what the organization asks of every sign-in of this
+	// member, from its own settings and the member's role, whatever the
+	// session: "two_factor" (2FA required) and "identity_provider" (its own
+	// SSO is enforced; the owner keeps a password break-glass). Shown before
+	// the person opens it.
+	Requires []string `json:"requires"`
 }
+
+// membershipRequirements reads what an organization asks of a member's
+// sign-in from its settings (an unreadable policy is reported as both).
+func membershipRequirements(t *tenantdom.Tenant, role string) []string {
+	out := []string{}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return []string{requireTwoFactor, requireIdentityProvider}
+	}
+	if sec.MFARequiredFor(role) {
+		out = append(out, requireTwoFactor)
+	}
+	if sec.SSOEnforced && role != string(tenantdom.RoleOwner) {
+		out = append(out, requireIdentityProvider)
+	}
+	return out
+}
+
+const (
+	requireTwoFactor        = "two_factor"
+	requireIdentityProvider = "identity_provider"
+)
 
 // MembershipAdmitter answers, per organization of the caller, what the
 // organization's rules say about the current session (auth.AuthService).
@@ -444,6 +473,7 @@ func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) (
 			Kind:            string(memberKindOrInternal(t.Kind)),
 			AccessExpiresAt: t.ExpiresAt,
 			BlockedReason:   t.BlockedReason(),
+			Requires:        membershipRequirements(t.Tenant, t.Role.String()),
 		}
 	}
 	return response, nil
