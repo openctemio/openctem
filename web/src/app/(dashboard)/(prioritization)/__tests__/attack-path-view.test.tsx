@@ -108,23 +108,25 @@ beforeEach(() => {
 })
 
 describe('/attack-paths view', () => {
-  it('asks for the first target and titles the page with it', () => {
+  it('asks for the first target; the title stays the page name, the path is named over the graph', () => {
     render(<AttackPathsPage />)
     expect(detail).toHaveBeenCalledWith('asset-n0')
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Path to billing-db' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Attack paths' })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot=graph-selection]')).toHaveTextContent(
+      'Path to billing-db'
+    )
     expect(screen.getByText('2 hops')).toBeInTheDocument()
     expect(screen.getByText('Likelihood 0.22')).toBeInTheDocument()
   })
 
-  it('draws the shortest path on the canvas, every path in All mode', () => {
+  it('draws every path by default, the shortest one in Shortest mode', () => {
+    search = new URLSearchParams('paths=shortest')
     const { unmount } = render(<AttackPathsPage />)
     const canvas = screen.getByTestId('attack-path-canvas')
     expect(within(canvas).getAllByTestId('flow-node')).toHaveLength(3)
     expect(within(canvas).getByTestId('flow-internet')).toBeInTheDocument()
     unmount()
-    search = new URLSearchParams('paths=all')
+    search = new URLSearchParams()
     render(<AttackPathsPage />)
     expect(
       within(screen.getByTestId('attack-path-canvas')).getAllByTestId('flow-node')
@@ -133,9 +135,11 @@ describe('/attack-paths view', () => {
 
   it('switches the path mode through the URL', async () => {
     render(<AttackPathsPage />)
-    await userEvent.click(screen.getByRole('button', { name: /Paths: Shortest/ }))
-    await userEvent.click(await screen.findByRole('menuitemradio', { name: /All/ }))
-    expect(replace).toHaveBeenCalledWith(expect.stringContaining('paths=all'), { scroll: false })
+    await userEvent.click(screen.getByRole('button', { name: /Paths: All/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: /Shortest/ }))
+    expect(replace).toHaveBeenCalledWith(expect.stringContaining('paths=shortest'), {
+      scroll: false,
+    })
   })
 
   it('lights the routes through a hovered node and dims the rest', () => {
@@ -242,13 +246,70 @@ describe('/attack-paths view', () => {
     expect(screen.getByTestId('task-dialog')).toHaveTextContent('f-vpn')
   })
 
+  it('offers the task for the first choke point that has a finding, and none when no step has one', () => {
+    const d = mockupDetail()
+    const first = d.chokePoints[0].node
+    d.nodes = d.nodes.map((n) => (n.key === first ? { ...n, finding: null } : n))
+    detail.mockReturnValue(ok(d))
+    const { unmount } = render(<AttackPathsPage />)
+    const button = screen.getByTestId('choke-task')
+    // Never a filled action that cannot be pressed.
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(screen.getByTestId('task-dialog')).not.toHaveTextContent('f-vpn')
+    unmount()
+    const none = mockupDetail()
+    none.nodes = none.nodes.map((n) => ({ ...n, finding: null }))
+    detail.mockReturnValue(ok(none))
+    render(<AttackPathsPage />)
+    expect(screen.queryByTestId('choke-task')).toBeNull()
+  })
+
+  it('keeps the header the same while the paths load and once they are in', () => {
+    detail.mockReturnValue({
+      detail: undefined,
+      error: undefined,
+      isLoading: true,
+      mutate: vi.fn(),
+    })
+    const { unmount } = render(<AttackPathsPage />)
+    const loading = document.querySelector('[data-slot=page-header] h1')?.textContent
+    const lineLoading = document.querySelector(
+      '[data-slot=page-header] p, [data-slot=page-header] .mt-1'
+    )?.textContent
+    unmount()
+    detail.mockReturnValue(ok())
+    render(<AttackPathsPage />)
+    expect(document.querySelector('[data-slot=page-header] h1')?.textContent).toBe(loading)
+    expect(
+      document.querySelector('[data-slot=page-header] p, [data-slot=page-header] .mt-1')
+        ?.textContent
+    ).toBe(lineLoading)
+  })
+
+  it('lists every mark the graph draws in the legend', async () => {
+    render(<AttackPathsPage />)
+    await userEvent.click(screen.getByTestId('graph-legend-trigger'))
+    const legend = await screen.findByTestId('attack-path-legend')
+    for (const label of [
+      /internet/i,
+      /Crown jewel/,
+      /business criticality/,
+      /Finding that allows the step/,
+      /Known exploited step/,
+      /another path, or hidden/,
+      /Thicker line/,
+    ])
+      expect(within(legend).getByText(label)).toBeInTheDocument()
+  })
+
   it('opens the list view from the switcher and by default on a phone', () => {
     search = new URLSearchParams('view=list')
     const { unmount } = render(<AttackPathsPage />)
     expect(screen.getByTestId('attack-path-list')).toBeInTheDocument()
     expect(screen.queryByTestId('attack-path-canvas')).not.toBeInTheDocument()
     unmount()
-    search = new URLSearchParams()
+    search = new URLSearchParams('paths=shortest')
     mobile = true
     render(<AttackPathsPage />)
     const list = screen.getByTestId('attack-path-list')

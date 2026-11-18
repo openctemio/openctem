@@ -122,9 +122,9 @@ describe('TeamSwitcher', () => {
     expect(trigger.getAttribute('aria-label')).toContain('ORG tenant')
   })
 
-  it('opens the card with a single organization, without a chevron', async () => {
+  it('opens the card with a single organization, and its chevron says the row opens it', async () => {
     renderSwitcher()
-    expect(screen.queryByTestId('team-switcher-chevron')).toBeNull()
+    expect(screen.getByTestId('team-switcher-chevron')).toBeInTheDocument()
     const { card } = await openCard()
     expect(within(card).getByText('ORG tenant')).toBeInTheDocument()
     expect(within(card).queryByTestId('org-card-plan')).toBeNull()

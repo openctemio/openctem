@@ -5,6 +5,7 @@ import * as SheetPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { ignoreToasterInteractions } from '@/components/ui/toaster-guard'
 import { FloatingFocusScope, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
@@ -55,10 +56,11 @@ const sheetCloseClassName =
   'ring-offset-background focus-visible:ring-ring data-[state=open]:bg-secondary rounded-md opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus:outline-hidden disabled:pointer-events-none flex items-center justify-center h-10 w-10 min-h-[44px] min-w-[44px]'
 
 function SheetCloseButton({ className }: { className?: string }) {
+  const { t } = useTranslation()
   return (
     <SheetPrimitive.Close data-slot="sheet-close" className={cn(sheetCloseClassName, className)}>
       <XIcon className="size-5" aria-hidden />
-      <span className="sr-only">Close</span>
+      <span className="sr-only">{t('common.close', 'Close')}</span>
     </SheetPrimitive.Close>
   )
 }

@@ -219,11 +219,16 @@ export default function AdministratorsPage() {
           const name = toDisplayText(a.name || a.email)
           return (
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="truncate font-medium" title={name}>
+              {/* The name keeps its room (up to 60 % of the cell); the address
+                  is the one that gives way. */}
+              <span className="max-w-[60%] shrink-0 truncate font-medium" title={name}>
                 {name}
               </span>
               {a.name && a.name !== a.email && (
-                <span className="truncate text-muted-foreground" title={toDisplayText(a.email)}>
+                <span
+                  className="min-w-0 truncate text-muted-foreground"
+                  title={toDisplayText(a.email)}
+                >
                   {toDisplayText(a.email)}
                 </span>
               )}
@@ -249,7 +254,7 @@ export default function AdministratorsPage() {
         enableSorting: false,
         meta: {
           kind: 'tags',
-          width: 200,
+          width: 184,
           hideBelow: 900,
           label: t('admin.securityAdministratorsPage.signIn', 'Sign-in'),
         },
@@ -261,7 +266,7 @@ export default function AdministratorsPage() {
         enableSorting: false,
         meta: {
           kind: 'datetime-recent',
-          width: 176,
+          width: 152,
           hideBelow: 1100,
           label: t('admin.securityAdministratorsPage.lastTested', 'Last tested'),
         },

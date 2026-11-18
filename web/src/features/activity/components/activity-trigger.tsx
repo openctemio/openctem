@@ -97,8 +97,12 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
     const headline =
       headlineProp ??
       (comments.length > 0
-        ? `${comments.length} comment${comments.length === 1 ? '' : 's'}`
-        : `${eventCount} event${eventCount === 1 ? '' : 's'}`)
+        ? comments.length === 1
+          ? t('activity.trigger.commentsOne', '{count} comment', { count: 1 })
+          : t('activity.trigger.commentsMany', '{count} comments', { count: comments.length })
+        : eventCount === 1
+          ? t('activity.trigger.eventsOne', '{count} event', { count: 1 })
+          : t('activity.trigger.eventsMany', '{count} events', { count: eventCount }))
 
     // The snippet line: the latest comment, else the latest change.
     let preview: React.ReactNode = null

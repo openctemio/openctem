@@ -19,7 +19,7 @@ import {
   RelativeTime,
   type MetricStripItem,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { AssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
@@ -353,7 +353,9 @@ export default function TargetMappingsPage() {
         >
           {newButton}
         </PageHeader>
-        <MetricStrip items={metrics} loading={stats.isLoading} />
+        {/* On a phone the list comes first: the strip's status filters follow it
+            (their two rows would push the first card below the fold). */}
+        <MetricStrip items={metrics} loading={stats.isLoading} className="max-md:order-last" />
         <ListTitleRow
           title={
             status === 'active'
@@ -361,17 +363,6 @@ export default function TargetMappingsPage() {
               : status === 'inactive'
                 ? t('admin.scanningTargetMappingsPage.viewInactive', 'Inactive mappings')
                 : t('admin.scanningTargetMappingsPage.viewAll', 'All custom mappings')
-          }
-          count={
-            <ListCount
-              total={total}
-              loading={!list.data && !list.error}
-              label={t(
-                'admin.scanningTargetMappingsPage.total',
-                '{count, plural, one {# mapping} other {# mappings}}',
-                { count: total }
-              )}
-            />
           }
         />
         <DataTable
@@ -445,7 +436,9 @@ export default function TargetMappingsPage() {
           }
         />
 
-        <TargetMappingRegistryPanel />
+        {/* Drawn once the list is known: it sits under the list, so it never
+            moves when the rows arrive. */}
+        {(list.data || list.error) && <TargetMappingRegistryPanel />}
 
         {dialog && (
           <TargetMappingDialog

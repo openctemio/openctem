@@ -472,9 +472,14 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      // 12 px above the brand row, 8 px sides; 16 px under the context row
-      // plus the nav column's 8 makes the 24 px step to the first nav row.
-      className={cn('flex flex-col gap-2 px-2 pt-3 pb-4', className)}
+      // 12 px above the brand row, 8 px sides. A 1 px divider closes the
+      // brand and context block (the app and the console both drew it): 15 px
+      // under the context row + the line + the nav column's 8 keep the 24 px
+      // step to the first nav row.
+      className={cn(
+        'flex flex-col gap-2 border-b border-sidebar-border px-2 pt-3 pb-[15px]',
+        className
+      )}
       {...props}
     />
   )

@@ -262,11 +262,13 @@ describe('TargetMappingsPage', () => {
     )
   })
 
-  it('shows the view name and the count once, the two filters as toolbar selects', async () => {
+  it('shows the view name without a count of its own, the two filters as toolbar selects', async () => {
     asRole('readonly')
     render(<TargetMappingsPage />)
     expect(screen.getByRole('heading', { name: /All custom mappings/ })).toBeInTheDocument()
-    expect(screen.getAllByText('1 mapping')).toHaveLength(1)
+    // The count lives in the metric strip and beside the pager, not in the title.
+    expect(document.querySelector('[data-slot="list-count"]')).toBeNull()
+    expect(screen.queryByText('1 mapping')).not.toBeInTheDocument()
     const toolbar = screen.getByTestId('data-table-toolbar')
     expect(within(toolbar).getByRole('button', { name: /target type/i })).toBeInTheDocument()
     expect(within(toolbar).getByRole('button', { name: /asset type/i })).toBeInTheDocument()
@@ -278,6 +280,28 @@ describe('TargetMappingsPage', () => {
     expect(headers).toEqual(
       expect.arrayContaining(['Target type', 'Asset type', 'Priority', 'Status', 'Updated'])
     )
+  })
+
+  it('puts the status strip after the list on a phone, so the first card comes up', () => {
+    asRole('readonly')
+    render(<TargetMappingsPage />)
+    expect(document.querySelector('[data-slot="metric-strip"]')).toHaveClass('max-md:order-last')
+  })
+
+  it('draws the built-in pairs only once the list is known', () => {
+    asRole('readonly')
+    vi.mocked(useTargetMappings).mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useTargetMappings>)
+    const { unmount } = render(<TargetMappingsPage />)
+    expect(screen.queryByText('Built-in pairs')).not.toBeInTheDocument()
+    unmount()
+    listOf([MAPPING])
+    render(<TargetMappingsPage />)
+    expect(screen.getByText('Built-in pairs')).toBeInTheDocument()
   })
 
   it('names the row menu after the pair', () => {

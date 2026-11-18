@@ -46,6 +46,9 @@ beforeEach(() => setWidth(390))
 afterEach(() => setWidth(1440))
 
 const WRAP_RULES = [
+  // A word longer than the card (an e-mail address) breaks and does not set
+  // the item's minimum width (break-word did: it ran under the menu button).
+  '[overflow-wrap:anywhere]',
   '[&_.truncate]:whitespace-normal',
   '[&_.truncate]:line-clamp-3',
   '[&_.whitespace-nowrap]:whitespace-normal',

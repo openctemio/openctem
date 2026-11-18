@@ -34,6 +34,13 @@ export interface MetricStripItem {
    * breakdown bar). Keep it short: the strip is a summary, not a card.
    */
   detail?: React.ReactNode
+  /**
+   * The detail's place while loading, for a detail taller than one line (a
+   * bar with a legend): the same shape with skeletons, so the strip keeps
+   * its height when the numbers arrive. Without it a one-line skeleton holds
+   * the place.
+   */
+  detailLoading?: React.ReactNode
   /** What the number counts, shown as the cell's tooltip. */
   description?: string
   /**
@@ -122,6 +129,7 @@ export function MetricStrip({
   loading = false,
   error,
   embedded = false,
+  listFirst = false,
   className,
 }: {
   items: MetricStripItem[]
@@ -136,6 +144,13 @@ export function MetricStrip({
    * tiles stay.
    */
   embedded?: boolean
+  /**
+   * The strip sits above a list: on a phone it moves under the list (CSS
+   * order, so nothing jumps after hydration) and the first row starts within
+   * the top 45% of the screen. The parent must be the page's flex column
+   * (a `PageStack`, or a fragment inside one).
+   */
+  listFirst?: boolean
   className?: string
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
@@ -153,6 +168,7 @@ export function MetricStrip({
       className={cn(
         'grid grid-cols-6 overflow-hidden',
         embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
+        listFirst && 'max-md:order-last',
         'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
         className
       )}
@@ -247,7 +263,11 @@ export function MetricStrip({
               />
             ) : null}
             {item.detail && !error ? (
-              loading ? (
+              loading && item.detailLoading ? (
+                <span data-slot="metric-detail" className="mt-1 block min-w-0 text-xs" aria-hidden>
+                  {item.detailLoading}
+                </span>
+              ) : loading ? (
                 // Holds the detail line's place (12px text, 16px line).
                 <span data-slot="metric-detail" className="mt-1 flex h-4 items-center">
                   <Skeleton className="h-3 w-24" />
