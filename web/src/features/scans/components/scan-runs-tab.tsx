@@ -725,16 +725,17 @@ function ScanRunsTable() {
   const moreLabel = t('scans.runs.more', 'More actions')
 
   const noAccess = accessStateOf(error) === 'no_access'
-  const strip = <MetricStrip loading={isLoadingStats} items={metrics} />
+  const strip = <MetricStrip loading={isLoadingStats} items={metrics} listFirst />
   const total = data?.total ?? 0
 
   return (
     // Fragment: the strip, the title row and the table are blocks of the
     // page's PageStack, which owns the gaps between them (research/244).
     <>
-      {/* On a phone the list comes first: the strip follows it, and the
-          same counts are beside each Status value in the filter sheet. */}
-      {!isPhone && strip}
+      {/* On a phone the list comes first: the strip follows it (CSS order,
+          so it never jumps after hydration), and the same counts are beside
+          each Status value in the filter sheet. */}
+      {strip}
 
       <ListTitleRow
         title={viewTitle}
@@ -868,8 +869,6 @@ function ScanRunsTable() {
           />
         </div>
       )}
-
-      {isPhone && strip}
 
       {/* Under the list, so the list's header never moves when a filter
           hides or shows this line. */}

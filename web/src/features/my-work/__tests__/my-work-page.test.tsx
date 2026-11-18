@@ -251,14 +251,41 @@ describe('My Work page', () => {
     expect(within(row).getByText('Changed since the request: now in CISA KEV')).toBeInTheDocument()
     expect(within(row).getByText('90 days')).toBeInTheDocument()
     expect(within(row).getByText('edge-proxy')).toBeInTheDocument()
+    // The short label beside it never breaks over two lines ("Tài sản" did).
+    expect(within(row).getByText('Asset')).toHaveClass('whitespace-nowrap', 'shrink-0')
     expect(within(row).getByText('Requested by Linh')).toBeInTheDocument()
     expect(screen.getByText(/Four-eyes/)).toBeInTheDocument()
 
-    fireEvent.click(within(row).getByRole('button', { name: /Approve/ }))
+    // The shared queue decision: outline buttons named with their finding, the
+    // sign-in step said on Approve; no filled button in the row.
+    const approve = within(row).getByRole('button', {
+      name: 'Approve Remote code execution in edge proxy',
+    })
+    expect(approve).toHaveAttribute('data-variant', 'outline')
+    expect(approve).toHaveAccessibleDescription(
+      'You confirm your sign-in before the approval is saved.'
+    )
+    expect(
+      within(row).getByRole('button', { name: 'Reject Remote code execution in edge proxy' })
+    ).toBeVisible()
+    expect(row.querySelector('[data-slot=button][data-variant=default]')).toBeNull()
+    fireEvent.click(approve)
     const dialog = await screen.findByRole('alertdialog')
     approveTrigger.mockResolvedValue({ status: 'approved' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }))
     await vi.waitFor(() => expect(approveTrigger).toHaveBeenCalledTimes(1))
+  })
+
+  it('Enter on Approve is the button, not the row: it never opens the finding', async () => {
+    search.value = 'tab=review'
+    approvalRows = [request()]
+    push.mockClear()
+    renderPage()
+    const row = screen.getByRole('listitem', { name: /Risk acceptance: Remote code execution/ })
+    fireEvent.keyDown(within(row).getByRole('button', { name: /^Approve / }), { key: 'Enter' })
+    expect(push).not.toHaveBeenCalled()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(push).toHaveBeenCalledWith('/findings/f1')
   })
 
   it('never offers a decision on my own request', () => {
@@ -267,7 +294,7 @@ describe('My Work page', () => {
     renderPage()
     const row = screen.getByRole('listitem')
     expect(within(row).queryByRole('button', { name: /Approve/ })).toBeNull()
-    expect(within(row).getByText('Your request: another person decides')).toBeInTheDocument()
+    expect(within(row).getByText(/Your request: another person decides/)).toBeInTheDocument()
   })
 
   it('moves with j and k and rejects with r, asking for a reason', async () => {

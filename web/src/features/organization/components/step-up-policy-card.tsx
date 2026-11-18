@@ -92,7 +92,8 @@ export function StepUpPolicyCard({ policy, onChange, disabled }: StepUpPolicyCar
         'How often people confirm their identity again (authenticator code, password or a new sign-in) before an action. One confirmation counts for every tier until its own time runs out.'
       )}
     >
-      {(['critical', 'sensitive', 'routine'] as StepUpTier[]).map((tier) => {
+      {/* Least to most protected, as on the board. */}
+      {(['routine', 'sensitive', 'critical'] as StepUpTier[]).map((tier) => {
         const id = `step-up-${tier}`
         return (
           <SettingsRow

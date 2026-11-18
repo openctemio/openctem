@@ -50,6 +50,24 @@ describe('DataTable selection scope', () => {
     Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })
   })
 
+  it('says how many rows are selected under the rows, never in the toolbar', () => {
+    render(table({ toolbarEnd: <button type="button">Export</button> }))
+    expect(document.querySelector('[data-slot=table-selected-count]')).toBeNull()
+    const before = document.querySelector('[data-slot=list-toolbar]')!.innerHTML
+    fireEvent.click(screen.getByLabelText('pick alpha'))
+    const note = document.querySelector('[data-slot=table-selected-count]')!
+    expect(note).toHaveTextContent('1 of 2 selected')
+    expect(note.closest('[data-slot=list-toolbar]')).toBeNull()
+    expect(note.closest('[data-slot=data-table-pager]')).not.toBeNull()
+    expect(document.querySelector('[data-slot=list-toolbar]')!.innerHTML).toBe(before)
+  })
+
+  it('shows no selection note when the page has its own', () => {
+    render(table({ showSelectionCount: false }))
+    fireEvent.click(screen.getByLabelText('pick alpha'))
+    expect(document.querySelector('[data-slot=table-selected-count]')).toBeNull()
+  })
+
   it('clears the selection when the page changes', () => {
     const onSelectionChange = vi.fn()
     const { rerender } = render(table({ onSelectionChange }))

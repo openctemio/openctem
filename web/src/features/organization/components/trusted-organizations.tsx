@@ -151,7 +151,7 @@ function TrustSettingsFields({
       <div className="flex items-start justify-between gap-4">
         <div>
           <Label htmlFor="trust-mfa-evidence">
-            {t('settings.trust.mfaEvidence', 'Require proof of MFA')}
+            {t('settings.trust.mfaEvidence', 'Require proof of two-factor sign-in')}
           </Label>
           <p className="text-xs text-muted-foreground">
             {t(
@@ -547,8 +547,10 @@ function TrustRow({
     trust.accept_home_sso
       ? t('settings.trust.fact.ssoAccepted', 'their SSO accepted')
       : t('settings.trust.fact.ssoNotAccepted', 'their SSO not accepted'),
-    trust.require_mfa_evidence ? t('settings.trust.fact.mfaRequired', 'MFA proof required') : null,
-    trust.home_attests_mfa ? t('settings.trust.fact.mfaAttested', 'MFA attested') : null,
+    trust.require_mfa_evidence
+      ? t('settings.trust.fact.mfaRequired', 'two-factor proof required')
+      : null,
+    trust.home_attests_mfa ? t('settings.trust.fact.mfaAttested', 'two-factor confirmed') : null,
     trust.allow_api_keys ? t('settings.trust.fact.apiKeys', 'API keys allowed') : null,
   ].filter(Boolean)
   return (

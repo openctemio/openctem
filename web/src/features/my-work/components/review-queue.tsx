@@ -6,10 +6,9 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { refreshPendingApprovalCount } from '@/hooks/use-dynamic-badges'
-import {
-  ApprovalDecisionButtons,
-  useApprovalDecision,
-} from '@/features/findings/components/approval-decision'
+import { useApprovalDecision } from '@/features/findings/components/approval-decision'
+import { QueueDecisionActions } from '@/features/shared/components/queue'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { isOwnApproval } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
 import { ApprovalRow } from './approval-row'
@@ -36,6 +35,10 @@ export function ReviewQueue({
   empty: React.ReactNode
 }) {
   const { t } = useTranslation()
+  const stepUpHint = t(
+    'myWork.review.stepUpHint',
+    'You confirm your sign-in before the approval is saved.'
+  )
   const router = useRouter()
   const currentUserId = useDisplayUser()?.id
   const decision = useApprovalDecision({
@@ -70,6 +73,10 @@ export function ReviewQueue({
         move(focus - 1)
         break
       case 'Enter':
+        // Enter on a control in the row (Approve, Reject, a link) is that
+        // control's own; only Enter on the row opens the finding.
+        if (e.target instanceof HTMLElement && e.target.closest('button, a, input, textarea'))
+          return
         e.preventDefault()
         router.push(`/findings/${encodeURIComponent(row.finding_id)}`)
         break
@@ -143,18 +150,26 @@ export function ReviewQueue({
                     refs.current[i] = el
                   }}
                   actions={
-                    own ? (
-                      <span className="text-meta text-muted-foreground">
-                        {t('myWork.review.own', 'Your request: another person decides')}
-                      </span>
-                    ) : (
-                      <ApprovalDecisionButtons
-                        approval={a}
-                        busy={busy}
-                        onApprove={decision.openApprove}
-                        onReject={decision.openReject}
-                      />
-                    )
+                    <QueueDecisionActions
+                      name={
+                        toDisplayText(a.finding_title, 300) ||
+                        t('myWork.untitled', 'Untitled finding')
+                      }
+                      itemId={a.id}
+                      canDecide
+                      own={own}
+                      ownLabel={t('myWork.review.own', 'Your request: another person decides')}
+                      ownReason={t(
+                        'findings.approvals.ownRequestHint',
+                        'Another approver must decide your own request.'
+                      )}
+                      busy={busy}
+                      onApprove={() => decision.openApprove(a)}
+                      onReject={() => decision.openReject(a)}
+                      approveLabel={t('myWork.review.approve', 'Approve')}
+                      rejectLabel={t('myWork.review.reject', 'Reject')}
+                      stepUpHint={stepUpHint}
+                    />
                   }
                 />
               )
