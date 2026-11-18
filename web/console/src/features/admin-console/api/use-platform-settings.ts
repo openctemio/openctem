@@ -99,7 +99,10 @@ export function savePrivateDestinations(input: {
   reason: string
   version: number
 }) {
-  return adminFetch<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, { method: 'PUT', body: input })
+  return adminFetch<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, {
+    method: 'PUT',
+    body: input,
+  })
 }
 
 /** Resolves a host and reports the guard's decision per address; never connects. */
