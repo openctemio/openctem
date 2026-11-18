@@ -77,6 +77,7 @@ import {
   type CreateThreatActorInput,
 } from '../api/use-threat-actors-api'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 const ALL = 'all'
 
@@ -90,7 +91,7 @@ function typeLabel(t: TFn, type: ActorType): string {
 function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDate(d)
 }
 
 /** "financial_gain" → "Financial gain" (motivation is stored as a slug). */

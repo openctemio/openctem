@@ -70,6 +70,7 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDate, formatNumber } from '@/lib/app-locale'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const IconMap: Record<TemplateStatus, React.ElementType> = {
@@ -300,7 +301,8 @@ export function ScannerTemplatesSection() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Rules" />,
         cell: ({ row }) => (
           <span className="text-sm tabular-nums text-muted-foreground">
-            {row.original.rule_count} {row.original.rule_count === 1 ? 'rule' : 'rules'}
+            {formatNumber(row.original.rule_count)}{' '}
+            {row.original.rule_count === 1 ? 'rule' : 'rules'}
           </span>
         ),
       },
@@ -345,7 +347,7 @@ export function ScannerTemplatesSection() {
         header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {new Date(row.original.updated_at).toLocaleDateString()}
+            {formatDate(new Date(row.original.updated_at))}
           </span>
         ),
       },

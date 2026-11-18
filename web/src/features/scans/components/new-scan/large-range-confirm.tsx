@@ -18,6 +18,7 @@ import {
   largeRangeKey,
   type LargeRangeSummary,
 } from '../../lib/large-range'
+import { formatNumber } from '@/lib/app-locale'
 
 /** How many ranges are named one by one; the rest are counted. */
 const LISTED_RANGES = 3
@@ -35,7 +36,7 @@ export function LargeRangeConfirm({
   const { t } = useTranslation()
   const id = useId()
   const key = largeRangeKey(summary)
-  const addresses = summary.addresses.toLocaleString()
+  const addresses = formatNumber(summary.addresses)
   const { hours, minutes } = durationParts(summary.seconds)
   const listed = summary.ranges.slice(0, LISTED_RANGES).join(', ')
   const more = summary.ranges.length - LISTED_RANGES
@@ -52,14 +53,14 @@ export function LargeRangeConfirm({
       <p className="text-muted-foreground">
         {t('scans.largeRange.summary', undefined, {
           addresses,
-          chunks: summary.chunks.toLocaleString(),
+          chunks: formatNumber(summary.chunks),
         })}
       </p>
       <p className="text-muted-foreground">
         {t('scans.largeRange.estimate', undefined, {
           hours,
           minutes,
-          rate: ESTIMATE_ADDRESSES_PER_SECOND.toLocaleString(),
+          rate: formatNumber(ESTIMATE_ADDRESSES_PER_SECOND),
         })}
       </p>
       <p className="text-muted-foreground">{t('scans.largeRange.scope')}</p>

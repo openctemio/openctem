@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Secret Store API Types
  *
@@ -288,6 +289,6 @@ export function formatLastUsed(lastUsedAt?: string): string {
   } else if (diffDays < 30) {
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
   } else {
-    return date.toLocaleDateString()
+    return formatDate(date)
   }
 }

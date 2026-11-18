@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Sparkline } from '@/components/ui/sparkline'
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * Page anatomy rules for a metric strip: research/244. A number earns a tile
@@ -209,7 +210,7 @@ export function MetricStrip({
                     warning && 'text-warning'
                   )}
                 >
-                  {numeric ? (item.value as number).toLocaleString() : item.value}
+                  {numeric ? formatNumber(item.value as number) : item.value}
                 </span>
               )}
               {item.hint && !loading && !error ? (

@@ -44,14 +44,15 @@ import { findingDetailHref } from '../../lib/finding-link'
 import { findingSourceText, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
-function formatDate(iso: string | undefined, locale: string): string {
+function formatDate(iso: string | undefined, _locale: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+  return localeFormatDate(d, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 /** "May 12, 2026 · 143 days overdue" with the overdue part in the destructive colour. */

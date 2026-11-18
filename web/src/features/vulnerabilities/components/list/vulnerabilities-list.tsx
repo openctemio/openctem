@@ -114,6 +114,7 @@ import {
   type VulnListState,
 } from '../../lib/vuln-list'
 import type { VulnListItem } from '../../types/list'
+import { formatNumber } from '@/lib/app-locale'
 
 const PANEL_ID = 'vulnerability-list-filters'
 
@@ -776,7 +777,7 @@ function VulnerabilitiesListBody() {
             onClick={(e) => e.stopPropagation()}
             className="tabular-nums hover:underline"
           >
-            {row.original.findings.toLocaleString()}
+            {formatNumber(row.original.findings)}
           </Link>
         ),
       },

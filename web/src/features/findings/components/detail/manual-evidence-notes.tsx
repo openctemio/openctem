@@ -20,16 +20,17 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface ManualEvidenceNotesSectionProps {
   findingId: string
 }
 
-function formatDate(dateString: string, locale: string): string {
+function formatDate(dateString: string, _locale: string): string {
   const d = new Date(dateString)
   return Number.isNaN(d.getTime())
     ? dateString
-    : d.toLocaleDateString(locale, {
+    : localeFormatDate(d, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',

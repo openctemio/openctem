@@ -46,6 +46,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { AIBadge } from '@/features/shared/components/ai-badge'
 import { confirmName } from '@/lib/confirm-name'
+import { formatDateTime } from '@/lib/app-locale'
 
 const TONE: Record<ActivityTone, string> = {
   muted: 'bg-muted text-muted-foreground',
@@ -355,7 +356,7 @@ export function CommentCard({
         {item.editedAt && !isPending && (
           <span
             className="text-xs text-muted-foreground"
-            title={`Edited ${new Date(item.editedAt).toLocaleString()}`}
+            title={`Edited ${formatDateTime(new Date(item.editedAt))}`}
           >
             , edited
           </span>

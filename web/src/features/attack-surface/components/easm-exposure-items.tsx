@@ -98,6 +98,7 @@ import {
   type ExposureItemRow,
   type ExposureItemStats,
 } from '../lib/exposure-items'
+import { formatNumber } from '@/lib/app-locale'
 
 const PAGE_SIZES = [20, 50, 100]
 const SORT_FIELDS = ['severity', 'last_seen', 'first_seen', 'asset_name', 'state'] as const
@@ -404,7 +405,9 @@ function useAssetColumns(): ColumnDef<ExposureAssetGroupRow>[] {
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
-            primary={<span className="font-medium tabular-nums">{row.original.total}</span>}
+            primary={
+              <span className="font-medium tabular-nums">{formatNumber(row.original.total)}</span>
+            }
             secondary={ACTIONABLE_SEVERITIES.filter((s) => (row.original.by_severity[s] ?? 0) > 0)
               .map((s) =>
                 t('attackSurface.exposures.severityCount', '{count} {severity}', {

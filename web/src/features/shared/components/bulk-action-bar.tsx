@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatNumber } from '@/lib/app-locale'
 
 /** The CSS property that holds the room the bar takes at the bottom of the screen. */
 export const BULK_BAR_SPACE_VAR = '--bulk-bar-space'
@@ -91,7 +92,7 @@ export function BulkActionBar({
   if (!shown) return null
   const countText = (
     <>
-      {count.toLocaleString()}{' '}
+      {formatNumber(count)}{' '}
       {noun ? (
         // A phone shows the short word only, so X stays on screen; screen
         // readers hear the page's noun at every width.
@@ -138,7 +139,7 @@ export function BulkActionBar({
                     'common.bulkBar.selectMenu',
                     '{count} selected: selection options',
                     {
-                      count: count.toLocaleString(),
+                      count: formatNumber(count),
                     }
                   )}
                 >
@@ -173,7 +174,7 @@ export function BulkActionBar({
             {more && more.length > 0 && (
               <ActionMenu
                 items={more}
-                title={`${count.toLocaleString()} ${noun ?? t('common.bulkBar.selected', 'selected')}`}
+                title={`${formatNumber(count)} ${noun ?? t('common.bulkBar.selected', 'selected')}`}
                 label={t('common.bulkBar.label', 'Actions for selected rows')}
                 trigger={
                   <Button

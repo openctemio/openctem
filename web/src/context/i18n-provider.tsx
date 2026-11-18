@@ -12,6 +12,7 @@ import {
 } from '@/lib/i18n'
 import { useBrand } from '@/context/brand-provider'
 import type { Brand } from '@/lib/brand'
+import { setAppLocale } from '@/lib/app-locale'
 
 type TranslateFn = (key: string, fallback?: string, vars?: TranslateVars) => string
 
@@ -91,6 +92,8 @@ function LoadedI18nProvider({
   children: React.ReactNode
 }) {
   const brand = useBrand()
+  // Numbers and dates formatted outside components follow the page's language.
+  setAppLocale(locale)
   const t = useCallback<TranslateFn>(
     (key, fallback, vars) => translate(dict, key, fallback, brandVars(brand, vars)),
     [dict, brand]

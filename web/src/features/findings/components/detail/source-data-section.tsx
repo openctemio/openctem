@@ -31,6 +31,7 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 import Link from '@/components/link'
 import { formatEpssScore } from '@/lib/epss'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
+import { formatDate } from '@/lib/app-locale'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
@@ -72,11 +73,11 @@ function humanize(s: string): string {
   return s.replace(/_/g, ' ')
 }
 
-function day(iso: string | undefined, locale: string): string | undefined {
+function day(iso: string | undefined, _locale: string): string | undefined {
   if (!iso) return undefined
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return undefined
-  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDate(d, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Mono({ children }: { children: React.ReactNode }) {

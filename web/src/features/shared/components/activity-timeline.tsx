@@ -6,12 +6,12 @@ import { History, Loader2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { cn } from '@/lib/utils'
 
 import { EmptyState } from './empty-state'
 import { ErrorState } from './error-state'
 import { RelativeTime } from './relative-time'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * A vertical activity timeline: one row per event with an icon, a sentence,
@@ -117,7 +117,6 @@ export function ActivityTimeline({
 }: ActivityTimelineProps) {
   const compact = density === 'compact'
   const { t, locale } = useTranslation()
-  const dfLocale = dateFnsLocaleFor(locale)
 
   const toggle = (value: string) => {
     if (!onSelectedFiltersChange) return
@@ -200,7 +199,7 @@ export function ActivityTimeline({
                             lastAt && !Number.isNaN(lastAt.getTime())
                               ? t('activity.repeatedLast', '{count} times, the last at {time}', {
                                   count: e.repeatCount ?? 1,
-                                  time: lastAt.toLocaleString(locale),
+                                  time: formatDateTime(lastAt),
                                 })
                               : t('activity.repeated', '{count} times', {
                                   count: e.repeatCount ?? 1,

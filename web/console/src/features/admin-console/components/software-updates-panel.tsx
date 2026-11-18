@@ -16,6 +16,7 @@ import { AdminApiError } from '@console/lib/admin-api/client'
 import { importReleaseFeed, setVersionCheckEnabled } from '../api/use-version-check'
 import { Switch } from '@/components/ui/switch'
 import type { ReleaseFeedAdvisory, VersionCheckErrorCode, VersionCheckStatus } from '../types'
+import { formatDate } from '@/lib/app-locale'
 
 /** The largest file the API accepts (releasefeed.MaxBundleBytes). */
 export const MAX_RELEASE_FEED_BYTES = 256 * 1024
@@ -91,7 +92,7 @@ function readText(file: File): Promise<string> {
 const NAMED_COMPONENTS: ReadonlySet<string> = new Set(['sensor', 'connector-tenable', 'sdk'])
 
 function dateOnly(iso: string | undefined) {
-  return iso ? new Date(iso).toLocaleDateString() : '-'
+  return iso ? formatDate(new Date(iso)) : '-'
 }
 
 interface Props {

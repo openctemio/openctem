@@ -31,6 +31,7 @@ import { useConsoleFactors } from '../api/use-console-factors'
 import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
+import { formatTime } from '@/lib/app-locale'
 
 const DURATIONS = [15, 30, 60] as const
 
@@ -89,7 +90,7 @@ export function AdminElevationBar({
 
   const acting = actingRoleLabel(admin)
   const until = admin.elevated_until
-    ? new Date(admin.elevated_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    ? formatTime(new Date(admin.elevated_until), { hour: '2-digit', minute: '2-digit' })
     : ''
   const activeText = t('admin.elevation.active', 'Acting as {role} until {until}.', {
     role: t(acting.key, acting.fallback),

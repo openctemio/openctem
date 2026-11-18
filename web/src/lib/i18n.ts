@@ -1,4 +1,5 @@
 import { DEFAULT_BRAND } from './brand'
+import { formatNumber } from '@/lib/app-locale'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
 export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
@@ -128,6 +129,6 @@ function applyPlurals(str: string, vars: TranslateVars): string {
     const byKey = new Map<string, string>()
     for (const m of branches.matchAll(PLURAL_BRANCH)) byKey.set(m[1], m[2])
     const text = byKey.get(`=${n}`) ?? byKey.get(pluralRules.select(n)) ?? byKey.get('other') ?? ''
-    return text.split('#').join(n.toLocaleString('en-US'))
+    return text.split('#').join(formatNumber(n))
   })
 }

@@ -17,6 +17,7 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import { PublishAnnouncementDialog } from '@console/features/admin-console/components/publish-announcement-dialog'
 import { type AdminAnnouncement, adminHas } from '@console/features/admin-console/types'
+import { formatDateTime } from '@/lib/app-locale'
 
 const STATE_TONE: Record<AdminAnnouncement['state'], PillTone> = {
   active: 'success',
@@ -25,7 +26,7 @@ const STATE_TONE: Record<AdminAnnouncement['state'], PillTone> = {
 }
 
 function when(iso?: string): string {
-  return iso ? new Date(iso).toLocaleString() : '-'
+  return iso ? formatDateTime(new Date(iso)) : '-'
 }
 
 export default function AdminAnnouncementsPage() {

@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Safe x-axis / tooltip label formatter for trend, area, bar and timeline
  * charts.
@@ -36,5 +37,5 @@ export function formatChartDate(value: unknown): string {
   const date = new Date(value as string | number | Date)
   if (Number.isNaN(date.getTime())) return String(value)
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return formatDate(date, { month: 'short', day: 'numeric' })
 }

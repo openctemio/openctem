@@ -47,6 +47,7 @@ import {
 import { FixStepsBlock } from './fix-steps'
 import { OwnerCombobox, type OwnerValue } from './owner-combobox'
 import { RiskPoints } from './risk-points'
+import { formatDate } from '@/lib/app-locale'
 
 const PER_PAGE = 50
 
@@ -69,12 +70,12 @@ export interface SuggestionPanelProps {
   onNext?: () => void
 }
 
-function dateLabel(iso: string | undefined, locale: string): string {
+function dateLabel(iso: string | undefined, _locale: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+    : formatDate(d, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function SuggestionPanel({

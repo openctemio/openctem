@@ -25,6 +25,7 @@ import {
   sensorSdkVersion,
   sensorVersionStatus,
 } from '../lib/sensor-version'
+import { formatDateTime, formatNumber } from '@/lib/app-locale'
 
 /**
  * Cells shared by the sensor table, the phone cards and the drawer, so one
@@ -371,7 +372,7 @@ export type SensorVersionFields = Pick<
 export function sensorBuildTooltip(
   sensor: SensorVersionFields,
   t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string,
-  locale?: string
+  _locale?: string
 ): string {
   const lines: string[] = []
   if (sensor.sensor_product) {
@@ -383,7 +384,7 @@ export function sensorBuildTooltip(
   if (sensor.sensor_build_time) {
     const d = new Date(sensor.sensor_build_time)
     if (!Number.isNaN(d.getTime())) {
-      lines.push(t('sensors.version.built', 'Built: {value}', { value: d.toLocaleString(locale) }))
+      lines.push(t('sensors.version.built', 'Built: {value}', { value: formatDateTime(d) }))
     }
   }
   const sdk = sensorSdkVersion(sensor)
@@ -632,12 +633,12 @@ export function SensorOutboxCell({ sensor, inline = false }: { sensor: Sensor; i
             sensor.outbox_warning ? 'text-warning' : 'text-foreground'
           )}
         >
-          {t('sensors.cells.queued', undefined, { count: ob.pending_count.toLocaleString() })}
+          {t('sensors.cells.queued', undefined, { count: formatNumber(ob.pending_count) })}
         </span>
       )}
       {lost > 0 && (
         <span className="text-sm tabular-nums text-destructive">
-          {t('sensors.cells.lost', undefined, { count: lost.toLocaleString() })}
+          {t('sensors.cells.lost', undefined, { count: formatNumber(lost) })}
         </span>
       )}
       {oldest && !inline && <span className={cn('text-xs', muted)}>{oldest}</span>}

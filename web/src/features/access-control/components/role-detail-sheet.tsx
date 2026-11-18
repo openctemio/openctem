@@ -60,6 +60,7 @@ import { AddMemberToRoleDialog } from './add-member-to-role-dialog'
 import { RoleCapabilities } from './role-capabilities'
 import { isAdminBypassRole } from '../lib/authz-reference'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface RoleDetailSheetProps {
   role: Role | null
@@ -132,7 +133,7 @@ function getPermissionType(permissionId: string): 'read' | 'write' | 'delete' {
 }
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

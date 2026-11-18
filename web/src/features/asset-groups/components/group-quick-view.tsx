@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
 import type { AssetGroup } from '../types'
 import { shareableLink } from '@/lib/org-link'
+import { formatDate } from '@/lib/app-locale'
 
 // ============================================
 // ASSETS IN THE GROUP
@@ -297,11 +298,9 @@ export function GroupQuickView({
             <DetailSection title="Details">
               <DetailFieldGrid>
                 <DetailField label="Owner">{group.owner || 'Not assigned'}</DetailField>
-                <DetailField label="Created">
-                  {new Date(group.createdAt).toLocaleDateString()}
-                </DetailField>
+                <DetailField label="Created">{formatDate(new Date(group.createdAt))}</DetailField>
                 <DetailField label="Last updated">
-                  {new Date(group.updatedAt).toLocaleDateString()}
+                  {formatDate(new Date(group.updatedAt))}
                 </DetailField>
                 <DetailField label="ID" full>
                   <DetailCopyId id={group.id} label="Group ID" />

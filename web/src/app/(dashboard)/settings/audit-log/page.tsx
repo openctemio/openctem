@@ -65,6 +65,11 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
+import {
+  formatDate as localeFormatDate,
+  formatDateTime,
+  formatTime as localeFormatTime,
+} from '@/lib/app-locale'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 const SORTABLE = ['logged_at', 'action', 'resource_type', 'result', 'severity']
@@ -74,16 +79,16 @@ const SEVERITY_OPTIONS: AuditSeverity[] = ['info', 'low', 'medium', 'high', 'cri
 type TFn = ReturnType<typeof useTranslation>['t']
 
 // Helper functions
-const formatDate = (dateString: string, locale: string) => {
-  return new Date(dateString).toLocaleDateString(locale, {
+const formatDate = (dateString: string, _locale: string) => {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   })
 }
 
-const formatTime = (dateString: string, locale: string) => {
-  return new Date(dateString).toLocaleTimeString(locale, {
+const formatTime = (dateString: string, _locale: string) => {
+  return localeFormatTime(new Date(dateString), {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -531,7 +536,7 @@ export default function AuditLogPage() {
               }
               meta={[
                 selectedLog.actor_email || t('auditLog.system', 'System'),
-                new Date(selectedLog.timestamp).toLocaleString(),
+                formatDateTime(new Date(selectedLog.timestamp)),
               ]}
               menu={[
                 {
@@ -579,7 +584,7 @@ export default function AuditLogPage() {
                   </DetailField>
                 )}
                 <DetailField label={t('auditLog.detail.date', 'Date')}>
-                  {new Date(selectedLog.timestamp).toLocaleString(locale, {
+                  {formatDateTime(new Date(selectedLog.timestamp), {
                     weekday: 'short',
                     year: 'numeric',
                     month: 'short',
@@ -588,7 +593,7 @@ export default function AuditLogPage() {
                 </DetailField>
                 <DetailField label={t('auditLog.col.time', 'Time')}>
                   <span className="tabular-nums">
-                    {new Date(selectedLog.timestamp).toLocaleTimeString()}
+                    {localeFormatTime(new Date(selectedLog.timestamp))}
                   </span>
                 </DetailField>
               </DetailFieldGrid>

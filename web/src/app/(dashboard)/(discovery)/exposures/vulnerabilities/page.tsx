@@ -24,6 +24,7 @@ import { Bug, LayoutGrid, List } from 'lucide-react'
 import { VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
+import { formatNumber } from '@/lib/app-locale'
 
 const TABS = ['overview', 'catalog'] as const
 
@@ -84,7 +85,7 @@ function OverviewTab() {
           description={t(
             'exposures.vulnerabilities.severityDescription',
             '{count} vulnerabilities by severity',
-            { count: typeStats.total.toLocaleString() }
+            { count: formatNumber(typeStats.total) }
           )}
         >
           <SeverityDonut bySeverity={typeStats.bySeverity} />

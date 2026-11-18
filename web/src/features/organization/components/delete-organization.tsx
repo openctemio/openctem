@@ -14,6 +14,7 @@ import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 /**
  * Organization › General › Danger zone: delete the organization.
@@ -75,7 +76,7 @@ export function DeleteOrganizationItem() {
       kind: 'success' as const,
       title: t('org.danger.scheduled', 'Organization "{name}" will be deleted on {date}.', {
         name: name ?? '',
-        date: due ? new Date(due).toLocaleDateString() : '',
+        date: due ? formatDate(new Date(due)) : '',
       }),
       description: t(
         'org.danger.scheduledHint',

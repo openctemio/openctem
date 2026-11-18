@@ -41,6 +41,7 @@ import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 type TypeFilter = 'all' | 'system' | 'custom'
 
@@ -51,7 +52,7 @@ const typeFilters: { value: TypeFilter; key: string; en: string }[] = [
 ]
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

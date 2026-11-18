@@ -41,6 +41,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
+import { formatDateTime } from '@/lib/app-locale'
 
 /** The channel's own delivery result wins over the event-wide status. */
 function deliveryStatus(entry: NotificationEventEntry): string {
@@ -113,7 +114,7 @@ function buildColumns(t: Translate): ColumnDef<NotificationEventEntry>[] {
       cell: ({ row }) => (
         <span
           className="whitespace-nowrap text-sm text-muted-foreground"
-          title={new Date(row.original.processed_at).toLocaleString()}
+          title={formatDateTime(new Date(row.original.processed_at))}
         >
           <RelativeTime date={row.original.processed_at} />
         </span>

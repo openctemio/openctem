@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { isHiddenReleaseStatus } from '@/lib/permissions'
 import type { ModuleHealth, TenantSubModule } from '@/features/organization/api/use-tenant-modules'
 import { useModuleText } from './use-module-text'
+import { formatDate } from '@/lib/app-locale'
 
 /** Why a module cannot be switched here, shown in place of the switch action. */
 export type ModuleLock =
@@ -80,7 +81,7 @@ export function ModuleRow({
   subEnabled = {},
   onToggle,
 }: ModuleRowProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const text = useModuleText()
   const formatList = useFormatList()
   const nameId = useId()
@@ -111,7 +112,7 @@ export function ModuleRow({
         return t(
           'settings.modules.lock.readOnly',
           'No longer available for this organization. Its data can be viewed and exported until {date}; changes are turned off.',
-          { date: new Date(l.until).toLocaleDateString(locale) }
+          { date: formatDate(new Date(l.until)) }
         )
       case 'needs_unavailable':
         return t(

@@ -5,6 +5,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorHealthChip } from './sensor-health-dot'
+import { formatNumber } from '@/lib/app-locale'
 
 // A sensor id, shown when the viewer cannot read the sensor's name.
 const SENSOR_ID_CLASS = 'font-mono text-xs' // label-ok: an id, mono by the label rules
@@ -51,9 +52,9 @@ export function ZoneShareTable({
           {zones.map((z) => (
             <tr key={z.zone_id}>
               <td className="px-3 py-2 font-medium">{z.zone_name}</td>
-              <td className="px-3 py-2 text-end tabular-nums">{z.targets.toLocaleString()}</td>
+              <td className="px-3 py-2 text-end tabular-nums">{formatNumber(z.targets)}</td>
               <td className="px-3 py-2 text-end tabular-nums">
-                {z.jobs.toLocaleString()}
+                {formatNumber(z.jobs)}
                 {z.queued_jobs > 0 && (
                   <span className="block text-xs text-warning">
                     {t('scans.routing.waiting', undefined, { count: z.queued_jobs })}

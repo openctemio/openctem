@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils'
 import { humanizePropertyKey } from '@/features/asset-types/lib/property-schema'
 import type { AssetPropertyFormat } from '@/features/asset-types/registry.generated'
 import { serializeInventoryFilters } from '../lib/inventory-url'
+import { formatDateTime } from '@/lib/app-locale'
 
 type Scalar = string | number | boolean
 
@@ -132,7 +133,7 @@ export function CopyValueButton({ text, className }: { text: string; className?:
 function DateValue({ iso }: { iso: string }) {
   return (
     <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-      <span>{new Date(iso).toLocaleString()}</span>
+      <span>{formatDateTime(new Date(iso))}</span>
       <RelativeTime date={iso} className="text-xs" />
     </span>
   )

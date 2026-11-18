@@ -75,6 +75,7 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { formatDate as localeFormatDate, formatNumber } from '@/lib/app-locale'
 
 // Filter types
 type StatusFilter = Status | 'all'
@@ -90,7 +91,7 @@ function daysSince(date: string): number {
 }
 
 export default function CredentialsPage() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   // Build API filters based on UI filters. Filters live in the URL so a filtered
   // view is shareable and survives reload (matching the findings/assets pages).
   const [statusFilter, setStatusFilterRaw] = useUrlFilter('status', 'all') as [
@@ -282,7 +283,7 @@ export default function CredentialsPage() {
     },
   ]
 
-  const formatDate = (date: string) => new Date(date).toLocaleDateString(locale)
+  const formatDate = (date: string) => localeFormatDate(new Date(date))
 
   // Table columns. No selection column: the page has no bulk actions, and a
   // checkbox that selects rows nothing can act on is a dead control.
@@ -435,7 +436,7 @@ export default function CredentialsPage() {
               t(
                 'credentials.export.truncated',
                 'Export limited to the first {count} leaks. Refine the filters to export the rest.',
-                { count: loaded.toLocaleString(locale) }
+                { count: formatNumber(loaded) }
               )
             ),
         }

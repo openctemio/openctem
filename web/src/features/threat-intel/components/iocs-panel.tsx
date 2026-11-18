@@ -75,19 +75,23 @@ import {
   type CreateIOCInput,
 } from '../api/use-iocs-api'
 import { useTranslation } from '@/context/i18n-provider'
+import {
+  formatDate as localeFormatDate,
+  formatDateTime as localeFormatDateTime,
+} from '@/lib/app-locale'
 
 const ALL = 'all'
 
 function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDate(d)
 }
 
 function formatDateTime(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDateTime(d)
 }
 
 export function IOCsPanel() {

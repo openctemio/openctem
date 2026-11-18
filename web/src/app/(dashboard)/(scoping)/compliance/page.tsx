@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/status-glyphs'
 import type { StatusTone } from '@/lib/status-colors'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 // ── Local view types ──────────────────────────────────────────────────────────
 
@@ -651,12 +652,12 @@ export default function CompliancePage() {
                   <DetailField label="Owner">{viewRequirement.owner || '—'}</DetailField>
                   {viewRequirement.dueDate && (
                     <DetailField label="Due date">
-                      {new Date(viewRequirement.dueDate).toLocaleDateString()}
+                      {formatDate(new Date(viewRequirement.dueDate))}
                     </DetailField>
                   )}
                   {viewRequirement.lastAssessed && (
                     <DetailField label="Last assessed">
-                      {new Date(viewRequirement.lastAssessed).toLocaleDateString()}
+                      {formatDate(new Date(viewRequirement.lastAssessed))}
                     </DetailField>
                   )}
                 </DetailFieldGrid>
