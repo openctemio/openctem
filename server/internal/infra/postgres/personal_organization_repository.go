@@ -76,7 +76,7 @@ func (r *TenantRepository) CreatePersonalOrganization(ctx context.Context, c ten
 		return tenant.ErrPersonalOrgNotPending
 	}
 	if !reservedAt.After(c.At.Add(-tenant.PersonalOrgMarkLifetime)) {
-		return tenant.ErrPersonalOrgNotPending // too old to be honoured
+		return tenant.ErrPersonalOrgNotPending // too old to be honored
 	}
 
 	// Rechecked under the lock: an organization joined or created another

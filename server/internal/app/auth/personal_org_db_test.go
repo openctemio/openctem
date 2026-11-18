@@ -412,8 +412,8 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		}
 	})
 
-	// L3 in the store: an old mark is not honoured, in the read or the write.
-	t.Run("an old mark is not honoured", func(t *testing.T) {
+	// L3 in the store: an old mark is not honored, in the read or the write.
+	t.Run("an old mark is not honored", func(t *testing.T) {
 		u := newAccount(t)
 		newService().Reserve(ctx, u.ID(), signupdom.OutcomeSelfService)
 		if _, err := sqlDB.ExecContext(ctx, `UPDATE personal_organizations SET reserved_at = now() - interval '31 days' WHERE user_id = $1`, u.ID().String()); err != nil {

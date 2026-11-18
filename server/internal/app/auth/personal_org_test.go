@@ -325,7 +325,7 @@ func TestPersonalOrgNameAndSlug(t *testing.T) {
 	}
 }
 
-// L3: a pending mark is honoured only within its lifetime of the sign-up.
+// L3: a pending mark is honored only within its lifetime of the sign-up.
 func TestPersonalOrgMarkExpires(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
