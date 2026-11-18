@@ -147,8 +147,6 @@ export async function totp(secret: string): Promise<string> {
 
 // --- API client ------------------------------------------------------------
 
-let ipSeq = 0
-
 export type ApiAnswer = { status: number; code: string; body: Record<string, unknown> }
 
 /** One person's API profile: cookie jar, CSRF pair, own client address. */
@@ -158,8 +156,10 @@ export class Profile {
   readonly ip: string
 
   constructor(private env: JourneyEnv) {
-    ipSeq += 1
-    this.ip = `198.18.${100 + ((ipSeq / 250) | 0)}.${(ipSeq % 250) + 1}`
+    // Random, not a counter: a retried test runs in a new worker, and a
+    // repeated address would share the previous person's limits.
+    const b = randomBytes(2)
+    this.ip = `198.18.${b[0]}.${(b[1] % 250) + 1}`
   }
 
   async call(method: string, path: string, body?: unknown): Promise<ApiAnswer> {
@@ -388,8 +388,13 @@ export class JourneyWatch {
 
   constructor(page: Page) {
     page.on('framenavigated', (f) => {
-      if (f === page.mainFrame())
-        this.visits.push(new URL(f.url()).pathname + new URL(f.url()).search)
+      if (f !== page.mainFrame()) return
+      const u = new URL(f.url())
+      const here = u.pathname + u.search
+      // One entry per page reached: a client-side replace of the same path
+      // (query cleanup, hydration) is not a second visit.
+      const last = this.visits[this.visits.length - 1]
+      if (last === undefined || last.split('?')[0] !== u.pathname) this.visits.push(here)
     })
     page.on('response', (r: Response) => {
       const u = new URL(r.url())
