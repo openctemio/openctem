@@ -298,19 +298,28 @@ async function enrollOnPage(page: Page, person: Person): Promise<void> {
     .first()
   const secret = ((await key.textContent()) ?? '').replace(/\s/g, '')
   person.secret = secret
+  // The code field submits itself once complete; the button is a fallback.
   await page
     .getByLabel('Authentication code')
     .first()
     .fill(await totp(secret))
-  await page
-    .getByRole('button', { name: /turn on|verify|continue/i })
-    .first()
-    .click()
+  await clickIfEnabled(page, /turn on/i)
   await settle(page)
   const saved = page.getByRole('checkbox', { name: /saved my recovery codes/i })
   if (await visible(page, saved)) await saved.first().check()
-  const savedButton = page.getByRole('button', { name: /saved my recovery codes|continue/i })
-  if (await visible(page, savedButton)) await savedButton.first().click()
+  await clickIfEnabled(page, /saved my recovery codes|continue/i)
+}
+
+/** Clicks the first enabled button with that name, if one shows within a moment. */
+async function clickIfEnabled(page: Page, name: RegExp): Promise<void> {
+  const button = page.getByRole('button', { name }).first()
+  await page.waitForTimeout(500)
+  if (
+    (await button.isVisible().catch(() => false)) &&
+    (await button.isEnabled().catch(() => false))
+  ) {
+    await button.click({ timeout: 5_000 }).catch(() => {})
+  }
 }
 
 /**
@@ -344,10 +353,7 @@ async function drive(
           detail: `a verify step for an account without an authenticator (${p})`,
         }
       await code.first().fill(await totp(person.secret))
-      await page
-        .getByRole('button', { name: /verify/i })
-        .first()
-        .click()
+      await clickIfEnabled(page, /verify/i)
       continue
     }
     if (p.startsWith('/invitations')) {
