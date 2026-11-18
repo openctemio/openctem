@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { summarize, SignupEventsPanel } from '../components/signup-events-panel'
+import {
+  SignupEventMobileCard,
+  summarize,
+  SignupEventsPanel,
+} from '../components/signup-events-panel'
 import { parseDomains, SignupAlertsForm } from '../components/signup-alerts-form'
 import type { SignupDailyCount, SignupEventList } from '../api/use-signup-events'
 
@@ -59,6 +63,50 @@ describe('parseDomains', () => {
   })
 })
 
+describe('SignupEventMobileCard', () => {
+  it('shows the event in fixed slots, no label/value grid, the organization as a link', () => {
+    const { container } = render(
+      <SignupEventMobileCard
+        event={{
+          id: 1,
+          kind: 'organization_created',
+          source: 'self_service',
+          email_domain: 'example.org',
+          ip_prefix: '198.51.100.0/24',
+          tenant_id: 'aaaaaaaa-0000-0000-0000-000000000001',
+          occurred_at: new Date().toISOString(),
+        }}
+      />
+    )
+    expect(container.querySelector('dl, dt, dd')).toBeNull()
+    expect(screen.queryByText('Email domain')).toBeNull()
+    expect(screen.getByText('Created by a member')).toBeInTheDocument()
+    const origin = container.querySelector('[data-testid="signup-card-origin"]') as HTMLElement
+    expect(origin).toHaveTextContent('example.org')
+    expect(origin).toHaveTextContent('198.51.100.0/24')
+    expect(screen.getByRole('link', { name: 'Open organization' })).toHaveAttribute(
+      'href',
+      '/organizations/aaaaaaaa-0000-0000-0000-000000000001'
+    )
+  })
+
+  it('leaves out a missing domain, network and organization instead of a dash', () => {
+    const { container } = render(
+      <SignupEventMobileCard
+        event={{
+          id: 2,
+          kind: 'account_created',
+          source: 'invitation',
+          occurred_at: new Date().toISOString(),
+        }}
+      />
+    )
+    expect(container.querySelector('[data-testid="signup-card-origin"]')).toBeNull()
+    expect(container).not.toHaveTextContent('\u2014')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+})
+
 describe('SignupEventsPanel', () => {
   beforeEach(() => {
     mocks.daily.data = []
@@ -90,6 +138,53 @@ describe('SignupEventsPanel', () => {
       'href',
       '/organizations/aaaaaaaa-0000-0000-0000-000000000001'
     )
+  })
+
+  it('names the view and counts once, with the kind select in the table toolbar', () => {
+    mocks.list.data = {
+      data: [
+        {
+          id: 2,
+          kind: 'account_created',
+          source: 'password',
+          email_domain: 'example.org',
+          ip_prefix: '203.0.113.0/24',
+          occurred_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    }
+    render(<SignupEventsPanel />)
+    expect(screen.getByRole('heading', { name: 'All events' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /Event/ })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Sign-up events' })
+    expect(within(table).getByText('example.org')).toBeInTheDocument()
+  })
+
+  it('puts the list first and the counts in one strip whose tiles filter the list', async () => {
+    mocks.list.data = { data: [], total: 0, page: 1, per_page: 50, total_pages: 0 }
+    mocks.daily.data = [
+      { day: new Date().toISOString().slice(0, 10), kind: 'organization_created', count: 2 },
+    ]
+    render(<SignupEventsPanel />)
+    const table = screen.getByTestId('data-table-toolbar')
+    const strip = document.querySelector('[data-slot="metric-strip"]') as HTMLElement
+    expect(strip).not.toBeNull()
+    expect(document.querySelectorAll('[data-slot="metric-tile"]')).toHaveLength(3)
+    // The strip follows the list in document (and reading) order.
+    expect(table.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const tile = within(strip).getByRole('button', { name: /Organizations created/ })
+    expect(tile).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(tile)
+    expect(tile).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('heading', { name: 'Organizations created' })).toBeInTheDocument()
+    await userEvent.click(tile)
+    expect(screen.getByRole('heading', { name: 'All events' })).toBeInTheDocument()
   })
 
   it('has an empty state', () => {
