@@ -114,10 +114,10 @@ test(
     } else {
       const row = page.locator('[data-slot="approval-row"]').first()
       await expect(row.getByRole('button', { name: /Approve/ })).toBeVisible()
-      await expect(row.getByRole('button', { name: 'Reject' })).toBeVisible()
+      await expect(row.getByRole('button', { name: /^Reject / })).toBeVisible()
       await expect(page.getByText(/Four-eyes/)).toBeVisible()
       // Reject asks for a reason first; cancelling leaves the request pending.
-      await row.getByRole('button', { name: 'Reject' }).click()
+      await row.getByRole('button', { name: /^Reject / }).click()
       const dialog = page.getByRole('dialog')
       await expect(dialog.getByRole('button', { name: 'Reject' })).toBeDisabled()
       await dialog.getByRole('button', { name: 'Cancel' }).click()
