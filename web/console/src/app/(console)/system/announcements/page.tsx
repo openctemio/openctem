@@ -121,6 +121,10 @@ export default function AdminAnnouncementsPage() {
         )}
         {ending && (
           <AdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.ann.reasonEnd',
+              'The maintenance finished early, change 2231'
+            )}
             open
             onOpenChange={(o) => !o && setEnding(null)}
             title={t('admin.ann.endTitle', 'Take this announcement down')}

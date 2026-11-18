@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRouter } from 'next/navigation'
 
-import { organizationHref } from '@console/features/admin-console/lib/organization-links'
+import { organizationHref } from '@console/features/admin-console/lib/console-links'
 import type { AdminOrganization } from '@console/features/admin-console/types'
 import AdminOrganizationsPage from '../page'
 
@@ -122,6 +122,15 @@ describe('Console organizations list', () => {
       'Single sign-on',
       'Created',
     ])
+  })
+
+  it('keeps the name its room: the slug is the one that gives way', () => {
+    render(<AdminOrganizationsPage />)
+    const row = screen.getByRole('link', { name: 'Example Works' }).closest('tr')!
+    expect(within(row).getByText('example-works')).toHaveClass('min-w-0', 'truncate')
+    expect(screen.getByRole('link', { name: 'Example Works' }).closest('span')).toHaveClass(
+      'shrink-0'
+    )
   })
 
   it('keeps every fact of a row: slug, owner domains, limits, status, sign-on', () => {

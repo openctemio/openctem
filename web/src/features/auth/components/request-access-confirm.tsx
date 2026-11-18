@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from '@/components/link'
 import { Loader2 } from 'lucide-react'
+import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { confirmAccessRequestAction } from '../actions/local-auth-actions'
@@ -34,25 +35,28 @@ export function RequestAccessConfirm() {
   }, [])
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 text-center">
+    <EntryCard>
+      <EntryHeader title={t('auth.requestAccess.title', 'Request access')} />
       {state === 'confirming' ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <p className="text-body text-muted-foreground flex items-center gap-2" role="status">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           {t('auth.requestAccess.confirming', 'Confirming your request...')}
         </p>
       ) : (
-        <p className="text-sm" role="status">
+        <EntryBanner tone={state === 'confirmed' ? 'ok' : 'danger'} role="status">
           {state === 'confirmed'
             ? t(
                 'auth.requestAccess.confirmed',
                 'Your request is confirmed and waits for an administrator.'
               )
             : t('auth.requestAccess.confirmFailed', 'This link is invalid or has expired.')}
-        </p>
+        </EntryBanner>
       )}
-      <Button asChild variant="outline">
-        <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-      </Button>
-    </div>
+      <EntryActions>
+        <Button asChild variant="outline">
+          <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
+        </Button>
+      </EntryActions>
+    </EntryCard>
   )
 }

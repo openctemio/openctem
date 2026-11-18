@@ -19,6 +19,7 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { EntryActions, EntryCard } from '@/components/entry'
 import { env } from '@/lib/env'
 import { OnboardingLogout, TeamOnboarding } from '@/features/tenant'
 import { BackToTeamsLink } from '@/features/auth/components/back-to-teams-link'
@@ -52,22 +53,16 @@ export default async function CreateFirstTeamPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md">
-      {/* Logout button in top right */}
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-        <OnboardingLogout />
-      </div>
-
-      {/* Back link — only shown when the user came from /select-tenant
-          (i.e., they already have other teams to go back to). For first-team
-          onboarding there's nowhere to go back to. */}
-      {hasPendingTenants && (
-        <div className="mb-4">
-          <BackToTeamsLink />
-        </div>
-      )}
-
+    <EntryCard>
       <TeamOnboarding hasOtherTeams={hasPendingTenants} />
-    </div>
+
+      {/* Ways out, under the page's own actions. The back link shows only when
+          the user came from /select-tenant (they have other teams to go back
+          to); for first-team onboarding there is nowhere to go back to. */}
+      <EntryActions>
+        {hasPendingTenants && <BackToTeamsLink />}
+        <OnboardingLogout />
+      </EntryActions>
+    </EntryCard>
   )
 }

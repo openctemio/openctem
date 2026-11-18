@@ -5,7 +5,7 @@
  * person may choose per status and their translated labels.
  */
 
-import type { FindingStatus } from '../types'
+import { FINDING_STATUS_CONFIG, type FindingStatus } from '../types'
 
 export type ClosureReason =
   | 'fixed'
@@ -107,3 +107,18 @@ export function verificationLabel(t: Translate, verification: string): string {
 /** Every reason and verification code, for the dictionary completeness test. */
 export const ALL_CLOSURE_REASONS = Object.keys(REASON_FALLBACK) as ClosureReason[]
 export const ALL_VERIFICATIONS = Object.keys(VERIFICATION_FALLBACK) as Verification[]
+
+/** Closure reasons of a fix: the finding was resolved because something changed on it. */
+const FIX_REASONS = new Set<string>(['fixed', 'mitigated', 'unknown'])
+
+/**
+ * Whether "Proof of fix" (verification, retest, retest check, rescan) belongs
+ * on the finding: while it is open or in progress, and once it is resolved by
+ * a fix. A false positive, an accepted risk, a duplicate, or a resolve that
+ * was not a fix (the asset is gone, the check changed) has nothing to prove.
+ */
+export function showsProofOfFix(status: string, closureReason?: string): boolean {
+  const category = FINDING_STATUS_CONFIG[status as FindingStatus]?.category
+  if (category !== 'closed') return true
+  return status === 'resolved' && (!closureReason || FIX_REASONS.has(closureReason))
+}

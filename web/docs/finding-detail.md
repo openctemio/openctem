@@ -46,9 +46,13 @@ in the activity panel.
 - **A request waiting on someone is visible where you are.** While a
   false-positive or accepted-risk request is pending, `FindingApprovalBand`
   (page and drawer) shows the requested status, who asked, when and why, whatever
-  the finding's status is. The requester can cancel it there; approvers get a link
-  to the approvals inbox, where the decision is made; everyone else reads it. The
-  buttons are cosmetic: the API decides who may cancel or approve.
+  the finding's status is. The requester is named as on the approvals inbox (the
+  API names current members only; anyone else reads "Former member", an AI or
+  integration request names its source). The requester can cancel it there; an
+  approver decides in place with the queue's decision controls (`QueueDecisionActions`,
+  outline, named "Approve {status} request"), so the header's main action stays the
+  one filled button; everyone else reads it. The buttons are cosmetic: the API decides
+  who may cancel or approve.
 - **AI triage is opt-in and permission-aware.** The header button shows only to a
   user who may run it (`ai_triage:trigger`) in an organization that turned AI triage
   on (Settings > AI). Without `ai_triage:read` the page sends no AI triage request
@@ -132,16 +136,18 @@ Proof of fix                                         Found by   SCA, npm-audit
 - **Header** (`FindingHeader` on `DetailPageHeader`): type and identifier chips, the place in the list the
   finding was opened from ("2 of 27" links back to that list; previous and next, also `k` and `j`), the title,
   one main action, two secondary ones (Re-verify, AI triage) and a More menu (Copy link, Copy finding ID,
-  Create ticket, Mark as duplicate). Who found it is said once, in the properties.
+  Add to task when it is not the main action, Create ticket, Mark as duplicate). Who found it is said once,
+  in the properties.
 - **Main action** (`FindingMainAction`), chosen by the finding's state; when the state's action is not
   available to the viewer, the next row applies:
 
-  | State                             | Main action       | Gate (the same as elsewhere on the page)                                   |
-  | --------------------------------- | ----------------- | -------------------------------------------------------------------------- |
-  | Duplicate of another finding      | Open the original | none (a link)                                                              |
-  | Fix applied, and a retest can run | Retest now        | `findings:verify` and the server's `can_retest` (the Proof of fix section) |
-  | In progress                       | Mark fix applied  | status permission, not a people-written finding, the lifecycle's move      |
-  | Any other state                   | Add to task       | task write permission and the remediation module                           |
+  | State                              | Main action       | Gate (the same as elsewhere on the page)                                   |
+  | ---------------------------------- | ----------------- | -------------------------------------------------------------------------- |
+  | Duplicate of another finding       | Open the original | none (a link)                                                              |
+  | Fix applied, and a retest can run  | Retest now        | `findings:verify` and the server's `can_retest` (the Proof of fix section) |
+  | In progress                        | Mark fix applied  | status permission, not a people-written finding, the lifecycle's move      |
+  | Resolved, accepted, false positive | none              | (Add to task stays in More)                                                |
+  | Any other state                    | Add to task       | task write permission and the remediation module                           |
 
   Mark fix applied asks the lifecycle for the move when clicked (as the status menu does) and then takes the
   status menu's path: the note dialog, the organization's move fields, approvals and Undo are unchanged.
@@ -156,7 +162,10 @@ Proof of fix                                         Found by   SCA, npm-audit
 - **Bands** (approval request, SLA overdue, remediation task) sit above the panel on every tab.
 - **Properties** (`FindingProperties` on `PropertyList`): a rail beside the panel from 1280 px (19rem, sticky);
   below that it sits under the header, in two columns while there is room; on a phone it is a card of 44 px
-  rows with "Asset, dates and more" folded, after the bands.
+  rows with "Asset, dates and more" folded, after the bands. A closed finding shows no SLA countdown: the
+  SLA row gives way to its closed state with the day it closed: "Marked false positive", "Risk accepted"
+  (until when, or "No end date"), "Duplicate of" (a link to the original) or "Resolved". Proof of fix shows
+  only while the finding is open and once it is resolved by a fix (`showsProofOfFix`).
 - **Activity** is the summary under the properties; it opens the activity panel (`?activity=open`).
 - On a phone the header starts with the way back to the list ("< Findings", or the list's name) and the
   position; the main action leads the action row.

@@ -14,7 +14,6 @@ const ALLOW_LIST = [
   'src/app/(dashboard)/settings/roles/page.tsx',
   'src/features/access-control/components/assignment-rules-section.tsx',
   'src/features/access-control/components/teams-section.tsx',
-  'src/features/assets/components/dedup-review-page.tsx',
   'src/features/assets/components/resolved-ports-section.tsx',
   'src/features/capabilities/components/capability-table.tsx',
   'src/features/credentials/components/credential-identity-groups.tsx',

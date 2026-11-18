@@ -41,6 +41,12 @@ const TabsVariantContext = React.createContext<TabsVariant>('line')
 export const EDGE_FADE_X_CLASS =
   'data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
 
+/** The fade in `EDGE_FADE_X_CLASS` is 2.5rem wide; in px for the scroll hook. */
+function edgeFadeWidth(): number {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+  return (Number.isFinite(rem) && rem > 0 ? rem : 16) * 2.5
+}
+
 export const TAB_STRIP_CLASS = `flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar ${EDGE_FADE_X_CLASS}`
 
 /** One underline tab in a `TAB_STRIP_CLASS` strip. */
@@ -77,7 +83,16 @@ export function useTabStripScroll(
       if (!active) return
       const a = active.getBoundingClientRect()
       const s = el.getBoundingClientRect()
-      if (a.left < s.left || a.right > s.right) {
+      // An edge with more tabs behind it fades over its last 2.5rem: a tab
+      // under that fade is half hidden, so it counts as out of view too.
+      const x = Math.abs(el.scrollLeft)
+      const max = el.scrollWidth - el.clientWidth
+      const fade = edgeFadeWidth()
+      const start = s.left + (x > 1 ? fade : 0)
+      const end = s.right - (max - x > 1 ? fade : 0)
+      if (a.left < start || a.right > end) {
+        // Centred (the browser clamps at the ends): a tab near the end then
+        // brings the strip to its end, where the fade is off.
         el.scrollBy({ left: a.left - s.left - (s.width - a.width) / 2, behavior: 'auto' })
       }
       update()
@@ -171,7 +186,12 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn('flex-1 outline-none', className)}
+      // The panel takes focus from the keyboard (Tab after the strip): it shows
+      // the ring every other focus stop shows.
+      className={cn(
+        'flex-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className
+      )}
       {...props}
     />
   )

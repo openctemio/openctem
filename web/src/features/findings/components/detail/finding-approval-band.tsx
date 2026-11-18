@@ -14,6 +14,7 @@
  */
 
 import { useSettleSignal } from '@/features/shared/components/settle-group'
+import { QueueDecisionActions } from '@/features/shared/components/queue'
 import {
   AwaitingApprovalBand,
   AwaitingApprovalRequest,
@@ -28,7 +29,7 @@ import { formatRelative } from '@/lib/format-date'
 import { Permission } from '@/lib/permissions'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
-import { ApprovalDecisionButtons, useApprovalDecision } from '../approval-decision'
+import { useApprovalDecision } from '../approval-decision'
 import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
 import { FINDING_STATUS_CONFIG, type ApiApproval, type FindingStatus } from '../../types'
@@ -72,7 +73,7 @@ function PendingRequest({
   onChanged: () => void
   decision: ReturnType<typeof useApprovalDecision>
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { trigger: cancel, isMutating } = useCancelApproval(approval.id)
   const [error, setError] = useState(false)
   const mayCancel = canWrite && canCancelApproval(approval, currentUserId)
@@ -101,7 +102,8 @@ function PendingRequest({
       title={t('findings.approvalBand.title', 'Awaiting approval: {status}', { status: target })}
       requestedBy={t('findings.approvalBand.requestedBy', 'Requested by {who} {when}', {
         who: requesterLabel(t, approval, currentUserId),
-        when: formatRelative(approval.created_at),
+        // In the console language ("3 giờ trước"), not the browser's.
+        when: formatRelative(approval.created_at, '—', locale),
       })}
       reason={approval.justification || undefined}
       details={
@@ -124,11 +126,18 @@ function PendingRequest({
       }
       actions={
         mayDecide ? (
-          <ApprovalDecisionButtons
-            approval={approval}
+          // The queue's decision controls (outline, named "Approve {request}"):
+          // the page header keeps the one filled main action.
+          <QueueDecisionActions
+            name={t('findings.approvalBand.requestName', '{status} request', { status: target })}
+            itemId={approval.id}
+            layout="card"
+            canDecide
             busy={decision.busyId === approval.id}
-            onApprove={decision.openApprove}
-            onReject={decision.openReject}
+            onApprove={() => decision.openApprove(approval)}
+            onReject={() => decision.openReject(approval)}
+            approveLabel={t('findings.approvals.action.approve', 'Approve')}
+            rejectLabel={t('findings.approvals.action.reject', 'Reject')}
           />
         ) : undefined
       }

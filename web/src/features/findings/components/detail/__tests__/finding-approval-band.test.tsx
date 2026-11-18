@@ -5,6 +5,7 @@ import { FindingApprovalBand } from '../finding-approval-band'
 let approvals: unknown[] | undefined
 let userId: string | undefined
 let perms: string[] = []
+let locale = 'en'
 const cancel = vi.fn()
 const mutate = vi.fn()
 const lastKey = vi.fn()
@@ -15,6 +16,7 @@ vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({
     t: (_k: string, fallback?: string, vars?: Record<string, string>) =>
       (fallback ?? _k).replace(/\{(\w+)\}/g, (_m, v) => vars?.[v] ?? ''),
+    locale,
   }),
 }))
 vi.mock('@/context/permission-provider', () => ({
@@ -59,9 +61,20 @@ beforeEach(() => {
   vi.clearAllMocks()
   approvals = [pending]
   perms = ['findings:write', 'findings:approve']
+  locale = 'en'
 })
 
 describe('FindingApprovalBand', () => {
+  it('says when the request was made in the console language', () => {
+    approvals = [{ ...pending, created_at: new Date(Date.now() - 3 * 3600_000).toISOString() }]
+    const { unmount } = render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.getByText(/Requested by An Nguyen .*3 hours ago/)).toBeInTheDocument()
+    unmount()
+    locale = 'vi'
+    render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.getByText(/Requested by An Nguyen .*3 giờ trước/)).toBeInTheDocument()
+  })
+
   it('shows nothing without a pending request', () => {
     approvals = [{ ...pending, status: 'approved' }]
     const { container } = render(<FindingApprovalBand findingId="f1" />)
@@ -114,7 +127,7 @@ describe('FindingApprovalBand', () => {
     userId = 'approver'
     reject.mockResolvedValue({})
     render(<FindingApprovalBand findingId="f1" />)
-    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reject False positive request' }))
     const dialog = await screen.findByRole('dialog')
     const submit = within(dialog).getByRole('button', { name: 'Reject' })
     expect(submit).toBeDisabled()
@@ -132,5 +145,37 @@ describe('FindingApprovalBand', () => {
     expect(screen.getByTestId('finding-approval-band')).toBeInTheDocument()
     expect(screen.queryByTestId('finding-approval-cancel')).toBeNull()
     expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull()
+  })
+
+  it('names the requester: a current member, a former member, a platform actor', () => {
+    userId = 'viewer'
+    approvals = [
+      { ...pending, id: 'm', requested_by: 'u-member', requested_by_name: 'An Nguyen' },
+      { ...pending, id: 'f', requested_by: 'u-gone', requested_by_name: undefined },
+      {
+        ...pending,
+        id: 'a',
+        requested_by: '',
+        requested_by_name: undefined,
+        requested_by_actor: 'ai_triage',
+      },
+    ]
+    render(<FindingApprovalBand findingId="f1" />)
+    const lines = screen.getAllByText(/^Requested by /).map((e) => e.textContent ?? '')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toMatch(/^Requested by An Nguyen /)
+    expect(lines[1]).toMatch(/^Requested by Former member /)
+    expect(lines[2]).toMatch(/^Requested by AI triage /)
+  })
+
+  it("decides with the queue's outline controls, named by the request", () => {
+    userId = 'approver'
+    render(<FindingApprovalBand findingId="f1" />)
+    const approveBtn = screen.getByRole('button', { name: 'Approve False positive request' })
+    const rejectBtn = screen.getByRole('button', { name: 'Reject False positive request' })
+    expect(approveBtn).toHaveAttribute('data-slot', 'queue-approve')
+    expect(rejectBtn).toHaveAttribute('data-slot', 'queue-reject')
+    // Never a filled button: the page header holds the one main action.
+    for (const b of [approveBtn, rejectBtn]) expect(b).toHaveAttribute('data-variant', 'outline')
   })
 })

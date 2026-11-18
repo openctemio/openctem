@@ -97,6 +97,7 @@ describe('TypedAdminConfirmDialog', () => {
     render(
       <TypedAdminConfirmDialog
         open
+        reasonPlaceholder="Why, ticket 1"
         onOpenChange={vi.fn()}
         title="Retire shared-1?"
         description={<p>It stops.</p>}

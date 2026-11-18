@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Label } from '@/components/ui/label'
+import { SettingsRow } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { Switch } from '@/components/ui/switch'
 import { setSensorIdentityPolicy, useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
@@ -52,20 +52,20 @@ export function SensorIdentityPolicySwitch() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4" data-testid="sensor-identity-policy">
-        <div className="space-y-0.5">
-          <Label htmlFor={ID}>{t('sensors.identityPolicy.label')}</Label>
-          <p className="text-sm text-muted-foreground" id={`${ID}-desc`}>
-            {t('sensors.identityPolicy.description')}
-          </p>
-        </div>
-        <Switch
-          id={ID}
-          aria-describedby={`${ID}-desc`}
-          checked={required}
-          onCheckedChange={(c) => (c ? void onChange(true) : setAskLoosen(true))}
-          disabled={!data || isLoading || saving || !canChange}
-        />
+      <div data-testid="sensor-identity-policy">
+        <SettingsRow
+          label={<label htmlFor={ID}>{t('sensors.identityPolicy.label')}</label>}
+          hintId={`${ID}-desc`}
+          hint={t('sensors.identityPolicy.description')}
+        >
+          <Switch
+            id={ID}
+            aria-describedby={`${ID}-desc`}
+            checked={required}
+            onCheckedChange={(c) => (c ? void onChange(true) : setAskLoosen(true))}
+            disabled={!data || isLoading || saving || !canChange}
+          />
+        </SettingsRow>
       </div>
       <ConfirmDialog
         open={askLoosen}

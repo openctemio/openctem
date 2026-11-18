@@ -94,6 +94,7 @@ jobs:
           output: 'trivy-web.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,misconfig'
+          trivyignores: 'web/.trivyignore'
       - name: Upload Trivy scan results
         if: ${{ !cancelled() && hashFiles('trivy-web.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
@@ -183,6 +184,7 @@ jobs:
         with:
           skip-setup-trivy: true
           image-ref: 'openctem-web:scan'
+          trivyignores: 'web/.trivyignore'
           format: 'sarif'
           output: 'trivy-docker-web.sarif'
           severity: 'CRITICAL,HIGH'

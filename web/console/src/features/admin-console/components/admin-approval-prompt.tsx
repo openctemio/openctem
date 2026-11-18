@@ -92,6 +92,10 @@ export function AdminApprovalPrompt() {
 
   return (
     <AdminConfirmDialog
+      reasonPlaceholder={t(
+        'admin.approvals.prompt.reasonPlaceholder',
+        'Why this needs a second super admin now, change 2231'
+      )}
       open
       onOpenChange={(open) => !open && setNeeded(null)}
       title={t('admin.approvals.prompt.title', 'Another super admin must approve')}

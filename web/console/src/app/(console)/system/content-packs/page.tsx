@@ -428,6 +428,10 @@ export default function ContentPacksPage() {
 
         {revoking && (
           <TypedAdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.cp.reasonRevoke',
+              'Its templates flood findings, advisory 2231'
+            )}
             typeToConfirm={nameToType(revoking.name, revoking.version ?? revoking.id ?? 'revoke')}
             open
             onOpenChange={(o) => !o && setRevoking(null)}
@@ -456,6 +460,10 @@ export default function ContentPacksPage() {
         )}
         {moving && (
           <AdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.cp.reasonMove',
+              'A week on the test channel without problems, change 2231'
+            )}
             open
             onOpenChange={(o) => !o && setMoving(null)}
             title={t('admin.cp.moveTitle', 'Point {channel} at {name} {version}', {

@@ -291,6 +291,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
 
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
+    acceptanceExpiresAt: api.acceptance_expires_at,
     closureReason: api.closure_reason,
     subStatusId: api.sub_status_id,
     maxAcceptanceDays: api.max_acceptance_days,
