@@ -57,6 +57,10 @@ describe('SettingsAttention', () => {
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).not.toContain(
       '//evil.example'
     )
+    // A stored link to a moved page goes to its new home with its #setting.
+    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toContain(
+      '/settings/sign-in#email-verification'
+    )
     expect(screen.getByRole('link', { name: /open the security overview/i })).toHaveAttribute(
       'href',
       '/settings/security'

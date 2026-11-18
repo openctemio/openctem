@@ -229,7 +229,7 @@ The toolbar row reads: the search field, the two fixed scopes **Practice** and *
 active filter is a chip in the row under it. Code: `src/features/findings/filters/`.
 
 - **Practice** ("Practice: Vulnerabilities", the default: every practice but compliance; Compliance, each
-  other practice that holds findings, All) and **State** ("State: Open", the default; Fixed, Dispositioned,
+  other practice that holds findings, All) and **State** ("State: Open", the default; Fixed, Dismissed,
   Closed, All) are base chips (`FindingsBaseChips`, the shared `FilterSelect` with `clearable={false}`): first
   after the search, never removed, no counts (the count shows once, beside the view name). They write the
   `practice` and `state` params. While an open saved view sets a scope itself, the chip reads "Set by the

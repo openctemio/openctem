@@ -64,12 +64,13 @@ function useCanRead() {
 
 export function useComponentsList(params: ComponentListParams) {
   const enabled = useCanRead()
-  const { data, error, isLoading, mutate } = useSWR<ComponentListResponse>(
+  const { data, error, isLoading, isValidating, mutate } = useSWR<ComponentListResponse>(
     enabled ? componentsListUrl(params) : null,
     (url: string) => get<ComponentListResponse>(url),
     swrConfig
   )
-  return { data, error, isLoading, mutate }
+  // `canRead`: false without the read permission (no request is sent).
+  return { data, error, isLoading, isValidating, mutate, canRead: enabled }
 }
 
 export function useComponentsSummary(filters: ComponentFilters) {

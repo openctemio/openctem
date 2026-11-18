@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
-import { AdminActivityTable } from '../components/admin-activity-table'
+import { AdminActivityTable, humanizeAction } from '../components/admin-activity-table'
 import type { AdminAuditEntry } from '../types'
 
 const entry = (patch: Partial<AdminAuditEntry> = {}): AdminAuditEntry => ({
@@ -23,5 +24,45 @@ describe('AdminActivityTable', () => {
   it('drops the address column for a read-only administrator (no addresses sent)', () => {
     render(<AdminActivityTable entries={[entry()]} />)
     expect(screen.queryByText('IP address')).not.toBeInTheDocument()
+  })
+
+  it('is a named table whose action is the row name, on one line', () => {
+    render(<AdminActivityTable entries={[entry({ action: 'organization.idp_create' })]} />)
+    const table = screen.getByRole('table', { name: 'Administrator activity' })
+    const row = within(table).getAllByRole('row')[1]
+    expect(within(row).getByText(humanizeAction('organization.idp_create'))).toBeInTheDocument()
+    expect(within(row).getByText('organization.idp_create')).toBeInTheDocument()
+  })
+
+  it('shows a failed read in the table with Retry, the toolbar staying', async () => {
+    const onRetry = vi.fn()
+    render(
+      <AdminActivityTable
+        entries={[]}
+        error={new Error('boom')}
+        onRetry={onRetry}
+        toolbarStart={<button type="button">Which events</button>}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Which events' })).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /retry/i }))
+    expect(onRetry).toHaveBeenCalled()
+  })
+
+  it('tells "nothing yet" from "no match", and offers Clear filters', async () => {
+    const { rerender } = render(<AdminActivityTable entries={[]} />)
+    expect(screen.getByText('No administrator activity yet')).toBeInTheDocument()
+    const onClear = vi.fn()
+    rerender(
+      <AdminActivityTable
+        entries={[]}
+        isFiltered
+        onClearFilters={onClear}
+        toolbarStart={<span />}
+      />
+    )
+    expect(screen.getByText('No activity matches these filters')).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /clear filters/i }))
+    expect(onClear).toHaveBeenCalled()
   })
 })

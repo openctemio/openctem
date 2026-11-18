@@ -56,7 +56,6 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/announcements/components/platform-announcement-banner.tsx': 'not-org-data',
   'src/features/auth/components/login-form.tsx': 'not-org-data',
   'src/features/auth/lib/invitation-token.ts': 'not-org-data',
-  'src/features/components/components/components-list-view.tsx': 'not-org-data',
   'src/features/dashboards/layout-hint.ts': 'not-org-data',
   // Whether the Compliance benchmarks block is folded (a UI preference).
   'src/features/findings/components/compliance-benchmarks-panel.tsx': 'not-org-data',

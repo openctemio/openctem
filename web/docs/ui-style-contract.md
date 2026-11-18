@@ -236,6 +236,13 @@ wrapper:
   an entry page is one call to action. `signal` is for entry pages only; an
   app page's primary action stays the kit default (ink). Fields and buttons are the kit's and
   take no size, padding or text class from the page. Links are `TextLink`.
+- Pages outside the `(auth)` group put themselves in the frame:
+  `/invitations` (card width) and `/ownership-invitations` (`width="wide"`,
+  the shared card with `surface="entry"`; My account keeps its own card).
+  The account space hub `/welcome` keeps its account header and uses
+  `EntryCard` + `EntryHeader level={2}` for its sections under the page's h1.
+  The entry rows inside the app shell (`/activate`, the GitHub App setup
+  page) keep `PageStack` with one `PageHeader` h1.
 - Entry pages change how a flow looks, never what it does: no request,
   redirect, cookie, message text or autofill attribute changes with a restyle.
 
@@ -339,8 +346,10 @@ reference.
    buttons, everything else in the More menu (`ActionMenu` entries, a sheet
    on a phone). Below 768 px the first line is the way back to the parent
    list ("‹ Findings") with the position at its end, the primary action
-   leads the action row and takes the free width, and More closes it.
-   Status, owner and dates are never in the header.
+   leads the action row and takes the free width, and More closes it; a
+   More with no buttons stays at the end of the title's line. The chips
+   wrap onto lines and are never cut by the screen. Status, owner and dates
+   are never in the header.
 2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
    counts in `TabsCount`.
 3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
@@ -348,7 +357,8 @@ reference.
    card. The value takes text, links, chips or a control (a status or
    assignee picker). The list follows its own width: one column in a rail,
    two columns when it sits under the header on a narrower page. Below
-   768 px every row is a 44 px line with the value at its end, and
+   768 px every row is a 44 px line with the value at its end (a 36 px
+   control in it keeps the line at 44 px), and
    `PropertyFold` keeps the rows after the first group one tap away. A row
    with an empty value renders nothing.
    Read-only facts inside a panel (a source record, a score table) keep
@@ -676,12 +686,14 @@ load.
 
 A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
 queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
-`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/queue`, which every queue uses
+`DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue`
+(exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
 and no page rebuilds:
 
-- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve, Reject) and one More
-  for everything else, in the row's last column and on the phone card. The buttons are named after the item
-  ("Approve {name}"). Without the permission there is no decision control. New decisions and bulk decisions
+- **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve and Reject, or the
+  page's own labels) and one More for everything else, in the row's last column and on the phone card. Each
+  button is announced by its own visible label and the item ("Approve {name}", "Merge {name}"); a page passes a
+  whole accessible name where that does not read well ("Keep {name} separate"). Without the permission there is no decision control. New decisions and bulk decisions
   are not added by a page: they need their own design with gates, confirm and audit.
 - **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
   stands in their place, with the reason on hover and focus in a table row and written out on a card. The
@@ -800,7 +812,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   single-storey a and open digits) and JetBrains Mono (`font-mono`). The
   files and their OFL licences are in `web/public/fonts`, declared in
   `src/styles/fonts.css` with Latin, Latin Extended and Vietnamese subsets;
-  no font CDN (the CSP allows fonts from our own origin only).
+  no font CDN (the CSP allows fonts from our own origin only). `Inter
+Fallback` (a local Arial or Liberation Sans with Inter's average width,
+  ascent and descent) follows Inter in the stack, so the swap from the
+  fallback to Inter moves nothing; the console's root layout preloads the
+  Inter files its first paint uses.
 
 ## 6. Colour
 
@@ -1071,7 +1087,8 @@ The shared pieces are in `src/features/shared/components/forms/`.
 - **Form dialog.** `FormDialog` is the frame of a create or edit dialog: title, optional description, a body that
   scrolls, and a footer with Cancel (ghost) and one primary action (a verb). It is a form: Enter submits. A failed
   submit shows above the actions as an alert; the reason for a disabled primary action is read with the button.
-  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors).
+  Sizes are the dialog sizes (`md` by default, `lg` for long forms, `xl` for editors). A result view inside the same
+  dialog (after a submit that keeps the dialog open) passes `cancelLabel={null}`: its one action (Done) closes it.
 - **Leaving with unsaved changes.** A dialog form asks before it closes (`dirty` on `FormDialog`, or
   `useDiscardPrompt`): Keep editing, Discard, and Keep as draft where the form keeps a draft. A page form renders
   `LeaveGuard`: the browser asks on reload or close, and an in-app link is held until the person chooses. A

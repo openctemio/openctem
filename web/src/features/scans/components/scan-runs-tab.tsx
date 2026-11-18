@@ -29,7 +29,6 @@ import {
   FilterSheet,
   MetricStrip,
   type MetricStripItem,
-  RunStatusBadge,
 } from '@/features/shared'
 import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
@@ -49,28 +48,20 @@ import { cn } from '@/lib/utils'
 import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
 import { scanManagementEndpoints } from '@/lib/api/endpoints'
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
-import { findingDetailHref } from '@/features/findings/lib/finding-link'
-import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
-import { scanDetailHref } from '@/features/scans/lib/scan-link'
+import { formatScanDate } from '@/features/scans/lib/format'
 import {
   DEFAULT_RUN_ORIGIN,
   IDLE_RUN_LIST_REFRESH_MS,
   RUN_KIND_FILTERS,
   RUN_ORIGIN_FILTERS,
   type RunOriginFilterValue,
-  elapsedMs,
   isRunInProgress,
   liveRunIds,
   runListRefreshInterval,
-  runKindLabel,
   runKindQuery,
   runOriginQuery,
-  runSubjectFindingId,
-  runTargetNote,
   runTriggeredByLabel,
-  runTaskProgress,
 } from '@/features/scans/lib/run-display'
-import { RunManagedBadge } from '@/features/scans/components/run-managed-badge'
 import { COVERAGE_SETTINGS_HREF } from './managed-scan-banner'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import { useRunChannels } from '@/hooks/use-websocket'
@@ -81,6 +72,8 @@ import {
   SCAN_PAGE_SIZES,
 } from '@/features/scans/lib/scans-url'
 import { LazyRunDetailSheet } from './lazy-dialogs'
+import { RunScanCell, RunStateLine, RunTasksText, runDurationText } from './scan-run-cells'
+import { ScanRunMobileCard } from './scan-run-mobile-card'
 import { Download, ListChecks, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToCsv } from '@/hooks/use-csv-export'
@@ -113,8 +106,7 @@ export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 /**
  * Column widths (px) and the table-frame width under which a column steps
  * aside (it stays under Display > Columns): Intensity first, then Triggered
- * by. The first four after the scan (Status, Tasks, Findings, Duration) are
- * the fields of the phone card. With the name's floor (200) the whole set fits the frame of a 1440
+ * by. A phone shows `ScanRunMobileCard` instead. With the name's floor (200) the whole set fits the frame of a 1440
  * screen (1114) and, without the two, the frame of a 1280 screen (954).
  */
 const RUNS_WIDTH = {
@@ -145,60 +137,6 @@ export function ScanRunsTab() {
     >
       <ScanRunsTable />
     </Can>
-  )
-}
-
-/**
- * The Scan cell, on one line: the scan's name as a link to the scan, or what
- * the run is when it belongs to no scan (a retest, with its finding), then
- * the mark of a platform-managed scan.
- */
-function RunScanCell({ run }: { run: ScanRun }) {
-  const { t } = useTranslation()
-  const findingId = runSubjectFindingId(run)
-  if (run.kind && run.kind !== 'scan' && run.kind !== 'quick') {
-    return (
-      <div data-slot="run-scan-cell" className="flex min-w-0 items-center gap-2">
-        <span className="min-w-16 truncate font-medium">{runKindLabel(run.kind, t)}</span>
-        <span className="flex min-w-0 shrink overflow-hidden">
-          <RunManagedBadge managedBy={run.managed_by} />
-        </span>
-        {findingId && (
-          <Link
-            href={findingDetailHref(findingId)}
-            className="shrink-0 text-xs text-muted-foreground hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {t('scans.runs.openFinding')}
-          </Link>
-        )}
-      </div>
-    )
-  }
-  if (!run.scan_id) {
-    return <span className="text-muted-foreground">{t('scans.runs.scanRun')}</span>
-  }
-  // Named by the server (quick scans and every page included); a run whose
-  // scan was deleted keeps its row.
-  if (!run.scan_name) {
-    return <span className="text-muted-foreground">{t('scans.runs.deletedScan')}</span>
-  }
-  return (
-    <div data-slot="run-scan-cell" className="flex min-w-0 items-center gap-2">
-      <Link
-        href={scanDetailHref(run.scan_id)}
-        dir="auto"
-        title={run.scan_name}
-        className="min-w-16 truncate rounded-sm font-medium [unicode-bidi:isolate] hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {run.scan_name}
-      </Link>
-      {/* The mark gives way before the name does. */}
-      <span className="flex min-w-0 shrink overflow-hidden">
-        <RunManagedBadge managedBy={run.managed_by} />
-      </span>
-    </div>
   )
 }
 
@@ -356,78 +294,16 @@ function ScanRunsTable() {
         meta: { kind: 'text', width: RUNS_WIDTH.status, label: t('scans.runs.colStatus') },
         header: t('scans.runs.colStatus'),
         enableSorting: false,
-        cell: ({ row }) => {
-          // The state, then what the targets held back and the run's message
-          // (why it failed or was refused) as one muted text cut to the
-          // column: whole in the hover text and in the run's sheet. The state
-          // word stays one chip that never wraps.
-          const note = runTargetNote(row.original, t)
-          const message = row.original.error_message
-          const more = [note, message].filter(Boolean).join('. ')
-          return (
-            <div className="flex min-w-0 items-center gap-2" title={more || undefined}>
-              <RunStatusBadge status={row.original.status} className="shrink-0" />
-              {/* A phone card shows four fields: the intensity rides with the
-                  state there, as it has no column of its own. */}
-              {isPhone && <IntensityBadge intensity={row.original.intensity} />}
-              {more && (
-                <span
-                  data-slot="run-status-more"
-                  className="min-w-0 truncate text-xs text-muted-foreground"
-                >
-                  {more}
-                </span>
-              )}
-            </div>
-          )
-        },
+        // The state, then why (what the targets held back, the run's
+        // message), cut to the column.
+        cell: ({ row }) => <RunStateLine run={row.original} />,
       },
       {
         id: 'tasks',
         meta: { kind: 'text', width: RUNS_WIDTH.tasks, label: t('scans.runs.colTasks') },
         header: t('scans.runs.colTasks'),
         enableSorting: false,
-        cell: ({ row }) => {
-          const r = row.original
-          const progress = runTaskProgress(r.task_summary, t)
-          if (!progress) {
-            // No task summary (nothing dispatched yet, or an older API): steps.
-            const steps = t('scans.runs.steps', undefined, {
-              done: r.completed_steps,
-              total: r.total_steps,
-            })
-            const failed =
-              r.failed_steps > 0
-                ? t('scans.runs.stepsFailed', undefined, { count: r.failed_steps })
-                : ''
-            return (
-              <span
-                className="block truncate text-sm tabular-nums"
-                title={failed ? `${steps} ${failed}` : steps}
-              >
-                {steps}
-                {failed && <span className="ms-1 text-destructive">{failed}</span>}
-              </span>
-            )
-          }
-          const details = progress.details.map((d) => `${d.count} ${t(`scans.taskState.${d.key}`)}`)
-          return (
-            <span
-              className="block truncate text-sm tabular-nums"
-              title={[progress.label, ...details].join(', ')}
-            >
-              <span>{progress.label}</span>
-              {progress.details.map((d, i) => (
-                <span key={d.key} className="text-xs text-muted-foreground">
-                  {', '}
-                  <span className={d.key === 'failed' ? 'text-destructive' : undefined}>
-                    {details[i]}
-                  </span>
-                </span>
-              ))}
-            </span>
-          )
-        },
+        cell: ({ row }) => <RunTasksText run={row.original} />,
       },
       {
         id: 'total_findings',
@@ -449,23 +325,19 @@ function ScanRunsTable() {
         header: t('scans.runs.colDuration'),
         enableSorting: false,
         cell: ({ row }) => {
-          const r = row.original
-          const finished = !!r.completed_at
-          const ms = elapsedMs(r)
-          if (ms === undefined) {
+          const d = runDurationText(row.original, t)
+          if (!d || d.state === 'waiting')
             return (
               <span className="block truncate text-xs text-muted-foreground">
-                {r.status === 'pending' ? t('scans.runs.notStarted') : '-'}
+                {d ? d.text : '-'}
               </span>
             )
-          }
-          const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
-          return finished ? (
-            <span className="text-sm tabular-nums">{label}</span>
-          ) : (
+          return d.state === 'live' ? (
             <span className="block truncate text-sm text-muted-foreground tabular-nums">
-              {t('scans.runs.soFar', undefined, { duration: label })}
+              {d.text}
             </span>
+          ) : (
+            <span className="text-sm tabular-nums">{d.text}</span>
           )
         },
       },
@@ -520,7 +392,7 @@ function ScanRunsTable() {
         },
       },
     ],
-    [t, isPhone]
+    [t]
   )
 
   const metrics: MetricStripItem[] = [
@@ -958,6 +830,15 @@ function ScanRunsTable() {
             toolbarBelow={chipsRow}
             getRowId={getRunId}
             onRowClick={(r) => setOpenRunId(r.id)}
+            // A phone card with fixed slots (state and reason on one line),
+            // not the automatic label/value card.
+            mobileRow={(r, selection) => (
+              <ScanRunMobileCard
+                run={r}
+                selection={selection}
+                onOpen={(run) => setOpenRunId(run.id)}
+              />
+            )}
             manualPagination
             rowCount={total}
             pageCount={data?.total_pages}

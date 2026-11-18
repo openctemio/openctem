@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FindingApprovalSettingsForm } from '../finding-approval-settings-form'
+import { FindingApprovalsForm as FindingApprovalSettingsForm } from '../finding-approvals-form'
 
 // The radio group measures itself; jsdom has no ResizeObserver.
 if (!('ResizeObserver' in globalThis)) {
@@ -17,8 +17,16 @@ vi.mock('../../api/use-findings-api', () => ({
   updateFindingApprovalSettings: (...args: unknown[]) => update(...args),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The page's policy sections list the groups for the security pool.
+vi.mock('@/features/access-control/api/use-groups', () => ({
+  useGroups: () => ({ groups: [], isLoading: false }),
+}))
+vi.mock('@/lib/permissions', () => ({
+  usePermissions: () => ({ can: () => true }),
+  Permission: { GroupsRead: 'team:groups:read' },
+}))
 
-describe('FindingApprovalSettingsForm', () => {
+describe('FindingApprovalsForm, levels: backup contact', () => {
   beforeEach(() => update.mockReset())
 
   it('saves the backup contact', async () => {
@@ -33,7 +41,7 @@ describe('FindingApprovalSettingsForm', () => {
     )
     // The one save model of a settings form: the bar shows once something changed.
     expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
-    await userEvent.type(screen.getByLabelText(/email address/i), 'advisor@example.com')
+    await userEvent.type(screen.getByLabelText(/backup contact/i), 'advisor@example.com')
     expect(screen.getByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
     expect(update).toHaveBeenCalledWith({ backup_contact_email: 'advisor@example.com' })
@@ -44,7 +52,7 @@ describe('FindingApprovalSettingsForm', () => {
     render(
       <FindingApprovalSettingsForm settings={{ backup_contact_email: 'a@example.com' }} canEdit />
     )
-    const email = screen.getByLabelText(/email address/i)
+    const email = screen.getByLabelText(/backup contact/i)
     await userEvent.clear(email)
     await userEvent.type(email, 'b@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
@@ -60,7 +68,7 @@ describe('FindingApprovalSettingsForm', () => {
         canEdit={false}
       />
     )
-    expect(screen.getByLabelText(/email address/i)).toBeDisabled()
+    expect(screen.getByLabelText(/backup contact/i)).toBeDisabled()
     expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument()
   })
 })
@@ -69,7 +77,7 @@ describe('FindingApprovalSettingsForm', () => {
 const fpGroup = () => within(screen.getByRole('group', { name: /false positive/i }))
 const acceptGroup = () => within(screen.getByRole('group', { name: /risk acceptance/i }))
 
-describe('FindingApprovalSettingsForm — risk acceptance level', () => {
+describe('FindingApprovalsForm, levels — risk acceptance level', () => {
   beforeEach(() => update.mockReset())
 
   it('shows both selectors in one approval policy card, defaulting to two people', () => {
@@ -127,7 +135,7 @@ describe('FindingApprovalSettingsForm — risk acceptance level', () => {
     render(
       <FindingApprovalSettingsForm settings={{ backup_contact_email: 'a@example.com' }} canEdit />
     )
-    const email = screen.getByLabelText(/email address/i)
+    const email = screen.getByLabelText(/backup contact/i)
     await userEvent.clear(email)
     await userEvent.type(email, 'b@example.com')
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
@@ -153,7 +161,7 @@ describe('FindingApprovalSettingsForm — risk acceptance level', () => {
   })
 })
 
-describe('FindingApprovalSettingsForm — false-positive level', () => {
+describe('FindingApprovalsForm, levels — false-positive level', () => {
   beforeEach(() => update.mockReset())
 
   it('warns on off and says a lowering waits 24 hours', async () => {
@@ -171,7 +179,7 @@ describe('FindingApprovalSettingsForm — false-positive level', () => {
     expect(screen.queryByText(/one person can hide any finding/i)).not.toBeInTheDocument()
     await userEvent.click(fpGroup().getByRole('radio', { name: /never/i }))
     expect(screen.getByText(/one person can hide any finding/i)).toBeInTheDocument()
-    expect(screen.getByText(/takes effect 24 hours after you save/i)).toBeInTheDocument()
+    expect(fpGroup().getByText(/takes effect 24 hours after you save/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
     expect(update).toHaveBeenCalledWith({ fp_approval: 'off' })
   })

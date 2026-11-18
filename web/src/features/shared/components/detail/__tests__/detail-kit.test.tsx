@@ -48,6 +48,29 @@ describe('DetailPageHeader', () => {
     expect(names).toEqual(['More actions', 'Retest', 'Add to task'])
   })
 
+  it('keeps a lone More on the title line on a phone; buttons take their own row', () => {
+    const menu = [
+      { id: 'a', label: 'Copy link', onSelect: () => {} },
+      { id: 'b', label: 'Copy ID', onSelect: () => {} },
+    ]
+    const { unmount } = render(<DetailPageHeader title="A record" parent={parent} menu={menu} />)
+    let actions = document.querySelector('[data-slot="detail-actions"]') as HTMLElement
+    expect(actions.className).not.toContain('max-md:w-full')
+    expect(screen.getByRole('heading', { level: 1 }).className).toContain('max-md:basis-0')
+    unmount()
+    render(
+      <DetailPageHeader
+        title="A record"
+        parent={parent}
+        menu={menu}
+        primary={<Button>Add to task</Button>}
+      />
+    )
+    actions = document.querySelector('[data-slot="detail-actions"]') as HTMLElement
+    expect(actions.className).toContain('max-md:w-full')
+    expect(screen.getByRole('heading', { level: 1 }).className).not.toContain('max-md:basis-0')
+  })
+
   it('is the page-header block of the page stack', () => {
     const { container } = render(<DetailPageHeader title="A record" parent={parent} />)
     expect(container.querySelector('header[data-slot="page-header"]')).not.toBeNull()
@@ -146,6 +169,29 @@ describe('PropertyList', () => {
     expect(within(group).getByRole('group', { name: 'People' })).toContainElement(
       screen.getByText('Assignee')
     )
+  })
+
+  it('keeps a phone row with a control at 44 px: little padding, more for a value of several lines', () => {
+    const { container } = render(
+      <PropertyList label="Properties">
+        <PropertyGroup>
+          <PropertyRow label="Status">
+            <button type="button">Confirmed</button>
+          </PropertyRow>
+          <PropertyRow label="Description" top>
+            Two lines of text
+          </PropertyRow>
+        </PropertyGroup>
+      </PropertyList>
+    )
+    const [control, text] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot=property-row]')
+    )
+    // 2 + 36 + 2 + 1 (rule) = 41, so the row is the 44 px minimum.
+    expect(control.className).toContain('max-md:min-h-touch-target')
+    expect(control.className).toContain('max-md:py-0.5')
+    expect(control.className).not.toContain('max-md:py-1.5')
+    expect(text.className).toContain('max-md:py-1.5')
   })
 
   it('renders no row for an empty value', () => {

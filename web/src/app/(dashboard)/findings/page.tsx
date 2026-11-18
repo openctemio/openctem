@@ -664,7 +664,7 @@ function FindingsContent() {
   const pendingApprovalFilter =
     pendingApprovalParam === 'true' ? true : pendingApprovalParam === 'false' ? false : undefined
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
+  // The state lens (Open, the default · Fixed · Dismissed · All). A saved
   // view carries its own status scope, so the default lens is not laid on top
   // of one; a lens picked explicitly still is.
   const rawLens = useUrlParam('state')

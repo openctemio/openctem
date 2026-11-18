@@ -209,6 +209,16 @@ const LISTS = {
     search: false,
     data: /\/api\/v1\/scan/,
   },
+  // Searched by name on the page; no query language for workflows.
+  '/scans/workflows': {
+    filters: [
+      ['retired', 'show'],
+      ['owner', 'mine'],
+    ],
+    group: false,
+    query: false,
+    data: /\/api\/v1\/scan-workflows/,
+  },
 } as const satisfies Record<string, ListSpec>
 
 type Route = keyof typeof LISTS
@@ -1035,7 +1045,7 @@ async function countPlaces(page: Page) {
       // An action's own label ("Add all 12 matching to group") names what it
       // acts on; it is not the list's count said again.
       const skip =
-        '[data-slot="list-count"], [data-slot="data-table-pager"], [role="tablist"], [data-slot="table-container"], [data-slot="mobile-card"], nav, aside, .sr-only, [role="dialog"], button, a, [role="button"]'
+        '[data-slot="list-count"], [data-slot="data-table-pager"], [role="tablist"], [data-slot="table-container"], [data-slot="mobile-card"], [data-phone-card], nav, aside, .sr-only, [role="dialog"], button, a, [role="button"]'
       const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT)
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
         const el = n.parentElement

@@ -8,36 +8,43 @@
  * vulnerability page. Producer and feed text renders as text.
  */
 
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import {
   Bug,
-  Clock,
   Download,
-  Flame,
+  type LucideIcon,
   ListPlus,
+  MoreHorizontal,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
   ShieldOff,
 } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { KevBadge } from '@/components/ui/kev-badge'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { PriorityBadge } from '@/components/ui/priority-badge'
-import { SignalChip } from '@/components/ui/signal-chip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetGroupsApi } from '@/features/asset-groups/api/use-asset-groups-api'
-import { BulkActionBar } from '@/features/shared/components/bulk-action-bar'
-import { DataTable } from '@/features/shared/components/data-table'
-import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
-import { type SavedView } from '@/features/saved-views/api/use-saved-views'
+import {
+  DataTable,
+  usePhoneSelectMode,
+  type DataTableBulk,
+} from '@/features/shared/components/data-table'
+import {
+  SavedViewsMenu,
+  type SavedViewsActions,
+} from '@/features/saved-views/components/saved-views-menu'
+import { type SavedView, useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import { EmptyState } from '@/features/shared/components/empty-state'
-import { ErrorState } from '@/features/shared/components/error-state'
 import {
   FacetOption,
   FacetPanel,
@@ -46,21 +53,21 @@ import {
 } from '@/features/shared/components/facet-filter-panel'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { FilterSelect } from '@/features/shared/components/filter-select'
+import { FilterSheet } from '@/features/shared/components/filter-sheet'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { PageHeader } from '@/features/shared/components/page-header'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
-import { SeverityBadge } from '@/features/shared/components/severity-badge'
-import { dateFnsLocaleFor } from '@/lib/format-date'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { formatEpssScore } from '@/lib/epss'
-import { EpssSparkline } from '../epss-trend'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import type { SeverityLevel } from '@/lib/severity'
+import { accessStateOf } from '@/lib/api/access-state'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
@@ -68,12 +75,23 @@ import { useCanReadVulnList, useVulnerabilityList } from '../../api/use-vulnerab
 import { vulnerabilityHref } from '../../api/use-cve-exposure'
 import { CveLink } from '../cve-link'
 import { useVulnActions } from '../actions/use-vuln-actions'
-import { FilterLayout, useFilterPanelOpen } from '../vulnerability-filters'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
+import {
+  AssetsCell,
+  EpssCell,
+  FixCell,
+  KevDueText,
+  ProductCell,
+  RemediationCell,
+  SeverityCell,
+  SIGNALS_WIDTH,
+  SignalsCell,
+  VulnTitleCell,
+} from './vuln-list-cells'
+import { VulnPhoneCard } from './vuln-phone-card'
 import {
   activeFilterCount,
   buildVulnListQuery,
-  headlineFixVersion,
-  kevDueDays,
   readEpss,
   readFlag,
   readList,
@@ -83,12 +101,10 @@ import {
   vulnActionParams,
   readSort,
   readState,
-  remediationState,
   rowFindingsHref,
   sortToSorting,
   sortingToSort,
   VULN_LIST_EPSS,
-  VULN_LIST_PAGE_SIZES,
   VULN_LIST_PRIORITIES,
   VULN_LIST_SEVERITIES,
   VULN_LIST_SORTS,
@@ -101,7 +117,45 @@ import type { VulnListItem } from '../../types/list'
 
 const PANEL_ID = 'vulnerability-list-filters'
 
+/**
+ * Column widths (px) and the table-frame width under which a column steps
+ * aside (it stays under Display > Columns): Last seen first, then
+ * Remediation, then Fix. The CVE, the title, the signals, the priority, the
+ * severity, the EPSS and the reach always show; with the title's floor they
+ * fit the table of a 1280 screen (954). The widths hold the longest
+ * Vietnamese values ("Nghiêm trọng 9.8", "Chưa có bản sửa").
+ */
+const VULN_WIDTH = {
+  cve: 132,
+  title: 130,
+  signals: SIGNALS_WIDTH,
+  priority: 76,
+  severity: 144,
+  epss: 112,
+  assets: 96,
+  product: 240,
+  fix: 128,
+  remediation: 136,
+  seen: 104,
+}
+const VULN_HIDE_BELOW = { lastSeen: 1560, remediation: 1450, fix: 1180 } as const
+
+// Below 1024 px the toolbar keeps one row by moving the order (the select of
+// lowest priority: the column headers sort too) from the toolbar into Add
+// filter. Remove when the kit's FilterSelect gets a compact value slot.
+const SORT_FOLD_TOOLBAR = 'max-lg:hidden'
+const SORT_FOLD_PANEL = 'lg:hidden'
+
 type Patch = Record<string, string | null>
+
+/** One bulk action: a button in the bar or an item of its More. */
+interface BulkEntry {
+  id: string
+  label: string
+  icon: LucideIcon
+  onSelect: () => void
+  disabledReason?: string
+}
 
 /** Writes params to the URL in one step; any change but paging goes back to page 1. */
 function patchUrl(changes: Patch, keepPage = false) {
@@ -133,15 +187,19 @@ export function VulnerabilitiesList() {
 }
 
 function VulnerabilitiesListBody() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const router = useRouter()
   const severityLabel = useSeverityLabel()
-  const dateLocale = dateFnsLocaleFor(locale)
   const urlSettled = useUrlSettled()
   const params = useUrlParams()
   const query = useMemo(() => buildVulnListQuery(params), [params])
   const { data, error, isLoading, isValidating, mutate } = useVulnerabilityList(query, urlSettled)
-  const panel = useFilterPanelOpen('vuln-list-filters-open')
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  // When the rows on screen were read: the table says so once they are old.
+  const [readAt, setReadAt] = useState<Date | undefined>(undefined)
+  useEffect(() => {
+    if (data) setReadAt(new Date())
+  }, [data])
   const [groupsWanted, setGroupsWanted] = useState(false)
   const groups = useAssetGroupsApi(groupsWanted ? { per_page: 100, sort_by: 'name' } : null)
   const groupOptions = useMemo(
@@ -162,6 +220,9 @@ function VulnerabilitiesListBody() {
   const epss = readEpss(params)
   const flag = (f: VulnListFlag) => readFlag(params, f)
   const filterCount = activeFilterCount(params)
+  // The open saved view (read only while one is open: no request otherwise).
+  const { views: savedViewList } = useSavedViews('vulnerabilities', !!viewId)
+  const openView = savedViewList.find((v) => v.id === viewId)
 
   // Typed search reaches the URL (and so the request) only once settled.
   const [searchInput, setSearchInput] = useState(() => readSearch(params))
@@ -201,7 +262,7 @@ function VulnerabilitiesListBody() {
   const clearSelection = useCallback(() => {
     setSelected([])
     setSelectionKey((k) => k + 1)
-  }, [setSelected, setSelectionKey])
+  }, [])
   const actions = useVulnActions(() => {
     clearSelection()
     void mutate()
@@ -366,6 +427,7 @@ function VulnerabilitiesListBody() {
   const chipsRow =
     chips.length > 0 ? (
       <FilterChipsRow
+        data-testid="vuln-filter-chips"
         label={t('vulnPage.list.activeFilters', 'Active filters')}
         chips={chips.map((c) => (
           <RemovableFilterChip
@@ -381,8 +443,69 @@ function VulnerabilitiesListBody() {
       />
     ) : undefined
 
-  const facetPanel = (
+  const stateLabel = (s: VulnListState) =>
+    ({
+      open: t('vulnPage.list.state.open', 'Open'),
+      fixed: t('vulnPage.list.state.fixed', 'Fixed'),
+      dispositioned: t('vulnPage.list.state.dispositioned', 'Dismissed'),
+      all: t('vulnPage.list.state.all', 'All'),
+    })[s]
+  const sortLabel: Record<string, string> = {
+    risk: t('vulnPage.list.sort.risk', 'Risk'),
+    epss: t('vulnPage.list.sort.epss', 'EPSS'),
+    cvss: t('vulnPage.list.sort.cvss', 'Severity (CVSS)'),
+    assets: t('vulnPage.list.sort.assets', 'Most assets'),
+    findings: t('vulnPage.list.sort.findings', 'Most findings'),
+    kev_due: t('vulnPage.list.sort.kevDue', 'KEV due date'),
+    last_seen: t('vulnPage.list.sort.lastSeen', 'Last seen'),
+    first_seen: t('vulnPage.list.sort.firstSeen', 'Newest'),
+    cve: t('vulnPage.list.sort.cve', 'CVE id'),
+  }
+
+  // `withSelects`: the phone sheet also holds the two toolbar selects (the
+  // findings state and the order), so every filter is in one place there.
+  // Under 1024 px the toolbar has no room for both selects on one row: the
+  // order folds out of the toolbar into Add filter (`SORT_FOLD_*`).
+  const sortSection = (
+    <FacetSection
+      title={t('vulnPage.list.sort.label', 'Sort')}
+      selectedCount={sort.key !== 'risk' ? 1 : 0}
+      defaultOpen={false}
+    >
+      {VULN_LIST_SORTS.map((k) => (
+        <FacetOption
+          key={k}
+          label={sortLabel[k]}
+          checked={sort.key === k}
+          onCheckedChange={(on) => patchUrl({ sort: on && k !== 'risk' ? k : null })}
+        />
+      ))}
+    </FacetSection>
+  )
+  const facetPanel = (withSelects: boolean) => (
     <FacetPanel activeCount={filterCount} onClearAll={clearAll}>
+      {withSelects ? (
+        <>
+          <FacetSection
+            title={t('vulnPage.list.state.label', 'Findings')}
+            selectedCount={state !== 'open' ? 1 : 0}
+          >
+            {VULN_LIST_STATES.map((s) => (
+              <FacetOption
+                key={s}
+                label={stateLabel(s)}
+                checked={state === s}
+                onCheckedChange={(on) => patchUrl({ state: on && s !== 'open' ? s : null })}
+              />
+            ))}
+          </FacetSection>
+          {sortSection}
+        </>
+      ) : (
+        <div data-slot="sort-fold" className={SORT_FOLD_PANEL}>
+          {sortSection}
+        </div>
+      )}
       <FacetToggle
         label={t('vulnPage.list.facet.kev', 'Known exploited')}
         description={t('vulnPage.list.facet.kevHint', 'Exploited in the wild (KEV catalog)')}
@@ -515,123 +638,137 @@ function VulnerabilitiesListBody() {
     </FacetPanel>
   )
 
+  // One line per row. The CVE id is the row's identity: frozen at the start
+  // while the table scrolls sideways. The checkbox column is the table's own.
   const columns = useMemo<ColumnDef<VulnListItem>[]>(
     () => [
-      ...(canSelect
-        ? [
-            {
-              id: 'select',
-              header: ({ table }) => (
-                <Checkbox
-                  checked={
-                    table.getIsAllPageRowsSelected() ||
-                    (table.getIsSomePageRowsSelected() && 'indeterminate')
-                  }
-                  onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-                  aria-label={t(
-                    'vulnPage.list.selectPage',
-                    'Select every vulnerability on this page'
-                  )}
-                />
-              ),
-              cell: ({ row }) => (
-                <Checkbox
-                  checked={row.getIsSelected()}
-                  onCheckedChange={(value) => row.toggleSelected(!!value)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={t('vulnPage.list.selectRow', 'Select {cve}', {
-                    cve: row.original.cve_id,
-                  })}
-                />
-              ),
-              enableSorting: false,
-              enableHiding: false,
-            } satisfies ColumnDef<VulnListItem>,
-          ]
-        : []),
       {
         id: 'cve',
-        header: t('vulnPage.list.col.vulnerability', 'Vulnerability'),
+        header: t('vulnPage.list.col.cve', 'CVE'),
+        meta: {
+          kind: 'id',
+          pin: 'start',
+          width: VULN_WIDTH.cve,
+          label: t('vulnPage.list.col.cve', 'CVE'),
+        },
         enableSorting: true,
         enableHiding: false,
-        cell: ({ row }) => <VulnCell item={row.original} />,
+        cell: ({ row }) => (
+          <CveLink
+            id={row.original.cve_id}
+            stopPropagation
+            className="block truncate font-medium"
+          />
+        ),
+      },
+      {
+        id: 'title',
+        header: t('vulnPage.list.col.vulnerability', 'Vulnerability'),
+        meta: {
+          kind: 'name',
+          primary: true,
+          minWidth: VULN_WIDTH.title,
+          label: t('vulnPage.list.col.vulnerability', 'Vulnerability'),
+        },
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => <VulnTitleCell item={row.original} />,
       },
       {
         id: 'signals',
         header: t('vulnPage.list.col.signals', 'Exploitation'),
+        meta: {
+          kind: 'signals',
+          width: VULN_WIDTH.signals,
+          label: t('vulnPage.list.col.signals', 'Exploitation'),
+        },
         enableSorting: false,
         cell: ({ row }) => <SignalsCell item={row.original} />,
       },
       {
         id: 'priority',
         header: t('vulnPage.list.col.priority', 'Priority'),
+        meta: {
+          kind: 'priority',
+          width: VULN_WIDTH.priority,
+          label: t('vulnPage.list.col.priority', 'Priority'),
+        },
         enableSorting: false,
         cell: ({ row }) => <PriorityBadge priorityClass={row.original.worst_priority || null} />,
       },
       {
         id: 'cvss',
         header: t('vulnPage.list.col.severity', 'Severity'),
+        meta: {
+          kind: 'severity',
+          width: VULN_WIDTH.severity,
+          label: t('vulnPage.list.col.severity', 'Severity'),
+        },
         enableSorting: true,
-        cell: ({ row }) => (
-          <span className="flex items-center gap-2 whitespace-nowrap">
-            <SeverityBadge severity={row.original.severity} />
-            {row.original.cvss_score != null && (
-              <span className="text-muted-foreground tabular-nums">
-                {row.original.cvss_score.toFixed(1)}
-              </span>
-            )}
-          </span>
-        ),
+        cell: ({ row }) => <SeverityCell item={row.original} />,
       },
       {
         id: 'epss',
         header: t('vulnPage.list.col.epss', 'EPSS'),
+        meta: {
+          kind: 'number',
+          width: VULN_WIDTH.epss,
+          label: t('vulnPage.list.col.epss', 'EPSS'),
+        },
         enableSorting: true,
-        cell: ({ row }) => (
-          <span className="flex flex-col gap-0.5">
-            <span
-              className="tabular-nums"
-              title={
-                row.original.epss_percentile != null
-                  ? t('vulnPage.list.epssPercentile', 'Higher than {pct} of all CVEs', {
-                      pct: formatEpssScore(row.original.epss_percentile, 0),
-                    })
-                  : undefined
-              }
-            >
-              {formatEpssScore(row.original.epss_score, 1, '—')}
-            </span>
-            <EpssSparkline points={row.original.epss_trend} />
-          </span>
-        ),
+        cell: ({ row }) => <EpssCell item={row.original} />,
       },
       {
         id: 'assets',
         header: t('vulnPage.list.col.assets', 'Assets'),
+        meta: {
+          kind: 'text',
+          width: VULN_WIDTH.assets,
+          sortFirst: 'desc',
+          label: t('vulnPage.list.col.assets', 'Assets'),
+        },
         enableSorting: true,
         cell: ({ row }) => <AssetsCell item={row.original} params={params} />,
       },
       {
         id: 'product',
         header: t('vulnPage.list.col.product', 'Affected product'),
+        meta: {
+          kind: 'text',
+          width: VULN_WIDTH.product,
+          label: t('vulnPage.list.col.product', 'Affected product'),
+        },
         enableSorting: false,
         cell: ({ row }) => <ProductCell item={row.original} />,
       },
       {
         id: 'fix',
         header: t('vulnPage.list.col.fix', 'Fix'),
+        meta: {
+          kind: 'text',
+          width: VULN_WIDTH.fix,
+          hideBelow: VULN_HIDE_BELOW.fix,
+          label: t('vulnPage.list.col.fix', 'Fix'),
+        },
         enableSorting: false,
         cell: ({ row }) => <FixCell item={row.original} />,
       },
       {
         id: 'remediation',
         header: t('vulnPage.list.col.remediation', 'Remediation'),
+        meta: {
+          kind: 'text',
+          width: VULN_WIDTH.remediation,
+          hideBelow: VULN_HIDE_BELOW.remediation,
+          label: t('vulnPage.list.col.remediation', 'Remediation'),
+        },
         enableSorting: false,
         cell: ({ row }) => <RemediationCell item={row.original} params={params} />,
       },
       {
         id: 'findings',
         header: t('vulnPage.list.col.findings', 'Findings'),
+        meta: { kind: 'number', label: t('vulnPage.list.col.findings', 'Findings') },
         enableSorting: true,
         cell: ({ row }) => (
           <Link
@@ -646,12 +783,18 @@ function VulnerabilitiesListBody() {
       {
         id: 'kev_due',
         header: t('vulnPage.list.col.kevDue', 'KEV due'),
+        meta: { kind: 'due', label: t('vulnPage.list.col.kevDue', 'KEV due') },
         enableSorting: true,
         cell: ({ row }) => <KevDueText due={row.original.kev_due_date} />,
       },
       {
         id: 'first_seen',
         header: t('vulnPage.list.col.firstSeen', 'First seen'),
+        meta: {
+          kind: 'datetime-recent',
+          width: VULN_WIDTH.seen,
+          label: t('vulnPage.list.col.firstSeen', 'First seen'),
+        },
         enableSorting: true,
         cell: ({ row }) => (
           <RelativeTime date={row.original.first_seen_at} className="whitespace-nowrap" />
@@ -660,13 +803,19 @@ function VulnerabilitiesListBody() {
       {
         id: 'last_seen',
         header: t('vulnPage.list.col.lastSeen', 'Last seen'),
+        meta: {
+          kind: 'datetime-recent',
+          width: VULN_WIDTH.seen,
+          hideBelow: VULN_HIDE_BELOW.lastSeen,
+          label: t('vulnPage.list.col.lastSeen', 'Last seen'),
+        },
         enableSorting: true,
         cell: ({ row }) => (
           <RelativeTime date={row.original.last_seen_at} className="whitespace-nowrap" />
         ),
       },
     ],
-    [t, params, dateLocale, canSelect]
+    [t, params]
   )
 
   const sorting = useMemo(() => sortToSorting(sort), [sort])
@@ -689,31 +838,20 @@ function VulnerabilitiesListBody() {
     [perPage]
   )
 
-  const stateLabel = (s: VulnListState) =>
-    ({
-      open: t('vulnPage.list.state.open', 'Open'),
-      fixed: t('vulnPage.list.state.fixed', 'Fixed'),
-      dispositioned: t('vulnPage.list.state.dispositioned', 'Accepted or false positive'),
-      all: t('vulnPage.list.state.all', 'All'),
-    })[s]
-  const sortLabel: Record<string, string> = {
-    risk: t('vulnPage.list.sort.risk', 'Risk'),
-    epss: t('vulnPage.list.sort.epss', 'EPSS'),
-    cvss: t('vulnPage.list.sort.cvss', 'Severity (CVSS)'),
-    assets: t('vulnPage.list.sort.assets', 'Most assets'),
-    findings: t('vulnPage.list.sort.findings', 'Most findings'),
-    kev_due: t('vulnPage.list.sort.kevDue', 'KEV due date'),
-    last_seen: t('vulnPage.list.sort.lastSeen', 'Last seen'),
-    first_seen: t('vulnPage.list.sort.firstSeen', 'Newest'),
-    cve: t('vulnPage.list.sort.cve', 'CVE id'),
-  }
-
+  // The toolbar row after the search: Add filter (it never changes size),
+  // then the list's two fixed selects, each in a box as wide as its longest
+  // value, so choosing a value moves nothing.
   const toolbarStart = (
     <>
+      <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
       <FilterSelect<VulnListState>
         label={t('vulnPage.list.state.label', 'Findings')}
         value={state}
         clearable={false}
+        foldLabel
+        // On a phone both selects live in the Filters sheet: the toolbar's
+        // second line holds the chips, which must not push a select along.
+        className="max-md:hidden"
         options={VULN_LIST_STATES.map((s) => ({ value: s, label: stateLabel(s) }))}
         onChange={(v) => patchUrl({ state: v && v !== 'open' ? v : null })}
       />
@@ -721,222 +859,409 @@ function VulnerabilitiesListBody() {
         label={t('vulnPage.list.sort.label', 'Sort')}
         value={sort.key}
         clearable={false}
+        foldLabel
+        className={SORT_FOLD_TOOLBAR}
         options={VULN_LIST_SORTS.map((s) => ({ value: s, label: sortLabel[s] }))}
         onChange={(v) => patchUrl({ sort: v && v !== 'risk' ? v : null })}
       />
     </>
   )
 
-  const toolbarEnd = (
-    <>
-      <SavedViewsMenu
-        page="vulnerabilities"
-        activeId={viewId}
-        modified={
-          !!viewId &&
-          Array.from(params.keys()).some((k) => !['view', 'page', 'per_page'].includes(k))
-        }
-        onSelect={openSavedView}
-        onDiscard={() => replaceUrlSearch(new URLSearchParams(viewId ? { view: viewId } : {}))}
-      />
-      <Button
-        variant="outline"
-        size="icon"
+  // Which view this is. A saved view is "modified" when the link carries
+  // anything beside it; the list itself ("All vulnerabilities") when a
+  // filter, search text, another findings state or another order is on.
+  const searching = readSearch(params) !== ''
+  const narrowed = filterCount > 0 || searching || state !== 'open'
+  const viewModified = viewId
+    ? Array.from(params.keys()).some((k) => !['view', 'page', 'per_page'].includes(k))
+    : narrowed || sort.key !== 'risk' || sort.flipped
+  const viewTitle = openView?.name ?? t('vulnPage.list.viewAll', 'All vulnerabilities')
+  const resetView = useCallback(() => {
+    setSearchInput('')
+    replaceUrlSearch(new URLSearchParams(viewId ? { view: viewId } : {}))
+  }, [viewId])
+  const clearFilters = useCallback(() => {
+    setSearchInput('')
+    patchUrl({
+      severity: null,
+      priority_class: null,
+      source: null,
+      asset_group_id: null,
+      kev: null,
+      exploit: null,
+      emerging: null,
+      past_sla: null,
+      has_fix: null,
+      epss_gte: null,
+      cve_id: null,
+      state: null,
+      q: null,
+    })
+  }, [])
+  const [savedViewsActions, setSavedViewsActions] = useState<SavedViewsActions | null>(null)
+  const openSaveView = () => savedViewsActions?.openSave()
+  const saveViewChanges = () => void savedViewsActions?.saveChanges()
+  const canUpdateView = !!openView?.is_owner
+  const saveViewLabel = t('common.listView.save', 'Save view')
+  const saveChangesLabel = t('confirm.savedView.saveChanges', 'Save changes')
+  const saveAsNewLabel = t('confirm.savedView.saveAsNew', 'Save as new view…')
 
-        onClick={() => void mutate()}
-        disabled={isValidating}
-        aria-label={t('vulnPage.list.refresh', 'Refresh')}
-        title={t('vulnPage.list.refresh', 'Refresh')}
-      >
-        <RefreshCw
-          className={cn('h-4 w-4', isValidating && 'animate-spin motion-reduce:animate-none')}
-          aria-hidden
-        />
-      </Button>
-    </>
+  const toolbarEnd = (
+    <SavedViewsMenu
+      page="vulnerabilities"
+      actionsRef={setSavedViewsActions}
+      activeId={viewId}
+      modified={!!viewId && viewModified}
+      onSelect={openSavedView}
+      onDiscard={resetView}
+    />
   )
 
-  const searching = readSearch(params) !== ''
-  const emptyState =
-    filterCount > 0 || searching || state !== 'open' ? (
-      <EmptyState
-        icon={ShieldCheck}
-        title={t('vulnPage.list.empty.filteredTitle', 'No vulnerability matches these filters')}
-        description={t(
-          'vulnPage.list.empty.filteredHint',
-          'Remove a filter, clear the search or switch the findings to All.'
-        )}
-        action={
-          filterCount > 0 ? (
-            <Button variant="outline" size="sm" onClick={clearAll}>
-              {t('vulnPage.list.clearFilters', 'Clear filters')}
-            </Button>
-          ) : undefined
-        }
-      />
-    ) : (
-      <EmptyState
-        icon={Bug}
-        title={t('vulnPage.list.empty.title', 'No open vulnerabilities on the assets you can see')}
-        description={t(
-          'vulnPage.list.empty.hint',
-          'Vulnerabilities appear here once a scan, an import or the software inventory reports a CVE on one of your assets.'
-        )}
-        action={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/exposures/vulnerabilities?tab=catalog">
-              {t('vulnPage.list.empty.catalog', 'Browse the CVE catalog')}
-            </Link>
+  // The bulk bar: at most two direct actions, the rest under More, each only
+  // with its permission (the API checks again). With no bulk permission there
+  // is no checkbox column.
+  const bulkEntries: BulkEntry[] = [
+    ...(actions.abilities.task
+      ? [
+          {
+            id: 'task',
+            label: t('vulnPage.list.bulk.task', 'Create task'),
+            icon: ListPlus,
+            onSelect: () =>
+              void actions.createTask(
+                selection,
+                selected.length === 1
+                  ? t('vulnPage.task.title', 'Fix {cve}', { cve: selected[0].cve_id })
+                  : t('vulnPage.list.bulk.taskTitle', 'Fix {count} vulnerabilities', {
+                      count: selected.length,
+                    })
+              ),
+          },
+        ]
+      : []),
+    ...(actions.abilities.exception
+      ? [
+          {
+            id: 'exception',
+            label: t('vulnPage.list.bulk.exception', 'Accept risk'),
+            icon: ShieldOff,
+            onSelect: () => actions.requestException(selection),
+          },
+        ]
+      : []),
+    ...(actions.abilities.retest
+      ? [
+          {
+            id: 'retest',
+            label: t('vulnPage.list.bulk.retest', 'Retest'),
+            icon: RotateCcw,
+            onSelect: () => actions.retest(selection),
+          },
+        ]
+      : []),
+    ...(actions.abilities.export
+      ? [
+          {
+            id: 'export',
+            label: t('vulnPage.list.bulk.export', 'Export'),
+            icon: Download,
+            disabledReason: actions.busy
+              ? t('vulnPage.list.bulk.busy', 'Wait for the current export to finish.')
+              : undefined,
+            onSelect: () => void actions.exportCsv(actionParams, selection.cveIds),
+          },
+        ]
+      : []),
+  ]
+  const vulnBulk: DataTableBulk<VulnListItem> | undefined = canSelect
+    ? {
+        rowLabel: (r) => r.cve_id,
+        checkboxLabel: (r) => t('vulnPage.list.selectRow', 'Select {cve}', { cve: r.cve_id }),
+        actions: (
+          <>
+            {bulkEntries.slice(0, 2).map((a) => (
+              <Button
+                key={a.id}
+                size="sm"
+                variant="ghost"
+                disabled={!!a.disabledReason}
+                title={a.disabledReason}
+                onClick={a.onSelect}
+              >
+                <a.icon aria-hidden />
+                {a.label}
+              </Button>
+            ))}
+          </>
+        ),
+        more: bulkEntries.length > 2 ? bulkEntries.slice(2) : undefined,
+        onSelectionChange: (sel) => setSelected(sel?.kind === 'ids' ? sel.rows : []),
+      }
+    : undefined
+
+  // Phone cards have no header checkbox: "Select" starts the title row's More.
+  const isPhone = useIsMobile()
+  const phoneSelect = usePhoneSelectMode(isPhone && !!vulnBulk)
+
+  const refreshLabel = t('vulnPage.list.refresh', 'Refresh')
+  const refreshButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => void mutate()}
+          disabled={isValidating}
+          aria-label={refreshLabel}
+        >
+          <RefreshCw
+            className={cn('h-4 w-4', isValidating && 'animate-spin motion-reduce:animate-none')}
+            aria-hidden
+          />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{refreshLabel}</TooltipContent>
+    </Tooltip>
+  )
+  const exportHint = t(
+    'vulnPage.list.exportHint',
+    'The findings behind the rows under the current filters, one per line with its asset'
+  )
+  const exportOff = actions.busy || total === 0
+  const exportButton = actions.abilities.export ? (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={exportOff}
+      onClick={() => void actions.exportCsv(actionParams)}
+      title={exportHint}
+    >
+      <Download aria-hidden />
+      {t('vulnPage.list.export', 'Export CSV')}
+    </Button>
+  ) : null
+  // Under 42rem of row width (and on a phone) the row's actions fold into
+  // More: Select first, then what a changed view offers, then Export.
+  const moreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    ...(viewModified
+      ? [
+          ...(canUpdateView
+            ? [{ id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges }]
+            : []),
+          {
+            id: 'view-save',
+            label: canUpdateView ? saveAsNewLabel : saveViewLabel,
+            onSelect: openSaveView,
+          },
+          { id: 'view-reset', label: t('common.listView.reset', 'Reset'), onSelect: resetView },
+        ]
+      : []),
+    ...(actions.abilities.export
+      ? [
+          {
+            id: 'export-csv',
+            label: t('vulnPage.list.export', 'Export CSV'),
+            section: 'export',
+            disabledReason: actions.busy
+              ? t('vulnPage.list.bulk.busy', 'Wait for the current export to finish.')
+              : total === 0
+                ? t('vulnPage.list.exportEmpty', 'There is nothing to export.')
+                : undefined,
+            onSelect: () => void actions.exportCsv(actionParams),
+          },
+        ]
+      : []),
+  ]
+  const moreMenu =
+    moreItems.length > 0 ? (
+      <ActionMenu
+        title={viewTitle}
+        label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+        items={moreItems}
+        trigger={
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={t('common.actionMenu.more', 'More actions')}
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden />
           </Button>
         }
       />
-    )
+    ) : null
+
+  const titleRow = (
+    <ListTitleRow
+      data-testid="vuln-list-title-row"
+      className="@container/actions"
+      title={viewTitle}
+      count={<ListCount total={total} loading={!data} label={resultLabel} />}
+      start={
+        <ListViewChanged
+          changed={viewModified}
+          // On a row under 42rem the two buttons are in the row's More.
+          actionsClassName="hidden @2xl/actions:flex"
+          onSave={openSaveView}
+          save={
+            canUpdateView ? (
+              <ActionMenu
+                title={viewTitle}
+                label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+                items={[
+                  { id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges },
+                  { id: 'view-save', label: saveAsNewLabel, onSelect: openSaveView },
+                ]}
+                trigger={
+                  <Button data-slot="list-view-save" variant="outline" size="sm">
+                    {saveViewLabel}
+                  </Button>
+                }
+              />
+            ) : undefined
+          }
+          onReset={resetView}
+        />
+      }
+    >
+      {refreshButton}
+      {exportButton && <div className="hidden @2xl/actions:block">{exportButton}</div>}
+      {moreMenu && <div className="@2xl/actions:hidden">{moreMenu}</div>}
+    </ListTitleRow>
+  )
+
+  // A failed read with rows on screen keeps the rows (the table says how old
+  // they are and offers a refresh); without rows the error takes their place.
+  const noAccess = accessStateOf(error) === 'no_access'
+  const firstRun = !!data && !error && total === 0 && !narrowed && !viewId
+  const readError = error && !data ? error : undefined
 
   return (
     <Main>
       <PageStack>
         <PageHeader
           title={t('vulnPage.list.title', 'Vulnerabilities')}
-          description={t(
-            'vulnPage.list.description',
-            'One row per vulnerability across the assets you can see, sorted by risk: priority, known exploitation, emerging threats, EPSS, CVSS and reach.'
-          )}
-        >
-          {actions.abilities.export && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={actions.busy || total === 0}
-              onClick={() => void actions.exportCsv(actionParams)}
-              title={t(
-                'vulnPage.list.exportHint',
-                'The findings behind the rows under the current filters, one per line with its asset'
+          // On a phone the list comes first: the description is read out but
+          // not drawn, and the tiles follow the list.
+          description={
+            <span className="max-md:sr-only">
+              {t(
+                'vulnPage.list.description',
+                'One row per vulnerability across the assets you can see, sorted by risk: priority, known exploitation, emerging threats, EPSS, CVSS and reach.'
               )}
-            >
-              <Download className="me-1.5 h-4 w-4" aria-hidden />
-              {t('vulnPage.list.export', 'Export CSV')}
-            </Button>
-          )}
-        </PageHeader>
-        <MetricStrip items={strip} loading={!data && !error} />
-        <ListTitleRow
-          title={t('vulnPage.list.viewAll', 'All vulnerabilities')}
-          count={<ListCount total={total} loading={!data} label={resultLabel} />}
+            </span>
+          }
         />
-        <FilterLayout
-          panelId={PANEL_ID}
-          label={t('vulnPage.list.filtersTitle', 'Vulnerability filters')}
-          open={panel.open}
-          sheetOpen={panel.sheetOpen}
-          onSheetOpenChange={panel.setSheetOpen}
-          panel={facetPanel}
-        >
-          {error ? (
-            <ErrorState
-              title={t('vulnPage.list.subject', 'the vulnerabilities list')}
-              error={error}
-              onRetry={() => void mutate()}
-            />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={rows}
-              showSearch={false}
-              search={{
-                value: searchInput,
-                onChange: setSearchInput,
-                placeholder: t(
-                  'vulnPage.list.searchPlaceholder',
-                  'Search CVE, advisory id or title…'
+        <MetricStrip items={strip} loading={!data && !error} className="max-md:order-last" />
+        {titleRow}
+        {noAccess ? (
+          <NoAccessState title={t('vulnPage.list.subject', 'the vulnerabilities list')} />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={rows}
+            error={readError}
+            onRetry={() => void mutate()}
+            errorTitle={t('vulnPage.list.subject', 'the vulnerabilities list')}
+            showSearch={false}
+            search={{
+              value: searchInput,
+              onChange: setSearchInput,
+              placeholder: t('vulnPage.list.searchPlaceholder', 'Search CVE or title…'),
+              label: t('vulnPage.list.searchLabel', 'Search vulnerabilities'),
+            }}
+            // One filter entry per width: Add filter from 768, this button
+            // (joined to the search field) on a phone, where it opens the sheet.
+            filterToggle={{
+              open: false,
+              onToggle: () => setFilterSheetOpen(true),
+              onOpenSheet: () => setFilterSheetOpen(true),
+              activeCount: filterCount + (state !== 'open' ? 1 : 0),
+              controlsId: PANEL_ID,
+              label: t('vulnPage.list.filtersTitle', 'Vulnerability filters'),
+              sheetOnly: true,
+            }}
+            toolbarStart={toolbarStart}
+            toolbarEnd={toolbarEnd}
+            toolbarBelow={chipsRow}
+            getRowId={(r) => r.cve_id}
+            bulk={vulnBulk}
+            selectMode={phoneSelect.selectMode}
+            resetSelectionKey={`${actionParams.toString()}#${selectionKey}`}
+            showSelectionCount={false}
+            manualPagination
+            rowCount={total}
+            pageCount={Math.max(1, data?.total_pages ?? 1)}
+            pagination={pagination}
+            onPaginationChange={onPaginationChange}
+            sorting={sorting}
+            onSortingChange={onSortingChange}
+            isLoading={isLoading}
+            isRefreshing={isValidating && !isLoading}
+            refreshingLabel={t('vulnPage.list.refreshing', 'Refreshing vulnerabilities')}
+            // A first run has nothing to search, filter or arrange.
+            showToolbar={!firstRun}
+            staleAt={readAt}
+            refreshFailed={!!error && !!data}
+            onRefresh={() => void mutate()}
+            onRowClick={(r) => router.push(vulnerabilityHref(r.cve_id))}
+            initialColumnVisibility={{
+              product: false,
+              findings: false,
+              kev_due: false,
+              first_seen: false,
+            }}
+            mobileRow={(r, sel) => (
+              <VulnPhoneCard
+                item={r}
+                selection={sel}
+                onOpen={() => router.push(vulnerabilityHref(r.cve_id))}
+              />
+            )}
+            paginationNoun={t('vulnPage.list.noun', 'vulnerabilities')}
+            isFiltered={narrowed || !!viewId}
+            onClearFilters={clearFilters}
+            emptyState={{
+              nothingYet: (
+                <EmptyState
+                  icon={Bug}
+                  title={t(
+                    'vulnPage.list.empty.title',
+                    'No open vulnerabilities on the assets you can see'
+                  )}
+                  description={t(
+                    'vulnPage.list.empty.hint',
+                    'Vulnerabilities appear here once a scan, an import or the software inventory reports a CVE on one of your assets.'
+                  )}
+                  action={
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/exposures/vulnerabilities?tab=catalog">
+                        {t('vulnPage.list.empty.catalog', 'Browse the CVE catalog')}
+                      </Link>
+                    </Button>
+                  }
+                />
+              ),
+              noMatch: {
+                title: t(
+                  'vulnPage.list.empty.filteredTitle',
+                  'No vulnerability matches these filters'
                 ),
-                label: t('vulnPage.list.searchLabel', 'Search vulnerabilities'),
-              }}
-              filterToggle={{
-                open: panel.open,
-                onToggle: panel.toggle,
-                onOpenSheet: () => panel.setSheetOpen(true),
-                activeCount: filterCount,
-                controlsId: PANEL_ID,
-              }}
-              toolbarStart={toolbarStart}
-              toolbarEnd={toolbarEnd}
-              toolbarBelow={chipsRow}
-              getRowId={(r) => r.cve_id}
-              onSelectionChange={setSelected}
-              resetSelectionKey={`${actionParams.toString()}#${selectionKey}`}
-              manualPagination
-              rowCount={total}
-              pageCount={Math.max(1, data?.total_pages ?? 1)}
-              pagination={pagination}
-              onPaginationChange={onPaginationChange}
-              pageSizeOptions={VULN_LIST_PAGE_SIZES}
-              sorting={sorting}
-              onSortingChange={onSortingChange}
-              isLoading={isLoading}
-              isRefreshing={isValidating && !isLoading}
-              onRowClick={(r) => router.push(vulnerabilityHref(r.cve_id))}
-              initialColumnVisibility={{
-                product: false,
-                findings: false,
-                kev_due: false,
-                first_seen: false,
-              }}
-              mobileRow={(r) => (
-                <MobileVulnRow item={r} onOpen={() => router.push(vulnerabilityHref(r.cve_id))} />
-              )}
-              paginationNoun={t('vulnPage.list.noun', 'vulnerabilities')}
-              emptyState={emptyState}
-            />
-          )}
-        </FilterLayout>
-        <BulkActionBar
-          count={selected.length}
-          onClear={clearSelection}
-          noun={t('vulnPage.list.bulk.selected', 'selected')}
+                hint: t(
+                  'vulnPage.list.empty.filteredHint',
+                  'Remove a filter, clear the search or switch the findings to All.'
+                ),
+              },
+            }}
+          />
+        )}
+        <FilterSheet
+          open={filterSheetOpen}
+          onOpenChange={setFilterSheetOpen}
+          title={t('vulnPage.list.filtersTitle', 'Vulnerability filters')}
         >
-          {actions.abilities.task && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                void actions.createTask(
-                  selection,
-                  selected.length === 1
-                    ? t('vulnPage.task.title', 'Fix {cve}', { cve: selected[0].cve_id })
-                    : t('vulnPage.list.bulk.taskTitle', 'Fix {count} vulnerabilities', {
-                        count: selected.length,
-                      })
-                )
-              }
-            >
-              <ListPlus className="me-1.5 h-4 w-4" aria-hidden />
-              {t('vulnPage.list.bulk.task', 'Create task')}
-            </Button>
-          )}
-          {actions.abilities.exception && (
-            <Button size="sm" variant="ghost" onClick={() => actions.requestException(selection)}>
-              <ShieldOff className="me-1.5 h-4 w-4" aria-hidden />
-              {t('vulnPage.list.bulk.exception', 'Accept risk')}
-            </Button>
-          )}
-          {actions.abilities.retest && (
-            <Button size="sm" variant="ghost" onClick={() => actions.retest(selection)}>
-              <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
-              {t('vulnPage.list.bulk.retest', 'Retest')}
-            </Button>
-          )}
-          {actions.abilities.export && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={actions.busy}
-              onClick={() => void actions.exportCsv(actionParams, selection.cveIds)}
-            >
-              <Download className="me-1.5 h-4 w-4" aria-hidden />
-              {t('vulnPage.list.bulk.export', 'Export')}
-            </Button>
-          )}
-        </BulkActionBar>
+          {facetPanel(true)}
+        </FilterSheet>
         {actions.dialogs}
         <p className="text-xs text-muted-foreground">
           {t(
@@ -946,251 +1271,5 @@ function VulnerabilitiesListBody() {
         </p>
       </PageStack>
     </Main>
-  )
-}
-
-/** The CVE (link), the title and the first aliases. */
-function VulnCell({ item }: { item: VulnListItem }) {
-  const { t } = useTranslation()
-  const title = item.title && item.title !== item.cve_id ? toDisplayText(item.title, 200) : ''
-  return (
-    <div className="min-w-[13rem] max-w-[18rem]">
-      <CveLink id={item.cve_id} stopPropagation className="font-medium" />
-      {title ? (
-        <p className="truncate text-muted-foreground" title={title}>
-          {title}
-        </p>
-      ) : !item.in_catalog ? (
-        <p className="text-muted-foreground">
-          {t('vulnPage.list.notInCatalog', 'Not in the feed yet')}
-        </p>
-      ) : null}
-      {item.aliases.length > 0 && (
-        <p
-          className="truncate font-mono text-xs text-muted-foreground"
-          title={item.aliases.join(', ')}
-        >
-          {item.aliases.slice(0, 2).join(', ')}
-          {item.aliases.length > 2 ? ` +${item.aliases.length - 2}` : ''}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** KEV (with due state), emerging threat, public exploit, past SLA: text chips. */
-function SignalsCell({ item }: { item: VulnListItem }) {
-  const { t } = useTranslation()
-  const days = kevDueDays(item.kev_due_date)
-  const chips = []
-  if (item.kev) {
-    chips.push(
-      <KevBadge
-        key="kev"
-        className="whitespace-nowrap"
-        ransomware={item.kev_ransomware}
-        pastDue={days !== undefined && days < 0}
-      />
-    )
-  }
-  if (item.emerging) {
-    chips.push(
-      <SignalChip key="em" icon={Flame} tone="alert" className="whitespace-nowrap">
-        <Link
-          href={`/emerging-threats/${encodeURIComponent(item.emerging.id)}`}
-          onClick={(e) => e.stopPropagation()}
-          className="hover:underline"
-        >
-          {t('vulnPage.list.signal.emerging', 'Emerging threat')}
-        </Link>
-      </SignalChip>
-    )
-  }
-  if (item.exploit) {
-    const maturity = item.exploit_maturity
-    chips.push(
-      <SignalChip key="ex" icon={Bug} className="whitespace-nowrap">
-        {maturity === 'weaponized'
-          ? t('vulnPage.list.signal.weaponized', 'Weaponized')
-          : maturity === 'functional'
-            ? t('vulnPage.list.signal.functional', 'Working exploit')
-            : maturity === 'poc'
-              ? t('vulnPage.list.signal.poc', 'Proof of concept')
-              : t('vulnPage.list.signal.exploit', 'Public exploit')}
-      </SignalChip>
-    )
-  }
-  if (item.past_sla > 0) {
-    chips.push(
-      <SignalChip key="sla" icon={Clock} tone="alert" alertText className="whitespace-nowrap">
-        {t('vulnPage.list.signal.pastSla', '{count} past SLA', { count: item.past_sla })}
-      </SignalChip>
-    )
-  }
-  if (chips.length === 0) {
-    return (
-      <span className="text-muted-foreground">{t('vulnPage.list.signal.none', 'No signal')}</span>
-    )
-  }
-  return <div className="flex max-w-[16rem] flex-wrap items-center gap-1">{chips}</div>
-}
-
-function KevDueText({ due }: { due?: string }) {
-  const { t } = useTranslation()
-  const days = kevDueDays(due)
-  if (days === undefined) return <span className="text-muted-foreground">—</span>
-  return (
-    <span className={cn('whitespace-nowrap', days < 0 && 'text-destructive')}>
-      {days < 0
-        ? t('vulnPage.list.kevPastDue', '{days, plural, one {# day} other {# days}} past due', {
-            days: -days,
-          })
-        : t('vulnPage.list.kevDueIn', 'Due in {days, plural, one {# day} other {# days}}', {
-            days,
-          })}
-    </span>
-  )
-}
-
-function AssetsCell({ item, params }: { item: VulnListItem; params: URLSearchParams }) {
-  const { t } = useTranslation()
-  return (
-    <div className="whitespace-nowrap">
-      <Link
-        href={safeHref(rowFindingsHref(item.cve_id, params, { group: 'asset_id' })) ?? '/findings'}
-        onClick={(e) => e.stopPropagation()}
-        className="font-medium tabular-nums hover:underline"
-        aria-label={t('vulnPage.list.assetsAria', '{count} assets: open the findings by asset', {
-          count: item.assets,
-        })}
-      >
-        {item.assets.toLocaleString()}
-      </Link>
-      {item.internet_facing_assets > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {t('vulnPage.list.internet', '{count} internet-facing', {
-            count: item.internet_facing_assets,
-          })}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function ProductCell({ item }: { item: VulnListItem }) {
-  const { t } = useTranslation()
-  const p = item.products[0]
-  if (!p) return <span className="text-muted-foreground">—</span>
-  const versions = p.versions.slice(0, 2).join(', ')
-  const name = toDisplayText(p.name, 80)
-  return (
-    <div className="max-w-[14rem]">
-      <p className="truncate" title={name}>
-        {name}
-      </p>
-      {versions && (
-        <p
-          className="truncate font-mono text-xs text-muted-foreground"
-          title={p.versions.join(', ')}
-        >
-          {toDisplayText(versions, 80)}
-          {p.versions.length > 2 ? ` +${p.versions.length - 2}` : ''}
-        </p>
-      )}
-      {item.products.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          {t('vulnPage.list.moreProducts', '+{count} more', { count: item.products.length - 1 })}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function FixCell({ item }: { item: VulnListItem }) {
-  const { t } = useTranslation()
-  const fix = headlineFixVersion(item)
-  if (fix) {
-    return (
-      <span className="font-mono whitespace-nowrap" title={item.fixed_versions.join(', ')}>
-        {toDisplayText(fix, 40)}
-      </span>
-    )
-  }
-  return (
-    <span className="whitespace-nowrap text-muted-foreground">
-      {item.has_fix
-        ? t('vulnPage.list.fixKnown', 'Fix known')
-        : t('vulnPage.list.noFix', 'No fix yet')}
-    </span>
-  )
-}
-
-function RemediationCell({ item, params }: { item: VulnListItem; params: URLSearchParams }) {
-  const { t } = useTranslation()
-  const st = remediationState(item)
-  const text =
-    st === 'closed'
-      ? t('vulnPage.list.rem.closed', 'All closed')
-      : st === 'untracked'
-        ? t('vulnPage.list.rem.untracked', 'Not in a task')
-        : st === 'tracked'
-          ? t('vulnPage.list.rem.tracked', 'In tasks')
-          : t('vulnPage.list.rem.partial', '{done} of {total} in tasks', {
-              done: item.in_task,
-              total: item.open_findings,
-            })
-  return (
-    <Link
-      href={safeHref(rowFindingsHref(item.cve_id, params, { state: 'open' })) ?? '/findings'}
-      onClick={(e) => e.stopPropagation()}
-      className={cn(
-        'whitespace-nowrap hover:underline',
-        st !== 'untracked' && 'text-muted-foreground'
-      )}
-    >
-      {text}
-    </Link>
-  )
-}
-
-/** The row as a card at phone width: id and priority, title, signals, reach and fix. */
-function MobileVulnRow({ item, onOpen }: { item: VulnListItem; onOpen: () => void }) {
-  const { t } = useTranslation()
-  const fix = headlineFixVersion(item)
-  const title = item.title && item.title !== item.cve_id ? toDisplayText(item.title, 160) : ''
-  return (
-    <div
-      className="cursor-pointer space-y-2 px-3 py-3 hover:bg-muted/50"
-      data-slot="vuln-card"
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest('button, a[href]')) return
-        onOpen()
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <CveLink id={item.cve_id} stopPropagation className="font-medium" />
-        <PriorityBadge priorityClass={item.worst_priority || null} />
-      </div>
-      {title && <p className="line-clamp-2 text-muted-foreground">{title}</p>}
-      <SignalsCell item={item} />
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <SeverityBadge severity={item.severity} />
-        <span className="tabular-nums">
-          {t('vulnPage.list.mobile.epss', 'EPSS {value}', {
-            value: formatEpssScore(item.epss_score, 1, '—'),
-          })}
-        </span>
-        <span className="tabular-nums">
-          {t('vulnPage.list.mobile.assets', '{count, plural, one {# asset} other {# assets}}', {
-            count: item.assets,
-          })}
-        </span>
-        <span className={cn(!fix && 'text-muted-foreground')}>
-          {fix
-            ? t('vulnPage.list.mobile.fix', 'Fix {version}', { version: toDisplayText(fix, 40) })
-            : t('vulnPage.list.noFix', 'No fix yet')}
-        </span>
-      </div>
-    </div>
   )
 }

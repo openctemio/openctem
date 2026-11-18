@@ -123,4 +123,11 @@ describe('GitHub setup redirect', () => {
     await waitFor(() => expect(screen.getByText(/did not send/i)).toBeInTheDocument())
     expect(mockComplete).not.toHaveBeenCalled()
   })
+
+  it('has one h1 and announces the outcome (alert for a refusal)', async () => {
+    search = new URLSearchParams('setup_action=install')
+    render(<CIGitHubCallback />)
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/did not send/i))
+  })
 })

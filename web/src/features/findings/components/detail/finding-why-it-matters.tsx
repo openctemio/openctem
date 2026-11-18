@@ -138,10 +138,17 @@ export interface FindingWhyItMattersProps {
   finding: FindingDetail
   /** `compact` for the drawer: one flat list of chips, no group labels. */
   compact?: boolean
+  /** The page: a block of the tab panel (no card, section title). The drawer keeps the card. */
+  flat?: boolean
   className?: string
 }
 
-export function FindingWhyItMatters({ finding, compact, className }: FindingWhyItMattersProps) {
+export function FindingWhyItMatters({
+  finding,
+  compact,
+  flat,
+  className,
+}: FindingWhyItMattersProps) {
   const { t } = useTranslation()
   const [scoreOpen, setScoreOpen] = useState(false)
   const signals = riskSignals(finding, t)
@@ -156,9 +163,9 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
     <section
       aria-labelledby={`why-${finding.id}`}
       data-slot="finding-why"
-      className={cn('rounded-lg border bg-card p-4', className)}
+      className={cn(!flat && 'rounded-lg border bg-card p-4', className)}
     >
-      <h2 id={`why-${finding.id}`} className="text-sm font-semibold">
+      <h2 id={`why-${finding.id}`} className={flat ? 'text-section' : 'text-sm font-semibold'}>
         {t('findings.whyItMatters.heading', 'Why it matters')}
       </h2>
 

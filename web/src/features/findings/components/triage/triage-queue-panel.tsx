@@ -27,15 +27,18 @@ export const OUTCOME_LABELS: Record<TriageOutcome, { key: string; fallback: stri
 }
 
 /**
- * The queue around the shown finding, in the queue's order. Hidden on
- * phones (the top bar carries the position there).
+ * The queue around the shown finding, in the queue's order. Beside the
+ * finding on a wide page; under the decision panel on a narrower one and on
+ * a phone (the item and its decision come first).
  */
 export function TriageQueuePanel({
   session,
   onSelect,
+  className,
 }: {
   session: TriageSession
   onSelect: (index: number) => void
+  className?: string
 }) {
   const { t } = useTranslation()
   const start = Math.max(0, session.index - BEFORE)
@@ -43,7 +46,7 @@ export function TriageQueuePanel({
   return (
     <nav
       aria-label={t('findings.triageMode.queue', 'Queue')}
-      className="hidden min-h-0 overflow-y-auto border-e bg-background p-2 lg:block"
+      className={cn('rounded-lg border bg-card p-2', className)}
       data-testid="triage-queue"
     >
       <p className="px-2 pt-1 pb-2 text-xs font-medium text-muted-foreground">
@@ -62,7 +65,7 @@ export function TriageQueuePanel({
                 aria-current={current ? 'true' : undefined}
                 className={cn(
                   'grid w-full gap-0.5 rounded-md px-2.5 py-2 text-start text-xs text-muted-foreground hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                  current && 'bg-card font-semibold shadow-[inset_0_0_0_1px_var(--border)]'
+                  current && 'bg-muted font-semibold'
                 )}
               >
                 {outcome ? (

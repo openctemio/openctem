@@ -66,9 +66,11 @@ afterEach(() => {
 })
 
 async function fillAndSubmit() {
-  await userEvent.type(screen.getByLabelText(/team name/i), 'Acme Corp')
-  await waitFor(() => expect(screen.getByRole('button', { name: /create team/i })).toBeEnabled())
-  await userEvent.click(screen.getByRole('button', { name: /create team/i }))
+  await userEvent.type(screen.getByLabelText(/organization name/i), 'Acme Corp')
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: /create organization/i })).toBeEnabled()
+  )
+  await userEvent.click(screen.getByRole('button', { name: /create organization/i }))
 }
 
 describe('CreateTeamForm — starting set', () => {
@@ -129,7 +131,7 @@ describe('CreateTeamForm — starting set', () => {
 describe('CreateTeamForm — no personal default name', () => {
   it.each([true, false])('starts with an empty name and slug (first team: %s)', (isFirstTeam) => {
     render(<CreateTeamForm isFirstTeam={isFirstTeam} showCancel={false} />)
-    const name = screen.getByLabelText(/team name/i) as HTMLInputElement
+    const name = screen.getByLabelText(/organization name/i) as HTMLInputElement
     expect(name.value).toBe('')
     expect(name.placeholder).not.toBe('')
     expect((screen.getByPlaceholderText('acme-corp') as HTMLInputElement).value).toBe('')
