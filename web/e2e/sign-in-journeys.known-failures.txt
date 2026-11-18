@@ -6,12 +6,6 @@
 first-time-invited / google / 2fa-required  # want: our second step, then inside the organization | got: "You have joined" page with no way to set up the second step (the session cannot enroll)
 first-time-invited / microsoft / 2fa-required  # want: our second step, then inside the organization | got: as Google
 first-time-invited / github / 2fa-required  # want: our second step, then inside the organization | got: as Google
-first-time-invited / google / idp-required  # want: a page that sends the person to the organization's identity provider | got: the invitation offers Accept again after the refusal
-first-time-invited / password / idp-required  # want: a page that sends the person to the organization's identity provider | got: the invitation offers Accept again after the refusal
 returning-member / google / open  # want: inside the organization | got: /login after 401 on /api/v1/me/modules (a social callback leaves an access token without an organization; to confirm by hand in a fresh browser)
 returning-member / google / 2fa-required  # want: our second step, then inside the organization | got: /login after 401 on /api/v1/me/modules
 while-signed-in / google / 2fa-turned-on  # want: our second step, then back inside | got: the returning social member does not get inside in the first place (as returning-member / google / open)
-first-time-invited / other-org-idp / open  # want: a page that asks for the account's own sign-in | got: the invitation page keeps offering Open after opening is refused (OWN_SIGN_IN_REQUIRED)
-first-time-invited / other-org-idp / 2fa-required  # want: a page that asks for the account's own sign-in | got: as open
-first-time-invited / other-org-idp / idp-required  # want: a page that asks for the account's own sign-in or the organization's provider | got: as open
-invitation / for-another-email-while-signed-in  # want: "this invitation is for another address, sign in with that account" | got: Accept offered, refused with "The invitation could not be accepted", Accept offered again
