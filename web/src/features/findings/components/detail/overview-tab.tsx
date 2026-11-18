@@ -186,7 +186,7 @@ export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps)
             {extraAssets.map((a) => (
               <li key={a.id} className="flex items-center gap-2 text-sm">
                 <Badge variant="outline" className="text-xs">
-                  {findingAssetTypeLabel(a.type)}
+                  {findingAssetTypeLabel(a.type, t)}
                 </Badge>
                 {isLinkableAssetId(a.id) ? (
                   <Link

@@ -280,7 +280,7 @@ export function AssetDetailSheet<T extends Asset>({
 
   if (!asset) return null
 
-  const assetTypeName = assetTypeNameProp ?? getAssetTypeLabel(asset.type)
+  const assetTypeName = assetTypeNameProp ?? getAssetTypeLabel(asset.type, t)
   const renderProperties = showProperties ?? overviewContent === undefined
 
   // Control plane is a property of relationship edges, not an asset column: the

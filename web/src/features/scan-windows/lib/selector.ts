@@ -83,7 +83,10 @@ export function selectorParts(
   if (s.tags?.length) parts.push(`${t('scanWindows.selector.tags', 'Tags')}: ${listed(s.tags, t)}`)
   if (s.asset_types?.length)
     parts.push(
-      `${t('scanWindows.selector.assetTypes', 'Asset types')}: ${listed(s.asset_types.map(getAssetTypeLabel), t)}`
+      `${t('scanWindows.selector.assetTypes', 'Asset types')}: ${listed(
+        s.asset_types.map((v) => getAssetTypeLabel(v, t)),
+        t
+      )}`
     )
   if (s.criticalities?.length)
     parts.push(
