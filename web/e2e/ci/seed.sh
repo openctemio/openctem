@@ -36,6 +36,9 @@ call() {
     -H 'Content-Type: application/json')
   [[ -n "${ACCESS_TOKEN:-}" ]] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
   [[ -n "$csrf" ]] && args+=(-H "X-CSRF-Token: $csrf")
+  # A distinct client address (the stack trusts its own networks as
+  # proxies), so a step does not share the per-address limits of the others.
+  [[ -n "${XFF:-}" ]] && args+=(-H "X-Forwarded-For: $XFF")
   [[ -n "$data" ]] && args+=(-d "$data")
   code=$(curl "${args[@]}")
   BODY=$(cat "$WORK/body")
@@ -388,7 +391,9 @@ UPDATE tenants
 SQL
 ACCESS_TOKEN=
 JAR="$WORK/journeys-cookies"
+XFF=198.18.250.1
 call POST /api/v1/auth/reset-password "{\"token\":\"$JOURNEY_SET_TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
+XFF=
 
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"

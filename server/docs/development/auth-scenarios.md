@@ -36,7 +36,7 @@ the combination was a dead end. The suites below test combinations.
 ## Expected outcomes
 
 The specification lives in code (`expect` in
-`server/tests/authscenarios/model.go`, `expected` in the e2e spec). In words:
+`server/tests/authscenarios/model_test.go`, `expected` in the e2e spec). In words:
 
 | Method | open | 2FA required (or admin rule, admin role) | identity provider required | provider must prove 2FA | suspended | IP allow-list |
 |---|---|---|---|---|---|---|

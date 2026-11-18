@@ -4,7 +4,7 @@
 // "a person arrives" and "they are working inside an organization", and
 // leaving and coming back. Each scenario signs a person in with one method,
 // meets an organization with one set of rules through one membership state,
-// and checks the answers against the specification (model.go) and the
+// and checks the answers against the specification (model_test.go) and the
 // invariants (no dead end, no bypass, a reason code on every refusal, no
 // server error).
 //

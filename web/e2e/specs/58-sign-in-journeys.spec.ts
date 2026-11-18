@@ -49,7 +49,7 @@ const RULES: Record<Rule, OrgRules> = {
   'idp-required': { ssoEnforced: true },
 }
 
-/** The specification, as in server/tests/authscenarios/model.go. */
+/** The specification, as in server/tests/authscenarios/model_test.go. */
 function expected(m: Method, r: Rule | null): Expect {
   if (r === null) return 'account-space'
   if (m === 'other-org-idp') return 'told-why' // sign in with your own account

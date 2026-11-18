@@ -2,6 +2,8 @@
 
 package authscenarios
 
+import "slices"
+
 // The scenario model: how a person signed in, what the organization
 // requires, how they relate to it, and what must happen next. The full
 // state space and the reasoning behind each expected outcome are in
@@ -128,7 +130,11 @@ func expect(m method, r rule) expectation {
 		// did not choose it; the person signs in with their own account, and
 		// the organization then applies its own rules to that sign-in.
 		final := r.name != "idp-required" && r.name != "ip-allowlist" && r.name != "suspended"
-		return expectation{codes: own, remedy: remedyPassword, final: final}
+		codes := own
+		if r.name == "idp-required" {
+			codes = append(slices.Clone(own), "SSO_REQUIRED")
+		}
+		return expectation{codes: codes, remedy: remedyPassword, final: final}
 	}
 	switch r.name {
 	case "open", "2fa-admins-member":

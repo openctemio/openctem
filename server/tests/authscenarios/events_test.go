@@ -75,7 +75,7 @@ func events() []event {
 			play: func(t *testing.T, w *world, rr *run) {
 				o := w.newOrg(t, "target")
 				p := w.memberOf(t, o, roleMember)
-				mustOK(t, "suspend", o.owner.do("POST", "/api/v1/tenants/"+o.ID+"/members/"+p.ID+"/suspend", map[string]string{"reason": "scenario"}))
+				mustOK(t, "suspend", o.owner.do("POST", "/api/v1/tenants/"+o.Slug+"/members/"+w.membershipID(t, o, p)+"/suspend", map[string]string{"reason": "scenario"}))
 				pr := rr.rec("old-token", p.b.do("GET", "/api/v1/tenants/"+o.Slug+"/", nil))
 				checkStatus(rr, pr)
 				if pr.Status == 200 {
@@ -119,7 +119,7 @@ func events() []event {
 				w.enrollOwnerTOTP(t, o)
 				p := w.memberOf(t, o, roleMember)
 				w.setRules(t, o.Slug, rules{MFARequiredForAdmins: true})
-				mustOK(t, "raise", o.owner.do("PATCH", "/api/v1/tenants/"+o.ID+"/members/"+p.ID, map[string]string{"role": "admin"}))
+				mustOK(t, "raise", o.owner.do("PATCH", "/api/v1/tenants/"+o.Slug+"/members/"+w.membershipID(t, o, p), map[string]string{"role": "admin"}))
 				w.followRuleChange(t, rr, p, o, method{name: "password", kind: kindPassword})
 			},
 		},
@@ -442,4 +442,15 @@ func (w *world) invitedAccount(t *testing.T, label string) *person {
 	o := w.newOrg(t, "throwaway")
 	email := w.newEmail(label)
 	return w.register(t, email, w.invite(t, o, email, roleMember))
+}
+
+// membershipID is the id of the person's membership row (member routes take
+// the membership, not the user).
+func (w *world) membershipID(t *testing.T, o *org, p *person) string {
+	t.Helper()
+	var id string
+	if err := w.db.QueryRow(`SELECT id FROM tenant_members WHERE user_id = $1 AND tenant_id = $2`, p.ID, o.ID).Scan(&id); err != nil {
+		t.Fatalf("membership of %s: %v", p.Email, err)
+	}
+	return id
 }
