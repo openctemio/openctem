@@ -365,7 +365,8 @@ describe('LoginForm ?error= message', () => {
     rerender(<LoginForm />)
     const notices = screen.getAllByTestId('login-notice')
     expect(notices).toHaveLength(1)
-    expect(notices[0]).toHaveAttribute('role', 'alert')
+    // Why the session ended is a notice, not a failure: read politely.
+    expect(notices[0]).toHaveAttribute('role', 'status')
     expect(notices[0]).toHaveTextContent(
       'An organization you belong to requires two-factor authentication. Sign in to set it up.'
     )

@@ -1,8 +1,7 @@
 /**
- * The automatic phone card (a table without `mobileRow`, below 768px) lets a
- * cell's one-line text wrap, but never into a tall sliver: a cut text stops at
- * three lines and the cell's flex row wraps, so a long text moves under the
- * chip beside it. Regression: a run's message beside its state wrapped in the
+ * The automatic phone card (a table without `mobileRow`, below 768px) keeps
+ * every line one line high: whatever a cell draws stays on one line, cut with
+ * an ellipsis. Regression: a run's message beside its state wrapped in the
  * few pixels the chip left and made the card taller than the screen
  * (/scans/runs at 390px, 2026-11-17). Layout itself is measured by the e2e
  * spec 66-phone-card-bounds; this pins the rules the card applies.
@@ -19,7 +18,7 @@ const columns: ColumnDef<Row>[] = [
   {
     id: 'status',
     header: 'Status',
-    meta: { kind: 'text', label: 'Status' },
+    meta: { label: 'Status' },
     cell: ({ row }) => (
       <div className="flex min-w-0 items-center gap-2">
         <span data-testid="chip" className="shrink-0 whitespace-nowrap">
@@ -45,19 +44,18 @@ const setWidth = (value: number) =>
 beforeEach(() => setWidth(390))
 afterEach(() => setWidth(1440))
 
-const WRAP_RULES = [
-  // A word longer than the card (an e-mail address) breaks and does not set
-  // the item's minimum width (break-word did: it ran under the menu button).
-  '[overflow-wrap:anywhere]',
-  '[&_.truncate]:whitespace-normal',
-  '[&_.truncate]:line-clamp-3',
-  '[&_.whitespace-nowrap]:whitespace-normal',
-  // Rows only: a wrapping column would size its items past the field.
-  '[&_.flex:not(.flex-col)]:flex-wrap',
+const ONE_LINE_RULES = [
+  'h-5',
+  'overflow-hidden',
+  'whitespace-nowrap',
+  '[&_*]:whitespace-nowrap',
+  '[&_.flex]:flex-nowrap',
+  // A stacked cell lays its lines side by side instead of growing the card.
+  '[&_.flex-col]:flex-row',
 ]
 
 describe('automatic phone card', () => {
-  it('wraps a field value by rule: cut texts stop at three lines, flex rows wrap', () => {
+  it('keeps a long value beside a chip on one line of fixed height', () => {
     const { container } = render(
       <DataTable
         columns={columns}
@@ -75,10 +73,12 @@ describe('automatic phone card', () => {
     const card = container.querySelector('[data-slot="mobile-card"]')
     expect(card).not.toBeNull()
     const value = card!.querySelector('[data-slot="mobile-card-field"] dd')!
-    for (const rule of WRAP_RULES) expect(value.className).toContain(rule)
-    // The title follows the same rules.
-    const title = card!.querySelector('.flex-\\[1_1_60\\%\\]')!
-    for (const rule of WRAP_RULES) expect(title.className).toContain(rule)
+    for (const rule of ONE_LINE_RULES) expect(value.className).toContain(rule)
+    expect(value.className).not.toContain('line-clamp')
+    // The title is the one line allowed to wrap: at most two lines, then cut.
+    const title = card!.querySelector('[data-slot="mobile-card-title"]')!
+    expect(title.className).toContain('max-h-10')
+    expect(title.className).toContain('overflow-hidden')
     // Every field has a label and a value.
     const fields = card!.querySelectorAll('[data-slot="mobile-card-field"]')
     expect(fields).toHaveLength(1)

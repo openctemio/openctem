@@ -5,6 +5,7 @@ import { ShieldOff } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { TonePill, type PillTone } from '@/features/shared'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { WebPathCatalogEntry } from '@/lib/api/generated'
 
 /** An HTTP method as a fixed-width mono label; write methods stand out. */
@@ -35,16 +36,23 @@ export function PathText({ path, className }: { path?: string; className?: strin
   )
 }
 
-const AUTH: Record<string, { label: string; tone: PillTone }> = {
-  none: { label: 'No auth', tone: 'warning' },
-  required: { label: 'Auth required', tone: 'success' },
-  redirect_login: { label: 'Login redirect', tone: 'success' },
-  unknown: { label: 'Unknown', tone: 'muted' },
+const AUTH_TONE: Record<string, PillTone> = {
+  none: 'warning',
+  required: 'success',
+  redirect_login: 'success',
+  unknown: 'muted',
 }
 
 export function AuthPill({ state }: { state?: string }) {
-  const a = AUTH[state ?? 'unknown'] ?? AUTH.unknown
-  return <TonePill tone={a.tone} label={a.label} />
+  const { t } = useTranslation()
+  const key = state && state in AUTH_TONE ? state : 'unknown'
+  const labels: Record<string, string> = {
+    none: t('attackSurface.web.auth.none', 'No auth'),
+    required: t('attackSurface.web.auth.required', 'Auth required'),
+    redirect_login: t('attackSurface.web.auth.redirect_login', 'Login redirect'),
+    unknown: t('attackSurface.web.auth.unknown', 'Unknown'),
+  }
+  return <TonePill tone={AUTH_TONE[key]} label={labels[key]} />
 }
 
 const SEVERITY_TONE: Record<string, PillTone> = {
@@ -57,12 +65,16 @@ const SEVERITY_TONE: Record<string, PillTone> = {
 
 /** A sensitive-path catalog match: its title, toned by how bad exposure is. */
 export function CatalogBadge({ entry }: { entry?: WebPathCatalogEntry }) {
+  const { t } = useTranslation()
   if (!entry?.key) return null
   return (
     <TonePill
       tone={SEVERITY_TONE[entry.severity ?? ''] ?? 'muted'}
       label={entry.title ?? entry.key}
-      title={`Sensitive path (${entry.category ?? 'catalog'}, ${entry.severity ?? 'unknown'})`}
+      title={t('attackSurface.web.catalog.title', 'Sensitive path ({category}, {severity})', {
+        category: entry.category ?? 'catalog',
+        severity: entry.severity ?? 'unknown',
+      })}
     />
   )
 }
@@ -73,10 +85,11 @@ export function CatalogBadge({ entry }: { entry?: WebPathCatalogEntry }) {
  * set its testing mode); absence of findings here is not evidence of safety.
  */
 export function ExcludedBadge({ exclusionId }: { exclusionId?: string }) {
+  const { t } = useTranslation()
   const badge = (
     <Badge variant="outline" className="gap-1 border-warning/50 font-normal text-warning">
       <ShieldOff className="h-3 w-3" aria-hidden />
-      Excluded, untested
+      {t('attackSurface.originWeb.metric.untested', 'Excluded, untested')}
     </Badge>
   )
   if (!exclusionId) return badge
@@ -84,7 +97,10 @@ export function ExcludedBadge({ exclusionId }: { exclusionId?: string }) {
     <Link
       href="/scope?tab=exclusions"
       className="inline-flex"
-      aria-label="Excluded, untested: open the scope exclusions"
+      aria-label={t(
+        'attackSurface.web.excludedOpen',
+        'Excluded, untested: open the scope exclusions'
+      )}
     >
       {badge}
     </Link>

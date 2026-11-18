@@ -72,31 +72,31 @@ export interface EditGroupFormData {
 
 const ENVIRONMENTS: {
   value: Environment
-  label: string
+  labelKey: string
   icon: typeof Server
   color: string
 }[] = [
   {
     value: 'production',
-    label: 'Production',
+    labelKey: 'assetGroups.environment.production',
     icon: Server,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'staging',
-    label: 'Staging',
+    labelKey: 'assetGroups.environment.staging',
     icon: FlaskConical,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'development',
-    label: 'Development',
+    labelKey: 'assetGroups.environment.development',
     icon: Code,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'testing',
-    label: 'Testing',
+    labelKey: 'assetGroups.environment.testing',
     icon: TestTube,
     color: 'text-foreground border-border bg-muted',
   },
@@ -104,40 +104,40 @@ const ENVIRONMENTS: {
 
 const CRITICALITIES: {
   value: Criticality
-  label: string
-  description: string
+  labelKey: string
+  descriptionKey: string
   icon: typeof AlertTriangle
   color: string
   bgColor: string
 }[] = [
   {
     value: 'critical',
-    label: 'Critical',
-    description: 'Business critical - immediate response',
+    labelKey: 'assetGroups.basic.crit.critical',
+    descriptionKey: 'assetGroups.edit.crit.criticalDesc',
     icon: AlertTriangle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'high',
-    label: 'High',
-    description: 'Important functions - prioritized',
+    labelKey: 'assetGroups.basic.crit.high',
+    descriptionKey: 'assetGroups.edit.crit.highDesc',
     icon: AlertCircle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'medium',
-    label: 'Medium',
-    description: 'Standard operations - normal',
+    labelKey: 'assetGroups.basic.crit.medium',
+    descriptionKey: 'assetGroups.edit.crit.mediumDesc',
     icon: Info,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'low',
-    label: 'Low',
-    description: 'Non-essential - scheduled',
+    labelKey: 'assetGroups.basic.crit.low',
+    descriptionKey: 'assetGroups.edit.crit.lowDesc',
     icon: MinusCircle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
@@ -202,7 +202,7 @@ export function EditGroupDialog({
   const handleRemoveTag = useCallback((tagToRemove: string) => {
     setFormData((prev) => ({
       ...prev,
-      tags: prev.tags.filter((t) => t !== tagToRemove),
+      tags: prev.tags.filter((x) => x !== tagToRemove),
     }))
   }, [])
 
@@ -231,9 +231,11 @@ export function EditGroupDialog({
                 <Pencil className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <DialogTitle className="text-lg">Edit Asset Group</DialogTitle>
+                <DialogTitle className="text-lg">
+                  {t('assetGroups.edit.title', 'Edit asset group')}
+                </DialogTitle>
                 <DialogDescription className="text-sm">
-                  Update group details and business context
+                  {t('assetGroups.edit.description', 'Update group details and business context')}
                 </DialogDescription>
               </div>
             </div>
@@ -250,17 +252,20 @@ export function EditGroupDialog({
                   <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Building2 className="h-3.5 w-3.5 text-primary" />
                   </div>
-                  Group Identity
+                  {t('assetGroups.basic.identity', 'Group identity')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-name" className="text-sm">
-                    Name <span className="text-destructive">*</span>
+                    {t('assetGroups.edit.name', 'Name')} <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="edit-name"
-                    placeholder="e.g., Payment Gateway Services"
+                    placeholder={t(
+                      'assetGroups.basic.namePlaceholder',
+                      'e.g., Payment Gateway Services'
+                    )}
                     value={formData.name}
                     onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                     disabled={isSubmitting}
@@ -268,11 +273,14 @@ export function EditGroupDialog({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-description" className="text-sm">
-                    Description
+                    {t('assetGroups.basic.description', 'Description')}
                   </Label>
                   <Textarea
                     id="edit-description"
-                    placeholder="Describe the purpose and scope..."
+                    placeholder={t(
+                      'assetGroups.edit.descriptionPlaceholder',
+                      'Describe the purpose and scope...'
+                    )}
                     value={formData.description}
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, description: e.target.value }))
@@ -288,7 +296,9 @@ export function EditGroupDialog({
             {/* Environment Selector */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Environment</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t('assetGroups.bulk.environment', 'Environment')}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-4 gap-2">
@@ -310,7 +320,7 @@ export function EditGroupDialog({
                         )}
                       >
                         <Icon className={cn('h-4 w-4', isSelected && 'text-foreground')} />
-                        <span className="text-xs font-medium">{env.label}</span>
+                        <span className="text-xs font-medium">{t(env.labelKey)}</span>
                       </button>
                     )
                   })}
@@ -321,7 +331,9 @@ export function EditGroupDialog({
             {/* Criticality Selector */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">Criticality</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t('assetGroups.bulk.criticality', 'Criticality')}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-2">
@@ -359,10 +371,10 @@ export function EditGroupDialog({
                               isSelected ? crit.color : 'text-foreground'
                             )}
                           >
-                            {crit.label}
+                            {t(crit.labelKey)}
                           </div>
                           <div className="text-xs text-muted-foreground line-clamp-1">
-                            {crit.description}
+                            {t(crit.descriptionKey)}
                           </div>
                         </div>
                         {isSelected && (
@@ -387,9 +399,9 @@ export function EditGroupDialog({
                         <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
                           <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                         </div>
-                        Business Context
+                        {t('assetGroups.basic.businessContext', 'Business context')}
                         <Badge variant="outline" className="ms-2 text-xs font-normal">
-                          Optional
+                          {t('assetGroups.basic.optional', 'Optional')}
                         </Badge>
                       </div>
                       <ChevronDown
@@ -407,7 +419,7 @@ export function EditGroupDialog({
                     <div className="space-y-2">
                       <Label className="text-sm flex items-center gap-2">
                         <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                        Business Unit
+                        {t('assetGroups.detail.info.businessUnit', 'Business unit')}
                       </Label>
                       <BusinessUnitField
                         value={formData.businessUnit}
@@ -423,10 +435,13 @@ export function EditGroupDialog({
                       <div className="space-y-2">
                         <Label className="text-sm flex items-center gap-2">
                           <User className="h-3.5 w-3.5 text-muted-foreground" />
-                          Owner
+                          {t('assetGroups.detail.owner', 'Owner')}
                         </Label>
                         <Input
-                          placeholder="e.g., Nguyen Van A"
+                          placeholder={t(
+                            'assetGroups.basic.ownerPlaceholder',
+                            'e.g., Nguyen Van A'
+                          )}
                           value={formData.owner}
                           onChange={(e) =>
                             setFormData((prev) => ({ ...prev, owner: e.target.value }))
@@ -437,11 +452,14 @@ export function EditGroupDialog({
                       <div className="space-y-2">
                         <Label className="text-sm flex items-center gap-2">
                           <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                          Email
+                          {t('assetGroups.edit.email', 'Email')}
                         </Label>
                         <Input
                           type="email"
-                          placeholder="e.g., a.nguyen@company.vn"
+                          placeholder={t(
+                            'assetGroups.basic.ownerEmailPlaceholder',
+                            'e.g., a.nguyen@company.vn'
+                          )}
                           value={formData.ownerEmail}
                           onChange={(e) =>
                             setFormData((prev) => ({
@@ -458,7 +476,7 @@ export function EditGroupDialog({
                     <div className="space-y-2">
                       <Label className="text-sm flex items-center gap-2">
                         <Tags className="h-3.5 w-3.5 text-muted-foreground" />
-                        Tags
+                        {t('assetGroups.detail.tags', 'Tags')}
                       </Label>
                       {formData.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 p-2 bg-muted/30 rounded-lg">
@@ -482,7 +500,10 @@ export function EditGroupDialog({
                         </div>
                       )}
                       <Input
-                        placeholder="Type a tag and press Enter..."
+                        placeholder={t(
+                          'assetGroups.basic.tagPlaceholder',
+                          'Type a tag and press Enter...'
+                        )}
                         value={tagInput}
                         onChange={(e) => setTagInput(e.target.value)}
                         onKeyDown={handleTagKeyDown}
@@ -490,7 +511,7 @@ export function EditGroupDialog({
                       />
                       <div className="flex flex-wrap gap-1">
                         <span className="text-xs text-muted-foreground me-1 py-0.5">
-                          Quick add:
+                          {t('assetGroups.basic.quickAdd', 'Quick add:')}
                         </span>
                         {SUGGESTED_TAGS.filter((tg) => !formData.tags.includes(tg))
                           .slice(0, 4)
@@ -553,16 +574,16 @@ export function EditGroupDialog({
         {/* Footer */}
         <DialogFooter className="bg-muted/30">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('assetGroups.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!formData.name.trim() || isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Saving...
+                {t('assetGroups.edit.saving', 'Saving...')}
               </>
             ) : (
-              'Save Changes'
+              t('assetGroups.edit.save', 'Save changes')
             )}
           </Button>
         </DialogFooter>

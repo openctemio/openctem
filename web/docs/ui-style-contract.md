@@ -519,11 +519,41 @@ reference.
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so the filter tokens neither shrink nor wrap to a third
     line.
+  - a toolbar group that draws none of its controls at this width (the
+    Display menu on a phone, tokens moved into the Filters sheet) takes no
+    line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
+    the first chip opens its own line (the list moves 44 px: the row and its
+    gap) instead of sitting on a line an empty group already opened.
+    An icon counts as drawn by its own box (an icon-only Add filter is not
+    empty), and with the tokens out of the flow the end group keeps its own
+    auto margin: it stays at the end of the line before and after the first
+    chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
   does the same, and never shows a page count below 1.
+- **An automatic phone card is compact.** A table without `mobileRow` draws
+  short lines of 20 px each, whatever its cells draw (one line, cut with an
+  ellipsis); only the title may take two:
+  - the title line: the row's name (the column of kind `name`, else the first
+    column; never guessed from the values), up to two lines whatever width the
+    table cell set for itself, then the status chip (the first column of kind
+    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    wraps under the title: a status cell too wide for its place gets a line of
+    its own under the title, and an actions cell wider than one icon button
+    gets one trailing line at the end of the card;
+  - one muted subtitle line: the first other column the page marked `asset`,
+    `owner`, `id` or `text` (an unmarked column is never the subtitle); kept
+    empty at its height on a row where it says nothing or repeats the title;
+  - one line of at most two label/value fields: the first other columns that
+    say something. A value that draws nothing or only a dash, or repeats the
+    title, is left out (never a label over an empty value), so a later column
+    takes its place. "0" is a value and stays; a switch is a value too.
+    A chip value (a badge, chip or tag) is never cut: a field whose chip does
+    not fit half the line takes the whole line, and the other field goes on
+    the line under it.
+    A list whose card needs more than that passes its own `mobileRow`.
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
   outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
@@ -875,7 +905,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
   `info` (running, informational) and `destructive` (failed, errors). Use them
   as `text-success` or a tint such as `bg-warning/15 text-warning`.
 - Errors that replace content use the shared `ErrorState` (a destructive
-  `Alert` with Retry), never a hand-made red box.
+  `Alert` with Retry), never a hand-made red box. It reads "Couldn't load
+  {what}" and, for a server failure or a bare code, "The server did not
+  answer. Nothing was changed." (never the server's code). Inside a table
+  frame it is start-aligned like every alert: icon, title, sentence and
+  buttons share one edge.
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
@@ -905,7 +939,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 ## 7. States
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
-  (`Loader2`) only inside buttons that are working.
+  (`Loader2`) only inside buttons that are working. A `DataTable` draws as
+  many placeholder rows as the list showed last time in this browser session
+  (same page and table), else five, never more than its page size or than fit
+  on the screen, and at least one (`data-table/loading-rows.ts`); it reads its frame
+  width before the first paint, so columns do not move when the rows arrive.
 - **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
   `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
   read never looks like an empty list or a row of zeros. The route guard
@@ -937,6 +975,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
+  **One filled button per screen**: the empty state's action is filled only
+  when no other filled button is shown (`OneFilledAction`, before paint); beside
+  the page's main action in the header it is an outline button. A page whose
+  header has no main action in that state keeps it filled (Findings first run:
+  "Run a scan"). It reaches a kit `Button` written in the action (also inside
+  `Can`); a filled button drawn by a component of its own is reported by a
+  warning outside production. The table's empty body follows the same rule.
   Three kinds, each worded for its case:
   - **no data yet** (first use): the setup action;
   - **no results** (filters active): "Clear filters"; a list that wants its

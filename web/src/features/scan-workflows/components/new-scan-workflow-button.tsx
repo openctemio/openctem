@@ -15,6 +15,7 @@ export function NewScanWorkflowButton({
   label,
   onClick,
   compact = false,
+  variant,
 }: {
   label: string
   onClick: () => void
@@ -23,6 +24,8 @@ export function NewScanWorkflowButton({
    * label from 768 px.
    */
   compact?: boolean
+  /** `outline` beside the page header's filled one (one filled button per screen). */
+  variant?: 'outline'
 }) {
   return (
     <Can permission={Permission.ScanWorkflowsWrite} mode="disable">
@@ -32,7 +35,7 @@ export function NewScanWorkflowButton({
           <span className="sr-only md:not-sr-only">{label}</span>
         </Button>
       ) : (
-        <Button size="sm" onClick={onClick}>
+        <Button size="sm" variant={variant} onClick={onClick}>
           <Plus className="me-2 h-4 w-4" />
           {label}
         </Button>

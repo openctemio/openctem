@@ -20,6 +20,7 @@ export type TriageAction =
   | 'evidence'
   | 'openPage'
   | 'help'
+  | 'queue'
 
 /** The key of each action, in the order the help lists them. */
 export const TRIAGE_KEYS: ReadonlyArray<{ action: TriageAction; key: string; label: string }> = [
@@ -34,6 +35,7 @@ export const TRIAGE_KEYS: ReadonlyArray<{ action: TriageAction; key: string; lab
   { action: 'next', key: 'j', label: 'j' },
   { action: 'prev', key: 'k', label: 'k' },
   { action: 'evidence', key: 'e', label: 'e' },
+  { action: 'queue', key: 'q', label: 'q' },
   { action: 'openPage', key: 'Enter', label: 'Enter' },
   { action: 'help', key: '?', label: '?' },
   { action: 'exit', key: 'Escape', label: 'Esc' },
@@ -51,7 +53,22 @@ const OPEN_LAYER =
   '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]:not([data-state="closed"])'
 
 /** Keys that still act while a button or link has focus (letters do not press it). */
-const ON_CONTROLS = new Set(['j', 'k', 'c', 'f', 'a', 'o', 'm', 'r', 's', 'u', 'e', '?', 'Escape'])
+const ON_CONTROLS = new Set([
+  'j',
+  'k',
+  'c',
+  'f',
+  'a',
+  'o',
+  'm',
+  'r',
+  's',
+  'u',
+  'e',
+  'q',
+  '?',
+  'Escape',
+])
 
 export interface TriageKeyEvent {
   key: string
