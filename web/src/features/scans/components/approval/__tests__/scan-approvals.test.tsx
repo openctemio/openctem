@@ -35,8 +35,12 @@ vi.mock('@/lib/api/scan-approval-hooks', () => ({
   remindScanApprovers: vi.fn(),
   cancelScanRequest: vi.fn(),
 }))
+// "Mine" is decided by the profile's id (useMyUserId); the auth store holds a
+// different id, so a regression to the store would fail these tests.
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => 'me' }))
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: 'me' } }),
+  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
+    sel({ user: { id: 'auth-store-id' } }),
 }))
 vi.mock('@/components/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
