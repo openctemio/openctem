@@ -254,7 +254,20 @@ describe('My Work page', () => {
     expect(within(row).getByText('Requested by Linh')).toBeInTheDocument()
     expect(screen.getByText(/Four-eyes/)).toBeInTheDocument()
 
-    fireEvent.click(within(row).getByRole('button', { name: /Approve/ }))
+    // The shared queue decision: outline buttons named with their finding, the
+    // sign-in step said on Approve; no filled button in the row.
+    const approve = within(row).getByRole('button', {
+      name: 'Approve Remote code execution in edge proxy',
+    })
+    expect(approve).toHaveAttribute('data-variant', 'outline')
+    expect(approve).toHaveAccessibleDescription(
+      'You confirm your sign-in before the approval is saved.'
+    )
+    expect(
+      within(row).getByRole('button', { name: 'Reject Remote code execution in edge proxy' })
+    ).toBeVisible()
+    expect(row.querySelector('[data-slot=button][data-variant=default]')).toBeNull()
+    fireEvent.click(approve)
     const dialog = await screen.findByRole('alertdialog')
     approveTrigger.mockResolvedValue({ status: 'approved' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }))
@@ -267,7 +280,7 @@ describe('My Work page', () => {
     renderPage()
     const row = screen.getByRole('listitem')
     expect(within(row).queryByRole('button', { name: /Approve/ })).toBeNull()
-    expect(within(row).getByText('Your request: another person decides')).toBeInTheDocument()
+    expect(within(row).getByText(/Your request: another person decides/)).toBeInTheDocument()
   })
 
   it('moves with j and k and rejects with r, asking for a reason', async () => {

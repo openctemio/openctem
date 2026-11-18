@@ -387,17 +387,31 @@ describe('ApprovalsPage', () => {
       expect(screen.getByText('Approval requests')).toBeInTheDocument()
     })
 
-    it('names the view and says its count once, in the title row', () => {
+    it('says the count once: under Pending the tab carries it, the title row does not', () => {
       mockHook({
         data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
       })
       const { container } = render(<ApprovalsPage />)
-      expect(screen.getByRole('heading', { name: 'Pending requests' })).toBeInTheDocument()
+      // The view is named for assistive technology; the selected tab shows the number.
+      expect(screen.getByRole('heading', { name: 'Pending requests' })).toHaveClass('sr-only')
+      expect(container.querySelector('[data-slot="list-count"]')).toBeNull()
+      expect(screen.getByRole('tab', { name: /Requests/ })).toHaveTextContent(
+        String(COUNTS.pending)
+      )
+      // No second count in the page header.
+      expect(screen.queryByText(/waiting for a decision/)).not.toBeInTheDocument()
+    })
+
+    it('says the count of another lens in the title row (no tab shows that number)', () => {
+      listState.status = 'all'
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      const { container } = render(<ApprovalsPage />)
       const counts = container.querySelectorAll('[data-slot="list-count"]')
       expect(counts).toHaveLength(1)
       expect(counts[0]).toHaveTextContent('3 requests')
-      // No second count in the page header.
-      expect(screen.queryByText(/waiting for a decision/)).not.toBeInTheDocument()
+      listState.status = ''
     })
 
     it('names the view after the status lens', () => {
@@ -409,9 +423,11 @@ describe('ApprovalsPage', () => {
     })
 
     it('keeps the count slot empty while the first read is on its way', () => {
+      listState.status = 'all'
       mockHook({ isLoading: true })
       const { container } = render(<ApprovalsPage />)
       expect(container.querySelector('[data-slot="list-count"]')).toBeEmptyDOMElement()
+      listState.status = ''
     })
 
     it('has no title-case back link: the sidebar already leads to Findings', () => {

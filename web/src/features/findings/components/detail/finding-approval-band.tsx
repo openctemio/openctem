@@ -28,7 +28,8 @@ import { formatRelative } from '@/lib/format-date'
 import { Permission } from '@/lib/permissions'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
-import { ApprovalDecisionButtons, useApprovalDecision } from '../approval-decision'
+import { QueueDecisionActions } from '@/features/shared/components/queue'
+import { useApprovalDecision } from '../approval-decision'
 import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
 import { FINDING_STATUS_CONFIG, type ApiApproval, type FindingStatus } from '../../types'
@@ -125,11 +126,21 @@ function PendingRequest({
       }
       actions={
         mayDecide ? (
-          <ApprovalDecisionButtons
-            approval={approval}
+          // Named with the status it asks for ("Approve False positive").
+          <QueueDecisionActions
+            name={target}
+            itemId={approval.id}
+            canDecide
             busy={decision.busyId === approval.id}
-            onApprove={decision.openApprove}
-            onReject={decision.openReject}
+            onApprove={() => decision.openApprove(approval)}
+            onReject={() => decision.openReject(approval)}
+            approveLabel={t('myWork.review.approve', 'Approve')}
+            rejectLabel={t('myWork.review.reject', 'Reject')}
+            stepUpHint={t(
+              'myWork.review.stepUpHint',
+              'You confirm your sign-in before the approval is saved.'
+            )}
+            layout="card"
           />
         ) : undefined
       }

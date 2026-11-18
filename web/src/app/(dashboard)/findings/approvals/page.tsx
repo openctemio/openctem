@@ -451,6 +451,10 @@ export default function ApprovalsPage() {
           onReject={() => handleRejectClick(approval)}
           approveLabel={t('findings.approvals.action.approve', 'Approve')}
           rejectLabel={t('findings.approvals.action.reject', 'Reject')}
+          stepUpHint={t(
+            'myWork.review.stepUpHint',
+            'You confirm your sign-in before the approval is saved.'
+          )}
           menu={menuItems}
         />
       )
@@ -721,26 +725,32 @@ export default function ApprovalsPage() {
       : t(`findings.approvals.viewName.${lens}`, 'Requests')
   const total = view === 'groups' ? groupsTotal : (data?.total ?? 0)
   const titleRow = (
+    // Count once: under Pending the selected tab already shows the number of
+    // the view, so the row names the view for assistive technology only and
+    // shows no count; another lens holds a number no tab shows, so it stays.
     <ListTitleRow
       title={viewTitle}
+      titleHidden
       count={
-        <ListCount
-          total={total}
-          loading={view === 'groups' ? !groupsPage : isInitialLoading || noAccess}
-          label={
-            view === 'groups'
-              ? t(
-                  'findingApprovals.group.total',
-                  '{count, plural, one {# group exception} other {# group exceptions}}',
-                  { count: total }
-                )
-              : t(
-                  'findings.approvals.total',
-                  '{count, plural, one {# request} other {# requests}}',
-                  { count: total }
-                )
-          }
-        />
+        lens === 'pending' ? undefined : (
+          <ListCount
+            total={total}
+            loading={view === 'groups' ? !groupsPage : isInitialLoading || noAccess}
+            label={
+              view === 'groups'
+                ? t(
+                    'findingApprovals.group.total',
+                    '{count, plural, one {# group exception} other {# group exceptions}}',
+                    { count: total }
+                  )
+                : t(
+                    'findings.approvals.total',
+                    '{count, plural, one {# request} other {# requests}}',
+                    { count: total }
+                  )
+            }
+          />
+        )
       }
     >
       {refreshButton}

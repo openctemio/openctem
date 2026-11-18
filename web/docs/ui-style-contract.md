@@ -683,7 +683,8 @@ load.
 ### Queues
 
 A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
-queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
+queues). It is a list in everything a list has (title row with the view name and its one count, said once: when
+the selected tab already shows the view's name and number, the row passes `titleHidden` and no count; toolbar,
 `DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue`
 (exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
 and no page rebuilds:
@@ -691,7 +692,10 @@ and no page rebuilds:
 - **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve and Reject, or the
   page's own labels) and one More for everything else, in the row's last column and on the phone card. Each
   button is announced by its own visible label and the item ("Approve {name}", "Merge {name}"); a page passes a
-  whole accessible name where that does not read well ("Keep {name} separate"). Without the permission there is no decision control. New decisions and bulk decisions
+  whole accessible name where that does not read well ("Keep {name} separate"). A decision that asks the user to
+  confirm their sign-in passes `stepUpHint`: the button carries a lock and the sentence on hover, on focus and as its
+  description. Every place that decides the same request uses these controls (the approvals inbox, My Work, the
+  finding page) with the same dialogs; there is no second decision component. Without the permission there is no decision control. New decisions and bulk decisions
   are not added by a page: they need their own design with gates, confirm and audit.
 - **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
   stands in their place, with the reason on hover and focus in a table row and written out on a card. The
