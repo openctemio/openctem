@@ -16,7 +16,6 @@ import { Main } from '@/components/layout'
 import {
   ErrorState,
   PageHeader,
-  StatusBadge,
   SeverityBadge,
   DataTable,
   DataTableColumnHeader,
@@ -92,6 +91,7 @@ import {
   CredentialFacetsPanel,
   type CredentialFilterName,
   CredentialPhoneCard,
+  CredentialStatusCell,
   credentialSeverityLabel,
   credentialSourceLabel,
   type CredentialStatus,
@@ -129,7 +129,12 @@ const PANEL_ID = 'credential-filters'
  * Columns that step aside while the table frame is narrower than this (px);
  * they stay under Display > Columns. Frame = screen - 326 at 1440 and 1280.
  */
-const CREDENTIAL_HIDE_BELOW = { username: 1060, discovered: 900, source: 760 } as const
+const CREDENTIAL_HIDE_BELOW = {
+  username: 1200,
+  discovered: 1000,
+  source: 760,
+  status: 700,
+} as const
 
 /**
  * Column widths (px). Every column but the credential has a fixed width, so
@@ -140,11 +145,11 @@ const CREDENTIAL_HIDE_BELOW = { username: 1060, discovered: 900, source: 760 } a
 const CREDENTIAL_WIDTH = {
   name: 220,
   source: 152,
-  username: 200,
-  leakDate: 160,
-  discovered: 112,
-  status: 112,
-  severity: 112,
+  username: 168,
+  leakDate: 152,
+  discovered: 136,
+  status: 152,
+  severity: 152,
 } as const
 
 export default function CredentialsPage() {
@@ -446,10 +451,11 @@ export default function CredentialsPage() {
       meta: {
         kind: 'status',
         width: CREDENTIAL_WIDTH.status,
+        hideBelow: CREDENTIAL_HIDE_BELOW.status,
         label: t('credentials.col.status', 'Status'),
       },
       header: t('credentials.col.status', 'Status'),
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      cell: ({ row }) => <CredentialStatusCell status={row.original.status} />,
     },
     {
       id: 'severity',
@@ -951,7 +957,26 @@ export default function CredentialsPage() {
             />
           )}
 
-          <FilterSheet open={sheetOpen} onOpenChange={setSheetOpen} title={filtersLabel}>
+          <FilterSheet
+            open={sheetOpen}
+            onOpenChange={setSheetOpen}
+            title={filtersLabel}
+            resultLabel={
+              identityView
+                ? t(
+                    'credentials.filter.showIdentities',
+                    '{count, plural, one {Show # identity} other {Show # identities}}',
+                    { count: total }
+                  )
+                : t(
+                    'credentials.filter.show',
+                    '{count, plural, one {Show # leak} other {Show # leaks}}',
+                    {
+                      count: total,
+                    }
+                  )
+            }
+          >
             {facets(true)}
           </FilterSheet>
         </PageStack>

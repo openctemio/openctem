@@ -8,6 +8,7 @@
  */
 
 import { Layers } from 'lucide-react'
+import { HealthStatus } from '@/components/ui/health-status'
 import { useTranslation } from '@/context/i18n-provider'
 import { FacetOption, FacetPanel, FacetSection, SeverityBadge } from '@/features/shared'
 import { MetaLine } from '@/features/shared/components/text-layout'
@@ -83,6 +84,23 @@ export function credentialSeverityLabel(t: TFn, severity: string): string {
 /** API severities are free strings; the shared badge falls back for unknown ones. */
 export function asSeverity(value: string | undefined): Severity {
   return (value || 'none') as Severity
+}
+
+/** How a leak's status reads: an active leak needs action, a resolved one is done. */
+const STATUS_HEALTH = { active: 'warn', completed: 'ok', inactive: 'off' } as const
+
+/** A leak's status in the list's words (Active, Resolved, Inactive). */
+export function CredentialStatusCell({ status }: { status: string }) {
+  const { t } = useTranslation()
+  const known = (CREDENTIAL_STATUSES as readonly string[]).includes(status)
+  const value = (known ? status : 'active') as CredentialStatus
+  return (
+    <HealthStatus
+      state={STATUS_HEALTH[value]}
+      value={value}
+      label={credentialStatusLabel(t, value)}
+    />
+  )
 }
 
 /** The leak date, with "Recent" when it is within the last 30 days. */
