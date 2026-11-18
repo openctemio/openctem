@@ -5,7 +5,7 @@ import { layoutDefects, seriousAxe } from '../helpers/layout'
 /**
  * CI/CD Settings (/ci-cd?tab=setup): every section on one page, in setup
  * order, with no section picker; a link that names a section scrolls to it;
- * Connect a pipeline sits in the page header; no sideways scroll at 1440 px
+ * Connect a CI provider sits in the page header; no sideways scroll at 1440 px
  * or 390 px; no serious axe violation; one read per resource.
  *
  * The seeded owner has CI write, so the header action and the refused
@@ -40,7 +40,7 @@ test.describe('CI/CD settings', { tag: ['@sensors'] }, () => {
       await page.waitForLoadState('networkidle')
       expect(await main.getByRole('heading', { level: 2 }).allTextContents()).toEqual(SECTIONS)
       await expect(main.getByRole('button', { name: /^Section:/ })).toHaveCount(0)
-      await expect(main.getByRole('button', { name: 'Connect a pipeline' }).first()).toBeVisible()
+      await expect(main.getByRole('button', { name: 'Connect a CI provider' }).first()).toBeVisible()
 
       expect(await layoutDefects(page)).toEqual([])
       expect(await seriousAxe(page)).toEqual([])

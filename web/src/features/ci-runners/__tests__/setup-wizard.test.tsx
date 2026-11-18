@@ -194,9 +194,9 @@ describe('Connect a CI provider', () => {
     const dialog = await githubToWaiting()
     expect(within(dialog).getByText(/a pipeline was refused/i)).toBeInTheDocument()
     expect(
-      within(dialog).getByText(/organization is not in the trust configuration/i)
+      within(dialog).getByText(/group or organization is not in the configuration/i)
     ).toBeInTheDocument()
-    expect(within(dialog).getByText(/add the organization to owners/i)).toBeInTheDocument()
+    expect(within(dialog).getByText(/add the group or organization to the configuration/i)).toBeInTheDocument()
   })
 
   it.each([1280, 390])('renders every step at %ipx with the steps wrapping', async (w) => {

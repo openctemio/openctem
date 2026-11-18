@@ -30,20 +30,18 @@ export function refusalText(code: string, t: TFn): { reason: string; fix: string
   }
 }
 
-/** The reasons of one refusal as chips with the fix in the title. */
+/** The reasons of one refusal in plain words, one line each (they wrap on a phone). */
 export function RefusalReasons({ reasons }: { reasons?: string[] }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap gap-1">
-      {(reasons ?? []).map((code) => {
-        const { reason, fix } = refusalText(code, t)
-        return (
-          <Badge key={code} variant="outline" title={fix || undefined}>
-            {reason}
-          </Badge>
-        )
-      })}
-    </div>
+    <ul className="space-y-0.5" data-testid="ci-refusal-reasons">
+      {(reasons ?? []).map((code) => (
+        <li key={code} className="flex items-start gap-1.5 font-medium">
+          <ShieldX className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <span className="min-w-0 break-words">{refusalText(code, t).reason}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
