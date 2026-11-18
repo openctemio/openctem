@@ -653,6 +653,12 @@ vars:
     type: string
     default: "disabled"
     description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+  - name: SIGNUP_PERSONAL_ORGANIZATION
+    component: api
+    group: "Organizations and scope guardrails"
+    type: bool
+    default: "false"
+    description: "First-start value of the sign-up policy switch \"Create a personal organization on sign-up\": a person who signs up with no other way in (no invitation, no organization that verified their e-mail domain) gets their own organization at their first sign-in after their address is verified. Used only when no sign-up policy is stored yet and `SIGNUP_MODE=open`; afterwards the switch is changed in the console (Console > System > Sign-up)."
   - name: SIGNUP_CAPTCHA
     component: api
     group: "Organizations and scope guardrails"

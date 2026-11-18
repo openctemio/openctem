@@ -1026,6 +1026,9 @@ type Services struct {
 	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
 	// is configured, which keeps the OAuth routes unregistered.
 	OAuth *auth.OAuthService
+	// PersonalOrgs makes the personal organization at sign-up (the sign-up
+	// policy switch).
+	PersonalOrgs *auth.PersonalOrganizations
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
@@ -3706,6 +3709,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
 	}
 	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	s.Signup.SetPersonalOrganizationSeed(cfg.Auth.SignupPersonalOrganization)
 	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
@@ -3882,6 +3886,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
+	// The personal organization at sign-up: a self-service sign-up with no
+	// other way in gets its own organization once its address is verified
+	// (the sign-up policy switch, off by default).
+	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
+	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
+	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
+	s.PersonalOrgs.SetAuditService(s.Audit)
+	if s.Entitlement != nil {
+		s.PersonalOrgs.SetLimits(s.Entitlement)
+	}
+	s.Auth.SetPersonalOrganizations(s.PersonalOrgs)
+
 	// Trusted organizations (RFC-058): home-realm sign-in for external
 	// members, the role ceiling, proposed end of access and API keys.
 	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
@@ -3932,6 +3948,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPersonalOrganizations(s.PersonalOrgs)
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}
