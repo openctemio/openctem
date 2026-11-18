@@ -31,7 +31,8 @@ type Repository interface {
 	// EnabledTrustConfigs returns the tenant's enabled configurations for
 	// an issuer.
 	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
-	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
+	// TouchTrustConfig records the last use and the kid that verified it.
+	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time, keyID string) error
 	// PipelineAudienceState: whether the pipeline exists and has exchanged a
 	// token with its configuration's current audience.
 	PipelineAudienceState(ctx context.Context, tenantID shared.ID, key PipelineKey) (exists, upgraded bool, err error)

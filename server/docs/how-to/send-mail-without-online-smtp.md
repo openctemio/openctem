@@ -27,7 +27,8 @@ flowchart LR
 ## What the platform enforces
 
 - The SMTP host is resolved through `httpsec.ResolveSafeHost`; a private address
-  needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` (the kit sets exactly the relay's
+  needs its range opened (console System > Private networks, or
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`; the kit sets exactly the relay's
   /32 when `openctem_mail_relay` is true).
 - TLS 1.2 or later. The roots are the system roots, or only the stored internal
   CA bundle (`ca_pem`): certificates only, at most 16 and 64 KB, write-only,

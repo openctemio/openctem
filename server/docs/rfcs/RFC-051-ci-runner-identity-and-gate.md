@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
+| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented; pasted signing keys (§3.2) implemented |
 | Related | RFC-008 (shift-left CI scanning), RFC-023 (sensors), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
 ## 1. Summary
@@ -79,6 +79,8 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | `rules.workflow_refs` | Optional: admit only jobs that run one of these pipeline definitions, `<path>@<ref>` (the path exact, the ref a pattern like `refs`). GitHub: the `job_workflow_ref` claim (`acme/security/.github/workflows/scan.yml@refs/heads/main`), so an organization can trust only its central reusable workflow, and a pull request that edits or adds a workflow file is refused (`workflow_not_allowed`). GitLab: the `ci_config_ref_uri` claim (`gitlab.example.com/grp/ci//scan.yml@refs/heads/main`). At most 20 entries. Other providers' tokens do not name the definition: the rule is refused when the configuration is saved, and a token without the claim is refused |
 | `default_branch` | The baseline branch when the platform does not know the repository's default branch yet. A pipeline cannot set it |
 | `rules.workspace_uuid` | Bitbucket only, required: the workspace's immutable id, compared with the token's `workspaceUuid` |
+| `key_source` | `fetch` (default): the issuer's discovery document and JWKS are fetched (section 4). `pasted`: tokens are verified with `signing_keys` only and nothing is ever fetched (section 3.2) |
+| `signing_keys` | The provider's public JWKS document as an administrator pasted it (migration `ci_trust_signing_keys`); with `signing_keys_updated_at` and `last_key_id` (the kid that verified the last admitted token) |
 
 A configuration must name at least one owner or repository: there is no "any
 repository" trust. Several configurations may exist; the first that admits the
@@ -127,6 +129,43 @@ token against its issuer's keys at the token's own issue time, and returns
 the claims (without e-mail addresses), the normalized repository, ref,
 commit and run, and the admission result. Nothing is stored and the token's
 id is not recorded; an invalid draft fetches nothing.
+
+### 3.2 Pasted signing keys
+
+A platform that cannot reach a provider (a self-managed GitLab on a network
+the platform has no route to), or that must not make outbound connections,
+verifies with keys an administrator pasted instead of fetching them.
+
+- **Validation on save** (`oidc.ParseStaticJWKS`): `{"keys":[...]}`, at most
+  64 KiB, 1 to 10 keys; each RSA (at least 2048 bits, `alg` RS256 or absent)
+  or EC P-256 (`alg` ES256 or absent), `use` absent or `sig`, a `kid`, no
+  duplicate `kid`. A key with any private or symmetric member (`d`, `p`, `q`,
+  `dp`, `dq`, `qi`, `oth`, `k`) is refused. The document is stored as pasted;
+  it is public and shown back.
+- **Verification**: the same checks as fetched keys (issuer, audience, `exp`,
+  `nbf`, `iat`, lifetime, `jti`, the algorithm allow-list, the rules), with
+  the token's key looked up by `kid` in the pasted set only. A key verifies
+  only its own algorithm (RS256 or ES256). No discovery document or JWKS is
+  fetched, whether or not the issuer is reachable. Two configurations of one
+  issuer with different pasted keys are verified separately. Stored keys that
+  no longer parse refuse the token.
+- **Rotation**: a token whose `kid` is not pasted is refused with
+  `CI_TOKEN_UNKNOWN_KEY` (`401`; never `503`, a retry cannot help). The
+  configuration's tenant gets an audit entry (`ci_run.token_refused`, reason
+  `unknown_key`, the token's `kid` and the pasted kids) and an alert to its
+  administrators (event `ci.token_refusals`, in-app and e-mail), at most once
+  an hour per configuration: the `kid` comes from a token nobody verified,
+  so an anonymous caller cannot fill the audit log or the inboxes. When a
+  configuration that fetches cannot get the keys, the exchange is still the
+  retryable `503 CI_ISSUER_UNAVAILABLE`.
+- **Audit**: creating or changing a configuration records the key source and
+  the kids before and after, never the document.
+- **Security**: a tenant administrator who pastes an attacker's key affects
+  only that tenant's own trust (the same as naming an attacker's issuer, and
+  behind the same permission and step-up); the audience still has to name the
+  tenant. No URL is fetched, so pasted keys open no outbound request.
+- **Planned**: a sensor of the organization fetching the keys for the
+  platform (the platform still makes no outbound connection).
 
 ## 4. Token exchange
 
