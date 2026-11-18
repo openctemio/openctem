@@ -29,7 +29,6 @@ const SAVE_EXCEPTIONS = new Set<string>([
   '/settings/mcp',
   '/settings/pentest',
   '/settings/scanning/content',
-  '/settings/scanning/scan-approval',
   '/settings/scope',
 ])
 
