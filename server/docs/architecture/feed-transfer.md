@@ -185,6 +185,9 @@ from before the platform stopped fetching itself may say `direct`),
 
 #### No direct fetch
 
+Upgrade note: an installation without the bundle import (`VULNFEED_ROOT_KEY_ID`
+empty) no longer receives KEV or EPSS.
+
 The platform never calls CISA or FIRST: KEV and EPSS arrive only in the signed
 release, fetched from the feed origin (direct mode) or through a relay sensor
 (relay mode). Each release that carries a stream is a check of that feed: a
