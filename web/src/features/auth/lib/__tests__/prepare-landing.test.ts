@@ -20,7 +20,7 @@ import { prepareLanding } from '../sign-in-landing'
 const ORG = '0b1e2c3d-0000-4000-8000-000000000001'
 
 /** The API: an account token, one membership, and the organization's answer. */
-function api(exchange: { status: number; body: Record<string, unknown> }) {
+function api(exchange: { status: number; body: Record<string, unknown> }, admission?: string) {
   return vi.fn(async (url: string) => {
     const json = (status: number, body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -30,7 +30,7 @@ function api(exchange: { status: number; body: Record<string, unknown> }) {
     if (url.endsWith('/auth/account-token'))
       return json(200, { access_token: 'acct', refresh_token: 'r2', expires_in: 900 })
     if (url.includes('/users/me/tenants'))
-      return json(200, [{ id: ORG, slug: 'acme', name: 'Acme', role: 'member' }])
+      return json(200, [{ id: ORG, slug: 'acme', name: 'Acme', role: 'member', admission }])
     if (url.endsWith('/auth/token')) return json(exchange.status, exchange.body)
     return json(404, {})
   })
@@ -53,6 +53,38 @@ describe('prepareLanding', () => {
       // The session stays (account-only), no organization is selected.
       expect(store.get(env.cookies.accountOnly)).toBe('1')
       expect(store.has(env.cookies.tenant)).toBe(false)
+    }
+  )
+
+  it('the listing already names the refusal: no token request, the account space says why', async () => {
+    const fetchMock = api({ status: 200, body: { access_token: 'org' } }, 'SSO_REQUIRED')
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(prepareLanding()).resolves.toEqual({
+      kind: 'account',
+      refusal: { code: 'SSO_REQUIRED', slug: 'acme' },
+    })
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/token'))).toBe(false)
+    expect(store.has(env.cookies.tenant)).toBe(false)
+  })
+
+  it.each(['open', 'MFA_ENROLLMENT_REQUIRED'])(
+    'admission %s: the token request still decides',
+    async (admission) => {
+      const fetchMock = api({ status: 403, body: { code: 'SSO_REQUIRED' } }, admission)
+      vi.stubGlobal('fetch', fetchMock)
+      await expect(prepareLanding()).resolves.toEqual({
+        kind: 'account',
+        refusal: { code: 'SSO_REQUIRED', slug: 'acme' },
+      })
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/token'))).toBe(true)
+    }
+  )
+
+  it.each([429, 503])(
+    'a %i from the token request: unavailable, not the plain account space',
+    async (status) => {
+      vi.stubGlobal('fetch', api({ status, body: { code: 'RATE_LIMIT_EXCEEDED' } }))
+      await expect(prepareLanding()).resolves.toEqual({ kind: 'unavailable' })
     }
   )
 
