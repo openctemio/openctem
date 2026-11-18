@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation'
 import { env } from '@/lib/env'
 import { legalConfig } from '@/lib/legal'
 import { legalSettings } from '@/lib/legal-settings'
+import { authProvidersSettings } from '@/lib/auth-providers-settings'
+import { AuthProvidersFallback } from '@/features/auth/components/auth-providers-fallback'
 
 import { RegisterGate } from '@/features/auth/components/register-gate'
 
@@ -23,13 +25,16 @@ export default async function SignUp() {
     }
   }
 
-  const legal = legalConfig(await legalSettings())
+  const [legalRec, providers] = await Promise.all([legalSettings(), authProvidersSettings()])
+  const legal = legalConfig(legalRec)
 
   // The gate shows the form only when open registration is on or the visitor
   // came from an invitation; otherwise "accounts are created by your admin".
   return (
-    <Suspense>
-      <RegisterGate termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
-    </Suspense>
+    <AuthProvidersFallback providers={providers}>
+      <Suspense>
+        <RegisterGate termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
+      </Suspense>
+    </AuthProvidersFallback>
   )
 }
