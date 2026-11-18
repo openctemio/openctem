@@ -156,7 +156,8 @@ the trusted root from the same medium as the artifacts it verifies.
 ## Content and intelligence feeds
 
 All outbound calls go through the SSRF-guarded client: an internal mirror on
-a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`.
+a private address needs its range opened, in the console (System > Private
+networks) or in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`.
 `HTTPS_PROXY` is not read. Where the only way out is a corporate proxy, set
 `OPENCTEM_HTTPSEC_FEED_PROXY` (Ansible: `openctem_feed_proxy`): the platform's
 own feeds (vulnerability bundles, KEV, EPSS, CTEM-ID, program feed, release
