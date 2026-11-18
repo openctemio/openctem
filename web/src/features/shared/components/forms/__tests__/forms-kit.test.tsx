@@ -162,6 +162,8 @@ describe('FormDialog', () => {
     const submit = screen.getByTestId('form-dialog-submit')
     expect(submit).toBeDisabled()
     expect(submit).toHaveAccessibleDescription('Give the group a name.')
+    // Beside the main button (right under it on a phone), not beside Cancel.
+    expect(submit.previousElementSibling).toHaveTextContent('Give the group a name.')
     await user.type(screen.getByLabelText(/Name/), 'Web{Enter}')
     expect(onSubmit).not.toHaveBeenCalled()
   })
