@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { DangerZone, DangerZoneItem } from '../danger-zone'
 import { SecretField } from '../secret-field'
 import {
+  SETTINGS_ROW_BESIDE,
   SettingsBlock,
   SettingsField,
   SettingsFieldGrid,
@@ -95,6 +96,38 @@ describe('SettingsRow and SettingsSwitchRow', () => {
     expect(sw).toHaveAccessibleDescription('A closed finding returns to Confirmed')
     fireEvent.click(sw)
     expect(onChange).toHaveBeenCalledWith(true)
+  })
+
+  it('keeps a switch beside its label on a phone, at the end of the first line', () => {
+    render(
+      <SettingsSwitchRow
+        label="Allow out-of-band interaction checks"
+        hint="A long hint that wraps over several lines on a phone"
+        checked
+        onCheckedChange={() => {}}
+      />
+    )
+    const row = screen.getByRole('switch').closest('[data-slot=settings-row]') as HTMLElement
+    // Two columns at every width (no flex-col stack below 45rem), control on top.
+    expect(row.className).toContain(SETTINGS_ROW_BESIDE)
+    expect(row.className).not.toContain('flex-col')
+    expect(screen.getByRole('switch').parentElement?.className).toContain('justify-self-end')
+  })
+
+  it.each([
+    ['wide', { wide: true }],
+    ['stacked', { stacked: true }],
+  ])('puts a %s control under the text on a phone', (_name, props) => {
+    render(
+      <SettingsRow label="Time zone" {...props}>
+        <button>Pick</button>
+      </SettingsRow>
+    )
+    const row = screen
+      .getByRole('button', { name: 'Pick' })
+      .closest('[data-slot=settings-row]') as HTMLElement
+    expect(row.className).toContain('flex-col')
+    expect(row.className).not.toContain(SETTINGS_ROW_BESIDE)
   })
 })
 

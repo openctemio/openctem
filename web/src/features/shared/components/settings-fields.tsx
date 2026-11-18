@@ -10,8 +10,9 @@ import { cn } from '@/lib/utils'
  * "Settings pages"):
  *
  * - `SettingsRow`: one setting on one line. What it is (label, hint) at the
- *   start, its control at the end; stacked when the section is narrower than
- *   45rem (a phone, a sheet).
+ *   start, its control at the end. Below 45rem (a phone, a sheet) a switch or
+ *   a short button stays at the end of the label's first line; a `wide`
+ *   control (a field, a select) or a `stacked` group goes under the text.
  * - `SettingsSwitchRow`: a row whose control is a switch.
  * - `SettingsBlock`: a padded block for anything else (a field grid, a note).
  * - `SettingsFieldGrid` + `SettingsField`: text fields with the label above,
@@ -22,6 +23,15 @@ import { cn } from '@/lib/utils'
  */
 
 const DIVIDER = 'border-t border-border-subtle'
+
+/**
+ * A row whose control stays beside its text on a phone: two columns at every
+ * width, the control at the top end (level with the label's first line). The
+ * text keeps at least 10rem, so a control that is wider than the rest wraps
+ * inside its own column instead of squeezing the label.
+ */
+export const SETTINGS_ROW_BESIDE =
+  'grid grid-cols-[minmax(min(10rem,100%),1fr)_auto] items-start gap-x-4'
 
 export interface SettingsRowProps {
   /** What the setting is. A string is drawn as the row label. */
@@ -34,6 +44,11 @@ export interface SettingsRowProps {
   hintId?: string
   /** A text field or select as the control: it gets a column of its own width. */
   wide?: boolean
+  /**
+   * Several controls (a preview and two buttons): below 45rem they go under
+   * the text instead of beside it. A single switch or button never needs it.
+   */
+  stacked?: boolean
   /** The control(s) at the row end. */
   children?: ReactNode
   className?: string
@@ -46,17 +61,20 @@ export function SettingsRow({
   labelId,
   hintId,
   wide = false,
+  stacked = false,
   children,
   className,
   id,
 }: SettingsRowProps) {
+  const besideOnPhone = !wide && !stacked && children != null
   return (
     <div
       id={id}
       data-slot="settings-row"
       className={cn(
         DIVIDER,
-        'flex min-w-0 flex-col gap-3 py-3.5 @[45rem]:grid @[45rem]:items-center @[45rem]:gap-x-8',
+        'min-w-0 py-3.5 @[45rem]:grid @[45rem]:items-center @[45rem]:gap-x-8',
+        besideOnPhone ? SETTINGS_ROW_BESIDE : 'flex flex-col gap-3',
         wide
           ? '@[45rem]:grid-cols-[minmax(0,1fr)_minmax(20rem,40%)]'
           : '@[45rem]:grid-cols-[minmax(0,1fr)_auto]',
@@ -77,6 +95,7 @@ export function SettingsRow({
         <div
           className={cn(
             'flex min-w-0 flex-wrap items-center gap-2',
+            besideOnPhone && 'justify-end justify-self-end',
             wide ? '@[45rem]:justify-self-stretch' : '@[45rem]:justify-self-end'
           )}
         >
