@@ -458,9 +458,15 @@ func validateIssuerURL(raw string) error {
 // can run a pipeline: a rule that does not name owners or repositories
 // would admit strangers there.
 var sharedIssuerHosts = []string{
-	"gitlab.com", "github.com", "token.actions.githubusercontent.com", "vstoken.dev.azure.com",
-	"oidc.circleci.com", "api.bitbucket.org",
+	"gitlab.com", "github.com", githubActionsIssuerHost, "vstoken.dev.azure.com",
+	"oidc.circleci.com", bitbucketAPIHost,
 }
+
+// Hosts of hosted CI issuers.
+const (
+	githubActionsIssuerHost = "token.actions.githubusercontent.com"
+	bitbucketAPIHost        = "api.bitbucket.org"
+)
 
 // SharedIssuer reports whether issuer belongs to a hosted CI service shared
 // by many customers (gitlab.com and its subdomains included), or has no
