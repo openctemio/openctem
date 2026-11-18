@@ -30,25 +30,22 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { provisionAdministrator } from '../api/use-admin-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { AdminRole } from '../types'
+import { roleName } from '../lib/role-name'
 
 export const ADMIN_ROLE_OPTIONS: {
   value: AdminRole
-  labelKey: string
   hintKey: string
 }[] = [
   {
     value: 'super_admin',
-    labelKey: 'admin.role.super_admin',
     hintKey: 'admin.createAdminDialog.superAdminHint',
   },
   {
     value: 'ops_admin',
-    labelKey: 'admin.role.ops_admin',
     hintKey: 'admin.createAdminDialog.operationsAdminHint',
   },
   {
     value: 'readonly',
-    labelKey: 'admin.role.readonly',
     hintKey: 'admin.createAdminDialog.readOnlyAdminHint',
   },
 ]
@@ -233,7 +230,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     <SelectContent>
                       {ADMIN_ROLE_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>
-                          {t(o.labelKey)}
+                          {roleName(t, o.value)}
                         </SelectItem>
                       ))}
                     </SelectContent>

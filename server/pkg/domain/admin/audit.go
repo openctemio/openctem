@@ -353,12 +353,28 @@ type AuditLogFilter struct {
 	StartTime    *time.Time
 	EndTime      *time.Time
 	Search       string // Search in action, resource_name, error_message
-	// ChangesOnly leaves out reads and write-ahead rows: a row stays when it
-	// records a non-GET request (a write, a sign-in, an elevation), a request
-	// without a method (a command on the host), or anything that failed (a
-	// refused read is a change worth seeing). The rows themselves are never
-	// dropped; this is a view of the same chain.
+	// ChangesOnly leaves out reads, write-ahead rows and sign-in or session
+	// events (AuditSessionActions): a row stays when it records a non-GET
+	// request (a write), a request without a method (a command on the host),
+	// or a refused or failed write or read. The rows themselves are never
+	// dropped; this is a view of the same chain, and the full list still
+	// shows sign-ins.
 	ChangesOnly bool
+}
+
+// AuditSessionActions are the actions that record a sign-in, a second-factor
+// or step-up check, an elevation or a session ending: events about the
+// administrator's session, not changes to the platform. The "changes" view of
+// the audit log leaves them out.
+var AuditSessionActions = []string{
+	"console.login", "console.login_failed", "console.mfa_failed", "console.logout",
+	"console.step_up", "console.step_up_failed", "console.elevate", "console.elevated",
+	"console.elevation_ended", "console.idp_login", "console.idp_login_failed",
+	"console.break_glass_sign_in", "console.new_network_sign_in", "console.session_evicted",
+	"console.session_end", "console.session_ended", "console.sessions_ended_by_account",
+	"console.webauthn_failed", "console.webauthn_counter_regressed",
+	"console.recovery_code_used", "console.recovery_code_failed",
+	AuditActionAuthSuccess, AuditActionAuthFailure,
 }
 
 // AuditActionWriteStarted is the write-ahead row an audited write stores

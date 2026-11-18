@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MonitorSmartphone, Siren } from 'lucide-react'
@@ -22,11 +23,8 @@ import {
 } from '@console/features/admin-console/api/use-admin-sessions'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
-import {
-  ADMIN_ROLE_LABELS,
-  type AdminConsoleSession,
-  adminHas,
-} from '@console/features/admin-console/types'
+import { roleName } from '@console/features/admin-console/lib/role-name'
+import { type AdminConsoleSession, adminHas } from '@console/features/admin-console/types'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
 export default function AdminSessionsPage() {
@@ -77,12 +75,7 @@ export default function AdminSessionsPage() {
         meta: { kind: 'tags', width: 176, label: t('admin.sessions.col.role', 'Role') },
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
-            <Badge variant="outline">
-              {t(
-                `admin.role.${row.original.admin_role}`,
-                ADMIN_ROLE_LABELS[row.original.admin_role]
-              )}
-            </Badge>
+            <Badge variant="outline">{roleName(t, row.original.admin_role)}</Badge>
             {row.original.break_glass && (
               <Badge variant="destructive">
                 <Siren className="me-1 size-3" />
@@ -120,7 +113,9 @@ export default function AdminSessionsPage() {
         },
         cell: ({ row }) => (
           <span className="block truncate tabular-nums" title={row.original.user_agent}>
-            {row.original.ip_address || '-'}
+            {row.original.ip_address || (
+              <EmptyCell title={t('admin.sessions.noIp', 'No address recorded')} />
+            )}
           </span>
         ),
       },
@@ -232,7 +227,10 @@ export default function AdminSessionsPage() {
                 {t(
                   'admin.sessions.endWhat',
                   '{email} is signed out of the console at once (signed in from {ip}). The other administrators can see this in the audit log.',
-                  { email: ending.admin_email, ip: ending.ip_address || '-' }
+                  {
+                    email: ending.admin_email,
+                    ip: ending.ip_address || t('admin.sessions.unknownIp', 'an unknown address'),
+                  }
                 )}
               </p>
             }

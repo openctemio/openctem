@@ -12,7 +12,9 @@ import {
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminFetcher } from '@console/lib/admin-api/client'
-import { humanizeAction } from './admin-activity-table'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { auditActionLabel } from '../lib/audit-action-label'
+import { formatUtcTime } from '../lib/format-utc'
 import type { AdminAuditEntry } from '../types'
 
 /** GET /admin/audit-logs/{id}: the row plus the (redacted) request. */
@@ -39,6 +41,13 @@ export function AdminAuditDetailSheet({
     adminFetcher
   )
 
+  const utc = data ? formatUtcTime(data.created_at) : ''
+  const request = data ? [data.request_method, data.request_path].filter(Boolean).join(' ') : ''
+  // The console sends a reason with a privileged change; the API keeps it in
+  // the stored request. It is text from the request body: shown as plain text.
+  const rawReason = data?.request_body?.reason
+  const reason = typeof rawReason === 'string' ? toDisplayText(rawReason).trim() : ''
+
   return (
     <DetailSheet
       open={entryId !== null}
@@ -46,7 +55,7 @@ export function AdminAuditDetailSheet({
       width="lg"
       header={
         <DetailHeader
-          title={data ? humanizeAction(data.action) : t('admin.activity.entry', 'Audit entry')}
+          title={data ? auditActionLabel(t, data.action) : t('admin.activity.entry', 'Audit entry')}
           badges={
             data &&
             (data.success ? (
@@ -66,32 +75,53 @@ export function AdminAuditDetailSheet({
         <div className="space-y-5">
           <DetailFieldGrid>
             <DetailField label={t('admin.activity.when', 'When')}>
-              <RelativeTime date={data.created_at} />
-            </DetailField>
-            <DetailField label={t('admin.activity.status', 'Response')}>
-              <span className="tabular-nums">{data.response_status ?? '-'}</span>
-            </DetailField>
-            <DetailField label={t('admin.activity.resource', 'Resource')}>
-              {data.resource_type ? (
-                <span>
-                  {data.resource_type}
-                  {data.resource_name ? `: ${data.resource_name}` : ''}
-                </span>
+              {utc ? (
+                <>
+                  <time dateTime={data.created_at} className="tabular-nums">
+                    {utc}
+                  </time>
+                  <RelativeTime
+                    date={data.created_at}
+                    className="block text-xs text-muted-foreground"
+                  />
+                </>
               ) : (
-                '-'
+                <RelativeTime date={data.created_at} />
               )}
             </DetailField>
-            <DetailField label={t('admin.activity.resourceId', 'Resource ID')}>
-              <code className="text-xs break-all">{data.resource_id ?? '-'}</code>
-            </DetailField>
-            <DetailField label={t('admin.activity.ip', 'IP address')}>
-              <span className="tabular-nums">{data.ip_address || '-'}</span>
-            </DetailField>
-            <DetailField label={t('admin.activity.request', 'Request')}>
-              <code className="text-xs break-all">
-                {data.request_method} {data.request_path}
-              </code>
-            </DetailField>
+            {data.response_status != null && (
+              <DetailField label={t('admin.activity.status', 'Response')}>
+                <span className="tabular-nums">{data.response_status}</span>
+              </DetailField>
+            )}
+            {data.resource_type && (
+              <DetailField label={t('admin.activity.resource', 'Resource')}>
+                <span>
+                  {data.resource_type}
+                  {data.resource_name ? `: ${toDisplayText(data.resource_name)}` : ''}
+                </span>
+              </DetailField>
+            )}
+            {data.resource_id && (
+              <DetailField label={t('admin.activity.resourceId', 'Resource ID')}>
+                <code className="text-xs break-all">{data.resource_id}</code>
+              </DetailField>
+            )}
+            {data.ip_address && (
+              <DetailField label={t('admin.activity.ip', 'IP address')}>
+                <span className="tabular-nums">{data.ip_address}</span>
+              </DetailField>
+            )}
+            {request && (
+              <DetailField label={t('admin.activity.request', 'Request')}>
+                <code className="text-xs break-all">{request}</code>
+              </DetailField>
+            )}
+            {reason && (
+              <DetailField label={t('admin.activity.reason', 'Reason')} full>
+                <span className="text-sm break-words whitespace-pre-wrap">{reason}</span>
+              </DetailField>
+            )}
             {data.user_agent && (
               <DetailField label={t('admin.activity.userAgent', 'Browser')} full>
                 <span className="text-xs break-all text-muted-foreground">{data.user_agent}</span>

@@ -644,6 +644,13 @@ func (r *AuditLogRepository) buildAuditWhereClause(filter admin.AuditLogFilter) 
 			argIndex))
 		args = append(args, admin.AuditActionWriteStarted)
 		argIndex++
+		marks := make([]string, 0, len(admin.AuditSessionActions))
+		for _, a := range admin.AuditSessionActions {
+			marks = append(marks, fmt.Sprintf("$%d", argIndex))
+			args = append(args, a)
+			argIndex++
+		}
+		conditions = append(conditions, "action NOT IN ("+strings.Join(marks, ", ")+")")
 	}
 
 	if filter.ResourceType != "" {
