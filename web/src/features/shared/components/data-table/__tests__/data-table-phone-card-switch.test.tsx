@@ -24,13 +24,13 @@ const columns: ColumnDef<Row>[] = [
   {
     id: 'enabled',
     header: 'Enabled',
-    meta: { kind: 'text', label: 'Enabled' },
+    meta: { label: 'Enabled' },
     cell: ({ row }) => <Toggle initial={row.original.enabled} />,
   },
   {
     id: 'note',
     header: 'Note',
-    meta: { kind: 'text', label: 'Note' },
+    meta: { label: 'Note' },
     cell: ({ row }) => (
       <span className="flex items-center gap-2">
         <Switch aria-label="Notify" checked />
