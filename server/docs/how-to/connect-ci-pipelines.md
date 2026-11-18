@@ -29,8 +29,10 @@ its snippet. The fields:
   issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, in
   **GitHub Enterprise issuer** (the wizard covers github.com only). The
   platform fetches the issuer's keys over HTTPS through the outbound-request
-  guard; an issuer on a private address needs its subnet in
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API. When the issuer cannot be
+  guard; an issuer on a private address needs its subnet opened by a platform
+  administrator under console System > Private networks (or in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API). "Test a destination"
+  there shows what the issuer's name resolves to and whether it is reachable. When the issuer cannot be
   reached, keys fetched earlier keep verifying for at most 6 hours.
 - **Check a sample token** (in the dialog): paste a token from a job of that
   pipeline. The platform verifies its signature against the issuer's keys and

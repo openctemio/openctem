@@ -329,6 +329,9 @@ type Handlers struct {
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
 	AdminEmailTestLimiter *middleware.AdminMappingRateLimiter
+	// AdminDestinationTestLimiter caps the private destination test (a DNS
+	// lookup) per administrator.
+	AdminDestinationTestLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
 	// directory per administrator (bulk harvesting of accounts).
 	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter

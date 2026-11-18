@@ -49,7 +49,7 @@ flowchart LR
 | `auth_required` | 530 at MAIL FROM | Add a login, or allow the API's address on the server |
 | `relay_denied` | Recipient refused at RCPT TO | Relay rules on the server; authenticate |
 | `sender_rejected` | Sender address refused | Send-as right; change the sender |
-| `host_rejected` | SSRF guard refused the address | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` |
+| `host_rejected` | SSRF guard refused the address | Open its range: console System > Private networks, or `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` |
 | `connect_failed`, `timeout` | Network | Name, port, firewall, egress policy |
 
 Delivery problems after acceptance (SPF fail, DKIM or DMARC reject, port 25

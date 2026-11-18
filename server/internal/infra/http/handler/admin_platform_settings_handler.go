@@ -28,6 +28,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/server/internal/app/platformmfa"
 	"github.com/openctemio/openctem/server/internal/app/platformsociallogin"
+	"github.com/openctemio/openctem/server/internal/app/privatedestinations"
 	"github.com/openctemio/openctem/server/internal/app/scanidentity"
 	"github.com/openctemio/openctem/server/internal/app/scopenames"
 	"github.com/openctemio/openctem/server/internal/app/storagequota"
@@ -84,6 +85,8 @@ type AdminPlatformSettingsHandler struct {
 	LeakedSecretStorage *leakedsecretpolicy.Service
 	// ScopeNames is the blocked target names policy and its exceptions.
 	ScopeNames *scopenames.Service
+	// PrivateDestinations are the private ranges outbound requests may reach.
+	PrivateDestinations *privatedestinations.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.
