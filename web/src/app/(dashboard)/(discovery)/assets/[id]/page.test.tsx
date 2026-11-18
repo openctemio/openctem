@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   relationshipsOn: true,
   relatedTotal: 0,
   webItems: [] as unknown[],
+  primary: false,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -87,6 +88,34 @@ vi.mock('@/features/assets/components/asset-owners-tab', () => ({
 vi.mock('@/features/assets/components/asset-relationships-tab', () => ({
   AssetRelationshipsTab: () => <section>relationships-tab</section>,
 }))
+vi.mock('@/features/assets/components/asset-findings', () => ({
+  AssetFindings: ({ findingCount }: { findingCount: number }) => (
+    <section>findings-tab {findingCount}</section>
+  ),
+}))
+vi.mock('@/features/assets/components/technologies/asset-technologies-tab', () => ({
+  AssetTechnologiesTab: () => <section>technologies-tab</section>,
+}))
+vi.mock('@/features/assets/components/key-facts', () => ({
+  KeyFactsSection: () => <section>key-facts</section>,
+}))
+vi.mock('@/features/assets/components/asset-overview-sections', () => ({
+  RiskSummarySection: ({ onViewFindings }: { onViewFindings?: () => void }) => (
+    <section>
+      risk-summary
+      <button type="button" onClick={onViewFindings}>
+        View findings
+      </button>
+    </section>
+  ),
+}))
+vi.mock('@/features/assets/components/asset-page-actions', () => ({
+  useAssetPageActions: () => ({
+    primary: state.primary ? <button type="button">Scan now</button> : null,
+    menu: state.primary ? [{ id: 'edit', label: 'Edit', onSelect: () => {} }] : [],
+    dialogs: null,
+  }),
+}))
 vi.mock('@/features/assets/hooks/use-related-assets', () => ({
   useRelatedAssets: (id: string | null) => ({
     total: id ? state.relatedTotal : 0,
@@ -131,6 +160,7 @@ beforeEach(() => {
   state.relationshipsOn = true
   state.relatedTotal = 0
   state.webItems = []
+  state.primary = false
 })
 
 const BASE = {
@@ -231,6 +261,7 @@ describe('/assets/[id]', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('www.example.com')
     expect(tabNames()).toEqual([
       'Overview',
+      'Findings4',
       'Relationships3',
       'How we found this',
       'Ports and services',
@@ -290,5 +321,47 @@ describe('/assets/[id]', () => {
     render(<AssetDetailPage />)
     expect(screen.getByRole('tab', { name: /Web/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByText('origin-web')).toBeNull()
+  })
+
+  it('has a Technologies tab with its count only when probes found any', async () => {
+    state.asset = { ...BASE, type: 'subdomain' }
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /Technologies/ })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Findings' })).toBeInTheDocument()
+    unmount()
+    state.asset = {
+      ...BASE,
+      type: 'subdomain',
+      technologies: [
+        { name: 'nginx', version: '1.25', category: 'web_server' },
+        { name: 'react', category: 'framework' },
+      ],
+    }
+    state.tab = 'technologies'
+    render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: 'Technologies2' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(await screen.findByText('technologies-tab')).toBeInTheDocument()
+  })
+
+  it('shows key facts and the risk summary in Overview; View findings opens the Findings tab', async () => {
+    state.asset = { ...BASE, type: 'subdomain', findingCount: 2 }
+    render(<AssetDetailPage />)
+    expect(screen.getByText('key-facts')).toBeInTheDocument()
+    expect(screen.getByText(/risk-summary/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View findings' }))
+    expect(await screen.findByText('findings-tab 2')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Findings2' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it("puts the actions' main button in the header and the rest before the links in More", () => {
+    state.asset = { ...BASE, type: 'subdomain' }
+    state.primary = true
+    const { container } = render(<AssetDetailPage />)
+    const header = container.querySelector('[data-slot="page-header"]') as HTMLElement
+    expect(header).toContainElement(screen.getByRole('button', { name: 'Scan now' }))
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
   })
 })
