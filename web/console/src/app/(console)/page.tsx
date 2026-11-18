@@ -67,7 +67,7 @@ export default function AdminOverviewPage() {
         },
         {
           key: 'failed',
-          href: '/security/activity?outcome=failure',
+          href: '/security/activity?kind=all&outcome=failure',
           label: t('admin.overview.failedActions', 'Refused admin actions (24 h)'),
           value: o.security.failed_admin_actions_24h,
           tone: o.security.failed_admin_actions_24h > 0 ? 'danger' : 'default',

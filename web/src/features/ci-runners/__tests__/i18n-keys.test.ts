@@ -47,7 +47,10 @@ describe('CI/CD i18n keys', () => {
       ...Object.keys(GATE_LABEL).map((k) => `scans.ci.gate.${k}`),
       ...Object.keys(REASON_LABEL).map((k) => `scans.ci.reason.${k}`),
       ...REFUSAL_CODES.flatMap((c) => [`scans.ci.refusal.${c}`, `scans.ci.refusal.${c}Fix`]),
-      ...['provider', 'organization', 'snippet', 'waiting'].map((s) => `scans.ci.setup.step.${s}`),
+      ...['provider', 'projects', 'snippet', 'waiting'].map((s) => `scans.ci.connect.step.${s}`),
+      ...['group', 'direct', 'list'].map((s) => `scans.ci.connect.repo.${s}`),
+      ...['protected', 'default', 'all'].map((s) => `scans.ci.connect.branch.${s}`),
+      ...['central', 'own', 'custom'].map((s) => `scans.ci.defs.case.${s}`),
       ...Object.keys(HEALTH_REASON_LABEL).map((k) => `scans.ci.health.${k}`),
       ...PIPELINE_STATUSES.flatMap((s) => [
         `scans.ci.status.${s}.label`,

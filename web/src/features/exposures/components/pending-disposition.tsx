@@ -7,9 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
-import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 import {
   acceptExposure,
@@ -62,7 +62,7 @@ interface PendingDispositionPanelProps {
 export function PendingDispositionPanel({ exposure, onChanged }: PendingDispositionPanelProps) {
   const { t } = useTranslation()
   const canApprove = useCanApproveExposures()
-  const userId = useAuthStore((s) => s.user?.id)
+  const userId = useMyUserId()
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
   const [selfOpen, setSelfOpen] = useState(false)
   const [confirm, setConfirm] = useState<'approve' | 'reject' | null>(null)

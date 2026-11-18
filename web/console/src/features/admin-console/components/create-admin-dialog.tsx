@@ -30,25 +30,23 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { provisionAdministrator } from '../api/use-admin-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { AdminRole } from '../types'
+import { roleName } from '../lib/role-name'
+import { BreakText } from '@/features/shared/components/break-text'
 
 export const ADMIN_ROLE_OPTIONS: {
   value: AdminRole
-  labelKey: string
   hintKey: string
 }[] = [
   {
     value: 'super_admin',
-    labelKey: 'admin.role.super_admin',
     hintKey: 'admin.createAdminDialog.superAdminHint',
   },
   {
     value: 'ops_admin',
-    labelKey: 'admin.role.ops_admin',
     hintKey: 'admin.createAdminDialog.operationsAdminHint',
   },
   {
     value: 'readonly',
-    labelKey: 'admin.role.readonly',
     hintKey: 'admin.createAdminDialog.readOnlyAdminHint',
   },
 ]
@@ -151,7 +149,9 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 <dt className="text-muted-foreground">
                   {t('admin.createAdminDialog.email', 'Email')}
                 </dt>
-                <dd className="min-w-0 break-all">{created.email}</dd>
+                <dd className="min-w-0 break-words">
+                  <BreakText>{created.email}</BreakText>
+                </dd>
                 {created.link && (
                   <>
                     <dt className="text-muted-foreground">
@@ -233,7 +233,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     <SelectContent>
                       {ADMIN_ROLE_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>
-                          {t(o.labelKey)}
+                          {roleName(t, o.value)}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -26,6 +26,7 @@ vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
   mine: [] as Dashboard[],
+  mineLoading: false,
   org: [] as Dashboard[],
   orgEnabled: [] as boolean[],
   orgError: undefined as Error | undefined,
@@ -40,7 +41,10 @@ vi.mock('../api/use-dashboards-api', () => ({
     hasOrg: perms.list.some((p) => p.startsWith('dashboards:org:')),
     dataKey: null,
   }),
-  useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
+  useMyDashboards: () =>
+    api.mineLoading
+      ? { data: undefined, isLoading: true }
+      : { data: { data: api.mine }, isLoading: false },
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
     if (enabled && api.orgError) return { data: undefined, error: api.orgError, isLoading: false }
@@ -141,6 +145,7 @@ describe('DashboardHome', () => {
     window.localStorage.clear()
     perms.list = []
     api.mine = []
+    api.mineLoading = false
     api.org = []
     api.orgEnabled = []
     api.orgError = undefined
@@ -218,9 +223,35 @@ describe('DashboardHome', () => {
     expect(screen.queryByText('Organization')).toBeNull()
     expect(screen.getByText('Mine', { selector: '[role=menuitem] span' })).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
-    // My own dashboard: Customize and the schedule picker are offered.
+    // My own dashboard: Customize in the toolbar, the schedule in More.
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Refresh schedule' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
+  })
+
+  it("holds the switcher's place on the title line while the lists load, hidden and inert", () => {
+    api.mineLoading = true
+    renderHome()
+    const line = document.querySelector('[data-slot="page-header-title-line"]')
+    const pending = screen.getByTestId('dashboard-switcher-pending')
+    expect(line).toContainElement(pending)
+    expect(pending).toBeDisabled()
+    expect(pending).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByRole('button', { name: /Switch dashboard/ })).toBeNull()
+  })
+
+  it("the dashboard's name is the switcher: a chevron on the title line, outside the h1", () => {
+    api.mine = [dash('p2', 'Mine', { is_default: true })]
+    data.byKey['personal:p2'] = snapshot('personal', 3)
+    renderHome()
+    const switcher = screen.getByRole('button', { name: 'Switch dashboard: Mine' })
+    const line = document.querySelector('[data-slot="page-header-title-line"]')
+    expect(line).toContainElement(switcher)
+    expect(screen.getByRole('heading', { level: 1, name: 'Mine' })).not.toContainElement(switcher)
+    // The toolbar holds no switcher and no schedule picker any more.
+    const toolbar = screen.getByTestId('dashboard-toolbar')
+    expect(toolbar).not.toContainElement(switcher)
+    expect(screen.queryByRole('combobox', { name: 'Refresh schedule' })).toBeNull()
   })
 
   it('an organization viewer lands on the organization default, badge organization-wide, no schedule or customize without manage', () => {
@@ -341,12 +372,13 @@ describe('DashboardHome', () => {
     expect(toast.success).not.toHaveBeenCalled()
   })
 
-  it('a manager may set the organization schedule', () => {
+  it('a manager may set the organization schedule', async () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
     api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     renderHome()
-    expect(screen.getByRole('combobox', { name: 'Refresh schedule' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
   })
 
   it('keeps the last choice and switches from the menu', async () => {
@@ -387,9 +419,10 @@ describe('DashboardHome', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
     try {
       renderHome()
-      // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
+      // The switcher is on the title line; the toolbar holds Refresh (named
+      // although icon-only) and More.
+      expect(screen.getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
       const toolbar = screen.getByTestId('dashboard-toolbar')
-      expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
       expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
       await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
       // A submenu makes it a bottom sheet titled with the dashboard.
@@ -407,15 +440,26 @@ describe('DashboardHome', () => {
     }
   })
 
-  it('the actions menu leaves Customize and the schedule to the toolbar from 640px', async () => {
+  it('from 640px the actions menu leaves Customize to the toolbar and keeps the schedule', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)
     renderHome()
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
     const menu = await screen.findByRole('menu')
     expect(within(menu).queryByRole('menuitem', { name: 'Customize' })).toBeNull()
-    expect(within(menu).queryByRole('menuitem', { name: /Refresh schedule/ })).toBeNull()
+    expect(within(menu).getByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
+  })
+
+  it('a viewer of an organization dashboard gets no schedule item', async () => {
+    perms.list = ['dashboards:org:view']
+    api.mine = [dash('p1', 'Mine')]
+    api.org = [dash('o2', 'CTEM', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    renderHome()
+    // Duplicate to mine is the only action: shown as the button itself.
+    expect(screen.getByRole('button', { name: 'Duplicate to mine' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Refresh schedule/ })).toBeNull()
   })
 
   it('the meta line names the scope, the last and the next refresh on one line', () => {

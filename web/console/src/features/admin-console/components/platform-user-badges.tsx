@@ -1,5 +1,6 @@
 'use client'
 
+import { accountStatusLabel } from '../lib/value-labels'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -55,9 +56,7 @@ export function PlatformUserBadges({
         <Badge variant="destructive">{t('admin.users.badge.blocked', 'Blocked')}</Badge>
       )}
       {user.status !== 'active' && !user.erased && !user.blocked && (
-        <Badge variant="outline" className="capitalize">
-          {user.status}
-        </Badge>
+        <Badge variant="outline">{accountStatusLabel(t, user.status)}</Badge>
       )}
       {!user.email_verified && (
         <Badge variant="outline" className="border-warning/50 text-warning">

@@ -64,10 +64,8 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
     <div
       // Rows keep their stored height from 640px; on a phone every widget is
       // as tall as its content, so a two-row figure leaves no empty space.
-      className={cn(
-        'grid gap-3 sm:gap-4 sm:[grid-auto-rows:minmax(var(--row),auto)]',
-        columnsClass(cols)
-      )}
+      // One 16px gap at every width.
+      className={cn('grid gap-4 sm:[grid-auto-rows:minmax(var(--row),auto)]', columnsClass(cols))}
       style={{ '--row': `${ROW_HEIGHT}px` } as React.CSSProperties}
       data-columns={cols}
     >

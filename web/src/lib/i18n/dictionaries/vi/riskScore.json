@@ -117,7 +117,7 @@
   "riskScore.settings.multiplier.tip": "Điểm cuối được nhân với hệ số này theo mức phơi nhiễm của tài sản. Hệ số 1.0 là không đổi, lớn hơn 1.0 làm tăng rủi ro, nhỏ hơn 1.0 làm giảm rủi ro.",
   "riskScore.settings.multiplier.title": "Hệ số nhân (0.1 - 3.0)",
   "riskScore.settings.page.desc": "Cấu hình các trọng số và tham số tạo nên điểm rủi ro của từng tài sản.",
-  "riskScore.settings.page.title": "Điểm rủi ro",
+  "riskScore.settings.page.title": "Chấm điểm rủi ro",
   "riskScore.settings.preset.banking.desc": "Mức độ quan trọng và CTEM cao, tập trung vào dữ liệu cá nhân",
   "riskScore.settings.preset.banking.name": "Ngân hàng",
   "riskScore.settings.preset.default.desc": "Cân bằng cho mục đích sử dụng chung",

@@ -74,7 +74,7 @@ export function CreateGroupDialog({
     switch (currentStep) {
       case 'basic':
         if (!formData.name.trim()) {
-          toast.error('Please enter a group name')
+          toast.error(t('assetGroups.create.nameRequiredPrompt', 'Please enter a group name'))
           return false
         }
         return true
@@ -82,7 +82,9 @@ export function CreateGroupDialog({
         // Validate new assets have names
         const invalidAssets = formData.newAssets.filter((asset) => !asset.name.trim())
         if (invalidAssets.length > 0) {
-          toast.error('Please provide names for all new assets')
+          toast.error(
+            t('assetGroups.create.assetNamesRequired', 'Please provide names for all new assets')
+          )
           return false
         }
         if (invalidDomains(formData.rule).length > 0) {
@@ -102,7 +104,7 @@ export function CreateGroupDialog({
       case 'review':
         // Final validation
         if (!formData.name.trim()) {
-          toast.error('Group name is required')
+          toast.error(t('assetGroups.create.nameRequired', 'Group name is required'))
           return false
         }
         return true
@@ -172,9 +174,13 @@ export function CreateGroupDialog({
 
       const totalAssets = formData.selectedAssetIds.length + formData.newAssets.length
       toast.success(
-        `Group "${formData.name}" created successfully${
-          totalAssets > 0 ? ` with ${totalAssets} assets` : ''
-        }`
+        totalAssets > 0
+          ? t(
+              'assetGroups.create.successWithAssets',
+              'Group "{name}" created with {count, plural, one {# asset} other {# assets}}',
+              { name: formData.name, count: totalAssets }
+            )
+          : t('assetGroups.filterActions.saved', 'Group "{name}" created', { name: formData.name })
       )
 
       // Reset and close
@@ -182,7 +188,7 @@ export function CreateGroupDialog({
       setCurrentStep('basic')
       onOpenChange(false)
     } catch {
-      toast.error('Failed to create group. Please try again.')
+      toast.error(t('assetGroups.create.failed', 'Failed to create group. Please try again.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -222,7 +228,7 @@ export function CreateGroupDialog({
       case 'members':
         return t('assetGroups.wizard.step.review', 'Review')
       default:
-        return 'Next'
+        return t('assetGroups.create.next', 'Next')
     }
   }
 
@@ -237,9 +243,14 @@ export function CreateGroupDialog({
                 <Layers className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <DialogTitle className="text-lg">Create Asset Group</DialogTitle>
+                <DialogTitle className="text-lg">
+                  {t('assetGroups.create.title', 'Create asset group')}
+                </DialogTitle>
                 <DialogDescription className="text-sm">
-                  Organize assets with business context for CTEM scoping
+                  {t(
+                    'assetGroups.create.description',
+                    'Organize assets with business context for CTEM scoping'
+                  )}
                 </DialogDescription>
               </div>
             </div>
@@ -265,7 +276,7 @@ export function CreateGroupDialog({
                 className="gap-1"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back
+                {t('assetGroups.create.back', 'Back')}
               </Button>
             )}
           </div>
@@ -278,7 +289,7 @@ export function CreateGroupDialog({
               onClick={handleClose}
               disabled={isSubmitting}
             >
-              Cancel
+              {t('assetGroups.cancel', 'Cancel')}
             </Button>
 
             {isLastStep ? (
@@ -291,12 +302,12 @@ export function CreateGroupDialog({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    Creating...
+                    {t('assetGroups.create.creating', 'Creating...')}
                   </>
                 ) : (
                   <>
                     <FolderPlus className="me-2 h-4 w-4" />
-                    Create Group
+                    {t('assetGroups.create.submit', 'Create group')}
                   </>
                 )}
               </Button>

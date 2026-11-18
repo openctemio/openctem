@@ -519,11 +519,37 @@ reference.
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so the filter tokens neither shrink nor wrap to a third
     line.
+  - a toolbar group that draws none of its controls at this width (the
+    Display menu on a phone, tokens moved into the Filters sheet) takes no
+    line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
+    the first chip opens its own line (the list moves 44 px: the row and its
+    gap) instead of sitting on a line an empty group already opened.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
   does the same, and never shows a page count below 1.
+- **An automatic phone card is compact.** A table without `mobileRow` draws
+  short lines of 20 px each, whatever its cells draw (one line, cut with an
+  ellipsis); only the title may take two:
+  - the title line: the row's name (the column of kind `name`, else the first
+    column; never guessed from the values), up to two lines whatever width the
+    table cell set for itself, then the status chip (the first column of kind
+    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    wraps under the title: a status cell too wide for its place gets a line of
+    its own under the title, and an actions cell wider than one icon button
+    gets one trailing line at the end of the card;
+  - one muted subtitle line: the first other column the page marked `asset`,
+    `owner`, `id` or `text` (an unmarked column is never the subtitle); kept
+    empty at its height on a row where it says nothing or repeats the title;
+  - one line of at most two label/value fields: the first other columns that
+    say something. A value that draws nothing or only a dash, or repeats the
+    title, is left out (never a label over an empty value), so a later column
+    takes its place. "0" is a value and stays; a switch is a value too.
+    A chip value (a badge, chip or tag) is never cut: a field whose chip does
+    not fit half the line takes the whole line, and the other field goes on
+    the line under it.
+    A list whose card needs more than that passes its own `mobileRow`.
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
   outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
@@ -815,6 +841,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   IPs, ports, file paths, URLs, API keys, code snippets. Never for numbers,
   labels, statuses or prose.
 - Numbers that line up use `tabular-nums`.
+- Names and addresses (asset and host names, e-mail addresses, URLs, file and
+  package names) wrap only at their separators: render them through
+  `<BreakText>` with `break-words`. `break-all` breaks every word at any
+  letter ("Paym|ents") and is kept for mono machine values (hashes, keys,
+  tokens); `src/lib/__tests__/name-break-guard.test.ts` enforces it.
 - Sizes come from the type roles in `src/styles/theme.css` (each sets size,
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with
@@ -900,7 +931,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 ## 7. States
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
-  (`Loader2`) only inside buttons that are working.
+  (`Loader2`) only inside buttons that are working. A `DataTable` draws as
+  many placeholder rows as the list showed last time in this browser session
+  (same page and table), else five, never more than its page size or than fit
+  on the screen, and at least one (`data-table/loading-rows.ts`); it reads its frame
+  width before the first paint, so columns do not move when the rows arrive.
 - **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
   `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
   read never looks like an empty list or a row of zeros. The route guard
@@ -1210,10 +1245,10 @@ repositories, SCM connections, the vulnerability page).
 holds a More icon; menus that are not action menus (breadcrumb levels, editor
 formatting, a menu of choices) are listed there with the reason.
 
-- A control that moves into the toolbar from 640 px up (the dashboard's Customize
-  and refresh schedule) is an item of the menu only below that width
-  (`useIsBelowSm`); a choice among values (the schedule) is a submenu, the
-  saved value marked "(current)".
+- A control that moves into the toolbar from 640 px up (the dashboard's
+  Customize) is an item of the menu only below that width (`useIsBelowSm`); a
+  choice among values (the dashboard's refresh schedule) is a submenu of the
+  menu at every width, the saved value marked "(current)".
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 
