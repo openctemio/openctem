@@ -205,7 +205,7 @@ export function AssetIdentitySections({
               <li key={r.id} className="flex items-start gap-2 text-xs">
                 <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="break-all">
+                  <p className="break-words">
                     <span className="font-mono">{r.old_value || '—'}</span>
                     {' → '}
                     <span className="font-mono">{r.new_value || '—'}</span>

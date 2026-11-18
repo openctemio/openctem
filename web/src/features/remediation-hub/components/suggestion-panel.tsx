@@ -580,7 +580,7 @@ function WhySection({ s }: { s: RemediationSuggestion }) {
           </p>
         )}
         <DetailDisclosure summary={t('remediationHub.panel.technical')}>
-          <p className="text-muted-foreground text-xs break-all">
+          <p className="text-muted-foreground text-xs break-words">
             {t('remediationHub.explain.key', undefined, { key: s.action_key })}
           </p>
           <p className="text-muted-foreground text-xs">

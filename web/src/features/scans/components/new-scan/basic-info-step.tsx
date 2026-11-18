@@ -32,6 +32,7 @@ import { safeHref } from '@/lib/safe-href'
 import {
   byReadiness,
   firstProblem,
+  canScan,
   isRunnable,
   skippedSteps,
   readinessFixHref,
@@ -72,9 +73,20 @@ interface BasicInfoStepProps {
    * (scan_type is fixed), so the mode switch is not offered.
    */
   lockMode?: boolean
+  /**
+   * The step's problems are shown (the person left the step, or tried to
+   * create): each missing value is marked at its field, so "Go to What"
+   * lands on the field to fix.
+   */
+  showErrors?: boolean
 }
 
-export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
+export function BasicInfoStep({
+  data,
+  onChange,
+  lockMode = false,
+  showErrors = false,
+}: BasicInfoStepProps) {
   const { t } = useTranslation()
   // Workflow scans are a module: when it is off for the organization the
   // API refuses them, so none is offered (an existing workflow scan being
@@ -89,11 +101,17 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       : { is_active: true, per_page: 100, include: 'readiness' },
     { revalidateOnFocus: false, isPaused: () => !offerWorkflows }
   )
-  // Workflows that can run here come first; the others stay visible, off,
-  // with why (a hidden card would hide what the product can do).
+  // Workflows that can run here come first, then those that run in part
+  // (their steps without a tool or sensor are skipped: a scan runs what is
+  // supported); CI-only ones stay visible, off, with why (a hidden card
+  // would hide what the product can do).
   const workflows = useMemo(() => byReadiness(workflowsData?.data ?? []), [workflowsData?.data])
   const runnable = useMemo(() => workflows.filter((w) => isRunnable(w.readiness)), [workflows])
-  const notAvailable = useMemo(() => workflows.filter((w) => !isRunnable(w.readiness)), [workflows])
+  const partly = useMemo(
+    () => workflows.filter((w) => !isRunnable(w.readiness) && canScan(w.readiness)),
+    [workflows]
+  )
+  const notAvailable = useMemo(() => workflows.filter((w) => !canScan(w.readiness)), [workflows])
   const starters = useMemo(
     () => workflows.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
     [workflows]
@@ -174,12 +192,17 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
     onChange(next)
   }
   const runnableHere = runnable.filter((w) => !aboveReason(tierOf.get(w.id)))
-  const aboveHere = runnable.filter((w) => !!aboveReason(tierOf.get(w.id)))
+  const partlyHere = partly.filter((w) => !aboveReason(tierOf.get(w.id)))
+  const aboveHere = [...runnable, ...partly].filter((w) => !!aboveReason(tierOf.get(w.id)))
 
   return (
     <FormStack className="px-4 py-4 sm:px-6">
       {/* Scan Name */}
-      <FormField id="scan-name" label={t('scans.basic.name')}>
+      <FormField
+        id="scan-name"
+        label={t('scans.basic.name')}
+        error={showErrors && !data.name.trim() ? t('scans.err.name') : undefined}
+      >
         <Input
           placeholder={t('scans.basic.namePlaceholder')}
           value={data.name}
@@ -236,6 +259,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         <FormField
           id="scan-scanner"
           label={t('scans.basic.scanner')}
+          error={showErrors && !data.scannerName ? t('scans.err.scanner') : undefined}
           hint={
             <>
               {t('scans.basic.scannerHint')}
@@ -269,6 +293,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         <FormStack className="gap-3">
           <FormField
             label={t('scans.basic.selectWorkflow')}
+            error={showErrors && !data.workflowId ? t('scans.err.workflow') : undefined}
             hint={
               !isLoadingWorkflows && workflows.length === 0 ? (
                 <Link href="/scans/workflows" className="underline">
@@ -282,7 +307,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 value={data.workflowId || undefined}
                 onValueChange={(value) => onChange({ workflowId: value })}
               >
-                <SelectTrigger {...control} aria-label={t('scans.basic.workflow')}>
+                <SelectTrigger
+                  {...control}
+                  className="w-full"
+                  aria-label={t('scans.basic.workflow')}
+                >
                   <SelectValue
                     placeholder={
                       isLoadingWorkflows
@@ -316,6 +345,24 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                       </div>
                     </SelectItem>
                   ))}
+                  {partlyHere.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-xs text-muted-foreground">
+                        {t('scans.basic.runsInPart')}
+                      </SelectLabel>
+                      {partlyHere.map((workflow) => (
+                        <SelectItem key={workflow.id} value={workflow.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{workflow.name}</span>
+                            <span className="text-cap text-warning">
+                              {problemText(workflow.readiness, t) ??
+                                readinessLabel(workflow.readiness, t)}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                   {aboveHere.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-xs text-muted-foreground">
@@ -419,7 +466,10 @@ function ChoiceCard({
 }) {
   const { t } = useTranslation()
   const id = `run-choice-${value}`
-  const off = !isRunnable(readiness) || !!aboveCeiling
+  // Off only above the intensity or for a CI-only workflow; a blocked one
+  // runs in part and says which steps are skipped.
+  const off = !canScan(readiness) || !!aboveCeiling
+  const inPart = !off && !isRunnable(readiness)
   const label = aboveCeiling ?? readinessLabel(readiness, t)
   const problem = aboveCeiling ? undefined : firstProblem(readiness)
   const fixHref = readinessFixHref(readiness)
@@ -461,6 +511,11 @@ function ChoiceCard({
                 </Link>
               </>
             )}
+          </span>
+        )}
+        {inPart && (
+          <span className="block text-cap text-muted-foreground" data-testid="runs-in-part">
+            {t('scans.readiness.runsInPart')}
           </span>
         )}
         {skipped.length > 0 && (

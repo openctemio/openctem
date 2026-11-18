@@ -63,6 +63,9 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/query/components/query-input.tsx': 'not-org-data',
   'src/features/remediation-hub/components/task-detail.tsx': 'not-org-data',
   'src/features/sensors/components/tool-settings-list.tsx': 'not-org-data',
+  // How many placeholder rows a list draws while it loads: a number capped at
+  // the page size and the screen, no record values.
+  'src/features/shared/components/data-table/loading-rows.ts': 'not-org-data',
   'src/features/shared/components/data-table/use-table-density.ts': 'not-org-data',
   'src/features/shared/components/filter-panel-layout.tsx': 'not-org-data',
   'src/hooks/use-display-user.ts': 'not-org-data',

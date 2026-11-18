@@ -132,6 +132,7 @@ import { useTenantSettings } from '@/features/organization/api/use-tenant-settin
 import { usePendingOwnershipTransfer } from '@/features/organization/api/use-ownership-transfer'
 import { TransferOwnershipDialog } from '@/features/organization/components/transfer-ownership-dialog'
 import { OwnershipTransferBanner } from '@/features/organization/components/ownership-transfer-banner'
+import { BreakText } from '@/features/shared/components/break-text'
 
 // Tab values for the status filter on the members table (RFC-050 member
 // lifecycle). "current" (the default) is active + disabled; offboarded
@@ -1020,7 +1021,7 @@ export default function UsersPage() {
           {/* Once: not under a name that is the address itself. */}
           {distinctAddress(row.original.name, row.original.email) && (
             <span className="min-w-0 flex-1 truncate text-cap text-muted-foreground">
-              {row.original.email}
+              <BreakText>{row.original.email}</BreakText>
             </span>
           )}
         </div>
@@ -1408,7 +1409,9 @@ export default function UsersPage() {
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="font-medium">{row.original.email}</span>
+          <span className="font-medium">
+            <BreakText>{row.original.email}</BreakText>
+          </span>
           {invitationBadges(row.original)}
         </div>
       ),

@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useTranslation } from '@/context/i18n-provider'
-import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { useRegistryTargetPairs } from '../api/use-target-mappings'
 import { useTargetTypeText } from '../lib/target-mappings'
 
@@ -32,9 +31,7 @@ export function TargetMappingRegistryPanel() {
       .map(([target, types]) => ({
         target,
         label: text.label(target),
-        types: [...new Set(types)]
-          .map((v) => getAssetTypeLabel(v))
-          .sort((a, b) => a.localeCompare(b)),
+        types: [...new Set(types)].map((v) => text.asset(v)).sort((a, b) => a.localeCompare(b)),
       }))
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [data, text])

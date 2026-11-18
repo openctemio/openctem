@@ -28,7 +28,7 @@ export function TypeToConfirmField({
     <div className="space-y-2">
       <Label htmlFor={id} className="block font-normal">
         {before}
-        <span className="font-semibold break-all">{expected}</span>
+        <span className="font-semibold break-words">{expected}</span>
         {after}
       </Label>
       <Input

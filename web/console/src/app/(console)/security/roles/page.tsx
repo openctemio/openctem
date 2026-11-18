@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { KeyRound, ShieldAlert, UserRound, X } from 'lucide-react'
@@ -176,7 +177,7 @@ export default function AdminRolesPage() {
               )}
             </div>
           ) : (
-            <span className="text-muted-foreground">-</span>
+            <EmptyCell title={t('admin.roles.noFlags', 'Active, nothing to flag')} />
           ),
       },
       {

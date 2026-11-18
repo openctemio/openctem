@@ -352,7 +352,7 @@
   "exposures.view.allStates": "Mọi trạng thái",
   "exposures.view.analytics": "Dạng phân tích",
   "exposures.view.list": "Dạng danh sách",
-  "exposures.view.needsAttention": "Cần xử lý",
+  "exposures.view.needsAttention": "Cần chú ý",
   "exposures.vulnCatalog.card.cvss": "CVSS {score}",
   "exposures.vulnCatalog.card.epss": "EPSS {score}",
   "exposures.vulnCatalog.card.published": "Công bố {date}",

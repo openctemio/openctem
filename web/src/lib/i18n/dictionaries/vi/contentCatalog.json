@@ -146,6 +146,7 @@
   "contentCatalog.trust.noRootsTitle": "Danh mục chưa được thiết lập",
   "contentCatalog.trust.revocationsStale": "Danh sách thu hồi đã quá hạn: không thể cài sensor và bộ chuyển đổi công cụ cho đến lần nhập tiếp theo.",
   "contentCatalog.trust.staleTitle": "Danh mục đã lỗi thời",
+  "contentCatalog.type.bundle": "Gói tổng hợp",
   "contentCatalog.type.feeds": "Nguồn dữ liệu",
   "contentCatalog.type.playbooks": "Playbook",
   "contentCatalog.type.policy-packs": "Gói chính sách",

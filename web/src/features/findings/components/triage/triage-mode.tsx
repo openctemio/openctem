@@ -31,7 +31,14 @@ import { useQueueAnnouncer } from '@/features/shared/components/queue'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { useCanMutate } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import {
   cancelApproval,
   fetchFinding,
@@ -83,6 +90,9 @@ import { TriageReceiptDialog } from './triage-receipt-dialog'
 
 type RequestTarget = 'false_positive' | 'accepted'
 
+/** Findings passed over one after another replace one note, not a stack of them. */
+const PASSED_OVER_TOAST = 'triage-passed-over'
+
 export function TriageMode() {
   const { t } = useTranslation()
   const router = useRouter()
@@ -123,6 +133,7 @@ export function TriageMode() {
 
   const [showEvidence, setShowEvidence] = useState(false)
   const [keysOpen, setKeysOpen] = useState(false)
+  const [queueOpen, setQueueOpen] = useState(false)
   const [requestTarget, setRequestTarget] = useState<RequestTarget | null>(null)
   // A status move the lifecycle gives a note or fields: the confirm of the
   // shown finding, or the inverse move of an Undo.
@@ -138,8 +149,8 @@ export function TriageMode() {
   // mode, each decision ("Confirmed: <title>") and each undo.
   const { announce, region } = useQueueAnnouncer()
   const say = useCallback(
-    (kind: 'info' | 'error', text: string) => {
-      if (kind === 'info') toast.info(text)
+    (kind: 'info' | 'error', text: string, toastId?: string) => {
+      if (kind === 'info') toast.info(text, toastId ? { id: toastId } : undefined)
       else toast.error(text)
       announce(text)
     },
@@ -222,11 +233,16 @@ export function TriageMode() {
           {
             status: cfg ? t(cfg.labelKey, cfg.label) : shown.status,
           }
-        )
+        ),
+        PASSED_OVER_TOAST
       )
       decide(current.id, 'changed')
     } else if (gone) {
-      say('info', t('findings.triageMode.goneSkipped', 'No longer available to you. Skipped.'))
+      say(
+        'info',
+        t('findings.triageMode.goneSkipped', 'No longer available to you. Skipped.'),
+        PASSED_OVER_TOAST
+      )
       decide(current.id, 'changed')
     }
   }, [current, busy, outcome, isChanged, gone, shown, decide, direction, say, t])
@@ -534,6 +550,9 @@ export function TriageMode() {
         case 'help':
           setKeysOpen(true)
           return
+        case 'queue':
+          if (session && session.items.length > 0) setQueueOpen((v) => !v)
+          return
         case 'evidence':
           if (shown) setShowEvidence((v) => !v)
           return
@@ -584,6 +603,7 @@ export function TriageMode() {
       undo,
       record,
       router,
+      session,
     ]
   )
 
@@ -719,10 +739,10 @@ export function TriageMode() {
     canNext: !!session && session.index < session.items.length,
   }
 
-  // Three cards side by side when the content area is wide (1152 px); from
-  // 672 px the finding and its decision side by side, the queue under them; on a phone
-  // the finding, then its decision, then the queue, with Confirm and the session's
-  // counts in a bar at the bottom of the screen. Nothing is left out.
+  // One finding at a time: the finding, then its decision under it in the
+  // same card. The queue opens on demand in a side sheet (Queue, `q`), never
+  // as a permanent column. On a phone the other decisions are folded and
+  // Previous, Skip and Confirm sit in a bar at the bottom of the screen.
   return (
     <Main>
       <PageStack>
@@ -730,52 +750,36 @@ export function TriageMode() {
           <TriageHeaderActions
             undoCount={session?.undo.length ?? 0}
             busy={busy}
+            queueOpen={queueOpen}
+            hasQueue={showQueue}
             onUndo={() => onAction('undo')}
+            onQueue={() => onAction('queue')}
             onHelp={() => onAction('help')}
             onExit={() => onAction('exit')}
           />
         </PageHeader>
         <TriageStatusLine queueLabel={queueLabel} progress={progress} />
         <div
-          className={cn(
-            'grid items-start gap-4',
-            showPanel
-              ? '@2xl/content:grid-cols-[minmax(0,1fr)_18rem] @6xl/content:grid-cols-[16rem_minmax(0,1fr)_20rem]'
-              : showQueue && '@6xl/content:grid-cols-[16rem_minmax(0,1fr)]'
-          )}
+          ref={centreRef}
+          tabIndex={-1}
+          className="min-w-0 space-y-6 outline-none md:rounded-lg md:border md:bg-card md:p-6"
+          aria-busy={loadingWindow || undefined}
         >
-          {showQueue && (
-            <TriageQueuePanel
-              session={session}
-              onSelect={(i) => go(i, i < session.index ? 'back' : 'forward')}
-              className={
-                !showPanel
-                  ? 'order-last @6xl/content:order-none'
-                  : 'order-last @2xl/content:col-span-2 @6xl/content:order-none @6xl/content:col-span-1'
-              }
-            />
+          {!!loadError && !!session && session.items.length > 0 && (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {t('findings.triageMode.windowFailed', 'The next findings could not be loaded.')}{' '}
+              <button type="button" className="underline" onClick={retry}>
+                {t('common.retry', 'Retry')}
+              </button>
+            </p>
           )}
-          <div
-            ref={centreRef}
-            tabIndex={-1}
-            className="min-w-0 rounded-lg border bg-card p-4 outline-none md:p-6"
-            aria-busy={loadingWindow || undefined}
-          >
-            {!!loadError && !!session && session.items.length > 0 && (
-              <p className="mb-3 text-sm text-destructive" role="alert">
-                {t('findings.triageMode.windowFailed', 'The next findings could not be loaded.')}{' '}
-                <button type="button" className="underline" onClick={retry}>
-                  {t('common.retry', 'Retry')}
-                </button>
-              </p>
-            )}
-            {centre}
-          </div>
+          {centre}
           {showPanel && (
             <TriageDecisionPanel
               state={decisionState}
               onAction={onAction}
-              confirmInBar={isPhone}
+              phone={isPhone}
+              className={isPhone ? undefined : 'border-t pt-6'}
               assignControl={
                 <div ref={assignRef}>
                   <AssigneeSelect
@@ -799,11 +803,30 @@ export function TriageMode() {
             />
           )}
         </div>
-        {showPanel && isPhone && (
-          <TriagePhoneBar state={decisionState} progress={progress} onAction={onAction} />
-        )}
+        {showPanel && isPhone && <TriagePhoneBar state={decisionState} onAction={onAction} />}
       </PageStack>
       {region}
+      {showQueue && (
+        <Sheet open={queueOpen} onOpenChange={setQueueOpen}>
+          <SheetContent side="right" data-testid="triage-queue-sheet">
+            <SheetHeader>
+              <SheetTitle>{t('findings.triageMode.queue', 'Queue')}</SheetTitle>
+              <SheetDescription>
+                {t('findings.triageMode.queueOrder', 'Queue, in the list order')}
+              </SheetDescription>
+            </SheetHeader>
+            <SheetBody>
+              <TriageQueuePanel
+                session={session}
+                onSelect={(i) => {
+                  setQueueOpen(false)
+                  go(i, i < session.index ? 'back' : 'forward')
+                }}
+              />
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {shown && requestTarget && (
         <ApprovalDialog

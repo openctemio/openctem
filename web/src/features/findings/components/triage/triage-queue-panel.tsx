@@ -27,9 +27,9 @@ export const OUTCOME_LABELS: Record<TriageOutcome, { key: string; fallback: stri
 }
 
 /**
- * The queue around the shown finding, in the queue's order. Beside the
- * finding on a wide page; under the decision panel on a narrower one and on
- * a phone (the item and its decision come first).
+ * The queue around the shown finding, in the queue's order. Shown on demand
+ * (the Queue button or `q`) in a side sheet over the page, never as a
+ * permanent column: the page shows one finding and its decision.
  */
 export function TriageQueuePanel({
   session,
@@ -46,12 +46,9 @@ export function TriageQueuePanel({
   return (
     <nav
       aria-label={t('findings.triageMode.queue', 'Queue')}
-      className={cn('rounded-lg border bg-card p-2', className)}
+      className={cn('p-2', className)}
       data-testid="triage-queue"
     >
-      <p className="px-2 pt-1 pb-2 text-xs font-medium text-muted-foreground">
-        {t('findings.triageMode.queueOrder', 'Queue, in the list order')}
-      </p>
       <ol className="space-y-0.5">
         {shown.map((item, i) => {
           const index = start + i
@@ -69,7 +66,7 @@ export function TriageQueuePanel({
                 )}
               >
                 {outcome ? (
-                  <span className="font-mono text-xs font-semibold tracking-wide uppercase">
+                  <span className="text-xs font-medium">
                     {t(OUTCOME_LABELS[outcome].key, OUTCOME_LABELS[outcome].fallback)}
                   </span>
                 ) : (

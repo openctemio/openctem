@@ -258,7 +258,7 @@ export const SuggestionCard = forwardRef<HTMLDivElement, SuggestionCardProps>(
             </ul>
             <details className="text-muted-foreground text-xs">
               <summary className="cursor-pointer">{t('remediationHub.panel.technical')}</summary>
-              <p className="mt-1 break-all">
+              <p className="mt-1 break-words">
                 {t('remediationHub.explain.key', undefined, { key: s.action_key })}
               </p>
               <p>

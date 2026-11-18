@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
+import { translate } from '@/lib/i18n'
+import { en } from '@/lib/i18n/dictionaries/en'
+import { vi } from '@/lib/i18n/dictionaries/vi'
 import {
   availabilityByName,
   isRunnable,
@@ -10,6 +13,10 @@ import {
   toolUnavailableReason,
   versionsLabel,
 } from '../availability'
+
+type Vars = Record<string, string | number>
+const tEn = (key: string, fallback?: string, vars?: Vars) => translate(en, key, fallback, vars)
+const tVi = (key: string, fallback?: string, vars?: Vars) => translate(vi, key, fallback, vars)
 
 function availItem(over: Partial<ToolAvailabilityItem>): ToolAvailabilityItem {
   return {
@@ -39,30 +46,74 @@ describe('tool availability helpers', () => {
   })
 
   it('explains why a tool cannot run, and says nothing when it can', () => {
-    expect(toolUnavailableReason(availItem({ status: 'ready' }))).toBeNull()
-    expect(toolUnavailableReason(undefined)).toBeNull()
+    expect(toolUnavailableReason(availItem({ status: 'ready' }), tEn)).toBeNull()
+    expect(toolUnavailableReason(undefined, tEn)).toBeNull()
     expect(
       toolUnavailableReason(
-        availItem({ name: 'checkov', status: 'no_sensor', sensors_total: 0, sensors_online: 0 })
+        availItem({ name: 'checkov', status: 'no_sensor', sensors_total: 0, sensors_online: 0 }),
+        tEn
       )
     ).toBe('No sensor has checkov')
     expect(
       toolUnavailableReason(
         availItem({ name: 'semgrep', status: 'offline_only', sensors_total: 2, sensors_online: 0 }),
+        tEn,
         true
       )
     ).toBe('No online sensor in this zone has semgrep (2 offline)')
     expect(
       toolUnavailableReason(
-        availItem({ name: 'zap', status: 'no_sensor', sensors_total: 0, sensors_excluded: 1 })
+        availItem({ name: 'zap', status: 'no_sensor', sensors_total: 0, sensors_excluded: 1 }),
+        tEn
       )
     ).toMatch(/grant or local policy/)
-    expect(toolUnavailableReason(availItem({ name: 'kics', status: 'disabled' }))).toBe(
+    expect(toolUnavailableReason(availItem({ name: 'kics', status: 'disabled' }), tEn)).toBe(
       'kics is switched off for this organization'
     )
     expect(
-      toolUnavailableReason(availItem({ name: 'mine', status: 'disabled', in_catalog: false }))
+      toolUnavailableReason(availItem({ name: 'mine', status: 'disabled', in_catalog: false }), tEn)
     ).toBe('mine is not in the tool catalog')
+  })
+
+  it('gives every reason in Vietnamese, with the tool name and count filled in', () => {
+    const cases: [Partial<ToolAvailabilityItem>, boolean, string][] = [
+      [{ status: 'no_sensor', sensors_total: 0 }, false, 'Không sensor nào có checkov'],
+      [
+        { status: 'no_sensor', sensors_total: 0 },
+        true,
+        'Không sensor nào trong vùng này có checkov',
+      ],
+      [
+        { status: 'offline_only', sensors_total: 2, sensors_online: 0 },
+        false,
+        'Không sensor trực tuyến nào có checkov (2 đang ngoại tuyến)',
+      ],
+      [
+        { status: 'offline_only', sensors_total: 2, sensors_online: 0 },
+        true,
+        'Không sensor trực tuyến nào trong vùng này có checkov (2 đang ngoại tuyến)',
+      ],
+      [
+        { status: 'no_sensor', sensors_total: 0, sensors_excluded: 1 },
+        false,
+        'Không sensor nào được phép chạy checkov: quyền hạn hoặc chính sách cục bộ của sensor không cho phép',
+      ],
+      [
+        { status: 'no_sensor', sensors_total: 0, sensors_excluded: 1 },
+        true,
+        'Không sensor nào trong vùng này được phép chạy checkov: quyền hạn hoặc chính sách cục bộ của sensor không cho phép',
+      ],
+      [{ status: 'disabled' }, false, 'checkov đã bị tắt cho tổ chức này'],
+      [{ status: 'disabled', in_catalog: false }, false, 'checkov không có trong danh mục công cụ'],
+    ]
+    for (const [over, inZone, want] of cases) {
+      const item = availItem({ name: 'checkov', ...over })
+      expect(toolUnavailableReason(item, tVi, inZone)).toBe(want)
+      // Every branch has its own key: the English text never shows in Vietnamese.
+      expect(toolUnavailableReason(item, tVi, inZone)).not.toBe(
+        toolUnavailableReason(item, tEn, inZone)
+      )
+    }
   })
 
   it('labels sensors and versions', () => {

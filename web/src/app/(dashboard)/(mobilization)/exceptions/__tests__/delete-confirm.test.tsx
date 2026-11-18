@@ -49,6 +49,8 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The signed-in person's id (no profile in this test: nothing is "mine").
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => undefined }))
 
 import ExceptionsPage from '../page'
 

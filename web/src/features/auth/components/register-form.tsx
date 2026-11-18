@@ -208,7 +208,7 @@ export function RegisterForm({
       console.error(`Social login error (${provider}):`, error)
       toast.error(
         t('auth.register.providerFailed', 'Could not sign up with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }

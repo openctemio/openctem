@@ -775,7 +775,7 @@ export function EASMExposureItems() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ExposureTypeSummary
         counts={s?.by_category}
         selected={categories}

@@ -54,7 +54,7 @@ import {
   fetchAllEvents,
   paramsCsv,
 } from '../lib/web-csv'
-import { EndpointSheet, RISK_LABEL, SOURCE_LABEL } from './endpoint-sheet'
+import { EndpointSheet, RISK_LABEL, useWebLabels } from './endpoint-sheet'
 import { MethodBadge, PathText } from './web-surface-badges'
 import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
 import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
@@ -136,6 +136,7 @@ function CookieRow({ cookie }: { cookie: PostureCookie }) {
       {flagPill(t, t('attackSurface.originWeb.cookie.httpOnly', 'HttpOnly'), cookie.httpOnly)}
       {cookie.sameSite && (
         <Badge variant="outline" className="font-normal">
+          {/* i18n-ok: the HTTP cookie attribute name */}
           {`SameSite ${cookie.sameSite}`}
         </Badge>
       )}
@@ -248,7 +249,7 @@ function OverviewTab({
       <MetricStrip loading={stats.isLoading && !s} items={items} />
       {isUrl && (
         <p className="text-sm">
-          <SafeExternalLink href={assetName} className="break-all underline underline-offset-2">
+          <SafeExternalLink href={assetName} className="break-words underline underline-offset-2">
             {assetName}
           </SafeExternalLink>
         </p>
@@ -339,6 +340,7 @@ function EndpointsTab({ assetId }: { assetId: string }) {
 
 function ParametersTab({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
+  const labels = useWebLabels()
   const paging = usePaging()
   const [risk, setRisk] = useState('')
   const filters: EndpointFilters = useMemo(() => ({ originAssetId: assetId }), [assetId])
@@ -402,7 +404,7 @@ function ParametersTab({ assetId }: { assetId: string }) {
           <div className="flex flex-wrap gap-1">
             {(row.original.risk_hints ?? []).map((h) => (
               <Badge key={h} variant="secondary" className="font-normal">
-                {RISK_LABEL[h] ?? h}
+                {labels.risk(h)}
               </Badge>
             ))}
           </div>
@@ -423,12 +425,12 @@ function ParametersTab({ assetId }: { assetId: string }) {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm">
-            {(row.original.sources ?? []).map((s) => SOURCE_LABEL[s] ?? s).join(', ')}
+            {(row.original.sources ?? []).map((s) => labels.source(s)).join(', ')}
           </span>
         ),
       },
     ],
-    [t]
+    [t, labels]
   )
 
   const hints = useMemo(() => {
@@ -448,7 +450,7 @@ function ParametersTab({ assetId }: { assetId: string }) {
         <FilterSelect<string>
           label={t('attackSurface.originWeb.param.riskFilter', 'Risk hint')}
           value={risk}
-          options={hints.map((h) => ({ value: h, label: RISK_LABEL[h] ?? h }))}
+          options={hints.map((h) => ({ value: h, label: labels.risk(h) }))}
           onChange={(v) => setRisk(v ?? '')}
         />
       }

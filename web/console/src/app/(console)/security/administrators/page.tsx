@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
@@ -38,12 +39,10 @@ import {
   adminHas,
 } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleName } from '@console/features/admin-console/lib/role-name'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
-const roleLabel = (t: ReturnType<typeof useTranslation>['t'], r: AdminRole) => {
-  const key = ADMIN_ROLE_OPTIONS.find((o) => o.value === r)?.labelKey
-  return key ? t(key) : r
-}
+const roleLabel = (t: ReturnType<typeof useTranslation>['t'], r: AdminRole) => roleName(t, r)
 
 type Pending =
   | { kind: 'reset'; admin: AdminUserRecord }
@@ -87,7 +86,15 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
 function BreakGlassTested({ a }: { a: AdminUserRecord }) {
   const { t } = useTranslation()
 
-  if (!a.is_break_glass) return <span className="text-muted-foreground">-</span>
+  if (!a.is_break_glass)
+    return (
+      <EmptyCell
+        title={t(
+          'admin.securityAdministratorsPage.notBreakGlass',
+          'Not an emergency-access account'
+        )}
+      />
+    )
   return (
     <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end md:*:shrink-0">
       {a.break_glass_tested_at ? (
@@ -319,7 +326,7 @@ export default function AdministratorsPage() {
               actions={[
                 ...ADMIN_ROLE_OPTIONS.filter((o) => o.value !== a.role).map((o) => ({
                   label: t('admin.securityAdministratorsPage.makeRole', 'Make {role}', {
-                    role: t(o.labelKey).toLowerCase(),
+                    role: roleName(t, o.value).toLowerCase(),
                   }),
                   onClick: () => setPending({ kind: 'role', admin: a, role: o.value }),
                 })),

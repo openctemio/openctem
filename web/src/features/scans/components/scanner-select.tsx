@@ -4,9 +4,9 @@
  * Scanner picker for single-scanner scans: the tool registry's active
  * scanners, the same list the API checks a scan's scanner_name against
  * (it refuses unknown, disabled and collector tools). A scanner no online
- * sensor may run is listed but disabled, with the reason (api
- * tool-availability.md): the trigger would be refused with
- * NO_SENSOR_FOR_TOOL.
+ * sensor may run stays selectable with the reason (api
+ * tool-availability.md): the scan is saved, and its start is refused with
+ * NO_SENSOR_FOR_TOOL until such a sensor is online.
  */
 
 import { useMemo } from 'react'
@@ -50,10 +50,11 @@ export function scannerOptions(tools: Tool[] | undefined, allowConnectors = fals
 export function scannerUnavailableReason(
   tool: Tool,
   availability: Map<string, ToolAvailabilityItem> | null,
+  t: Parameters<typeof toolUnavailableReason>[1],
   inZone = false
 ): string | null {
   if (!availability || tool.metadata?.kind === 'connector') return null
-  return toolUnavailableReason(availability.get(tool.name), inZone)
+  return toolUnavailableReason(availability.get(tool.name), t, inZone)
 }
 
 export function useScannerOptions(allowConnectors = false, zoneId?: string | null) {
@@ -118,7 +119,7 @@ export function ScannerSelect({
   const known = options.some((tool) => tool.name === value)
   const selected = options.find((tool) => tool.name === value)
   const selectedReason = selected
-    ? scannerUnavailableReason(selected, availability, !!zoneId)
+    ? scannerUnavailableReason(selected, availability, t, !!zoneId)
     : null
 
   const placeholder = isLoading
@@ -134,6 +135,7 @@ export function ScannerSelect({
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           id={id}
+          className="w-full"
           aria-label={t('scans.basic.scanner')}
           aria-describedby={describedBy}
           aria-invalid={invalid}
@@ -148,15 +150,11 @@ export function ScannerSelect({
             </SelectItem>
           )}
           {options.map((tool) => {
-            const reason = scannerUnavailableReason(tool, availability, !!zoneId)
-            // The current value stays selectable so Edit keeps it.
+            // A scanner no sensor can run now stays selectable with why: the
+            // scan is saved, and only its start waits for such a sensor.
+            const reason = scannerUnavailableReason(tool, availability, t, !!zoneId)
             return (
-              <SelectItem
-                key={tool.id}
-                value={tool.name}
-                disabled={!!reason && tool.name !== value}
-                title={reason ?? undefined}
-              >
+              <SelectItem key={tool.id} value={tool.name} title={reason ?? undefined}>
                 <span className="flex flex-col">
                   <span>{tool.display_name || tool.name}</span>
                   {reason && <span className="text-xs text-muted-foreground">{reason}</span>}
