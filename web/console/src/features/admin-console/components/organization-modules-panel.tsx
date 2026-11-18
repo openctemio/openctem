@@ -229,6 +229,11 @@ function ModuleActionDialog({
 
   return (
     <AdminConfirmDialog
+      reasonPlaceholder={
+        kind === 'deny'
+          ? t('admin.modules.reasonDeny', 'Not in their contract, ticket 2231')
+          : t('admin.modules.reasonAllow', 'Added to their contract, ticket 2231')
+      }
       open
       onOpenChange={(open) => !open && onClose()}
       title={

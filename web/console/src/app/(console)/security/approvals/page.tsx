@@ -276,6 +276,14 @@ export default function AdminApprovalsPage() {
         )}
         {deciding && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              deciding.kind === 'approve'
+                ? t(
+                    'admin.approvals.reasonApprove',
+                    'Checked with the requester by phone, ticket 2231'
+                  )
+                : t('admin.approvals.reasonReject', 'Not planned in any change request')
+            }
             open
             onOpenChange={(open) => !open && setDeciding(null)}
             title={
