@@ -264,6 +264,11 @@ areas:
     - web/src/app/auth/**
     - web/src/app/invitations/**
     - web/src/lib/i18n/dictionaries/en/auth.json
+    - web/src/stores/auth-store.ts
+    - web/src/lib/middleware/**
+    - web/src/features/account/**
+    - web/e2e/sign-in-journeys.known-failures.txt
+    - server/internal/app/auth/**
   # The every-page request budget: any change to how a page loads its data.
   '@budget':
     - web/e2e/request-budget.json
