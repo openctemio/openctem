@@ -362,8 +362,11 @@ export function ToolsSection() {
   return (
     <PageStack>
       <PageHeader
-        title="Tools"
-        description="The tools your sensors report, and whether a scan with each can run now. Add custom tools for your own scanners."
+        title={t('settings.item.tools', 'Tools')}
+        description={t(
+          'settings.page.tools.description',
+          'The tools your sensors report, and whether a scan with each can run now. Add custom tools for your own scanners.'
+        )}
       >
         <Button variant="outline" size="sm" onClick={handleExport}>
           <Download className="h-4 w-4" />
