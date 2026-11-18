@@ -178,6 +178,12 @@ firewall or the proxy, or replace them with a mirror or a local directory:
 CISA KEV and EPSS are not on this list: they arrive only inside the signed
 vulnerability bundle; the platform never calls CISA or FIRST itself.
 
+**Upgrading:** an installation without the bundle import (`VULNFEED_ROOT_KEY_ID`
+empty) no longer receives KEV or EPSS. Configure the bundle import (default
+origin, a mirror, a bundle directory or the feed relay) before upgrading, and
+remove the egress rules for `www.cisa.gov`, `raw.githubusercontent.com` and
+`epss.empiricalsecurity.com` once it works.
+
 A host whose DNS answers include IPv6 is tried over both families; without an
 IPv6 route the IPv4 addresses are used, and a failure names every address
 tried. EASM lookups (certificate transparency, RIPEstat), AI providers and
