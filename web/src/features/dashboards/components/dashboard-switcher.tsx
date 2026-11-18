@@ -3,7 +3,9 @@
 /**
  * One menu to switch dashboards: "Organization" (only for viewers the server
  * lists organization dashboards for) and "Mine", with search once there are
- * many, plus New and Manage.
+ * many, plus New and Manage. Its trigger is a chevron set right after the
+ * page title (the PageHeader `titleAction` slot), so the dashboard's name is
+ * the switcher; the trigger's accessible name says which dashboard is open.
  */
 
 import { useMemo, useState } from 'react'
@@ -21,7 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/context/i18n-provider'
-import { cn } from '@/lib/utils'
 import type { Dashboard } from '../api/dashboards.types'
 import type { DashboardRef } from '../landing'
 
@@ -38,8 +39,6 @@ export interface DashboardSwitcherProps {
   onChoose: (ref: DashboardRef) => void
   /** Extra entries (built-in views) rendered after the two groups. */
   extra?: React.ReactNode
-  /** Classes for the trigger button (the phone toolbar lets it fill the row). */
-  className?: string
 }
 
 export function DashboardSwitcher({
@@ -49,7 +48,6 @@ export function DashboardSwitcher({
   fallbackLabel,
   onChoose,
   extra,
-  className,
 }: DashboardSwitcherProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -89,14 +87,12 @@ export function DashboardSwitcher({
     <DropdownMenu onOpenChange={(open) => !open && setQuery('')}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
-          size="sm"
-          className={cn('max-w-[16rem]', className)}
+          variant="ghost"
+          size="icon-sm"
           aria-label={t('dashboards.switcher.label', 'Switch dashboard: {name}', { name: label })}
+          data-testid="dashboard-switcher"
         >
-          <LayoutGrid className="me-2 h-4 w-4 shrink-0" aria-hidden />
-          <span className="me-2 truncate">{label}</span>
-          <ChevronDown className="ms-auto h-4 w-4 shrink-0" aria-hidden />
+          <ChevronDown aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64">
@@ -159,5 +155,26 @@ export function DashboardSwitcher({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * The switcher's place while the dashboard lists load: the same button box,
+ * inert and hidden from assistive technology, so the title row has its final
+ * height from the first paint and the name does not move when the lists
+ * arrive.
+ */
+export function DashboardSwitcherPending() {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      disabled
+      aria-hidden
+      tabIndex={-1}
+      data-testid="dashboard-switcher-pending"
+    >
+      <ChevronDown aria-hidden />
+    </Button>
   )
 }
