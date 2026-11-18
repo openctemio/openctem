@@ -59,7 +59,7 @@ describe('notice roles', () => {
           if (name !== '__tests__' && name !== 'node_modules') walk(full)
         } else if (name.endsWith('.tsx') && !name.includes('.test.')) {
           const src = readFileSync(full, 'utf8')
-          for (const m of src.matchAll(/<(Alert|EntryBanner)\b([^>]*?)>/gs)) {
+          for (const m of src.matchAll(/<(Alert|EntryBanner)\b([^>]*?)>/g)) {
             const attrs = m[2]
             if (!/role="alert"/.test(attrs)) continue
             if (/variant="destructive"|tone="danger"/.test(attrs)) continue

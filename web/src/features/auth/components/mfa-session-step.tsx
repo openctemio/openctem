@@ -141,10 +141,7 @@ export function MfaSessionStep({
   if (phase.kind === 'reauth') {
     return (
       <div className="flex flex-col gap-3.5">
-        <EntryBanner
-          tone="info"
-          title={t('auth.mfaSession.reauthTitle', 'Sign in again')}
-        >
+        <EntryBanner tone="info" title={t('auth.mfaSession.reauthTitle', 'Sign in again')}>
           {t(
             'auth.mfaSession.reauthBody',
             'For your security, sign in again to set up two-factor authentication.'
