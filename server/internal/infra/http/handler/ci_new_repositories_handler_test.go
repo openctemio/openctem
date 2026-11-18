@@ -53,7 +53,7 @@ func TestCINewRepositories(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	h.ListNewRepositories(w, req(http.MethodGet, ""))
-	if w.Code != http.StatusNotFound {
+	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unwired: %d", w.Code)
 	}
 	f := &fakeNewRepos{}

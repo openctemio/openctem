@@ -56,7 +56,8 @@ func optTime(nt sql.NullTime) *time.Time {
 // ---------------------------------------------------------------- trust ---
 
 const ciTrustColumns = `id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled,
-	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until, manage_scope`
+	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until, manage_scope,
+	key_source, COALESCE(signing_keys, ''), signing_keys_updated_at, COALESCE(last_key_id, '')`
 
 func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 	var (
@@ -67,12 +68,17 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 		lastUsed       sql.NullTime
 		createdAt, upd time.Time
 		legacyUntil    sql.NullTime
+		keySource      string
+		keysUpdated    sql.NullTime
 	)
 	if err := row.Scan(&id, &tid, &c.Name, &prov, &c.Issuer, &c.Audience, &rules, &c.DefaultBranch, &c.Enabled,
-		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil, &c.ManageScope); err != nil {
+		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil, &c.ManageScope,
+		&keySource, &c.SigningKeys, &keysUpdated, &c.LastKeyID); err != nil {
 		return c, err
 	}
 	c.LegacyAudienceUntil = optTime(legacyUntil)
+	c.KeySource = cirun.KeySource(keySource)
+	c.SigningKeysUpdatedAt = optTime(keysUpdated)
 	c.ID, _ = shared.IDFromString(id)
 	c.TenantID, _ = shared.IDFromString(tid)
 	c.Provider = cirun.Provider(prov)
@@ -97,10 +103,12 @@ func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO ci_trust_configs
-		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at, manage_scope)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
+		(id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled, created_by, created_at, updated_at, manage_scope,
+		 key_source, signing_keys, signing_keys_updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15)`,
 		c.ID.String(), c.TenantID.String(), c.Name, string(c.Provider), c.Issuer, c.Audience, rules,
-		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt, c.ManageScope)
+		c.DefaultBranch, c.Enabled, nullID(c.CreatedBy), c.CreatedAt, c.ManageScope,
+		trustKeySource(c), nullString(c.SigningKeys), c.SigningKeysUpdatedAt)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
@@ -115,11 +123,13 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 	}
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
 		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, manage_scope = $9, updated_at = NOW(),
+			key_source = $10, signing_keys = $11, signing_keys_updated_at = $12,
 			-- A changed audience withdraws the trust: no legacy audience survives it.
 			legacy_audience = CASE WHEN audience = $5::text THEN legacy_audience END,
 			legacy_audience_until = CASE WHEN audience = $5::text THEN legacy_audience_until END
 		WHERE tenant_id = $1 AND id = $2`,
-		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled, c.ManageScope)
+		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled, c.ManageScope,
+		trustKeySource(c), nullString(c.SigningKeys), c.SigningKeysUpdatedAt)
 	if isUniqueViolation(err) {
 		return cirun.ErrTrustConfigExists
 	}
@@ -230,15 +240,33 @@ func (r *CIRunRepository) MarkPipelineAudienceUpgraded(ctx context.Context, tena
 	return err
 }
 
-// TouchTrustConfig records the configuration's last use. The row is shared by
-// every pipeline of a repository, so it is written at most once a minute: a
-// burst of token exchanges does not queue on one hot row.
-func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs SET last_used_at = $3
+// TouchTrustConfig records the configuration's last use and the kid of the
+// key that verified the token (kept when empty). The row is shared by every
+// pipeline of a repository, so it is written at most once a minute unless
+// the key changed: a burst of token exchanges does not queue on one hot row,
+// and a rotation shows at once.
+func (r *CIRunRepository) TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time, keyID string) error {
+	if len(keyID) > maxTrustKeyIDLen {
+		keyID = ""
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
+		SET last_used_at = $3, last_key_id = COALESCE(NULLIF($4::text, ''), last_key_id)
 		WHERE tenant_id = $1 AND id = $2
-		  AND (last_used_at IS NULL OR last_used_at < $3::timestamptz - interval '1 minute')`,
-		tenantID.String(), id.String(), at)
+		  AND (last_used_at IS NULL OR last_used_at < $3::timestamptz - interval '1 minute'
+		       OR ($4::text <> '' AND last_key_id IS DISTINCT FROM $4::text))`,
+		tenantID.String(), id.String(), at, keyID)
 	return err
+}
+
+// maxTrustKeyIDLen is the length of ci_trust_configs.last_key_id.
+const maxTrustKeyIDLen = 200
+
+// trustKeySource is the stored key source (fetch when unset).
+func trustKeySource(c *cirun.TrustConfig) string {
+	if c.KeySource == "" {
+		return string(cirun.KeySourceFetch)
+	}
+	return string(c.KeySource)
 }
 
 // --------------------------------------------------------------- replay ---

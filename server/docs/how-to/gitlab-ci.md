@@ -136,12 +136,18 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 - Enter your GitLab URL as the **Issuer** in step 1 (for example
   `https://gitlab.example.com`). It must match the `iss` claim exactly.
-- OpenCTEM fetches your GitLab's signing keys over HTTPS through its
-  outbound-request guard. A GitLab on a private address needs its subnet in
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
-  `10.20.0.0/16`).
-- The certificate must be trusted by the API (a public CA, or your CA added to
-  the API container).
+- By default OpenCTEM fetches your GitLab's signing keys over HTTPS through
+  its outbound-request guard. A GitLab on a private address needs its subnet
+  in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
+  `10.20.0.0/16`), and its certificate must be trusted by the API (a public
+  CA, or your CA added to the API container).
+- When the platform cannot or must not reach your GitLab, choose **Use keys I
+  paste** under **Signing keys** in the trust: open
+  `https://<your GitLab>/oauth/discovery/keys` and paste the whole document
+  (all keys). Tokens are then verified with those keys only and OpenCTEM
+  never contacts your GitLab. When GitLab rotates its signing key, jobs are
+  refused with `CI_TOKEN_UNKNOWN_KEY` and the administrators are alerted:
+  paste the current document again.
 - A custom audience in the trust configuration replaces
   `openctem:tenant:<id>`; it must contain the organization id. Set the same
   value in `id_tokens`.
@@ -218,7 +224,8 @@ configuration.
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |
 | "scan-only mode" in the log, nothing uploaded | `OPENCTEM_TENANT_ID` is not set in the job, or the pipeline runs for a fork merge request |
-| Self-managed: token refused with an issuer or key error | The Issuer URL does not match `iss`, or the API cannot reach your GitLab's keys (private address flag, certificate) |
+| Self-managed: token refused with an issuer or key error | The Issuer URL does not match `iss`, or the API cannot reach your GitLab's keys (private address flag, certificate): allow it, or paste the keys in the trust |
+| `CI_TOKEN_UNKNOWN_KEY` | The trust uses pasted keys and GitLab signed the token with another key (a rotation): paste the current `https://<your GitLab>/oauth/discovery/keys` document |
 
 ## No API keys in CI
 

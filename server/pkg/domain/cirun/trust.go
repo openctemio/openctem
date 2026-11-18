@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 // Provider is the CI system that issued the OIDC token.
@@ -166,6 +167,65 @@ type TrustConfig struct {
 	// use it; its first exchange with Audience ends that for it.
 	LegacyAudience      string
 	LegacyAudienceUntil *time.Time
+	// KeySource is where the provider's signing keys come from: fetched
+	// from the issuer (the default) or the keys an administrator pasted.
+	KeySource KeySource
+	// SigningKeys is the JWKS document an administrator pasted, stored as
+	// pasted (public keys, not a secret). Used only with KeySourcePasted.
+	SigningKeys string
+	// SigningKeysUpdatedAt is when SigningKeys last changed.
+	SigningKeysUpdatedAt *time.Time
+	// LastKeyID is the kid of the key that verified the last admitted token.
+	LastKeyID string
+}
+
+// KeySource is where a trust configuration's signing keys come from.
+type KeySource string
+
+const (
+	// KeySourceFetch fetches the issuer's discovery document and keys.
+	KeySourceFetch KeySource = "fetch"
+	// KeySourcePasted verifies with the pasted keys only and never fetches.
+	KeySourcePasted KeySource = "pasted"
+)
+
+// PastedKeys parses the configuration's pasted keys: nil without
+// KeySourcePasted. A stored document that no longer parses is an error (the
+// caller refuses the token: fail closed).
+func (c *TrustConfig) PastedKeys() (*oidc.StaticKeySet, error) {
+	if c.KeySource != KeySourcePasted {
+		return nil, nil
+	}
+	return oidc.ParseStaticJWKS([]byte(c.SigningKeys))
+}
+
+// SigningKeyIDs lists the kids of the stored signing keys (empty when there
+// are none or they do not parse).
+func (c *TrustConfig) SigningKeyIDs() []string {
+	return c.SigningKeyList().kids()
+}
+
+// SigningKeyList lists the stored signing keys' kids and algorithms.
+func (c *TrustConfig) SigningKeyList() PastedKeyList {
+	if strings.TrimSpace(c.SigningKeys) == "" {
+		return nil
+	}
+	set, err := oidc.ParseStaticJWKS([]byte(c.SigningKeys))
+	if err != nil {
+		return nil
+	}
+	return PastedKeyList(set.Keys())
+}
+
+// PastedKeyList is the kids and algorithms of a pasted key set.
+type PastedKeyList []oidc.PastedKey
+
+func (l PastedKeyList) kids() []string {
+	out := make([]string, len(l))
+	for i, k := range l {
+		out[i] = k.KID
+	}
+	return out
 }
 
 // LegacyAccepted reports whether a token with the audience may still be
@@ -188,6 +248,12 @@ func (c *TrustConfig) Normalize() {
 	c.Issuer = strings.TrimRight(strings.TrimSpace(c.Issuer), "/")
 	c.Audience = strings.TrimSpace(c.Audience)
 	c.DefaultBranch = strings.TrimSpace(c.DefaultBranch)
+	if c.KeySource == "" {
+		c.KeySource = KeySourceFetch
+	}
+	if strings.TrimSpace(c.SigningKeys) == "" {
+		c.SigningKeys = ""
+	}
 	if c.DefaultBranch == "" {
 		c.DefaultBranch = "main"
 	}
@@ -279,6 +345,9 @@ func (c *TrustConfig) Validate() error {
 	if len(c.DefaultBranch) > maxBranchNameLen || strings.ContainsAny(c.DefaultBranch, " \t\r\n*?[") {
 		return invalid("default_branch must be a branch name")
 	}
+	if err := c.validateSigningKeys(); err != nil {
+		return invalid("%v", err)
+	}
 	return c.Rules.validate()
 }
 
@@ -339,6 +408,27 @@ func (c *TrustConfig) validateProviderRules() error {
 					"whose rules admit only protected branches and tags")
 			}
 		}
+	}
+	return nil
+}
+
+// validateSigningKeys checks the key source and, when keys are stored, the
+// pasted document (ParseStaticJWKS: size, count, key types, no private
+// material, unique kids). Pasted keys are required with KeySourcePasted.
+func (c *TrustConfig) validateSigningKeys() error {
+	switch c.KeySource {
+	case KeySourceFetch, KeySourcePasted:
+	default:
+		return fmt.Errorf("key_source must be fetch or pasted")
+	}
+	if c.SigningKeys == "" {
+		if c.KeySource == KeySourcePasted {
+			return fmt.Errorf("signing_keys: paste the provider's signing keys (the JWKS document) to use pasted keys")
+		}
+		return nil
+	}
+	if _, err := oidc.ParseStaticJWKS([]byte(c.SigningKeys)); err != nil {
+		return fmt.Errorf("signing_keys: %v", err)
 	}
 	return nil
 }
