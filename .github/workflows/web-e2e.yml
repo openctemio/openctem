@@ -298,18 +298,24 @@ jobs:
           esac
           wc -l < "$RUNNER_TEMP/changed.txt"
 
-      # Per-spec durations recorded by the newest green develop run. None found
-      # (first run, expired artifact): every spec costs the same.
+      # Per-spec durations recorded by the newest green run of the branch under
+      # test (the pull request's base, or the pushed branch), else of develop:
+      # a long-lived branch such as next has specs develop does not, and those
+      # would all cost the median. None found (first run, expired artifact):
+      # every spec costs the same.
       - name: Recorded durations
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           mkdir -p "$RUNNER_TEMP/timings"
-          for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch develop --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
-            if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
-              echo "timings from run $id"; break
-            fi
+          for branch in "$BRANCH" develop; do
+            for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch "$branch" --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+              if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
+                echo "timings from run $id ($branch)"; break 2
+              fi
+            done
           done
           ls "$RUNNER_TEMP/timings" || true
 
