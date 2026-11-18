@@ -98,6 +98,40 @@ describe('automatic phone card: the title line', () => {
     expect(head.contains(slot(container, 'actions'))).toBe(true)
   })
 
+  it('centres a chip control and the row menu on one line at one height', () => {
+    // The scan workflows list: a 25 px chip that opens a popover sat beside
+    // the 36 px row menu on another centre line (page-rhythm probeRowMix).
+    const chipColumns = columns(menu).map((c) =>
+      (c.meta as { kind?: string } | undefined)?.kind === 'status'
+        ? {
+            ...c,
+            cell: () => (
+              <button type="button" data-testid="chip-control">
+                <span data-slot="badge">Runs in your CI pipeline</span>
+              </button>
+            ),
+          }
+        : c
+    )
+    const { container } = render(<DataTable columns={chipColumns} data={[row]} />)
+    const head = slot(container, 'head')!
+    expect(head.className).toMatch(/(^|\s)items-center(\s|$)/)
+    expect(head.className).not.toContain('items-start')
+    const status = slot(container, 'status')!
+    const actions = slot(container, 'actions')!
+    expect(head.contains(status)).toBe(true)
+    // Both boxes are the menu's 36 px, pulled out of the 20 px line so the
+    // line does not grow; a control in the status takes the same box.
+    for (const el of [status, actions]) {
+      expect(el.className).toMatch(/(^|\s)h-9(\s|$)/)
+      expect(el.className).toMatch(/(^|\s)-my-2(\s|$)/)
+      expect(el.className).toMatch(/(^|\s)items-center(\s|$)/)
+    }
+    expect(status.className).toContain('[&_button]:h-9')
+    expect(status.className).toContain('[&_button]:items-center')
+    expect(status.querySelector('[data-testid="chip-control"]')).not.toBeNull()
+  })
+
   it('moves an actions cell wider than one icon button to a trailing line', () => {
     const real = HTMLElement.prototype.getBoundingClientRect
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
