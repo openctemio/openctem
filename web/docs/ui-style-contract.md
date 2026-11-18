@@ -164,7 +164,9 @@ A table that scrolls sideways freezes its identifying columns at the start: the 
 columns marked `pin: 'start'` (else the first data column), within 45 % of the table's frame; a frozen
 column without a fixed width keeps its floor and is capped at 420 px. The header cells freeze with the
 body cells. A soft edge shows after the frozen group only while content is hidden under it. The row
-actions column scrolls with the table as its last column (`pinActions` freezes it, off by default).
+actions column scrolls with the table as its last column (`pinActions` freezes it, off by default). A
+frozen actions column is as wide as its widest action on the page (one line), never wider than its
+declared width, and has no box while no row of the page has an action.
 
 Before a table scrolls sideways its columns give way: a column with a range (`minWidth` below its
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
@@ -813,6 +815,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   IPs, ports, file paths, URLs, API keys, code snippets. Never for numbers,
   labels, statuses or prose.
 - Numbers that line up use `tabular-nums`.
+- Names and addresses (asset and host names, e-mail addresses, URLs, file and
+  package names) wrap only at their separators: render them through
+  `<BreakText>` with `break-words`. `break-all` breaks every word at any
+  letter ("Paym|ents") and is kept for mono machine values (hashes, keys,
+  tokens); `src/lib/__tests__/name-break-guard.test.ts` enforces it.
 - Sizes come from the type roles in `src/styles/theme.css` (each sets size,
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with

@@ -365,7 +365,7 @@ function SortableStepCard(props: StepCardProps) {
                   // why; the step's current tool stays selectable.
                   const reason = entry.is_available
                     ? null
-                    : (toolUnavailableReason(availability.get(entry.tool.name)) ??
+                    : (toolUnavailableReason(availability.get(entry.tool.name), t) ??
                       t('scans.workflowForm.noSensorCanRun'))
                   return (
                     <SelectItem

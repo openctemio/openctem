@@ -39,6 +39,7 @@ import {
   useEASMNetworkSeeds,
 } from '../hooks/use-easm-network-seeds'
 import { useEASMSettings } from '../hooks/use-easm-settings'
+import { BreakText } from '@/features/shared/components/break-text'
 
 type SeedKind = 'asn' | 'org_name'
 
@@ -93,9 +94,11 @@ function SeedCard({
             ? t('networkSeeds.kindAsn', 'AS number')
             : t('networkSeeds.kindOrg', 'Organization')}
         </Badge>
-        <span className="break-all font-medium">{seed.value}</span>
+        <span className="break-words font-medium">
+          <BreakText>{seed.value}</BreakText>
+        </span>
         {seed.holder && (
-          <span className="break-all text-sm text-muted-foreground">{seed.holder}</span>
+          <span className="break-words text-sm text-muted-foreground">{seed.holder}</span>
         )}
         {seed.label && <span className="text-xs text-muted-foreground">({seed.label})</span>}
         <span className="ms-auto flex items-center gap-1">
@@ -204,7 +207,7 @@ function SeedCard({
             {(seed.suggestions ?? []).map((s) => (
               <li key={s.asn} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono">{s.asn}</span>
-                <span className="break-all text-muted-foreground">{s.description}</span>
+                <span className="break-words text-muted-foreground">{s.description}</span>
                 {canWrite && s.asn && (
                   <Button
                     size="sm"

@@ -124,7 +124,9 @@ export function AdminAuditDetailSheet({
             )}
             {data.user_agent && (
               <DetailField label={t('admin.activity.userAgent', 'Browser')} full>
-                <span className="text-xs break-all text-muted-foreground">{data.user_agent}</span>
+                <span className="text-cap break-words text-muted-foreground">
+                  {data.user_agent}
+                </span>
               </DetailField>
             )}
             {data.error_message && (

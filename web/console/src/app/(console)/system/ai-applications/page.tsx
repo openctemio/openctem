@@ -87,7 +87,7 @@ export default function AiApplicationsPage() {
                 {/* Applications that name themselves (a metadata document or a
                             dynamic registration) are identified by where they live: the
                             name is whatever the application chose to say. */}
-                <span className="font-medium break-all">
+                <span className="font-medium break-words">
                   {c.kind === 'organization' ? c.name : c.host || c.name}
                 </span>
                 <Badge variant={c.kind === 'dynamic' ? 'outline' : 'secondary'}>

@@ -469,7 +469,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const renderStep = () => {
     switch (currentStep) {
       case 'basic':
-        return <BasicInfoStep data={formData} onChange={handleDataChange} />
+        return (
+          <BasicInfoStep
+            data={formData}
+            onChange={handleDataChange}
+            showErrors={nav.attempted || nav.seen.has('basic')}
+          />
+        )
       case 'targets':
         return (
           <>

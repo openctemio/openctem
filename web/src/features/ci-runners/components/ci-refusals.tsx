@@ -55,7 +55,7 @@ export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
   return (
     <div className="space-y-1 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="break-all font-medium">
+        <span className="break-words font-medium">
           {refusal.repository || t('scans.ci.refusals.unknownRepository', 'Unknown repository')}
         </span>
         {refusal.provider && (
@@ -64,7 +64,7 @@ export function RefusalDetail({ refusal }: { refusal: CITokenRefusal }) {
         {refusal.at && <RelativeTime date={refusal.at} className="text-muted-foreground" />}
       </div>
       {(refusal.ref || refusal.event) && (
-        <div className="break-all text-muted-foreground">
+        <div className="break-words text-muted-foreground">
           {[refusal.event, refusal.ref].filter(Boolean).join(', ')}
         </div>
       )}
