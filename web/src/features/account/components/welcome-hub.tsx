@@ -34,8 +34,11 @@ import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { safeText } from '@/lib/api/error-message'
 import { formatRelative } from '@/lib/format-date'
 
+import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
+
 import { useProfile } from '../api'
 import { welcomeView } from '../lib/welcome-view'
+import { WelcomeNotice } from './welcome-notice'
 
 interface WelcomeHubProps {
   /**
@@ -43,6 +46,12 @@ interface WelcomeHubProps {
    * ask the API for the account-only token first, then load.
    */
   needsSession: boolean
+  /**
+   * Why the account space opened instead of an organization (a refused
+   * refresh), already validated by the page: it shows the reason and its one
+   * next step.
+   */
+  notice?: { notice: Notice; org?: string }
 }
 
 const ACCOUNT_LINKS: Array<{
@@ -95,7 +104,7 @@ const ACCOUNT_LINKS: Array<{
  * address (accept or decline), offers "Create an organization" only when the
  * API's policy allows it for this person, and links the account pages.
  */
-export function WelcomeHub({ needsSession }: WelcomeHubProps) {
+export function WelcomeHub({ needsSession, notice }: WelcomeHubProps) {
   const { t, locale } = useTranslation()
   const { profile } = useProfile()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
@@ -202,6 +211,10 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
           'You are signed in, but you are not in an organization yet.'
         )}
       />
+
+      {notice && (
+        <WelcomeNotice notice={notice.notice} org={notice.org} email={email ?? undefined} />
+      )}
 
       {loading && (
         <div

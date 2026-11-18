@@ -7,7 +7,12 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { refreshFailureAction, twoFactorSetupHref } from '../refresh-failure'
+import {
+  readWelcomeNotice,
+  refreshFailureAction,
+  twoFactorSetupHref,
+  welcomeNoticeHref,
+} from '../refresh-failure'
 
 describe('refreshFailureAction', () => {
   it.each([
@@ -28,12 +33,15 @@ describe('refreshFailureAction', () => {
     }
   )
 
-  it.each(['ORGANIZATION_SUSPENDED', 'SSO_REQUIRED', 'MFA_IDP_EVIDENCE_REQUIRED'])(
-    'keeps the session and opens the account space: %s',
-    (code) => {
-      expect(refreshFailureAction(403, code)).toBe('account_space')
-    }
-  )
+  it.each([
+    'ORGANIZATION_SUSPENDED',
+    'SSO_REQUIRED',
+    'MFA_IDP_EVIDENCE_REQUIRED',
+    'EMAIL_NOT_VERIFIED',
+    'PERSONAL_ACCOUNTS_BLOCKED',
+  ])('keeps the session and opens the account space: %s', (code) => {
+    expect(refreshFailureAction(403, code)).toBe('account_space')
+  })
 
   it.each([
     [0, undefined],
@@ -60,5 +68,44 @@ describe('twoFactorSetupHref', () => {
     expect(twoFactorSetupHref('/account/security')).toBe(
       '/two-factor-setup?next=%2Faccount%2Fsecurity'
     )
+  })
+})
+
+describe('welcomeNoticeHref', () => {
+  it.each([
+    ['SSO_REQUIRED', 'sso_required'],
+    ['MFA_IDP_EVIDENCE_REQUIRED', 'idp_mfa_required'],
+    ['ORGANIZATION_SUSPENDED', 'organization_suspended'],
+    ['EMAIL_NOT_VERIFIED', 'email_not_verified'],
+    ['PERSONAL_ACCOUNTS_BLOCKED', 'personal_accounts_blocked'],
+  ])('names the reason of %s and the organization', (code, notice) => {
+    expect(welcomeNoticeHref(code, 'acme')).toBe(`/welcome?notice=${notice}&org=acme`)
+  })
+
+  it('is the plain account space for another code, and drops a slug that is not one', () => {
+    expect(welcomeNoticeHref('SOMETHING_NEW', 'acme')).toBe('/welcome')
+    expect(welcomeNoticeHref(undefined)).toBe('/welcome')
+    expect(welcomeNoticeHref('SSO_REQUIRED', '../evil?x=1')).toBe('/welcome?notice=sso_required')
+  })
+})
+
+describe('readWelcomeNotice', () => {
+  it('reads a known notice and a valid slug', () => {
+    expect(readWelcomeNotice('sso_required', 'acme-2')).toEqual({
+      notice: 'sso_required',
+      org: 'acme-2',
+    })
+  })
+
+  it('shows nothing for an unknown value (a crafted link puts no text on the page)', () => {
+    expect(readWelcomeNotice('<script>', 'acme')).toBeUndefined()
+    expect(readWelcomeNotice(null, 'acme')).toBeUndefined()
+  })
+
+  it('drops an organization that is not a slug', () => {
+    expect(readWelcomeNotice('organization_suspended', 'Evil Corp<b>')).toEqual({
+      notice: 'organization_suspended',
+      org: undefined,
+    })
   })
 })

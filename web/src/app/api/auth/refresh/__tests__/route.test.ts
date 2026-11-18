@@ -84,3 +84,41 @@ describe('POST /api/auth/refresh without an organization', () => {
     expect(res.cookies.get(env.auth.refreshCookieName)).toBeUndefined()
   })
 })
+
+describe('POST /api/auth/refresh refused by the organization', () => {
+  function inOrganization() {
+    mocks.cookies.set(env.auth.refreshCookieName, 'rt')
+    mocks.cookies.set(env.auth.cookieName, 'at')
+    mocks.cookies.set(
+      env.cookies.tenant,
+      JSON.stringify({ id: 't1', slug: 'acme', role: 'member' })
+    )
+  }
+
+  it.each([
+    'ORGANIZATION_SUSPENDED',
+    'SSO_REQUIRED',
+    'MFA_IDP_EVIDENCE_REQUIRED',
+    'EMAIL_NOT_VERIFIED',
+    'PERSONAL_ACCOUNTS_BLOCKED',
+  ])(
+    '%s keeps the session for the account space, drops the organization and its token',
+    async (code) => {
+      inOrganization()
+      mocks.refreshOnce.mockResolvedValue({ ok: false, status: 403, code })
+      const res = await POST(request())
+      expect(res.status).toBe(403)
+      expect(res.cookies.get(env.auth.refreshCookieName)).toBeUndefined()
+      expect(res.cookies.get(env.auth.cookieName)?.value).toBe('')
+      expect(res.cookies.get(env.cookies.tenant)?.value).toBe('')
+    }
+  )
+
+  it('OWN_SIGN_IN_REQUIRED ends the session', async () => {
+    inOrganization()
+    mocks.refreshOnce.mockResolvedValue({ ok: false, status: 403, code: 'OWN_SIGN_IN_REQUIRED' })
+    const res = await POST(request())
+    expect(res.cookies.get(env.auth.refreshCookieName)?.value).toBe('')
+    expect(res.cookies.get(env.cookies.tenant)?.value).toBe('')
+  })
+})
