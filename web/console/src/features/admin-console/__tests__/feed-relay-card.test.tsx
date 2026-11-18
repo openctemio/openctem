@@ -142,7 +142,13 @@ describe('FeedRelayCard', () => {
   it('shows the relay status: alerts, age, round progress, claimer, the stale reason with its fix and relay stats', () => {
     mocks.status.current = relaying()
     render(<FeedRelayCard canEdit={false} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('No relay sensor online for over an hour')
+    // A raised relay alert is a notice in the card, read politely, not an interruption.
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((e) => e.textContent?.includes('No relay sensor online for over an hour'))
+    ).toBe(true)
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('50 hours')).toBeInTheDocument()
     expect(
       screen.getByText(/Downloading data files: 5 of 12 files, 1\.0 KiB received/)
