@@ -4,12 +4,13 @@ import { touchTargetHeight } from '../helpers/touch'
 
 /**
  * Dashboard header on a phone (390px). Before content there are two rows:
- *   1. the dashboard switcher filling the width, an icon-only Refresh and an
- *      icon-only More menu, all on one line, each with a 44px touch target;
- *   2. one muted meta line (scope · updated · next) that never wraps.
+ *   1. the dashboard's name with the switcher chevron right after it, and at
+ *      the end of the same row an icon-only Refresh and an icon-only More
+ *      menu, each with a 44px touch target;
+ *   2. one muted meta line (scope, updated, next) that never wraps.
  * Customize and the refresh schedule live in More. A screenshot of the header
- * in light and dark is attached for review. From 640px the same controls sit
- * in one toolbar row with their labels.
+ * in light and dark is attached for review. From 640px Customize is a toolbar
+ * button; the schedule stays in More at every width.
  */
 
 /** 44px touch target, with room for sub-pixel layout rounding. */
@@ -29,23 +30,26 @@ for (const scheme of ['light', 'dark'] as const) {
       // The More trigger is a placeholder until the menu's code has loaded;
       // measure the real one, not a node about to be replaced.
       await expect(toolbar.locator('[data-action-menu-pending]')).toHaveCount(0)
-      const switcher = toolbar.getByRole('button', { name: /Switch dashboard/ })
+      const switcher = page.getByRole('button', { name: /Switch dashboard/ })
       const refresh = toolbar.getByRole('button', { name: 'Refresh now' })
       const more = toolbar.getByRole('button', { name: 'More dashboard actions' })
-      const boxes = await Promise.all([switcher, refresh, more].map((l) => l.boundingBox()))
-      expect(boxes.every(Boolean), 'switcher, refresh and more render').toBe(true)
-      const [s, r, m] = boxes as NonNullable<(typeof boxes)[number]>[]
+      const title = page.getByRole('heading', { level: 1 })
+      const boxes = await Promise.all([title, switcher, refresh, more].map((l) => l.boundingBox()))
+      expect(boxes.every(Boolean), 'title, switcher, refresh and more render').toBe(true)
+      const [h, s, r, m] = boxes as NonNullable<(typeof boxes)[number]>[]
 
-      // One row, in this order, touch-sized, switcher taking the free width.
-      for (const b of [r, m]) expect(Math.abs(b.y - s.y)).toBeLessThan(2)
+      // One row, in this order: name, chevron, then Refresh and More at the end.
+      const mid = (b: { y: number; height: number }) => b.y + b.height / 2
+      expect(Math.abs(mid(s) - mid(h))).toBeLessThan(4)
+      for (const b of [r, m]) expect(Math.abs(mid(b) - mid(s))).toBeLessThan(4)
+      expect(h.x).toBeLessThan(s.x)
       expect(s.x).toBeLessThan(r.x)
       expect(r.x).toBeLessThan(m.x)
       for (const l of [switcher, refresh, more])
         expect(await touchTargetHeight(l), 'touch target').toBeGreaterThanOrEqual(TOUCH)
-      expect(s.width).toBeGreaterThan(390 / 2)
       // Customize and the schedule are not in the row on a phone.
       await expect(toolbar.getByRole('button', { name: 'Customize' })).toBeHidden()
-      await expect(toolbar.getByRole('combobox', { name: 'Refresh schedule' })).toBeHidden()
+      await expect(page.getByRole('combobox', { name: 'Refresh schedule' })).toHaveCount(0)
 
       // The meta line is one line.
       const meta = await page.getByTestId('dashboard-meta').boundingBox()
@@ -138,9 +142,16 @@ for (const state of ['current', 'building', 'stale'] as const) {
         const n = await notice.boundingBox()
         expect(n!.y).toBeGreaterThanOrEqual(header!.y + header!.height)
       }
-      await expect(toolbar.getByRole('button', { name: 'Refresh now' })).toContainText(
-        'Refresh now'
+      // The switcher is on the title line; the schedule is not a toolbar control.
+      await expect(page.locator('[data-slot="page-header-title-line"]')).toContainText(
+        (await page.getByRole('heading', { level: 1 }).textContent()) ?? ''
       )
+      await expect(
+        page
+          .locator('[data-slot="page-header-title-action"]')
+          .getByRole('button', { name: /Switch dashboard/ })
+      ).toBeVisible()
+      await expect(page.getByRole('combobox', { name: 'Refresh schedule' })).toHaveCount(0)
     }
   )
 }
