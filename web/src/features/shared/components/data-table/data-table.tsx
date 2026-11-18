@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
+import { OneFilledAction } from '../one-filled-action'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -1570,13 +1571,15 @@ export function DataTable<TData, TValue>({
   ) : (
     (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
   )
+  // One filled button per screen: the empty body's action is an outline
+  // button beside the page's main action (`OneFilledAction`).
   const emptyBody = (
-    <div
+    <OneFilledAction
       data-slot="table-empty"
       className="[&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none"
     >
       {emptyContent}
-    </div>
+    </OneFilledAction>
   )
 
   // A stale read says so in the footer, with a refresh.
