@@ -5,4 +5,4 @@
   sentence on Approve, and the same dialogs. The page no longer has a filled decision button.
 - Approval requests says its count once: under Pending the tab shows it, so the title row names the view for
   screen readers only; another status lens still shows its own count there.
-- Docs: the queue section of the web style contract (`stepUpHint`, count said once).
+- Docs: none (no user guide describes these buttons; the queue section of `web/docs/ui-style-contract.md` is updated for contributors).
