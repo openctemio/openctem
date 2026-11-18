@@ -95,6 +95,13 @@ import {
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
 import { formatNumber } from '@/lib/app-locale'
+import {
+  knownRowCount,
+  loadingRowCount,
+  rememberRowCount,
+  ROW_HEIGHT,
+  rowCountKey,
+} from './loading-rows'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -431,8 +438,14 @@ const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
   center: 'text-center',
 }
 
-/** Skeleton rows shown in an empty body while `isLoading`. */
-const LOADING_ROWS = 5
+/** Height of one phone placeholder card (two skeleton lines + padding). */
+const PHONE_LOADING_ROW_HEIGHT = 64
+
+const noSubscribe = () => () => {}
+const subscribeResize = (onChange: () => void) => {
+  window.addEventListener('resize', onChange)
+  return () => window.removeEventListener('resize', onChange)
+}
 
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
@@ -1026,9 +1039,14 @@ export function DataTable<TData, TValue>({
   // viewer turned on or off (the state has its key); a controlled one's state
   // names every column, so only the click counts there.
   const [frameWidth, setFrameWidth] = React.useState(0)
-  React.useEffect(() => {
+  // Read before the first paint (a layout effect), so the column widths that
+  // depend on the frame (fit, pins, dropped columns) are right on the first
+  // frame instead of settling a frame later (cells moved sideways on load).
+  React.useLayoutEffect(() => {
     const el = tableWrapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    if (!el) return
+    setFrameWidth(el.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
     ro.observe(el)
     return () => ro.disconnect()
@@ -1312,6 +1330,34 @@ export function DataTable<TData, TValue>({
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
+
+  // Placeholder rows while loading (loading-rows.ts): the last count this list
+  // showed, else five, capped to the page size and the viewport, so the list
+  // keeps its height when the rows arrive. Read through useSyncExternalStore:
+  // the server render (no storage, no viewport) draws five.
+  // Keyed by the page path (read from the location on the client only, so the
+  // table needs no router) and the table's name.
+  const tableName = caption ?? labelledBy ?? ''
+  const knownRows = React.useSyncExternalStore(
+    noSubscribe,
+    () => knownRowCount(rowCountKey(tableName)) ?? -1,
+    () => -1
+  )
+  const viewportHeight = React.useSyncExternalStore(
+    subscribeResize,
+    () => window.innerHeight,
+    () => 0
+  )
+  const settled = !isLoading && !error
+  React.useEffect(() => {
+    if (settled) rememberRowCount(rowCountKey(tableName), pageRows.length)
+  }, [settled, tableName, pageRows.length])
+  const loadingRows = loadingRowCount(
+    knownRows < 0 ? undefined : knownRows,
+    table.getState().pagination.pageSize,
+    viewportHeight,
+    phoneCards ? PHONE_LOADING_ROW_HEIGHT : ROW_HEIGHT[density]
+  )
   const displayGroups = !rowGroups
     ? [{ key: 'all', rows: pageRows }]
     : rowGroups.groups
@@ -1781,7 +1827,7 @@ export function DataTable<TData, TValue>({
             })
           ) : isLoading ? (
             <div aria-busy="true" aria-label={t('common.table.loading', 'Loading')}>
-              {Array.from({ length: LOADING_ROWS }).map((_, i) => (
+              {Array.from({ length: loadingRows }).map((_, i) => (
                 <div key={i} className="space-y-2 px-3 py-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />
@@ -1989,7 +2035,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableBody>
               {isLoading ? (
-                Array.from({ length: LOADING_ROWS }).map((_, i) => (
+                Array.from({ length: loadingRows }).map((_, i) => (
                   <TableRow key={`loading-${i}`} aria-busy="true" data-loading-row="">
                     {table.getVisibleLeafColumns().map((column) => (
                       <TableCell key={column.id}>
