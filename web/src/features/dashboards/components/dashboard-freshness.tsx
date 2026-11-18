@@ -55,18 +55,20 @@ export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: Dashboa
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex shrink-0 items-center gap-1 rounded-sm font-medium text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm font-medium text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           tabIndex={0}
           data-scope={org ? 'organization' : 'personal'}
         >
           {org ? (
-            <Building2 className="h-3.5 w-3.5" aria-hidden />
+            <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
           ) : (
-            <User className="h-3.5 w-3.5" aria-hidden />
+            <User className="h-3.5 w-3.5 shrink-0" aria-hidden />
           )}
-          {org
-            ? t('dashboards.scope.organization', 'Organization-wide')
-            : t('dashboards.scope.mine', 'Your scope')}
+          <span className="truncate">
+            {org
+              ? t('dashboards.scope.organization', 'Organization-wide')
+              : t('dashboards.scope.mine', 'Your scope')}
+          </span>
         </span>
       </TooltipTrigger>
       <TooltipContent>{hint}</TooltipContent>
@@ -105,8 +107,15 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
       className="flex flex-col gap-1 text-xs text-muted-foreground"
       data-testid="dashboard-freshness"
     >
+      {/* Below 640px the line shares the title row's width with Refresh and
+          More, so it never wraps: the times keep their full width and the
+          scope label gives way first (its full rule stays in the hint), and
+          the schedule facts are left out visually (a screen reader still
+          reads them; the schedule is also in More). One line means the
+          header keeps its height when the minute tick lengthens a time. */}
       <MetaLine
         data-testid="dashboard-meta"
+        className="max-sm:flex-nowrap max-sm:[&>span:not(:first-child)]:shrink-0 max-sm:[&>span:not(:first-child)]:whitespace-nowrap"
         items={[
           <ScopeBadge key="scope" data={data} kind={kind} />,
           computed && (
@@ -115,9 +124,6 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
             </span>
           ),
           data?.next_refresh_at ? (
-            // Below 640px the line shares the title row's width with Refresh
-            // and More: the next refresh is visually left out so the line stays
-            // one line; a screen reader still reads it.
             <span
               key="next"
               className="sr-only sm:not-sr-only"
@@ -129,7 +135,7 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
             </span>
           ) : (
             data && (
-              <span key="manual">
+              <span key="manual" className="sr-only sm:not-sr-only">
                 {t('dashboards.freshness.manual', 'Refreshed on request only')}
               </span>
             )
