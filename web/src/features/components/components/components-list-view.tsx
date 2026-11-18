@@ -558,7 +558,7 @@ export function ComponentsListView() {
         <MetricStrip
           loading={summaryLoading && !summary}
           items={metrics}
-          className="max-md:order-last"
+          listFirst
         />
         {titleRow}
 

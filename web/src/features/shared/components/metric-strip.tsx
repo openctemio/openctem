@@ -122,6 +122,7 @@ export function MetricStrip({
   loading = false,
   error,
   embedded = false,
+  listFirst = false,
   className,
 }: {
   items: MetricStripItem[]
@@ -136,6 +137,13 @@ export function MetricStrip({
    * tiles stay.
    */
   embedded?: boolean
+  /**
+   * The strip sits above a list: on a phone it moves under the list (CSS
+   * order, so nothing jumps after hydration) and the first row starts within
+   * the top 45% of the screen. The parent must be the page's flex column
+   * (a `PageStack`, or a fragment inside one).
+   */
+  listFirst?: boolean
   className?: string
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
@@ -153,6 +161,7 @@ export function MetricStrip({
       className={cn(
         'grid grid-cols-6 overflow-hidden',
         embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
+        listFirst && 'max-md:order-last',
         'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
         className
       )}
