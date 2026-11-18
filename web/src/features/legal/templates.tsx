@@ -3,6 +3,7 @@ import { LEGAL_DOCS, type LegalDoc, type LegalValues } from '@/lib/legal'
 import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
 import { safeInternalHref } from '@/lib/safe-href'
 import type { LegalSection } from './components/legal-document'
+import { LegalMail, LegalWeb } from './components/legal-links'
 
 /**
  * The built-in legal templates: Terms of Service, Acceptable Use Policy,
@@ -55,9 +56,9 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Who we are',
       body: (
         <P>
-          {v.service} ({v.website}) is provided by {v.organization}, {v.address}. These terms govern
-          your use of the service. By creating an account or signing in you accept them for yourself
-          and, where you act for an organization, for that organization.
+          {v.service} (<LegalWeb url={v.website} />) is provided by {v.organization}, {v.address}.
+          These terms govern your use of the service. By creating an account or signing in you
+          accept them for yourself and, where you act for an organization, for that organization.
         </P>
       ),
     },
@@ -65,9 +66,10 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Your account',
       body: (
         <P>
-          Keep your sign-in details and second factor secure, and tell us at {v.securityEmail} if
-          you suspect someone else has used your account. Organization owners decide who joins their
-          organization and what each member may see and do.
+          Keep your sign-in details and second factor secure, and tell us at{' '}
+          <LegalMail to={v.securityEmail} /> if you suspect someone else has used your account.
+          Organization owners decide who joins their organization and what each member may see and
+          do.
         </P>
       ),
     },
@@ -110,8 +112,8 @@ function terms(v: LegalValues): LegalSection[] {
       body: (
         <P>
           We work to keep the service available and secure but do not guarantee that it is free of
-          interruptions. Documentation lives at {v.docsUrl}. We may change these terms and will
-          announce material changes before they take effect.
+          interruptions. Documentation lives at <LegalWeb url={v.docsUrl} />. We may change these
+          terms and will announce material changes before they take effect.
         </P>
       ),
     },
@@ -128,7 +130,8 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Governing law and contact',
       body: (
         <P>
-          These terms are governed by {v.jurisdiction}. Questions: {v.contactEmail}.
+          These terms are governed by {v.jurisdiction}. Questions: <LegalMail to={v.contactEmail} />
+          .
         </P>
       ),
     },
@@ -170,7 +173,7 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       heading: 'Reporting a vulnerability',
       body: (
         <P>
-          Found a security issue in {v.service}? Write to {v.securityEmail}{' '}
+          Found a security issue in {v.service}? Write to <LegalMail to={v.securityEmail} />{' '}
           <Linked>
             {
               '([security.txt](/.well-known/security.txt)). Give us reasonable time to fix it before disclosing it.'
@@ -184,7 +187,7 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       body: (
         <P>
           We may suspend or remove accounts, organizations or scans that break this policy, and
-          report unlawful activity to the authorities. Questions: {v.contactEmail}.
+          report unlawful activity to the authorities. Questions: <LegalMail to={v.contactEmail} />.
         </P>
       ),
     },
@@ -198,7 +201,7 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           {v.organization}, {v.address}, is responsible for the personal data processed to run{' '}
-          {v.service}. Contact: {v.contactEmail}.{' '}
+          {v.service}. Contact: <LegalMail to={v.contactEmail} />.{' '}
           <Linked>
             {
               'For the data organizations bring to the service we act as their processor under the [Data Processing Addendum](/dpa).'
@@ -259,7 +262,8 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           You can ask to see, correct, export or delete your personal data, and object to its use,
-          by writing to {v.contactEmail}. You may also complain to your data protection authority.
+          by writing to <LegalMail to={v.contactEmail} />. You may also complain to your data
+          protection authority.
         </P>
       ),
     },
@@ -318,8 +322,11 @@ function dpa(v: LegalValues): LegalSection[] {
       heading: 'Subprocessors',
       body: (
         <P>
-          The customer authorizes the subprocessors listed at /subprocessors. We announce a new
-          subprocessor before it starts processing customer data; the customer may object.
+          <Linked>
+            {
+              'The customer authorizes the subprocessors listed in [Subprocessors](/subprocessors). We announce a new subprocessor before it starts processing customer data; the customer may object.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -329,7 +336,7 @@ function dpa(v: LegalValues): LegalSection[] {
         <P>
           We notify the customer without undue delay after becoming aware of a personal data breach,
           help it answer data subject requests and assessments, and make available the information
-          needed to demonstrate compliance. Security contact: {v.securityEmail}.
+          needed to demonstrate compliance. Security contact: <LegalMail to={v.securityEmail} />.
         </P>
       ),
     },
@@ -361,7 +368,7 @@ function subprocessors(v: LegalValues): LegalSection[] {
         <>
           <P>
             {v.organization} uses these subprocessors to provide {v.service}. We announce changes
-            before they take effect. Questions: {v.contactEmail}.
+            before they take effect. Questions: <LegalMail to={v.contactEmail} />.
           </P>
           <div className="overflow-x-auto">
             <table className="w-full text-start text-dense">

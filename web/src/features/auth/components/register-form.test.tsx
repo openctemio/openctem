@@ -57,6 +57,18 @@ describe('RegisterForm social buttons', () => {
     ).toEqual([])
   })
 
+  it('puts the providers after the form, as sign-in does', () => {
+    mockProviders({ google: true, github: true, microsoft: false })
+    render(<RegisterForm />)
+
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    const google = screen.getByRole('button', { name: /Google/ })
+    expect(submit.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    expect(screen.getByText('Or sign up with')).toBeInTheDocument()
+  })
+
   it('renders only the providers the API advertises', () => {
     mockProviders({ google: true, github: false, microsoft: false })
     render(<RegisterForm />)

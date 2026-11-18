@@ -32,7 +32,7 @@ export function LegalDocument({
   effective: string
   sections: LegalSection[]
   /** "Contact: ... Documentation: ...", translated. */
-  contactLine: string
+  contactLine: ReactNode
   /** Shown under the date when the reader's language is not the text's (English). */
   languageNote?: string
   labels: StaticPageLabels

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { LEGAL_DOCS, legalConfig, type LegalDoc } from '@/lib/legal'
 import { legalSettings } from '@/lib/legal-settings'
 import { LegalDocument } from './components/legal-document'
+import { LegalMail, LegalWeb, withNodes } from './components/legal-links'
 import { legalFrameLabels, legalLanguageNote, legalTranslator } from './legal-labels'
 import { legalSections } from './templates'
 
@@ -19,10 +20,17 @@ export async function LegalPage({ doc }: { doc: LegalDoc }) {
         date: cfg.values.effectiveDate,
       })}
       sections={legalSections(doc, cfg.values)}
-      contactLine={t('legal.frame.contact', 'Contact: {contact}. Documentation: {docs}.', {
-        contact: cfg.values.contactEmail,
-        docs: cfg.values.docsUrl,
-      })}
+      contactLine={withNodes(
+        // Each mark is asked as itself, then replaced by its link.
+        t('legal.frame.contact', 'Contact: {contact}. Documentation: {docs}.', {
+          contact: '{contact}',
+          docs: '{docs}',
+        }),
+        {
+          contact: <LegalMail to={cfg.values.contactEmail} />,
+          docs: <LegalWeb url={cfg.values.docsUrl} />,
+        }
+      )}
       languageNote={await legalLanguageNote(t)}
       labels={legalFrameLabels(t)}
     />

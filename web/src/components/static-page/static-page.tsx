@@ -24,10 +24,15 @@ import { PrintButton } from './print-button'
  * From 768 px the contents sit beside the text. On a phone the title comes
  * first: the article draws the contents under its header as a folded list
  * with 44 px rows (`StaticArticle` `contents`), and the side list is hidden.
+ * A page of one section has no contents (a one-entry list only repeats the
+ * heading under it).
  *
  * Text is passed in by the caller (already translated), so the frame renders
  * on the server and in a client page alike.
  */
+
+/** Fewest sections for which a page lists its contents. */
+const MIN_TOC = 2
 
 export interface StaticPageLabels {
   /** The brand link and the button to the sign-in page. */
@@ -62,7 +67,7 @@ export function StaticPage({
   /** A `StaticArticle`. */
   children: ReactNode
 }) {
-  const hasToc = !!toc && toc.length > 0
+  const hasToc = !!toc && toc.length >= MIN_TOC
   return (
     <div
       data-control-scale="entry"
@@ -147,7 +152,7 @@ export function StaticArticle({
         {meta && <p className="mt-1 text-dense text-muted-foreground">{meta}</p>}
         {note && <p className="mt-1 text-dense text-muted-foreground">{note}</p>}
       </header>
-      {contents && contents.toc.length > 0 && <StaticContents {...contents} />}
+      {contents && contents.toc.length >= MIN_TOC && <StaticContents {...contents} />}
       {children}
       {footer && (
         <footer className="flex flex-col gap-1.5 border-t pt-3 text-cap text-muted-foreground">

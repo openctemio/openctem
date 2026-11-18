@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 
 import { LEGAL_DOCS, legalConfig } from '@/lib/legal'
 import { LegalDocument } from '../components/legal-document'
+import { LegalMail, LegalWeb, withNodes } from '../components/legal-links'
 import { legalSections } from '../templates'
 
 const labels = {
@@ -79,6 +80,82 @@ describe('legal documents', () => {
     const side = container.querySelector('[data-slot="static-toc"]') as HTMLElement
     expect(side.className).toMatch(/(^| )hidden( |$)/)
     expect(side.className).toContain('md:flex')
+  })
+
+  it.each(LEGAL_DOCS.map((d) => [d.doc, d] as const))(
+    '%s prints no site path as text and links every e-mail address',
+    (_, doc) => {
+      const { container } = renderDoc(doc)
+      const main = container.querySelector('main') as HTMLElement
+      for (const node of main.querySelectorAll('section p, section td, section li')) {
+        // Text outside links: no "/subprocessors" style path.
+        const own = Array.from(node.childNodes)
+          .filter((n) => n.nodeType === Node.TEXT_NODE)
+          .map((n) => n.textContent)
+          .join('')
+        expect(own).not.toMatch(/(^|\s)\/[a-z-]+/)
+        expect(own).not.toMatch(/[^\s@]+@[^\s@]+\.[a-z]{2,}/i)
+      }
+      for (const link of main.querySelectorAll('a[href^="mailto:"]')) {
+        expect(link.getAttribute('href')).toBe(`mailto:${link.textContent}`)
+      }
+    }
+  )
+
+  it('links the contact and security addresses as mailto', () => {
+    const terms = LEGAL_DOCS.find((d) => d.doc === 'terms')!
+    const { container } = renderDoc(terms)
+    const values = legalConfig({}).values
+    const main = container.querySelector('main') as HTMLElement
+    expect(within(main).getAllByRole('link', { name: values.securityEmail })[0]).toHaveAttribute(
+      'href',
+      `mailto:${values.securityEmail}`
+    )
+    expect(within(main).getAllByRole('link', { name: values.docsUrl })[0]).toHaveAttribute(
+      'href',
+      new URL(values.docsUrl).href
+    )
+  })
+
+  it('lists no contents for a page of one section', () => {
+    const subprocessors = LEGAL_DOCS.find((d) => d.doc === 'subprocessors')!
+    const cfg = legalConfig({})
+    expect(legalSections('subprocessors', cfg.values)).toHaveLength(1)
+    const { container } = renderDoc(subprocessors)
+    expect(container.querySelector('[data-slot="static-toc"]')).toBeNull()
+    expect(container.querySelector('[data-slot="static-toc-phone"]')).toBeNull()
+    // A page of several sections keeps both lists.
+    const terms = LEGAL_DOCS.find((d) => d.doc === 'terms')!
+    const other = renderDoc(terms).container
+    expect(other.querySelector('[data-slot="static-toc"]')).not.toBeNull()
+    expect(other.querySelector('[data-slot="static-toc-phone"]')).not.toBeNull()
+  })
+
+  it('puts links into a translated line in the translator order', () => {
+    const line = withNodes('Liên hệ: {contact}. Tài liệu: {docs}.', {
+      contact: <LegalMail to="privacy@example.com" />,
+      docs: <LegalWeb url="https://docs.example.com" />,
+    })
+    render(<p data-testid="line">{line}</p>)
+    const p = screen.getByTestId('line')
+    expect(p.textContent).toBe('Liên hệ: privacy@example.com. Tài liệu: https://docs.example.com.')
+    expect(within(p).getByRole('link', { name: 'privacy@example.com' })).toHaveAttribute(
+      'href',
+      'mailto:privacy@example.com'
+    )
+    expect(within(p).getByRole('link', { name: 'https://docs.example.com' })).toHaveAttribute(
+      'href',
+      'https://docs.example.com/'
+    )
+  })
+
+  it('keeps an address that is not a safe link as text', () => {
+    render(
+      <p data-testid="bad">
+        <LegalWeb url="javascript:alert(1)" />
+      </p>
+    )
+    expect(within(screen.getByTestId('bad')).queryByRole('link')).toBeNull()
   })
 
   it('says the text is in English when a language note is given', () => {

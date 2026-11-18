@@ -224,19 +224,6 @@ export function RegisterForm({
         className={cn('flex flex-col gap-3.5', className)}
         {...props}
       >
-        {/* Social sign-up first; the block keeps its place while it loads. */}
-        {showSocialLogin && (
-          <SocialProviderButtons
-            providers={authProviders}
-            failed={!!authProvidersError}
-            divider={t('auth.register.orWithEmail', 'Or register with email')}
-            dividerAfter
-            disabled={isLoading}
-            loadingProvider={loadingProvider}
-            onSelect={handleSocialLogin}
-          />
-        )}
-
         {/* Name Fields */}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
           <FormField
@@ -353,6 +340,19 @@ export function RegisterForm({
           {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
           {t('auth.register.submit', 'Create account')}
         </Button>
+
+        {/* Social sign-up after the form, as on sign-in; the block keeps its
+            place while the providers answer loads. */}
+        {showSocialLogin && (
+          <SocialProviderButtons
+            providers={authProviders}
+            failed={!!authProvidersError}
+            divider={t('auth.register.orContinueWith', 'Or sign up with')}
+            disabled={isLoading}
+            loadingProvider={loadingProvider}
+            onSelect={handleSocialLogin}
+          />
+        )}
       </form>
     </Form>
   )

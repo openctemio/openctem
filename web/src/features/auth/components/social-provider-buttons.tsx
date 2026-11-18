@@ -34,7 +34,6 @@ export function SocialProviderButtons({
   providers,
   failed,
   divider,
-  dividerAfter = false,
   disabled,
   loadingProvider,
   onSelect,
@@ -44,8 +43,6 @@ export function SocialProviderButtons({
   /** The answer could not be loaded. */
   failed: boolean
   divider: ReactNode
-  /** The divider goes under the buttons (sign-up puts them above the form). */
-  dividerAfter?: boolean
   disabled: boolean
   loadingProvider: SocialProvider | null
   onSelect: (provider: SocialProvider) => void
@@ -83,12 +80,7 @@ export function SocialProviderButtons({
       ))}
     </div>
   )
-  return dividerAfter ? (
-    <>
-      {grid}
-      {line}
-    </>
-  ) : (
+  return (
     <>
       {line}
       {grid}
