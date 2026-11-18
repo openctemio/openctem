@@ -358,7 +358,7 @@ function FindingDetail({
           )}
           {data.rule_id && (
             <DetailField label={t('admin.support.rule', 'Rule')}>
-              <code className="text-xs break-all">{data.rule_id}</code>
+              <code className="text-code break-all">{data.rule_id}</code>
             </DetailField>
           )}
           {data.cve_id && (
@@ -379,7 +379,7 @@ function FindingDetail({
           )}
           {data.file_path && (
             <DetailField label={t('admin.support.location', 'Location')} full>
-              <code className="text-xs break-all">
+              <code className="text-code break-all">
                 {`${data.file_path}${data.start_line ? `:${data.start_line}` : ''}`}
               </code>
             </DetailField>

@@ -82,7 +82,7 @@ export function AdminAuditDetailSheet({
                   </time>
                   <RelativeTime
                     date={data.created_at}
-                    className="block text-xs text-muted-foreground"
+                    className="block text-cap text-muted-foreground"
                   />
                 </>
               ) : (
@@ -104,7 +104,7 @@ export function AdminAuditDetailSheet({
             )}
             {data.resource_id && (
               <DetailField label={t('admin.activity.resourceId', 'Resource ID')}>
-                <code className="text-xs break-all">{data.resource_id}</code>
+                <code className="text-code break-all">{data.resource_id}</code>
               </DetailField>
             )}
             {data.ip_address && (
@@ -114,12 +114,12 @@ export function AdminAuditDetailSheet({
             )}
             {request && (
               <DetailField label={t('admin.activity.request', 'Request')}>
-                <code className="text-xs break-all">{request}</code>
+                <code className="text-code break-all">{request}</code>
               </DetailField>
             )}
             {reason && (
               <DetailField label={t('admin.activity.reason', 'Reason')} full>
-                <span className="text-sm break-words whitespace-pre-wrap">{reason}</span>
+                <span className="text-body break-words whitespace-pre-wrap">{reason}</span>
               </DetailField>
             )}
             {data.user_agent && (

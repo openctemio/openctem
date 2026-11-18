@@ -168,7 +168,7 @@ export function TargetMappingDialog({
                     <p className="text-sm font-medium">
                       {t('admin.targetMappingDialog.assetType', 'Asset type')}
                     </p>
-                    <p className="text-sm">{text.asset(mapping.asset_type)}</p>
+                    <p className="text-body">{text.asset(mapping.asset_type)}</p>
                   </div>
                   <p className="col-span-2 text-xs text-muted-foreground">
                     {t(
