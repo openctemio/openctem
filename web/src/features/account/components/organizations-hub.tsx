@@ -1,17 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import Link from '@/components/link'
-import {
-  Building2,
-  ChevronRight,
-  KeyRound,
-  Loader2,
-  Monitor,
-  Settings2,
-  UserRound,
-  type LucideIcon,
-} from 'lucide-react'
+import { Building2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
@@ -31,14 +21,17 @@ import {
 } from '@/features/auth/actions/account-space-actions'
 import { ResendVerification } from '@/features/auth/components/resend-verification'
 import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
+import { useMyTenants } from '@/lib/api/user-tenant-hooks'
+import { readTenantCookieId } from '@/lib/tenant-epoch'
 import { safeText } from '@/lib/api/error-message'
 import { formatRelative } from '@/lib/format-date'
 
 import { useProfile } from '../api'
 import { welcomeView } from '../lib/welcome-view'
+import { MembershipsCard } from './memberships-card'
 
-interface WelcomeHubProps {
+interface OrganizationsHubProps {
   /**
    * The browser holds only a refresh token (or a token of a social sign-in):
    * ask the API for the account-only token first, then load.
@@ -48,57 +41,14 @@ interface WelcomeHubProps {
 
 const SESSION_RETRY_KEY = 'welcome-organization-retry'
 
-const ACCOUNT_LINKS: Array<{
-  href: string
-  icon: LucideIcon
-  key: string
-  fallbackTitle: string
-  fallbackDesc: string
-}> = [
-  {
-    href: '/account',
-    icon: UserRound,
-    key: 'profile',
-    fallbackTitle: 'Profile',
-    fallbackDesc: 'Your name and contact details',
-  },
-  {
-    href: '/account/security',
-    icon: KeyRound,
-    key: 'security',
-    fallbackTitle: 'Security',
-    fallbackDesc: 'Password and two-factor authentication',
-  },
-  {
-    href: '/account/security#sessions',
-    icon: Monitor,
-    key: 'sessions',
-    fallbackTitle: 'Sessions',
-    fallbackDesc: 'Devices signed in to your account',
-  },
-  {
-    href: '/account/security#sign-in-methods',
-    icon: KeyRound,
-    key: 'signInMethods',
-    fallbackTitle: 'Sign-in methods',
-    fallbackDesc: 'Google, GitHub, Microsoft and your password',
-  },
-  {
-    href: '/account/preferences',
-    icon: Settings2,
-    key: 'preferences',
-    fallbackTitle: 'Preferences',
-    fallbackDesc: 'Language, theme and time zone',
-  },
-]
-
 /**
- * /welcome: the account space of a signed-in person with no organization
- * (api RFC-141). It lists the invitations sent to the person's verified
- * address (accept or decline), offers "Create an organization" only when the
- * API's policy allows it for this person, and links the account pages.
+ * /account/organizations (api RFC-141): the person's own memberships, each
+ * with its one next step, the invitations sent to their verified address
+ * (accept or decline), and "Create an organization" only when the API's policy
+ * allows it for this person. With no organization at all it is the first page a
+ * new person sees, so it starts with a welcome.
  */
-export function WelcomeHub({ needsSession }: WelcomeHubProps) {
+export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
   const { t, locale } = useTranslation()
   const { profile } = useProfile()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
@@ -164,6 +114,9 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
 
   const view = welcomeView(options)
   const email = profile?.email
+  const { data: memberships } = useMyTenants({ skip: starting })
+  const [currentId] = useState(readTenantCookieId)
+  const firstRun = !!memberships && memberships.length === 0
 
   const accept = (ref: string) => {
     setBusyRef(ref)
@@ -215,15 +168,25 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
 
   return (
     <PageStack>
-      <PageHeader
-        title={t('auth.welcome.title', 'Welcome, {name}', {
-          name: profile?.name || email || '',
-        })}
-        description={t(
-          'auth.welcome.subtitle',
-          'You are signed in, but you are not in an organization yet.'
-        )}
-      />
+      {firstRun && (
+        <div data-testid="organizations-first-run">
+          <h2 className="text-section">
+            {t('auth.welcome.title', 'Welcome, {name}', {
+              name: profile?.name || email || '',
+            })}
+          </h2>
+          <p className="text-body text-muted-foreground">
+            {t(
+              'auth.welcome.subtitle',
+              'You are signed in, but you are not in an organization yet.'
+            )}
+          </p>
+        </div>
+      )}
+
+      {memberships && memberships.length > 0 && (
+        <MembershipsCard memberships={memberships} currentId={currentId} />
+      )}
 
       {loading && (
         <div
@@ -392,33 +355,6 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
           )}
         </p>
       )}
-
-      <EntryCard>
-        <EntryHeader level={2} title={t('auth.welcome.account', 'Your account')} />
-        <div className="divide-y sm:-mx-6">
-          {ACCOUNT_LINKS.map((item) => (
-            <Link
-              key={item.key}
-              href={item.href}
-              className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-3 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset sm:px-6"
-            >
-              <item.icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="text-dense block font-medium">
-                  {t(`auth.welcome.link.${item.key}`, item.fallbackTitle)}
-                </span>
-                <span className="text-cap text-muted-foreground block">
-                  {t(`auth.welcome.link.${item.key}Desc`, item.fallbackDesc)}
-                </span>
-              </span>
-              <ChevronRight
-                className="text-muted-foreground size-4 shrink-0 rtl:rotate-180"
-                aria-hidden
-              />
-            </Link>
-          ))}
-        </div>
-      </EntryCard>
 
       <ConfirmDialog
         open={declining !== null}

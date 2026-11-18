@@ -293,7 +293,7 @@ export function LoginForm({
         // Otherwise the account space: invitations, the account pages, and
         // creating an organization where the installation allows it. The page
         // decides, so this toast stays neutral.
-        hardNavigate('/welcome', t('auth.login.success', 'Signed in'))
+        hardNavigate('/account/organizations', t('auth.login.success', 'Signed in'))
         return
       }
 

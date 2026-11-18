@@ -1,11 +1,13 @@
 'use client'
 
 import Link from '@/components/link'
+import { ArrowLeft } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
 import { BrandMark, usesBuiltInLogo } from '@/components/brand-logo'
 import { LogoFull } from '@/assets/logo'
 import { MainRegion } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { SkipToMain } from '@/components/skip-to-main'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -13,28 +15,29 @@ import { useBrand } from '@/context/brand-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { AccountSpaceProvider } from '@/context/account-space-provider'
 import { cn } from '@/lib/utils'
+import { ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
+import { ACCOUNT_NAV, activeAccountItem } from '@/config/account-nav'
 
 import { AccountSignOut } from './account-sign-out'
 import { OwnershipInvitationBanner } from './ownership-invitation-banner'
 
-const NAV = [
-  { href: '/welcome', key: 'auth.welcome.nav.home', fallback: 'Home' },
-  { href: '/account', key: 'auth.welcome.nav.profile', fallback: 'Profile' },
-  { href: '/account/security', key: 'auth.welcome.nav.security', fallback: 'Security' },
-  { href: '/account/preferences', key: 'auth.welcome.nav.preferences', fallback: 'Preferences' },
-] as const
-
 /**
- * The shell of a signed-in person with no organization (api RFC-141): the
- * brand, the four account pages, theme and sign out. No tenant sidebar, no
- * organization switcher, no search: every one of them reads organization data
- * the account-only session cannot reach.
+ * The shell of the account area, for anyone signed in (api RFC-141): the
+ * brand, the account pages, a way back to the open organization, theme and
+ * sign out. No tenant sidebar, no organization switcher, no search: every one
+ * of them reads organization data, which the account area never shows.
  */
 export function AccountShell({
   children,
   sessionReady = true,
+  organizationName,
 }: {
   children: React.ReactNode
+  /**
+   * The organization open in this browser, if any: the header offers a way
+   * back to it. Undefined when none is open; '' when its name is unknown.
+   */
+  organizationName?: string
   /**
    * The account-only session exists. False on /welcome while it holds only a
    * refresh token: the hub starts the session and reloads, so nothing else
@@ -53,7 +56,7 @@ export function AccountShell({
         <header className="border-b bg-background">
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
             <Link
-              href="/welcome"
+              href={organizationName === undefined ? ACCOUNT_HOME_PATH : '/account'}
               className="flex items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               {usesBuiltInLogo(brand) ? (
@@ -68,15 +71,15 @@ export function AccountShell({
               )}
             </Link>
             <nav
-              aria-label={t('auth.welcome.navLabel', 'Account')}
+              aria-label={t('account.area.navLabel', 'Your account')}
               className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:flex-1"
             >
-              {NAV.map((item) => {
-                const active = pathname === item.href
+              {ACCOUNT_NAV.map((item) => {
+                const active = activeAccountItem(pathname)?.id === item.id
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href}
+                    key={item.id}
+                    href={item.url}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
                       'rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
@@ -85,12 +88,26 @@ export function AccountShell({
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     )}
                   >
-                    {t(item.key, item.fallback)}
+                    {t(`account.area.nav.${item.id}`, item.title)}
                   </Link>
                 )
               })}
             </nav>
             <div className="ms-auto flex items-center gap-2 sm:ms-0">
+              {organizationName !== undefined && (
+                // The organization shell is another layout: it mounts its own
+                // providers and reads its data afresh.
+                <Button asChild variant="outline">
+                  <Link href="/">
+                    <ArrowLeft aria-hidden />
+                    <span className="max-w-[16ch] truncate">
+                      {organizationName
+                        ? t('account.area.backTo', 'Back to {name}', { name: organizationName })
+                        : t('account.area.backToOrganization', 'Back to your organization')}
+                    </span>
+                  </Link>
+                </Button>
+              )}
               <ThemeSwitch />
               <AccountSignOut />
             </div>
