@@ -8,6 +8,8 @@ import type {
   EmailRelayMode,
   EmailRelaySettings,
   LeakedSecretStorageSettings,
+  PrivateDestinationsSettings,
+  DestinationTestResult,
   MFAFloor,
   MFAFloorSettings,
   PlatformAISettings,
@@ -36,6 +38,7 @@ const SOCIAL = '/settings/social-login-providers'
 const MFA_FLOOR = '/settings/auth-mfa'
 const EMAIL_RELAY = '/settings/email-relay'
 const LEAKED_SECRETS = '/settings/leaked-secret-storage'
+const PRIVATE_DESTINATIONS = '/settings/private-destinations'
 const SCAN_IDENT = '/settings/scan-identification'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
@@ -49,6 +52,8 @@ export const useMFAFloor = () => useSWR<MFAFloorSettings>(MFA_FLOOR, adminFetche
 export const useEmailRelay = () => useSWR<EmailRelaySettings>(EMAIL_RELAY, adminFetcher)
 export const useLeakedSecretStorage = () =>
   useSWR<LeakedSecretStorageSettings>(LEAKED_SECRETS, adminFetcher)
+export const usePrivateDestinations = () =>
+  useSWR<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, adminFetcher)
 export const useScanIdentification = () =>
   useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
 
@@ -86,6 +91,23 @@ export function saveLeakedSecretStorage(input: {
   version: number
 }) {
   return adminFetch<LeakedSecretStorageSettings>(LEAKED_SECRETS, { method: 'PUT', body: input })
+}
+
+/** Platform owner, fresh step-up and a reason; every administrator is notified. */
+export function savePrivateDestinations(input: {
+  ranges: { cidr: string; note?: string }[]
+  reason: string
+  version: number
+}) {
+  return adminFetch<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, { method: 'PUT', body: input })
+}
+
+/** Resolves a host and reports the guard's decision per address; never connects. */
+export function testPrivateDestination(host: string) {
+  return adminFetch<DestinationTestResult>(`${PRIVATE_DESTINATIONS}/test`, {
+    method: 'POST',
+    body: { host },
+  })
 }
 
 export function saveEmailRelay(input: { mode: EmailRelayMode; reason: string; version: number }) {
