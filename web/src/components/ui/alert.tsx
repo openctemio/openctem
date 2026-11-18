@@ -19,6 +19,11 @@ const alertVariants = cva(
   }
 )
 
+/**
+ * A notice in the page. Only the destructive variant (an error) is announced
+ * as an alert, interrupting a screen reader; any other notice is a polite
+ * `status`, read in turn. `__tests__/alert-roles.test.ts` keeps it that way.
+ */
 function Alert({
   className,
   variant,
@@ -27,7 +32,7 @@ function Alert({
   return (
     <div
       data-slot="alert"
-      role="alert"
+      role={variant === 'destructive' ? 'alert' : 'status'}
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />

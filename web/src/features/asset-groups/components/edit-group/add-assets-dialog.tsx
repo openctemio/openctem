@@ -216,7 +216,7 @@ export function AddAssetsDialog({
 
   // Get current asset type info
   const currentAssetTypeInfo = React.useMemo(
-    () => assetTypes.find((t) => t.code === newAssetType),
+    () => assetTypes.find((info) => info.code === newAssetType),
     [assetTypes, newAssetType]
   )
 
@@ -224,7 +224,7 @@ export function AddAssetsDialog({
   const currentPlaceholder =
     currentAssetTypeInfo?.pattern_placeholder ||
     currentAssetTypeInfo?.pattern_example ||
-    'Enter asset name'
+    t('assetGroups.assetsStep.enterName', 'Enter asset name')
 
   // Validation
   const validationResult = React.useMemo(() => {
@@ -242,17 +242,21 @@ export function AddAssetsDialog({
       const isValid = regex.test(newAssetName.trim())
       return {
         isValid,
-        error: isValid ? null : `Invalid ${currentAssetTypeInfo?.name || 'asset'} format`,
+        error: isValid
+          ? null
+          : t('assetGroups.assetsStep.invalidFormat', 'Invalid {type} format', {
+              type: currentAssetTypeInfo?.name || t('assetGroups.assetsStep.assetNoun', 'asset'),
+            }),
       }
     } catch {
       return { isValid: true, error: null }
     }
-  }, [newAssetName, currentAssetTypeInfo])
+  }, [newAssetName, currentAssetTypeInfo, t])
 
   // Helper to get asset type name
   const getAssetTypeName = React.useCallback(
     (typeCode: string) => {
-      const typeInfo = assetTypes.find((t) => t.code === typeCode)
+      const typeInfo = assetTypes.find((info) => info.code === typeCode)
       return typeInfo?.name || ASSET_TYPE_LABELS[typeCode as AssetType] || typeCode
     },
     [assetTypes]
@@ -372,13 +376,15 @@ export function AddAssetsDialog({
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-muted-foreground">{getAssetTypeName(asset.type)}</span>
               {asset.riskScore !== undefined && (
-                <span className="text-xs text-muted-foreground">Risk: {asset.riskScore}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('assetGroups.manage.risk', 'Risk: {score}', { score: asset.riskScore })}
+                </span>
               )}
             </div>
           </div>
           <Badge variant="secondary" className="shrink-0 text-xs gap-1">
             <CheckCircle2 className="h-3 w-3" />
-            In Group
+            {t('assetGroups.manage.inGroup', 'In group')}
           </Badge>
           {onRemove && (
             <Button
@@ -431,7 +437,9 @@ export function AddAssetsDialog({
           <p className="text-sm font-medium truncate">{asset.name}</p>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs text-muted-foreground">{getAssetTypeName(asset.type)}</span>
-            <span className="text-xs text-muted-foreground">Risk: {asset.riskScore}</span>
+            <span className="text-xs text-muted-foreground">
+              {t('assetGroups.manage.risk', 'Risk: {score}', { score: asset.riskScore ?? '—' })}
+            </span>
           </div>
         </div>
       </div>
@@ -449,9 +457,15 @@ export function AddAssetsDialog({
                 <FolderPlus className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <DialogTitle className="text-lg">Manage Group Assets</DialogTitle>
+                <DialogTitle className="text-lg">
+                  {t('assetGroups.manage.title', 'Manage group assets')}
+                </DialogTitle>
                 <DialogDescription className="text-sm">
-                  &quot;{groupName}&quot; - {safeGroupAssets.length} in group, {total} total
+                  {t('assetGroups.manage.summary', '"{name}" - {inGroup} in group, {total} total', {
+                    name: groupName,
+                    inGroup: safeGroupAssets.length,
+                    total,
+                  })}
                 </DialogDescription>
               </div>
             </div>
@@ -465,14 +479,14 @@ export function AddAssetsDialog({
               <TabsList>
                 <TabsTrigger value="select" className="gap-2">
                   <ListChecks className="h-4 w-4" />
-                  Select Existing
+                  {t('assetGroups.assetsStep.tabSelect', 'Select existing')}
                   {selectedAssetIds.length > 0 && (
                     <TabsCount value={`+${selectedAssetIds.length}`} />
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="create" className="gap-2">
                   <PlusCircle className="h-4 w-4" />
-                  Create New
+                  {t('assetGroups.assetsStep.tabCreate', 'Create new')}
                   {newAssets.length > 0 && <TabsCount value={newAssets.length} />}
                 </TabsTrigger>
               </TabsList>
@@ -487,7 +501,7 @@ export function AddAssetsDialog({
               <div className="relative pt-3 shrink-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 mt-1.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search assets..."
+                  placeholder={t('assetGroups.addAssets.search', 'Search assets...')}
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   className="ps-9"
@@ -501,7 +515,9 @@ export function AddAssetsDialog({
                   {showLoading ? (
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                      <span className="ms-2 text-sm text-muted-foreground">Loading assets...</span>
+                      <span className="ms-2 text-sm text-muted-foreground">
+                        {t('assetGroups.manage.loadingAssets', 'Loading assets...')}
+                      </span>
                     </div>
                   ) : (
                     <>
@@ -510,7 +526,9 @@ export function AddAssetsDialog({
                         <div className="mb-3">
                           <div className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            In Group ({filteredGroupAssets.length})
+                            {t('assetGroups.manage.inGroupCount', 'In group ({count})', {
+                              count: filteredGroupAssets.length,
+                            })}
                           </div>
                           <div className="space-y-1">
                             {filteredGroupAssets.map((asset) => renderAssetRow(asset, 'in-group'))}
@@ -523,7 +541,9 @@ export function AddAssetsDialog({
                         <div>
                           <div className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                             <Plus className="h-3.5 w-3.5" />
-                            Available ({availableAssets.length})
+                            {t('assetGroups.manage.availableCount', 'Available ({count})', {
+                              count: availableAssets.length,
+                            })}
                           </div>
                           <div className="space-y-1">
                             {availableAssets.map((asset) => renderAssetRow(asset, 'available'))}
@@ -536,12 +556,20 @@ export function AddAssetsDialog({
                         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                           <Package className="h-10 w-10 mb-3 opacity-50" />
                           <p className="text-sm font-medium">
-                            {searchInput ? 'No assets found' : 'No assets available'}
+                            {searchInput
+                              ? t('assetGroups.addAssets.emptyTitle', 'No assets found')
+                              : t('assetGroups.manage.noneAvailable', 'No assets available')}
                           </p>
                           <p className="text-xs mt-1">
                             {searchInput
-                              ? 'Try a different search term'
-                              : 'Create new assets using the Create New tab'}
+                              ? t(
+                                  'assetGroups.manage.tryOtherSearch',
+                                  'Try a different search term'
+                                )
+                              : t(
+                                  'assetGroups.manage.createHint',
+                                  'Create new assets using the Create new tab'
+                                )}
                           </p>
                         </div>
                       )}
@@ -552,14 +580,14 @@ export function AddAssetsDialog({
                           <div className="flex items-center justify-center py-4">
                             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                             <span className="ms-2 text-sm text-muted-foreground">
-                              Loading more...
+                              {t('assetGroups.manage.loadingMore', 'Loading more...')}
                             </span>
                           </div>
                         )}
                         {!hasMore &&
                           (availableAssets.length > 0 || filteredGroupAssets.length > 0) && (
                             <p className="text-center text-xs text-muted-foreground py-2">
-                              All assets loaded
+                              {t('assetGroups.manage.allLoaded', 'All assets loaded')}
                             </p>
                           )}
                       </div>
@@ -583,7 +611,13 @@ export function AddAssetsDialog({
                     disabled={isLoadingTypes || isBusy}
                   >
                     <SelectTrigger className="w-[140px]">
-                      <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'Select type'} />
+                      <SelectValue
+                        placeholder={
+                          isLoadingTypes
+                            ? t('assetGroups.assetsStep.loading', 'Loading...')
+                            : t('assetGroups.assetsStep.selectType', 'Select type')
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {assetTypes.map((type) =>
@@ -624,13 +658,18 @@ export function AddAssetsDialog({
                     {validationResult.error}
                     {currentAssetTypeInfo?.pattern_example && (
                       <span className="text-muted-foreground ms-1">
-                        (e.g., {currentAssetTypeInfo.pattern_example})
+                        {t('assetGroups.assetsStep.example', '(e.g., {example})', {
+                          example: currentAssetTypeInfo.pattern_example,
+                        })}
                       </span>
                     )}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-2">
-                    Press Enter to quickly add multiple assets
+                    {t(
+                      'assetGroups.assetsStep.pressEnter',
+                      'Press Enter to quickly add multiple assets'
+                    )}
                   </p>
                 )}
               </Card>
@@ -640,8 +679,12 @@ export function AddAssetsDialog({
                 {newAssets.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-lg border-dashed">
                     <Plus className="h-10 w-10 mb-3 opacity-50" />
-                    <p className="text-sm font-medium">No assets added yet</p>
-                    <p className="text-xs mt-1">Use the form above to add assets</p>
+                    <p className="text-sm font-medium">
+                      {t('assetGroups.assetsStep.noneYet', 'No assets added yet')}
+                    </p>
+                    <p className="text-xs mt-1">
+                      {t('assetGroups.assetsStep.useForm', 'Use the form above to add assets')}
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -668,7 +711,7 @@ export function AddAssetsDialog({
                             </p>
                           </div>
                           <Badge variant="outline" className="shrink-0 text-xs">
-                            New
+                            {t('assetGroups.assetsStep.new', 'New')}
                           </Badge>
                           <Button
                             type="button"
@@ -718,23 +761,33 @@ export function AddAssetsDialog({
             <div>
               {totalToAdd > 0 && (
                 <Badge variant="secondary">
-                  {totalToAdd} asset{totalToAdd !== 1 ? 's' : ''} to add
+                  {t(
+                    'assetGroups.manage.toAdd',
+                    '{count, plural, one {# asset} other {# assets}} to add',
+                    { count: totalToAdd }
+                  )}
                 </Badge>
               )}
             </div>
             <div className="flex items-center gap-3">
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
-                {totalToAdd === 0 ? 'Close' : 'Cancel'}
+                {totalToAdd === 0
+                  ? t('assetGroups.manage.close', 'Close')
+                  : t('assetGroups.cancel', 'Cancel')}
               </Button>
               {totalToAdd > 0 && (
                 <Button onClick={handleSubmit} disabled={isBusy}>
                   {isSubmitting ? (
                     <>
                       <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                      Adding...
+                      {t('assetGroups.addAssets.adding', 'Adding...')}
                     </>
                   ) : (
-                    `Add ${totalToAdd} Asset${totalToAdd !== 1 ? 's' : ''}`
+                    t(
+                      'assetGroups.manage.add',
+                      '{count, plural, one {Add # asset} other {Add # assets}}',
+                      { count: totalToAdd }
+                    )
                   )}
                 </Button>
               )}

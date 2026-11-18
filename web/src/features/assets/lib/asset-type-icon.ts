@@ -70,10 +70,18 @@ export function getAssetTypeIcon(type: string | undefined): LucideIcon {
   return (name && ICONS_BY_NAME[name]) || Package
 }
 
-/** Human label for an asset type ("repository" -> "Repository"). */
-export function getAssetTypeLabel(type: string | undefined): string {
-  if (!type) return 'Asset'
-  return (ASSET_TYPE_LABELS as Record<string, string>)[type] ?? type
+/**
+ * Human label for an asset type ("repository" -> "Repository"). Pass `t`
+ * wherever the label is shown: it reads `assets.typeLabel.<type>` in the
+ * reader's language.
+ */
+export function getAssetTypeLabel(
+  type: string | undefined,
+  t?: (key: string, fallback: string) => string
+): string {
+  if (!type) return t ? t('assets.typeLabel.asset', 'Asset') : 'Asset'
+  const english = (ASSET_TYPE_LABELS as Record<string, string>)[type] ?? type
+  return t ? t(`assets.typeLabel.${type}`, english) : english
 }
 
 /**

@@ -353,12 +353,29 @@ type AuditLogFilter struct {
 	StartTime    *time.Time
 	EndTime      *time.Time
 	Search       string // Search in action, resource_name, error_message
-	// ChangesOnly leaves out reads and write-ahead rows: a row stays when it
-	// records a non-GET request (a write, a sign-in, an elevation), a request
-	// without a method (a command on the host), or anything that failed (a
-	// refused read is a change worth seeing). The rows themselves are never
-	// dropped; this is a view of the same chain.
+	// ChangesOnly leaves out reads, write-ahead rows and routine successful
+	// session events (AuditRoutineSessionActions): a row stays when it records
+	// a non-GET request (a write), a request without a method (a command on
+	// the host), or a refused or failed write or read. Every failure and
+	// anomaly stays, including a routine action that failed. The rows
+	// themselves are never dropped; this is a view of the same chain, and the
+	// full list still shows every row.
 	ChangesOnly bool
+}
+
+// AuditRoutineSessionActions are the actions that record a routine, successful
+// session event: a sign-in, a second-factor check, a step-up, a session or an
+// elevation ending. They are not changes to the platform, so the "changes"
+// view leaves them out when they succeeded. Failures and anomalies (failed
+// sign-in or second factor, a passkey counter that went backwards, recovery
+// codes, break-glass or new-network sign-in, evicted sessions, elevations) are
+// deliberately NOT in this list: they are security signals and stay visible.
+// A row of this list whose request failed also stays.
+var AuditRoutineSessionActions = []string{
+	"console.login", "console.logout", "console.idp_login", "console.step_up",
+	"console.session_end", "console.session_ended", "console.sessions_ended_by_account",
+	"console.elevation_ended",
+	AuditActionAuthSuccess,
 }
 
 // AuditActionWriteStarted is the write-ahead row an audited write stores

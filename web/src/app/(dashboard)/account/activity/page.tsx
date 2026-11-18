@@ -127,14 +127,16 @@ export default function ActivityPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium">{formatAction(activity.action)}</p>
+                        <p className="font-medium">{formatAction(activity.action, t)}</p>
                         {result && (
                           <Badge className={`${result.bgColor} ${result.color} border-0 text-xs`}>
                             {t(`auditLog.result.${activity.result}`, result.label)}
                           </Badge>
                         )}
                       </div>
-                      {activity.message && (
+                      {/* The server's English message often only repeats the action
+                        name, which the line above already shows translated. */}
+                      {activity.message && activity.message !== formatAction(activity.action) && (
                         <p className="text-sm text-muted-foreground mt-0.5">{activity.message}</p>
                       )}
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
