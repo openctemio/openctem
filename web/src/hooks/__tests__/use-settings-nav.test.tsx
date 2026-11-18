@@ -55,16 +55,9 @@ beforeEach(() => {
 })
 
 describe('useSettingsNav', () => {
-  it('a user with no permissions sees only My account', () => {
-    expect(groupIds()).toEqual(['account'])
-    expect(ids()).toEqual([
-      'profile',
-      'account-security',
-      'preferences',
-      'my-notifications',
-      'activity',
-      'connected-apps',
-    ])
+  it('a user with no permissions sees only Your membership', () => {
+    expect(groupIds()).toEqual(['membership'])
+    expect(ids()).toEqual(['membership', 'my-notifications', 'activity', 'connected-apps'])
   })
 
   it('shows an item only with the permission its route needs', () => {

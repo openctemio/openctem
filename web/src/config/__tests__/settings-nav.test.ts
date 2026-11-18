@@ -85,13 +85,14 @@ function staticPagesUnder(prefix: string): string[] {
   return out.filter((u) => u === prefix || u.startsWith(`${prefix}/`))
 }
 
-const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
+const isMembership = (url: string) => url === '/settings/me' || url.startsWith('/settings/me/')
+const isAccountArea = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
   // The six groups decided 2026-10-01 (item placement: research 346).
   it('has the six groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
-      'account',
+      'membership',
       'organization',
       'access',
       'findings',
@@ -100,12 +101,14 @@ describe('settings nav config', () => {
     ])
   })
 
-  // Personal settings never mix with the organization's: My account holds
-  // every /account page and nothing else.
-  it('keeps personal pages in My account and nowhere else', () => {
+  // The person inside this organization: "Your membership" holds every
+  // /settings/me page and nothing else. The person's own account (/account)
+  // is a separate area with its own navigation, never in this rail.
+  it('keeps membership pages in Your membership and the account area out', () => {
     for (const group of settingsNav) {
       for (const item of group.items) {
-        expect(isPersonal(item.url), `${group.id} > ${item.id}`).toBe(group.id === 'account')
+        expect(isMembership(item.url), `${group.id} > ${item.id}`).toBe(group.id === 'membership')
+        expect(isAccountArea(item.url), `${group.id} > ${item.id}`).toBe(false)
       }
     }
   })
@@ -117,7 +120,7 @@ describe('settings nav config', () => {
       settingsNav.map((g) => [g.id, [...new Set(g.items.map((i) => i.section))]])
     )
     expect(sections).toEqual({
-      account: [undefined],
+      membership: [undefined],
       organization: [undefined],
       access: [undefined, 'api-access', 'sign-in', 'oversight'],
       findings: [undefined, 'risk', 'assets'],
@@ -221,7 +224,7 @@ describe('every settings item', () => {
 
       it('asks for what the route guard enforces', () => {
         const guard = matchRoutePermission(item.url)
-        if (isPersonal(item.url) || !item.permission) {
+        if (isMembership(item.url) || !item.permission) {
           // The user's own pages: no permission in the nav, none in the guard.
           expect(guard, `${item.url} is personal but the guard gates it`).toBeUndefined()
           expect(item.permission).toBeUndefined()
@@ -283,13 +286,13 @@ describe('CI/CD settings have one home', () => {
 })
 
 describe('settings shell', () => {
-  it('owns /settings, /account and every item url (with sub-pages)', () => {
+  it('owns /settings and every item url (with sub-pages)', () => {
     for (const p of [
       '/settings',
       '/settings/members',
       '/settings/integrations/notifications/history',
-      '/account',
-      '/account/security',
+      '/settings/me',
+      '/settings/me/activity',
       '/settings/scanning/profiles',
       '/settings/scanning/profiles/abc',
       '/settings/scanning/credentials',
@@ -297,6 +300,13 @@ describe('settings shell', () => {
       '/settings/scanning/capabilities',
     ]) {
       expect(isSettingsShellPath(p), p).toBe(true)
+    }
+  })
+
+  it('leaves the account area to its own shell', () => {
+    for (const p of ['/account', '/account/security', '/account/organizations']) {
+      expect(isSettingsShellPath(p), p).toBe(false)
+      expect(activeSettingsItem(p), p).toBeUndefined()
     }
   })
 
@@ -321,8 +331,8 @@ describe('settings shell', () => {
     expect(activeSettingsItem('/settings/integrations/notifications/outbox')?.id).toBe(
       'notification-channels'
     )
-    expect(activeSettingsItem('/account')?.id).toBe('profile')
-    expect(activeSettingsItem('/account/security')?.id).toBe('account-security')
+    expect(activeSettingsItem('/settings/me')?.id).toBe('membership')
+    expect(activeSettingsItem('/settings/me/activity')?.id).toBe('activity')
     expect(activeSettingsItem('/settings/scanning/profiles/123')?.id).toBe('scan-profiles')
   })
 
@@ -370,10 +380,7 @@ describe('nothing left the command palette', () => {
     '/settings/integrations/siem',
     '/settings/integrations/scim-tokens',
     '/settings/integrations/mcp',
-    '/account/notifications', // was /settings/notifications (308)
-    '/account',
-    '/account/security',
-    '/account/preferences',
+    '/account/notifications', // was /settings/notifications (308), now /settings/me/notifications
     '/account/activity',
   ]
 

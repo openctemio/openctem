@@ -2,14 +2,17 @@
  * Settings navigation: the one source of truth for the settings rail, the
  * /settings landing page and the Settings section of the command palette (⌘K).
  *
- * Routes under /settings and /account (plus every item's own URL) render the
+ * Routes under /settings (plus every item's own URL) render the
  * settings shell: the left sidebar swaps its content for this list, two levels
  * deep (group, then item), with a way back to the app. The main sidebar keeps a
- * single "Settings" link.
+ * single "Organization settings" link. The person's own account (profile,
+ * security, preferences, organizations) is not here: it is the account area,
+ * src/config/account-nav.ts, outside the organization shell.
  *
  * Six groups (settings IA decided 2026-10-01; placement research 346, then
  * research 369 sorted items by the task and the person who uses them):
- * - My account: the signed-in person's own pages, nothing of the organization;
+ * - Your membership: the signed-in person inside this organization (role,
+ *   leaving, notifications, activity, connected applications); no role needed;
  * - Organization: what the organization is, its modules, usage and AI;
  * - Access & security: people and their roles, then API access (service
  *   accounts, keys, AI assistants), Sign-in, and Oversight (security
@@ -25,7 +28,7 @@
  * Rules (src/config/__tests__/settings-nav.test.ts):
  * - every url has a page; no page is a scaffold;
  * - `permission` / `module` equal what the route guard enforces for the url,
- *   and personal items (/account) carry neither;
+ *   and membership items (/settings/me) carry neither;
  * - a "Soon" badge if and only if the page is a ComingSoonPage;
  * - 2 to 10 items per group, or per section in a group with sections (a
  *   group's first section is untitled; items of a section are contiguous);
@@ -72,7 +75,6 @@ import {
   Scale,
   ClipboardCheck,
   ServerCog,
-  Settings2,
   Shield,
   SlidersHorizontal,
   Sparkles,
@@ -150,38 +152,22 @@ export interface SettingsNavGroup {
 
 const coreSettingsNav: SettingsNavGroup[] = [
   {
-    id: 'account',
-    title: 'My account',
+    id: 'membership',
+    title: 'Your membership',
     items: [
       {
-        id: 'profile',
-        title: 'Profile',
-        description: 'Your name, email and avatar.',
-        url: '/account',
+        id: 'membership',
+        title: 'Membership',
+        description: 'Your role in this organization, and leaving it.',
+        url: '/settings/me',
         icon: User,
-        keywords: ['name', 'avatar', 'me'],
-      },
-      {
-        id: 'account-security',
-        title: 'Security',
-        description: 'Password, two-factor authentication and active sessions.',
-        url: '/account/security',
-        icon: Shield,
-        keywords: ['password', '2fa', 'mfa', 'totp', 'sessions'],
-      },
-      {
-        id: 'preferences',
-        title: 'Preferences',
-        description: 'Theme and how your findings lists open.',
-        url: '/account/preferences',
-        icon: Settings2,
-        keywords: ['theme', 'dark mode', 'informational findings'],
+        keywords: ['role', 'leave', 'me', 'member since'],
       },
       {
         id: 'my-notifications',
         title: 'Notifications',
         description: 'Which notifications you receive, and how.',
-        url: '/account/notifications',
+        url: '/settings/me/notifications',
         icon: Bell,
         keywords: ['email', 'digest', 'alerts', 'mute'],
       },
@@ -189,7 +175,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         id: 'activity',
         title: 'Activity',
         description: 'Your own recent sign-ins and actions.',
-        url: '/account/activity',
+        url: '/settings/me/activity',
         icon: Activity,
         keywords: ['history', 'sign-ins'],
       },
@@ -197,7 +183,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         id: 'connected-apps',
         title: 'Connected applications',
         description: 'AI applications you allowed to read your data.',
-        url: '/account/connected-apps',
+        url: '/settings/me/connected-apps',
         icon: Bot,
         keywords: ['mcp', 'oauth', 'ai', 'assistant', 'claude', 'disconnect'],
       },
@@ -1101,7 +1087,7 @@ function underPath(pathname: string, base: string): boolean {
 /** Whether `pathname` renders the settings shell instead of the app sidebar. */
 export function isSettingsShellPath(pathname: string): boolean {
   if (APP_SHELL_UNDER_SETTINGS.some((p) => underPath(pathname, p))) return false
-  if (underPath(pathname, '/settings') || underPath(pathname, '/account')) return true
+  if (underPath(pathname, '/settings')) return true
   return settingsNavItems.some((item) => underPath(pathname, item.url))
 }
 

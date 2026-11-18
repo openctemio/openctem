@@ -175,7 +175,7 @@ export function ConnectPanel({
           </p>
           <ConnectionTest />
           <Button asChild variant="link" className="h-auto p-0 whitespace-normal text-start">
-            <Link href="/account/connected-apps">
+            <Link href="/settings/me/connected-apps">
               {t('mcp.connect.yourConnections', 'See and disconnect your connected applications')}
               <ArrowRight className="ms-1 h-3.5 w-3.5 shrink-0" aria-hidden />
             </Link>

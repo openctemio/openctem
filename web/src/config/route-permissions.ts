@@ -635,9 +635,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/limits': {
     permission: Permission.TeamUpdate,
   },
-  // The user's own notification settings live at /account/notifications
-  // (/settings/notifications 308s there) and carry no entry: /account pages are
-  // personal and open to every signed-in user. The org-level channels
+  // The user's own notification settings live at /settings/me/notifications
+  // (/settings/notifications 308s there) and carry no entry: "Your membership" pages are
+  // the person's own and open to every member. The org-level channels
   // (Slack/Teams/webhook) live under /settings/integrations/notifications and
   // stay gated by the integrations entries below.
   '/settings/sla-policies': {

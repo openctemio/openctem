@@ -245,9 +245,9 @@ describe('an account-only session (signed in, no organization)', () => {
     '/select-tenant',
     '/onboarding/create-team',
     // Tenant data behind /account stays shut: only the three personal pages open.
-    '/account/activity',
-    '/account/notifications',
-    '/account/connected-apps',
+    '/settings/me/activity',
+    '/settings/me/notifications',
+    '/settings/me/connected-apps',
     '/accountx',
   ])('%s redirects to /account/organizations', (pathname) => {
     expect(decideAuth({ pathname, search: '?x=1', cookie: jar(accountOnly) })).toEqual({
