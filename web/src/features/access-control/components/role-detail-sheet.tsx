@@ -60,6 +60,7 @@ import { AddMemberToRoleDialog } from './add-member-to-role-dialog'
 import { RoleCapabilities } from './role-capabilities'
 import { isAdminBypassRole } from '../lib/authz-reference'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { BreakText } from '@/features/shared/components/break-text'
 
 interface RoleDetailSheetProps {
   role: Role | null
@@ -681,7 +682,7 @@ export function RoleDetailSheet({
                         {member.name && (
                           <p className="flex items-center gap-1 text-xs break-words text-muted-foreground">
                             <Mail className="h-3 w-3 shrink-0" />
-                            {member.email}
+                            <BreakText>{member.email}</BreakText>
                           </p>
                         )}
                       </div>
