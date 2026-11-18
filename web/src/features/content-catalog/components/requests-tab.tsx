@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import type { ContentInstallRequest } from '@/lib/api/generated'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,6 @@ import { ActorChip, DataTable, ErrorState, RelativeTime, StackedCell } from '@/f
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { useAuthStore } from '@/stores/auth-store'
 import { cancelRequest, decideRequest, useContentRequests } from '../api'
 import { requestActions, sortRequests } from '../lib'
 
@@ -142,7 +142,7 @@ export function RequestsTab({
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canInstall = can(Permission.ContentInstall)
-  const userId = useAuthStore((s) => s.user?.id)
+  const userId = useMyUserId()
   const requests = useContentRequests()
   const [decision, setDecision] = useState<Decision | null>(null)
   const [canceling, setCanceling] = useState<string | null>(null)

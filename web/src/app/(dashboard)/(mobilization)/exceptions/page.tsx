@@ -27,6 +27,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { confirmName } from '@/lib/confirm-name'
 import { cn } from '@/lib/utils'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -50,7 +51,6 @@ import {
 } from '@/features/exceptions'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
-import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 
 function relative(iso: string | null | undefined, locale: string): string {
@@ -96,7 +96,7 @@ export default function ExceptionsPage() {
   const [approveOpen, setApproveOpen] = useState(false)
   const [selfApproveOpen, setSelfApproveOpen] = useState(false)
   const [selfReviewOpen, setSelfReviewOpen] = useState(false)
-  const userId = useAuthStore((s) => s.user?.id)
+  const userId = useMyUserId()
   const [rejectOpen, setRejectOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')

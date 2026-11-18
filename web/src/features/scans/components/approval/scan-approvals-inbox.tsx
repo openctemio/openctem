@@ -31,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, ErrorState } from '@/features/shared'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatRelative } from '@/lib/format-date'
 import {
@@ -42,7 +43,6 @@ import {
   useScanApprovals,
   type ScanApprovalRequest,
 } from '@/lib/api/scan-approval-hooks'
-import { useAuthStore } from '@/stores/auth-store'
 import { approversText } from './approval-requirement'
 
 type Action = 'approve' | 'reject' | 'self'
@@ -155,7 +155,7 @@ function StatusBadge({ status }: { status: ScanApprovalRequest['status'] }) {
 
 export function ScanApprovalsInbox() {
   const { t } = useTranslation()
-  const me = useAuthStore((s) => s.user?.id)
+  const me = useMyUserId()
   const [filter, setFilter] = useState<'pending' | 'all'>('pending')
   const { data, error, isLoading, isLoadingMore, loadMore, mutate } = useScanApprovals(
     filter === 'pending' ? 'pending' : ''
