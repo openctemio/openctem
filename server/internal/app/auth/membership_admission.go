@@ -25,7 +25,9 @@ var ErrAdmissionSessionUnknown = errors.New("session not found")
 // the user id of the access token; nothing in the request chooses them, so
 // the answer names no organization the person does not belong to.
 //
-// It is read-only: it states what the person's own token request would answer.
+// It is read-only (admitCheck): it states what the person's own token request
+// would answer, and records no break-glass sign-in and notifies nobody; only
+// the token exchange and refresh do that.
 func (s *AuthService) MembershipAdmission(ctx context.Context, userID, sessionID string) (map[string]error, error) {
 	uid, err := shared.IDFromString(userID)
 	if err != nil {
@@ -52,7 +54,7 @@ func (s *AuthService) MembershipAdmission(ctx context.Context, userID, sessionID
 	}
 	out := make(map[string]error, len(memberships))
 	for _, m := range memberships {
-		out[m.TenantID] = s.admitSession(ctx, sess, u, m.TenantID, m.Role)
+		out[m.TenantID] = s.admitSession(ctx, sess, u, m.TenantID, m.Role, admitCheck)
 	}
 	return out, nil
 }

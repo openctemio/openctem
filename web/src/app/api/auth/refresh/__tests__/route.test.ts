@@ -83,4 +83,22 @@ describe('POST /api/auth/refresh without an organization', () => {
     // A 2FA refusal keeps the session for the setup page.
     expect(res.cookies.get(env.auth.refreshCookieName)).toBeUndefined()
   })
+
+  it('a removed member loses only the organization cookie, not the session', async () => {
+    mocks.cookies.set(env.auth.refreshCookieName, 'rt')
+    mocks.cookies.set(
+      env.cookies.tenant,
+      JSON.stringify({ id: 't1', slug: 'acme', role: 'member' })
+    )
+    mocks.refreshOnce.mockResolvedValue({
+      ok: false,
+      status: 403,
+      code: 'ORGANIZATION_ACCESS_DENIED',
+    })
+    const res = await POST(request())
+    expect(res.status).toBe(403)
+    expect(res.cookies.get(env.cookies.tenant)?.value).toBe('')
+    expect(res.cookies.get(env.auth.refreshCookieName)).toBeUndefined()
+    expect(res.cookies.get(env.auth.cookieName)).toBeUndefined()
+  })
 })

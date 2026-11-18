@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -454,8 +455,13 @@ func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID 
 			return ErrSoleOwnerCannotLeave
 		}
 	}
-	result, err := s.lifecycle.Offboard(ctx, membership, &userID, tenantdom.OffboardPlan{})
+	// The owner rows are locked and counted again inside the offboarding
+	// transaction: the check above only gives the early, friendly answer.
+	result, err := s.lifecycle.Offboard(ctx, membership, &userID, tenantdom.OffboardPlan{RequireOtherOwner: membership.IsOwner()})
 	if err != nil {
+		if errors.Is(err, tenantdom.ErrNoOtherOwner) {
+			return ErrSoleOwnerCannotLeave
+		}
 		if _, ok := tenantdom.AsReassignmentError(err); ok {
 			return ErrLeaveNeedsReassignment
 		}

@@ -881,7 +881,7 @@ type SessionMFAChallengeRequest struct {
 // place. The completion signs the person in again with a session that proved
 // the factor.
 // @Summary      Start the second-factor step for a signed-in session
-// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an identity provider.
+// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an organization's identity provider; a session started with a social provider (Google, GitHub, Microsoft) may enroll.
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
