@@ -131,11 +131,7 @@ const PLURAL_BRANCH = /(=\d+|\w+)\s*\{([^{}]*)\}/g
 const pluralRules = new Intl.PluralRules('en')
 
 function groupedNumber(n: number, locale: string): string {
-  try {
-    return new Intl.NumberFormat(locale).format(n)
-  } catch {
-    return new Intl.NumberFormat('en').format(n)
-  }
+  return new Intl.NumberFormat(locale).format(n)
 }
 
 function countOf(raw: string | number): number {
