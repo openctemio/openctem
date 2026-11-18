@@ -719,8 +719,11 @@ function TrustConfigDialog({
                   id="ci-envs"
                   placeholder={
                     provider === 'bitbucket'
-                      ? '{environment uuid}, {environment uuid}'
-                      : 'production, staging'
+                      ? t(
+                          'scans.ci.trust.environmentUuidPlaceholder',
+                          '{environment uuid}, {environment uuid}'
+                        )
+                      : t('scans.ci.trust.environmentsPlaceholder', 'production, staging')
                   }
                   value={environments}
                   onChange={(e) => setEnvironments(e.target.value)}
@@ -740,7 +743,7 @@ function TrustConfigDialog({
               >
                 <Input
                   id="ci-events"
-                  placeholder="push, pull_request"
+                  placeholder={t('scans.ci.trust.eventsPlaceholder', 'push, pull_request')}
                   value={events}
                   onChange={(e) => setEvents(e.target.value)}
                 />

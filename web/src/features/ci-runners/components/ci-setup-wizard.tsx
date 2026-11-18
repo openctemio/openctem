@@ -247,7 +247,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
                 <Label htmlFor="ci-setup-owners">{ownersLabel}</Label>
                 <Input
                   id="ci-setup-owners"
-                  placeholder="acme, acme-labs"
+                  placeholder={t('scans.ci.setup.ownersPlaceholder', 'acme, acme-labs')}
                   value={owners}
                   onChange={(e) => setOwners(e.target.value)}
                 />
