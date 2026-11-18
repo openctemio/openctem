@@ -7,9 +7,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * the save-view and refresh buttons wrapped to a third line under the chips).
  * At 375px and 390px, in English and Vietnamese:
  *   1. the search field has the first line to itself;
- *   2. the second line holds the filter tokens and chips at the start and the
- *      icon actions at the end, one height and one centre line, nothing on a
- *      third line;
+ *   2. the second line holds the chips at the start (none: empty room), the
+ *      filter tokens anchored to the end and the icon actions after them, one
+ *      height and one centre line, nothing on a third line;
  *   3. tokens and chips that do not fit scroll sideways in their strip, and
  *      a strip fades at its end exactly when more is hidden past it; no chip
  *      folds away into "+N more";
@@ -249,8 +249,12 @@ for (const locale of ['en', 'vi'] as const) {
         await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
         await page.setViewportSize({ width, height: 844 })
         await page.goto('/vulnerabilities')
-        const tokens = page.locator('main [data-slot="list-toolbar-tokens"]').first()
-        await expect(tokens).toBeVisible({ timeout: 45_000 })
+        // Ready when the end actions are drawn. On a phone both selects of
+        // this list live in the Filters sheet, so its token strip may hold
+        // nothing and has no width (it is anchored to the end, before the
+        // actions); toolbarDefects checks whatever the line holds.
+        const end = page.locator('main [data-slot="list-toolbar-end"]').first()
+        await expect(end).toBeVisible({ timeout: 45_000 })
         await page.waitForLoadState('networkidle')
         await page.waitForTimeout(300)
         const defects = await toolbarDefects(page)

@@ -202,17 +202,34 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
  * that follows the tab's own state. `tone="danger"` turns it red only while
  * the value is a positive number, the same rule as MetricStrip: a zero is good
  * news and stays neutral. Pass a string (e.g. "…") while loading; null/undefined
- * renders nothing.
+ * renders nothing. `pending` draws an empty pill of a one-digit count's width
+ * while the count loads, so the tabs after it do not move when it arrives.
  */
 function TabsCount({
   value,
+  pending = false,
   tone = 'default',
   className,
 }: {
   value: number | string | null | undefined
+  pending?: boolean
   tone?: 'default' | 'danger'
   className?: string
 }) {
+  if (pending)
+    return (
+      <span
+        data-slot="tabs-count"
+        data-pending=""
+        aria-hidden
+        className={cn(
+          'inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-cap leading-none tabular-nums',
+          className
+        )}
+      >
+        <span className="invisible">0</span>
+      </span>
+    )
   if (value == null) return null
   const alarming = tone === 'danger' && typeof value === 'number' && value > 0
   return (
