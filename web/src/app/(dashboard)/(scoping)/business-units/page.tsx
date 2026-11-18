@@ -1057,7 +1057,7 @@ export default function BusinessUnitsPage() {
                 <DetailSection title={t('businessContext.units.sheet.owner', 'Owner')}>
                   <p className="text-sm font-medium">{viewUnit.owner || unassigned}</p>
                   {viewUnit.ownerEmail && (
-                    <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                    <p className="flex items-center gap-1 text-xs break-words text-muted-foreground">
                       <Mail className="h-3 w-3 shrink-0" />
                       {viewUnit.ownerEmail}
                     </p>

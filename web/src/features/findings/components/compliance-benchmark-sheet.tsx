@@ -39,6 +39,7 @@ import {
 } from '../api/compliance-checks-api'
 import { RESULT_TEXT, RESULT_TONE } from '../lib/compliance-posture'
 import { PassRate } from './compliance-pass-rate'
+import { BreakText } from '@/features/shared/components/break-text'
 
 export function ComplianceResultChip({ result }: { result: ComplianceResult }) {
   const { t } = useTranslation()
@@ -69,7 +70,7 @@ function ControlAssets({ benchmarkKey, control }: { benchmarkKey: string; contro
           <li key={a.asset_id} className="space-y-2 px-3 py-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <ComplianceResultChip result={a.result} />
-              <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{a.asset_name}</span>
+              <span className="min-w-0 font-medium [overflow-wrap:anywhere]"><BreakText>{a.asset_name}</BreakText></span>
               <span className="text-xs text-muted-foreground">
                 {t('findings.complianceView.checkedAt', 'checked {when}', {
                   when: formatRelative(a.last_checked_at, '', locale),

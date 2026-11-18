@@ -142,7 +142,7 @@ function LogLineRow({ line }: { line: RunTaskLogLine }) {
             {fields.map(([k, v]) => (
               <div key={k} className="contents">
                 <dt className="text-muted-foreground">{toDisplayText(k, 128)}</dt>
-                <dd className="break-all">
+                <dd className="break-words">
                   {toDisplayText(typeof v === 'string' ? v : JSON.stringify(v))}
                 </dd>
               </div>

@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { certDaysLeft, certIssuer, certSans, certSubject } from '../../lib/certificate-facts'
 import type { Asset } from '../../types'
+import { BreakText } from '@/features/shared/components/break-text'
 
 /** Characters of a name before it is cut in the middle. */
 export const NAME_MAX = 48
@@ -106,8 +107,8 @@ export function AssetNameCell({
           </div>
         </TooltipTrigger>
         <TooltipContent className="max-w-[min(28rem,90vw)] space-y-1 text-start">
-          <p className="font-medium break-all" dir="auto">
-            {title}
+          <p className="font-medium break-words" dir="auto">
+            {typeof title === 'string' ? <BreakText>{title}</BreakText> : title}
           </p>
           {isCert && issuer && (
             <p className="flex flex-wrap gap-x-2 text-xs opacity-80">
@@ -128,7 +129,7 @@ export function AssetNameCell({
             </p>
           )}
           {sans.length > 0 && (
-            <p className="text-xs break-all opacity-80">
+            <p className="text-xs break-words opacity-80">
               {t('assets.nameCell.sans', 'Also names: {names}', {
                 names:
                   sans

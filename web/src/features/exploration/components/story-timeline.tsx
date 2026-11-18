@@ -24,8 +24,9 @@ import { sightingChannelLabel } from '@/features/findings/components/detail/find
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { hiddenHint, stepHref, stepRoleLabel, type Story, type StoryStep } from '../lib/story'
+import { BreakText } from '@/features/shared/components/break-text'
 
-const linkClass = 'break-all underline-offset-2 hover:underline'
+const linkClass = 'break-words underline-offset-2 hover:underline'
 
 function StepIcon({ step }: { step: StoryStep }) {
   const subject = step.kind === 'finding' || !!step.asset?.subject
@@ -79,7 +80,7 @@ function StepName({ step }: { step: StoryStep }) {
   }
   // Built from ids and a scope pattern of our own API; checked all the same.
   const href = safeHref(stepHref(step))
-  if (!href) return <span className="break-all font-medium">{name}</span>
+  if (!href) return <span className="break-words font-medium"><BreakText>{name}</BreakText></span>
   return (
     <Link href={href} className={cn('font-medium', linkClass)}>
       {name}

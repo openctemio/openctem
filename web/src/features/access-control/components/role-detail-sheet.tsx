@@ -679,7 +679,7 @@ export function RoleDetailSheet({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium break-words">{label}</p>
                         {member.name && (
-                          <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                          <p className="flex items-center gap-1 text-xs break-words text-muted-foreground">
                             <Mail className="h-3 w-3 shrink-0" />
                             {member.email}
                           </p>

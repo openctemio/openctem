@@ -15,6 +15,7 @@ import { SignalChip } from '@/components/ui/signal-chip'
 import { Tag } from '@/components/ui/tag'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { BreakText } from '@/features/shared/components/break-text'
 
 /** One certificate of the platform's CA bundle (API sensorapp.PlatformCACert). */
 export interface PlatformCACert {
@@ -68,7 +69,7 @@ export function PlatformCAPanel({ ca }: { ca: PlatformCAInfo }) {
         {ca.certificates.map((c) => (
           <li key={c.sha256_hex} className="min-w-0 space-y-0.5" data-testid="platform-ca-cert">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium break-all">{c.common_name}</span>
+              <span className="font-medium break-words"><BreakText>{c.common_name}</BreakText></span>
               <Tag
                 label={c.root ? t('sensors.platformCa.root') : t('sensors.platformCa.intermediate')}
               />

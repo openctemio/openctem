@@ -46,6 +46,7 @@ import {
 } from '../lib/import-results'
 import { MappingFormatField } from './mapping-format-field'
 import { ReceiptSummary, RecentImports } from './receipt-summary'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const ACCEPT_RECON = '.zip,application/zip'
 const ACCEPT = '.nessus,.xml,.json,.zip,application/xml,text/xml,application/json,application/zip'
@@ -355,7 +356,7 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm" data-testid="import-file">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{file.name}</span>
+        <span className="font-medium break-words"><BreakText>{file.name}</BreakText></span>
         <Badge variant="outline">{formatLabel(file.format)}</Badge>
       </div>
       {file.error ? (
@@ -500,7 +501,7 @@ function PathList({
       <CollapsibleContent>
         <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-xs">
           {paths.map((p) => (
-            <li key={p.path} className="break-all">
+            <li key={p.path} className="break-words">
               {p.path}
               {p.reason ? (
                 <span className="text-muted-foreground font-sans"> ({p.reason})</span>
