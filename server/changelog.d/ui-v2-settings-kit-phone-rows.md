@@ -11,4 +11,4 @@
   on a phone like text fields.
 - On a list's automatic phone card a word longer than the card, such as a long e-mail address, breaks inside the
   card and no longer runs under the row's menu button.
-- Docs: `web/docs/ui-style-contract.md` "Settings pages" (rows on a phone, picker trigger).
+- Docs: web/docs/ui-style-contract.md (Settings pages: rows on a phone, picker trigger)
