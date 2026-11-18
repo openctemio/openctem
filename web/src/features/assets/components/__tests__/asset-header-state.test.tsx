@@ -63,7 +63,7 @@ describe('ClassificationBadges, labelled (asset header)', () => {
     expect(container.textContent).not.toContain('Zone:')
   })
 
-  it('draws a header criticality without the solid fill a list uses, never cut at 200 px', () => {
+  it('draws criticality without a solid fill in a header and in a list; only a header is never cut at 200 px', () => {
     const { container, unmount } = render(
       <ClassificationBadges scope="internal" exposure="public" criticality="critical" labelled />
     )
@@ -76,7 +76,9 @@ describe('ClassificationBadges, labelled (asset header)', () => {
       <ClassificationBadges scope="internal" exposure="public" criticality="critical" />
     )
     tag = list.container.querySelector('[data-slot="tag"]') as HTMLElement
-    expect(tag.className).toContain('bg-lvl-4-bg')
+    // One look everywhere: a list row has no solid fill either, and keeps the 200 px cap.
+    expect(tag.className).not.toContain('bg-lvl-4-bg')
+    expect(tag.className).toContain('max-w-[200px]')
   })
 })
 
