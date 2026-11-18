@@ -605,7 +605,11 @@ export function SignInSettings() {
                   aria-describedby="email-verification-desc"
                   className="w-full"
                 >
-                  <SelectValue />
+                  {/* The chosen mode by name only: its hint is in the list, and two
+                      lines do not fit a 36px field. */}
+                  <SelectValue>
+                    {emailModes.find((m) => m.value === form.email_verification_mode)?.label}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {emailModes.map((m) => (

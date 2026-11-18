@@ -108,6 +108,14 @@ describe('Settings › Sign-in', () => {
     }
   })
 
+  it('shows the email verification mode by name only in its 36px field', () => {
+    open()
+    const field = document.getElementById('email-verification-mode') as HTMLElement
+    expect(field).toHaveTextContent('Auto (recommended)')
+    // The mode's hint is in the open list, not squeezed into the field.
+    expect(field.textContent).toBe('Auto (recommended)')
+  })
+
   it('shows two tabs, Sign-in first', () => {
     open()
     const tabs = within(screen.getByRole('tablist')).getAllByRole('tab')
