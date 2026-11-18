@@ -70,4 +70,26 @@ describe('OwnershipInvitationsCard', () => {
     await user.click(buttons[buttons.length - 1])
     await waitFor(() => expect(declineOwnershipInvitation).toHaveBeenCalledWith('i1'))
   })
+
+  it('on its own page: one h1 in the entry card, teal accept without a leading icon', async () => {
+    const own = { ...INV, organization_name: 'Example Org' }
+    vi.mocked(useOwnershipInvitations).mockReturnValue(listing([own]))
+    vi.mocked(acceptOwnershipInvitation).mockResolvedValue({ organization_id: 't1' })
+    const user = userEvent.setup()
+    render(<OwnershipInvitationsCard surface="entry" />)
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(document.querySelector('[data-entry="card"]')).not.toBeNull()
+    const accept = screen.getByRole('button', { name: /accept and become owner/i })
+    expect(accept).toHaveAttribute('data-variant', 'signal')
+    expect(accept.querySelector('svg')).toBeNull()
+    await user.click(accept)
+    await waitFor(() => expect(acceptOwnershipInvitation).toHaveBeenCalledWith('i1'))
+  })
+
+  it('on My account keeps the card without a page heading', () => {
+    vi.mocked(useOwnershipInvitations).mockReturnValue(listing([INV]))
+    render(<OwnershipInvitationsCard />)
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    expect(document.querySelector('[data-entry="card"]')).toBeNull()
+  })
 })

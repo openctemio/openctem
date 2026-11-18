@@ -24,7 +24,7 @@ describe('verify email', () => {
 
   it('has en and vi text and opens without a session', () => {
     const keys = Object.keys(en).filter((k) => k.startsWith('auth.verifyEmail.'))
-    expect(keys).toHaveLength(8)
+    expect(keys).toHaveLength(9)
     for (const key of keys) expect((vi_ as Record<string, string>)[key], key).toBeTruthy()
     expect(PUBLIC_ROUTES).toContain('/verify-email')
   })

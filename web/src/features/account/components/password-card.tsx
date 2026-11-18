@@ -51,7 +51,7 @@ export function PasswordCard({ isLocalAccount, onChanged, activeApiKeys }: Passw
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    const issue = passwordPolicy && passwordPolicyIssue(form.new_password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(form.new_password, passwordPolicy, t)
     if (issue) {
       setError(issue)
       return

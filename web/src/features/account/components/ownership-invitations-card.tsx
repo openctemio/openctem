@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
@@ -25,7 +26,14 @@ import {
  * administrator. `hideWhenEmpty` lets My account show the card only when
  * there is something to answer.
  */
-export function OwnershipInvitationsCard({ hideWhenEmpty = false }: { hideWhenEmpty?: boolean }) {
+export function OwnershipInvitationsCard({
+  hideWhenEmpty = false,
+  surface = 'card',
+}: {
+  hideWhenEmpty?: boolean
+  /** `entry`: the page's own card on /ownership-invitations (title is the page's h1). */
+  surface?: 'card' | 'entry'
+}) {
   const { t } = useTranslation()
   const { invitations, isLoading, mutate } = useOwnershipInvitations()
   const [busy, setBusy] = useState<string | null>(null)
@@ -84,80 +92,118 @@ export function OwnershipInvitationsCard({ hideWhenEmpty = false }: { hideWhenEm
     }
   }
 
+  const entry = surface === 'entry'
+  const title = t('account.ownershipInvitations.title', 'Organizations waiting for you')
+  const description = t(
+    'account.ownershipInvitations.desc',
+    'A platform administrator created these organizations for you. You become the owner only if you accept; you will be asked to confirm your identity.'
+  )
+
+  const body = isLoading ? (
+    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+  ) : invitations.length === 0 ? (
+    <p className={entry ? 'text-body text-muted-foreground' : 'text-sm text-muted-foreground'}>
+      {t('account.ownershipInvitations.empty', 'No invitations are waiting for you.')}
+    </p>
+  ) : (
+    <ul className="divide-y">
+      {invitations.map((inv) => (
+        <li
+          key={inv.id}
+          className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            {entry ? (
+              <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
+                <Building2 className="size-4" aria-hidden="true" />
+              </span>
+            ) : (
+              <Building2 className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            )}
+            <div className="min-w-0">
+              <p className={entry ? 'text-body truncate font-medium' : 'truncate font-medium'}>
+                {inv.organization_name}
+              </p>
+              <p
+                className={
+                  entry ? 'text-cap text-muted-foreground' : 'text-sm text-muted-foreground'
+                }
+              >
+                {t('account.ownershipInvitations.expires', 'Expires')}{' '}
+                <RelativeTime date={inv.expires_at} />
+              </p>
+            </div>
+          </div>
+          {entry ? (
+            <EntryActions layout="row" className="max-sm:w-full">
+              <Button variant="outline" disabled={busy !== null} onClick={() => setDeclining(inv)}>
+                {t('account.ownershipInvitations.decline', 'Decline')}
+              </Button>
+              <Button variant="signal" disabled={busy !== null} onClick={() => void accept(inv)}>
+                {busy === inv.id && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                {t('account.ownershipInvitations.accept', 'Accept and become owner')}
+              </Button>
+            </EntryActions>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() => setDeclining(inv)}
+              >
+                <X className="size-4" aria-hidden="true" />
+                {t('account.ownershipInvitations.decline', 'Decline')}
+              </Button>
+              <Button size="sm" disabled={busy !== null} onClick={() => void accept(inv)}>
+                {busy === inv.id ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Check className="size-4" aria-hidden="true" />
+                )}
+                {t('account.ownershipInvitations.accept', 'Accept and become owner')}
+              </Button>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+
+  const confirm = (
+    <ConfirmDialog
+      open={declining !== null}
+      onOpenChange={(open) => !open && setDeclining(null)}
+      title={t('account.ownershipInvitations.declineTitle', 'Decline the invitation?')}
+      desc={t(
+        'account.ownershipInvitations.declineDesc',
+        'You will not become the owner of {name}. The platform administrator decides what happens to it.',
+        { name: declining?.organization_name ?? '' }
+      )}
+      confirmText={t('account.ownershipInvitations.decline', 'Decline')}
+      destructive
+      handleConfirm={decline}
+    />
+  )
+
+  if (entry) {
+    return (
+      <EntryCard aria-busy={isLoading || undefined}>
+        <EntryHeader title={title} description={description} />
+        {body}
+        {confirm}
+      </EntryCard>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          {t('account.ownershipInvitations.title', 'Organizations waiting for you')}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'account.ownershipInvitations.desc',
-            'A platform administrator created these organizations for you. You become the owner only if you accept; you will be asked to confirm your identity.'
-          )}
-        </CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-        ) : invitations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {t('account.ownershipInvitations.empty', 'No invitations are waiting for you.')}
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {invitations.map((inv) => (
-              <li
-                key={inv.id}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <Building2 className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{inv.organization_name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {t('account.ownershipInvitations.expires', 'Expires')}{' '}
-                      <RelativeTime date={inv.expires_at} />
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => setDeclining(inv)}
-                  >
-                    <X className="size-4" aria-hidden="true" />
-                    {t('account.ownershipInvitations.decline', 'Decline')}
-                  </Button>
-                  <Button size="sm" disabled={busy !== null} onClick={() => void accept(inv)}>
-                    {busy === inv.id ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Check className="size-4" aria-hidden="true" />
-                    )}
-                    {t('account.ownershipInvitations.accept', 'Accept and become owner')}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-      <ConfirmDialog
-        open={declining !== null}
-        onOpenChange={(open) => !open && setDeclining(null)}
-        title={t('account.ownershipInvitations.declineTitle', 'Decline the invitation?')}
-        desc={t(
-          'account.ownershipInvitations.declineDesc',
-          'You will not become the owner of {name}. The platform administrator decides what happens to it.',
-          { name: declining?.organization_name ?? '' }
-        )}
-        confirmText={t('account.ownershipInvitations.decline', 'Decline')}
-        destructive
-        handleConfirm={decline}
-      />
+      <CardContent>{body}</CardContent>
+      {confirm}
     </Card>
   )
 }

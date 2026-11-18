@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -246,98 +246,101 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
       )}
 
       {options && view.verifyFirst && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t('auth.welcome.verifyTitle', 'Verify your email address')}
-            </CardTitle>
-            <CardDescription>
-              {t('auth.welcome.verifyDesc', 'Verify {email} to see the invitations sent to it.', {
+        <EntryCard>
+          <EntryHeader
+            level={2}
+            title={t('auth.welcome.verifyTitle', 'Verify your email address')}
+            description={t(
+              'auth.welcome.verifyDesc',
+              'Verify {email} to see the invitations sent to it.',
+              {
                 email: email ?? '',
-              })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResendVerification email={email} />
-          </CardContent>
-        </Card>
+              }
+            )}
+          />
+          <ResendVerification email={email} />
+        </EntryCard>
       )}
 
       {options && view.invitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t('auth.welcome.invitations', 'Your invitations')}
-              <Badge variant="secondary" className="ms-2">
-                {view.invitations.length}
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              {t('auth.welcome.invitationsDesc', 'Sent to {email}', { email: email ?? '' })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
+        <EntryCard>
+          <EntryHeader
+            level={2}
+            title={
+              <>
+                {t('auth.welcome.invitations', 'Your invitations')}
+                <Badge variant="secondary" className="ms-2">
+                  {view.invitations.length}
+                </Badge>
+              </>
+            }
+            description={t('auth.welcome.invitationsDesc', 'Sent to {email}', {
+              email: email ?? '',
+            })}
+          />
+          <div className="divide-y">
             {view.invitations.map((inv) => (
               <div
                 key={inv.ref}
                 className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{inv.organization_name}</p>
-                  <p className="text-muted-foreground text-sm">
+                  <p className="text-body truncate font-medium">{inv.organization_name}</p>
+                  <p className="text-cap text-muted-foreground">
                     {inv.invited_by
                       ? t('org.onboarding.invitedBy', undefined, {
                           name: inv.invited_by,
                           role: inv.role,
                         })
-                      : t('org.onboarding.invitedAs', undefined, { role: inv.role })}{' '}
+                      : t('org.onboarding.invitedAs', undefined, { role: inv.role })}
+                  </p>
+                  {/* Its own line: two sentences run together read as one. */}
+                  <p className="text-cap text-muted-foreground">
                     {t('auth.welcome.expires', 'Expires {when}', {
                       when: formatRelative(inv.expires_at, '', locale),
                     })}
                   </p>
                 </div>
-                {/* Phone: Join first, full width. Wide: Decline, then Join. */}
-                <div className="flex flex-col gap-2 sm:flex-row-reverse">
-                  <Button
-                    onClick={() => accept(inv.ref)}
-                    disabled={busyRef !== null}
-                    className="w-full sm:w-auto"
-                  >
-                    {busyRef === inv.ref && <Loader2 className="size-4 animate-spin" aria-hidden />}
-                    {t('org.onboarding.join', 'Join')}
-                  </Button>
+                {/* A choice: Decline, then Join; on a phone they share the width. */}
+                <EntryActions layout="row">
                   <Button
                     variant="outline"
                     onClick={() => setDeclining({ ref: inv.ref, name: inv.organization_name })}
                     disabled={busyRef !== null}
-                    className="w-full sm:w-auto"
                   >
                     {t('auth.welcome.decline', 'Decline')}
                   </Button>
-                </div>
+                  <Button onClick={() => accept(inv.ref)} disabled={busyRef !== null}>
+                    {busyRef === inv.ref && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                    {t('org.onboarding.join', 'Join')}
+                  </Button>
+                </EntryActions>
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </EntryCard>
       )}
 
       {options && view.organizations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t('org.onboarding.yourCompany')}</CardTitle>
-            <CardDescription>{t('org.onboarding.yourCompanyDesc')}</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
+        <EntryCard>
+          <EntryHeader
+            level={2}
+            title={t('org.onboarding.yourCompany')}
+            description={t('org.onboarding.yourCompanyDesc')}
+          />
+          <div className="divide-y">
             {view.organizations.map((org) => (
               <div
                 key={org.ref}
                 className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <Building2 className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
+                    <Building2 className="size-4" aria-hidden />
+                  </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{org.organization_name}</p>
-                    <p className="text-muted-foreground text-sm">{org.domain}</p>
+                    <p className="text-body truncate font-medium">{org.organization_name}</p>
+                    <p className="text-cap text-muted-foreground">{org.domain}</p>
                   </div>
                 </div>
                 {org.pending ? (
@@ -346,7 +349,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
                   <Button
                     onClick={() => accept(org.ref)}
                     disabled={busyRef !== null}
-                    className="w-full sm:w-auto"
+                    className="max-sm:w-full"
                   >
                     {busyRef === org.ref && <Loader2 className="size-4 animate-spin" aria-hidden />}
                     {org.mode === 'join' ? t('org.onboarding.join') : t('org.onboarding.askToJoin')}
@@ -354,24 +357,21 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
                 )}
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </EntryCard>
       )}
 
       {options && view.canCreate && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t('auth.welcome.createTitle', 'Create an organization')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'auth.welcome.createDesc',
-                'An organization is where you manage exposure across a company. You can invite teammates after this.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <EntryCard>
+          <EntryHeader
+            level={2}
+            title={t('auth.welcome.createTitle', 'Create an organization')}
+            description={t(
+              'auth.welcome.createDesc',
+              'An organization is where you manage exposure across a company. You can invite teammates after this.'
+            )}
+          />
+          <div>
             {showCreate || (view.invitations.length === 0 && view.organizations.length === 0) ? (
               <CreateTeamForm showCancel={false} isFirstTeam={true} />
             ) : (
@@ -379,12 +379,12 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
                 {t('auth.welcome.createCta', 'Create an organization')}
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </EntryCard>
       )}
 
       {options && view.askAdministrator && !view.verifyFirst && (
-        <p className="text-muted-foreground text-sm" data-testid="ask-administrator">
+        <p className="text-body text-muted-foreground" data-testid="ask-administrator">
           {t(
             'auth.welcome.askAdministrator',
             'Ask your administrator to invite {email}. Invitations sent to this address appear here.',
@@ -393,23 +393,21 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('auth.welcome.account', 'Your account')}</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y p-0">
+      <EntryCard>
+        <EntryHeader level={2} title={t('auth.welcome.account', 'Your account')} />
+        <div className="divide-y sm:-mx-6">
           {ACCOUNT_LINKS.map((item) => (
             <Link
               key={item.key}
               href={item.href}
-              className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-3 px-6 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+              className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-3 py-3 transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset sm:px-6"
             >
               <item.icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">
+                <span className="text-dense block font-medium">
                   {t(`auth.welcome.link.${item.key}`, item.fallbackTitle)}
                 </span>
-                <span className="text-muted-foreground block text-sm">
+                <span className="text-cap text-muted-foreground block">
                   {t(`auth.welcome.link.${item.key}Desc`, item.fallbackDesc)}
                 </span>
               </span>
@@ -419,8 +417,8 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
               />
             </Link>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </EntryCard>
 
       <ConfirmDialog
         open={declining !== null}

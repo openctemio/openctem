@@ -50,7 +50,7 @@ export function InvitationGrantsNotice({
 
       {roles.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-cap font-medium text-muted-foreground">
             {roles.length === 1 ? t('org.acceptInvite.role') : t('org.acceptInvite.roles')}
           </p>
           <ul className="space-y-2">
@@ -68,7 +68,7 @@ export function InvitationGrantsNotice({
       )}
 
       <div className="space-y-1">
-        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="flex items-center gap-2 text-cap font-medium text-muted-foreground">
           <Users className="h-3.5 w-3.5" aria-hidden />
           {t('org.acceptInvite.teams')}
         </p>

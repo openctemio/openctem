@@ -7,10 +7,11 @@ import { Building2, Check, Loader2, LogOut, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getCookie } from '@/lib/cookies'
+import { cn } from '@/lib/utils'
 import { env } from '@/lib/env'
 import {
   selectTenantAction,
@@ -149,30 +150,23 @@ export default function SelectTenantPage() {
   // Show loading if parsing or redirecting due to error
   if (parseError || tenants.length === 0) {
     return (
-      <Card className="w-full max-w-md">
-        <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <EntryCard>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="text-muted-foreground size-8 animate-spin" />
+        </div>
+      </EntryCard>
     )
   }
 
-  return (
-    /*
-      Card uses flex column with bounded max-height so the header, search,
-      and footer stay visible while only the team list scrolls when the user
-      has many teams. Without this, a user with 30+ teams would push the
-      "Create new team" and "Sign out" buttons completely off-screen.
+  const rowClass =
+    'flex w-full min-w-0 items-center gap-2.5 rounded-md border px-2.5 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
-      max-height: min(85vh, 720px) — adapts to small screens (mobile) by
-      using viewport height, but caps at 720px on large screens so the card
-      doesn't stretch ridiculously tall on a 4K monitor.
-    */
-    <Card className="w-full max-w-md flex flex-col max-h-[min(90vh,720px)] overflow-hidden">
-      <CardHeader className="text-center shrink-0 pb-4">
-        <CardTitle className="text-xl">{t('auth.selectTenant.title', 'Select a team')}</CardTitle>
-        <CardDescription className="text-sm">
-          {tenants.length === 1
+  return (
+    <EntryCard>
+      <EntryHeader
+        title={t('auth.selectTenant.title', 'Select a team')}
+        description={
+          tenants.length === 1
             ? t('auth.selectTenant.one', 'You have access to one team. Select it to continue.')
             : t(
                 'auth.selectTenant.many',
@@ -180,164 +174,119 @@ export default function SelectTenantPage() {
                 {
                   count: tenants.length,
                 }
-              )}
-        </CardDescription>
-      </CardHeader>
+              )
+        }
+      />
 
-      {/*
-        Search input — fixed (doesn't scroll). Only renders when the user
-        has more than SEARCH_THRESHOLD teams; below that scanning is faster
-        than typing.
-      */}
+      {/* Search: only above SEARCH_THRESHOLD teams; below that scanning is
+          faster than typing. */}
       {showSearch && (
-        <div className="shrink-0 px-6 pb-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              type="search"
-              placeholder={t('auth.selectTenant.search', 'Search teams…')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              disabled={isPending || isLoggingOut}
-              className="ps-9"
-              aria-label={t('auth.selectTenant.searchLabel', 'Search teams')}
-              autoFocus
-            />
-          </div>
+        <div className="relative">
+          <Search className="text-muted-foreground pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2" />
+          <Input
+            type="search"
+            placeholder={t('auth.selectTenant.search', 'Search teams…')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            disabled={isPending || isLoggingOut}
+            className="ps-9"
+            aria-label={t('auth.selectTenant.searchLabel', 'Search teams')}
+            autoFocus
+          />
         </div>
       )}
 
-      {/*
-        Scrollable team list — this is the only part of the card that
-        scrolls. flex-1 + min-h-0 makes it claim the remaining space inside
-        the flex column without overflowing the card max-height. The
-        negative right margin trick lets the scrollbar sit closer to the
-        edge while keeping content padded.
-      */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6">
-        <div className="space-y-2">
-          {filteredTenants.map((tenant) => {
-            const isSelected = selectedId === tenant.id
-            const isDisabled = isPending
+      {/* The list is the only part that scrolls, so a person with many teams
+          still sees the create and sign-out actions under it. */}
+      <ul
+        aria-label={t('auth.selectTenant.listLabel', 'Teams')}
+        className="flex max-h-[min(50svh,26rem)] flex-col gap-2 overflow-y-auto"
+      >
+        {filteredTenants.map((tenant) => {
+          const isSelected = selectedId === tenant.id
 
-            return (
+          return (
+            <li key={tenant.id}>
               <button
-                key={tenant.id}
+                type="button"
                 onClick={() => handleSelectTenant(tenant.id)}
-                disabled={isDisabled}
-                className={`
-                  w-full flex items-center gap-3 p-4 rounded-lg border transition-colors
-                  ${
-                    isSelected
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                  }
-                  ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-                `}
-              >
-                {/* Icon */}
-                <div
-                  className={`
-                  flex items-center justify-center w-10 h-10 rounded-lg shrink-0
-                  ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted'}
-                `}
-                >
-                  {isSelected && isPending ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <Building2 className="h-5 w-5" />
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 text-start min-w-0">
-                  <p className="font-medium truncate">{tenant.name}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {tenant.slug}, {tenant.role}
-                  </p>
-                </div>
-
-                {/* Check indicator */}
-                {isSelected && !isPending && <Check className="h-5 w-5 text-primary shrink-0" />}
-              </button>
-            )
-          })}
-
-          {/* Empty search state */}
-          {filteredTenants.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                {t('auth.selectTenant.noMatch', 'No teams match “{query}”', { query: searchQuery })}
-              </p>
-              <Button variant="link" size="sm" onClick={() => setSearchQuery('')} className="mt-1">
-                {t('auth.selectTenant.clearSearch', 'Clear search')}
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/*
-        Footer — fixed (doesn't scroll). Always visible regardless of how
-        many teams the user has. Contains the "Create new team" CTA and the
-        sign-out escape hatch. pb uses safe-area-inset-bottom on mobile so
-        the sign-out button clears the iOS home indicator.
-      */}
-      <div className="shrink-0 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
-        {/* Create new team — secondary action with dashed border. Visually
-            distinct from the team list above so it reads as "another option"
-            rather than "another team". p-3 on mobile (vs p-4) keeps it
-            from dominating the small screen. */}
-        {/* Hidden when only the platform administrator creates organizations
-            (the admin_only sign-up policy). */}
-        {canCreateTeam && (
-          <button
-            onClick={() => router.push('/onboarding/create-team')}
-            disabled={isPending || isLoggingOut}
-            className={`
-              w-full flex items-center gap-3 p-3 sm:p-4 rounded-lg border border-dashed transition-colors
-              border-border hover:border-primary hover:bg-muted/30
-              ${isPending || isLoggingOut ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-            `}
-          >
-            <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-muted shrink-0">
-              <Plus className="h-5 w-5" />
-            </div>
-            <div className="flex-1 text-start min-w-0">
-              <p className="font-medium text-sm sm:text-base">
-                {t('auth.selectTenant.createTitle', 'Create a new team')}
-              </p>
-              <p className="text-xs sm:text-sm text-muted-foreground truncate">
-                {t(
-                  'auth.selectTenant.createBody',
-                  'Start a fresh workspace for a different organization'
+                disabled={isPending}
+                className={cn(
+                  rowClass,
+                  isSelected ? 'border-border-strong bg-accent' : 'border-border hover:bg-accent'
                 )}
-              </p>
-            </div>
-          </button>
-        )}
+              >
+                <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
+                  {isSelected && isPending ? (
+                    <Loader2 aria-hidden className="size-4 animate-spin" />
+                  ) : (
+                    <Building2 aria-hidden className="size-4" />
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-body truncate font-medium">{tenant.name}</span>
+                  <span className="text-cap text-muted-foreground truncate">
+                    {tenant.slug}, {tenant.role}
+                  </span>
+                </span>
+                {isSelected && !isPending && <Check aria-hidden className="size-4 shrink-0" />}
+              </button>
+            </li>
+          )
+        })}
 
-        {/* Sign out */}
-        <div className="pt-3 border-t">
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={handleCancel}
-            disabled={isPending || isLoggingOut}
-          >
-            {isLoggingOut ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <LogOut className="h-4 w-4 me-2" />
-            )}
-            <span className="truncate">
-              {isLoggingOut
-                ? t('auth.selectTenant.signingOut', 'Signing out...')
-                : t('auth.selectTenant.signOut', 'Sign out and use a different account')}
+        {filteredTenants.length === 0 && (
+          <li className="flex flex-col items-center gap-1 py-6 text-center">
+            <p className="text-dense text-muted-foreground">
+              {t('auth.selectTenant.noMatch', 'No teams match “{query}”', { query: searchQuery })}
+            </p>
+            <Button variant="link" onClick={() => setSearchQuery('')}>
+              {t('auth.selectTenant.clearSearch', 'Clear search')}
+            </Button>
+          </li>
+        )}
+      </ul>
+
+      {/* Hidden when only the platform administrator creates organizations
+          (the admin_only sign-up policy). */}
+      {canCreateTeam && (
+        <button
+          type="button"
+          onClick={() => router.push('/onboarding/create-team')}
+          disabled={isPending || isLoggingOut}
+          className={cn(rowClass, 'border-border hover:bg-accent border-dashed')}
+        >
+          <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
+            <Plus aria-hidden className="size-4" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-body font-medium">
+              {t('auth.selectTenant.createTitle', 'Create a new team')}
             </span>
-          </Button>
-        </div>
-      </div>
-    </Card>
+            <span className="text-cap text-muted-foreground truncate">
+              {t(
+                'auth.selectTenant.createBody',
+                'Start a fresh workspace for a different organization'
+              )}
+            </span>
+          </span>
+        </button>
+      )}
+
+      <EntryActions>
+        <Button variant="ghost" onClick={handleCancel} disabled={isPending || isLoggingOut}>
+          {isLoggingOut ? (
+            <Loader2 aria-hidden className="size-4 animate-spin" />
+          ) : (
+            <LogOut aria-hidden className="size-4" />
+          )}
+          <span className="truncate">
+            {isLoggingOut
+              ? t('auth.selectTenant.signingOut', 'Signing out...')
+              : t('auth.selectTenant.signOut', 'Sign out and use a different account')}
+          </span>
+        </Button>
+      </EntryActions>
+    </EntryCard>
   )
 }
