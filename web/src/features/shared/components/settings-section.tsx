@@ -38,6 +38,14 @@ export const SETTINGS_SECTION_FRAME =
  */
 export const SETTINGS_SECTION_ACTIONS = 'flex min-w-0 max-w-full flex-wrap items-center gap-2'
 
+/**
+ * The title box of a section heading. Its 12rem basis leaves room for a
+ * chevron, a switch or one short button beside the title on a 390px phone
+ * (a 348px column): only actions that truly do not fit (two long buttons)
+ * wrap under it.
+ */
+export const SETTINGS_SECTION_TITLE = 'min-w-0 flex-[1_1_12rem]'
+
 /** The heading row of a framed section. */
 export const SETTINGS_SECTION_HEAD =
   'flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-4'
@@ -69,7 +77,7 @@ export function SettingsSection({
         className={cn(SETTINGS_SECTION_FRAME, className)}
       >
         <div className={SETTINGS_SECTION_HEAD}>
-          <div className="min-w-0 flex-[1_1_20rem]">
+          <div className={SETTINGS_SECTION_TITLE}>
             <h2 id={id} className="text-section">
               {title}
             </h2>
@@ -89,10 +97,7 @@ export function SettingsSection({
   return (
     <section aria-labelledby={id} className={cn('space-y-3', className)}>
       <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        {/* At least 20rem for the title and description: on a phone the
-            actions wrap under them instead of squeezing the text into a
-            narrow column beside the Save button. */}
-        <div className="min-w-0 flex-[1_1_20rem]">
+        <div className={SETTINGS_SECTION_TITLE}>
           <h2 id={id} className="text-base font-semibold">
             {title}
           </h2>

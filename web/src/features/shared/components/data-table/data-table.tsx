@@ -488,9 +488,14 @@ const MOBILE_CARD_FIELDS = 4
  * state) wrapped in the sliver of width the chip left: one field became
  * thousands of pixels tall, with the chip centred far down and the rest of
  * the card empty (/scans/runs at 390 px, owner report 2026-11-17).
+ *
+ * `overflow-wrap: anywhere` (not `break-word`) lets a word longer than the
+ * card (an 88-character e-mail address, a URL) break, AND stops it from
+ * setting the minimum width of its flex item: with `break-word` the address
+ * kept its one-line width and ran under the row's menu button.
  */
 const CARD_WRAP_CLASS =
-  '[&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
+  '[overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
 
 /**
  * A column's readable label for the phone card: `meta.label`, a string
@@ -569,12 +574,7 @@ function AutoMobileCard<TData>({
           </div>
         )}
         {title && (
-          <div
-            className={cn(
-              'min-w-0 flex-[1_1_60%] text-sm font-medium break-words',
-              CARD_WRAP_CLASS
-            )}
-          >
+          <div className={cn('min-w-0 flex-[1_1_60%] text-sm font-medium', CARD_WRAP_CLASS)}>
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
         )}
@@ -586,7 +586,7 @@ function AutoMobileCard<TData>({
       </div>
       {fields.length > 0 && (
         // Full card width, two equal columns (minmax(0,1fr): a long value
-        // cannot widen its column). break-words only splits a word that is
+        // cannot widen its column). The wrap rule only splits a word that is
         // longer than the column; "High" stays whole.
         <dl
           className={cn(
@@ -604,7 +604,7 @@ function AutoMobileCard<TData>({
                   into the next column (CARD_WRAP_CLASS). */}
               <dd
                 className={cn(
-                  'mt-0.5 min-w-0 text-sm break-words [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:break-words',
+                  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal',
                   CARD_WRAP_CLASS
                 )}
               >
