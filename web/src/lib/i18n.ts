@@ -1,5 +1,4 @@
 import { DEFAULT_BRAND } from './brand'
-import { formatNumber } from './format-metric'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
 export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
@@ -131,6 +130,14 @@ const PLURAL_BLOCK = /\{(\w+),\s*plural,((?:\s*(?:=\d+|\w+)\s*\{[^{}]*\})+)\s*\}
 const PLURAL_BRANCH = /(=\d+|\w+)\s*\{([^{}]*)\}/g
 const pluralRules = new Intl.PluralRules('en')
 
+function groupedNumber(n: number, locale: string): string {
+  try {
+    return new Intl.NumberFormat(locale).format(n)
+  } catch {
+    return new Intl.NumberFormat('en').format(n)
+  }
+}
+
 function countOf(raw: string | number): number {
   if (typeof raw === 'number') return raw
   return Number(raw.replace(/[\s,.\u00a0](?=\d{3}(\D|$))/g, ''))
@@ -146,7 +153,7 @@ function applyPlurals(str: string, vars: TranslateVars, locale: string): string 
     for (const m of branches.matchAll(PLURAL_BRANCH)) byKey.set(m[1], m[2])
     const category = Number.isNaN(n) ? 'other' : pluralRules.select(n)
     const text = byKey.get(`=${n}`) ?? byKey.get(category) ?? byKey.get('other') ?? ''
-    const shown = typeof raw === 'number' ? formatNumber(raw, locale) : raw
+    const shown = typeof raw === 'number' ? groupedNumber(raw, locale) : raw
     return text.split('#').join(shown)
   })
 }

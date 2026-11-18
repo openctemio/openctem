@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
-import { formatNumber } from '@/lib/format-metric'
 
 /** The CSS property that holds the room the bar takes at the bottom of the screen. */
 export const BULK_BAR_SPACE_VAR = '--bulk-bar-space'
@@ -76,7 +75,7 @@ export function BulkActionBar({
    */
   selectMenu?: ReactNode
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const shown = count > 0 || open
   const barRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -99,7 +98,7 @@ export function BulkActionBar({
   const nounText = typeof noun === 'function' ? noun(count) : noun
   const countText = (
     <>
-      {formatNumber(count, locale)}{' '}
+      {count.toLocaleString()}{' '}
       {nounText ? (
         // A phone shows the short word only, so X stays on screen; screen
         // readers hear the page's noun at every width.
@@ -181,7 +180,7 @@ export function BulkActionBar({
             {more && more.length > 0 && (
               <ActionMenu
                 items={more}
-                title={`${formatNumber(count, locale)} ${nounText ?? t('common.bulkBar.selected', 'selected')}`}
+                title={`${count.toLocaleString()} ${nounText ?? t('common.bulkBar.selected', 'selected')}`}
                 label={t('common.bulkBar.label', 'Actions for selected rows')}
                 trigger={
                   <Button

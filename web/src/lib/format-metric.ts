@@ -20,15 +20,6 @@ function nf(locale: string, opts: Intl.NumberFormatOptions): Intl.NumberFormat {
   }
 }
 
-/**
- * A number written out in full, grouped in the reader's locale ("12,840" in
- * English, "12.840" in Vietnamese): counts inside sentences and table cells.
- */
-export function formatNumber(value: number, locale = 'en'): string {
-  if (!Number.isFinite(value)) return String(value)
-  return nf(locale, { maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value)
-}
-
 /** A count or plain number. Null and non-finite values are "—". */
 export function formatCount(value: number | null | undefined, locale = 'en'): string {
   if (value == null || !Number.isFinite(value)) return '—'
