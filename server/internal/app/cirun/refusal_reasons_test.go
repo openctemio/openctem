@@ -125,7 +125,7 @@ func TestPlainIssuer(t *testing.T) {
 		"https://user@gitlab.example.com":      false,
 		"https://gitlab.example.com/?q=1":      false,
 		"https://gitlab.example.com/#x":        false,
-		"https://gitlab.example.com/‮x":        false,
+		"https://gitlab.example.com/\u202ex":   false,
 		"https://gitlab.example.com/ x":        false,
 		"https://" + strings.Repeat("a", 260):  false,
 		"":                                     false,
