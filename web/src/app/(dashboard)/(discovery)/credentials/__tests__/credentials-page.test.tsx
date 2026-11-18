@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen } from '@testing-library/react'
 
 globalThis.ResizeObserver ??= class {
@@ -93,7 +94,7 @@ describe('credentials page', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Classification')).not.toBeInTheDocument()
     expect(screen.getByText('Discovered')).toBeInTheDocument()
-    expect(screen.getByText(new Date('2020-05-01').toLocaleDateString('en'))).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2020-05-01')))).toBeInTheDocument()
   })
 
   it('has no Pending status option', () => {

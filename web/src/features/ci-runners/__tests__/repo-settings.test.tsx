@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -346,9 +347,7 @@ describe('CIRepositorySettingsTab', () => {
     render(<CIRepositorySettingsTab repositoryAssetId={REPO} />)
     expect(screen.getByText('First verified default-branch run')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
-    expect(
-      screen.getByText(new Date('2026-10-11T00:00:00Z').toLocaleDateString())
-    ).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2026-10-11T00:00:00Z')))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove baseline' })).toBeInTheDocument()
   })
 })

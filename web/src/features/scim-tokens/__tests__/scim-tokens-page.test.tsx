@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ScimTokensPage from '@/app/(dashboard)/settings/scim/page'
@@ -163,9 +164,7 @@ describe('ScimTokensPage', () => {
     }
     render(<ScimTokensPage />)
     expect(screen.getByText('Expired')).toBeInTheDocument()
-    expect(
-      screen.getByText(new Date('2026-04-01T00:00:00Z').toLocaleDateString())
-    ).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2026-04-01T00:00:00Z')))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /rotate okta old/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /revoke okta old/i })).toBeNull()
   })
