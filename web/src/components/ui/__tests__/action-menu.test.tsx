@@ -400,6 +400,39 @@ describe('ActionMenu below 768 px', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('marks the current choice of a set inside a step', async () => {
+    render(
+      <ActionMenu
+        title="Account"
+        label="Account menu"
+        trigger={<button aria-label="Account">A</button>}
+        items={[
+          { id: 'settings', label: 'All settings', href: '/settings' },
+          {
+            kind: 'sub',
+            id: 'language',
+            label: 'Language',
+            items: [
+              { id: 'en', label: 'English', checked: true, onSelect: () => {} },
+              { id: 'vi', label: 'Tiếng Việt', checked: false, onSelect: () => {} },
+            ],
+          },
+        ]}
+      />
+    )
+    await menuReady()
+    await userEvent.click(screen.getByRole('button', { name: 'Account' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Account' })
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Language' }))
+    expect(within(sheet).getByRole('button', { name: 'English' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
+    expect(within(sheet).getByRole('button', { name: 'Tiếng Việt' })).not.toHaveAttribute(
+      'aria-current'
+    )
+  })
+
   it('focuses the first row only when opened from the keyboard', async () => {
     render(<Harness />)
     await menuReady()

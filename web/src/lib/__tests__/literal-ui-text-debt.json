@@ -57,7 +57,6 @@
   "components/ui/editable-card.tsx": 4,
   "components/ui/image-upload.tsx": 6,
   "components/ui/markdown-editor.tsx": 14,
-  "components/ui/sheet.tsx": 1,
   "components/ui/tag-input.tsx": 6,
   "features/access-control/components/edit-role-sheet.tsx": 1,
   "features/access-control/components/group-detail-sheet/add-asset-dialog.tsx": 19,
