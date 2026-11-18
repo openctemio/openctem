@@ -15,4 +15,4 @@
   texts are translated.
 - No API change: the same reads, sorts, tiles, sheet, export and permissions; the filters send the lists the API
   already takes.
-- Docs: `server/docs/architecture/credential-leaks.md` (the Credentials list)
+- Docs: server/docs/architecture/credential-leaks.md (the Credentials list)
