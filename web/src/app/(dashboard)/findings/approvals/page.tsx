@@ -100,8 +100,8 @@ function parseApprovalLens(raw: string): ApprovalLens {
 /**
  * Column widths in px (the kind's default where none is given) and the frame
  * widths below which a column leaves the table. The request's finding, what
- * is asked, who asked, why, the decide-by date and the decision stay at every
- * width; the phone card shows every field.
+ * is asked and the decision stay at every width; the phone card and both
+ * decision dialogs show every field.
  */
 const APPROVALS_WIDTH = {
   findingMin: 192,
@@ -116,7 +116,26 @@ const APPROVALS_WIDTH = {
   // Approve + Reject (or "Your request" + More) in en and vi, and the cell padding.
   actions: 196,
 } as const
-const APPROVALS_HIDE_BELOW = { created: 1360, expires: 1240, tier: 1100 } as const
+/**
+ * Each threshold is the sum of the columns still shown when that column
+ * joins them, so the table always fits its frame (1024 with the sidebar open
+ * leaves a 698 px frame) and the page never scrolls sideways. Columns leave
+ * in this order: Created, Acceptance ends, Approval, Requester, Justification
+ * (Display > Columns brings any of them back). With the Status column (every
+ * lens but Pending) each threshold is 128 px wider, and Decide by, empty on
+ * every decided row, leaves last.
+ */
+const APPROVALS_HIDE_BELOW = {
+  pending: { created: 1360, expires: 1232, tier: 1112, requester: 952, justification: 836 },
+  withStatus: {
+    created: 1488,
+    expires: 1360,
+    tier: 1240,
+    requester: 1080,
+    justification: 964,
+    decideBy: 808,
+  },
+} as const
 
 // ============================================
 // HELPERS
@@ -451,6 +470,10 @@ export default function ApprovalsPage() {
           onReject={() => handleRejectClick(approval)}
           approveLabel={t('findings.approvals.action.approve', 'Approve')}
           rejectLabel={t('findings.approvals.action.reject', 'Reject')}
+          stepUpHint={t(
+            'myWork.review.stepUpHint',
+            'You confirm your sign-in before the approval is saved.'
+          )}
           menu={menuItems}
         />
       )
@@ -537,6 +560,9 @@ export default function ApprovalsPage() {
       actions: t('findings.approvals.col.actions', 'Decision'),
     }
     const meta = (m: DataTableColumnMeta) => m
+    const hideBelow = showStatusColumn
+      ? APPROVALS_HIDE_BELOW.withStatus
+      : APPROVALS_HIDE_BELOW.pending
     const all: ColumnDef<ApiApproval>[] = [
       {
         // The row's name: what the request is about. Frozen at the start.
@@ -580,7 +606,7 @@ export default function ApprovalsPage() {
         meta: meta({
           kind: 'text',
           width: APPROVALS_WIDTH.tier,
-          hideBelow: APPROVALS_HIDE_BELOW.tier,
+          hideBelow: hideBelow.tier,
           label: label.tier,
         }),
         header: label.tier,
@@ -589,7 +615,12 @@ export default function ApprovalsPage() {
       },
       {
         id: 'requester',
-        meta: meta({ kind: 'owner', width: APPROVALS_WIDTH.requester, label: label.requester }),
+        meta: meta({
+          kind: 'owner',
+          width: APPROVALS_WIDTH.requester,
+          hideBelow: hideBelow.requester,
+          label: label.requester,
+        }),
         header: label.requester,
         enableSorting: false,
         cell: ({ row }) => (
@@ -603,6 +634,7 @@ export default function ApprovalsPage() {
         meta: meta({
           kind: 'text',
           minWidth: APPROVALS_WIDTH.justificationMin,
+          hideBelow: hideBelow.justification,
           label: label.justification,
         }),
         header: label.justification,
@@ -611,7 +643,12 @@ export default function ApprovalsPage() {
       },
       {
         accessorKey: 'decide_by',
-        meta: meta({ kind: 'due', width: APPROVALS_WIDTH.decideBy, label: label.decideBy }),
+        meta: meta({
+          kind: 'due',
+          width: APPROVALS_WIDTH.decideBy,
+          hideBelow: 'decideBy' in hideBelow ? hideBelow.decideBy : undefined,
+          label: label.decideBy,
+        }),
         header: label.decideBy,
         enableSorting: false,
         cell: ({ row }) => (
@@ -625,7 +662,7 @@ export default function ApprovalsPage() {
         meta: meta({
           kind: 'date',
           width: APPROVALS_WIDTH.expires,
-          hideBelow: APPROVALS_HIDE_BELOW.expires,
+          hideBelow: hideBelow.expires,
           label: label.expires,
         }),
         header: label.expires,
@@ -647,7 +684,7 @@ export default function ApprovalsPage() {
         accessorKey: 'created_at',
         meta: meta({
           kind: 'datetime-recent',
-          hideBelow: APPROVALS_HIDE_BELOW.created,
+          hideBelow: hideBelow.created,
           label: label.created,
         }),
         header: label.created,
@@ -721,26 +758,32 @@ export default function ApprovalsPage() {
       : t(`findings.approvals.viewName.${lens}`, 'Requests')
   const total = view === 'groups' ? groupsTotal : (data?.total ?? 0)
   const titleRow = (
+    // Count once: under Pending the selected tab already shows the number of
+    // the view, so the row names the view for assistive technology only and
+    // shows no count; another lens holds a number no tab shows, so it stays.
     <ListTitleRow
       title={viewTitle}
+      titleHidden
       count={
-        <ListCount
-          total={total}
-          loading={view === 'groups' ? !groupsPage : isInitialLoading || noAccess}
-          label={
-            view === 'groups'
-              ? t(
-                  'findingApprovals.group.total',
-                  '{count, plural, one {# group exception} other {# group exceptions}}',
-                  { count: total }
-                )
-              : t(
-                  'findings.approvals.total',
-                  '{count, plural, one {# request} other {# requests}}',
-                  { count: total }
-                )
-          }
-        />
+        lens === 'pending' ? undefined : (
+          <ListCount
+            total={total}
+            loading={view === 'groups' ? !groupsPage : isInitialLoading || noAccess}
+            label={
+              view === 'groups'
+                ? t(
+                    'findingApprovals.group.total',
+                    '{count, plural, one {# group exception} other {# group exceptions}}',
+                    { count: total }
+                  )
+                : t(
+                    'findings.approvals.total',
+                    '{count, plural, one {# request} other {# requests}}',
+                    { count: total }
+                  )
+            }
+          />
+        )
       }
     >
       {refreshButton}
