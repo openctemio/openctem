@@ -205,7 +205,7 @@ describe('SLA compliance page', () => {
   it('a failed read shows an error and dashes, not zeros', async () => {
     failStats = true
     renderPage()
-    expect(await screen.findByText(/Failed to load SLA compliance/)).toBeTruthy()
+    expect(await screen.findByText(/Couldn't load SLA compliance/)).toBeTruthy()
     const dt = screen.getByText('Past due', { selector: '[data-slot="metric-label"]' })
     expect(within(dt.closest('button') as HTMLElement).queryByText('0')).toBeNull()
   })

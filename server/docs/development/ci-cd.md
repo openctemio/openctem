@@ -710,9 +710,12 @@ post-merge run.
   any error in the selector.
 - **Plan job.** `plan` (`web/e2e/ci/select.mjs plan`) takes the changed files
   of the pull request or of the queue group (`merge_group.base_sha..head_sha`)
-  and the per-spec durations of the newest green `develop` run (artifact
-  `e2e-timings`, written by the `report` job of every full run; a spec without a
-  recorded duration costs the median, 60 s when none exist). It sets the shard
+  and the per-spec durations of the newest green run of the branch under test
+  (the pull request's base or the pushed branch, so `next` balances with its own
+  specs), else of `develop` (artifact `e2e-timings`, written by the `report` job
+  of every full push or nightly run; a test counts for the spec file that ran it,
+  even when a helper declares it; a spec without a recorded duration costs the
+  median, 60 s when none exist). It sets the shard
   count to `ceil(total / 240 s)` clamped to 1 to 4, assigns specs longest first
   to the lightest shard, and emits the matrix the shard jobs read with
   `fromJSON`. The request budget job exists only when a `@budget` spec is

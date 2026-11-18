@@ -83,7 +83,7 @@ describe('DataTable error prop', () => {
       />
     )
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
-    expect(screen.getByText('Failed to load things')).toBeInTheDocument()
+    expect(screen.getByText("Couldn't load things")).toBeInTheDocument()
     expect(screen.getByLabelText('my search')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(onRetry).toHaveBeenCalledTimes(1)
