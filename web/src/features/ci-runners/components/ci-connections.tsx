@@ -291,10 +291,19 @@ function ConnectionRow({
       >
         <span className="min-w-0 space-y-0.5">
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground" aria-hidden>
-              <ProviderIcon provider={c.provider ?? ''} />
+            {/* Icon and name are one flex row: the icon stays at the start of the name's first line. */}
+            <span className="flex min-w-0 items-start gap-2" data-testid="ci-trust-title">
+              <span
+                className="flex h-6 shrink-0 items-center text-muted-foreground"
+                data-testid="ci-trust-icon"
+                aria-hidden
+              >
+                <ProviderIcon provider={c.provider ?? ''} />
+              </span>
+              <span className="min-w-0 break-words font-medium" data-testid="ci-trust-name">
+                {c.name}
+              </span>
             </span>
-            <span className="break-words font-medium">{c.name}</span>
             {c.enabled === false && (
               <Badge variant="secondary">{t('scans.ci.disabled', 'Disabled')}</Badge>
             )}
@@ -310,10 +319,10 @@ function ConnectionRow({
           </span>
         </span>
         <span
-          className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+          className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
           data-testid="ci-trust-health"
         >
-          <span>
+          <span className="min-w-0">
             {c.last_used_at ? (
               <>
                 {t('scans.ci.health.lastAccepted', 'Last accepted job')}{' '}
@@ -324,7 +333,10 @@ function ConnectionRow({
             )}
           </span>
           {refused > 0 && (
-            <span className="font-medium text-warning">
+            <span
+              className="shrink-0 whitespace-nowrap font-medium text-warning"
+              data-testid="ci-trust-refused"
+            >
               {t('scans.ci.health.refusedCount', '{count} refused', { count: refused })}
             </span>
           )}

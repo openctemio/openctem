@@ -675,6 +675,26 @@ describe('CIConnections (Connections tab)', () => {
     expect(screen.queryByRole('button', { name: 'Pipeline snippet' })).not.toBeInTheDocument()
   })
 
+  it('keeps the provider icon inline with the name and the refused count on one line', () => {
+    trust = [{ ...ghTrust, name: 'GitHub, a very long configuration name for the mobile team' }]
+    refusals = [
+      {
+        at: new Date().toISOString(),
+        repository: 'acme/x',
+        provider: 'github',
+        reasons: ['owner_not_allowed'],
+      },
+    ]
+    render(<CIConnections />)
+    const title = screen.getByTestId('ci-trust-title')
+    // One flex row: the icon cannot drop onto its own line above a wrapping name.
+    expect(title).toHaveClass('flex', 'items-start')
+    expect(screen.getByTestId('ci-trust-icon')).toHaveClass('shrink-0', 'h-6')
+    expect(screen.getByTestId('ci-trust-name')).toHaveClass('min-w-0')
+    // The count never splits inside itself; the "last accepted" text wraps instead.
+    expect(screen.getByTestId('ci-trust-refused')).toHaveClass('whitespace-nowrap', 'shrink-0')
+  })
+
   it('opens a configuration in a sheet with Health, Rules, Scope and the snippet', async () => {
     trust = [ghTrust]
     render(<CIConnections />)
