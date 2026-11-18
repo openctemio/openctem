@@ -41,7 +41,7 @@ test(
         : route.continue()
     )
     await page.goto('/assets?q=web')
-    await expect(page.getByText(/Failed to load assets/)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/Couldn't load assets/)).toBeVisible({ timeout: 30_000 })
     const box = page.getByRole('searchbox', { name: 'Search assets' })
     await expect(box).toBeVisible()
     await expect(box).toHaveValue('web')

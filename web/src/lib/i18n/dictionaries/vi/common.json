@@ -152,7 +152,7 @@
   "common.listView.modified": "Đã sửa đổi",
   "common.listView.reset": "Đặt lại",
   "common.listView.save": "Lưu chế độ xem",
-  "common.loadFailedPlain": "Đã xảy ra lỗi khi tải. Hãy thử lại; nếu vẫn lỗi, hãy báo cáo sự cố.",
+  "common.loadFailedPlain": "Máy chủ không phản hồi. Không có gì bị thay đổi. Hãy thử lại; nếu vẫn lỗi, hãy báo cáo sự cố.",
   "common.loading": "Đang tải…",
   "common.markdownEditor.bold": "In đậm",
   "common.markdownEditor.bulletList": "Danh sách dấu đầu dòng",
