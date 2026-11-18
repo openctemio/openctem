@@ -349,8 +349,8 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 			t.Fatalf("create membership: %v", err)
 		}
 		t.Cleanup(func() {
-			_, _ = sqlDB.Exec(`DELETE FROM tenant_members WHERE tenant_id = $1`, tn.ID().String())
-			_, _ = sqlDB.Exec(`DELETE FROM tenants WHERE id = $1`, tn.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenant_members WHERE tenant_id = $1`, tn.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tn.ID().String())
 		})
 		return tn.ID().String()
 	}
@@ -420,7 +420,7 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 		if _, err := exchange(svc, rt, tid, ua); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := sqlDB.Exec(`UPDATE refresh_tokens SET used_at = NOW() - interval '31 seconds'
+		if _, err := sqlDB.ExecContext(ctx, `UPDATE refresh_tokens SET used_at = NOW() - interval '31 seconds'
 			WHERE session_id = $1 AND used_at IS NOT NULL`, sid.String()); err != nil {
 			t.Fatal(err)
 		}

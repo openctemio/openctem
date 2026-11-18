@@ -89,7 +89,7 @@ func TestProviderTestSeam_NoReleaseBuildPassesTheTag(t *testing.T) {
 	}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil //nolint:nilerr // unreadable entries are not build files
+			return err
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -104,7 +104,11 @@ func TestProviderTestSeam_NoReleaseBuildPassesTheTag(t *testing.T) {
 			return nil
 		}
 		raw, rerr := os.ReadFile(path)
-		if rerr != nil || !strings.Contains(string(raw), "authtestseam") {
+		if rerr != nil {
+			t.Errorf("read %s: %v", rel, rerr)
+			return nil
+		}
+		if !strings.Contains(string(raw), "authtestseam") {
 			return nil
 		}
 		for _, a := range allowed {
