@@ -419,15 +419,16 @@ export function ConsentView({ requestId }: ConsentViewProps) {
                 dialog's text. */}
             <AlertDescription className="min-w-0 space-y-3">
               <p className="break-words">{blockedMessage(blocked, request.client_kind, host)}</p>
+              {/* Outline, no icon: the teal Allow below stays the screen's one filled action. */}
               {request.requestable && request.can_allow && (
                 <Button
                   size="sm"
+                  variant="outline"
                   className="max-w-full"
                   title={allowPublisherLabel}
                   onClick={() => setConfirmAllow(true)}
                   disabled={allowing}
                 >
-                  <ShieldCheck className="mr-2 h-4 w-4" aria-hidden />
                   <span className="truncate">{allowPublisherLabel}</span>
                 </Button>
               )}

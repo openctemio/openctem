@@ -88,13 +88,13 @@ export function BrandLogoFull({ className }: { className?: string }) {
   )
 }
 
-/** "Powered by OpenCTEM" under a renamed brand, when the operator keeps the credit. */
+/** "Powered by OpenCTEM" under a renamed brand, when the operator keeps the credit (in the entry footer: its size). */
 export function PoweredBy({ className }: { className?: string }) {
   const brand = useBrand()
   const { t } = useTranslation()
   if (!brand.poweredBy) return null
   return (
-    <p className={cn('text-center text-xs text-muted-foreground', className)}>
+    <p className={cn('text-center text-muted-foreground', className)}>
       {t('brand.poweredBy', undefined, { upstream: UPSTREAM_NAME })}
     </p>
   )

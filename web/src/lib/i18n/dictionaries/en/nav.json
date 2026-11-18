@@ -217,6 +217,7 @@
   "nav.record.scans": "Scan",
   "nav.record.templates": "Template",
   "nav.record.workflows": "Workflow",
+  "nav.sidebar.brandHome": "{name} home",
   "nav.sidebar.close": "Close sidebar",
   "nav.sidebar.collapse": "Collapse sidebar",
   "nav.sidebar.description": "Pages of this organization",

@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input'
 import { EntryBanner, EntryDivider } from '@/components/entry'
 import { TextLink } from '@/components/ui/text-link'
 import { PasswordInput } from '@/components/password-input'
-import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
+import { SocialProviderButtons } from './social-provider-buttons'
 
 import { isHttpsUrl, validateRedirectUrl } from '@/lib/redirect'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
@@ -93,20 +93,6 @@ interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
   reauth?: boolean
 }
 
-// ============================================
-// SOCIAL PROVIDERS CONFIG
-// ============================================
-
-const socialProviders: {
-  id: SocialProvider
-  name: string
-  icon: React.ComponentType<{ className?: string }>
-}[] = [
-  { id: 'google', name: 'Google', icon: IconGoogle },
-  { id: 'github', name: 'GitHub', icon: IconGithub },
-  { id: 'microsoft', name: 'Microsoft', icon: IconMicrosoft },
-]
-
 /**
  * Full page navigation after login, so the cookies set by the Server Action
  * are picked up (router.push would keep the old auth state). A message is
@@ -164,12 +150,9 @@ export function LoginForm({
   const safeRedirectTo = validateRedirectUrl(redirectTo, '/')
 
   // Fetch which social providers the backend actually has configured, so we
-  // only render buttons that will work (no 404 dead-affordances). Buttons are
-  // hidden while loading (data undefined) and only shown for providers === true.
-  const { data: authProviders } = useAuthProviders()
-  const enabledSocialProviders = authProviders
-    ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
-    : []
+  // only render buttons that will work (no 404 dead-affordances). While it
+  // loads, the block keeps its place (SocialProviderButtons).
+  const { data: authProviders, error: authProvidersError } = useAuthProviders()
 
   // Check for error from OAuth/SSO callback
   // Only a known code's message is shown, never the raw parameter: a crafted
@@ -533,32 +516,17 @@ export function LoginForm({
           {t('auth.login.submit', 'Sign in')}
         </Button>
 
-        {/* Social Login Section — only shown for providers the backend has
-            configured. If none are configured (or still loading), the whole
-            block including the "or continue with" divider is hidden. */}
-        {showSocialLogin && enabledSocialProviders.length > 0 && (
-          <>
-            <EntryDivider>{t('auth.login.orContinueWith', 'Or continue with')}</EntryDivider>
-
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
-              {enabledSocialProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin(provider.id)}
-                >
-                  {loadingProvider === provider.id ? (
-                    <Loader2 aria-hidden className="size-4 animate-spin" />
-                  ) : (
-                    <provider.icon className="size-4" />
-                  )}
-                  <span>{provider.name}</span>
-                </Button>
-              ))}
-            </div>
-          </>
+        {/* Social sign-in: only providers the backend has configured; the
+            block keeps its place while that answer loads. */}
+        {showSocialLogin && (
+          <SocialProviderButtons
+            providers={authProviders}
+            failed={!!authProvidersError}
+            divider={t('auth.login.orContinueWith', 'Or continue with')}
+            disabled={isLoading}
+            loadingProvider={loadingProvider}
+            onSelect={handleSocialLogin}
+          />
         )}
 
         {/* SSO Providers (when ?org= parameter is present) */}

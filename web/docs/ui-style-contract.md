@@ -491,7 +491,9 @@ reference.
     `toolbarStart`: a token that reads "Status: Pending", opens a menu of every
     value with its count (counted in the viewer's scope), can be cleared to
     all rows, and keeps its value in the URL (`useUrlFilter`, the page's
-    default value when the parameter is absent);
+    default value when the parameter is absent); the room of its clear button
+    is kept while nothing is chosen, so choosing a value never changes the
+    token's width;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
@@ -507,10 +509,10 @@ reference.
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
   - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a list whose end actions would need more shows them as icons
-    (`iconOnlyBelow="@2xl/toolbar"`, the label `sr-only @2xl/toolbar:not-sr-only`,
-    a tooltip with the same name), so the filter tokens neither shrink nor
-    wrap to a third line.
+    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+    `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
+    tooltip below it, so the filter tokens neither shrink nor wrap to a third
+    line.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -528,6 +530,10 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
+- **A switch is a value on a phone card.** A field of the automatic phone card
+  whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
+  beside it, kept in step with the switch, so no card shows a label over a
+  bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with
@@ -684,7 +690,8 @@ load.
 ### Queues
 
 A queue is a list where a person decides on requests (approvals, scoping decisions, access requests, review
-queues). It is a list in everything a list has (title row with the view name and its one count, toolbar,
+queues). It is a list in everything a list has (title row with the view name and its one count, said once: when
+the selected tab already shows the view's name and number, the row passes `titleHidden` and no count; toolbar,
 `DataTable`, pager, phone cards, states) plus the queue add-on in `src/features/shared/components/queue`
 (exported from `@/features/shared`; the platform console's queues use it too), which every queue uses
 and no page rebuilds:
@@ -692,7 +699,10 @@ and no page rebuilds:
 - **Decision controls** (`QueueDecisionActions`): at most two direct decisions (Approve and Reject, or the
   page's own labels) and one More for everything else, in the row's last column and on the phone card. Each
   button is announced by its own visible label and the item ("Approve {name}", "Merge {name}"); a page passes a
-  whole accessible name where that does not read well ("Keep {name} separate"). Without the permission there is no decision control. New decisions and bulk decisions
+  whole accessible name where that does not read well ("Keep {name} separate"). A decision that asks the user to
+  confirm their sign-in passes `stepUpHint`: the button carries a lock and the sentence on hover, on focus and as its
+  description. Every place that decides the same request uses these controls (the approvals inbox, My Work, the
+  finding page) with the same dialogs; there is no second decision component. Without the permission there is no decision control. New decisions and bulk decisions
   are not added by a page: they need their own design with gates, confirm and audit.
 - **Four eyes**: nobody decides a request they made. The decision controls are absent and "Your request"
   stands in their place, with the reason on hover and focus in a table row and written out on a card. The
@@ -731,21 +741,29 @@ Every settings page is built from the same parts (`@/features/shared`):
   (header and skeleton rows), `state="error"` (the failure with Retry; saved
   values are never replaced by defaults) and `readOnly` (the "View only"
   notice; the page disables its own controls). A settings page that is a list
-  passes `wide` and uses the list kit unchanged.
+  passes `wide` and uses the list kit unchanged. The header shares the column:
+  on a form page it is as wide as the form (its actions end where the form
+  ends), on a `wide` list page both use the full width.
 - **`SettingsSection framed`** is a section: no card and no fill, a hairline
   above every section but the first, the title (`text-section`), one line of
   description, an optional quiet `meta` note ("Last changed by ...") and
-  actions. Its children draw their own dividers:
+  actions. The title keeps a 12rem basis, so a chevron, a switch or one short
+  button stays on the title line of a phone; only actions that do not fit
+  (two long buttons) wrap under it. Its children draw their own dividers:
   - `SettingsRow`: one setting per line, label and hint at the start, the
-    control at the end (`wide` for a text field or select); stacked when the
-    section is narrower than 45rem. `SettingsSwitchRow` is the row of an
-    on / off setting: the label names the switch, the hint describes it.
+    control at the end. Below 45rem a switch or a short button stays at the
+    end of the label's first line (the text keeps a 13rem basis); a control
+    that does not fit beside it, and a `wide` control (a text field or
+    select), goes under the text. `SettingsSwitchRow`
+    is the row of an on / off setting: the label names the switch, the hint
+    describes it.
   - `SettingsBlock` with `SettingsFieldGrid` and `SettingsField`: fields with
     the label above, as many columns as fit. `SettingsField` ties the label,
     the hint and the error to the control (`aria-describedby`,
     `aria-invalid`); an error is `role="alert"` text under the field.
 - **Fields** are the kit's at the kit's sizes (32px; 36px with 16px text
-  below 768px). A secret the user types is a `SecretField` (masked, Show
+  below 768px). A picker with a popover of its own (the time zone search)
+  draws its trigger with `SELECT_TRIGGER_CLASS`, the select field's look. A secret the user types is a `SecretField` (masked, Show
   value / Hide value; a stored secret is never read back). A secret the
   server shows once is a `OneTimeSecretField` (masked, reveal, copy).
 - **`SettingsSaveBar`** is the one save of a page: shown only while there are

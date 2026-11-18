@@ -1,5 +1,6 @@
 'use client'
 
+import { useNow } from '@/hooks/use-now'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -121,6 +122,10 @@ import { Can, Permission, usePermissions, useCanMutate } from '@/lib/permissions
 import { useOpenForm } from '@/hooks/use-open-form'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
+import {
+  PersonPhoneCard,
+  distinctAddress,
+} from '@/features/organization/components/person-phone-card'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
 import { suspendedReasonText } from '@/features/organization/lib/external-access'
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
@@ -199,6 +204,20 @@ const formatLastActive = (t: TFn, locale: string, lastLoginAt?: string) => {
 
 // Role chips are neutral: a role is a label, not a state, so it gets no colour of
 // its own (the old per-role palette read as severity and broke in dark mode).
+/** The built-in roles by slug: their names follow the console language. */
+const SYSTEM_ROLE_NAME: Record<string, { key: string; en: string }> = {
+  owner: { key: 'org.systemRole.owner', en: 'Owner' },
+  admin: { key: 'org.systemRole.admin', en: 'Administrator' },
+  member: { key: 'org.systemRole.member', en: 'Member' },
+  viewer: { key: 'org.systemRole.viewer', en: 'Viewer' },
+}
+
+/** A role's name: a built-in role in the console language, a custom role as named. */
+const roleName = (t: TFn, role: { slug?: string; name: string; is_system?: boolean }) => {
+  const known = role.is_system && role.slug ? SYSTEM_ROLE_NAME[role.slug] : undefined
+  return known ? t(known.key, known.en) : role.name
+}
+
 const getRoleColor = (role: Role) =>
   role.is_system ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-foreground'
 
@@ -281,7 +300,7 @@ function UserRolesCell({ userId }: { userId: string }) {
     <div className="flex flex-wrap gap-1">
       {displayRoles.slice(0, 2).map((role) => (
         <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
-          {role.name}
+          {roleName(t, role)}
         </Badge>
       ))}
       {displayRoles.length > 2 && (
@@ -345,7 +364,7 @@ function UserRolesDetailCard({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm">{role.name}</p>
+                  <p className="font-medium text-sm">{roleName(t, role)}</p>
                   {role.is_system && (
                     <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
                       {t('org.membersPage.system', 'System')}
@@ -730,6 +749,8 @@ export default function UsersPage() {
   } | null>(null)
   const emailUnavailable = useEmailUnavailable()
   const { t, locale } = useTranslation()
+  // Invitation expiry is read against a clock in state (a minute is fine here).
+  const now = useNow(60_000)
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
   // strips every access source and asks for a new owner of their work.
@@ -787,6 +808,176 @@ export default function UsersPage() {
     return { current, active, suspended, offboarded, all: current + offboarded }
   }, [memberStats])
 
+  // A member's row menu: the table's last column and the phone card.
+  const memberMenu = (member: MemberWithUser) => {
+    const isOwnerRow = member.role === 'owner'
+    const locked = isPeerAdminLocked(member, caller)
+    const offboarded = member.status === 'offboarded'
+
+    const name = member.name || member.email
+    const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
+    const memberRoute = 'PATCH /api/v1/tenants/{tenant}/members/{userId}' as const
+    const actions: RowAction[] = [
+      {
+        label: t('org.membersPage.viewDetails', 'View details'),
+        icon: Eye,
+        onClick: () => setSelectedMember(member),
+      },
+    ]
+    if (isOwnerRow && canManageMembers && canResetMemberMfa(member, caller)) {
+      actions.push({
+        label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+        icon: ShieldOff,
+        onClick: () => setResetMfaMember(member),
+        separatorBefore: true,
+      })
+    }
+    if (!isOwnerRow && !offboarded && caller.isOwner) {
+      actions.push({
+        label: t('org.ownership.action', 'Transfer ownership...'),
+        icon: Crown,
+        onClick: () => setTransferMember(member),
+        disabled: !!pendingTransfer,
+        disabledReason: pendingTransfer
+          ? t(
+              'org.ownership.pendingReason',
+              'A transfer is already waiting for an answer: cancel it first.'
+            )
+          : undefined,
+        separatorBefore: true,
+      })
+    }
+    if (!isOwnerRow && !offboarded && locked) {
+      // The management actions of an administrator row, shown disabled
+      // with the reason to a caller who is not the owner.
+      actions.push(
+        {
+          label: t('org.membersPage.changeRoles', 'Change roles'),
+          icon: Pencil,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          separatorBefore: true,
+          route: memberRoute,
+        },
+        ...(member.mfa_status === 'enabled'
+          ? [
+              {
+                label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+                icon: ShieldOff,
+                onClick: () => undefined,
+                disabled: true,
+                disabledReason: t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON),
+                route: memberRoute,
+              },
+            ]
+          : []),
+        {
+          label: t('org.membersPage.disable', 'Disable'),
+          icon: Ban,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          route: memberRoute,
+        },
+        {
+          label: t('org.membersPage.offboard', 'Offboard'),
+          icon: UserMinus,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          route: memberRoute,
+        }
+      )
+    }
+    if (!isOwnerRow && !locked) {
+      actions.push({
+        label: t('org.membersPage.changeRoles', 'Change roles'),
+        icon: Pencil,
+        onClick: () => {
+          setEditRolesMember(member)
+          setEditRolesDialogOpen(true)
+        },
+        route: 'PUT /api/v1/users/{userId}/roles',
+      })
+      if (member.kind === 'external' && canChangeAccess && !offboarded) {
+        actions.push({
+          label: t('org.membersPage.changeEndOfAccess', 'Change end of access'),
+          icon: CalendarClock,
+          onClick: () => setAccessMember(member),
+          route: memberRoute,
+        })
+      }
+      if (member.pending_setup) {
+        actions.push({
+          label: t('org.membersPage.getSetupLink', 'Get setup link'),
+          icon: KeyRound,
+          onClick: () =>
+            setSetupLinkTarget({
+              userId: member.user_id,
+              email: member.email,
+              name: member.name,
+            }),
+          route: memberRoute,
+        })
+      }
+      // Access changes, each asking first, set apart from the edits above.
+      const access: RowAction[] = []
+      if (canResetMemberMfa(member, caller)) {
+        access.push({
+          label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+          icon: ShieldOff,
+          onClick: () => setResetMfaMember(member),
+          route: memberRoute,
+        })
+      }
+      access.push(
+        member.status === 'suspended'
+          ? {
+              label:
+                member.suspended_reason === 'awaiting_approval'
+                  ? t('org.membersPage.approve', 'Approve')
+                  : t('org.membersPage.reenable', 'Re-enable'),
+              icon: CheckCircle,
+              onClick: () => setReactivateMember(member),
+              route: memberRoute,
+            }
+          : {
+              label: t('org.membersPage.disable', 'Disable'),
+              icon: Ban,
+              onClick: () => setSuspendConfirmMember(member),
+              route: memberRoute,
+            },
+        {
+          label: t('org.membersPage.offboardEllipsis', 'Offboard...'),
+          icon: UserMinus,
+          onClick: () => setOffboardMember(member),
+          destructive: true,
+          route: memberRoute,
+        }
+      )
+      access[0].separatorBefore = true
+      actions.push(...access)
+    }
+    if (!isOwnerRow && offboarded && caller.isOwner) {
+      actions.push({
+        label: t('org.membersPage.erasePersonalData', 'Erase personal data...'),
+        icon: Eraser,
+        onClick: () => setEraseConfirmMember(member),
+        destructive: true,
+        route: 'POST /api/v1/organization/members/{member_id}/erase',
+      })
+    }
+
+    return (
+      <DataTableRowActions
+        actions={actions}
+        title={name}
+        label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+      />
+    )
+  }
+
   // Table columns. The select-checkbox column was removed alongside the
   // bulk-actions dropdown — there's nothing to do with selected rows now.
   const columns: ColumnDef<MemberWithUser>[] = [
@@ -826,7 +1017,8 @@ export default function UsersPage() {
             ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
             className="shrink-0"
           />
-          {row.original.name && (
+          {/* Once: not under a name that is the address itself. */}
+          {distinctAddress(row.original.name, row.original.email) && (
             <span className="min-w-0 flex-1 truncate text-cap text-muted-foreground">
               {row.original.email}
             </span>
@@ -909,175 +1101,7 @@ export default function UsersPage() {
       meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
-      cell: ({ row }) => {
-        const member = row.original
-        const isOwnerRow = member.role === 'owner'
-        const locked = isPeerAdminLocked(member, caller)
-        const offboarded = member.status === 'offboarded'
-
-        const name = member.name || member.email
-        const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
-        const memberRoute = 'PATCH /api/v1/tenants/{tenant}/members/{userId}' as const
-        const actions: RowAction[] = [
-          {
-            label: t('org.membersPage.viewDetails', 'View details'),
-            icon: Eye,
-            onClick: () => setSelectedMember(member),
-          },
-        ]
-        if (isOwnerRow && canManageMembers && canResetMemberMfa(member, caller)) {
-          actions.push({
-            label: t('org.membersPage.reset2fa', 'Reset 2FA'),
-            icon: ShieldOff,
-            onClick: () => setResetMfaMember(member),
-            separatorBefore: true,
-          })
-        }
-        if (!isOwnerRow && !offboarded && caller.isOwner) {
-          actions.push({
-            label: t('org.ownership.action', 'Transfer ownership...'),
-            icon: Crown,
-            onClick: () => setTransferMember(member),
-            disabled: !!pendingTransfer,
-            disabledReason: pendingTransfer
-              ? t(
-                  'org.ownership.pendingReason',
-                  'A transfer is already waiting for an answer: cancel it first.'
-                )
-              : undefined,
-            separatorBefore: true,
-          })
-        }
-        if (!isOwnerRow && !offboarded && locked) {
-          // The management actions of an administrator row, shown disabled
-          // with the reason to a caller who is not the owner.
-          actions.push(
-            {
-              label: t('org.membersPage.changeRoles', 'Change roles'),
-              icon: Pencil,
-              onClick: () => undefined,
-              disabled: true,
-              disabledReason: lockReason,
-              separatorBefore: true,
-              route: memberRoute,
-            },
-            ...(member.mfa_status === 'enabled'
-              ? [
-                  {
-                    label: t('org.membersPage.reset2fa', 'Reset 2FA'),
-                    icon: ShieldOff,
-                    onClick: () => undefined,
-                    disabled: true,
-                    disabledReason: t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON),
-                    route: memberRoute,
-                  },
-                ]
-              : []),
-            {
-              label: t('org.membersPage.disable', 'Disable'),
-              icon: Ban,
-              onClick: () => undefined,
-              disabled: true,
-              disabledReason: lockReason,
-              route: memberRoute,
-            },
-            {
-              label: t('org.membersPage.offboard', 'Offboard'),
-              icon: UserMinus,
-              onClick: () => undefined,
-              disabled: true,
-              disabledReason: lockReason,
-              route: memberRoute,
-            }
-          )
-        }
-        if (!isOwnerRow && !locked) {
-          actions.push({
-            label: t('org.membersPage.changeRoles', 'Change roles'),
-            icon: Pencil,
-            onClick: () => {
-              setEditRolesMember(member)
-              setEditRolesDialogOpen(true)
-            },
-            route: 'PUT /api/v1/users/{userId}/roles',
-          })
-          if (member.kind === 'external' && canChangeAccess && !offboarded) {
-            actions.push({
-              label: t('org.membersPage.changeEndOfAccess', 'Change end of access'),
-              icon: CalendarClock,
-              onClick: () => setAccessMember(member),
-              route: memberRoute,
-            })
-          }
-          if (member.pending_setup) {
-            actions.push({
-              label: t('org.membersPage.getSetupLink', 'Get setup link'),
-              icon: KeyRound,
-              onClick: () =>
-                setSetupLinkTarget({
-                  userId: member.user_id,
-                  email: member.email,
-                  name: member.name,
-                }),
-              route: memberRoute,
-            })
-          }
-          // Access changes, each asking first, set apart from the edits above.
-          const access: RowAction[] = []
-          if (canResetMemberMfa(member, caller)) {
-            access.push({
-              label: t('org.membersPage.reset2fa', 'Reset 2FA'),
-              icon: ShieldOff,
-              onClick: () => setResetMfaMember(member),
-              route: memberRoute,
-            })
-          }
-          access.push(
-            member.status === 'suspended'
-              ? {
-                  label:
-                    member.suspended_reason === 'awaiting_approval'
-                      ? t('org.membersPage.approve', 'Approve')
-                      : t('org.membersPage.reenable', 'Re-enable'),
-                  icon: CheckCircle,
-                  onClick: () => setReactivateMember(member),
-                  route: memberRoute,
-                }
-              : {
-                  label: t('org.membersPage.disable', 'Disable'),
-                  icon: Ban,
-                  onClick: () => setSuspendConfirmMember(member),
-                  route: memberRoute,
-                },
-            {
-              label: t('org.membersPage.offboardEllipsis', 'Offboard...'),
-              icon: UserMinus,
-              onClick: () => setOffboardMember(member),
-              destructive: true,
-              route: memberRoute,
-            }
-          )
-          access[0].separatorBefore = true
-          actions.push(...access)
-        }
-        if (!isOwnerRow && offboarded && caller.isOwner) {
-          actions.push({
-            label: t('org.membersPage.erasePersonalData', 'Erase personal data...'),
-            icon: Eraser,
-            onClick: () => setEraseConfirmMember(member),
-            destructive: true,
-            route: 'POST /api/v1/organization/members/{member_id}/erase',
-          })
-        }
-
-        return (
-          <DataTableRowActions
-            actions={actions}
-            title={name}
-            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
-          />
-        )
-      },
+      cell: ({ row }) => memberMenu(row.original),
     },
   ]
 
@@ -1236,6 +1260,146 @@ export default function UsersPage() {
     }
   }
 
+  // An invitation's row menu: the table's last column and the phone card.
+  const invitationMenu = (inv: Invitation) => (
+    <DataTableRowActions
+      title={inv.email}
+      label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+        name: inv.email,
+      })}
+      actions={[
+        ...(new Date(inv.expires_at).getTime() <= now
+          ? [
+              {
+                label: t('org.membersPage.renewInvitation', 'Renew'),
+                icon: RotateCw,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
+                onClick: () => reissueInviteLink(inv, true),
+              },
+            ]
+          : [
+              {
+                label: t('org.membersPage.copyNewLink', 'Copy new link'),
+                icon: LinkIcon,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
+                onClick: () => reissueInviteLink(inv, false),
+              },
+            ]),
+        // The email actions only make sense on a server that sends email.
+        ...(emailUnavailable
+          ? []
+          : [
+              {
+                label: t('org.membersPage.resendEmail', 'Resend email'),
+                icon: Send,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
+                onClick: () => resendInvite(inv),
+              },
+            ]),
+        {
+          label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
+          icon: Trash2,
+          destructive: true,
+          separatorBefore: true,
+          route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
+          onClick: () => setPendingCancelInvite(inv),
+        },
+      ]}
+    />
+  )
+
+  // The parts of an invitation row, shared by the table and the phone card.
+  const invitationBadges = (inv: Invitation) => (
+    <>
+      {inv.member_kind === 'external' && (
+        <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
+          {t('org.invitations.external')}
+        </Badge>
+      )}
+      {inv.privileged && (
+        <Badge
+          variant="outline"
+          className="border-warning/50 text-xs text-warning"
+          data-testid="invitation-badge-mfa"
+          title={t('org.invitations.mfaHint')}
+        >
+          {t('org.invitations.mfa')}
+        </Badge>
+      )}
+    </>
+  )
+
+  const invitationRoles = (invitation: Invitation) => {
+    // Role names from role_ids (resolved when the role list is loaded).
+    const invitedRoles = (invitation.role_ids || [])
+      .map((id) => availableRolesForInvite.find((r) => r.id === id))
+      .filter((r): r is NonNullable<typeof r> => r != null)
+    if (invitedRoles.length > 0) {
+      return (
+        <div className="flex flex-wrap items-center gap-1">
+          {invitedRoles.slice(0, 2).map((role) => (
+            <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
+              {roleName(t, role)}
+            </Badge>
+          ))}
+          {invitedRoles.length > 2 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="text-xs cursor-pointer">
+                  +{invitedRoles.length - 2}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {invitedRoles
+                  .slice(2)
+                  .map((r) => roleName(t, r))
+                  .join(', ')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )
+    }
+    /* Invitations created before the RBAC role picker carry only the
+       legacy `role` field ("member", "admin", ...) with empty role_ids —
+       show that (in the console language) rather than a confusing "No roles". */
+    const legacy = invitation.role ? SYSTEM_ROLE_NAME[invitation.role] : undefined
+    return (
+      <Badge variant="secondary" className="text-xs">
+        {legacy
+          ? t(legacy.key, legacy.en)
+          : invitation.role || t('org.membersPage.noRoles', 'No roles')}
+      </Badge>
+    )
+  }
+
+  /** When the invitation runs out; `labelled` adds "Expires" for the phone card. */
+  const invitationExpiry = (inv: Invitation, labelled = false) => {
+    const daysUntilExpiry = Math.ceil(
+      (new Date(inv.expires_at).getTime() - now) / (1000 * 60 * 60 * 24)
+    )
+    const isExpiringSoon = daysUntilExpiry <= 3 && daysUntilExpiry > 0
+    const isExpired = daysUntilExpiry <= 0
+    const date = formatDate(inv.expires_at, locale)
+    return (
+      <span
+        className={`text-sm ${isExpired || isExpiringSoon ? 'text-destructive' : 'text-muted-foreground'}`}
+      >
+        {isExpired
+          ? t('org.membersPage.expired', 'Expired')
+          : isExpiringSoon
+            ? daysUntilExpiry > 1
+              ? t('org.membersPage.expiresInOther', 'In {count} days', {
+                  count: daysUntilExpiry,
+                })
+              : t('org.membersPage.expiresInOne', 'In {count} day', { count: daysUntilExpiry })
+            : labelled
+              ? t('org.membersPage.expiresOn', 'Expires {date}', { date })
+              : date}
+      </span>
+    )
+  }
+
   const invitationColumns: ColumnDef<Invitation>[] = [
     {
       accessorKey: 'email',
@@ -1245,21 +1409,7 @@ export default function UsersPage() {
       cell: ({ row }) => (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="font-medium">{row.original.email}</span>
-          {row.original.member_kind === 'external' && (
-            <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
-              {t('org.invitations.external')}
-            </Badge>
-          )}
-          {row.original.privileged && (
-            <Badge
-              variant="outline"
-              className="border-warning/50 text-xs text-warning"
-              data-testid="invitation-badge-mfa"
-              title={t('org.invitations.mfaHint')}
-            >
-              {t('org.invitations.mfa')}
-            </Badge>
-          )}
+          {invitationBadges(row.original)}
         </div>
       ),
     },
@@ -1268,131 +1418,21 @@ export default function UsersPage() {
       meta: { kind: 'tags', label: t('org.membersPage.col.roles', 'Roles') },
       header: t('org.membersPage.col.roles', 'Roles'),
       enableSorting: false,
-      cell: ({ row }) => {
-        const invitation = row.original
-        // Role names from role_ids (resolved when the role list is loaded).
-        const invitedRoles = (invitation.role_ids || [])
-          .map((id) => availableRolesForInvite.find((r) => r.id === id))
-          .filter((r): r is NonNullable<typeof r> => r != null)
-        if (invitedRoles.length > 0) {
-          return (
-            <div className="flex flex-wrap items-center gap-1">
-              {invitedRoles.slice(0, 2).map((role) => (
-                <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
-                  {role.name}
-                </Badge>
-              ))}
-              {invitedRoles.length > 2 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="text-xs cursor-pointer">
-                      +{invitedRoles.length - 2}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {invitedRoles
-                      .slice(2)
-                      .map((r) => r.name)
-                      .join(', ')}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-          )
-        }
-        /* Invitations created before the RBAC role picker carry only the
-           legacy `role` field ("member", "admin", ...) with empty role_ids —
-           show that rather than a confusing "No roles". */
-        return (
-          <Badge variant="secondary" className="text-xs capitalize">
-            {invitation.role
-              ? t(`org.role.${invitation.role}`, invitation.role)
-              : t('org.membersPage.noRoles', 'No roles')}
-          </Badge>
-        )
-      },
+      cell: ({ row }) => invitationRoles(row.original),
     },
     {
       accessorKey: 'expires_at',
       meta: { kind: 'date', label: t('org.membersPage.col.expires', 'Expires') },
       header: t('org.membersPage.col.expires', 'Expires'),
       enableSorting: false,
-      cell: ({ row }) => {
-        const daysUntilExpiry = Math.ceil(
-          (new Date(row.original.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        )
-        const isExpiringSoon = daysUntilExpiry <= 3 && daysUntilExpiry > 0
-        const isExpired = daysUntilExpiry <= 0
-        return (
-          <span
-            className={`text-sm ${isExpired || isExpiringSoon ? 'text-destructive' : 'text-muted-foreground'}`}
-          >
-            {isExpired
-              ? t('org.membersPage.expired', 'Expired')
-              : isExpiringSoon
-                ? daysUntilExpiry > 1
-                  ? t('org.membersPage.expiresInOther', 'In {count} days', {
-                      count: daysUntilExpiry,
-                    })
-                  : t('org.membersPage.expiresInOne', 'In {count} day', { count: daysUntilExpiry })
-                : formatDate(row.original.expires_at, locale)}
-          </span>
-        )
-      },
+      cell: ({ row }) => invitationExpiry(row.original),
     },
     {
       id: 'actions',
       meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
-      cell: ({ row }) => (
-        <DataTableRowActions
-          title={row.original.email}
-          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
-            name: row.original.email,
-          })}
-          actions={[
-            ...(new Date(row.original.expires_at).getTime() <= Date.now()
-              ? [
-                  {
-                    label: t('org.membersPage.renewInvitation', 'Renew'),
-                    icon: RotateCw,
-                    route:
-                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
-                    onClick: () => reissueInviteLink(row.original, true),
-                  },
-                ]
-              : [
-                  {
-                    label: t('org.membersPage.copyNewLink', 'Copy new link'),
-                    icon: LinkIcon,
-                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
-                    onClick: () => reissueInviteLink(row.original, false),
-                  },
-                ]),
-            // The email actions only make sense on a server that sends email.
-            ...(emailUnavailable
-              ? []
-              : [
-                  {
-                    label: t('org.membersPage.resendEmail', 'Resend email'),
-                    icon: Send,
-                    route:
-                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
-                    onClick: () => resendInvite(row.original),
-                  },
-                ]),
-            {
-              label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
-              icon: Trash2,
-              destructive: true,
-              separatorBefore: true,
-              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
-              onClick: () => setPendingCancelInvite(row.original),
-            },
-          ]}
-        />
-      ),
+      cell: ({ row }) => invitationMenu(row.original),
     },
   ]
 
@@ -1570,6 +1610,26 @@ export default function UsersPage() {
                 }}
                 toolbarStart={toolbarStart}
                 onRowClick={(m) => setSelectedMember(m)}
+                mobileRow={(m) => (
+                  <PersonPhoneCard
+                    title={m.name || m.email}
+                    address={distinctAddress(m.name, m.email)}
+                    dimmed={isDeactivated(m.status)}
+                    onOpen={() => setSelectedMember(m)}
+                    menu={memberMenu(m)}
+                    facts={
+                      <>
+                        <UserRolesCell userId={m.user_id} />
+                        <MemberStatusBadge status={m.status} pendingSetup={m.pending_setup} />
+                        {m.mfa_status ? <MemberMfaBadge status={m.mfa_status} labelled /> : null}
+                        <MemberBadges
+                          member={m}
+                          ssoExceptionUntil={ssoExceptionUntil.get(m.user_id)}
+                        />
+                      </>
+                    }
+                  />
+                )}
                 emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
               />
             )}
@@ -1598,6 +1658,19 @@ export default function UsersPage() {
                 showSearch={false}
                 showColumnToggle={false}
                 showPagination={invitations.length > 10}
+                mobileRow={(inv) => (
+                  <PersonPhoneCard
+                    title={inv.email}
+                    menu={invitationMenu(inv)}
+                    facts={
+                      <>
+                        {invitationRoles(inv)}
+                        {invitationExpiry(inv, true)}
+                        {invitationBadges(inv)}
+                      </>
+                    }
+                  />
+                )}
                 emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
               />
             </TabsContent>
