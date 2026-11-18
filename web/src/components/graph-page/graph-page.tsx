@@ -138,7 +138,8 @@ export function GraphNote({
       <PopoverTrigger asChild>
         <Button type="button" variant="ghost" data-testid="graph-note-trigger">
           <CircleHelp aria-hidden />
-          {label}
+          {/* On a phone the question mark alone, so the toolbar keeps to two rows; the label stays its name. */}
+          <span className="max-sm:sr-only">{label}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 text-dense">
@@ -264,7 +265,7 @@ export function GraphNodeSheet({
         </SheetHeader>
         <SheetBody>
           {action && (
-            <div id={actionId} data-slot="graph-node-action" className="flex">
+            <div id={actionId} data-slot="graph-node-action" className="mb-2 flex">
               {action}
             </div>
           )}

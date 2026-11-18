@@ -241,7 +241,9 @@ export default function ExposureChainsPage() {
           <NoRelationshipData />
         ) : (
           <>
+            {/* On a phone the chains come first (list-first): the totals follow them. */}
             <MetricStrip
+              className="max-sm:order-last"
               items={[
                 {
                   key: 'entries',
@@ -367,7 +369,7 @@ export default function ExposureChainsPage() {
                 <h2 className="text-section">
                   {t('prioritization.exposureChains.rankedTitle', 'Chains ranked by urgency')}
                 </h2>
-                <p className="text-body text-muted-foreground">
+                <p className="text-body text-muted-foreground max-sm:hidden">
                   {t(
                     'prioritization.exposureChains.rankedHint',
                     'Each chain is the shortest path. Select a step to see its detail and findings.'

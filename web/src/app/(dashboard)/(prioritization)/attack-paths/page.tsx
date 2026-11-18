@@ -296,9 +296,13 @@ export default function AttackPathsPage() {
       <GraphToolbar
         label={t('prioritization.attackPath.toolbarLabel', 'Attack path filters')}
         end={
-          detail && detail.paths.length > 0 ? (
+          // The note needs no data: it shows from the first paint, so the
+          // toolbar's second row on a phone is there before the paths arrive.
+          !detail || detail.paths.length > 0 ? (
             <>
-              {view === 'canvas' && <GraphLegend items={legendItems} testId="attack-path-legend" />}
+              {view === 'canvas' && detail && (
+                <GraphLegend items={legendItems} testId="attack-path-legend" />
+              )}
               <GraphNote
                 label={t('prioritization.attackPath.howLabel', 'How paths are scored')}
                 title={t('prioritization.attackPath.howTitle', 'How a path is scored')}
