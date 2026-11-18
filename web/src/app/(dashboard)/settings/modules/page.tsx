@@ -370,11 +370,24 @@ export default function ModuleManagementPage() {
     }
   }, [resetModules, mutate, refreshModules, t])
 
+  // The header action is drawn from the first frame (disabled until the
+  // modules are in): added late, it grew the header by a line on a phone and
+  // moved the page under it.
+  const resetAction = (ready: boolean) => (
+    <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
+      <Button variant="outline" onClick={() => setShowReset(true)} disabled={!ready || isResetting}>
+        <RotateCcw aria-hidden />
+        {t('settings.modules.reset', 'Reset to defaults')}
+      </Button>
+    </Can>
+  )
+
   if ((error && !modules.length) || isLoading) {
     return (
       <SettingsPage
         title={pageTitle}
         description={pageDescription}
+        actions={resetAction(false)}
         state={isLoading ? 'loading' : 'error'}
         error={error}
         onRetry={() => void mutate()}
@@ -406,14 +419,7 @@ export default function ModuleManagementPage() {
               'You can see which modules are on. Only administrators can change them.'
             )
       }
-      actions={
-        <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
-          <Button variant="outline" onClick={() => setShowReset(true)} disabled={isResetting}>
-            <RotateCcw aria-hidden />
-            {t('settings.modules.reset', 'Reset to defaults')}
-          </Button>
-        </Can>
-      }
+      actions={resetAction(true)}
     >
       <ListToolbar
         search={{
