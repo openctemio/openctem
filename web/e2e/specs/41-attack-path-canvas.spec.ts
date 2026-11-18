@@ -231,7 +231,7 @@ test.describe.fixme('attack path view', { tag: ['@attack-surface'] }, () => {
   test('an unknown asset shows an error state, not an empty graph', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/attack-paths?target=00000000-0000-0000-0000-000000000000')
-    await expect(page.getByText(/Failed to load attack paths|not found/i).first()).toBeVisible({
+    await expect(page.getByText(/Couldn't load attack paths|not found/i).first()).toBeVisible({
       timeout: 30_000,
     })
   })
