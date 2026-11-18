@@ -36,6 +36,7 @@ import {
 } from '@/features/shared'
 import { copyToClipboard } from '@/lib/clipboard'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { CRITICALITY_LABEL_KEYS } from '@/lib/criticality'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
@@ -249,13 +250,13 @@ export function GroupQuickView({
             badges={
               <>
                 <Badge variant="secondary" className="capitalize">
-                  {group.environment}
+                  {t(`assetGroups.environment.${group.environment}`, group.environment)}
                 </Badge>
                 <Badge
                   variant="outline"
                   className={cn('capitalize', CRITICALITY_BADGE_SOFT[criticality])}
                 >
-                  {group.criticality}
+                  {t(CRITICALITY_LABEL_KEYS[criticality] ?? '', group.criticality)}
                 </Badge>
               </>
             }

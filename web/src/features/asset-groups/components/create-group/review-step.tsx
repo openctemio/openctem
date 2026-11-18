@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import {
+  CRITICALITY_LABEL_KEYS,
   CRITICALITY_LABELS,
   RATED_CRITICALITY_LEVELS,
   type RatedCriticality,
@@ -169,7 +170,9 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 <p className="text-xs text-muted-foreground mb-1">
                   {t('assetGroups.bulk.criticality', 'Criticality')}
                 </p>
-                <Badge className={cn(critConfig.color, 'text-white')}>{critConfig.label}</Badge>
+                <Badge className={cn(critConfig.color, 'text-white')}>
+                  {t(CRITICALITY_LABEL_KEYS[data.criticality], critConfig.label)}
+                </Badge>
               </div>
             </div>
 
