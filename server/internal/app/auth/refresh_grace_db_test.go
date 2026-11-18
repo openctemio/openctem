@@ -478,4 +478,72 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 			t.Fatal("with the grace off any reuse ends the session")
 		}
 	})
+
+	// A grace hand-out is audited (auth.refresh_grace), for both calls.
+	graceAudits := func(t *testing.T, sid shared.ID, flow string) int {
+		t.Helper()
+		var n int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs
+			WHERE action = 'auth.refresh_grace' AND session_id = $1
+			  AND metadata->>'flow' = $2 AND severity = 'low'`, sid.String(), flow).Scan(&n); err != nil {
+			t.Fatalf("count grace audits: %v", err)
+		}
+		return n
+	}
+	t.Run("refresh: a grace hand-out is audited, a normal rotation is not", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if graceAudits(t, sid, "refresh") != 0 {
+			t.Fatal("a normal rotation must not be audited as a grace hand-out")
+		}
+		if _, err := refresh(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if got := graceAudits(t, sid, "refresh"); got != 1 {
+			t.Fatalf("grace audits = %d, want 1", got)
+		}
+	})
+	t.Run("exchange: a grace hand-out is audited", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if got := graceAudits(t, sid, "token_exchange"); got != 1 {
+			t.Fatalf("grace audits = %d, want 1", got)
+		}
+	})
+
+	// The membership is checked before the organization's status: a session
+	// cannot learn whether an organization it is not in is suspended.
+	t.Run("refresh: a non-member of a suspended organization gets access denied", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		svc.SetOrganizationGate(&suspendedGate{})
+		u, _ := newMember(t)
+		_, otherTenant := newMember(t) // u is not a member
+		sid, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, otherTenant, ua); !errors.Is(err, ErrTenantAccessDenied) {
+			t.Fatalf("want ErrTenantAccessDenied, got %v", err)
+		}
+		if !sessionActive(t, sid) {
+			t.Fatal("a refused organization must not end the session")
+		}
+	})
+	t.Run("refresh: a member of a suspended organization still hears it is suspended", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		svc.SetOrganizationGate(&suspendedGate{})
+		u, tid := newMember(t)
+		_, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, tid, ua); !errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			t.Fatalf("want ErrOrganizationSuspended, got %v", err)
+		}
+	})
 }

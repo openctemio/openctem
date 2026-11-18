@@ -36,6 +36,21 @@ func TestProviderTestSeam_TagSelectsTheFile(t *testing.T) {
 	}
 }
 
+// The seam is opt-in twice: the tag AND an explicit test APP_ENV. The check
+// is a plain function so a release-build test run proves it too.
+func TestSeamEnvAllowed_OnlyExplicitTestValues(t *testing.T) {
+	for _, ok := range []string{"test", "e2e", " TEST ", "E2E"} {
+		if !SeamEnvAllowed(ok) {
+			t.Errorf("APP_ENV=%q should allow the seam", ok)
+		}
+	}
+	for _, no := range []string{"", "production", "prod", "staging", "development", "dev", "testing", "ci", "test-prod"} {
+		if SeamEnvAllowed(no) {
+			t.Errorf("APP_ENV=%q must not allow the seam", no)
+		}
+	}
+}
+
 // In a build without the tag (every release build) the environment cannot
 // move a provider endpoint.
 func TestProviderTestSeam_ReleaseBuildIgnoresTheEnvironment(t *testing.T) {
@@ -76,6 +91,10 @@ func TestProviderTestSeam_NoReleaseBuildPassesTheTag(t *testing.T) {
 		"server/tests/",
 		"web/e2e/",
 		".github/workflows/api-auth-scenarios.yml",
+		// The release guards that refuse the tag: they name it to forbid it.
+		".github/scripts/release/build-dist.sh",
+		".github/scripts/release/check-no-test-seam.sh",
+		".github/scripts/release/tests/test_build_dist_seam.sh",
 	}
 	buildFile := func(rel string) bool {
 		base := filepath.Base(rel)

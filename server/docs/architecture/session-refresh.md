@@ -102,6 +102,13 @@ the request is a reuse and ends the session:
   (signing out revokes every token of the session, used ones included);
 - the same client presents it: a hash of the user agent recorded at rotation
   (`refresh_tokens.rotated_fingerprint`) matches, compared in constant time.
+  The console calls the API from its server and forwards the browser's
+  `User-Agent` on `/auth/refresh` and `/auth/token`, so "the same client" is the
+  same browser software. A user agent is not a secret: this check stops a
+  different kind of client (another browser, a script), not someone who copies
+  the victim's user agent. A grace hand-out is audited (`auth.refresh_grace`,
+  low severity, with the session and the flow) so a successor that left twice
+  can be seen.
 
 Every refusal the refresh applies (suspended account or organization, membership,
 SSO, two-factor, email verification and the other organization policies) runs before
