@@ -15,8 +15,8 @@ const providerTestSeamCompiled = true
 // testSeamEndpoint maps a provider endpoint to the stand-in named by
 // AUTHTESTSEAM_PROVIDER_URL (or, for the browser,
 // AUTHTESTSEAM_PROVIDER_BROWSER_URL): <base>/<real host><real path>. Unset or
-// unparsable, or APP_ENV=production (a test build never serves production):
-// the real URL.
+// unparsable, or APP_ENV not an explicit test value (see SeamEnvAllowed): the
+// real URL.
 func testSeamEndpoint(real string, browser bool) string {
 	if !TestSeamActive() {
 		return real
@@ -46,5 +46,5 @@ func testSeamEndpoint(real string, browser bool) string {
 // TestSeamActive reports whether provider endpoints are overridden.
 func TestSeamActive() bool {
 	return strings.TrimSpace(os.Getenv(EnvTestSeamProviderURL)) != "" &&
-		!strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production")
+		SeamEnvAllowed(os.Getenv("APP_ENV"))
 }

@@ -165,6 +165,43 @@ func TestMFAFloor_MemberRoleIsNotAdministrator(t *testing.T) {
 	}
 }
 
+// Every privileged permission, alone in a custom role on top of the viewer
+// baseline, makes its holder an administrator for "2FA for administrators"
+// and for the platform floor; the one exception is the permission the
+// built-in member role already carries. A new privileged permission is
+// covered by this table without an edit.
+func TestMFAFloor_EachPrivilegedPermissionAloneMakesAnAdministrator(t *testing.T) {
+	past := time.Now().Add(-30 * 24 * time.Hour)
+	viewerPerms := permission.ToStrings(permission.RolePermissions[tenant.RoleViewer])
+	member := map[string]bool{}
+	for _, p := range permission.RolePermissions[tenant.RoleMember] {
+		member[string(p)] = true
+	}
+	privileged := permission.PrivilegedPermissions()
+	if len(privileged) == 0 {
+		t.Fatal("no privileged permissions")
+	}
+	for _, p := range privileged {
+		role := privStub{perms: append(slices.Clone(viewerPerms), string(p))}
+		gated := !member[string(p)]
+		t.Run("floor: "+string(p), func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorAdmins, past)
+			f.h.svc.SetMFAFloor(f.floor, role)
+			checkGated(t, f.exchange(), gated)
+		})
+		t.Run("organization rule: "+string(p), func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorNone, past)
+			st := f.tn.TypedSettings()
+			st.Security.MFARequiredForAdmins = true
+			if err := f.tn.UpdateSettings(st); err != nil {
+				t.Fatal(err)
+			}
+			f.h.svc.SetMFAFloor(f.floor, role)
+			checkGated(t, f.exchange(), gated)
+		})
+	}
+}
+
 func checkGated(t *testing.T, err error, gated bool) {
 	t.Helper()
 	if gated && !errors.Is(err, auth.ErrMFAEnrollmentRequired) {

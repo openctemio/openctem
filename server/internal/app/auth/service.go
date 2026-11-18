@@ -1417,6 +1417,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	if graceSuccessor != nil {
 		s.logger.Info("refresh token re-presented within the rotation grace; successor handed out again",
 			"session_id", sess.ID().String(), "flow", "token_exchange")
+		s.auditRefreshGrace(ctx, sess, u.ID().String(), targetMembership.TenantID, "token_exchange")
 	}
 
 	s.logger.Debug("token exchanged",
@@ -1672,6 +1673,21 @@ func (s *AuthService) onRefreshTokenReuse(ctx context.Context, stored *sessiondo
 			WithMetadata("reason", "refresh_token_reuse"))
 }
 
+// auditRefreshGrace records that a rotated refresh token was accepted again
+// inside the rotation grace and its successor handed out a second time. Low
+// severity: it is the normal case of two tabs of one browser, but an
+// investigator needs to see a successor leave twice.
+func (s *AuthService) auditRefreshGrace(ctx context.Context, sess *sessiondom.Session, userID, tenantID, flow string) {
+	ci := clientInfoFrom(ctx)
+	s.audit(ctx, auditapp.AuditContext{
+		TenantID: tenantID, ActorID: userID, ActorIP: ci.IP, UserAgent: ci.UserAgent, SessionID: sess.ID().String(),
+	}, auditapp.NewSuccessEvent(auditdom.ActionAuthRefreshGrace, auditdom.ResourceTypeUser, userID).
+		WithSeverity(auditdom.SeverityLow).
+		WithMessage("Rotated refresh token accepted again within the rotation grace; successor handed out a second time").
+		WithMetadata("session_id", sess.ID().String()).
+		WithMetadata("flow", flow))
+}
+
 // RefreshTokenInput represents the input for token refresh.
 // Requires tenant_id to generate tenant-scoped access token.
 type RefreshTokenInput struct {
@@ -1763,13 +1779,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, ErrAccountSuspended
 	}
 
-	// A suspended organization is refused before the refresh token is
-	// spent: the session stays usable for the member's other
-	// organizations.
-	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
-		return nil, err
-	}
-
 	// Verify user has access to the requested tenant
 	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
 	if err != nil {
@@ -1786,6 +1795,14 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 
 	if targetMembership == nil {
 		return nil, ErrTenantAccessDenied
+	}
+
+	// A suspended organization is refused before the refresh token is
+	// spent: the session stays usable for the member's other
+	// organizations. Only after the membership check, so a session cannot
+	// learn whether an organization it does not belong to is suspended.
+	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
+		return nil, err
 	}
 
 	// Per-tenant SSO enforcement (break-glass safe): re-checked on every refresh
@@ -1837,7 +1854,8 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		}
 		newRefreshTokenStr, refreshExpiresAt = tok, graceSuccessor.ExpiresAt()
 		s.logger.Info("refresh token re-presented within the rotation grace; successor handed out again",
-			"session_id", sess.ID().String())
+			"session_id", sess.ID().String(), "flow", "refresh")
+		s.auditRefreshGrace(ctx, sess, u.ID().String(), targetMembership.TenantID, "refresh")
 	}
 
 	// Determine if user is admin (owner or admin role)

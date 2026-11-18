@@ -93,8 +93,9 @@ Google, Microsoft and GitHub) at a stand-in:
 `AUTHTESTSEAM_PROVIDER_BROWSER_URL` (default: the same) for the browser's
 authorization redirect. The identity rules do not change: an id_token still
 carries the provider's real issuer and our client id, and is verified
-against the stand-in's keys. With `APP_ENV=production` even a test binary
-ignores the variables, and it logs a warning at start-up whenever they apply.
+against the stand-in's keys. Even a test binary ignores the variables unless
+`APP_ENV` is `test` or `e2e` (unset, `production`, `staging` and every other
+value never apply them), and it logs a warning at start-up whenever they apply.
 
 A build without the tag (every release image) compiles
 `internal/app/auth/provider_endpoints_release.go` instead and reads no

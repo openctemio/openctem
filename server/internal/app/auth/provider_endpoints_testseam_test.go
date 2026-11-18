@@ -86,7 +86,7 @@ func TestProviderTestSeam_SignInAgainstAStandIn(t *testing.T) {
 	srv := httptest.NewTLSServer(mux)
 	defer srv.Close()
 
-	t.Setenv("APP_ENV", "staging")
+	t.Setenv("APP_ENV", "test")
 	t.Setenv(EnvTestSeamProviderURL, srv.URL)
 	t.Setenv(EnvTestSeamProviderBrowserURL, "https://idp.example.test:8443")
 
@@ -143,9 +143,15 @@ func TestProviderTestSeam_SignInAgainstAStandIn(t *testing.T) {
 		t.Fatalf("github identity %+v", info)
 	}
 
-	// APP_ENV=production: a test binary still reaches the real providers.
-	t.Setenv("APP_ENV", "production")
-	if got := TokenEndpoint(OAuthProviderGoogle); got != "https://oauth2.googleapis.com/token" {
-		t.Fatalf("production must never use the stand-in, got %s", got)
+	// Any APP_ENV that is not an explicit test value: a tagged binary still
+	// reaches the real providers.
+	for _, env := range []string{"production", "staging", "development", "", "prod", "testing"} {
+		t.Setenv("APP_ENV", env)
+		if got := TokenEndpoint(OAuthProviderGoogle); got != "https://oauth2.googleapis.com/token" {
+			t.Fatalf("APP_ENV=%q must never use the stand-in, got %s", env, got)
+		}
+		if TestSeamActive() {
+			t.Fatalf("APP_ENV=%q reports the seam active", env)
+		}
 	}
 }
