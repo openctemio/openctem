@@ -147,7 +147,7 @@ describe('Users list', () => {
 })
 
 describe('Content catalog', () => {
-  it('shows the trust roots read-only and lets a super admin revoke a version with a reason', async () => {
+  it('shows the trust roots read-only and lets a super admin revoke a version with a reason, the typed version and a code', async () => {
     mocks.role = 'super_admin'
     render(<CatalogPage />)
     expect(screen.getByText(/cannot be changed from this console/)).toBeInTheDocument()
@@ -155,13 +155,18 @@ describe('Content catalog', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Revoke' }))
     const confirm = screen.getAllByRole('button', { name: 'Revoke' }).at(-1)!
     expect(confirm).toBeDisabled()
-    await userEvent.type(screen.getByLabelText('Reason'), 'withdrawn by the publisher')
+    // Reason, the version typed and a fresh code: all three before Revoke.
+    await userEvent.type(screen.getByLabelText(/^Reason/), 'withdrawn by the publisher')
+    await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    expect(screen.getAllByRole('button', { name: 'Revoke' }).at(-1)!).toBeDisabled()
+    await userEvent.type(screen.getByTestId('admin-confirm-typed'), '0.24.0')
     await userEvent.click(screen.getAllByRole('button', { name: 'Revoke' }).at(-1)!)
     await waitFor(() =>
       expect(mocks.revoke).toHaveBeenCalledWith(
         'openctem/sensor',
         '0.24.0',
-        'withdrawn by the publisher'
+        'withdrawn by the publisher',
+        '123456'
       )
     )
   })

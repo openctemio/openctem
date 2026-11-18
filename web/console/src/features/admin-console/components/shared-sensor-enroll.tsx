@@ -8,14 +8,12 @@
  * with its own key and becomes a shared sensor (no organization,
  * least-privilege grant).
  *
- * Three steps, each a dialog: the form (name, validity), the confirmation
- * with the reason and the code on top of it, then the token, shown once.
+ * Two dialogs: the form (name, validity, the reason and the code), then the
+ * token, shown once.
  */
 
-import { useId, useState } from 'react'
-import { Check, Copy, Loader2, Plus } from 'lucide-react'
-import { toast } from 'sonner'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useState } from 'react'
+import { Check, Copy, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -30,9 +28,8 @@ import { Input } from '@/components/ui/input'
 import { FormDialog, FormField, FormStack } from '@/features/shared/components/forms'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
-import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
-import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
+import { AdminConfirmDialog } from './admin-confirm-dialog'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
@@ -49,13 +46,9 @@ export interface SharedSensorEnrollProps {
 
 export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps) {
   const { t } = useTranslation()
-  const id = useId()
   const [formOpen, setFormOpen] = useState(false)
   const [name, setName] = useState('')
   const [ttl, setTtl] = useState(60)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const rc = useReasonAndCode(confirmOpen)
-  const [busy, setBusy] = useState(false)
   const [issued, setIssued] = useState<SharedSensorEnrollmentToken | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -67,31 +60,11 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
     setFormOpen(true)
   }
 
-  const issue = async () => {
-    setBusy(true)
-    rc.setCodeError(null)
-    try {
-      const out = await onIssue({
-        name: name.trim(),
-        ttlMinutes: ttl,
-        reason: rc.reason.trim(),
-        code: rc.code.trim(),
-      })
-      setIssued(out)
-      setCopied(false)
-      setConfirmOpen(false)
-      setFormOpen(false)
-    } catch (e) {
-      if (e instanceof AdminApiError && e.status === 401) {
-        rc.refuseCode(e.message)
-        return
-      }
-      setConfirmOpen(false)
-      toast.error(e instanceof Error ? e.message : t('admin.sharedSensorEnroll.issueFailed'))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const description = (
+    <>
+      {t('admin.sharedSensorEnroll.desc')} {t('admin.sharedSensorEnroll.mintRightBefore')}
+    </>
+  )
 
   return (
     <>
@@ -100,24 +73,33 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
         {t('admin.sharedSensorEnroll.action')}
       </Button>
 
-      <FormDialog
-        open={formOpen}
-        onOpenChange={(o) => {
-          if (!busy) setFormOpen(o)
-        }}
-        title={t('admin.sharedSensorEnroll.title')}
-        description={
-          <>
-            {t('admin.sharedSensorEnroll.desc')} {t('admin.sharedSensorEnroll.mintRightBefore')}
-          </>
-        }
-        submitLabel={t('admin.sharedSensorEnroll.issue')}
-        canSubmit={canEdit && ttlValid && !busy}
-        onSubmit={() => setConfirmOpen(true)}
-        dirty={name.trim() !== '' || ttl !== 60}
-        data-testid="sensors-enroll-dialog"
-      >
-        {canEdit ? (
+      {canEdit ? (
+        // One dialog, as for every privileged console action: the sensor's
+        // name and lifetime, then the reason and a fresh code (the API
+        // refuses the token without both). A refused code keeps it open.
+        <AdminConfirmDialog
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          title={t('admin.sharedSensorEnroll.title')}
+          description={description}
+          confirmLabel={t('admin.sharedSensorEnroll.issue')}
+          reasonPlaceholder={t(
+            'admin.sharedSensorEnroll.reasonPlaceholder',
+            'Second scanner for the Hanoi region, change 2231'
+          )}
+          requireCode
+          canSubmit={ttlValid}
+          onConfirm={async ({ reason, totp_code }) => {
+            const out = await onIssue({
+              name: name.trim(),
+              ttlMinutes: ttl,
+              reason,
+              code: (totp_code ?? '').trim(),
+            })
+            setIssued(out)
+            setCopied(false)
+          }}
+        >
           <FormStack>
             <FormField label={t('admin.sharedSensorEnroll.name')} required={false}>
               <Input
@@ -141,34 +123,21 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
               )}
             </FormField>
           </FormStack>
-        ) : (
+        </AdminConfirmDialog>
+      ) : (
+        <FormDialog
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          title={t('admin.sharedSensorEnroll.title')}
+          description={description}
+          submitLabel={t('admin.sharedSensorEnroll.issue')}
+          canSubmit={false}
+          onSubmit={() => undefined}
+          data-testid="sensors-enroll-dialog"
+        >
           <RoleRequiredNotice needed="super_admin" />
-        )}
-      </FormDialog>
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={(o) => {
-          if (!busy) setConfirmOpen(o)
-        }}
-        title={t('admin.sharedSensorEnroll.confirmTitle')}
-        desc={<p>{t('admin.sharedSensorEnroll.confirmDesc')}</p>}
-        disabled={!rc.codeOk || !rc.reasonOk}
-        isLoading={busy}
-        handleConfirm={() => void issue()}
-        confirmText={
-          busy ? (
-            <>
-              <Loader2 className="me-1.5 size-4 animate-spin" />
-              {t('admin.sharedSensorEnroll.issuing')}
-            </>
-          ) : (
-            t('admin.sharedSensorEnroll.issue')
-          )
-        }
-      >
-        <ReasonAndCodeFields id={id} state={rc} />
-      </ConfirmDialog>
+        </FormDialog>
+      )}
 
       <Dialog
         open={issued !== null}
