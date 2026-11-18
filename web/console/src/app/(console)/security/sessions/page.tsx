@@ -54,18 +54,24 @@ export default function AdminSessionsPage() {
           const s = row.original
           return (
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-medium" title={s.admin_name || s.admin_email}>
+              {/* The name keeps its room (up to 60 % of the cell); the mark of
+                  the own session is plain text beside it (a badge in a name
+                  cell collapses it) and the address gives way first. */}
+              <span
+                className="max-w-[60%] shrink-0 truncate font-medium"
+                title={s.admin_name || s.admin_email}
+              >
                 {s.admin_name || s.admin_email}
               </span>
-              {s.admin_name && s.admin_name !== s.admin_email && (
-                <span className="truncate text-muted-foreground" title={s.admin_email}>
-                  {s.admin_email}
+              {s.current && (
+                <span className="shrink-0 text-cap-m text-muted-foreground">
+                  {t('admin.sessions.current', 'This session')}
                 </span>
               )}
-              {s.current && (
-                <Badge variant="secondary" className="shrink-0">
-                  {t('admin.sessions.current', 'This session')}
-                </Badge>
+              {s.admin_name && s.admin_name !== s.admin_email && (
+                <span className="min-w-0 truncate text-muted-foreground" title={s.admin_email}>
+                  {s.admin_email}
+                </span>
               )}
             </div>
           )
@@ -74,7 +80,7 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'admin_role',
         header: t('admin.sessions.col.role', 'Role'),
-        meta: { kind: 'tags', width: 176, label: t('admin.sessions.col.role', 'Role') },
+        meta: { kind: 'tags', width: 160, label: t('admin.sessions.col.role', 'Role') },
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
             <Badge variant="outline">
@@ -140,7 +146,8 @@ export default function AdminSessionsPage() {
         header: t('admin.sessions.col.lastSeen', 'Last seen'),
         meta: {
           kind: 'datetime-recent',
-          width: 152,
+          // "less than a minute ago" whole, with a gap before the cell on its left.
+          width: 176,
           label: t('admin.sessions.col.lastSeen', 'Last seen'),
         },
         cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,

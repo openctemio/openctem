@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   revoke: vi.fn(),
   stale: false,
   phone: false,
+  imported: true,
+  pkgsKnown: true,
+  pkgTotal: 1,
 }))
 
 vi.mock('@/hooks/use-mobile', async (orig) => ({
@@ -72,31 +75,36 @@ vi.mock('../api/use-content-catalog', async (orig) => ({
       index_expired: false,
       revocations_sequence: 1,
       revocations_stale: mocks.stale,
-      imported_at: '2026-11-01T00:00:00Z',
+      imported_at: mocks.imported ? '2026-11-01T00:00:00Z' : undefined,
     },
     mutate: vi.fn(),
   }),
   useCatalogPackages: () => ({
-    isLoading: false,
+    isLoading: !mocks.pkgsKnown,
     mutate: vi.fn(),
-    data: {
-      total: 1,
-      data: [
-        {
-          versions: 2,
-          latest: {
-            id: 'p1',
-            package_id: 'openctem/sensor',
-            version: '0.24.0',
-            type: 'sensors',
-            origin: 'catalog',
-            title: 'Scanning sensor',
-            revoked: false,
-            signatures: ['catalog'],
-          },
+    data: !mocks.pkgsKnown
+      ? undefined
+      : {
+          total: mocks.pkgTotal,
+          data:
+            mocks.pkgTotal === 0
+              ? []
+              : [
+                  {
+                    versions: 2,
+                    latest: {
+                      id: 'p1',
+                      package_id: 'openctem/sensor',
+                      version: '0.24.0',
+                      type: 'sensors',
+                      origin: 'catalog',
+                      title: 'Scanning sensor',
+                      revoked: false,
+                      signatures: ['catalog'],
+                    },
+                  },
+                ],
         },
-      ],
-    },
   }),
   useCatalogVersions: (id: string | null) => ({
     isLoading: false,
@@ -125,6 +133,9 @@ beforeEach(() => {
   mocks.role = 'ops_admin'
   mocks.usersCalls.length = 0
   mocks.revoke.mockReset().mockResolvedValue({})
+  mocks.imported = true
+  mocks.pkgsKnown = true
+  mocks.pkgTotal = 1
   window.history.replaceState(null, '', '/')
 })
 
@@ -227,6 +238,30 @@ describe('Content catalog', () => {
   it('shows no marker while the catalog is current', () => {
     render(<CatalogPage />)
     expect(screen.queryByRole('link', { name: 'Out of date' })).not.toBeInTheDocument()
+  })
+
+  it('does not say nothing was imported while packages are listed', () => {
+    mocks.imported = false
+    render(<CatalogPage />)
+    expect(screen.getByRole('table', { name: 'Catalog packages' })).toBeInTheDocument()
+    expect(screen.queryByText('No catalog has been imported yet')).not.toBeInTheDocument()
+    // The trust details stay.
+    expect(screen.getByText(/cannot be changed from this console/)).toBeInTheDocument()
+  })
+
+  it('says nothing was imported when no package is listed', () => {
+    mocks.imported = false
+    mocks.pkgTotal = 0
+    render(<CatalogPage />)
+    expect(screen.getByText('No catalog has been imported yet')).toBeInTheDocument()
+  })
+
+  it('draws nothing under the list before the package list is known', () => {
+    mocks.imported = false
+    mocks.pkgsKnown = false
+    render(<CatalogPage />)
+    expect(screen.queryByText('No catalog has been imported yet')).not.toBeInTheDocument()
+    expect(document.getElementById('catalog-trust')).toBeNull()
   })
 
   it('offers no change to an operations administrator', () => {
