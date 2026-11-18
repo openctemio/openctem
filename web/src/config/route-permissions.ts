@@ -609,7 +609,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Settings - Organization (Core feature, no module required)
   // Team management is always available, controlled by RBAC only
   // ========================================
-  // Organization › General and Access & security › Sign-in. Viewing needs
+  // Organization › General and Sign-in and oversight › Sign-in. Viewing needs
   // team:update; saving the security settings is owner-only in the API and
   // the page. Sign-in also holds the verified domains, trusted organizations
   // (owners and admins read, owners change) and the SSO changes an owner
@@ -631,7 +631,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
-  // Usage & limits: owners and admins (GET /organization/limits needs admin).
+  // Usage and limits: owners and admins (GET /organization/limits needs admin).
   '/settings/limits': {
     permission: Permission.TeamUpdate,
   },

@@ -217,7 +217,7 @@ export default function SIEMIntegrationPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('siemIntegration.title', 'SIEM')}
+          title={t('siemIntegration.title', 'Event forwarding')}
           description={t(
             'siemIntegration.description',
             'Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC).'
@@ -233,7 +233,7 @@ export default function SIEMIntegrationPage() {
 
         {error ? (
           <ErrorState
-            title={t('siemIntegration.errorTitle', 'SIEM integrations')}
+            title={t('siemIntegration.errorTitle', 'event forwarding')}
             error={error}
             onRetry={() => void mutate()}
           />
@@ -245,7 +245,7 @@ export default function SIEMIntegrationPage() {
         ) : splunkIntegrations.length === 0 ? (
           <EmptyState
             icon={Shield}
-            title={t('siemIntegration.empty.title', 'No SIEM integrations yet')}
+            title={t('siemIntegration.empty.title', 'No event forwarding yet')}
             description={t(
               'siemIntegration.empty.description',
               'Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM.'
