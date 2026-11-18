@@ -1373,7 +1373,7 @@ export async function onboardingOptionsAction(): Promise<OnboardingOptionsResult
 
 export type OnboardingAcceptResult =
   | { success: true; status: 'joined' | 'requested'; organizationName: string }
-  | { success: false; code?: string; error: string }
+  | { success: false; code?: string; error: string; organizationId?: string }
 
 /**
  * Takes one offer. When the account joined, the organization is selected at
@@ -1393,8 +1393,20 @@ export async function onboardingAcceptAction(ref: string): Promise<OnboardingAcc
     })
     if (res.status === 'joined' && res.organization_id) {
       const selected = await selectTenantAction(res.organization_id)
-      if (!selected.success)
+      if (!selected.success) {
+        // Joined, but the organization does not admit this session yet: it
+        // requires two-factor authentication. The caller sends the person to
+        // set it up (the session stays), then into the organization.
+        if (selected.code === 'MFA_ENROLLMENT_REQUIRED') {
+          return {
+            success: false,
+            code: 'MFA_ENROLLMENT_REQUIRED',
+            error: selected.error ?? 'error',
+            organizationId: res.organization_id,
+          }
+        }
         return { success: false, code: 'SELECT_FAILED', error: selected.error ?? 'error' }
+      }
     }
     return { success: true, status: res.status, organizationName: res.organization_name }
   } catch (error) {
