@@ -358,6 +358,10 @@ func (m *teamMockMemberRepo) ListByCampaign(_ context.Context, _, _ string) ([]*
 	return m.listByCampaign, nil
 }
 
+func (m *teamMockMemberRepo) ListDirectByCampaign(_ context.Context, _, _ string) ([]*pentest.CampaignMember, error) {
+	return m.listByCampaign, nil
+}
+
 func (m *teamMockMemberRepo) ListByUser(_ context.Context, _, _ string) ([]*pentest.CampaignMember, error) {
 	return nil, nil
 }
