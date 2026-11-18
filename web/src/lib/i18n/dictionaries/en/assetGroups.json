@@ -261,7 +261,7 @@
   "assetGroups.selectRow": "Select row",
   "assetGroups.subject": "the asset groups list",
   "assetGroups.title": "Asset groups",
-  "assetGroups.truncated": "Showing the first {shown} of {total, plural, one {# group} other {# groups}}. Search or filter to narrow the list.",
+  "assetGroups.truncated": "Showing the first {shown, plural, other {#}} of {total, plural, one {# group} other {# groups}}. Search or filter to narrow the list.",
   "assetGroups.updateFailed": "Failed to update the group",
   "assetGroups.viewAll": "All groups",
   "assetGroups.wizard.step.basic": "Basic Info",

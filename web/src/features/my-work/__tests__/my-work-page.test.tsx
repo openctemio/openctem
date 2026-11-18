@@ -68,20 +68,22 @@ vi.mock('@/components/link', () => ({
     </a>
   ),
 }))
-vi.mock('@/context/i18n-provider', () => ({
-  useTranslation: () => ({
-    locale,
-    t: (k: string, fb?: string, vars?: Record<string, string | number>) => {
-      const dict = {
-        ...(enFindings as Record<string, string>),
-        ...((locale === 'vi' ? viDict : en) as Record<string, string>),
-      }
-      let s = dict[k] ?? (typeof fb === 'string' ? fb : k)
-      for (const [n, v] of Object.entries(vars ?? {})) s = s.replace(`{${n}}`, String(v))
-      return s
-    },
-  }),
-}))
+vi.mock('@/context/i18n-provider', async () => {
+  // The app's translator (plurals included) over the real catalogs.
+  const { translate } = await vi.importActual<typeof import('@/lib/i18n')>('@/lib/i18n')
+  return {
+    useTranslation: () => ({
+      locale,
+      t: (k: string, fb?: string, vars?: Record<string, string | number>) => {
+        const dict = {
+          ...(enFindings as Record<string, string>),
+          ...((locale === 'vi' ? viDict : en) as Record<string, string>),
+        }
+        return translate(dict, k, typeof fb === 'string' ? fb : undefined, vars, locale)
+      },
+    }),
+  }
+})
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => perms.has(p) }),
 }))
