@@ -219,6 +219,10 @@ func challengeFixtureAged(t *testing.T, federated bool, factor *mfa.Factor, age 
 	t.Helper()
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "0123456789abcdef0123456789abcdef", Issuer: "t", AccessTokenDuration: time.Minute, RefreshTokenDuration: time.Hour})
 	u, err := userdom.New("new@gmail.com", "New")
+	if federated {
+		// A social session belongs to a social-provider account.
+		u, err = userdom.NewOAuthUser("new@gmail.com", "New", "", userdom.AuthProviderGoogle)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,9 +280,46 @@ func TestSessionMFAChallenge(t *testing.T) {
 			t.Fatalf("purpose = %q", info.Purpose)
 		}
 	})
-	t.Run("a federated session is refused and no challenge is issued", func(t *testing.T) {
+	t.Run("a session from an organization's own IdP is refused and no challenge is issued", func(t *testing.T) {
 		s, mr, rt := challengeFixture(t, true, nil)
+		s.sessionRepo.(*mfaInvSessionRepo).sess.SetIDPTenant(shared.NewID())
 		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrMFAFederatedSession) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(mr.challenges) != 0 {
+			t.Fatal("no challenge may be issued")
+		}
+	})
+	// The in-place step is named by the account's provider kind, not by "no
+	// issuing organization": a federated session recorded without one (before
+	// migration 000269) of a non-social account is refused, no challenge.
+	t.Run("a federated session with no issuing organization of a non-social account is refused", func(t *testing.T) {
+		s, mr, rt := challengeFixture(t, true, nil)
+		plain, err := userdom.New("plain@example.com", "Plain")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.userRepo = &mfaInvUserRepo{u: plain}
+		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrMFAFederatedSession) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(mr.challenges) != 0 {
+			t.Fatal("no challenge may be issued")
+		}
+	})
+	// A social sign-in (federated, no issuing organization) is a first factor:
+	// the person enrolls our second step in place, so an invitation into an
+	// organization that requires 2FA never strands them.
+	t.Run("a fresh social session gets an enrollment challenge", func(t *testing.T) {
+		s, mr, rt := challengeFixture(t, true, nil)
+		info, err := s.SessionMFAChallenge(context.Background(), rt, "", "")
+		if err != nil || info.Purpose != mfa.PurposeEnroll || len(mr.challenges) != 1 {
+			t.Fatalf("info=%+v err=%v challenges=%d", info, err, len(mr.challenges))
+		}
+	})
+	t.Run("an old social session cannot start enrollment either", func(t *testing.T) {
+		s, mr, rt := challengeFixtureAged(t, true, nil, sessionEnrollFreshness+time.Minute)
+		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrReauthRequired) {
 			t.Fatalf("err = %v", err)
 		}
 		if len(mr.challenges) != 0 {
