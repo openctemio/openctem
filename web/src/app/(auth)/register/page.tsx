@@ -1,4 +1,3 @@
-import { Suspense } from 'react'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { env } from '@/lib/env'
@@ -30,11 +29,12 @@ export default async function SignUp() {
 
   // The gate shows the form only when open registration is on or the visitor
   // came from an invitation; otherwise "accounts are created by your admin".
+  // No Suspense boundary around it: the page is dynamic (it reads cookies), so
+  // the card is in the first HTML with the rest of the page, as on /login; a
+  // boundary let the footer paint alone, before the card, on a slow stream.
   return (
     <AuthProvidersFallback providers={providers}>
-      <Suspense>
-        <RegisterGate termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
-      </Suspense>
+      <RegisterGate termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
     </AuthProvidersFallback>
   )
 }
