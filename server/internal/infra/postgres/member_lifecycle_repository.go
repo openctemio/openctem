@@ -360,9 +360,11 @@ func (r *MemberLifecycleRepository) Offboard(ctx context.Context, m *tenant.Memb
 // the first commits, then sees the first as no longer an active owner.
 func requireOtherOwner(ctx context.Context, tx *sql.Tx, tid, uid string) error {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT user_id::text FROM tenant_members
-		WHERE tenant_id = $1 AND role = 'owner' AND status = 'active'
-		ORDER BY user_id FOR UPDATE`, tid)
+		SELECT m.user_id::text FROM tenant_members m
+		WHERE m.tenant_id = $1 AND m.status = 'active'
+		  AND m.user_id IN (SELECT ver.user_id FROM v_user_effective_role ver
+		                    WHERE ver.tenant_id = $1 AND ver.role = 'owner')
+		ORDER BY m.user_id FOR UPDATE OF m`, tid)
 	if err != nil {
 		return fmt.Errorf("lock owners: %w", err)
 	}
