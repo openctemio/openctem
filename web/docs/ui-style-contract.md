@@ -164,7 +164,9 @@ A table that scrolls sideways freezes its identifying columns at the start: the 
 columns marked `pin: 'start'` (else the first data column), within 45 % of the table's frame; a frozen
 column without a fixed width keeps its floor and is capped at 420 px. The header cells freeze with the
 body cells. A soft edge shows after the frozen group only while content is hidden under it. The row
-actions column scrolls with the table as its last column (`pinActions` freezes it, off by default).
+actions column scrolls with the table as its last column (`pinActions` freezes it, off by default). A
+frozen actions column is as wide as its widest action on the page (one line), never wider than its
+declared width, and has no box while no row of the page has an action.
 
 Before a table scrolls sideways its columns give way: a column with a range (`minWidth` below its
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a

@@ -470,6 +470,9 @@ const PINNED_START_EDGE_CLASS =
 const PINNED_END_EDGE_CLASS =
   "before:pointer-events-none before:absolute before:inset-y-0 before:-start-3 before:w-3 before:bg-gradient-to-l before:from-foreground/10 before:to-transparent before:opacity-0 before:transition-opacity before:content-[''] rtl:before:bg-gradient-to-r group-data-[hidden-end=true]/table:before:opacity-100"
 
+/** The pinned actions column while no row has an action: no box, no edge. */
+const ACTIONS_COLLAPSED_CLASS = 'overflow-hidden border-0 p-0'
+
 /** Columns the automatic phone card treats as controls rather than fields. */
 const CONTROL_COLUMN_IDS = new Set(['select', 'actions'])
 /** Fields shown under the title on an automatic phone card. */
@@ -766,6 +769,9 @@ export function DataTable<TData, TValue>({
   // the pinned columns — drives the edge shadows.
   const tableWrapRef = React.useRef<HTMLDivElement>(null)
   const [hiddenEdges, setHiddenEdges] = React.useState({ start: false, end: false })
+  // No row of the page has an action (cells render nothing): the pinned
+  // actions column collapses instead of covering the column before it.
+  const [actionsEmpty, setActionsEmpty] = React.useState(false)
   // Mode A (`clip`): the table fits, the page scrolls, the header sticks under
   // the app header. Mode B (`scroll`): the table is wider than its frame (the
   // viewer turned on many columns), the frame scrolls on both axes and the
@@ -1003,7 +1009,10 @@ export function DataTable<TData, TValue>({
       : {}
     if (columnId === 'actions' && actionsPinned) {
       return {
-        className: cn(PINNED_CELL_CLASS, PINNED_END_EDGE_CLASS),
+        // While no row has an action the pinned column has no box at all.
+        className: actionsEmpty
+          ? cn(PINNED_CELL_CLASS, ACTIONS_COLLAPSED_CLASS)
+          : cn(PINNED_CELL_CLASS, PINNED_END_EDGE_CLASS, 'whitespace-nowrap'),
         style: { insetInlineEnd: 0 },
       }
     }
@@ -1038,6 +1047,18 @@ export function DataTable<TData, TValue>({
       ?.primary
     return primary ? { ...props, className: cn(props.className, NAME_COLUMN_FLOOR) } : props
   }
+
+  // After every render: does any row of the page draw an action? (A page's
+  // actions cell returns nothing for a row that has none.)
+  React.useLayoutEffect(() => {
+    if (!actionsPinned) return
+    const cells = tableWrapRef.current?.querySelectorAll('tbody td[data-pinned-actions]')
+    const empty =
+      !!cells &&
+      cells.length > 0 &&
+      Array.from(cells).every((td) => td.childElementCount === 0 && !td.textContent?.trim())
+    setActionsEmpty((prev) => (prev === empty ? prev : empty))
+  })
 
   // Re-measure when the rows, visible columns or container size change.
   React.useEffect(() => {
@@ -1176,11 +1197,22 @@ export function DataTable<TData, TValue>({
     const pin = pinnedProps(columnId)
     const layout = layoutOf(columnId)
     const narrowed = fitted.get(columnId)
-    const style =
+    const declared =
       narrowed !== undefined
         ? { ...layout.style, width: narrowed, maxWidth: narrowed }
         : layout.style
+    // The pinned actions column is as wide as its widest real content (one
+    // line, `whitespace-nowrap`), never wider than the declared width: a
+    // width of 1px in the automatic table layout grows to the widest cell, so
+    // rows without actions add nothing.
+    const style =
+      columnId === 'actions' && actionsPinned
+        ? actionsEmpty
+          ? { width: 0, minWidth: 0, maxWidth: 0 }
+          : { width: 1, maxWidth: declared?.maxWidth ?? declared?.width }
+        : declared
     return {
+      'data-pinned-actions': columnId === 'actions' && actionsPinned ? '' : undefined,
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
