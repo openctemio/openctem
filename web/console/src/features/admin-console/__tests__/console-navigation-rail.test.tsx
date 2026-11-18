@@ -87,7 +87,7 @@ describe('actingRoleLabel', () => {
         elevated_as: 'platform_owner',
         permissions: owner.max_permissions,
       })
-    ).toEqual({ key: 'admin.platformRole.platform_owner', fallback: 'platform_owner' })
+    ).toEqual({ key: 'admin.platformRole.platform_owner', fallback: 'Platform owner' })
   })
 
   it('says read-only while an elevation would add something', () => {

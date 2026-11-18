@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Plus, Waypoints } from 'lucide-react'
@@ -21,7 +22,7 @@ import {
 import { ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
+import { AssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
 import {
   deleteTargetMapping,
   updateTargetMapping,
@@ -59,7 +60,7 @@ export default function TargetMappingsPage() {
   const text = useTargetTypeText()
   const types = useTargetMappingTypes().data
   const pairLabel = (m: TargetMapping) =>
-    `${text.label(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
+    `${text.label(m.target_type)} → ${text.asset(m.asset_type)}`
   // The API is the authority (every change needs a super admin, a step-up and
   // a reason); this only decides which controls to show.
   const canWrite = adminHas(me, 'platform.content.manage')
@@ -126,9 +127,9 @@ export default function TargetMappingsPage() {
     text.label
   )
   const assetFilterOptions = withStoredValues(
-    (types?.asset_types ?? []).map((v) => ({ value: v, label: getAssetTypeLabel(v) })),
+    (types?.asset_types ?? []).map((v) => ({ value: v, label: text.asset(v) })),
     s?.by_asset_type,
-    getAssetTypeLabel
+    text.asset
   )
   const metrics: MetricStripItem[] = [
     {
@@ -204,7 +205,7 @@ export default function TargetMappingsPage() {
               type={row.original.asset_type}
               className="size-4 shrink-0 text-muted-foreground"
             />
-            <span className="truncate">{getAssetTypeLabel(row.original.asset_type)}</span>
+            <span className="truncate">{text.asset(row.original.asset_type)}</span>
           </span>
         ),
       },
@@ -264,7 +265,9 @@ export default function TargetMappingsPage() {
               {row.original.description}
             </span>
           ) : (
-            <span className="text-muted-foreground">-</span>
+            <EmptyCell
+              title={t('admin.scanningTargetMappingsPage.noDescription', 'No description')}
+            />
           ),
       },
       {
@@ -294,7 +297,7 @@ export default function TargetMappingsPage() {
                 'admin.scanningTargetMappingsPage.rowActions',
                 'Actions for the mapping {pair}',
                 {
-                  pair: `${text.label(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`,
+                  pair: `${text.label(m.target_type)} → ${text.asset(m.asset_type)}`,
                 }
               )}
               actions={[
@@ -486,7 +489,7 @@ export default function TargetMappingsPage() {
                 ? t(
                     'confirm.targetMapping.deleteDesc',
                     'Scanners that only reach {type} assets through it will skip them, in every organization. To pause it instead, deactivate it.',
-                    { type: getAssetTypeLabel(pending.mapping.asset_type) }
+                    { type: text.asset(pending.mapping.asset_type) }
                   )
                 : pending.mapping.is_active
                   ? t(

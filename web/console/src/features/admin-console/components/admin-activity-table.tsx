@@ -6,14 +6,9 @@ import { Badge } from '@/components/ui/badge'
 import { History } from 'lucide-react'
 import { DataTable, EmptyState, RelativeTime, type FilterPanelToggleProps } from '@/features/shared'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { humanizeIdentifier } from '@/lib/humanize-identifier'
+import { EmptyCell } from '@/features/assets/components/service-cells'
+import { auditActionLabel } from '../lib/audit-action-label'
 import type { AdminAuditEntry } from '../types'
-
-/** "organization.idp_create" -> "Identity provider create". */
-export function humanizeAction(action: string): string {
-  const [area, verb] = action.split('.')
-  return humanizeIdentifier(verb ?? area)
-}
 
 function useColumns(): ColumnDef<AdminAuditEntry>[] {
   const { t } = useTranslation()
@@ -31,7 +26,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       },
       cell: ({ row }) => (
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 font-medium">{humanizeAction(row.original.action)}</span>
+          <span className="shrink-0 font-medium">{auditActionLabel(t, row.original.action)}</span>
           <span
             className="truncate font-mono text-code text-muted-foreground"
             title={row.original.action}
@@ -81,9 +76,12 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
         hideBelow: 900,
         label: t('admin.adminActivityTable.ipAddress', 'IP address'),
       },
-      cell: ({ row }) => (
-        <span className="block truncate tabular-nums">{row.original.ip_address || '-'}</span>
-      ),
+      cell: ({ row }) =>
+        row.original.ip_address ? (
+          <span className="block truncate tabular-nums">{row.original.ip_address}</span>
+        ) : (
+          <EmptyCell title={t('admin.adminActivityTable.noIp', 'No address recorded')} />
+        ),
     },
     {
       accessorKey: 'created_at',
