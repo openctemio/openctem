@@ -152,6 +152,7 @@
   "common.listView.modified": "Modified",
   "common.listView.reset": "Reset",
   "common.listView.save": "Save view",
+  "common.loadFailedPlain": "Something went wrong while loading. Try again; if it keeps failing, report the problem.",
   "common.loading": "Loading…",
   "common.markdownEditor.bold": "Bold",
   "common.markdownEditor.bulletList": "Bulleted list",
