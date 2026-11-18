@@ -1,7 +1,7 @@
 /**
  * Platform sensors > Enroll a sensor (RFC-100 §7): a title-row action opens
- * the form dialog; a super admin issues a single-use shared sensor enrollment
- * token with a reason and an authenticator code; the token is shown once;
+ * one dialog; a super admin issues a single-use shared sensor enrollment
+ * token with a reason and an authenticator code asked in that dialog; the token is shown once;
  * anyone else cannot issue one.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -38,9 +38,9 @@ describe('SharedSensorEnroll', () => {
     render(<SharedSensorEnroll canEdit onIssue={onIssue} />)
     await user.click(screen.getByRole('button', { name: 'Enroll a sensor' }))
     await user.type(await screen.findByLabelText(/Sensor name \(optional\)/), 'central-01')
-    await user.click(screen.getByRole('button', { name: 'Issue token' }))
-    expect(await screen.findByText('Issue a shared sensor enrollment token?')).toBeInTheDocument()
-    const confirm = screen.getAllByRole('button', { name: 'Issue token' }).at(-1)!
+    // The reason and the code are in the same dialog: one step, no stacked confirm.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    const confirm = screen.getByRole('button', { name: 'Issue token' })
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'central scanner')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
@@ -70,21 +70,22 @@ describe('SharedSensorEnroll', () => {
     const user = userEvent.setup()
     render(<SharedSensorEnroll canEdit onIssue={onIssue} />)
     await user.click(screen.getByRole('button', { name: 'Enroll a sensor' }))
-    await user.click(await screen.findByRole('button', { name: 'Issue token' }))
     await user.type(await screen.findByLabelText('Reason'), 'central scanner')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '111111')
-    await user.click(screen.getAllByRole('button', { name: 'Issue token' }).at(-1)!)
+    await user.click(screen.getByRole('button', { name: 'Issue token' }))
     expect(await screen.findByText('Wrong code')).toBeInTheDocument()
     expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('')
   })
 
-  it('refuses a lifetime over an hour before asking for a code', async () => {
+  it('refuses a lifetime over an hour', async () => {
     const user = userEvent.setup()
     render(<SharedSensorEnroll canEdit onIssue={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: 'Enroll a sensor' }))
     const ttl = await screen.findByLabelText(/Valid for \(minutes, 5 to 60\)/)
     await user.clear(ttl)
     await user.type(ttl, '90')
+    await user.type(screen.getByLabelText('Reason'), 'central scanner')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     expect(screen.getByRole('button', { name: 'Issue token' })).toBeDisabled()
   })
 })
