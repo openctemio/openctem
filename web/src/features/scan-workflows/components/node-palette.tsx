@@ -315,7 +315,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                       const isAvailable = toolWithConfig.is_available === true
                       const avail = availability.get(tool.name)
                       const unavailableReason =
-                        toolUnavailableReason(avail) ?? t('workflowStages.palette.noOnlineSensor')
+                        toolUnavailableReason(avail, t) ??
+                        t('workflowStages.palette.noOnlineSensor')
                       const logoSrc = safeImageSrc(tool.logo_url)
 
                       return (
