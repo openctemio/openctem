@@ -24,7 +24,6 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '@/lib/utils'
-import { EntryDivider } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -36,7 +35,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
-import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
+import { SocialProviderButtons } from './social-provider-buttons'
 
 // Import schema and server actions
 import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
@@ -76,20 +75,6 @@ interface RegisterFormProps extends React.HTMLAttributes<HTMLFormElement> {
 }
 
 // ============================================
-// SOCIAL PROVIDERS CONFIG
-// ============================================
-
-const socialProviders: {
-  id: SocialProvider
-  name: string
-  icon: React.ComponentType<{ className?: string }>
-}[] = [
-  { id: 'google', name: 'Google', icon: IconGoogle },
-  { id: 'github', name: 'GitHub', icon: IconGithub },
-  { id: 'microsoft', name: 'Microsoft', icon: IconMicrosoft },
-]
-
-// ============================================
 // COMPONENT
 // ============================================
 
@@ -105,19 +90,13 @@ export function RegisterForm({
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Only render buttons that lead somewhere. This form mapped over
-  // socialProviders unconditionally, so all three rendered on every
-  // deployment — including the ones with no OAuth credentials, where the
-  // button dead-ends. LoginForm has always asked the API which providers are
-  // live; this is the same question, asked here too.
-  const { data: authProviders } = useAuthProviders()
+  // Only buttons that lead somewhere: the API says which providers are live
+  // (SocialProviderButtons keeps their place while it answers).
+  const { data: authProviders, error: authProvidersError } = useAuthProviders()
   const passwordPolicy = authProviders?.password_policy
   const captchaSiteKey = authProviders?.captcha_site_key ?? ''
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
-  const enabledSocialProviders = authProviders
-    ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
-    : []
 
   // Error code from an OAuth callback. Only a known code's message is shown,
   // never the raw parameter, and once per value (this ran on every render).
@@ -245,30 +224,17 @@ export function RegisterForm({
         className={cn('flex flex-col gap-3.5', className)}
         {...props}
       >
-        {/* Social Login Section - Show First for Better UX */}
-        {showSocialLogin && enabledSocialProviders.length > 0 && (
-          <>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
-              {enabledSocialProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin(provider.id)}
-                >
-                  {loadingProvider === provider.id ? (
-                    <Loader2 aria-hidden className="size-4 animate-spin" />
-                  ) : (
-                    <provider.icon className="size-4" />
-                  )}
-                  <span>{provider.name}</span>
-                </Button>
-              ))}
-            </div>
-
-            <EntryDivider>{t('auth.register.orWithEmail', 'Or register with email')}</EntryDivider>
-          </>
+        {/* Social sign-up first; the block keeps its place while it loads. */}
+        {showSocialLogin && (
+          <SocialProviderButtons
+            providers={authProviders}
+            failed={!!authProvidersError}
+            divider={t('auth.register.orWithEmail', 'Or register with email')}
+            dividerAfter
+            disabled={isLoading}
+            loadingProvider={loadingProvider}
+            onSelect={handleSocialLogin}
+          />
         )}
 
         {/* Name Fields */}

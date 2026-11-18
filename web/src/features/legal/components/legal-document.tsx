@@ -24,6 +24,7 @@ export function LegalDocument({
   effective,
   sections,
   contactLine,
+  languageNote,
   labels,
 }: {
   title: string
@@ -32,6 +33,8 @@ export function LegalDocument({
   sections: LegalSection[]
   /** "Contact: ... Documentation: ...", translated. */
   contactLine: string
+  /** Shown under the date when the reader's language is not the text's (English). */
+  languageNote?: string
   labels: StaticPageLabels
 }) {
   const toc = staticToc(
@@ -44,7 +47,13 @@ export function LegalDocument({
       documents={LEGAL_DOCS.map((d) => ({ label: d.title, href: d.path }))}
       toc={toc}
     >
-      <StaticArticle title={title} meta={effective} footer={<p>{contactLine}</p>}>
+      <StaticArticle
+        title={title}
+        meta={effective}
+        note={languageNote}
+        contents={{ toc, label: labels.onThisPage, print: labels.print }}
+        footer={<p>{contactLine}</p>}
+      >
         {sections.map((s, i) => (
           <StaticSection key={s.heading} id={toc[i].id} heading={s.heading}>
             {s.body}

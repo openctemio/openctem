@@ -68,11 +68,13 @@ describe('RegisterForm social buttons', () => {
     mockUseAuthProviders.mockReturnValue({
       data: undefined,
     } as unknown as ReturnType<typeof useAuthProviders>)
-    render(<RegisterForm />)
+    const { container } = render(<RegisterForm />)
 
     expect(socialButtonNames(), 'buttons must not flash in before we know which ones work').toEqual(
       []
     )
+    // Their place is held (a skeleton of the grid), so the form below does not move.
+    expect(container.querySelector('[data-slot="social-providers-pending"]')).not.toBeNull()
   })
 
   // The API contract says `social` is always present, but a proxy error page or

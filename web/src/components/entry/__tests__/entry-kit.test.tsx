@@ -34,7 +34,11 @@ describe('EntryFrame', () => {
     expect(privacy).toHaveAttribute('href', 'https://example.com/privacy')
     expect(privacy).toHaveAttribute('target', '_blank')
     expect(privacy.getAttribute('rel')).toContain('noopener')
-    expect(within(footer).getByRole('button', { name: 'Language' })).toBeInTheDocument()
+    // One footer line, one text size: Language is drawn as one more footer
+    // link (it inherits the footer's size), not a kit button of its own size.
+    const language = within(footer).getByRole('button', { name: 'Language' })
+    expect(language).not.toHaveAttribute('data-slot', 'button')
+    expect(language.className).not.toMatch(/(^| )text-(xs|sm|base|dense|body|cap)( |$)/)
   })
 
   it('shows no legal link that is not configured', () => {

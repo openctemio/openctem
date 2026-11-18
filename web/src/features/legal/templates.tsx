@@ -1,4 +1,5 @@
 import type { LegalDoc, LegalValues } from '@/lib/legal'
+import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
 import type { LegalSection } from './components/legal-document'
 
 /**
@@ -10,6 +11,13 @@ import type { LegalSection } from './components/legal-document'
  */
 
 const P = ({ children }: { children: React.ReactNode }) => <p>{children}</p>
+
+/** A reference to another legal page: a link named by that page's title. */
+const Ref = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <TextLink href={href} variant="inline">
+    {children}
+  </TextLink>
+)
 
 function terms(v: LegalValues): LegalSection[] {
   return [
@@ -37,9 +45,10 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Acceptable use',
       body: (
         <P>
-          Your use of the service must follow the Acceptable Use Policy (/acceptable-use). In short:
-          scan, test or monitor only what you own or are authorized to assess. We may suspend
-          accounts or organizations that break it.
+          Your use of the service must follow the{' '}
+          <Ref href="/acceptable-use">Acceptable Use Policy</Ref>. In short: scan, test or monitor
+          only what you own or are authorized to assess. We may suspend accounts or organizations
+          that break it.
         </P>
       ),
     },
@@ -58,8 +67,9 @@ function terms(v: LegalValues): LegalSection[] {
       body: (
         <P>
           You keep ownership of the data you bring. We process it to provide the service, as
-          described in the Privacy Policy (/privacy) and, for organizations, the Data Processing
-          Addendum (/dpa). You can export your data and ask for its deletion.
+          described in the <Ref href="/privacy">Privacy Policy</Ref> and, for organizations, the{' '}
+          <Ref href="/dpa">Data Processing Addendum</Ref>. You can export your data and ask for its
+          deletion.
         </P>
       ),
     },
@@ -128,8 +138,11 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       heading: 'Reporting a vulnerability',
       body: (
         <P>
-          Found a security issue in {v.service}? Write to {v.securityEmail}
-          (/.well-known/security.txt). Give us reasonable time to fix it before disclosing it.
+          Found a security issue in {v.service}? Write to {v.securityEmail}(
+          <a href="/.well-known/security.txt" className={TEXT_LINK_CLASS.inline}>
+            security.txt
+          </a>
+          ). Give us reasonable time to fix it before disclosing it.
         </P>
       ),
     },
@@ -153,7 +166,7 @@ function privacy(v: LegalValues): LegalSection[] {
         <P>
           {v.organization}, {v.address}, is responsible for the personal data processed to run{' '}
           {v.service}. Contact: {v.contactEmail}. For the data organizations bring to the service we
-          act as their processor under the Data Processing Addendum (/dpa).
+          act as their processor under the <Ref href="/dpa">Data Processing Addendum</Ref>.
         </P>
       ),
     },
@@ -187,7 +200,8 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           Data stays within your organization. We share it only with the subprocessors that host and
-          operate the service for us (/subprocessors), under contract, or when the law requires it.
+          operate the service for us (<Ref href="/subprocessors">Subprocessors</Ref>), under
+          contract, or when the law requires it.
         </P>
       ),
     },
@@ -224,8 +238,9 @@ function dpa(v: LegalValues): LegalSection[] {
       body: (
         <P>
           This addendum is between the customer organization (the controller) and {v.organization},{' '}
-          {v.address} (the processor), and forms part of the Terms of Service (/terms). It covers
-          the personal data the customer brings to {v.service}.
+          {v.address} (the processor), and forms part of the{' '}
+          <Ref href="/terms">Terms of Service</Ref>. It covers the personal data the customer brings
+          to {v.service}.
         </P>
       ),
     },
