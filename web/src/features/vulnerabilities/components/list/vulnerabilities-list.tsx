@@ -1152,7 +1152,7 @@ function VulnerabilitiesListBody() {
             </span>
           }
         />
-        <MetricStrip items={strip} loading={!data && !error} className="max-md:order-last" />
+        <MetricStrip items={strip} loading={!data && !error} listFirst />
         {titleRow}
         {noAccess ? (
           <NoAccessState title={t('vulnPage.list.subject', 'the vulnerabilities list')} />

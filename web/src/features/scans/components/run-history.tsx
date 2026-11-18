@@ -38,7 +38,9 @@ export function RunHistory({
   }
   const summary = summarizeRuns(list)
   const lines = breakdown(summary, t)
-  const rateText = summary.rate === null ? '-' : `${summary.rate}%`
+  // Fewer runs than the rate needs: no rate at all (not a "-" placeholder);
+  // the tooltip says how many runs it takes.
+  const rateText = summary.rate === null ? null : `${summary.rate}%`
   const label = [
     t('scans.history.title', undefined, { count: list.length }),
     ...lines,
@@ -72,15 +74,11 @@ export function RunHistory({
               )
             })}
           </span>
-          <span
-            className={cn(
-              'shrink-0 text-meta tabular-nums',
-              summary.rate === null ? 'text-muted-foreground' : 'text-foreground'
-            )}
-            aria-hidden
-          >
-            {rateText}
-          </span>
+          {rateText !== null && (
+            <span className="shrink-0 text-meta tabular-nums text-foreground" aria-hidden>
+              {rateText}
+            </span>
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs text-meta">
