@@ -50,7 +50,7 @@ func TestParseConsoleCIDR(t *testing.T) {
 		"gitlab.example.com":  ErrRangeNotCIDR,
 	} {
 		_, err := ParseConsoleCIDR(raw)
-		if !errors.Is(err, want) && !(want == nil && err == nil) {
+		if !errors.Is(err, want) && (want != nil || err != nil) {
 			t.Errorf("ParseConsoleCIDR(%q) = %v, want %v", raw, err, want)
 		}
 	}
@@ -96,10 +96,10 @@ func TestCheckRangeNote(t *testing.T) {
 		strings.Repeat("a", 100): nil,
 		strings.Repeat("a", 101): ErrRangeNoteTooLong,
 		"two\nlines":             ErrRangeNoteNotPlain,
-		"bidi ‮ override":        ErrRangeNoteNotPlain,
+		"bidi \u202e override":   ErrRangeNoteNotPlain,
 		"tab\there":              ErrRangeNoteNotPlain,
 	} {
-		if err := CheckRangeNote(note); !errors.Is(err, want) && !(want == nil && err == nil) {
+		if err := CheckRangeNote(note); !errors.Is(err, want) && (want != nil || err != nil) {
 			t.Errorf("CheckRangeNote(%q) = %v, want %v", note, err, want)
 		}
 	}
