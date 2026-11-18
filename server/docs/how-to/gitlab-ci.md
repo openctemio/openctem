@@ -138,8 +138,11 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   `https://gitlab.example.com`). It must match the `iss` claim exactly.
 - By default OpenCTEM fetches your GitLab's signing keys over HTTPS through
   its outbound-request guard. A GitLab on a private address needs its subnet
-  in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
-  `10.20.0.0/16`), and its certificate must be trusted by the API (a public
+  opened: a platform administrator adds it under console System > Private
+  networks (for example `10.20.0.0/24`, note "GitLab"; applied without a
+  restart), or the operator sets `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the
+  API. "Test a destination" on that page resolves the GitLab host name and
+  says which range would open each address. Its certificate must be trusted by the API (a public
   CA, or your CA added to the API container).
 - When the platform cannot or must not reach your GitLab, choose **Use keys I
   paste** under **Signing keys** in the trust: open
