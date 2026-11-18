@@ -66,8 +66,8 @@ export function TriageHeaderActions({
 /**
  * Where the person is: the queue's name, the position in it, what this
  * session decided, and a progress bar. One line on a desktop; on a phone the
- * session's counts take a line of their own from the first paint, so nothing
- * below moves when the numbers arrive.
+ * session's counts are in the bottom bar (`TriagePhoneBar`), hidden here by CSS
+ * from the first paint, so nothing below moves.
  */
 export function TriageStatusLine({
   queueLabel,
@@ -105,10 +105,8 @@ export function TriageStatusLine({
                   })}
           </span>
         </p>
-        <p
-          className="basis-full text-muted-foreground tabular-nums sm:basis-auto"
-          data-testid="triage-counts"
-        >
+        {/* A phone shows the counts once, in the bar at the bottom of the screen. */}
+        <p className="text-muted-foreground tabular-nums max-md:hidden" data-testid="triage-counts">
           {progress
             ? t(
                 'findings.triageMode.counts',

@@ -599,4 +599,32 @@ describe('TriageMode decisions, part 2', () => {
       screen.getAllByRole('button').filter((b) => b.getAttribute('data-variant') === 'default')
     ).toHaveLength(0)
   })
+
+  it('a phone has Confirm and the counts in one bar at the bottom: one Confirm, the rest after the finding', async () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      seed(3)
+      await ready()
+      const bar = screen.getByRole('region', { name: 'Confirm and session summary' })
+      const confirm = within(bar).getByRole('button', { name: /^Confirm/ })
+      expect(confirm).toHaveAttribute('data-variant', 'default')
+      expect(screen.getAllByRole('button', { name: /^Confirm/ })).toHaveLength(1)
+      const region = screen.getByRole('region', { name: 'Decision' })
+      expect(within(region).queryByRole('button', { name: /^Confirm/ })).toBeNull()
+      expect(within(region).getByRole('button', { name: /^Skip/ })).toBeEnabled()
+      // The item first, its decision panel next, the bar last.
+      const finding = screen.getByRole('article')
+      expect(
+        finding.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+      expect(region.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      fireEvent.click(confirm)
+      await screen.findByRole('heading', { name: 'Finding 2' })
+      expect(writeFindingStatus).toHaveBeenCalledWith(id(1), { status: 'confirmed' }, 1)
+      expect(within(bar).getByTestId('triage-bar-counts')).toHaveTextContent('1 decided')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    }
+  })
 })

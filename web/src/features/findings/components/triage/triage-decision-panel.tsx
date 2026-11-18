@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import type { TriageAction } from '../../lib/triage-keys'
+import type { TriageProgress } from '../../lib/triage-session'
 import { Kbd } from './kbd'
 
 export interface TriageDecisionState {
@@ -33,6 +34,7 @@ function ActionButton({
   disabled,
   primary,
   busy,
+  className,
 }: {
   action: TriageAction
   keyLabel: string
@@ -42,6 +44,7 @@ function ActionButton({
   disabled?: boolean
   primary?: boolean
   busy?: boolean
+  className?: string
 }) {
   return (
     <Button
@@ -52,7 +55,8 @@ function ActionButton({
       aria-keyshortcuts={keyLabel === 'Esc' ? 'Escape' : keyLabel}
       data-triage-action={action}
       className={cn(
-        'h-auto min-h-control justify-start gap-2 py-1.5 text-start max-md:h-auto max-md:min-h-control-touch'
+        'h-auto min-h-control justify-start gap-2 py-1.5 text-start max-md:h-auto max-md:min-h-control-touch',
+        className
       )}
     >
       {busy ? (
@@ -77,6 +81,72 @@ function ActionButton({
   )
 }
 
+function ConfirmButton({
+  state,
+  onAction,
+  className,
+}: {
+  state: TriageDecisionState
+  onAction: (a: TriageAction) => void
+  className?: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <ActionButton
+      action="confirm"
+      keyLabel="c"
+      label={t('findings.triageMode.action.confirm', 'Confirm')}
+      hint={t('findings.triageMode.action.confirmHint', 'A real issue to fix')}
+      onAction={onAction}
+      disabled={!!state.lockedReason || !state.canConfirm || state.busy}
+      busy={state.busy}
+      primary
+      className={className}
+    />
+  )
+}
+
+/**
+ * A phone's bottom bar: what this session decided and Confirm, the one main
+ * action, always on screen without scrolling. It sticks to the bottom of the
+ * screen and ends the page, so it never covers the last of the queue. The
+ * rest of the decision panel follows the finding.
+ */
+export function TriagePhoneBar({
+  state,
+  progress,
+  onAction,
+}: {
+  state: TriageDecisionState
+  progress: TriageProgress | null
+  onAction: (a: TriageAction) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div
+      role="region"
+      aria-label={t('findings.triageMode.phoneBar', 'Confirm and session summary')}
+      data-testid="triage-phone-bar"
+      className="sticky bottom-0 z-20 -mx-4 space-y-2 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    >
+      <p className="text-cap text-muted-foreground tabular-nums" data-testid="triage-bar-counts">
+        {progress
+          ? t(
+              'findings.triageMode.counts',
+              '{decided} decided, {sent} sent for approval, {skipped} skipped',
+              {
+                decided: progress.decided,
+                sent: progress.sentForApproval,
+                skipped: progress.skipped,
+              }
+            )
+          : '…'}
+      </p>
+      <ConfirmButton state={state} onAction={onAction} className="w-full" />
+    </div>
+  )
+}
+
 /**
  * The decision panel: one key per action, each a visible labelled button,
  * then Previous / Next. Decisions use the finding page's endpoints and
@@ -88,12 +158,15 @@ export function TriageDecisionPanel({
   state,
   onAction,
   assignControl,
+  confirmInBar = false,
   className,
 }: {
   state: TriageDecisionState
   onAction: (a: TriageAction) => void
   /** The assignee picker (opened by `o`). */
   assignControl: ReactNode
+  /** A phone: Confirm is in the bar at the bottom of the screen, not in this panel. */
+  confirmInBar?: boolean
   className?: string
 }) {
   const { t } = useTranslation()
@@ -114,16 +187,7 @@ export function TriageDecisionPanel({
         </p>
       )}
       <div className="grid gap-2">
-        <ActionButton
-          action="confirm"
-          keyLabel="c"
-          label={t('findings.triageMode.action.confirm', 'Confirm')}
-          hint={t('findings.triageMode.action.confirmHint', 'A real issue to fix')}
-          onAction={onAction}
-          disabled={locked || !state.canConfirm || state.busy}
-          busy={state.busy}
-          primary
-        />
+        {!confirmInBar && <ConfirmButton state={state} onAction={onAction} />}
         <ActionButton
           action="falsePositive"
           keyLabel="f"

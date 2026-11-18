@@ -2237,6 +2237,7 @@
   "findings.triageMode.outcome.retest": "Retest requested",
   "findings.triageMode.outcome.skipped": "Skipped",
   "findings.triageMode.outcome.tasked": "Added to a task",
+  "findings.triageMode.phoneBar": "Confirm and session summary",
   "findings.triageMode.policyNote": "Decisions use the same checks as the finding page: your permissions, your data scope, approvals and re-authentication. Re-authentication is asked once per window, not per finding.",
   "findings.triageMode.position": "{position} of {total}",
   "findings.triageMode.positionDone": "{total} in the queue",

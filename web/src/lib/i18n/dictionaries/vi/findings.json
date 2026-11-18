@@ -2237,6 +2237,7 @@
   "findings.triageMode.outcome.retest": "Đã yêu cầu kiểm tra lại",
   "findings.triageMode.outcome.skipped": "Đã bỏ qua",
   "findings.triageMode.outcome.tasked": "Đã thêm vào nhiệm vụ",
+  "findings.triageMode.phoneBar": "Xác nhận và tóm tắt phiên",
   "findings.triageMode.policyNote": "Các quyết định dùng cùng các kiểm tra như trang phát hiện: quyền của bạn, phạm vi dữ liệu, phê duyệt và xác thực lại. Xác thực lại chỉ được hỏi một lần cho mỗi khoảng thời gian, không phải cho từng phát hiện.",
   "findings.triageMode.position": "{position} / {total}",
   "findings.triageMode.positionDone": "{total} trong hàng đợi",

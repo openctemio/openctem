@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { useBreadcrumbTitle } from '@/components/layout/breadcrumb-title'
@@ -72,7 +73,7 @@ import { FINDING_STATUS_CONFIG, requiresApproval, type FindingStatus } from '../
 import { ApprovalDialog } from '../approval-dialog'
 import { AssigneeSelect, type AssigneeUser } from '../assignee-select'
 import { LifecycleMoveDialog, type LifecycleMoveInput } from '../lifecycle/lifecycle-move-dialog'
-import { TriageDecisionPanel } from './triage-decision-panel'
+import { TriageDecisionPanel, TriagePhoneBar } from './triage-decision-panel'
 import { TriageFindingSkeleton, TriageFindingView } from './triage-finding-view'
 import { TriageKeysDialog } from './triage-keys-dialog'
 import { OUTCOME_LABELS, TriageQueuePanel } from './triage-queue-panel'
@@ -612,6 +613,7 @@ export function TriageMode() {
         ? t('findings.quickView.needs_triage', 'Needs triage')
         : t('findings.triageMode.thisView', 'Selected view')
   const progress = session ? progressOf(session) : null
+  const isPhone = useIsMobile()
   const done = !!session && session.exhausted && session.index >= session.items.length
 
   // The queue could not be read and nothing is on screen: the error and its Retry only.
@@ -719,7 +721,8 @@ export function TriageMode() {
 
   // Three cards side by side when the content area is wide (1152 px); from
   // 672 px the finding and its decision side by side, the queue under them; on a phone
-  // the finding, then its decision, then the queue. Nothing is left out.
+  // the finding, then its decision, then the queue, with Confirm and the session's
+  // counts in a bar at the bottom of the screen. Nothing is left out.
   return (
     <Main>
       <PageStack>
@@ -772,6 +775,7 @@ export function TriageMode() {
             <TriageDecisionPanel
               state={decisionState}
               onAction={onAction}
+              confirmInBar={isPhone}
               assignControl={
                 <div ref={assignRef}>
                   <AssigneeSelect
@@ -795,6 +799,9 @@ export function TriageMode() {
             />
           )}
         </div>
+        {showPanel && isPhone && (
+          <TriagePhoneBar state={decisionState} progress={progress} onAction={onAction} />
+        )}
       </PageStack>
       {region}
 
