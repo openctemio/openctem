@@ -162,7 +162,7 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
       })
     )
     await page.goto('/findings')
-    await expect(page.getByRole('alert').filter({ hasText: /failed to load/i })).toBeVisible({
+    await expect(page.getByRole('alert').filter({ hasText: /couldn't load/i })).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByRole('button', { name: /retry/i })).toBeVisible()
@@ -236,7 +236,7 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
     // The rows and the pager stay; the failure is not an alert in their place.
     await expect(rows).toHaveCount(before)
     await expect(page.locator('[data-slot=data-table-pager]')).toBeVisible()
-    await expect(page.getByRole('alert').filter({ hasText: /failed to load/i })).toHaveCount(0)
+    await expect(page.getByRole('alert').filter({ hasText: /couldn't load/i })).toHaveCount(0)
     const refresh = stale.getByRole('button', { name: 'Refresh now' })
     expect(Math.round((await refresh.boundingBox())!.height)).toBe(32)
 
