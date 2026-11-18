@@ -100,7 +100,7 @@ export function AccountShell({
                 <Button asChild variant="outline">
                   <Link href="/">
                     <ArrowLeft aria-hidden />
-                    <span className="max-w-[16ch] truncate">
+                    <span className="max-w-[16ch] truncate sm:max-w-[32ch]">
                       {organizationName
                         ? t('account.area.backTo', 'Back to {name}', { name: organizationName })
                         : t('account.area.backToOrganization', 'Back to your organization')}
