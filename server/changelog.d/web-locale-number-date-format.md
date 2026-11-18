@@ -6,3 +6,4 @@
 - One set of format helpers (`web/src/lib/app-locale.ts`) serves code inside
   and outside components; a guard test refuses a raw `toLocaleString()`,
   `toLocaleDateString()`, `toLocaleTimeString()` or a hard-coded locale.
+- Docs: none (formatting of existing values; the user guides show no number or date format)
