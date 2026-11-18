@@ -82,11 +82,27 @@ describe('LoginForm social-button gating', () => {
     expect(screen.queryByText('Or continue with')).not.toBeInTheDocument()
   })
 
-  it('does not flash social buttons while providers are still loading', () => {
+  it('holds the place of the social block while providers load, with no button to press', () => {
     setAuthProviders(null) // data undefined => loading
-    render(<LoginForm />)
-    expect(screen.queryByText('Or continue with')).not.toBeInTheDocument()
+    const { container } = render(<LoginForm />)
+    // The divider and a skeleton of the button grid keep the card's height,
+    // so the footer does not jump when the answer arrives.
+    expect(screen.getByText('Or continue with')).toBeInTheDocument()
+    const pending = container.querySelector('[data-slot="social-providers-pending"]')
+    expect(pending).not.toBeNull()
+    expect(pending?.getAttribute('aria-hidden')).toBe('true')
+    expect(pending?.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3)
     expect(screen.queryByText('Google')).not.toBeInTheDocument()
+  })
+
+  it('shows nothing when the providers answer failed', () => {
+    mockUseAuthProviders.mockReturnValue({
+      data: undefined,
+      error: new Error('unavailable'),
+    } as ReturnType<typeof useAuthProviders>)
+    const { container } = render(<LoginForm />)
+    expect(screen.queryByText('Or continue with')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-slot="social-providers-pending"]')).toBeNull()
   })
 
   it('renders only the configured providers', () => {

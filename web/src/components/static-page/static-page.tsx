@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 
 import { BrandLogoFull } from '@/components/brand-logo'
 import Link from '@/components/link'
@@ -20,9 +21,18 @@ import { PrintButton } from './print-button'
  * - `StaticArticle`, `StaticSection` and `StaticLead` are the reading parts on
  *   their own, for a static page inside the app shell.
  *
+ * From 768 px the contents sit beside the text. On a phone the title comes
+ * first: the article draws the contents under its header as a folded list
+ * with 44 px rows (`StaticArticle` `contents`), and the side list is hidden.
+ * A page of one section has no contents (a one-entry list only repeats the
+ * heading under it).
+ *
  * Text is passed in by the caller (already translated), so the frame renders
  * on the server and in a client page alike.
  */
+
+/** Fewest sections for which a page lists its contents. */
+const MIN_TOC = 2
 
 export interface StaticPageLabels {
   /** The brand link and the button to the sign-in page. */
@@ -57,7 +67,7 @@ export function StaticPage({
   /** A `StaticArticle`. */
   children: ReactNode
 }) {
-  const hasToc = !!toc && toc.length > 0
+  const hasToc = !!toc && toc.length >= MIN_TOC
   return (
     <div
       data-control-scale="entry"
@@ -88,7 +98,7 @@ export function StaticPage({
           <nav
             aria-label={labels.onThisPage}
             data-slot="static-toc"
-            className="flex min-w-0 flex-[1_1_13.75rem] flex-col gap-1 text-dense md:max-w-65 md:sticky md:top-6 print:hidden"
+            className="hidden min-w-0 flex-[1_1_13.75rem] flex-col gap-1 text-dense md:sticky md:top-6 md:flex md:max-w-65 print:hidden"
           >
             <span className="text-cap text-muted-foreground">{labels.onThisPage}</span>
             <ol className="flex flex-col">
@@ -118,6 +128,8 @@ export function StaticPage({
 export function StaticArticle({
   title,
   meta,
+  note,
+  contents,
   footer,
   className,
   children,
@@ -125,6 +137,10 @@ export function StaticArticle({
   title: string
   /** One muted line under the title, e.g. the effective date. */
   meta?: ReactNode
+  /** A second muted line under the title (e.g. the language the text is published in). */
+  note?: ReactNode
+  /** The phone's contents under the title: the same list `StaticPage` shows beside the text. */
+  contents?: { toc: StaticTocItem[]; label: string; print: string }
   footer?: ReactNode
   className?: string
   children: ReactNode
@@ -134,7 +150,9 @@ export function StaticArticle({
       <header>
         <h1 className="text-page">{title}</h1>
         {meta && <p className="mt-1 text-dense text-muted-foreground">{meta}</p>}
+        {note && <p className="mt-1 text-dense text-muted-foreground">{note}</p>}
       </header>
+      {contents && contents.toc.length >= MIN_TOC && <StaticContents {...contents} />}
       {children}
       {footer && (
         <footer className="flex flex-col gap-1.5 border-t pt-3 text-cap text-muted-foreground">
@@ -142,6 +160,49 @@ export function StaticArticle({
         </footer>
       )}
     </article>
+  )
+}
+
+/** The contents on a phone: folded under the title, one 44 px row per section. */
+function StaticContents({
+  toc,
+  label,
+  print,
+}: {
+  toc: StaticTocItem[]
+  label: string
+  print: string
+}) {
+  return (
+    <details
+      data-slot="static-toc-phone"
+      className="group rounded-md border md:hidden print:hidden"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-body font-medium [&::-webkit-details-marker]:hidden">
+        {label}
+        <ChevronDown
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+          aria-hidden
+        />
+      </summary>
+      <nav aria-label={label} className="border-t">
+        <ol className="flex flex-col">
+          {toc.map((s) => (
+            <li key={s.id}>
+              <a
+                href={safeInternalHref(`#${s.id}`)}
+                className="flex min-h-11 items-center px-3 text-body text-signal-text underline-offset-3 hover:underline focus-visible:underline"
+              >
+                {s.heading}
+              </a>
+            </li>
+          ))}
+        </ol>
+        <div className="border-t p-3">
+          <PrintButton>{print}</PrintButton>
+        </div>
+      </nav>
+    </details>
   )
 }
 

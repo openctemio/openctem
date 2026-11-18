@@ -27,6 +27,7 @@ import {
 } from '@/features/auth/lib/invitation-token'
 import { registerHref } from '@/features/auth/lib/self-register'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { OrgAvatar } from '@/components/layout/org-avatar'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
 import { selectTenantAction } from '@/features/auth/actions/local-auth-actions'
@@ -557,16 +558,11 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   )
 }
 
-/** The invited organization: its initial, its name and an optional expiry chip. */
+/** The invited organization: its avatar (the switcher's), its name and an optional expiry chip. */
 function OrganizationRow({ name, expiry }: { name: string; expiry?: ReactNode }) {
   return (
     <div className="border-border flex items-center gap-3 rounded-lg border p-3">
-      <span
-        aria-hidden
-        className="bg-surface-sunken text-body flex size-8 shrink-0 items-center justify-center rounded-sm font-semibold"
-      >
-        {name.charAt(0).toUpperCase()}
-      </span>
+      <OrgAvatar name={name} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="text-body truncate font-medium">{name}</p>
         {expiry}

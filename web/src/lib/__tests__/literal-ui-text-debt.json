@@ -48,7 +48,6 @@
   "components/layout/module-gate.tsx": 2,
   "components/list-page-parts.tsx": 1,
   "components/security/recovery-codes-panel.tsx": 6,
-  "components/security/secret-key.tsx": 4,
   "components/security/totp-qr-code.tsx": 1,
   "components/sign-out-dialog.tsx": 3,
   "components/ui/breadcrumb.tsx": 2,
