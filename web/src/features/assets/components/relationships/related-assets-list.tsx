@@ -480,7 +480,9 @@ function RelatedRow({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <AssetName item={item} onNavigateToAsset={onNavigateToAsset} className="font-medium" />
-          <span className="text-xs text-muted-foreground">{getAssetTypeLabel(a.type)}</span>
+          <span className="text-xs text-muted-foreground">
+            {t(`assets.typeLabel.${a.type}`, getAssetTypeLabel(a.type))}
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {showCrit && <CriticalityBadge criticality={crit} size="sm" />}
