@@ -164,7 +164,11 @@ top-level group, and its jobs are refused with
 project, or the whole group (every current and future project of that group
 is then accepted with no further step), or block either (refused with
 `CI_TOKEN_REPOSITORY_BLOCKED`, reversible). Several items can be decided at
-once. Only approved projects are added to scope. "Protected branches and tags
+once. Only approved projects are added to scope. An approval binds to the
+project and namespace ids that were seen: if the path changes hands
+afterwards, the new project's jobs are refused. A group lists at most 25
+pending projects; past that its new projects are refused without being
+listed until you decide some of them. "Protected branches and tags
 only" and "Notify me when a new group asks" are on by default for such a
 configuration.
 

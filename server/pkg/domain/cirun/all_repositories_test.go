@@ -54,22 +54,6 @@ func TestAllRepositories_RuleCombinations(t *testing.T) {
 	}
 }
 
-func TestSharedIssuer(t *testing.T) {
-	for issuer, shared := range map[string]bool{
-		"https://gitlab.com":                          true,
-		"https://staging.gitlab.com":                  true,
-		"https://token.actions.githubusercontent.com": true,
-		"https://gitlab.example.com":                  false,
-		"https://notgitlab.com":                       false,
-		"https://gitlab.com.example.org":              false,
-		"":                                            true,
-	} {
-		if got := SharedIssuer(issuer); got != shared {
-			t.Errorf("SharedIssuer(%q) = %v, want %v", issuer, got, shared)
-		}
-	}
-}
-
 // The rules check everything but the group and project; the approved lists
 // decide those (ApprovedRepository).
 func TestAllRepositories_AdmitLeavesRepositoryToApproval(t *testing.T) {

@@ -149,13 +149,21 @@ func (s *Service) UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID,
 	if err := s.repo.UpdateTrustConfig(ctx, &next); err != nil {
 		return nil, err
 	}
-	// Changing which organizations or repositories a configuration trusts, or
-	// its issuer, drops its owner pins: they are taken again at the next
-	// admitted exchange.
+	// A pin binds a listed name to the organization or namespace id that
+	// first used it. Changing the issuer drops every pin; changing the owners
+	// or repositories drops only the pins of names no longer listed, so a
+	// routine edit (or an approval on an all-projects configuration) never
+	// lets a renamed-and-re-registered group take a listed name over. An
+	// administrator re-pins a name by removing it in one save and listing it
+	// again in the next.
 	if cur.Issuer != next.Issuer || !slices.Equal(cur.Rules.Owners, next.Rules.Owners) ||
 		!slices.Equal(cur.Rules.Repositories, next.Rules.Repositories) {
-		if _, err := s.repo.ResetOwnerPins(ctx, tenantID, id); err != nil {
-			return nil, fmt.Errorf("reset owner pins: %w", err)
+		keep := cirun.OwnerPinsKept(next.Rules)
+		if cur.Issuer != next.Issuer {
+			keep = cirun.OwnerPinKeep{}
+		}
+		if _, err := s.repo.DropOwnerPins(ctx, tenantID, id, keep); err != nil {
+			return nil, fmt.Errorf("drop owner pins: %w", err)
 		}
 	}
 	// Disabling a configuration, or pointing it at another issuer or

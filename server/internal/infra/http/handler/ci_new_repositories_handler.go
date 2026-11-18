@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
@@ -32,12 +33,21 @@ type CINewProject struct {
 	LastSeen  time.Time `json:"last_seen"`
 	// Count is how many CI token exchanges the project made.
 	Count int64 `json:"count"`
+	// ProjectID and NamespaceID are the verified ids of the first sighting.
+	// Approving the project binds it to them: a project or namespace that
+	// takes the path over later is refused.
+	ProjectID   string `json:"project_id,omitempty"`
+	NamespaceID string `json:"namespace_id,omitempty"`
 }
 
 // CINewGroup is a top-level group with projects waiting for approval.
 type CINewGroup struct {
 	Group    string         `json:"group"`
 	Projects []CINewProject `json:"projects"`
+	// Full: the group holds the most pending projects it may (25); a new
+	// project of the group is refused without being listed until some are
+	// approved or blocked.
+	Full bool `json:"full"`
 }
 
 // CIBlockedRepository is a blocked project or group.
@@ -59,11 +69,16 @@ type CINewRepositoriesResponse struct {
 	Blocked              []CIBlockedRepository `json:"blocked"`
 	ApprovedGroups       []string              `json:"approved_groups"`
 	ApprovedProjects     []string              `json:"approved_projects"`
+	// ListFull: the configuration holds the most pending projects it may
+	// (500); a new project is refused without being listed.
+	ListFull bool `json:"list_full"`
+	// FullGroups are the groups whose pending list is full (25 each).
+	FullGroups []string `json:"full_groups"`
 }
 
 // ListNewRepositories handles GET /api/v1/ci/trust-configs/{id}/new-repositories
 // @Summary      List the new repositories of an all-projects CI trust
-// @Description  For a configuration that admits every project of a self-managed GitLab: the projects seen for the first time and waiting for approval, grouped by top-level group; the blocked projects and groups; and the approved groups and projects. Empty lists for any other configuration.
+// @Description  For a configuration that admits every project of a self-managed GitLab: the projects seen for the first time and waiting for approval, grouped by top-level group, with the verified project and namespace ids they were seen with; the blocked projects and groups; and the approved groups and projects. A group holds at most 25 pending projects and the configuration 500: full lists are named (full_groups, list_full) and a new project past them is refused without being listed. Empty lists for any other configuration.
 // @Tags         CI
 // @Produce      json
 // @Security     BearerAuth
@@ -96,7 +111,8 @@ func newRepositoriesResponse(list *cirunapp.NewRepositoryList) CINewRepositories
 	c := list.Config
 	resp := CINewRepositoriesResponse{AllRepositories: c.Rules.AllRepositories, AdmitNewRepositories: c.Rules.AdmitNewRepositories,
 		Pending: []CINewGroup{}, Blocked: []CIBlockedRepository{}, ApprovedGroups: append([]string{}, c.Rules.Owners...),
-		ApprovedProjects: append([]string{}, c.Rules.Repositories...)}
+		ApprovedProjects: append([]string{}, c.Rules.Repositories...), ListFull: list.ListFull,
+		FullGroups: append([]string{}, list.FullGroups...)}
 	index := map[string]int{}
 	for _, row := range list.Rows {
 		if row.State == cirun.NewRepoBlocked {
@@ -107,10 +123,11 @@ func newRepositoriesResponse(list *cirunapp.NewRepositoryList) CINewRepositories
 		if !ok {
 			i = len(resp.Pending)
 			index[row.Group] = i
-			resp.Pending = append(resp.Pending, CINewGroup{Group: row.Group, Projects: []CINewProject{}})
+			resp.Pending = append(resp.Pending, CINewGroup{Group: row.Group, Projects: []CINewProject{},
+				Full: slices.Contains(list.FullGroups, row.Group)})
 		}
 		resp.Pending[i].Projects = append(resp.Pending[i].Projects, CINewProject{Name: row.Name, FirstSeen: row.FirstSeen,
-			LastSeen: row.LastSeen, Count: row.Count})
+			LastSeen: row.LastSeen, Count: row.Count, ProjectID: row.ProjectID, NamespaceID: row.NamespaceID})
 	}
 	return resp
 }

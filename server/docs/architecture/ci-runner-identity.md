@@ -196,17 +196,33 @@ on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 
 A trust configuration of a self-managed GitLab may accept every project of
 the instance without naming its groups. Refused for gitlab.com (and its
-subdomains), every GitHub issuer and every other provider: on a shared issuer
-it would admit anyone in the world (`cirun.SharedIssuer`, checked when the
-configuration is saved).
+subdomains), the hosted GitLab services jihulab.com and gitlab.cn, every
+GitHub issuer (including `*.ghe.com` data residency) and every other
+provider: on a shared issuer it would admit anyone in the world
+(`cirun.SharedIssuer`, checked when the configuration is saved). A
+self-managed GitLab with open sign-up has the same exposure; there the
+pending approval below is what protects the configuration.
 
 Risk: any user of the instance can create a personal project and protect its
 branches, so "protected branches only" does not stop them. Therefore:
 
 - A project seen for the first time is a **new repository**: recorded as
-  pending (`ci_trust_new_repositories`, at most 500 per configuration) and,
-  by default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an
-  administrator approves it. With `admit_new_repositories` its runs are
+  pending (`ci_trust_new_repositories`) with the verified `project_id`,
+  `namespace_path` and `namespace_id` of that first sighting and, by
+  default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an
+  administrator approves it. At most 25 pending projects per top-level group
+  and 500 per configuration: one instance user creating many projects or
+  personal namespaces fills only their own group's list. Past either bound a
+  project is refused without being listed, and the list names the full
+  groups (`full_groups`) or says the whole list is full (`list_full`).
+- Approval binds to what the administrator saw. Approving pins each covered
+  namespace to the `namespace_id` its pending projects were seen with (an
+  existing pin to another id, or sightings that disagree, refuse the
+  approval), and an approved project keeps its row (state `approved`, not
+  listed) with the `project_id` seen: its runs must carry that id, or they
+  are refused with `CI_TOKEN_REPOSITORY_BINDING`. When the configuration no
+  longer lists the project, its next sighting makes it pending again with the
+  new ids. With `admit_new_repositories` its runs are
   admitted and imported while it waits, but it is not added to scope.
 - Approving a project adds it to the configuration's Repositories; approving
   a whole group adds the group to Owners, approves its pending projects at
@@ -223,16 +239,26 @@ branches, so "protected branches only" does not stop them. Therefore:
 - Saved with all_repositories, a new configuration turns on "Protected
   branches and tags only" and "Notify me when a new group asks"
   (`notify_new_groups`: in the app and on the organization's channels
-  subscribed to `ci.new_repository_group`, once per group); an administrator
-  may turn them off by editing it. The configuration's response carries a
+  subscribed to `ci.new_repository_group`, once per group, at most 10 per
+  configuration and hour per server; the first notice after a busy hour says
+  how many were held back); an administrator may turn them off by editing it.
+- Approving or blocking changes the configuration's owners or repositories.
+  That keeps the owner pins of every name still listed: only the pins of
+  names no longer listed are dropped (any configuration, not only this kind).
+  A routine approval therefore never lets a group renamed on the instance
+  and registered again by someone else take its old name over.
+- The trust preview reports the same step as the exchange: a project the
+  draft does not approve is refused as pending approval, or admitted with
+  `pending_approval` when the draft admits new repositories. The configuration's response carries a
   plain-words warning (`warnings`).
 
 API (CI write, `scans:ci:write`; decisions need a recent sign-in):
 
 - `GET /api/v1/ci/trust-configs/{id}/new-repositories`:
-  `{all_repositories, admit_new_repositories, pending: [{group, projects:
-  [{name, first_seen, last_seen, count}]}], blocked: [{kind, name,
-  blocked_by, blocked_at}], approved_groups, approved_projects}`.
+  `{all_repositories, admit_new_repositories, pending: [{group, full,
+  projects: [{name, first_seen, last_seen, count, project_id,
+  namespace_id}]}], blocked: [{kind, name, blocked_by, blocked_at}],
+  approved_groups, approved_projects, list_full, full_groups}`.
 - `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions`:
   `{decision: approve | block | unblock, items: [{kind: project | group,
   name}]}` (1 to 100 items, so several pending projects or groups are decided
