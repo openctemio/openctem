@@ -119,10 +119,36 @@ export function listSpecs(dir = SPEC_DIR) {
   return readdirSync(dir)
     .filter((f) => f.endsWith('.spec.ts'))
     .sort()
-    .map((f) => ({
-      file: `${SPEC_PREFIX}${f}`,
-      tags: specTags(readFileSync(path.join(dir, f), 'utf8')),
-    }))
+    .map((f) => {
+      const source = readFileSync(path.join(dir, f), 'utf8')
+      return { file: `${SPEC_PREFIX}${f}`, tags: specTags(source), helpers: specHelpers(source) }
+    })
+}
+
+// The e2e helpers a spec imports, as timing keys (`e2e/specs/helpers/<name>.ts`).
+export function specHelpers(source) {
+  const out = new Set()
+  for (const m of source.matchAll(/from\s+['"]\.\.\/helpers\/([A-Za-z0-9._-]+)['"]/g))
+    out.add(`${SPEC_PREFIX}helpers/${m[1].replace(/\.ts$/, '')}.ts`)
+  return [...out].sort()
+}
+
+// Durations recorded before a test counted for the spec that ran it were
+// filed under the helper that declares the tests. A spec with no duration of
+// its own takes an equal part of such a helper's duration, so those specs are
+// not costed at the median and packed into one shard past its timeout.
+export function withHelperCosts(timings, specs) {
+  const out = { ...timings }
+  const has = (f) => Number.isFinite(timings[f]) && timings[f] > 0
+  const users = {}
+  for (const s of specs) {
+    if (has(s.file)) continue
+    for (const h of s.helpers ?? []) if (has(h)) (users[h] ??= []).push(s.file)
+  }
+  for (const [h, files] of Object.entries(users)) {
+    for (const f of files) out[f] = Math.max(out[f] ?? 0, timings[h] / files.length)
+  }
+  return out
 }
 
 const matchesAny = (globs, changed) => !!globs && changed.some((f) => matches(globs, f))
@@ -240,7 +266,7 @@ export function plan(changed, map, specs, timings, opts = {}) {
   const isBudget = (f) => specs.find((s) => s.file === f)?.tags.includes('@budget')
   const budgetFiles = sel.files.filter(isBudget)
   const main = sel.files.filter((f) => !isBudget(f))
-  const bins = shard(main, timings, opts)
+  const bins = shard(main, withHelperCosts(timings, specs), opts)
   const include = bins.map((b, i) => ({
     id: i + 1,
     name: `shard ${i + 1}/${bins.length}`,
@@ -263,20 +289,23 @@ export function plan(changed, map, specs, timings, opts = {}) {
 
 // ---- timings from a Playwright JSON report ----------------------------------
 
+// A test counts for the spec file Playwright ran (the top-level suite's file),
+// not the file that declares it: tests a helper declares for a spec (the list
+// toolbar stability checks) would otherwise cost their spec nothing.
 export function timingsFromReport(report) {
   const out = {}
-  const walk = (suite) => {
+  const walk = (suite, root) => {
     for (const sp of suite.specs ?? []) {
-      const file = `${SPEC_PREFIX}${String(sp.file).replace(/^specs\//, '')}`
+      const file = `${SPEC_PREFIX}${String(root ?? sp.file).replace(/^specs\//, '')}`
       for (const t of sp.tests ?? []) {
         const last = (t.results ?? []).at(-1)
         if (last && Number.isFinite(last.duration))
           out[file] = (out[file] ?? 0) + last.duration / 1000
       }
     }
-    for (const s of suite.suites ?? []) walk(s)
+    for (const s of suite.suites ?? []) walk(s, root)
   }
-  for (const s of report.suites ?? []) walk(s)
+  for (const s of report.suites ?? []) walk(s, s.file)
   for (const k of Object.keys(out)) out[k] = Math.round(out[k] * 10) / 10
   return out
 }
