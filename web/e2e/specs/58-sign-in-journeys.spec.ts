@@ -62,7 +62,17 @@ type Journey = { title: string; m: Method; r: Rule | null; mb: Membership }
 
 function journeys(): Journey[] {
   const out: Journey[] = []
-  const full: Method[] = ['password', 'password-totp', 'google', 'org-oidc', 'other-org-idp']
+  // An authenticator only changes the outcome where two-factor is required
+  // (each code waits for a fresh 30-second window, so it stays on that rule).
+  for (const mb of ['first-time-invited', 'returning-member'] as const) {
+    out.push({
+      title: `${mb} / password-totp / 2fa-required`,
+      m: 'password-totp',
+      r: '2fa-required',
+      mb,
+    })
+  }
+  const full: Method[] = ['password', 'google', 'org-oidc', 'other-org-idp']
   for (const m of full) {
     out.push({ title: `no-organization / ${m}`, m, r: null, mb: 'no-organization' })
     for (const mb of ['first-time-invited', 'returning-member'] as const) {
@@ -141,14 +151,22 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
       const at = await person.p.call('POST', '/api/v1/auth/account-token', {})
       if (at.status === 200) access = String(at.body.access_token)
     }
+    let tenantCookie = ''
     if (j.mb === 'returning-member') {
       await person.p.ok('POST', '/api/v1/invitations/accept-with-refresh', { token: invitation })
+      if (j.m === 'org-oidc') {
+        // The organization's provider signs in to that organization: its
+        // callback stores an organization token and the organization.
+        const t = await person.p.ok('POST', '/api/v1/auth/token', { tenant_id: orgId })
+        access = String(t.body.access_token)
+        tenantCookie = env.slug
+      }
     }
     if (j.r) setRules(env, RULES[j.r])
 
     const invitationURL = `/invitations#token=${invitation}`
     if (federated) {
-      await handOver(context, env, person, access)
+      await handOver(context, env, person, access, tenantCookie)
       return { person, start: j.mb === 'first-time-invited' ? invitationURL : '/' }
     }
     if (j.mb === 'first-time-invited') return { person, start: invitationURL }
@@ -335,6 +353,7 @@ async function drive(
   env: JourneyEnv
 ): Promise<Outcome> {
   let signedIn = false
+  let accepted = 0
   for (let i = 0; i < 16; i++) {
     await settle(page)
     const url = new URL(page.url())
@@ -361,6 +380,18 @@ async function drive(
       const open = page.getByRole('button', { name: /^Open / })
       const signIn = page.getByRole('link', { name: /sign in/i })
       if (await visible(page, accept)) {
+        if (accepted > 0) {
+          const said = await page
+            .locator('[data-sonner-toast], [role="alert"]')
+            .first()
+            .textContent()
+            .catch(() => '')
+          return {
+            kind: 'stuck',
+            detail: `the invitation still offers Accept after a refused acceptance (${(said ?? '').trim()})`,
+          }
+        }
+        accepted += 1
         await accept.first().click()
         continue
       }
@@ -427,12 +458,11 @@ async function drive(
     const tenant = (await page.context().cookies()).find((c) => c.name === 'app_tenant')
     if (tenant) {
       let slug = ''
+      const raw = decodeURIComponent(tenant.value)
       try {
-        slug = String(
-          (JSON.parse(decodeURIComponent(tenant.value)) as { slug?: string }).slug ?? ''
-        )
+        slug = String((JSON.parse(raw) as { slug?: string }).slug ?? '')
       } catch {
-        slug = ''
+        slug = raw // the identity provider callback stores the bare slug
       }
       return { kind: 'in-org', slug }
     }
