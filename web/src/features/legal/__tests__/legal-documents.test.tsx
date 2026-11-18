@@ -36,7 +36,9 @@ describe('legal documents', () => {
       // Never a raw path in parentheses such as "(/dpa)".
       expect(main.textContent).not.toMatch(/\(\/[a-z.-]+/)
       for (const other of LEGAL_DOCS) {
+        // A section of the same name in the contents is an in-page anchor, not a reference.
         for (const link of within(main).queryAllByRole('link', { name: other.title })) {
+          if (link.getAttribute('href')?.startsWith('#')) continue
           expect(link).toHaveAttribute('href', other.path)
         }
       }

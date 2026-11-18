@@ -1,5 +1,7 @@
-import type { LegalDoc, LegalValues } from '@/lib/legal'
+import { Fragment } from 'react'
+import { LEGAL_DOCS, type LegalDoc, type LegalValues } from '@/lib/legal'
 import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
+import { safeInternalHref } from '@/lib/safe-href'
 import type { LegalSection } from './components/legal-document'
 
 /**
@@ -12,12 +14,40 @@ import type { LegalSection } from './components/legal-document'
 
 const P = ({ children }: { children: React.ReactNode }) => <p>{children}</p>
 
-/** A reference to another legal page: a link named by that page's title. */
-const Ref = ({ href, children }: { href: string; children: React.ReactNode }) => (
-  <TextLink href={href} variant="inline">
-    {children}
-  </TextLink>
-)
+const SECURITY_TXT = '/.well-known/security.txt'
+
+/**
+ * Prose with references to the other legal pages: "[the title](/path)" marks
+ * a link, named by the page's title. Only the legal pages and security.txt
+ * can be linked (a constant list, never data); any other mark stays text.
+ * A paragraph stays one text, as the documents are written.
+ */
+function Linked({ children }: { children: string }) {
+  const parts = children.split(/(\[[^\]]+\]\([^)]+\))/)
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
+        if (!m) return <Fragment key={i}>{part}</Fragment>
+        const [, text, path] = m
+        if (path === SECURITY_TXT)
+          // A file, not a page: a plain link, no client-side navigation.
+          return (
+            <a key={i} href={safeInternalHref(SECURITY_TXT)} className={TEXT_LINK_CLASS.inline}>
+              {text}
+            </a>
+          )
+        const doc = LEGAL_DOCS.find((d) => d.path === path)
+        if (!doc) return <Fragment key={i}>{text}</Fragment>
+        return (
+          <TextLink key={i} href={safeInternalHref(doc.path)} variant="inline">
+            {doc.title}
+          </TextLink>
+        )
+      })}
+    </>
+  )
+}
 
 function terms(v: LegalValues): LegalSection[] {
   return [
@@ -45,10 +75,11 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Acceptable use',
       body: (
         <P>
-          Your use of the service must follow the{' '}
-          <Ref href="/acceptable-use">Acceptable Use Policy</Ref>. In short: scan, test or monitor
-          only what you own or are authorized to assess. We may suspend accounts or organizations
-          that break it.
+          <Linked>
+            {
+              'Your use of the service must follow the [Acceptable Use Policy](/acceptable-use). In short: scan, test or monitor only what you own or are authorized to assess. We may suspend accounts or organizations that break it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -66,10 +97,11 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Your data',
       body: (
         <P>
-          You keep ownership of the data you bring. We process it to provide the service, as
-          described in the <Ref href="/privacy">Privacy Policy</Ref> and, for organizations, the{' '}
-          <Ref href="/dpa">Data Processing Addendum</Ref>. You can export your data and ask for its
-          deletion.
+          <Linked>
+            {
+              'You keep ownership of the data you bring. We process it to provide the service, as described in the [Privacy Policy](/privacy) and, for organizations, the [Data Processing Addendum](/dpa). You can export your data and ask for its deletion.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -138,11 +170,12 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       heading: 'Reporting a vulnerability',
       body: (
         <P>
-          Found a security issue in {v.service}? Write to {v.securityEmail}(
-          <a href="/.well-known/security.txt" className={TEXT_LINK_CLASS.inline}>
-            security.txt
-          </a>
-          ). Give us reasonable time to fix it before disclosing it.
+          Found a security issue in {v.service}? Write to {v.securityEmail}{' '}
+          <Linked>
+            {
+              '([security.txt](/.well-known/security.txt)). Give us reasonable time to fix it before disclosing it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -165,8 +198,12 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           {v.organization}, {v.address}, is responsible for the personal data processed to run{' '}
-          {v.service}. Contact: {v.contactEmail}. For the data organizations bring to the service we
-          act as their processor under the <Ref href="/dpa">Data Processing Addendum</Ref>.
+          {v.service}. Contact: {v.contactEmail}.{' '}
+          <Linked>
+            {
+              'For the data organizations bring to the service we act as their processor under the [Data Processing Addendum](/dpa).'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -199,9 +236,11 @@ function privacy(v: LegalValues): LegalSection[] {
       heading: 'Sharing',
       body: (
         <P>
-          Data stays within your organization. We share it only with the subprocessors that host and
-          operate the service for us (<Ref href="/subprocessors">Subprocessors</Ref>), under
-          contract, or when the law requires it.
+          <Linked>
+            {
+              'Data stays within your organization. We share it only with the subprocessors that host and operate the service for us ([Subprocessors](/subprocessors)), under contract, or when the law requires it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -238,9 +277,13 @@ function dpa(v: LegalValues): LegalSection[] {
       body: (
         <P>
           This addendum is between the customer organization (the controller) and {v.organization},{' '}
-          {v.address} (the processor), and forms part of the{' '}
-          <Ref href="/terms">Terms of Service</Ref>. It covers the personal data the customer brings
-          to {v.service}.
+          {v.address}{' '}
+          <Linked>
+            {
+              '(the processor), and forms part of the [Terms of Service](/terms). It covers the personal data the customer brings to'
+            }
+          </Linked>{' '}
+          {v.service}.
         </P>
       ),
     },
