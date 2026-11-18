@@ -9,7 +9,7 @@
  * says the access ended (SUPPORT_GRANT_REQUIRED) the view closes.
  */
 
-import { EmptyCell } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useEffect, useState } from 'react'
 import { Loader2, ShieldAlert } from 'lucide-react'
 

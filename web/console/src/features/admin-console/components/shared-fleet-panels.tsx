@@ -10,7 +10,7 @@
  * Results and findings are never shown here.
  */
 
-import { EmptyCell } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Info, ListChecks, Server } from 'lucide-react'
