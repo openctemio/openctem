@@ -1446,7 +1446,12 @@ export function DataTable<TData, TValue>({
       )}
 
       {beforeRows != null && beforeRows !== false && (
-        <div data-slot="table-before-rows">{beforeRows}</div>
+        // No box while the block renders nothing (Compliance with no
+        // benchmark): the frame is a flex column with a gap, and an empty
+        // child would still take a gap and push the rows 16px down.
+        <div data-slot="table-before-rows" className="empty:hidden">
+          {beforeRows}
+        </div>
       )}
 
       {phoneCards && (

@@ -48,6 +48,21 @@ describe('DataTable beforeRows', () => {
     expect(block.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('takes no box (and no gap of the frame) while the block renders nothing', () => {
+    function NoBenchmarks() {
+      return null
+    }
+    const { container } = render(
+      <DataTable columns={columns} data={[{ name: 'a row' }]} beforeRows={<NoBenchmarks />} />
+    )
+    const slot = container.querySelector('[data-slot="table-before-rows"]')!
+    expect(slot).toBeEmptyDOMElement()
+    // The frame is `flex flex-col gap-4`: an empty child with a box would
+    // still take a 16px gap. `empty:hidden` gives it display: none.
+    expect(slot.parentElement!.className).toContain('gap-4')
+    expect(slot.className.split(/\s+/)).toContain('empty:hidden')
+  })
+
   it('reserves nothing without it', () => {
     const { container } = render(<DataTable columns={columns} data={[]} />)
     expect(container.querySelector('[data-slot="table-before-rows"]')).toBeNull()

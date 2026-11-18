@@ -249,8 +249,12 @@ for (const locale of ['en', 'vi'] as const) {
         await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
         await page.setViewportSize({ width, height: 844 })
         await page.goto('/vulnerabilities')
-        const tokens = page.locator('main [data-slot="list-toolbar-tokens"]').first()
-        await expect(tokens).toBeVisible({ timeout: 45_000 })
+        // Ready when the end actions are drawn. On a phone both selects of
+        // this list live in the Filters sheet, so its token strip may hold
+        // nothing and has no width (it is anchored to the end, before the
+        // actions); toolbarDefects checks whatever the line holds.
+        const end = page.locator('main [data-slot="list-toolbar-end"]').first()
+        await expect(end).toBeVisible({ timeout: 45_000 })
         await page.waitForLoadState('networkidle')
         await page.waitForTimeout(300)
         const defects = await toolbarDefects(page)
