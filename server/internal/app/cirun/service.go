@@ -200,6 +200,8 @@ type Service struct {
 	// newRepos keeps the new repositories of all-projects trust
 	// configurations (new_repositories.go).
 	newRepos cirun.NewRepositoryStore
+	// groupNotices throttles the new-group notices per configuration.
+	groupNotices groupNotices
 
 	// keyNotices throttles the pasted-key rotation notices.
 	keyNotices noticeThrottle

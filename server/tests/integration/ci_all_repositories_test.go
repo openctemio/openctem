@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -165,4 +166,163 @@ func containsString(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// sighting is a protected-branch job of project with the given verified
+// project and namespace ids.
+func (r *ciRig) sighting(t *testing.T, aud, project, projectID, namespaceID, job string) string {
+	return r.idp.token(t, aud, project, "main", "1234123412341234123412341234123412341234",
+		map[string]any{"ref_protected": "true", "job_id": job, "project_id": projectID, "namespace_id": namespaceID})
+}
+
+// Review finding: an approval on an all-projects configuration changes its
+// owners or repositories, which used to drop every owner pin. A group renamed
+// on the instance and re-registered by someone else (same name, new
+// namespace id) was then admitted after any routine approval. The pin of a
+// name still listed survives an approval of another project.
+func TestCIAllProjects_ApprovalKeepsOwnerPins(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.allProjectsTrust(r.tenant, false)
+	if code, _ := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "acme/api", "7", "42", "1")); code != http.StatusUnauthorized {
+		t.Fatalf("new project admitted: %d", code)
+	}
+	if err := r.decide(r.tenant, cfg.ID, cirun.DecisionApprove, cirun.NewRepositoryItem{Kind: cirun.NewRepoGroup, Name: "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "acme/api", "7", "42", "2")); code != http.StatusCreated {
+		t.Fatalf("approved group: %d %v", code, out)
+	}
+	// Routine approval of an unrelated project.
+	if code, _ := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "x/y", "8", "50", "3")); code != http.StatusUnauthorized {
+		t.Fatalf("new project admitted: %d", code)
+	}
+	if err := r.decide(r.tenant, cfg.ID, cirun.DecisionApprove, cirun.NewRepositoryItem{Kind: cirun.NewRepoProject, Name: "x/y"}); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := r.svc.OwnerPins(ctx, r.tenant, cfg.ID)
+	if err != nil || !hasPin(pins, "acme", "42") {
+		t.Fatalf("pin of acme after an unrelated approval: %+v %v", pins, err)
+	}
+	// acme renamed on the instance; someone registers a new acme (id 99).
+	code, out := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "acme/new-tool", "9", "99", "4"))
+	if code != http.StatusUnauthorized || out["code"] != "CI_TOKEN_OWNER_ID_MISMATCH" {
+		t.Fatalf("re-registered group after an approval: %d %v", code, out)
+	}
+}
+
+func hasPin(pins []cirun.OwnerPin, name, id string) bool {
+	for _, p := range pins {
+		if p.OwnerName == name && p.OwnerID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// Review finding: the administrator approves what was seen. The pending row
+// keeps the verified project and namespace ids of the sighting, and the
+// approval binds to them: a project that takes the path over between the
+// sighting and the first admitted run is refused.
+func TestCIAllProjects_ApprovalBindsSeenIDs(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.allProjectsTrust(r.tenant, false)
+	if code, _ := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "alice/tool", "70", "500", "1")); code != http.StatusUnauthorized {
+		t.Fatalf("new project admitted: %d", code)
+	}
+	list, err := r.svc.ListNewRepositories(ctx, r.tenant, cfg.ID)
+	if err != nil || len(list.Rows) != 1 || list.Rows[0].ProjectID != "70" || list.Rows[0].NamespaceID != "500" {
+		t.Fatalf("pending row ids: %+v %v", list.Rows, err)
+	}
+	if err := r.decide(r.tenant, cfg.ID, cirun.DecisionApprove, cirun.NewRepositoryItem{Kind: cirun.NewRepoProject, Name: "alice/tool"}); err != nil {
+		t.Fatal(err)
+	}
+	if pins, _ := r.svc.OwnerPins(ctx, r.tenant, cfg.ID); !hasPin(pins, "alice", "500") {
+		t.Fatalf("approval did not pin the namespace seen: %+v", pins)
+	}
+	// The path changed hands: another namespace, then another project id.
+	if code, out := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "alice/tool", "70", "501", "2")); code != http.StatusUnauthorized ||
+		out["code"] != "CI_TOKEN_OWNER_ID_MISMATCH" {
+		t.Fatalf("other namespace after approval: %d %v", code, out)
+	}
+	if code, out := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "alice/tool", "71", "500", "3")); code != http.StatusUnauthorized ||
+		out["code"] != "CI_TOKEN_REPOSITORY_BINDING" {
+		t.Fatalf("other project id after approval: %d %v", code, out)
+	}
+	if code, out := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "alice/tool", "70", "500", "4")); code != http.StatusCreated {
+		t.Fatalf("approved project with the ids seen: %d %v", code, out)
+	}
+	// An approved row is not listed as pending.
+	if list, _ := r.svc.ListNewRepositories(ctx, r.tenant, cfg.ID); len(list.Rows) != 0 {
+		t.Fatalf("approved row listed: %+v", list.Rows)
+	}
+}
+
+// Review finding: one instance user filling the pending list. A group keeps
+// at most cirun.MaxPendingPerGroup pending projects; past it a project is
+// refused without being listed and the list names the full group, while
+// projects of other groups are still recorded.
+func TestCIAllProjects_PendingCapPerGroup(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.allProjectsTrust(r.tenant, false)
+	for i := 0; i <= cirun.MaxPendingPerGroup; i++ {
+		p := fmt.Sprintf("spam/p%02d", i)
+		if code, _ := r.exchange(r.tenant, r.sighting(t, cfg.Audience, p, fmt.Sprint(1000+i), "66", "s"+fmt.Sprint(i))); code != http.StatusUnauthorized {
+			t.Fatalf("%s admitted", p)
+		}
+	}
+	if code, _ := r.exchange(r.tenant, r.sighting(t, cfg.Audience, "team/app", "2000", "77", "t1")); code != http.StatusUnauthorized {
+		t.Fatal("team/app admitted")
+	}
+	list, err := r.svc.ListNewRepositories(ctx, r.tenant, cfg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spam, team := 0, 0
+	for _, row := range list.Rows {
+		switch row.Group {
+		case "spam":
+			spam++
+		case "team":
+			team++
+		}
+	}
+	if spam != cirun.MaxPendingPerGroup || team != 1 {
+		t.Fatalf("pending spam=%d team=%d", spam, team)
+	}
+	if list.ListFull || len(list.FullGroups) != 1 || list.FullGroups[0] != "spam" {
+		t.Fatalf("full flags: list_full=%v groups=%v", list.ListFull, list.FullGroups)
+	}
+}
+
+// Review finding: the trust preview ran the rules only and reported an
+// all-projects configuration as admitting any project, while the exchange
+// answers "pending approval". The preview now reports the same step.
+func TestCIAllProjects_PreviewShowsPendingApproval(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	tok := r.sighting(t, cirun.DefaultAudience(r.tenant), "alice/tool", "70", "500", "p1")
+	draft := cirunapp.TrustConfigInput{Name: "draft", Provider: "gitlab", Issuer: r.idp.url,
+		Rules: cirun.Rules{AllRepositories: true, RequireProtectedRef: true}}
+	preview := func() *cirunapp.PreviewResult {
+		t.Helper()
+		out, err := r.svc.PreviewTrust(ctx, r.tenant, cirunapp.PreviewInput{Config: draft, IDToken: tok})
+		if err != nil || !out.Verified {
+			t.Fatalf("preview: %+v %v", out, err)
+		}
+		return out
+	}
+	if out := preview(); out.Admitted || out.Refusal == nil || out.Refusal.Code != cirun.RefuseRepositoryPending {
+		t.Fatalf("new project previewed as %+v %+v", out.Admitted, out.Refusal)
+	}
+	draft.Rules.AdmitNewRepositories = true
+	if out := preview(); !out.Admitted || !out.PendingApproval {
+		t.Fatalf("admit-new preview: admitted=%v pending=%v %+v", out.Admitted, out.PendingApproval, out.Refusal)
+	}
+	draft.Rules.AdmitNewRepositories, draft.Rules.Owners = false, []string{"alice"}
+	if out := preview(); !out.Admitted || out.PendingApproval {
+		t.Fatalf("approved group preview: admitted=%v pending=%v %+v", out.Admitted, out.PendingApproval, out.Refusal)
+	}
 }

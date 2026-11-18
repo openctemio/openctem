@@ -5,3 +5,6 @@
 - New configurations of this kind start with protected branches and tags only and a notice when a new group asks (in the app and on channels subscribed to the new event `ci.new_repository_group`).
 - API: `GET /api/v1/ci/trust-configs/{id}/new-repositories` and `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions` (CI write permission; decisions need a recent sign-in and are audited). Migration `20261118080035_ci_trust_new_repositories`.
 - Docs: server/docs/how-to/gitlab-ci.md#every-project-on-this-gitlab
+- Approving a project binds it to the project and namespace ids it was seen with. A group holds at most 25 pending projects and a configuration 500; the list names full groups (`full_groups`, `list_full`). New-group notices are limited to 10 per configuration and hour.
+- jihulab.com, gitlab.cn and `*.ghe.com` count as shared issuers, so they cannot have an all-projects configuration.
+- Changing a trust configuration's owners or repositories now keeps the owner pins of the names still listed (before, every pin was dropped).

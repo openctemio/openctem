@@ -7,7 +7,6 @@ package cirun
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"path"
 	"regexp"
@@ -542,38 +541,6 @@ func validateIssuerURL(raw string) error {
 		return fmt.Errorf("must be an https URL without credentials, query or fragment")
 	}
 	return nil
-}
-
-// sharedIssuerHosts are the issuer hosts of hosted CI services where anyone
-// can run a pipeline: a rule that does not name owners or repositories
-// would admit strangers there.
-var sharedIssuerHosts = []string{
-	"gitlab.com", "github.com", githubActionsIssuerHost, azureIssuerHost, circleCIIssuerHost, bitbucketAPIHost,
-}
-
-// Hosts of hosted CI issuers.
-const (
-	githubActionsIssuerHost = "token.actions.githubusercontent.com"
-	azureIssuerHost         = "vstoken.dev.azure.com"
-	circleCIIssuerHost      = "oidc.circleci.com"
-	bitbucketAPIHost        = "api.bitbucket.org"
-)
-
-// SharedIssuer reports whether issuer belongs to a hosted CI service shared
-// by many customers (gitlab.com and its subdomains included), or has no
-// host.
-func SharedIssuer(issuer string) bool {
-	h := IssuerHost(issuer)
-	if hh, _, err := net.SplitHostPort(h); err == nil {
-		h = hh
-	}
-	h = strings.TrimSuffix(h, ".")
-	for _, s := range sharedIssuerHosts {
-		if h == s || strings.HasSuffix(h, "."+s) {
-			return true
-		}
-	}
-	return h == ""
 }
 
 // IssuerHost is the host part of the configuration's issuer, used to name
