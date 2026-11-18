@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import en from '@/lib/i18n/dictionaries/en/findings.json'
+import vi from '@/lib/i18n/dictionaries/vi/findings.json'
 import {
   parseFindingLens,
   FINDING_LENSES,
@@ -10,6 +12,16 @@ import { buildGroupsUrl } from '../../api/use-finding-groups'
 import { buildFindingsQuery } from '../../api/use-findings-api'
 
 describe('findings state lens', () => {
+  it('names the not-fixed set Dismissed (en) and Không cần sửa (vi); the API value stays dispositioned', () => {
+    const lens = FINDING_LENSES.find((l) => l.value === 'dispositioned')
+    expect(lens?.label).toBe('Dismissed')
+    expect(en['findings.lens.dispositioned.label']).toBe('Dismissed')
+    expect(vi['findings.lens.dispositioned.label']).toBe('Không cần sửa')
+    expect(en['findings.lens.closed.description']).toBe('Fixed and dismissed together')
+    expect(vi['findings.lens.closed.description']).toBe('Đã sửa và không cần sửa gộp lại')
+    expect(buildFindingsQuery({ state: 'dispositioned' }).get('state')).toBe('dispositioned')
+  })
+
   it('has the lenses of decision C2 plus Closed, Open first and default', () => {
     expect(FINDING_LENSES.map((l) => l.value)).toEqual([
       'open',

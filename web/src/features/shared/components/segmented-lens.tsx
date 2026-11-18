@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * A lens: a small segmented control that switches what a list is about
- * ("Open · Fixed · Dispositioned · All") without being a filter facet. One
+ * ("Open · Fixed · Dismissed · All") without being a filter facet. One
  * value is always selected. It is a radio group: arrow keys move and select,
  * Home/End jump, only the selected segment is in the tab order.
  *
