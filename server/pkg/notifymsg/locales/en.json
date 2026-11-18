@@ -38,6 +38,7 @@
   "event.ci.break_glass": "CI break-glass used",
   "event.ci.coverage_regression": "CI coverage lost",
   "event.ci.gate_failing": "CI default branch failing",
+  "event.ci.new_repository_group": "CI new group asks",
   "event.ci.runner_outdated": "CI runner outdated",
   "event.ci.schedule_missed": "CI scheduled scan missed",
   "event.ci.token_refusals": "CI token refusals",
