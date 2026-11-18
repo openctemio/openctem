@@ -199,9 +199,10 @@ describe('notices keep the role they are announced with', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('the device code page warns with an alert', () => {
+  it('the device code page warns politely: a warning on load is not an error', () => {
     render(<DeviceCodeView />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Only enter a code you asked for')
+    expect(screen.getByRole('status')).toHaveTextContent('Only enter a code you asked for')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 
