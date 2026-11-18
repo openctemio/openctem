@@ -146,6 +146,22 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   `openctem:tenant:<id>`; it must contain the organization id. Set the same
   value in `id_tokens`.
 
+### Every project on this GitLab
+
+On a self-managed GitLab, a trust configuration can accept every project
+without naming its groups ("Every project on this GitLab",
+`rules.all_repositories`; not available for gitlab.com). Any user of your
+GitLab can create a personal project, so a project seen for the first time is
+not trusted on sight: it is listed under **New repositories**, grouped by
+top-level group, and its jobs are refused with
+`CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until you approve it. Approve the
+project, or the whole group (every current and future project of that group
+is then accepted with no further step), or block either (refused with
+`CI_TOKEN_REPOSITORY_BLOCKED`, reversible). Several items can be decided at
+once. Only approved projects are added to scope. "Protected branches and tags
+only" and "Notify me when a new group asks" are on by default for such a
+configuration.
+
 ## Security notes
 
 - Nothing reusable is stored in GitLab. Each ID token belongs to one run: it

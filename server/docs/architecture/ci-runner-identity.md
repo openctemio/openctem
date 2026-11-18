@@ -184,6 +184,55 @@ The job exits 0 on pass, 1 on fail and 2 when it cannot trust the result
 (gate unreachable without `--fail-on`, or a local failure). The job asks again
 on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 
+### Every project on this GitLab (`rules.all_repositories`)
+
+A trust configuration of a self-managed GitLab may accept every project of
+the instance without naming its groups. Refused for gitlab.com (and its
+subdomains), every GitHub issuer and every other provider: on a shared issuer
+it would admit anyone in the world (`cirun.SharedIssuer`, checked when the
+configuration is saved).
+
+Risk: any user of the instance can create a personal project and protect its
+branches, so "protected branches only" does not stop them. Therefore:
+
+- A project seen for the first time is a **new repository**: recorded as
+  pending (`ci_trust_new_repositories`, at most 500 per configuration) and,
+  by default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an
+  administrator approves it. With `admit_new_repositories` its runs are
+  admitted and imported while it waits, but it is not added to scope.
+- Approving a project adds it to the configuration's Repositories; approving
+  a whole group adds the group to Owners, approves its pending projects at
+  once, and admits every current and future project of the group with no
+  further approval (a group already approved never produces a pending item
+  again). Only approved groups and projects become scope patterns
+  (`ScopePatterns`), so Manage scope applies only after approval.
+- Blocking a project or a group refuses it at once
+  (`CI_TOKEN_REPOSITORY_BLOCKED`), takes it out of the configuration and
+  lists it as blocked; unblocking makes it new again. A block wins over an
+  approved group.
+- Approval is never guessed from the namespace: a GitLab token does not say
+  whether a namespace is a group or a personal namespace.
+- Saved with all_repositories, a new configuration turns on "Protected
+  branches and tags only" and "Notify me when a new group asks"
+  (`notify_new_groups`: in the app and on the organization's channels
+  subscribed to `ci.new_repository_group`, once per group); an administrator
+  may turn them off by editing it. The configuration's response carries a
+  plain-words warning (`warnings`).
+
+API (CI write, `scans:ci:write`; decisions need a recent sign-in):
+
+- `GET /api/v1/ci/trust-configs/{id}/new-repositories`:
+  `{all_repositories, admit_new_repositories, pending: [{group, projects:
+  [{name, first_seen, last_seen, count}]}], blocked: [{kind, name,
+  blocked_by, blocked_at}], approved_groups, approved_projects}`.
+- `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions`:
+  `{decision: approve | block | unblock, items: [{kind: project | group,
+  name}]}` (1 to 100 items, so several pending projects or groups are decided
+  together); answers the list as above. Audited as
+  `ci_trust_config.new_repositories_decided` with its items, plus the
+  ordinary `ci_trust_config.updated` with before and after when the
+  configuration's lists change.
+
 ## Request chains
 
 | Route | Chain |

@@ -54,8 +54,10 @@ type CIAdminHandler struct {
 	baseline     CIGateBaselineService
 	repoSettings CIRepositorySettingsService
 	refusals     CIRefusalService
-	dataScope    DataScopeEnforcer
-	logger       *logger.Logger
+	// newRepos: new repositories of all-projects trust configurations.
+	newRepos  CINewRepositoryService
+	dataScope DataScopeEnforcer
+	logger    *logger.Logger
 }
 
 // SetStepUpGate passes the re-authentication gate to the service: a gate
@@ -103,7 +105,15 @@ type CITrustConfigResponse struct {
 	// patterns the configuration claims, the scope entry of each and the
 	// evidence of the first verified pipeline run under it.
 	ScopeEntries []CITrustScopeEntry `json:"scope_entries,omitempty"`
+	// Warnings are plain-words notes on a risky configuration (every project
+	// of a GitLab: rules.all_repositories).
+	Warnings []string `json:"warnings,omitempty"`
 }
+
+// AllRepositoriesWarning is the note on an all-projects configuration.
+const AllRepositoriesWarning = "This configuration accepts CI results from every project on this GitLab, including personal projects any of its users can create. " +
+	"A project seen for the first time is listed under New repositories and is not added to scope until you approve it; " +
+	"keep \"Protected branches and tags only\" on, and approve whole groups only when everyone who can create projects in them is trusted."
 
 // CITrustScopeEntry is one repository pattern a trust configuration claims.
 type CITrustScopeEntry struct {
@@ -183,7 +193,14 @@ func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 	return CITrustConfigResponse{ID: c.ID.String(), Name: c.Name, Provider: string(c.Provider), Issuer: c.Issuer,
 		Audience: c.Audience, DefaultBranch: c.DefaultBranch, Rules: c.Rules, Enabled: c.Enabled,
 		ManageScope: c.ManageScope, LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
-		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil}
+		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil, Warnings: trustWarnings(c)}
+}
+
+func trustWarnings(c *cirun.TrustConfig) []string {
+	if c.Rules.AllRepositories {
+		return []string{AllRepositoriesWarning}
+	}
+	return nil
 }
 
 // CITrustConfigRequest creates or changes a trust configuration.
