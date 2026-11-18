@@ -65,6 +65,7 @@ import { useFindingTriage } from '@/features/findings/hooks/use-finding-triage'
 import { useFindingEvidenceCount } from '@/features/findings/hooks/use-finding-evidence-count'
 import type { FindingDetail } from '@/features/findings/types'
 import { toFindingDetail, findingShortName } from '@/features/findings/lib/finding-detail'
+import { showsProofOfFix } from '@/features/findings/lib/closure'
 import { FindingActivityView } from '@/features/findings/components/finding-activity'
 import { isBreach, daysUntil } from '@/features/sla/lib/sla'
 import {
@@ -408,17 +409,21 @@ export default function FindingDetailPage() {
                       onOpenPlan={() => setTab('remediation')}
                     />
                     <FindingScannerOutput finding={finding} />
-                    <DetailSectionBlock
-                      title={t('findings.detail.proofOfFix', 'Proof of fix')}
-                      className="has-[[data-slot=finding-proof]:empty]:hidden"
-                    >
-                      <div data-slot="finding-proof" className="flex min-w-0 flex-col gap-5">
-                        <VerificationPanel findingId={finding.id} />
-                        <FindingRetestSection finding={{ ...finding, status: triage.status }} />
-                        <FindingRetestCheckSection finding={finding} />
-                        <FindingTenableRescanSection finding={finding} />
-                      </div>
-                    </DetailSectionBlock>
+                    {/* Only where a fix can be proven: not on a false positive, an
+                        accepted risk, a duplicate or a resolve that was no fix. */}
+                    {showsProofOfFix(triage.status, finding.closureReason) && (
+                      <DetailSectionBlock
+                        title={t('findings.detail.proofOfFix', 'Proof of fix')}
+                        className="has-[[data-slot=finding-proof]:empty]:hidden"
+                      >
+                        <div data-slot="finding-proof" className="flex min-w-0 flex-col gap-5">
+                          <VerificationPanel findingId={finding.id} />
+                          <FindingRetestSection finding={{ ...finding, status: triage.status }} />
+                          <FindingRetestCheckSection finding={finding} />
+                          <FindingTenableRescanSection finding={finding} />
+                        </div>
+                      </DetailSectionBlock>
+                    )}
                   </DetailSectionList>
                 </TabsContent>
                 <TabsContent value="evidence">
