@@ -87,6 +87,11 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
   return seen
 }
 
+/** A page of the account area (/account/*), which has its own shell and session. */
+function isAccountRoute(route: string): boolean {
+  return route === '/account' || route.startsWith('/account/')
+}
+
 /** Adds the budget, duplicate and session-read problems of one load. */
 function checkLoad(route: string, max: number, requests: string[], problems: string[]): void {
   if (requests.length > max) {
@@ -99,6 +104,13 @@ function checkLoad(route: string, max: number, requests: string[], problems: str
   for (const [r, n] of counts) if (n > 1) problems.push(`${route}: ${r} sent ${n} times`)
 
   const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
+  if (isAccountRoute(route)) {
+    // The account area runs on the account session, outside any organization:
+    // it never reads the organization bootstrap, and the account's own reads
+    // (/users/me, /users/me/tenants, ownership invitations) are asked directly.
+    if (bootstraps !== 0) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 0)`)
+    return
+  }
   if (bootstraps !== 1) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
   const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
   for (const r of requests) {
