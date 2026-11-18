@@ -94,7 +94,9 @@ export function InstanceScanZonesCard({ zones, canEdit, onChanged }: InstanceSca
               <li key={z.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                 <div className="min-w-0 space-y-1">
                   <p className="font-medium break-words">{z.name}</p>
-                  <p className="text-sm break-words text-muted-foreground">{z.ranges.join(', ')}</p>
+                  <p className="text-body break-words text-muted-foreground">
+                    {z.ranges.join(', ')}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="secondary">
                       {t('admin.instanceZones.sensorCount', undefined, {
