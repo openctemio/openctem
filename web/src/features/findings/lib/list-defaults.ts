@@ -22,7 +22,7 @@ export const FINDINGS_OPEN_STATUSES = ['new', 'confirmed', 'in_progress', 'fix_a
 /** Fixed: closed by a verified fix. */
 export const FINDINGS_FIXED_STATUSES = ['resolved'] as const
 
-/** Dispositioned: a decision not to fix; never counted as fixed. */
+/** Dismissed (API value `dispositioned`): a decision not to fix; never counted as fixed. */
 export const FINDINGS_DISPOSITIONED_STATUSES = ['false_positive', 'accepted', 'duplicate'] as const
 
 /** Closed: fixed or dispositioned. */

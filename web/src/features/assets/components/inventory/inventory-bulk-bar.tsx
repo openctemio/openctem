@@ -94,9 +94,9 @@ import {
   type BusinessContextTarget,
 } from './inventory-business-context-actions'
 import { addAssetOwner } from '../../hooks/use-asset-owners'
+import { OWNERSHIP_TYPES, ownershipTypeLabel } from '../../lib/ownership-labels'
 import {
   CRITICALITY_LABELS,
-  OWNERSHIP_TYPE_LABELS,
   type Asset,
   type Criticality,
   type OwnershipType,
@@ -508,7 +508,7 @@ export function useInventoryBulk({
       reportResult(
         t('assets.bulk.ownerAssigned', 'Assigned {name} as {role} owner', {
           name: selectedOption.label,
-          role: OWNERSHIP_TYPE_LABELS[ownershipType].toLowerCase(),
+          role: ownershipTypeLabel(t, ownershipType).toLowerCase(),
         }),
         failed
       )
@@ -1070,13 +1070,11 @@ export function useInventoryBulk({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                      ([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      )
-                    )}
+                    {OWNERSHIP_TYPES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {ownershipTypeLabel(t, value)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

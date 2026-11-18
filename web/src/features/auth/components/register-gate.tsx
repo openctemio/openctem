@@ -2,20 +2,15 @@
 
 import Link from '@/components/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, UserX } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
+import { EntryActions, EntryCard, EntryHeader, EntryLine, EntryNote } from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TextLink } from '@/components/ui/text-link'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 import { useCanSelfRegister } from '../hooks/use-can-self-register'
 import { LegalNotice } from './legal-notice'
 import { RegisterForm } from './register-form'
@@ -40,71 +35,61 @@ export function RegisterGate({
 
   if (isLoading) {
     return (
-      <Card className="gap-4" aria-busy="true">
-        <CardHeader>
-          <Skeleton className="h-6 w-40" />
-          <Skeleton className="h-4 w-64" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
-        </CardContent>
-      </Card>
+      <EntryCard aria-busy="true">
+        <div className="flex flex-col gap-1">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-5 w-64 max-w-full" />
+        </div>
+        <Skeleton className="h-control w-full" />
+        <Skeleton className="h-control w-full" />
+        <Skeleton className="h-control w-full" />
+      </EntryCard>
     )
   }
 
   if (!canRegister) {
     return (
-      <Card className="gap-4">
-        <CardHeader>
-          <div className="text-muted-foreground mb-2 flex justify-center">
-            <UserX className="h-10 w-10" />
-          </div>
-          <CardTitle className="text-center text-lg tracking-tight">
-            <h1>{t('auth.register.disabledTitle', 'Registration is disabled')}</h1>
-          </CardTitle>
-          <CardDescription className="text-center">
-            {t(
-              'auth.register.disabledBody',
-              'Accounts are created by your administrator. If you were given a setup or invitation link, open it to get started.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild className="w-full">
+      <EntryCard>
+        <EntryHeader
+          title={t('auth.register.disabledTitle', 'Registration is disabled')}
+          description={t(
+            'auth.register.disabledBody',
+            'Accounts are created by your administrator. If you were given a setup or invitation link, open it to get started.'
+          )}
+        />
+        <EntryActions>
+          <Button variant="outline" asChild>
             <Link href="/login">
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft aria-hidden className="size-4" />
               {t('auth.common.backToSignIn', 'Back to sign in')}
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   const loginHref = returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login'
 
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        <CardTitle className="text-lg tracking-tight">
-          <h1>{t('auth.register.title', 'Create an account')}</h1>
-        </CardTitle>
-        <CardDescription>
-          {t('auth.register.description', 'Enter your email and password to create an account.')}{' '}
-          {t('auth.register.haveAccount', 'Already have an account?')}{' '}
-          <Link href={loginHref} className="hover:text-primary underline underline-offset-4">
-            {t('auth.register.signIn', 'Sign in')}
-          </Link>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <RegisterForm />
-      </CardContent>
-      <CardFooter className="justify-center empty:hidden">
+    <EntryCard>
+      <EntryHeader
+        title={t('auth.register.title', 'Create an account')}
+        description={t(
+          'auth.register.description',
+          'Enter your email and password to create an account.'
+        )}
+      />
+      <RegisterForm />
+      <EntryNote>
         <LegalNotice kind="register" termsUrl={termsUrl} privacyUrl={privacyUrl} />
-      </CardFooter>
-    </Card>
+      </EntryNote>
+      <EntryLine>
+        {t('auth.register.haveAccount', 'Already have an account?')}{' '}
+        <TextLink href={safeHref(loginHref)} variant="inline">
+          {t('auth.register.signIn', 'Sign in')}
+        </TextLink>
+      </EntryLine>
+    </EntryCard>
   )
 }

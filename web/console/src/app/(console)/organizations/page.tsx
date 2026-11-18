@@ -29,7 +29,7 @@ import {
   OrganizationStatePill,
   type OrgStatus,
 } from '@console/features/admin-console/components/organization-state-pill'
-import { organizationHref } from '@console/features/admin-console/lib/organization-links'
+import { organizationHref } from '@console/features/admin-console/lib/console-links'
 import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
 export default function AdminOrganizationsPage() {
@@ -71,15 +71,19 @@ export default function AdminOrganizationsPage() {
         cell: ({ row }) => {
           const href = organizationHref(row.original.id)
           return (
+            // The name keeps its room (up to 70 % of the cell); the slug is the
+            // one that gives way.
             <span className="flex min-w-0 items-baseline gap-2">
-              <RowNameLink
-                href={href}
-                onOpen={() => router.push(href)}
-                title={toDisplayText(row.original.name)}
-              >
-                {toDisplayText(row.original.name)}
-              </RowNameLink>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              <span className="flex max-w-[70%] min-w-0 shrink-0">
+                <RowNameLink
+                  href={href}
+                  onOpen={() => router.push(href)}
+                  title={toDisplayText(row.original.name)}
+                >
+                  {toDisplayText(row.original.name)}
+                </RowNameLink>
+              </span>
+              <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
                 {row.original.slug}
               </span>
             </span>
@@ -181,7 +185,7 @@ export default function AdminOrganizationsPage() {
           label: t('admin.org.col.sso', 'Single sign-on'),
         },
         cell: ({ row }) => (
-          <span className="flex min-w-0 overflow-hidden whitespace-nowrap *:flex-nowrap">
+          <span className="flex min-w-0 overflow-hidden ps-3 whitespace-nowrap *:flex-nowrap">
             <SSOPostureBadges org={row.original} />
           </span>
         ),
@@ -192,7 +196,7 @@ export default function AdminOrganizationsPage() {
         meta: {
           kind: 'date',
           width: 152,
-          hideBelow: 1220,
+          hideBelow: 1560,
           label: t('admin.org.col.created', 'Created'),
         },
         cell: ({ row }) => <RelativeTime date={row.original.created_at} />,

@@ -33,13 +33,15 @@ export function QueueFrame({
   children: ReactNode
 }) {
   const { t, locale } = useTranslation()
+  // The count is the list title row's; this line says only when the queue
+  // holds more than is on screen.
   const note =
     total > shown
       ? t('myWork.topOf', 'Top {shown} of {total}', {
           shown,
           total: formatCount(total, locale),
         })
-      : t('myWork.results', '{count} results', { count: total })
+      : null
   return (
     <section aria-label={label} className="min-w-0 overflow-hidden rounded-lg border bg-card">
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-b px-4 py-2.5">

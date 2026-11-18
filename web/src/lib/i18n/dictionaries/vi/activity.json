@@ -22,6 +22,10 @@
   "activity.loadMore": "Tải thêm",
   "activity.repeated": "{count} lần",
   "activity.repeatedLast": "{count} lần, lần cuối lúc {time}",
+  "activity.trigger.commentsMany": "{count} bình luận",
+  "activity.trigger.commentsOne": "{count} bình luận",
+  "activity.trigger.eventsMany": "{count} sự kiện",
+  "activity.trigger.eventsOne": "{count} sự kiện",
   "activity.trigger.new": "{count} mới",
   "activity.trigger.title": "Hoạt động"
 }

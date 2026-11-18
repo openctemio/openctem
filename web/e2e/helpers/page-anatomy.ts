@@ -28,8 +28,6 @@ const SAVE_EXCEPTIONS = new Set<string>([
   '/settings/finding-lifecycle',
   '/settings/mcp',
   '/settings/pentest',
-  '/settings/scanning/content',
-  '/settings/scanning/scan-approval',
   '/settings/scope',
 ])
 
@@ -45,8 +43,6 @@ const ROW_MIX_DEBT: Record<string, number> = {
   '/attack-surface/exposures@1440': 1,
   // The "SLA due in 72 hours" toggle (28) beside the Display menu (32).
   '/my-work@1440': 1,
-  // The Assign tile (two-line action tile, 34) beside its person picker (32).
-  '/findings/triage@1440': 1,
 }
 
 type Probe = {

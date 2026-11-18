@@ -8,3 +8,8 @@
 export function platformUserHref(id: string): string {
   return `/users/${encodeURIComponent(id)}`
 }
+
+/** The page of one organization (Customers > Organizations). */
+export function organizationHref(id: string): string {
+  return `/organizations/${encodeURIComponent(id)}`
+}

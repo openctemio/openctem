@@ -236,6 +236,13 @@ wrapper:
   an entry page is one call to action. `signal` is for entry pages only; an
   app page's primary action stays the kit default (ink). Fields and buttons are the kit's and
   take no size, padding or text class from the page. Links are `TextLink`.
+- Pages outside the `(auth)` group put themselves in the frame:
+  `/invitations` (card width) and `/ownership-invitations` (`width="wide"`,
+  the shared card with `surface="entry"`; My account keeps its own card).
+  The account space hub `/welcome` keeps its account header and uses
+  `EntryCard` + `EntryHeader level={2}` for its sections under the page's h1.
+  The entry rows inside the app shell (`/activate`, the GitHub App setup
+  page) keep `PageStack` with one `PageHeader` h1.
 - Entry pages change how a flow looks, never what it does: no request,
   redirect, cookie, message text or autofill attribute changes with a restyle.
 
@@ -287,7 +294,8 @@ Every page, top to bottom:
      of the strip. The current tab is always one of the shown tabs; a label is
      never cut at the edge and the strip never scrolls sideways. In-page
      `<Tabs>` scroll with a fade on the hidden side and keep the active tab in
-     view.
+     full view: a tab under an edge's 2.5rem fade counts as hidden and is
+     scrolled to the middle (at the ends, the strip stops at its edge).
 5. **Sidebar**: the main sidebar collapses and its width can be resized
    (persisted per user, between 13rem and 20rem). Its links are the same in
    every organization. Settings and the admin console keep their own rail.
@@ -339,8 +347,10 @@ reference.
    buttons, everything else in the More menu (`ActionMenu` entries, a sheet
    on a phone). Below 768 px the first line is the way back to the parent
    list ("‹ Findings") with the position at its end, the primary action
-   leads the action row and takes the free width, and More closes it.
-   Status, owner and dates are never in the header.
+   leads the action row and takes the free width, and More closes it; a
+   More with no buttons stays at the end of the title's line. The chips
+   wrap onto lines and are never cut by the screen. Status, owner and dates
+   are never in the header.
 2. **In-page `<Tabs>`** right under the header, the active tab in the URL,
    counts in `TabsCount`.
 3. **`PropertyList`** holds the record's properties: `PropertyGroup`s of
@@ -802,7 +812,11 @@ Every settings page is built from the same parts (`@/features/shared`):
   single-storey a and open digits) and JetBrains Mono (`font-mono`). The
   files and their OFL licences are in `web/public/fonts`, declared in
   `src/styles/fonts.css` with Latin, Latin Extended and Vietnamese subsets;
-  no font CDN (the CSP allows fonts from our own origin only).
+  no font CDN (the CSP allows fonts from our own origin only). `Inter
+Fallback` (a local Arial or Liberation Sans with Inter's average width,
+  ascent and descent) follows Inter in the stack, so the swap from the
+  fallback to Inter moves nothing; the console's root layout preloads the
+  Inter files its first paint uses.
 
 ## 6. Colour
 
@@ -837,7 +851,9 @@ Every settings page is built from the same parts (`@/features/shared`):
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
-  `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+  `src/lib/criticality-colors.ts`; its badge (`CriticalityBadge`) has one look
+  everywhere, list rows and record headers alike: the level bars and the word on
+  the neutral pill (`Tag levelOutline`), never a solid fill. Charts: the chart colour sources.
 
 ### Charts
 

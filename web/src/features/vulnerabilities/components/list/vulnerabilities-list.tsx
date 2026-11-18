@@ -447,7 +447,7 @@ function VulnerabilitiesListBody() {
     ({
       open: t('vulnPage.list.state.open', 'Open'),
       fixed: t('vulnPage.list.state.fixed', 'Fixed'),
-      dispositioned: t('vulnPage.list.state.dispositioned', 'Accepted or false positive'),
+      dispositioned: t('vulnPage.list.state.dispositioned', 'Dismissed'),
       all: t('vulnPage.list.state.all', 'All'),
     })[s]
   const sortLabel: Record<string, string> = {

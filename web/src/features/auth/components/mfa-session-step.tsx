@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { EntryBanner } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -129,8 +129,8 @@ export function MfaSessionStep({
 
   if (phase.kind === 'starting' || phase.kind === 'opening') {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-        <Loader2 className="h-4 w-4 animate-spin" />
+      <div className="text-body text-muted-foreground flex items-center gap-2" role="status">
+        <Loader2 aria-hidden className="size-4 animate-spin" />
         {phase.kind === 'starting'
           ? t('auth.mfaSession.starting', 'Preparing two-factor setup')
           : t('auth.mfaSession.opening', 'Opening your organization')}
@@ -140,42 +140,38 @@ export function MfaSessionStep({
 
   if (phase.kind === 'reauth') {
     return (
-      <Alert>
-        <AlertTitle>{t('auth.mfaSession.reauthTitle', 'Sign in again')}</AlertTitle>
-        <AlertDescription className="grid gap-3">
-          <span>
-            {t(
-              'auth.mfaSession.reauthBody',
-              'For your security, sign in again to set up two-factor authentication.'
-            )}
-          </span>
-          <Button type="button" size="sm" className="justify-self-start" onClick={onReauthRequired}>
-            {t('auth.mfaSession.reauthAction', 'Sign in')}
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <div className="flex flex-col gap-3.5">
+        <EntryBanner
+          tone="info"
+          role="alert"
+          title={t('auth.mfaSession.reauthTitle', 'Sign in again')}
+        >
+          {t(
+            'auth.mfaSession.reauthBody',
+            'For your security, sign in again to set up two-factor authentication.'
+          )}
+        </EntryBanner>
+        <Button type="button" variant="signal" onClick={onReauthRequired}>
+          {t('auth.mfaSession.reauthAction', 'Sign in')}
+        </Button>
+      </div>
     )
   }
 
   if (phase.kind === 'error') {
     return (
-      <Alert variant="destructive">
-        <AlertTitle>
-          {t('auth.mfaSession.errorTitle', 'Two-factor setup did not finish')}
-        </AlertTitle>
-        <AlertDescription className="grid gap-3">
-          <span>{phase.message}</span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="justify-self-start"
-            onClick={retry}
-          >
-            {t('auth.mfaSession.retry', 'Try again')}
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <div className="flex flex-col gap-3.5">
+        <EntryBanner
+          tone="danger"
+          role="alert"
+          title={t('auth.mfaSession.errorTitle', 'Two-factor setup did not finish')}
+        >
+          {phase.message}
+        </EntryBanner>
+        <Button type="button" variant="outline" onClick={retry}>
+          {t('auth.mfaSession.retry', 'Try again')}
+        </Button>
+      </div>
     )
   }
 

@@ -1,12 +1,8 @@
 'use client'
 
-import { Main } from '@/components/layout'
 import { ContentPolicySettings } from '@/features/sensors/components/content-policy-settings'
 
+/** Settings > Scanning > Content freshness: how fresh the content sensors scan with must be. */
 export default function ScannerContentSettingsPage() {
-  return (
-    <Main>
-      <ContentPolicySettings />
-    </Main>
-  )
+  return <ContentPolicySettings />
 }

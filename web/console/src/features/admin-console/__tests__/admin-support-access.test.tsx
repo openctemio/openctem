@@ -106,6 +106,20 @@ describe('Console support access', () => {
     const item = await screen.findByTestId('support-grant')
     expect(within(item).getByText('Acme Corp')).toBeInTheDocument()
     expect(within(item).getByText(/case CASE-42/)).toBeInTheDocument()
+    // The list's title and its one count; no middle-dot separator in the card.
+    expect(screen.getByRole('heading', { name: 'Granted to you' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(item.textContent).not.toContain(' · ')
+  })
+
+  it('opens a session with an outline button: the grant cards add no filled button', async () => {
+    route(['findings', 'assets'])
+    renderPanel()
+    const item = await screen.findByTestId('support-grant')
+    expect(within(item).getByRole('button', { name: 'Open support session' })).toHaveAttribute(
+      'data-variant',
+      'outline'
+    )
   })
 
   it('without support access: says so, and never reads the grants (the API would refuse)', async () => {
@@ -117,6 +131,7 @@ describe('Console support access', () => {
       )
     ).toBeInTheDocument()
     expect(screen.queryByTestId('support-grant')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Granted to you' })).not.toBeInTheDocument()
     expect(screen.queryByText(/could not be loaded/i)).not.toBeInTheDocument()
     expect(adminFetch.mock.calls.some((c) => c[0] === '/support/grants')).toBe(false)
   })
