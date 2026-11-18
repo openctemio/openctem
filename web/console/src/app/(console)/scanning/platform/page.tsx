@@ -124,6 +124,35 @@ function NotAvailablePanel() {
   )
 }
 
+/**
+ * The page while the release keeps shared sensors closed: no tabs. A link to
+ * the Blocked names tab (`?tab=blocked`) opens on its list: the exceptions
+ * first, then the blocked-names policy, then the notice and the domain-proof
+ * policy. Any other address shows the notice, the domain-proof policy, then
+ * the blocked names.
+ */
+function ClosedLayout({ s }: { s: Scanning }) {
+  const [tab] = useUrlFilter('tab', 'policy')
+  if (tab === 'blocked') {
+    return (
+      <>
+        <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
+        <NotAvailablePanel />
+        <ProofPolicy s={s} />
+      </>
+    )
+  }
+  return (
+    <>
+      <NotAvailablePanel />
+      <ProofPolicy s={s} />
+      {/* The blocked names come once the card above has its final height,
+          so their table is drawn where it stays. */}
+      {s.proof.data || s.proof.error ? <ScopeBlockedNamesPanel canEdit={s.canEditNames} /> : null}
+    </>
+  )
+}
+
 function SharedTabs({ s }: { s: Scanning }) {
   const { t } = useTranslation()
   const [rawTab, setTab] = useUrlFilter('tab', 'policy')
@@ -309,12 +338,12 @@ export default function PlatformScanningPage() {
             'Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.'
           )}
         />
-        {notAvailable ? (
-          <>
-            <NotAvailablePanel />
-            <ProofPolicy s={s} />
-            <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
-          </>
+        {/* Until the setting is read the page does not know its layout: one
+            placeholder, so neither the tabs nor a table flash and move. */}
+        {!s.shared.data && !s.shared.error ? (
+          <Skeleton className="h-56 w-full" />
+        ) : notAvailable ? (
+          <ClosedLayout s={s} />
         ) : (
           <SharedTabs s={s} />
         )}

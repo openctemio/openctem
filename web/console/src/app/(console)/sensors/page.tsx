@@ -1,6 +1,5 @@
 'use client'
 
-import { Info } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
@@ -13,7 +12,7 @@ import { useSharedFleet } from '@console/features/admin-console/api/use-shared-f
 import { useInstanceScanZones } from '@console/features/admin-console/api/use-instance-scan-zones'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { InstanceScanZonesCard } from '@console/features/admin-console/components/instance-scan-zones-card'
-import { SharedSensorEnrollCard } from '@console/features/admin-console/components/shared-sensor-enroll-card'
+import { SharedSensorEnroll } from '@console/features/admin-console/components/shared-sensor-enroll'
 import { SharedFleetPanel } from '@console/features/admin-console/components/shared-fleet-panels'
 import { adminHas } from '@console/features/admin-console/types'
 
@@ -47,36 +46,37 @@ export default function PlatformSensorsPage() {
             'admin.sensors.pageDesc',
             'Sensors the platform owns. Organizations never see them by name.'
           )}
-        />
-        {gateClosed && (
-          <p
-            className="flex items-start gap-2 text-sm text-muted-foreground"
-            data-testid="sensors-shared-scanning-closed"
-          >
-            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {relayPresent
-              ? t(
-                  'admin.sensors.sharedClosed',
-                  'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (feed relay, passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
-                )
-              : t(
-                  'admin.sensors.sharedClosedNoRelay',
-                  'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
-                )}
-          </p>
-        )}
-        <SharedSensorEnrollCard
-          canEdit={canEdit}
-          onIssue={({ name, ttlMinutes, reason, code }) =>
-            createSharedSensorEnrollmentToken({
-              name,
-              ttl_minutes: ttlMinutes,
-              reason,
-              totp_code: code,
-            })
+        >
+          <SharedSensorEnroll
+            canEdit={canEdit}
+            onIssue={({ name, ttlMinutes, reason, code }) =>
+              createSharedSensorEnrollmentToken({
+                name,
+                ttl_minutes: ttlMinutes,
+                reason,
+                totp_code: code,
+              })
+            }
+          />
+        </PageHeader>
+        {/* The fleet is the page's list and comes first; the shared-scanning
+            note sits behind the info mark of its title row, so it appearing
+            once the setting is read moves nothing. */}
+        <SharedFleetPanel
+          note={
+            gateClosed
+              ? relayPresent
+                ? t(
+                    'admin.sensors.sharedClosed',
+                    'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (feed relay, passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
+                  )
+                : t(
+                    'admin.sensors.sharedClosedNoRelay',
+                    'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
+                  )
+              : undefined
           }
         />
-        <SharedFleetPanel />
         {zones.error ? (
           <ErrorState
             title={t('admin.instanceZones.errorTitle')}
