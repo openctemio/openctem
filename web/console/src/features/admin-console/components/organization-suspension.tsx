@@ -111,6 +111,11 @@ export function OrganizationSuspensionAction({
       </Button>
       {open && (
         <AdminConfirmDialog
+          reasonPlaceholder={
+            suspended
+              ? t('admin.org.suspension.reasonLift', 'Invoice paid, ticket 2231')
+              : t('admin.org.suspension.reasonSuspend', 'Abuse report confirmed, ticket 2231')
+          }
           open
           onOpenChange={setOpen}
           title={label}
@@ -165,6 +170,10 @@ export function OrganizationPurgeAction({
       </Button>
       {open && (
         <AdminConfirmDialog
+          reasonPlaceholder={t(
+            'admin.org.deletion.reasonPurge',
+            'The contract ended and the customer asked for deletion, ticket 2231'
+          )}
           open
           onOpenChange={setOpen}
           title={t('admin.org.deletion.purgeTitle', 'Delete {name} now?', { name: org.name })}

@@ -22,6 +22,10 @@
   "activity.loadMore": "Load more",
   "activity.repeated": "{count} times",
   "activity.repeatedLast": "{count} times, the last at {time}",
+  "activity.trigger.commentsMany": "{count} comments",
+  "activity.trigger.commentsOne": "{count} comment",
+  "activity.trigger.eventsMany": "{count} events",
+  "activity.trigger.eventsOne": "{count} event",
   "activity.trigger.new": "{count} new",
   "activity.trigger.title": "Activity"
 }
