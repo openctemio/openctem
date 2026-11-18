@@ -50,6 +50,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/server/internal/app/module"
 	"github.com/openctemio/openctem/server/internal/app/orgrelay"
+	"github.com/openctemio/openctem/server/internal/app/privatedestinations"
 	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
@@ -1073,7 +1074,9 @@ type Services struct {
 	// LeakedSecretPolicy is the platform default of whether imported leaked
 	// secret values are kept (organizations may override it).
 	LeakedSecretPolicy *leakedsecretpolicy.Service
-	PlatformMFA        *platformmfa.Service
+	// PrivateDestinations: the console's private ranges for outbound requests.
+	PrivateDestinations *privatedestinations.Service
+	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1233,6 +1236,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 		s.LeakedSecretPolicy = leakedsecretpolicy.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, log)
+		s.PrivateDestinations = privatedestinations.NewService(repos.PlatformSetting, s.SettingRecorder, log)
+		s.PrivateDestinations.SetSignupOpen(cfg.Auth.SignupMode == config.SignupModeOpen)
+		// Every replica applies the console ranges now and keeps them current.
+		s.PrivateDestinations.Start(context.Background())
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,

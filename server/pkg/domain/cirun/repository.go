@@ -3,6 +3,7 @@ package cirun
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -192,6 +193,32 @@ type PipelineCaps struct {
 }
 
 // PipelineRepository persists CI pipelines. Every method is tenant-scoped.
+// OwnerPinKeep names the owner pins a configuration change keeps: a pin's
+// name (GitHub organization, GitLab namespace path) is kept when its first
+// segment is one of Groups (listed owners) or the name is one of Namespaces
+// (the namespace of a listed repository).
+type OwnerPinKeep struct {
+	Groups     []string
+	Namespaces []string
+}
+
+// OwnerPinsKept is what a configuration with rules r keeps of its pins.
+func OwnerPinsKept(r Rules) OwnerPinKeep {
+	var k OwnerPinKeep
+	for _, o := range r.Owners {
+		if o = strings.ToLower(strings.TrimSpace(o)); o != "" {
+			k.Groups = append(k.Groups, o)
+		}
+	}
+	for _, rp := range r.Repositories {
+		rp = strings.ToLower(strings.TrimSpace(rp))
+		if i := strings.LastIndex(rp, "/"); i > 0 {
+			k.Namespaces = append(k.Namespaces, rp[:i])
+		}
+	}
+	return k
+}
+
 type PipelineRepository interface {
 	// RepositoryBoundElsewhere reports whether an active pipeline of the
 	// provider and issuer, keyed by another repository id, already reports
@@ -208,9 +235,10 @@ type PipelineRepository interface {
 	// is pinned already, and returns the pinned id and whether this call
 	// pinned it.
 	PinOwner(ctx context.Context, tenantID, trustConfigID shared.ID, ownerName, ownerID string) (string, bool, error)
-	// ResetOwnerPins drops the configuration's pins (they are taken again at
-	// the next admitted exchange).
-	ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error)
+	// DropOwnerPins drops the configuration's pins except those of the names
+	// keep covers (OwnerPinKeep); a pin dropped is taken again at the next
+	// admitted exchange. An empty keep drops every pin.
+	DropOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID, keep OwnerPinKeep) (int64, error)
 	// OwnerPins lists the configuration's pins.
 	OwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) ([]OwnerPin, error)
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled

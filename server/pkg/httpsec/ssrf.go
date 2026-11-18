@@ -69,6 +69,53 @@ var hardBlockedIPRanges = []string{
 	"198.18.0.0/15", // Benchmarking
 }
 
+// hardBlockedReason says why each hardBlockedIPRanges entry is blocked. The
+// table above stays a plain string list: server/scripts/security-lint.sh
+// (Rule 6) compares it with the shared address-scope definition.
+var hardBlockedReason = map[string]HardBlockReason{
+	"127.0.0.0/8":        HardBlockLoopback,
+	"169.254.0.0/16":     HardBlockLinkLocal,
+	"100.64.0.0/10":      HardBlockSharedAddress,
+	"0.0.0.0/8":          HardBlockUnspecified,
+	"224.0.0.0/4":        HardBlockMulticast,
+	"240.0.0.0/4":        HardBlockReserved,
+	"255.255.255.255/32": HardBlockBroadcast,
+	"::1/128":            HardBlockLoopback,
+	"::/128":             HardBlockUnspecified,
+	"::/96":              HardBlockEmbeddedIPv4,
+	"fe80::/10":          HardBlockLinkLocal,
+	"ff00::/8":           HardBlockMulticast,
+	"fec0::/10":          HardBlockReserved,
+	"fd00:ec2::254/128":  HardBlockMetadata,
+	"fd20:ce::254/128":   HardBlockMetadata,
+	"64:ff9b::/96":       HardBlockEmbeddedIPv4,
+	"64:ff9b:1::/48":     HardBlockEmbeddedIPv4,
+	"2002::/16":          HardBlockEmbeddedIPv4,
+	"2001::/32":          HardBlockEmbeddedIPv4,
+	"192.0.0.0/24":       HardBlockReserved,
+	"198.18.0.0/15":      HardBlockReserved,
+}
+
+// HardBlockReason says why an address can never be reached, whatever ranges
+// the installation opened.
+type HardBlockReason string
+
+// Hard-block reasons.
+const (
+	HardBlockLoopback      HardBlockReason = "loopback"
+	HardBlockLinkLocal     HardBlockReason = "link_local"
+	HardBlockMetadata      HardBlockReason = "cloud_metadata"
+	HardBlockSharedAddress HardBlockReason = "shared_address_space"
+	HardBlockUnspecified   HardBlockReason = "unspecified"
+	HardBlockMulticast     HardBlockReason = "multicast"
+	HardBlockBroadcast     HardBlockReason = "broadcast"
+	HardBlockReserved      HardBlockReason = "reserved"
+	HardBlockEmbeddedIPv4  HardBlockReason = "embedded_ipv4"
+	// HardBlockName: the host name itself is a blocked alias (localhost,
+	// the metadata service names).
+	HardBlockName HardBlockReason = "blocked_name"
+)
+
 // privateIPRanges lists the RFC 1918 / ULA CIDRs. They are blocked by
 // default: a tenant-supplied URL must not reach the platform's own network
 // (database, Redis, the sensor gateway, other services on the same network).
@@ -89,18 +136,12 @@ var privateIPRanges = []string{
 	"fc00::/7",       // IPv6 ULA
 }
 
-// Environment variables read once at start-up.
+// Environment variables read once at start-up. The platform console adds
+// ranges at runtime (SetConsolePrivateCIDRs, private_policy.go).
 const (
 	EnvAllowPrivate      = "OPENCTEM_HTTPSEC_ALLOW_PRIVATE"
 	EnvAllowPrivateCIDRs = "OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS"
 )
-
-// allowPrivate opens every private range (development only). Tests flip it
-// directly to exercise both modes.
-var allowPrivate bool
-
-// allowedPrivateCIDRs are the private ranges the operator opened by name.
-var allowedPrivateCIDRs []*net.IPNet
 
 // privateEgressErr is the reason the private-egress settings were refused;
 // nothing was opened when it is set.
@@ -109,17 +150,11 @@ var privateEgressErr error
 // AllowPrivate reports whether every RFC1918 / ULA range is reachable (the
 // development-only switch). For start-up logging only; IsIPBlocked decides
 // individual calls.
-func AllowPrivate() bool { return allowPrivate }
+func AllowPrivate() bool { return currentPolicy().all }
 
 // AllowedPrivateCIDRs returns the private ranges opened by
 // OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS, for start-up logging.
-func AllowedPrivateCIDRs() []string {
-	out := make([]string, 0, len(allowedPrivateCIDRs))
-	for _, n := range allowedPrivateCIDRs {
-		out = append(out, n.String())
-	}
-	return out
-}
+func AllowedPrivateCIDRs() []string { return netStrings(currentPolicy().env) }
 
 // PrivateEgressError returns why the private-egress settings were refused, or
 // nil. The server refuses to start on it; the guard already ignores a refused
@@ -182,7 +217,7 @@ func insidePrivateRange(n *net.IPNet) bool {
 
 // dangerousHosts is a string-level allowlist rejection for common
 // aliases that hit metadata/local services before DNS resolves.
-// These stay blocked regardless of allowPrivate — "localhost" and
+// These stay blocked whatever private ranges are open — "localhost" and
 // the IMDS aliases are never legitimate outbound targets.
 var dangerousHosts = []string{
 	"localhost",
@@ -227,12 +262,14 @@ var defaultDialer = guardedDialer{
 }
 
 var hardBlockedCIDRs []*net.IPNet
+var hardBlockedReasons []HardBlockReason
 var privateCIDRs []*net.IPNet
 
 func init() {
 	for _, cidr := range hardBlockedIPRanges {
 		if _, ipNet, err := net.ParseCIDR(cidr); err == nil {
 			hardBlockedCIDRs = append(hardBlockedCIDRs, ipNet)
+			hardBlockedReasons = append(hardBlockedReasons, hardBlockedReason[cidr])
 		}
 	}
 	for _, cidr := range privateIPRanges {
@@ -244,13 +281,16 @@ func init() {
 	if appEnv == "" {
 		appEnv = "production" // the internal/config default
 	}
-	allowPrivate, allowedPrivateCIDRs, privateEgressErr = loadPrivateEgress(
+	var all bool
+	var env []*net.IPNet
+	all, env, privateEgressErr = loadPrivateEgress(
 		appEnv, os.Getenv(EnvAllowPrivate), os.Getenv(EnvAllowPrivateCIDRs))
+	policy.Store(&egressPolicy{all: all, env: env})
 }
 
 // IsIPBlocked reports whether the given IP is not reachable under
 // the current policy. Hard-blocked CIDRs always return true; a private
-// (RFC1918 / ULA) address is reachable only when allowPrivate is set or it is
+// (RFC1918 / ULA) address is reachable only when the development switch is on or it is
 // inside a range the operator opened.
 func IsIPBlocked(ip net.IP) bool {
 	return isIPBlocked(ip, false)
@@ -272,25 +312,32 @@ func IsPrivateIP(ip net.IP) bool {
 // privateOK is true every RFC1918 / ULA address is reachable (the
 // hard-blocked ranges never are).
 func isIPBlocked(ip net.IP, privateOK bool) bool {
-	for _, cidr := range hardBlockedCIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
+	if _, hard := hardBlockReason(ip); hard {
+		return true
 	}
-	if privateOK || allowPrivate {
+	if privateOK {
 		return false
 	}
-	for _, cidr := range allowedPrivateCIDRs {
+	// One snapshot per check: a console change mid-check cannot mix two
+	// policies.
+	p := currentPolicy()
+	if p.all {
+		return false
+	}
+	if p.opens(ip) != nil {
+		return false
+	}
+	return IsPrivateIP(ip)
+}
+
+// hardBlockReason returns why ip can never be reached, if it cannot.
+func hardBlockReason(ip net.IP) (HardBlockReason, bool) {
+	for i, cidr := range hardBlockedCIDRs {
 		if cidr.Contains(ip) {
-			return false
+			return hardBlockedReasons[i], true
 		}
 	}
-	for _, cidr := range privateCIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return "", false
 }
 
 // ValidateHost resolves host (a bare hostname or host:port) and rejects it if
@@ -550,6 +597,7 @@ func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {
 		ResponseHeaderTimeout: 15 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}
+	registerGuardedTransport(tr)
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     tr,

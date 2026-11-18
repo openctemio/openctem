@@ -38,6 +38,11 @@ import (
 //	                                           audit, admins told; a second owner on a
 //	                                           hosted service for grants, extensions
 //	                                           and turning the government rule off)
+//	/admin/settings/private-destinations   any admin   PUT: platform owner
+//	                                           (platform.settings.network) + fresh step-up
+//	                                           + reason (critical audit, admins told);
+//	                                           test: the same permission, rate limited,
+//	                                           resolves only
 //
 // Secrets are never returned by any of them.
 func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlewares []Middleware,
@@ -125,6 +130,19 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.POST("/exceptions", on(scopeNames, ps.GrantScopeNameException), freshStepUp("settings.scope_name_exception"))
 		r.POST("/exceptions/{id}/extend", on(scopeNames, ps.ExtendScopeNameException), freshStepUp("settings.scope_name_exception"))
 		r.POST("/exceptions/{id}/revoke", on(scopeNames, ps.RevokeScopeNameException), freshStepUp("settings.scope_name_exception"))
+	}, adminMiddlewares...)
+	// Private network destinations: opens the platform's own network to every
+	// organization. The test only resolves (never connects), bounded per
+	// administrator.
+	privateDest := ps.PrivateDestinations != nil
+	router.Group("/api/v1/admin/settings/private-destinations", func(r Router) {
+		r.GET("/", on(privateDest, ps.GetPrivateDestinations))
+		r.PUT("/", on(privateDest, ps.UpdatePrivateDestinations), freshStepUp("settings.private_destinations"))
+		testMW := []Middleware{}
+		if h.AdminDestinationTestLimiter != nil {
+			testMW = append(testMW, h.AdminDestinationTestLimiter.WriteMiddleware())
+		}
+		r.POST("/test", on(privateDest, ps.TestPrivateDestination), testMW...)
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))
