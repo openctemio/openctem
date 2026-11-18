@@ -19,8 +19,12 @@ vi.mock('@/lib/permissions', async (importOriginal) => ({
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', slug: 'acme', role: 'owner' } }),
 }))
+// "Mine" is decided by the profile's id (useMyUserId); the auth store holds a
+// different id, so a regression to the store would fail these tests.
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => 'u-me' }))
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: 'u-me' } }),
+  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
+    sel({ user: { id: 'auth-store-id' } }),
 }))
 vi.mock('@/features/organization/api/use-members', () => ({
   useMembers: () => ({

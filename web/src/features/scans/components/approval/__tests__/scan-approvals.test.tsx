@@ -55,9 +55,14 @@ vi.mock('@/hooks/use-list-params', () => ({
     setFilter: listState.setFilter,
   }),
 }))
-// The page knows the signed-in person from the profile, not the auth store
-// (the session token is not readable by the page).
-vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'me' }) }))
+// "Mine" is decided by the profile's id (useMyUserId); the auth store and the
+// display user hold different ids, so a regression to either would fail these tests.
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => 'me' }))
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
+    sel({ user: { id: 'auth-store-id' } }),
+}))
+vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'display-user-id' }) }))
 vi.mock('@/components/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
     <a href={href}>{children}</a>
