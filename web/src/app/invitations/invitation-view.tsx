@@ -202,7 +202,9 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       setOpenWait(seconds)
       setOpenError(
         t(
-          selected.status === 429 ? 'org.acceptInvite.openBusy' : 'org.acceptInvite.openUnavailable',
+          selected.status === 429
+            ? 'org.acceptInvite.openBusy'
+            : 'org.acceptInvite.openUnavailable',
           undefined,
           { org: data.tenant.name, seconds }
         )
