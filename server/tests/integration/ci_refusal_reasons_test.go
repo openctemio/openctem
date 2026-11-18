@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -49,22 +50,34 @@ func TestCIRefusal_WorkflowValueAndAllow(t *testing.T) {
 		t.Fatalf("refusal record: %+v", got)
 	}
 
-	// Another tenant cannot touch the configuration.
-	if _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.other, cfg.ID, cirunapp.AllowWorkflowRef, value,
+	refusalID := shared.MustIDFromString(got.ID)
+	admin := cirunapp.Actor{Email: "admin@acme.test"}
+
+	// Another tenant cannot touch the configuration with this refusal.
+	if _, _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.other, cfg.ID, refusalID,
 		cirunapp.Actor{Email: "admin@other.test"}); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant allow: %v", err)
 	}
-	if _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, "owner", "evil",
-		cirunapp.Actor{Email: "admin@acme.test"}); !errors.Is(err, cirunapp.ErrAllowKind) {
-		t.Fatalf("unknown kind: %v", err)
+	// Another tenant's refusal id is not found in this tenant.
+	ocfg := r.trust(r.other, cirun.Rules{Owners: []string{"acme"}, WorkflowRefs: []string{listed}})
+	oraw := r.idp.token(t, ocfg.Audience, "acme/api", "main", sha, map[string]any{"ci_config_ref_uri": host + "/acme/api//other.yml@refs/heads/main"})
+	if code, _ := r.exchange(r.other, oraw); code != http.StatusUnauthorized {
+		t.Fatalf("other tenant's token admitted: %d", code)
 	}
-	next, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, cirunapp.AllowWorkflowRef, value,
-		cirunapp.Actor{Email: "admin@acme.test"})
-	if err != nil || !changed || len(next.Rules.WorkflowRefs) != 2 {
-		t.Fatalf("allow: %v %v %+v", err, changed, next)
+	olist, err := r.svc.RecentRefusals(context.Background(), r.other, 1)
+	if err != nil || len(olist) != 1 {
+		t.Fatalf("other tenant's refusal: %v %v", olist, err)
 	}
-	if _, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, cirunapp.AllowWorkflowRef, value,
-		cirunapp.Actor{Email: "admin@acme.test"}); err != nil || changed {
+	if _, _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, shared.MustIDFromString(olist[0].ID),
+		admin); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another tenant's refusal id: %v", err)
+	}
+
+	next, allowed, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, refusalID, admin)
+	if err != nil || !changed || len(next.Rules.WorkflowRefs) != 2 || allowed.Kind != cirunapp.AllowWorkflowRef || allowed.Value != value {
+		t.Fatalf("allow: %v %v %+v %+v", err, changed, allowed, next)
+	}
+	if _, _, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, refusalID, admin); err != nil || changed {
 		t.Fatalf("allow again: %v %v", err, changed)
 	}
 	var audited int
@@ -88,9 +101,13 @@ func TestCIRefusal_RefAllow(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized || !strings.Contains(msg, "branches and tags it lists") || !strings.Contains(msg, "release") {
 		t.Fatalf("refusal: %d %v", resp.StatusCode, out)
 	}
-	if _, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, cirunapp.AllowRef, "release",
-		cirunapp.Actor{Email: "admin@acme.test"}); err != nil || !changed {
-		t.Fatalf("allow ref: %v %v", err, changed)
+	list, err := r.svc.RecentRefusals(context.Background(), r.tenant, 1)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("refusals: %v %v", list, err)
+	}
+	if _, allowed, changed, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, shared.MustIDFromString(list[0].ID),
+		cirunapp.Actor{Email: "admin@acme.test"}); err != nil || !changed || allowed.Kind != cirunapp.AllowRef || allowed.Value != "release" {
+		t.Fatalf("allow ref: %v %v %+v", err, changed, allowed)
 	}
 	if code, ex := r.exchange(r.tenant, raw); code != http.StatusCreated {
 		t.Fatalf("after allow: %d %v", code, ex)
@@ -176,20 +193,184 @@ func TestCIRefusal_UnverifiedRecord(t *testing.T) {
 	}
 }
 
-// The store keeps at most MaxUnverifiedRefusals per tenant, newest first.
+// The store keeps at most MaxUnverifiedRefusals per tenant. A full tenant
+// takes no new record while its records are recent (nothing is pushed out),
+// and takes one in place of a record not seen for the retention period.
 func TestCIRefusal_UnverifiedBounded(t *testing.T) {
 	r := newCIRig(t)
 	r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	ctx := context.Background()
 	base := time.Now().UTC()
-	for i := 0; i < cirun.MaxUnverifiedRefusals+5; i++ {
-		if err := r.repo.RecordUnverifiedRefusal(context.Background(), cirun.UnverifiedRefusal{TenantID: r.tenant,
-			Issuer: "https://ci" + string(rune('a'+i)) + ".example.com", Reason: cirunapp.UnverifiedNoConfiguration,
-			LastSeen: base.Add(time.Duration(i) * time.Second), Count: 1}); err != nil {
+	record := func(i int, at time.Time) {
+		t.Helper()
+		if err := r.repo.RecordUnverifiedRefusal(ctx, cirun.UnverifiedRefusal{TenantID: r.tenant,
+			Issuer: fmt.Sprintf("https://ci%02d.example.com", i), Reason: cirunapp.UnverifiedNoConfiguration,
+			LastSeen: at, Count: 1}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	list, err := r.repo.ListUnverifiedRefusals(context.Background(), r.tenant)
-	if err != nil || len(list) != cirun.MaxUnverifiedRefusals || !strings.HasPrefix(list[0].Issuer, "https://ci"+string(rune('a'+cirun.MaxUnverifiedRefusals+4))) {
-		t.Fatalf("bounded list: %d %v (first %+v)", len(list), err, list[0])
+	// The first record is old; the others are recent.
+	record(0, base.Add(-cirun.UnverifiedRefusalRetention-time.Hour))
+	for i := 1; i < cirun.MaxUnverifiedRefusals; i++ {
+		record(i, base.Add(time.Duration(i)*time.Second))
+	}
+	record(50, base.Add(time.Minute)) // replaces the old record
+	record(51, base.Add(time.Minute)) // full of recent records: not kept
+	list, err := r.repo.ListUnverifiedRefusals(ctx, r.tenant)
+	if err != nil || len(list) != cirun.MaxUnverifiedRefusals {
+		t.Fatalf("bounded list: %d %v", len(list), err)
+	}
+	issuers := map[string]bool{}
+	for _, u := range list {
+		issuers[u.Issuer] = true
+	}
+	if issuers["https://ci00.example.com"] || !issuers["https://ci50.example.com"] || issuers["https://ci51.example.com"] ||
+		!issuers["https://ci01.example.com"] {
+		t.Fatalf("records kept: %v", issuers)
+	}
+}
+
+// Review finding: for no_configuration the stored issuer was whatever the
+// anonymous token claimed, so 20 made-up issuers pushed a real record (a
+// mistyped issuer) out and chose the text administrators read. An issuer not
+// close to a configured one is now recorded as "another issuer" (one row),
+// and the real record stays.
+func TestCIRefusal_JunkIssuersDoNotEvict(t *testing.T) {
+	r := newCIRig(t)
+	now := time.Now().UTC()
+	r.svc.SetClock(func() time.Time { return now })
+	r.svc.SetUnverifiedRefusalStore(r.repo)
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	withIssuer := func(iss string) string {
+		return r.idp.token(t, cfg.Audience, "acme/api", "main", "7777777777777777777777777777777777777777", map[string]any{"iss": iss})
+	}
+	send := func(tok string) {
+		t.Helper()
+		if resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(), "id_token": tok}); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("exchange: %d %v", resp.StatusCode, out)
+		}
+	}
+	mistyped := r.idp.url + "/gitlab"
+	send(withIssuer(mistyped))
+	for i := 0; i < 25; i++ {
+		now = now.Add(time.Second)
+		send(withIssuer(fmt.Sprintf("https://junk%02d.example.org/oidc", i)))
+	}
+	list, _, err := r.svc.UnverifiedRefusals(context.Background(), r.tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var real, other int
+	for _, u := range list {
+		switch {
+		case u.Issuer == mistyped:
+			real++
+		case u.Issuer == "":
+			other++
+		default:
+			t.Errorf("a made-up issuer was stored: %q", u.Issuer)
+		}
+	}
+	if real != 1 || other != 1 || len(list) != 2 {
+		t.Fatalf("records: %+v", list)
+	}
+}
+
+// Review finding: a verified token no configuration admits got the rule
+// kinds of the organization's configurations (details.reasons) whatever the
+// issuer. On a hosted issuer anyone can mint a verified token, so the job
+// gets the generic refusal there; a self-managed issuer keeps the detail.
+func TestCIRefusal_SharedIssuerGetsGenericMessage(t *testing.T) {
+	r := newProviderRig(t)
+	gh := r.trustFor(r.tenant, cirun.ProviderGitHub, cirun.GitHubIssuer, cirun.Rules{Owners: []string{"acme"}})
+	tok := r.idp.sign(t, map[string]any{
+		"iss": cirun.GitHubIssuer, "aud": gh.Audience, "sub": "repo:stranger/tool:ref:refs/heads/main",
+		"repository": "stranger/tool", "repository_id": "5150", "repository_owner": "stranger", "repository_owner_id": "88",
+		"ref": "refs/heads/main", "sha": "3333333333333333333333333333333333333333", "event_name": "push",
+		"run_id": "1", "run_attempt": "1", "jti": shared.NewID().String(),
+		"job_workflow_ref": "stranger/tool/.github/workflows/scan.yml@refs/heads/main",
+	}, nil)
+	code, out := r.exchangeWith(r.tenant, tok, nil)
+	msg, _ := out["message"].(string)
+	if code != http.StatusUnauthorized || out["code"] != "CI_TOKEN_NOT_TRUSTED" || out["details"] != nil ||
+		strings.Contains(msg, "organizations or groups it lists") || strings.Contains(msg, "stranger") {
+		t.Fatalf("hosted issuer refusal told the rule: %d %v", code, out)
+	}
+	// The administrator still sees the reason.
+	list, err := r.svc.RecentRefusals(context.Background(), r.tenant, 1)
+	if err != nil || len(list) != 1 || len(list[0].Configs) != 1 || list[0].Configs[0].Code != cirun.RefuseOwner {
+		t.Fatalf("refusal record: %+v %v", list, err)
+	}
+
+	// The same refusal on a self-managed GitLab keeps the detail.
+	const selfManaged = "https://gitlab.example.com"
+	gl := r.trustFor(r.tenant, cirun.ProviderGitLab, selfManaged, cirun.Rules{Owners: []string{"acme"}})
+	gtok := r.idp.sign(t, map[string]any{
+		"iss": selfManaged, "aud": gl.Audience, "sub": "project_path:stranger/tool:ref_type:branch:ref:main",
+		"project_path": "stranger/tool", "project_id": "61", "namespace_path": "stranger", "namespace_id": "62",
+		"ref": "main", "ref_type": "branch", "sha": "4444444444444444444444444444444444444444",
+		"pipeline_id": "1", "pipeline_source": "push", "jti": shared.NewID().String(),
+	}, nil)
+	code, out = r.exchangeWith(r.tenant, gtok, nil)
+	msg, _ = out["message"].(string)
+	details, _ := out["details"].(map[string]any)
+	if code != http.StatusUnauthorized || !strings.Contains(msg, "organizations or groups it lists") || details == nil ||
+		!strings.Contains(fmt.Sprint(details["reasons"]), cirun.RefuseOwner) {
+		t.Fatalf("self-managed refusal lost its detail: %d %v", code, out)
+	}
+}
+
+// Review finding: the one-click fix adds a value only from a refusal by that
+// configuration's pipeline definitions or branches rule. A refusal by the
+// owner rule (the token is not the organization's) cannot add anything.
+func TestCIRefusal_AllowRefusesOtherRules(t *testing.T) {
+	r := newCIRig(t)
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}, Refs: []string{"main"}})
+	raw := r.idp.token(t, cfg.Audience, "evil/api", "release", "5555555555555555555555555555555555555555", nil)
+	if code, _ := r.exchange(r.tenant, raw); code != http.StatusUnauthorized {
+		t.Fatalf("owner refusal admitted: %d", code)
+	}
+	list, err := r.svc.RecentRefusals(context.Background(), r.tenant, 1)
+	if err != nil || len(list) != 1 || list[0].Configs[0].Code != cirun.RefuseOwner {
+		t.Fatalf("refusal: %+v %v", list, err)
+	}
+	if _, _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg.ID, shared.MustIDFromString(list[0].ID),
+		cirunapp.Actor{Email: "admin@acme.test"}); !errors.Is(err, cirunapp.ErrAllowNotApplicable) {
+		t.Fatalf("owner_not_allowed refusal allowed: %v", err)
+	}
+	// Another configuration than the one that refused cannot take it either.
+	cfg2 := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	if _, _, _, err := r.svc.AllowInTrustConfig(context.Background(), r.tenant, cfg2.ID, shared.MustIDFromString(list[0].ID),
+		cirunapp.Actor{Email: "admin@acme.test"}); !errors.Is(err, cirunapp.ErrAllowNotApplicable) {
+		t.Fatalf("another configuration took the refusal: %v", err)
+	}
+}
+
+// Review finding (low): the 503 told an anonymous caller the class of the
+// failure. On a hosted issuer the class is withheld (the administrator's
+// record keeps it); a self-managed issuer keeps it (TestCIRefusal_UnverifiedRecord).
+func TestCIRefusal_SharedIssuerUnavailableWithholdsCause(t *testing.T) {
+	r := newProviderRig(t)
+	r.svc.SetUnverifiedRefusalStore(r.repo)
+	gh := r.trustFor(r.tenant, cirun.ProviderGitHub, cirun.GitHubIssuer, cirun.Rules{Owners: []string{"acme"}})
+	claims := jwtv5.MapClaims{
+		"iss": cirun.GitHubIssuer, "aud": gh.Audience, "sub": "repo:acme/api:ref:refs/heads/main",
+		"repository": "acme/api", "repository_id": "4242", "repository_owner": "acme", "repository_owner_id": "77",
+		"ref": "refs/heads/main", "sha": "6666666666666666666666666666666666666666", "jti": shared.NewID().String(),
+		"iat": time.Now().Unix(), "nbf": time.Now().Unix(), "exp": time.Now().Add(5 * time.Minute).Unix(),
+	}
+	rotated := jwtv5.NewWithClaims(jwtv5.SigningMethodRS256, claims)
+	rotated.Header["kid"] = "k-rotated"
+	tok, err := rotated.SignedString(r.idp.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out := r.exchangeWith(r.tenant, tok, nil)
+	if code != http.StatusServiceUnavailable || out["details"] != nil || strings.Contains(fmt.Sprint(out["message"]), "signing keys: the") {
+		t.Fatalf("hosted issuer 503: %d %v", code, out)
+	}
+	list, _, _ := r.svc.UnverifiedRefusals(context.Background(), r.tenant)
+	if len(list) != 1 || list[0].Cause != cirunapp.IssuerCauseKeyNotFound {
+		t.Fatalf("administrator record: %+v", list)
 	}
 }

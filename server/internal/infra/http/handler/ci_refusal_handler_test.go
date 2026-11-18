@@ -15,10 +15,10 @@ import (
 )
 
 type fakeRefusalActions struct {
-	tenant  shared.ID
-	kind    string
-	value   string
-	configs []cirun.TrustConfig
+	tenant    shared.ID
+	refusalID shared.ID
+	configs   []cirun.TrustConfig
+	notFit    bool
 }
 
 func (f *fakeRefusalActions) UnverifiedRefusals(_ context.Context, tenantID shared.ID) ([]cirun.UnverifiedRefusal, []cirun.TrustConfig, error) {
@@ -27,12 +27,13 @@ func (f *fakeRefusalActions) UnverifiedRefusals(_ context.Context, tenantID shar
 		{Issuer: "", Reason: cirunapp.UnverifiedKeysUnavailable, Cause: cirunapp.IssuerCauseBlockedAddress, Count: 1}}, f.configs, nil
 }
 
-func (f *fakeRefusalActions) AllowInTrustConfig(_ context.Context, tenantID, id shared.ID, kind, value string, _ cirunapp.Actor) (*cirun.TrustConfig, bool, error) {
-	f.tenant, f.kind, f.value = tenantID, kind, value
-	if kind != cirunapp.AllowWorkflowRef && kind != cirunapp.AllowRef {
-		return nil, false, cirunapp.ErrAllowKind
+func (f *fakeRefusalActions) AllowInTrustConfig(_ context.Context, tenantID, id, refusalID shared.ID, _ cirunapp.Actor) (*cirun.TrustConfig, cirunapp.Allowed, bool, error) {
+	f.tenant, f.refusalID = tenantID, refusalID
+	if f.notFit {
+		return nil, cirunapp.Allowed{}, false, cirunapp.ErrAllowNotApplicable
 	}
-	return &cirun.TrustConfig{ID: id, TenantID: tenantID, Name: "gl", Provider: cirun.ProviderGitLab}, true, nil
+	return &cirun.TrustConfig{ID: id, TenantID: tenantID, Name: "gl", Provider: cirun.ProviderGitLab},
+		cirunapp.Allowed{Kind: cirunapp.AllowRef, Value: "release"}, true, nil
 }
 
 // The tenant comes from the session; the unverified list carries the
@@ -62,8 +63,11 @@ func TestCIListUnverifiedRefusals(t *testing.T) {
 	}
 }
 
+// The one-click fix names a refusal, never a value: a free-text kind or
+// value is refused, the tenant comes from the session, and a refusal the
+// configuration cannot take answers 400.
 func TestCIAllowInTrustConfig(t *testing.T) {
-	tenant, id := shared.NewID(), shared.NewID()
+	tenant, id, refusal := shared.NewID(), shared.NewID(), shared.NewID()
 	h := NewCIAdminHandler(nil, nil, logger.NewNop())
 	f := &fakeRefusalActions{}
 	h.SetRefusalActions(f)
@@ -74,14 +78,19 @@ func TestCIAllowInTrustConfig(t *testing.T) {
 		h.AllowInTrustConfig(w, r)
 		return w
 	}
-	if w := call(`{"kind":"owner","value":"evil"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("unknown kind: %d %s", w.Code, w.Body.String())
+	for _, body := range []string{`{"kind":"ref","value":"release"}`, `{"refusal_id":"x"}`,
+		`{"refusal_id":"` + refusal.String() + `","value":"evil"}`} {
+		if w := call(body); w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
+		}
 	}
-	if w := call(`{"kind":"ref","value":"release","tenant_id":"x"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("unknown field accepted: %d", w.Code)
-	}
-	w := call(`{"kind":"workflow_ref","value":"gitlab.example.com/g/p//.gitlab-ci.yml@refs/heads/main"}`)
-	if w.Code != http.StatusOK || f.tenant != tenant || f.kind != cirunapp.AllowWorkflowRef || !strings.Contains(w.Body.String(), `"changed":true`) {
+	w := call(`{"refusal_id":"` + refusal.String() + `"}`)
+	if w.Code != http.StatusOK || f.tenant != tenant || f.refusalID != refusal ||
+		!strings.Contains(w.Body.String(), `"changed":true`) || !strings.Contains(w.Body.String(), `"value":"release"`) {
 		t.Fatalf("allow: %d %s", w.Code, w.Body.String())
+	}
+	f.notFit = true
+	if w := call(`{"refusal_id":"` + refusal.String() + `"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("refusal the configuration cannot take: %d %s", w.Code, w.Body.String())
 	}
 }

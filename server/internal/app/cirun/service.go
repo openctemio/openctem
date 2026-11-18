@@ -359,7 +359,9 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 			// claimed: the job may retry the same token shortly.
 			cause := IssuerCause(err)
 			s.recordUnverified(ctx, tenantID, issuer, UnverifiedKeysUnavailable, cause)
-			return nil, &IssuerUnavailableError{Cause: cause}
+			// On a hosted issuer the caller may be anyone: the class stays
+			// in the administrator's record.
+			return nil, &IssuerUnavailableError{Cause: cause, Withheld: cirun.SharedIssuer(issuer)}
 		}
 		s.recordUnverified(ctx, tenantID, issuer, UnverifiedNotVerified, "")
 		return nil, ErrExchangeRefused
@@ -369,9 +371,13 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		s.noteRenamedRepository(ctx, tenantID, issuer, claims, configs)
-		// The token verified: the job is told which rule refused it and its
-		// own value that did not match, never the configuration's values.
-		if msg := RuleRefusalMessage(refusals, claims); msg != "" {
+		// The token verified: on a self-managed issuer the job is told which
+		// rule refused it and its own value that did not match, never the
+		// configuration's values. On a hosted issuer anyone can mint a
+		// verified token, and the rule kinds would map the organization's
+		// trust rules: the job gets the generic refusal, and the
+		// administrator sees the reason under CI/CD.
+		if msg := RuleRefusalMessage(refusals, claims); msg != "" && !refusedOnSharedIssuer(refusals, configs) {
 			return nil, &RefusedError{Code: "not_trusted", Message: msg, Reasons: refusalCodes(refusals)}
 		}
 		return nil, ErrExchangeRefused
@@ -1393,6 +1399,21 @@ func scannedImage(report *ctis.Report) string {
 		}
 	}
 	return ""
+}
+
+// refusedOnSharedIssuer reports whether any refusing configuration trusts a
+// hosted issuer (cirun.SharedIssuer), or a refusal names no configuration.
+func refusedOnSharedIssuer(refusals []*cirun.Refusal, configs []cirun.TrustConfig) bool {
+	for _, r := range refusals {
+		if r == nil {
+			continue
+		}
+		i := slices.IndexFunc(configs, func(c cirun.TrustConfig) bool { return c.ID == r.ConfigID })
+		if r.ConfigID.IsZero() || i < 0 || cirun.SharedIssuer(configs[i].Issuer) {
+			return true
+		}
+	}
+	return false
 }
 
 // refusalCodes are the distinct codes of the refusals.
