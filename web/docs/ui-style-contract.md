@@ -849,7 +849,9 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
-  `src/lib/criticality-colors.ts`. Charts: the chart colour sources.
+  `src/lib/criticality-colors.ts`; its badge (`CriticalityBadge`) has one look
+  everywhere, list rows and record headers alike: the level bars and the word on
+  the neutral pill (`Tag levelOutline`), never a solid fill. Charts: the chart colour sources.
 
 ### Charts
 
