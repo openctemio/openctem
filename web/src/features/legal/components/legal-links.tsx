@@ -35,12 +35,9 @@ export function LegalWeb({ url }: { url: string }) {
  * around it stay in the translator's order.
  */
 export function withNodes(line: string, nodes: Record<string, ReactNode>): ReactNode {
-  const names = Object.keys(nodes)
-  if (names.length === 0) return line
-  const re = new RegExp(`(${names.map((n) => `\\{${n}\\}`).join('|')})`)
-  return line.split(re).map((part, i) => {
-    const m = /^\{(.+)\}$/.exec(part)
-    if (m && m[1] in nodes) return <Fragment key={i}>{nodes[m[1]]}</Fragment>
+  return line.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1]
+    if (name && name in nodes) return <Fragment key={i}>{nodes[name]}</Fragment>
     return <Fragment key={i}>{part}</Fragment>
   })
 }
