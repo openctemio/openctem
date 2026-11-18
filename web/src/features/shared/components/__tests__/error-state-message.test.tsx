@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { ErrorState } from '../error-state'
 
 const PLAIN =
-  'Something went wrong while loading. Try again; if it keeps failing, report the problem.'
+  'The server did not answer. Nothing was changed. Try again; if it keeps failing, report the problem.'
 
 function apiError(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode })

@@ -581,6 +581,15 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
 const CARD_TITLE_CLASS =
   'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
 
+/**
+ * A control in the card's title line (a chip that opens a popover beside the
+ * status) gets the row menu's 36 px box with its chip centred in it: every
+ * control of the line has one height and one centre, and the chip keeps its
+ * own size.
+ */
+const CARD_HEAD_CONTROL_CLASS =
+  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
+
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
 /** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
@@ -752,8 +761,10 @@ function AutoMobileCard<TData>({
       }}
     >
       {/* Title line, never wrapped: the name (up to two lines), the status
-          chip and the row menu. */}
-      <div data-slot="mobile-card-head" className="flex items-start gap-x-3">
+          chip and the row menu, centred on one line. The menu and any control
+          in the status keep their 36 px box without making the line taller
+          (negative margins), so a chip and the menu share one centre. */}
+      <div data-slot="mobile-card-head" className="flex items-center gap-x-3">
         {select && (
           <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
@@ -763,7 +774,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
-            className={cn('min-w-0 flex-1 self-center', CARD_TITLE_CLASS)}
+            className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
@@ -772,7 +783,11 @@ function AutoMobileCard<TData>({
           <div
             ref={statusRef}
             data-slot="mobile-card-status"
-            className={cn('flex h-5 max-w-[45%] shrink-0 items-center', CARD_LINE_CLASS)}
+            className={cn(
+              '-my-2 flex h-9 max-w-[45%] shrink-0 items-center',
+              CARD_LINE_CLASS,
+              CARD_HEAD_CONTROL_CLASS
+            )}
           >
             {flexRender(status.column.columnDef.cell, status.getContext())}
           </div>
@@ -781,7 +796,7 @@ function AutoMobileCard<TData>({
           <div
             ref={actionsRef}
             data-slot="mobile-card-actions"
-            className="-my-1.5 flex shrink-0 items-center"
+            className="-my-2 flex h-9 shrink-0 items-center"
           >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
@@ -2050,7 +2065,17 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
+                  {/* An error block is start-aligned like every alert: icon,
+                      title, sentence and buttons share one edge (a centred
+                      cell centred only its text). */}
+                  <TableCell
+                    colSpan={columns.length}
+                    data-slot={errorState ? 'table-error-cell' : undefined}
+                    className={cn(
+                      'h-48',
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                    )}
+                  >
                     {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>
