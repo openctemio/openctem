@@ -309,7 +309,7 @@ describe('/attack-paths view', () => {
     expect(screen.getByTestId('attack-path-list')).toBeInTheDocument()
     expect(screen.queryByTestId('attack-path-canvas')).not.toBeInTheDocument()
     unmount()
-    search = new URLSearchParams()
+    search = new URLSearchParams('paths=shortest')
     mobile = true
     render(<AttackPathsPage />)
     const list = screen.getByTestId('attack-path-list')
