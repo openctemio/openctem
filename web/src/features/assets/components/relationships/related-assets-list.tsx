@@ -641,7 +641,11 @@ function AssetName({
   const { t } = useTranslation()
   const a = item.asset
   if (!onNavigateToAsset)
-    return <span className={cn('min-w-0 break-words', className)}><BreakText>{a.name}</BreakText></span>
+    return (
+      <span className={cn('min-w-0 break-words', className)}>
+        <BreakText>{a.name}</BreakText>
+      </span>
+    )
   return (
     <button
       type="button"

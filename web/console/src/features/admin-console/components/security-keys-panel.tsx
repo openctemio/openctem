@@ -165,7 +165,9 @@ export function SecurityKeysPanel({
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium break-words"><BreakText>{k.name}</BreakText></span>
+                      <span className="font-medium break-words">
+                        <BreakText>{k.name}</BreakText>
+                      </span>
                       {k.synced ? (
                         <Badge variant="secondary">
                           {t('admin.keys.synced', 'Synced passkey')}

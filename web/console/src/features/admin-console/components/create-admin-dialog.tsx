@@ -152,7 +152,9 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 <dt className="text-muted-foreground">
                   {t('admin.createAdminDialog.email', 'Email')}
                 </dt>
-                <dd className="min-w-0 break-words"><BreakText>{created.email}</BreakText></dd>
+                <dd className="min-w-0 break-words">
+                  <BreakText>{created.email}</BreakText>
+                </dd>
                 {created.link && (
                   <>
                     <dt className="text-muted-foreground">

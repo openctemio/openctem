@@ -69,7 +69,9 @@ export function PlatformCAPanel({ ca }: { ca: PlatformCAInfo }) {
         {ca.certificates.map((c) => (
           <li key={c.sha256_hex} className="min-w-0 space-y-0.5" data-testid="platform-ca-cert">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium break-words"><BreakText>{c.common_name}</BreakText></span>
+              <span className="font-medium break-words">
+                <BreakText>{c.common_name}</BreakText>
+              </span>
               <Tag
                 label={c.root ? t('sensors.platformCa.root') : t('sensors.platformCa.intermediate')}
               />

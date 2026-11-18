@@ -987,7 +987,9 @@ function GroupRow({
         />
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="break-words text-sm font-medium"><BreakText>{title}</BreakText></span>
+            <span className="break-words text-sm font-medium">
+              <BreakText>{title}</BreakText>
+            </span>
             <span className="text-xs text-muted-foreground">
               {plural(t, `${K}.count`, count, '1 address', '{count} addresses')}
             </span>

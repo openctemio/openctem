@@ -173,7 +173,9 @@ export function CITrustPreview({
                   <dt className="text-muted-foreground">
                     {t('scans.ci.preview.repositoryAsset', 'Repository asset')}
                   </dt>
-                  <dd className="break-words"><BreakText>{result.repository_asset}</BreakText></dd>
+                  <dd className="break-words">
+                    <BreakText>{result.repository_asset}</BreakText>
+                  </dd>
                 </div>
               )}
             </dl>

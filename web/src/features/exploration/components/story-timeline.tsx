@@ -80,7 +80,12 @@ function StepName({ step }: { step: StoryStep }) {
   }
   // Built from ids and a scope pattern of our own API; checked all the same.
   const href = safeHref(stepHref(step))
-  if (!href) return <span className="break-words font-medium"><BreakText>{name}</BreakText></span>
+  if (!href)
+    return (
+      <span className="break-words font-medium">
+        <BreakText>{name}</BreakText>
+      </span>
+    )
   return (
     <Link href={href} className={cn('font-medium', linkClass)}>
       {name}

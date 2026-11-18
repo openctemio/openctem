@@ -157,7 +157,9 @@ function ChangeRow({ change }: { change: EASMChange }) {
               {name}
             </AssetPeekLink>
           ) : (
-            <span className="break-words text-muted-foreground"><BreakText>{name}</BreakText></span>
+            <span className="break-words text-muted-foreground">
+              <BreakText>{name}</BreakText>
+            </span>
           )}
         </div>
         <ChangeDetail change={change} />

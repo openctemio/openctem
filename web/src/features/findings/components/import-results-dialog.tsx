@@ -356,7 +356,9 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm" data-testid="import-file">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-words"><BreakText>{file.name}</BreakText></span>
+        <span className="font-medium break-words">
+          <BreakText>{file.name}</BreakText>
+        </span>
         <Badge variant="outline">{formatLabel(file.format)}</Badge>
       </div>
       {file.error ? (

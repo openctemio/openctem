@@ -115,7 +115,9 @@ export function QuickScanPreviewPanel({ targets, scannerName, onDiscover, discov
     <ul className="space-y-2" data-testid="quick-scan-preview">
       {data.targets.map((p) => (
         <li key={p.target} className="rounded-md border p-2 text-xs">
-          <p className="font-medium break-words"><BreakText>{p.target}</BreakText></p>
+          <p className="font-medium break-words">
+            <BreakText>{p.target}</BreakText>
+          </p>
           {p.refused_code ? (
             <p className="text-destructive">
               {t(REFUSED_KEYS[p.refused_code] ?? REFUSED_KEYS.run_refused)}

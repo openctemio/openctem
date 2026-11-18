@@ -625,7 +625,9 @@ export default function AuditLogPage() {
                         key={field}
                         className="grid gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_2fr] sm:items-center sm:gap-4"
                       >
-                        <span className="font-medium break-words text-muted-foreground">{field}</span>
+                        <span className="font-medium break-words text-muted-foreground">
+                          {field}
+                        </span>
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs break-words text-muted-foreground line-through">
                             {String(change.old)}

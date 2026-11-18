@@ -433,7 +433,9 @@ export function PlatformIdPForm({
               <dt className="text-muted-foreground">
                 {t('admin.platformIdpForm.authorization', 'Authorization')}
               </dt>
-              <dd className="min-w-0 break-words"><BreakText>{idp.authorization_endpoint}</BreakText></dd>
+              <dd className="min-w-0 break-words">
+                <BreakText>{idp.authorization_endpoint}</BreakText>
+              </dd>
               <dt className="text-muted-foreground">{t('admin.platformIdpForm.token', 'Token')}</dt>
               <dd className="min-w-0 break-words">
                 {idp.token_endpoint} ({idp.token_endpoint_auth_method})
@@ -441,7 +443,9 @@ export function PlatformIdPForm({
               <dt className="text-muted-foreground">
                 {t('admin.platformIdpForm.signingKeys', 'Signing keys')}
               </dt>
-              <dd className="min-w-0 break-words"><BreakText>{idp.jwks_uri}</BreakText></dd>
+              <dd className="min-w-0 break-words">
+                <BreakText>{idp.jwks_uri}</BreakText>
+              </dd>
             </dl>
           </CardContent>
         </Card>

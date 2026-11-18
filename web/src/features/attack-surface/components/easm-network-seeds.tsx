@@ -94,7 +94,9 @@ function SeedCard({
             ? t('networkSeeds.kindAsn', 'AS number')
             : t('networkSeeds.kindOrg', 'Organization')}
         </Badge>
-        <span className="break-words font-medium"><BreakText>{seed.value}</BreakText></span>
+        <span className="break-words font-medium">
+          <BreakText>{seed.value}</BreakText>
+        </span>
         {seed.holder && (
           <span className="break-words text-sm text-muted-foreground">{seed.holder}</span>
         )}

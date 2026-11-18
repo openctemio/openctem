@@ -305,7 +305,9 @@ function ReviewRow({
     <li className="flex flex-wrap items-center gap-3 py-3">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="break-words font-medium"><BreakText>{display}</BreakText></span>
+          <span className="break-words font-medium">
+            <BreakText>{display}</BreakText>
+          </span>
           {display !== ascii && (
             // An IDN homoglyph reads like the real name: always show what it really is.
             <span className="break-all font-mono text-xs text-muted-foreground">{ascii}</span>

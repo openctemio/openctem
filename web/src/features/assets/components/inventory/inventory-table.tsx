@@ -882,7 +882,9 @@ export function InventoryTable({
                     className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 break-words text-sm font-medium"><BreakText>{a.name}</BreakText></p>
+                    <p className="line-clamp-2 break-words text-sm font-medium">
+                      <BreakText>{a.name}</BreakText>
+                    </p>
                     <MetaLine
                       className="mt-0.5 flex-nowrap"
                       items={[

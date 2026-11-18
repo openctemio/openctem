@@ -87,7 +87,11 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
             primary={<span className="break-words">{e.label || endpointUrl(e)}</span>}
             secondary={
               <span className="flex items-center gap-1.5 font-mono text-xs">
-                {e.label && <span className="break-words"><BreakText>{endpointUrl(e)}</BreakText></span>}
+                {e.label && (
+                  <span className="break-words">
+                    <BreakText>{endpointUrl(e)}</BreakText>
+                  </span>
+                )}
                 {e.has_credentials && (
                   <Lock
                     role="img"

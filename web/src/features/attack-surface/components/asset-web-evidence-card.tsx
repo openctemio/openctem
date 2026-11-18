@@ -32,11 +32,15 @@ function Capture({ assetId, item }: { assetId: string; item: WebEvidenceItem }) 
       </div>
       <dl className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-[8rem_1fr]">
         <dt>{t('webEvidence.url', 'URL')}</dt>
-        <dd className="break-words"><BreakText>{item.url}</BreakText></dd>
+        <dd className="break-words">
+          <BreakText>{item.url}</BreakText>
+        </dd>
         {item.final_url && item.final_url !== item.url && (
           <>
             <dt>{t('webEvidence.finalUrl', 'Final URL')}</dt>
-            <dd className="break-words"><BreakText>{item.final_url}</BreakText></dd>
+            <dd className="break-words">
+              <BreakText>{item.final_url}</BreakText>
+            </dd>
           </>
         )}
         {item.server && (

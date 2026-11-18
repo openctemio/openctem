@@ -39,7 +39,9 @@ describe('names break only at separators', () => {
   it('flags break-all on a name and allows it on a mono value', () => {
     expect(anywhereBreaks('<p className="break-all font-medium">{a.name}</p>')).toEqual([1])
     expect(anywhereBreaks('<code className="break-all font-mono">{hash}</code>')).toEqual([])
-    expect(anywhereBreaks('<p className="break-words"><BreakText>{a.name}</BreakText></p>')).toEqual([])
+    expect(
+      anywhereBreaks('<p className="break-words"><BreakText>{a.name}</BreakText></p>')
+    ).toEqual([])
   })
 
   it('no text outside mono/code values breaks at any letter', () => {
