@@ -113,7 +113,14 @@ describe('FindingApprovalBand', () => {
     expect(screen.getByText(/Requested by An Nguyen/)).toBeInTheDocument()
     expect(screen.getByText('Changed since the request: now in CISA KEV')).toBeInTheDocument()
     expect(screen.queryByTestId('finding-approval-cancel')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+    // The shared queue decision: outline, named with the status asked for,
+    // the sign-in step said on Approve.
+    const approveButton = screen.getByRole('button', { name: /^Approve \S/ })
+    expect(approveButton).toHaveAttribute('data-variant', 'outline')
+    expect(approveButton).toHaveAccessibleDescription(
+      'You confirm your sign-in before the approval is saved.'
+    )
+    fireEvent.click(approveButton)
     // A confirmation first (the API then asks for the sign-in again).
     expect(approve).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')

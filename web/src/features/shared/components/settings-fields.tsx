@@ -10,8 +10,10 @@ import { cn } from '@/lib/utils'
  * "Settings pages"):
  *
  * - `SettingsRow`: one setting on one line. What it is (label, hint) at the
- *   start, its control at the end; stacked when the section is narrower than
- *   45rem (a phone, a sheet).
+ *   start, its control at the end. Below 45rem (a phone, a sheet) a switch or
+ *   a short button stays at the end of the label's first line; a control that
+ *   does not fit beside 13rem of text, and a `wide` control (a field, a
+ *   select), goes under the text.
  * - `SettingsSwitchRow`: a row whose control is a switch.
  * - `SettingsBlock`: a padded block for anything else (a field grid, a note).
  * - `SettingsFieldGrid` + `SettingsField`: text fields with the label above,
@@ -22,6 +24,18 @@ import { cn } from '@/lib/utils'
  */
 
 const DIVIDER = 'border-t border-border-subtle'
+
+/**
+ * A row whose control stays beside its text on a phone: the text and the
+ * control share a wrapping line, the control at the top end (level with the
+ * label's first line). The text keeps a 13rem basis, so a control wider than
+ * the rest of the line (a long button) moves under the text instead of
+ * squeezing it into a sliver. From 45rem the row is a two-column grid.
+ */
+export const SETTINGS_ROW_BESIDE = 'flex flex-wrap items-start justify-between gap-x-4 gap-y-3'
+
+/** The text box of a row: grows, and keeps 13rem beside a control on a phone. */
+export const SETTINGS_ROW_TEXT = 'min-w-0 max-w-[58ch] flex-[1_1_13rem]'
 
 export interface SettingsRowProps {
   /** What the setting is. A string is drawn as the row label. */
@@ -50,20 +64,22 @@ export function SettingsRow({
   className,
   id,
 }: SettingsRowProps) {
+  const besideOnPhone = !wide && children != null
   return (
     <div
       id={id}
       data-slot="settings-row"
       className={cn(
         DIVIDER,
-        'flex min-w-0 flex-col gap-3 py-3.5 @[45rem]:grid @[45rem]:items-center @[45rem]:gap-x-8',
+        'min-w-0 py-3.5 @[45rem]:grid @[45rem]:items-center @[45rem]:gap-x-8',
+        besideOnPhone ? SETTINGS_ROW_BESIDE : 'flex flex-col gap-3',
         wide
           ? '@[45rem]:grid-cols-[minmax(0,1fr)_minmax(20rem,40%)]'
           : '@[45rem]:grid-cols-[minmax(0,1fr)_auto]',
         className
       )}
     >
-      <div className="min-w-0 max-w-[58ch]">
+      <div className={besideOnPhone ? SETTINGS_ROW_TEXT : 'min-w-0 max-w-[58ch]'}>
         <div id={labelId} className="text-body font-medium">
           {label}
         </div>
@@ -77,6 +93,7 @@ export function SettingsRow({
         <div
           className={cn(
             'flex min-w-0 flex-wrap items-center gap-2',
+            besideOnPhone && 'max-w-full shrink-0',
             wide ? '@[45rem]:justify-self-stretch' : '@[45rem]:justify-self-end'
           )}
         >
