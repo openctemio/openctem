@@ -300,7 +300,7 @@
   "admin.attention.critical": "Nghiêm trọng",
   "admin.attention.failedActions.detail": "{count} hành động bị từ chối hoặc lỗi trong 24 giờ qua (sai mã, không đủ quyền, lỗi).",
   "admin.attention.failedActions.title": "Hành động quản trị bị từ chối",
-  "admin.attention.heading": "Cần xử lý",
+  "admin.attention.heading": "Cần chú ý",
   "admin.attention.info": "Thông tin",
   "admin.attention.inspect": "Kiểm tra",
   "admin.attention.noOwner.detail": "{count} tổ chức không có chủ sở hữu: không ai quản lý được thành viên hoặc cách đăng nhập.",

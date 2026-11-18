@@ -16,10 +16,10 @@ interface GroupStepperProps {
   onStepClick?: (step: GroupWizardStep) => void
 }
 
-const STEPS: { id: GroupWizardStep; labelKey: string; label: string; icon: typeof FileText }[] = [
-  { id: 'basic', labelKey: 'assetGroups.wizard.step.basic', label: 'Basic Info', icon: FileText },
-  { id: 'members', labelKey: 'assetGroups.wizard.step.members', label: 'Members', icon: Package },
-  { id: 'review', labelKey: 'assetGroups.wizard.step.review', label: 'Review', icon: Eye },
+const STEPS: { id: GroupWizardStep; labelKey: string; icon: typeof FileText }[] = [
+  { id: 'basic', labelKey: 'assetGroups.wizard.step.basic', icon: FileText },
+  { id: 'members', labelKey: 'assetGroups.wizard.step.members', icon: Package },
+  { id: 'review', labelKey: 'assetGroups.wizard.step.review', icon: Eye },
 ]
 
 export function GroupStepper({ currentStep, onStepClick }: GroupStepperProps) {
@@ -89,7 +89,7 @@ export function GroupStepper({ currentStep, onStepClick }: GroupStepperProps) {
                     isPending && 'text-muted-foreground'
                   )}
                 >
-                  {t(step.labelKey, step.label)}
+                  {t(step.labelKey)}
                 </span>
               </button>
             )
