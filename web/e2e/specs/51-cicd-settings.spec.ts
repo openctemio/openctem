@@ -17,11 +17,11 @@ import { layoutDefects, seriousAxe } from '../helpers/layout'
 /** Reads per tab: /me/bootstrap plus the tab's own resources. */
 const TABS: { tab: string; name: string; budget: number }[] = [
   // bootstrap, CI settings, trust configurations, refused tokens
-  { tab: 'connections', name: 'Connections', budget: 5 },
-  // bootstrap, gate policies
-  { tab: 'gate', name: 'Gate', budget: 4 },
+  { tab: 'connections', name: 'Connections', budget: 4 },
+  // bootstrap, gate policies, repository names (one batch, only when a repository policy exists)
+  { tab: 'gate', name: 'Gate', budget: 3 },
   // bootstrap, code-host apps
-  { tab: 'feedback', name: 'Pull request feedback', budget: 4 },
+  { tab: 'feedback', name: 'Pull request feedback', budget: 2 },
 ]
 
 function isApi(req: Request): boolean {

@@ -224,12 +224,16 @@ function ConnectionsStatus({
   const last = lastAccepted(configs)
   const ok = working > 0 && refused === 0
   const Icon = ok ? CheckCircle2 : AlertTriangle
+  // One sentence that wraps like text on a phone: the icon, then the parts.
   return (
-    <p
-      className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm"
-      data-testid="ci-connections-status"
-    >
-      <Icon className={cn('size-4 shrink-0', ok ? 'text-success' : 'text-warning')} aria-hidden />
+    <p className="text-sm" data-testid="ci-connections-status">
+      <Icon
+        className={cn(
+          'mr-1.5 inline size-4 -translate-y-px align-middle',
+          ok ? 'text-success' : 'text-warning'
+        )}
+        aria-hidden
+      />
       <span className="font-medium">
         {working === 0
           ? t('scans.ci.status.noneWorking', 'No connection has let a job in yet')
@@ -244,22 +248,22 @@ function ConnectionsStatus({
           {t('scans.ci.status.lastJob', ', last accepted job')} <RelativeTime date={last} />
         </span>
       )}
+      <span className="text-muted-foreground">.</span>
       {refused > 0 && (
         <>
-          <span className="text-muted-foreground">,</span>
-          <Button
+          {' '}
+          <button
             type="button"
-            variant="link"
-            size="sm"
             onClick={onSeeWhy}
             data-testid="ci-connections-see-why"
+            className="rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {t(
               refused === 1 ? 'scans.ci.status.refused.one' : 'scans.ci.status.refused.other',
               refused === 1 ? '1 job refused: see why' : '{count} jobs refused: see why',
               { count: refused }
             )}
-          </Button>
+          </button>
         </>
       )}
     </p>
@@ -284,7 +288,6 @@ function ConnectionRow({
         type="button"
         onClick={onOpen}
         className="flex w-full flex-col gap-1 p-3 text-left hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-        aria-label={t('scans.ci.connections.open', 'Open {name}', { name: c.name ?? '' })}
       >
         <span className="min-w-0 space-y-0.5">
           <span className="flex flex-wrap items-center gap-2">
@@ -340,23 +343,26 @@ function OrganizationRules({ canWrite }: { canWrite: boolean }) {
   const required = !!data?.require_oidc
   return (
     <Collapsible open={open} onOpenChange={setOpen} data-testid="ci-org-rules">
-      <CollapsibleTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" aria-expanded={open}>
-          <ChevronDown
-            className={open ? 'rotate-180 transition-transform' : 'transition-transform'}
-            aria-hidden
-          />
-          {t('scans.ci.orgRules.title', 'Organization rules')}
+      {/* A plain trigger: its summary wraps on a phone instead of running off the edge. */}
+      <CollapsibleTrigger
+        className="flex items-start gap-1.5 rounded-sm text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+      >
+        <ChevronDown
+          className={cn('mt-0.5 size-4 shrink-0 transition-transform', open && 'rotate-180')}
+          aria-hidden
+        />
+        <span>
+          <span className="font-medium">{t('scans.ci.orgRules.title', 'Organization rules')}</span>
           {data && (
-            <span
-              className={cn('font-normal', required ? 'text-muted-foreground' : 'text-warning')}
-            >
+            <span className={required ? 'text-muted-foreground' : 'text-warning'}>
+              {' '}
               {required
                 ? t('scans.ci.orgRules.oidcOn', '(Require OIDC for CI results: on)')
                 : t('scans.ci.orgRules.oidcOff', '(Require OIDC for CI results: off)')}
             </span>
           )}
-        </Button>
+        </span>
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-2">
         <CIRequireOIDC canWrite={canWrite} />

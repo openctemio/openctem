@@ -678,7 +678,7 @@ describe('CIConnections (Connections tab)', () => {
   it('opens a configuration in a sheet with Health, Rules, Scope and the snippet', async () => {
     trust = [ghTrust]
     render(<CIConnections />)
-    await userEvent.click(screen.getByRole('button', { name: 'Open GitHub acme' }))
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
     expect(window.location.search).toContain('connection=old')
     const tabs = screen.getAllByRole('tab').map((t) => t.textContent)
     expect(tabs).toEqual(['Health', 'Rules', 'Scope', 'Pipeline snippet'])
@@ -702,7 +702,7 @@ describe('CIConnections (Connections tab)', () => {
       },
     ]
     render(<CIConnections />)
-    await userEvent.click(screen.getByRole('button', { name: 'Open GitHub acme' }))
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
     const fixes = within(screen.getByTestId('ci-health-refusals')).getAllByRole('button')
     await userEvent.click(fixes[0])
     expect(screen.getByRole('tab', { name: 'Rules', selected: true })).toBeInTheDocument()
@@ -728,7 +728,7 @@ describe('CIConnections (Connections tab)', () => {
     trust = [ghTrust]
     mockDeleteTrust.mockResolvedValue(undefined)
     render(<CIConnections />)
-    await userEvent.click(screen.getByRole('button', { name: 'Open GitHub acme' }))
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete GitHub acme' }))
     expect(mockDeleteTrust).not.toHaveBeenCalled()
@@ -746,7 +746,7 @@ describe('CIConnections (Connections tab)', () => {
     trust = [ghTrust]
     render(<CIConnections />)
     expect(screen.queryByTestId('ci-connections-see-why')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open GitHub acme' }))
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
     expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Rules' }))
     expect(screen.queryByTestId('ci-trust-rules')).not.toBeInTheDocument()
@@ -762,7 +762,7 @@ describe('CIConnections (Connections tab)', () => {
       },
     ]
     render(<CIConnections />)
-    await userEvent.click(screen.getByRole('button', { name: 'Open GitHub acme' }))
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
     const text = screen.getByTestId('ci-legacy-audience').textContent ?? ''
     expect(text).toContain('https://openctem.example.com')
     expect(text).toContain('Jan 12, 2027')
@@ -911,6 +911,8 @@ describe('CIOverrides (break-glass on Runs)', () => {
     overrides = [active]
     mockRevokeOverride.mockResolvedValue(undefined)
     render(<CIOverrides canOverride />)
+    // The Runs tab reads only its runs on load: the overrides come on request.
+    await userEvent.click(screen.getByRole('button', { name: 'Show overrides' }))
     expect(screen.getByTestId('ci-overrides')).toHaveTextContent('github.com/acme/api, until')
     expect(screen.getByTestId('ci-overrides')).not.toHaveTextContent('repo-9')
     await userEvent.click(screen.getByRole('button', { name: 'Revoke' }))
@@ -924,6 +926,7 @@ describe('CIOverrides (break-glass on Runs)', () => {
   it('folds past overrides behind one button', async () => {
     overrides = [{ ...active, id: 'ov2', active: false, revoked_at: '2026-10-01T00:00:00Z' }]
     render(<CIOverrides canOverride />)
+    await userEvent.click(screen.getByRole('button', { name: 'Show overrides' }))
     expect(screen.getByTestId('ci-overrides-none-active')).toBeInTheDocument()
     expect(screen.queryByTestId('ci-overrides')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Show 1 past overrides' }))
@@ -945,6 +948,8 @@ describe('CIOverrides (break-glass on Runs)', () => {
     window.history.replaceState({}, '', '/ci-cd?view=runs&section=break-glass')
     render(<CIOverrides canOverride />)
     expect(scrolled).toEqual(['ci-setup-break-glass'])
+    // The link opens the overrides at once.
+    expect(screen.queryByRole('button', { name: 'Show overrides' })).not.toBeInTheDocument()
     spy.mockRestore()
   })
 })

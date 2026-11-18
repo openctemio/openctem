@@ -25,12 +25,16 @@ import { CIOverrideDialog } from './ci-override-dialog'
 export const BREAK_GLASS_ID = 'ci-setup-break-glass'
 
 /**
- * Break-glass on the Runs tab, next to the failed run it unblocks: active
- * overrides first, past ones folded, "Override a commit". Repositories show
- * by name (the caller's data scope decides which names resolve).
+ * Break-glass on the Runs tab, next to the failed run it unblocks:
+ * "Override a commit", and the overrides on request (the Runs tab reads only
+ * its runs on load; an old `?section=break-glass` link opens them): active
+ * ones first, past ones folded. Repositories show by name (the caller's data
+ * scope decides which names resolve).
  */
 export function CIOverrides({ canOverride }: { canOverride: boolean }) {
-  const { data, error, isLoading, mutate } = useGateOverrides()
+  const [sectionParam] = useUrlFilter('section', '')
+  const [listed, setListed] = useState(sectionParam === 'break-glass')
+  const { data, error, isLoading, mutate } = useGateOverrides({ enabled: listed })
   const { trigger: revoke } = useRevokeGateOverride()
   const [open, setOpen] = useState(false)
   const [pendingRevoke, setPendingRevoke] = useState<{ id: string; sha: string } | null>(null)
@@ -42,7 +46,6 @@ export function CIOverrides({ canOverride }: { canOverride: boolean }) {
   const shown = showPast ? overrides : active
   const { nameFor } = useAssetNameMap(overrides.map((o) => o.repository_asset_id ?? ''))
   // An old `?section=break-glass` link lands here: scroll once the list is in.
-  const [sectionParam] = useUrlFilter('section', '')
   useEffect(() => {
     if (sectionParam !== 'break-glass' || isLoading) return
     document.getElementById(BREAK_GLASS_ID)?.scrollIntoView?.({ block: 'start' })
@@ -72,7 +75,17 @@ export function CIOverrides({ canOverride }: { canOverride: boolean }) {
         </GatedButton>
       }
     >
-      {error ? (
+      {!listed ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => setListed(true)}
+          data-testid="ci-overrides-show"
+        >
+          {t('scans.ci.breakGlass.showList', 'Show overrides')}
+        </Button>
+      ) : error ? (
         <ErrorState
           title={t('scans.ci.breakGlass.list', 'break-glass overrides')}
           error={error}
