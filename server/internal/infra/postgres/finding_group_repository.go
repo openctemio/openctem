@@ -8,6 +8,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -235,10 +236,8 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 
 	// Pentest findings only to members of their campaign; others to everyone.
 	if filter.PentestMemberOrNonPentestUserID != nil {
-		clauses = append(clauses, fmt.Sprintf(`(f.source != 'pentest' OR f.pentest_campaign_id IN (
-			SELECT campaign_id FROM pentest_campaign_members WHERE user_id = $%d AND tenant_id = $%d
-			  AND (role <> 'client' OR f.status NOT IN ('draft', 'in_review'))
-		))`, argOffset, argOffset+1))
+		clauses = append(clauses, "(f.source != 'pentest' OR "+campaignaccess.FindingVisibleSQL(
+			"f.pentest_campaign_id", "f.status", fmt.Sprintf("$%d", argOffset+1), fmt.Sprintf("$%d", argOffset))+")")
 		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
 		argOffset += 2
 	}
