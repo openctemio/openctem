@@ -438,7 +438,7 @@ export function AddAssetsDialog({
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs text-muted-foreground">{getAssetTypeName(asset.type)}</span>
             <span className="text-xs text-muted-foreground">
-              {t('assetGroups.manage.risk', 'Risk: {score}', { score: asset.riskScore })}
+              {t('assetGroups.manage.risk', 'Risk: {score}', { score: asset.riskScore ?? '—' })}
             </span>
           </div>
         </div>

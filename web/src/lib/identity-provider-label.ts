@@ -34,10 +34,7 @@ type Translate = (key: string, fallback: string) => string
  * "google_workspace" -> "Google Workspace"; an unknown id is humanized. Pass
  * `t` wherever the label is shown, so "Email and password" is translated.
  */
-export function identityProviderLabel(
-  provider: string | null | undefined,
-  t?: Translate
-): string {
+export function identityProviderLabel(provider: string | null | undefined, t?: Translate): string {
   const id = provider || 'local'
   const key = TRANSLATED_KEYS[id]
   if (key && t) return t(key, IDENTITY_PROVIDER_LABELS[id])
