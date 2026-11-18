@@ -504,7 +504,10 @@ const MOBILE_CARD_FIELDS = 4
  * `overflow-wrap: anywhere` (not `break-word`) lets a word longer than the
  * card (an 88-character e-mail address, a URL) break, AND stops it from
  * setting the minimum width of its flex item: with `break-word` the address
- * kept its one-line width and ran under the row's menu button.
+ * kept its one-line width and ran under the row's menu button. It is only the
+ * last resort: cells that show a name or an address render it through
+ * `BreakText`, whose break opportunities at `.`, `@`, `-`, `_`, `/` are taken
+ * first, so an address wraps at a separator and never inside a word.
  */
 const CARD_WRAP_CLASS =
   '[overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'

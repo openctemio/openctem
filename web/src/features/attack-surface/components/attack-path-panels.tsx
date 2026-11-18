@@ -339,7 +339,7 @@ export function AttackPathList({
                           onClick={() => onOpenNode(k)}
                           data-testid="list-step-open"
                           className={cn(
-                            'rounded text-start font-semibold break-all outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
+                            'rounded text-start font-semibold break-words outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
                             n.hidden && 'font-normal italic'
                           )}
                         >
@@ -348,7 +348,7 @@ export function AttackPathList({
                       ) : (
                         <span
                           className={cn(
-                            'font-semibold break-all',
+                            'font-semibold break-words',
                             n.hidden && 'font-normal italic'
                           )}
                         >

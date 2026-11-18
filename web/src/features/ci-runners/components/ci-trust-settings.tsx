@@ -1032,7 +1032,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
                 className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between"
               >
                 <div className="min-w-0 space-y-1">
-                  <p className="break-all font-medium">{policyScope(p, t)}</p>
+                  <p className="break-words font-medium">{policyScope(p, t)}</p>
                   <div className="text-sm">
                     <PolicySummary p={p} />
                   </div>
