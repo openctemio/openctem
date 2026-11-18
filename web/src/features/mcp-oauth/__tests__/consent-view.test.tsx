@@ -239,7 +239,17 @@ describe('ConsentView', () => {
         async () => new Response(JSON.stringify({ ...consent, verified: true }), { status: 200 })
       )
     render(<ConsentView requestId={REQUEST_ID} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Allow assistant.example for Acme' }))
+    const allowHere = await screen.findByRole('button', {
+      name: 'Allow assistant.example for Acme',
+    })
+    // Outline, no icon: the teal Allow stays the screen's one filled action.
+    expect(allowHere).toHaveAttribute('data-variant', 'outline')
+    expect(allowHere.querySelector('svg')).toBeNull()
+    const filled = [...document.querySelectorAll('[data-slot=button]')].filter((b) =>
+      ['default', 'signal'].includes(b.getAttribute('data-variant') ?? '')
+    )
+    expect(filled.map((b) => b.textContent)).toEqual(['Allow'])
+    fireEvent.click(allowHere)
     // The confirmation names the publisher before anything changes.
     expect(
       await screen.findByText('Approve applications published by assistant.example?')

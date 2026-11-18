@@ -7,6 +7,7 @@ import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { OrgAvatar } from '@/components/layout/org-avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
@@ -93,6 +94,9 @@ export function OwnershipInvitationsCard({
   }
 
   const entry = surface === 'entry'
+  // One filled button per screen: Accept is the filled action only when it is
+  // the one choice; with several invitations no row outranks another.
+  const single = invitations.length === 1
   const title = t('account.ownershipInvitations.title', 'Organizations waiting for you')
   const description = t(
     'account.ownershipInvitations.desc',
@@ -114,9 +118,7 @@ export function OwnershipInvitationsCard({
         >
           <div className="flex min-w-0 items-center gap-3">
             {entry ? (
-              <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
-                <Building2 className="size-4" aria-hidden="true" />
-              </span>
+              <OrgAvatar name={inv.organization_name} />
             ) : (
               <Building2 className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
             )}
@@ -139,7 +141,11 @@ export function OwnershipInvitationsCard({
               <Button variant="outline" disabled={busy !== null} onClick={() => setDeclining(inv)}>
                 {t('account.ownershipInvitations.decline', 'Decline')}
               </Button>
-              <Button variant="signal" disabled={busy !== null} onClick={() => void accept(inv)}>
+              <Button
+                variant={single ? 'signal' : 'outline'}
+                disabled={busy !== null}
+                onClick={() => void accept(inv)}
+              >
                 {busy === inv.id && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                 {t('account.ownershipInvitations.accept', 'Accept and become owner')}
               </Button>
@@ -155,7 +161,12 @@ export function OwnershipInvitationsCard({
                 <X className="size-4" aria-hidden="true" />
                 {t('account.ownershipInvitations.decline', 'Decline')}
               </Button>
-              <Button size="sm" disabled={busy !== null} onClick={() => void accept(inv)}>
+              <Button
+                size="sm"
+                variant={single ? 'default' : 'outline'}
+                disabled={busy !== null}
+                onClick={() => void accept(inv)}
+              >
                 {busy === inv.id ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (

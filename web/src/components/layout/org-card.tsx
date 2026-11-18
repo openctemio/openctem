@@ -27,6 +27,7 @@ import { useMemberStats } from '@/features/organization/api/use-members'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { orgInitials } from './org-initials'
+import { OrgAvatar } from './org-avatar'
 import { PHONE_TOUCH_SQUARE } from './header-controls'
 import { blockedReasonText, formatShortDate } from '@/features/organization/lib/external-access'
 
@@ -84,24 +85,6 @@ export function useOrgLabels() {
       role: (role?: string) => (role ? t(`org.role.${role}`, capitalize(role)) : ''),
     }),
     [t]
-  )
-}
-
-/**
- * Initials on a neutral tile, so each organization is recognisable in the
- * list (a decorative icon cycled by index told the user nothing).
- */
-function OrgAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'flex shrink-0 items-center justify-center rounded-md bg-muted font-semibold text-foreground ring-1 ring-border',
-        size === 'md' ? 'size-9 text-xs' : 'size-6 text-[10px]'
-      )}
-    >
-      {orgInitials(name)}
-    </span>
   )
 }
 

@@ -9,6 +9,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
   type Edge,
   type EdgeTypes,
@@ -96,6 +97,38 @@ export function flowFitOptions(withFullscreen: boolean) {
     },
     maxZoom: 1,
   } as const
+}
+
+/**
+ * The smallest zoom the graph opens at: node titles (14 px) stay at least
+ * 12.9 px and their small lines (12 px) 11 px. A graph that would need a
+ * smaller zoom to fit opens at this one from its start (the left, where every
+ * path begins), vertically centred; "Fit view" still shows all of it.
+ */
+export const READABLE_ZOOM = 0.92
+
+/** The view a graph opens at: fitted when it fits at a readable zoom, else readable from its start. */
+export function readableViewport(
+  bounds: { x: number; y: number; width: number; height: number },
+  box: { width: number; height: number },
+  withFullscreen: boolean
+): { x: number; y: number; zoom: number } | null {
+  const pad = flowFitOptions(withFullscreen).padding
+  const top = parseFloat(pad.top)
+  const left = parseFloat(pad.left)
+  const w = box.width - left - parseFloat(pad.right)
+  const h = box.height - top - parseFloat(pad.bottom)
+  if (bounds.width <= 0 || bounds.height <= 0 || w <= 0 || h <= 0) return null
+  const fit = Math.min(w / bounds.width, h / bounds.height, 1)
+  // It fits at a readable zoom: the ordinary fit, centred.
+  if (fit >= READABLE_ZOOM) return null
+  const zoom = READABLE_ZOOM
+  const tall = bounds.height * zoom
+  return {
+    zoom,
+    x: left - bounds.x * zoom,
+    y: (tall <= h ? top + (h - tall) / 2 : top) - bounds.y * zoom,
+  }
 }
 
 function FlowControls({ withFullscreen }: { withFullscreen: boolean }) {
@@ -188,19 +221,33 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
     [nodes, measured]
   )
 
-  const firstFit = React.useRef(true)
-  React.useEffect(() => {
-    if (firstFit.current) {
-      // The first fit is the fitView prop's.
-      firstFit.current = false
+  // The view a graph opens at, and again when its nodes change (fitKey):
+  // fitted when the fit stays readable, else at a readable zoom from its start.
+  const boxRef = React.useRef<HTMLDivElement>(null)
+  const initialized = useNodesInitialized()
+  const place = React.useCallback(
+    (duration: number) => {
+      const box = boxRef.current?.getBoundingClientRect()
+      const vp = box && readableViewport(rf.getNodesBounds(rf.getNodes()), box, fullscreen)
+      if (vp) void rf.setViewport(vp, { duration })
+      else void rf.fitView({ ...flowFitOptions(fullscreen), duration })
+    },
+    [rf, fullscreen]
+  )
+  const placedFor = React.useRef<string | number | undefined | null>(null)
+  // A layout effect: the first placement lands before the measured nodes are painted.
+  React.useLayoutEffect(() => {
+    if (!initialized) return
+    const first = placedFor.current === null
+    if (!first && placedFor.current === fitKey) return
+    placedFor.current = fitKey
+    if (first) {
+      place(0)
       return
     }
-    const id = window.setTimeout(
-      () => void rf.fitView({ ...flowFitOptions(fullscreen), duration: 200 }),
-      50
-    )
+    const id = window.setTimeout(() => place(200), 50)
     return () => window.clearTimeout(id)
-  }, [fitKey, rf, fullscreen])
+  }, [initialized, fitKey, place])
 
   const keyNodes = React.useMemo(
     () => focusable.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })),
@@ -266,6 +313,7 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
         aria-roledescription={label}
         aria-label={label}
         aria-describedby={helpId}
+        ref={boxRef}
         className={cn('relative h-full w-full', className)}
       >
         <p id={helpId} className="sr-only">
@@ -292,8 +340,7 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
           zoomOnDoubleClick={false}
           minZoom={0.3}
           maxZoom={1.5}
-          fitView
-          fitViewOptions={flowFitOptions(fullscreen)}
+          // No fitView prop: the first placement is `place` (readable zoom).
           proOptions={{ hideAttribution: true }}
           className="bg-transparent"
         >

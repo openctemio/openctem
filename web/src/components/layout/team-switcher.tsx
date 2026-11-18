@@ -167,8 +167,6 @@ export function TeamSwitcher() {
   }, [closeAll, router])
 
   const currentName = currentTenant?.name || currentTenant?.slug || ''
-  // Something to do besides reading: another organization, or creating one.
-  const hasActions = tenants.length > 1 || canCreate
 
   // Loading state
   if (isLoading && organizations.length === 0) {
@@ -255,13 +253,13 @@ export function TeamSwitcher() {
               >
                 {currentName}
               </span>
-              {hasActions && (
-                <ChevronsUpDown
-                  className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
-                  data-testid="team-switcher-chevron"
-                  aria-hidden
-                />
-              )}
+              {/* The row always opens the organization card: the chevron says
+                  so, with one organization too (hidden in the icon rail). */}
+              <ChevronsUpDown
+                className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
+                data-testid="team-switcher-chevron"
+                aria-hidden
+              />
             </SidebarMenuButton>
           </PopoverTrigger>
 

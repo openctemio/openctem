@@ -316,8 +316,12 @@ describe('EmergingThreatsList', () => {
   })
 
   it('shows the API error', async () => {
-    api.get.mockRejectedValue(new Error('boom'))
+    // A refusal the API explains in a sentence is shown as written (a bare
+    // code reads as the shared "Something went wrong" line: error-state tests).
+    api.get.mockRejectedValue(new Error('The threat feed is not reachable right now.'))
     renderList()
-    expect(await screen.findByText('boom')).toBeInTheDocument()
+    expect(
+      await screen.findByText('The threat feed is not reachable right now.')
+    ).toBeInTheDocument()
   })
 })
