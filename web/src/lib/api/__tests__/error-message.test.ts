@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 
 import { ApiClientError, getErrorMessage } from '../error-handler'
 import {
+  apiErrorFields,
   describeApiError,
   describeCode,
   isSafeMessage,
@@ -181,5 +182,34 @@ describe('toastError', () => {
   it('shortReference keeps only id characters', () => {
     expect(shortReference('<script>abc')).toBe('scriptab')
     expect(shortReference(undefined)).toBeUndefined()
+  })
+})
+
+describe('apiErrorFields', () => {
+  const refusal = (details?: unknown) =>
+    new ApiClientError('Invalid', 'VALIDATION_ERROR', 400, details as Record<string, unknown>)
+
+  it('names the fields of a validation refusal, once each, in every details shape', () => {
+    expect(
+      apiErrorFields(
+        refusal({
+          errors: [
+            { field: 'name', message: 'is required' },
+            { field: 'name', message: 'is too long' },
+            { field: 'slug', message: 'is taken' },
+          ],
+        })
+      )
+    ).toEqual(['name', 'slug'])
+    expect(apiErrorFields(refusal({ field: 'website', message: 'bad' }))).toEqual(['website'])
+  })
+
+  it('names nothing for an answer without fields, an id as a field, or a non-API error', () => {
+    expect(apiErrorFields(refusal())).toEqual([])
+    expect(apiErrorFields(refusal({ errors: [{ message: 'no field' }] }))).toEqual([])
+    expect(
+      apiErrorFields(refusal({ errors: [{ field: '0b8c4f3e-1d2a-4c5b-9e7f-112233445566' }] }))
+    ).toEqual([])
+    expect(apiErrorFields(new Error('boom'))).toEqual([])
   })
 })

@@ -54,4 +54,16 @@ describe('re-verification policy', () => {
       expect(screen.getByTestId(`step-up-${tier}`)).toBeDisabled()
     }
   })
+
+  it('lists the tiers from least to most protected, as on the board', () => {
+    render(<StepUpPolicyCard policy={LEGACY_STEP_UP} onChange={vi.fn()} />)
+    const order = ['Routine actions', 'Sensitive actions', 'Critical actions'].map((name) =>
+      screen.getByText(name)
+    )
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    }
+  })
 })

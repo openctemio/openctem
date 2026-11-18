@@ -11,12 +11,23 @@ export interface SensorOptInValue {
   allow_sensor_custom_templates: boolean
 }
 
-const ITEMS: { key: keyof SensorOptInValue; id: string; label: string; help: string }[] = [
+const ITEMS: {
+  key: keyof SensorOptInValue
+  id: string
+  label: string
+  help: string
+  /**
+   * The names an operator meets on the sensor and in scan options, shown as
+   * secondary help in mono (the label and the hint stay in plain words).
+   */
+  tech?: string
+}[] = [
   {
     key: 'allow_sensor_interactsh',
     id: 'tenant-sensor-interactsh',
     label: 'sensors.optIns.interactsh.label',
     help: 'sensors.optIns.interactsh.help',
+    tech: 'interactsh, allow_interactsh, SENSOR_OOB_SERVER',
   },
   {
     key: 'allow_sensor_custom_templates',
@@ -53,6 +64,12 @@ export function SensorOptInSwitches({
           hint={
             <>
               {t(item.help)} {t('sensors.optIns.audited')}
+              {item.tech && (
+                <span className="mt-1 block" data-slot="settings-row-tech">
+                  {t('sensors.optIns.techNames', 'Technical names:')}{' '}
+                  <span className="font-mono">{item.tech}</span>
+                </span>
+              )}
             </>
           }
         >

@@ -528,17 +528,7 @@ export function SignInSettings() {
                 </p>
               </SettingsBlock>
             )}
-            <SettingsSwitchRow
-              id="tenant-mfa-required"
-              label={t('org.auth.mfa.all', 'Require for everyone')}
-              hint={t(
-                'org.auth.mfa.allHint',
-                'Members who sign in with a password set up an authenticator app at their next sign-in.'
-              )}
-              checked={form.mfa_required}
-              onCheckedChange={(v) => patchForm({ mfa_required: v })}
-              disabled={disabled || floorEveryone}
-            />
+            {/* The board's order: the narrower rule first, then everyone. */}
             <SettingsSwitchRow
               id="tenant-mfa-admins"
               label={t('org.auth.mfa.admins', 'Require for owners and administrators')}
@@ -549,6 +539,17 @@ export function SignInSettings() {
               checked={form.mfa_required || form.mfa_required_for_admins}
               onCheckedChange={(v) => patchForm({ mfa_required_for_admins: v })}
               disabled={disabled || form.mfa_required || floorAdmins}
+            />
+            <SettingsSwitchRow
+              id="tenant-mfa-required"
+              label={t('org.auth.mfa.all', 'Require for everyone')}
+              hint={t(
+                'org.auth.mfa.allHint',
+                'Members who sign in with a password set up an authenticator app at their next sign-in.'
+              )}
+              checked={form.mfa_required}
+              onCheckedChange={(v) => patchForm({ mfa_required: v })}
+              disabled={disabled || floorEveryone}
             />
             <SettingsSwitchRow
               id="tenant-sso-mfa-proof"

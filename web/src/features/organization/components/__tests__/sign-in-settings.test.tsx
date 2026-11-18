@@ -96,6 +96,18 @@ describe('Settings › Sign-in', () => {
     )
   })
 
+  it('lists the two-factor switches in the board order: administrators, everyone, SSO proof', () => {
+    open()
+    const ids = ['tenant-mfa-admins', 'tenant-mfa-required', 'tenant-sso-mfa-proof'].map(
+      (id) => document.getElementById(id) as HTMLElement
+    )
+    for (let i = 1; i < ids.length; i++) {
+      expect(
+        ids[i - 1].compareDocumentPosition(ids[i]) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    }
+  })
+
   it('shows two tabs, Sign-in first', () => {
     open()
     const tabs = within(screen.getByRole('tablist')).getAllByRole('tab')

@@ -183,6 +183,27 @@ function validationReasons(details: unknown): string | undefined {
 }
 
 /**
+ * The request fields an API refusal names, from its validation details
+ * (`[{field, message}]`, `{errors: [...]}` or `{field}`), so a form can mark
+ * the field a refused save was about. Empty when the answer names none.
+ */
+export function apiErrorFields(err: unknown): string[] {
+  if (!(err instanceof ApiClientError)) return []
+  const details = err.details as { errors?: unknown; field?: unknown } | unknown[] | undefined
+  const list: unknown[] = Array.isArray(details)
+    ? details
+    : Array.isArray(details?.errors)
+      ? details.errors
+      : details && typeof details === 'object'
+        ? [details]
+        : []
+  const fields = list
+    .map((d) => (d as { field?: unknown } | null)?.field)
+    .filter((f): f is string => typeof f === 'string' && f !== '' && !UUID.test(f))
+  return [...new Set(fields)]
+}
+
+/**
  * Describe any thrown value. `fallback` is the caller's "Could not …"
  * sentence, used whenever the cause is not something the person can act on.
  */

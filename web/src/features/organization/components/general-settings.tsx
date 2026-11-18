@@ -23,6 +23,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useAppHost } from '@/hooks/use-app-origin'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { apiErrorFields } from '@/lib/api/error-message'
 import { useCanMutate, usePermissions } from '@/lib/permissions'
 import { safeImageSrc } from '@/lib/safe-href'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
@@ -59,6 +60,11 @@ const EMPTY_GENERAL: GeneralSettingsValues = {
   industry: '',
   website: '',
 }
+
+/** The fields of this form a refused save can be about (named as in the API). */
+const ORG_FIELDS = ['name', 'slug', 'website', 'timezone'] as const
+type OrgField = (typeof ORG_FIELDS)[number]
+type FieldErrors = Partial<Record<OrgField, string>>
 
 /** Downscale an image file to at most 200×200 px, as a JPEG data URL. */
 function readLogo(file: File): Promise<string> {
@@ -162,6 +168,10 @@ export function GeneralSettings() {
     saving: false,
   })
   const [saveError, setSaveError] = useState(false)
+  // The field a refused save was about: its message shows under it.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const clearFieldError = (field: OrgField) =>
+    setFieldErrors((e) => (e[field] ? { ...e, [field]: undefined } : e))
 
   const restoreSaved = useCallback(() => {
     setOrgInfo({ name: currentTenant?.name || '', slug: currentTenant?.slug || '' })
@@ -178,6 +188,7 @@ export function GeneralSettings() {
     restoreSaved()
     storageRef.current?.discard()
     setSaveError(false)
+    setFieldErrors({})
   }
 
   const plan = useMemo(
@@ -212,17 +223,22 @@ export function GeneralSettings() {
 
   const saveOrg = async (): Promise<boolean> => {
     if (!planHasChanges(plan)) return true
+    // The fields of the request being sent, to mark the one a refusal is about.
+    let sent: OrgField[] = []
     try {
       if (plan.orgChanges) {
+        sent = ORG_FIELDS.filter((f) => f in (plan.orgChanges ?? {}))
         await updateTenant(plan.orgChanges)
         updateCurrentTenant(plan.orgChanges)
         refreshTenants()
       }
       if (plan.general) {
+        sent = (['website', 'timezone'] as const).filter((f) => general[f] !== savedGeneral[f])
         const result = await updateGeneralSettings(plan.general)
         if (result) await mutate(result, { revalidate: false })
       }
       if (plan.branding) {
+        sent = []
         const result = await updateBrandingSettings(plan.branding)
         if (result) {
           await mutate(result, { revalidate: false })
@@ -233,12 +249,21 @@ export function GeneralSettings() {
       toast.success(t('org.general.saved', 'Organization settings saved'))
       return true
     } catch (err) {
-      toast.error(
-        getErrorMessage(
-          err,
-          t('org.general.saveFailed', 'Could not save the organization settings')
-        )
+      const message = getErrorMessage(
+        err,
+        t('org.general.saveFailed', 'Could not save the organization settings')
       )
+      // The field the answer names, else the one field the request carried.
+      const named = apiErrorFields(err).filter((f): f is OrgField =>
+        (ORG_FIELDS as readonly string[]).includes(f)
+      )
+      const marked = named.length > 0 ? named : sent.length === 1 ? sent : []
+      if (marked.length > 0) {
+        setFieldErrors(Object.fromEntries(marked.map((f) => [f, message])))
+        document.getElementById(`org-${marked[0]}`)?.focus()
+      } else {
+        toast.error(message)
+      }
       return false
     }
   }
@@ -246,6 +271,7 @@ export function GeneralSettings() {
   // Each part saves on its own and keeps its changes when it fails.
   const handleSave = async () => {
     setSaveError(false)
+    setFieldErrors({})
     const orgOk = await saveOrg()
     const storageOk = (await storageRef.current?.save()) ?? true
     if (!orgOk || !storageOk) setSaveError(true)
@@ -349,6 +375,7 @@ export function GeneralSettings() {
             <SettingsField
               id="org-name"
               label={t('org.general.name', 'Organization name')}
+              error={fieldErrors.name}
               hint={
                 orgInfo.name !== savedName && savedName
                   ? t('org.general.was', 'Was "{value}".', { value: savedName })
@@ -359,20 +386,30 @@ export function GeneralSettings() {
                 <Input
                   {...control}
                   value={orgInfo.name}
-                  onChange={(e) => setOrgInfo((p) => ({ ...p, name: e.target.value }))}
+                  onChange={(e) => {
+                    clearFieldError('name')
+                    setOrgInfo((p) => ({ ...p, name: e.target.value }))
+                  }}
                   disabled={!canUpdateTenant}
                   maxLength={100}
                 />
               )}
             </SettingsField>
-            <SettingsField id="org-website" label={t('org.general.website', 'Website')}>
+            <SettingsField
+              id="org-website"
+              label={t('org.general.website', 'Website')}
+              error={fieldErrors.website}
+            >
               {(control) => (
                 <Input
                   {...control}
                   type="url"
                   placeholder="https://example.com"
                   value={general.website}
-                  onChange={(e) => setGeneral((g) => ({ ...g, website: e.target.value }))}
+                  onChange={(e) => {
+                    clearFieldError('website')
+                    setGeneral((g) => ({ ...g, website: e.target.value }))
+                  }}
                   disabled={!canUpdateTenant}
                 />
               )}
@@ -380,6 +417,7 @@ export function GeneralSettings() {
             <SettingsField
               id="org-slug"
               label={t('org.general.slug', 'URL slug')}
+              error={fieldErrors.slug}
               lock={owner ? undefined : t('org.general.ownerOnly', 'Owner only')}
               hint={
                 owner
@@ -401,12 +439,13 @@ export function GeneralSettings() {
                   <Input
                     {...control}
                     value={orgInfo.slug}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      clearFieldError('slug')
                       setOrgInfo((p) => ({
                         ...p,
                         slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                       }))
-                    }
+                    }}
                     className="rounded-s-none"
                     disabled={!canUpdateTenant || !owner}
                   />
@@ -417,6 +456,7 @@ export function GeneralSettings() {
               <SettingsField
                 id="org-timezone"
                 label={t('org.general.timezone', 'Time zone')}
+                error={fieldErrors.timezone}
                 hint={t(
                   'org.general.timezoneHelp',
                   'The organization clock: alert quiet hours, the daily digest and scan approval hours use it.'
@@ -427,7 +467,10 @@ export function GeneralSettings() {
                     id={control.id}
                     aria-describedby={control['aria-describedby']}
                     value={general.timezone}
-                    onChange={(zone) => setGeneral((g) => ({ ...g, timezone: zone }))}
+                    onChange={(zone) => {
+                      clearFieldError('timezone')
+                      setGeneral((g) => ({ ...g, timezone: zone }))
+                    }}
                     disabled={!canUpdateTenant}
                   />
                 )}
