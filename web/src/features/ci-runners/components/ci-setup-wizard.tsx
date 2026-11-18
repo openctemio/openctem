@@ -64,6 +64,8 @@ import {
 } from '../lib/connect'
 import type { CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 import { RefusalDetail } from './ci-refusals'
+import { privateAllowText } from './ci-verify-cause'
+import { SnippetDialog, TrustConfigForm } from './ci-trust-form'
 
 /** The most entries a rule may hold (server: maxRuleEntries). */
 const MAX_RULE_ENTRIES = 100
@@ -89,7 +91,16 @@ const PROVIDER_ORDER: CIProvider[] = [
 /** Providers whose projects can be named by a group path (choices group / direct). */
 const GROUPED: Partial<Record<CIProvider, true>> = { gitlab: true }
 
-export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CISetupWizard({
+  open,
+  onClose,
+  onEveryRule,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Leave the steps for the full rules form (every provider option, a sample token check). */
+  onEveryRule?: () => void
+}) {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const [step, setStep] = useState<Step>('provider')
@@ -114,10 +125,9 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
 
   const scm = useSCMApps()
   const waiting = step === 'waiting'
-  const trusts = useTrustConfigs({
-    enabled: open,
-    refreshInterval: waiting ? SETUP_POLL_MS : 0,
-  })
+  // Read once (reuse an existing configuration); the waiting step polls only
+  // runs and refusals (two reviewed polls), and a run is the sign a job got in.
+  const trusts = useTrustConfigs({ enabled: open })
   const suggestions = useMemo(
     () =>
       provider === 'github'
@@ -314,9 +324,10 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
                       <TriangleAlert />
                       <AlertDescription>
                         {t(
-                          'scans.ci.connect.privateAddress',
-                          'This address is private. The platform must reach it to read the signing keys of its tokens; if it cannot, every job is refused. The platform operator allows its address range with the server setting OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS.'
-                        )}
+                          'scans.ci.connect.privateAddressShort',
+                          'This address is private. The platform must reach it to read the signing keys of its tokens; if it cannot, every job is refused.'
+                        )}{' '}
+                        {privateAllowText(t)}
                       </AlertDescription>
                     </Alert>
                   )}
@@ -324,6 +335,17 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
               )}
               {needsIssuer && (
                 <IssuerInput provider={provider} value={issuer} onChange={setIssuer} />
+              )}
+              {onEveryRule && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'scans.ci.connect.everyRuleHint',
+                    'Need environments, events, a fixed audience or a sample token check?'
+                  )}{' '}
+                  <Button type="button" variant="link" size="sm" onClick={onEveryRule}>
+                    {t('scans.ci.connect.everyRule', 'Fill in every rule yourself')}
+                  </Button>
+                </p>
               )}
             </div>
           )}
@@ -655,7 +677,9 @@ export function CISetupEntry({
   size?: 'sm' | 'default'
 }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  // The steps, the full rules form, or the snippet of what the form added.
+  const [open, setOpen] = useState<'steps' | 'form' | null>(null)
+  const [added, setAdded] = useState<CITrustConfig | null>(null)
   if (!canWrite)
     return (
       <p className="text-sm text-muted-foreground">
@@ -664,10 +688,23 @@ export function CISetupEntry({
     )
   return (
     <>
-      <Button size={size} onClick={() => setOpen(true)}>
+      <Button size={size} onClick={() => setOpen('steps')}>
         {t('scans.ci.connect.open', 'Connect a CI provider')}
       </Button>
-      {open && <CISetupWizard open onClose={() => setOpen(false)} />}
+      {open === 'steps' && (
+        <CISetupWizard open onClose={() => setOpen(null)} onEveryRule={() => setOpen('form')} />
+      )}
+      {open === 'form' && (
+        <TrustConfigForm
+          config={null}
+          onClose={() => setOpen(null)}
+          onSaved={(c) => {
+            setOpen(null)
+            setAdded(c)
+          }}
+        />
+      )}
+      {added && <SnippetDialog config={added} onClose={() => setAdded(null)} />}
     </>
   )
 }

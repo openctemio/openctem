@@ -8,7 +8,25 @@
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
-import { verifyCause } from '../lib/connect'
+import { privateRangesInConsole, verifyCause } from '../lib/connect'
+
+type TFn = ReturnType<typeof useTranslation>['t']
+
+/**
+ * Who can let the platform reach a private address, and where: the
+ * platform console's page once the API serves it, else the server setting.
+ */
+export function privateAllowText(t: TFn, inConsole = privateRangesInConsole()): string {
+  return inConsole
+    ? t(
+        'scans.ci.private.allowConsole',
+        'A platform administrator can allow it in the platform console, under Private destinations.'
+      )
+    : t(
+        'scans.ci.private.allowSetting',
+        'A platform administrator can allow it: the server setting OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS lists the private address ranges the platform may reach.'
+      )
+}
 
 export function CIVerifyCause({
   message,
@@ -24,10 +42,10 @@ export function CIVerifyCause({
   const { t } = useTranslation()
   const cause = verifyCause(message, issuer)
   const text: Record<typeof cause.kind, string> = {
-    private_address: t(
-      'scans.ci.cause.privateAddress',
-      'The platform cannot reach your CI provider: its address is private and not allowed. The platform operator allows its address range with the server setting OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS.'
-    ),
+    private_address: `${t(
+      'scans.ci.cause.privateAddressShort',
+      'The platform cannot reach your CI provider: its address is private and not allowed.'
+    )} ${privateAllowText(t)}`,
     unreachable: t(
       'scans.ci.cause.unreachable',
       'The platform could not read the signing keys from your CI provider. Check that its address is right and reachable from the platform.'

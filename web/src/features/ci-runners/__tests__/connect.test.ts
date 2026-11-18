@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   branchRules,
+  privateRangesInConsole,
   configNames,
   isPipelineDefinition,
   looksPrivate,
@@ -12,6 +13,7 @@ import {
   verifyCause,
 } from '../lib/connect'
 import type { CITrustConfig } from '../types'
+import { privateAllowText } from '../components/ci-verify-cause'
 
 describe('normaliseIssuer', () => {
   it('writes the address as tokens carry it', () => {
@@ -182,5 +184,19 @@ describe('configNames', () => {
     expect(configNames(c, 'gamma/sub/api')).toBe(false)
     expect(configNames(c, 'acme/api', 'github')).toBe(false)
     expect(configNames(c, '')).toBe(false)
+  })
+})
+
+describe('private address help', () => {
+  const t = ((_k: string, fallback: string) => fallback) as Parameters<typeof privateAllowText>[0]
+
+  it('points at the console page once the API serves its route, else the server setting', () => {
+    expect(privateRangesInConsole(['GET /api/v1/ci/runs'])).toBe(false)
+    expect(privateRangesInConsole(['GET /api/v1/private-destinations'])).toBe(false)
+    expect(privateRangesInConsole(['GET /api/v1/admin/network/private-destinations'])).toBe(true)
+    expect(privateAllowText(t, false)).toMatch(/platform administrator can allow it/)
+    expect(privateAllowText(t, false)).toContain('OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS')
+    expect(privateAllowText(t, true)).toContain('platform console')
+    expect(privateAllowText(t, true)).not.toContain('OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS')
   })
 })

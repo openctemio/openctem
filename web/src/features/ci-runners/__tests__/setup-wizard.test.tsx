@@ -103,7 +103,7 @@ describe('Connect a CI provider', () => {
     const dialog = await open()
     await userEvent.type(within(dialog).getByLabelText(/your gitlab address/i), '192.168.8.10')
     expect(within(dialog).getByTestId('ci-connect-private')).toHaveTextContent(
-      'OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS'
+      /a platform administrator can allow it/i
     )
   })
 
@@ -147,7 +147,7 @@ describe('Connect a CI provider', () => {
     expect(within(dialog).queryByTestId('ci-connect-all-branches')).not.toBeInTheDocument()
   })
 
-  it('waits for the first job and polls the configuration, runs and refusals', async () => {
+  it('waits for the first job and polls runs and refusals only (two reviewed polls)', async () => {
     const dialog = await githubToWaiting()
     expect(within(dialog).getByText(/waiting for the first job/i)).toBeInTheDocument()
     expect(
@@ -155,7 +155,7 @@ describe('Connect a CI provider', () => {
         ([f, o]) => f.provider === 'github' && o.enabled && (o.refreshInterval ?? 0) > 0
       )
     ).toBe(true)
-    expect(trustCalls.some((o) => (o?.refreshInterval ?? 0) > 0)).toBe(true)
+    expect(trustCalls.some((o) => (o?.refreshInterval ?? 0) > 0)).toBe(false)
   })
 
   it('turns green when the configuration accepted a job', async () => {
@@ -196,7 +196,9 @@ describe('Connect a CI provider', () => {
     expect(
       within(dialog).getByText(/group or organization is not in the configuration/i)
     ).toBeInTheDocument()
-    expect(within(dialog).getByText(/add the group or organization to the configuration/i)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(/add the group or organization to the configuration/i)
+    ).toBeInTheDocument()
   })
 
   it.each([1280, 390])('renders every step at %ipx with the steps wrapping', async (w) => {

@@ -175,7 +175,7 @@ export function CIRefusalNotice({ canWrite }: { canWrite: boolean }) {
         )}
       </span>
       <Link
-        href="/ci-cd?tab=setup&section=refused"
+        href="/ci-cd?tab=connections&refused=1"
         className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {t('scans.ci.refusals.noticeLink', 'See why')}
@@ -193,8 +193,11 @@ export function CITrustRefusals({
   canWrite,
   onFix,
   canFix,
+  bare = false,
 }: {
   canWrite: boolean
+  /** Without its heading (inside a sheet that names it). */
+  bare?: boolean
   /** Open the configuration a refusal's fix edits. */
   onFix?: (refusal: CITokenRefusal, fix: RefusalFix) => void
   /** Whether a configuration exists for the fix to edit. */
@@ -205,10 +208,10 @@ export function CITrustRefusals({
   const { data, error, isLoading, mutate } = useTrustRefusals({ enabled: canWrite })
   if (!canWrite) return null
   const list = data?.data ?? []
-  const shown = all ? list : list.slice(0, REFUSALS_SHOWN)
+  const shown = all || bare ? list : list.slice(0, REFUSALS_SHOWN)
   return (
     <section aria-labelledby={REFUSALS_ID} className="space-y-2" data-testid="ci-refusals">
-      <div>
+      <div className={bare ? 'sr-only' : undefined}>
         <h3 id={REFUSALS_ID} className="flex items-center gap-2 text-sm font-medium">
           <ShieldX className="size-4 text-muted-foreground" aria-hidden />
           {t('scans.ci.refusals.title', 'Recent refused pipelines')}
@@ -244,7 +247,7 @@ export function CITrustRefusals({
               </li>
             ))}
           </ul>
-          {list.length > REFUSALS_SHOWN && (
+          {!bare && list.length > REFUSALS_SHOWN && (
             <Button variant="ghost" size="sm" onClick={() => setAll((v) => !v)}>
               {all
                 ? t('scans.ci.refusals.showFewer', 'Show fewer')

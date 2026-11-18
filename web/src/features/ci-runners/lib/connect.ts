@@ -6,6 +6,7 @@
  * Rule semantics follow server/pkg/domain/cirun (Rules.Admit, repoMatch).
  */
 
+import routePermissions from '@/config/api-route-permissions.json'
 import type { CIProvider, CITokenRefusal, CITrustConfig } from '../types'
 
 /**
@@ -35,6 +36,15 @@ export function issuerHost(issuer: string): string {
   } catch {
     return ''
   }
+}
+
+/**
+ * Whether the platform console manages the private address ranges the
+ * platform may reach (its admin route is in the API route map, generated from
+ * the API). Until it does, the server setting is the only way.
+ */
+export function privateRangesInConsole(routes: string[] = Object.keys(routePermissions)): boolean {
+  return routes.some((r) => /^\S+ \/api\/v1\/admin\/\S*private-destinations/.test(r))
 }
 
 /** Whether an issuer names a private or local host (the platform may be unable to reach it). */
