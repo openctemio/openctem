@@ -365,13 +365,16 @@ func TestSocialSignInMayCreate(t *testing.T) {
 		{"social, floor applies", social, func(context.Context) (bool, error) { return true, nil }, false},
 		{"social, floor none", social, func(context.Context) (bool, error) { return false, nil }, true},
 		{"social, floor unreadable", social, func(context.Context) (bool, error) { return false, errors.New("down") }, false},
-		{"social, no floor source", social, nil, true},
+		{"social, no floor source", social, nil, false},
+		{"password account, no floor source", password, nil, true},
 		{"password account, floor applies", password, func(context.Context) (bool, error) { return true, nil }, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			p := NewPersonalOrganizations(newFakePersonalOrgs(), personalOn, logger.NewNop())
-			p.SetOwnerMFAApplies(c.floor)
+			if c.floor != nil {
+				p.SetOwnerMFAApplies(c.floor)
+			}
 			if got := p.SocialSignInMayCreate(context.Background(), c.u); got != c.want {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}

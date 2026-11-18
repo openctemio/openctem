@@ -46,7 +46,8 @@ type PersonalOrganizations struct {
 	rates       tenantdom.PersonalOrgRates
 	now         func() time.Time
 	// ownerMFAApplies tells whether the platform 2FA floor would cover a
-	// new owner (see SocialSignInMayCreate). Nil means no floor source.
+	// new owner (see SocialSignInMayCreate). Nil means no floor source, which
+	// counts as applying (fail closed).
 	ownerMFAApplies func(ctx context.Context) (bool, error)
 }
 
@@ -92,7 +93,8 @@ func (p *PersonalOrganizations) SetOwnerMFAApplies(f func(ctx context.Context) (
 // takes the second step) or while the floor is "none". Otherwise the mark
 // stays pending and the person keeps the normal "create your organization"
 // step; once they have a password and a factor, the password sign-in makes
-// it. An unreadable floor counts as applying (fail closed).
+// it. An unreadable floor, or no floor source wired, counts as applying (fail
+// closed).
 //
 // REMOVE this guard when a person who signed in through a social provider can
 // enroll 2FA (for example set a password and enroll from the account space)
@@ -105,7 +107,7 @@ func (p *PersonalOrganizations) SocialSignInMayCreate(ctx context.Context, u *us
 		return true
 	}
 	if p.ownerMFAApplies == nil {
-		return true
+		return false
 	}
 	applies, err := p.ownerMFAApplies(ctx)
 	if err != nil {

@@ -606,8 +606,8 @@ after that the console value wins.
   organization claims the address's domain (joinable, SSO required, closed to
   joining or blocking new organizations; rechecked inside the transaction),
   and not a disposable address.
-- **Name and address.** "<Display name>'s organization" ("Tổ chức của <tên>"
-  when the person chose Vietnamese; the e-mail's local part when there is no
+- **Name and address.** "<Display name>'s organization" (in the person's
+  language when they chose another one; the e-mail's local part when there is no
   display name), renameable later. The address (slug) is the name's ASCII
   letters and digits (at most 30) and a random 6-character suffix, so it says
   nothing about other organizations; a taken one is retried with another.
