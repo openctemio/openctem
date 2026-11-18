@@ -88,28 +88,56 @@ export function toolDisplayName(item: Pick<ToolAvailabilityItem, 'name' | 'tool'
   return item.tool?.display_name || item.name
 }
 
+/** The web app's translator (useTranslation().t). */
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
 /**
- * Why a scan with this tool cannot run now, in one sentence ("No online
- * sensor has checkov"), or null when it can. inZone: the view was limited to
- * a scan zone's sensors.
+ * Why a scan with this tool cannot run now, in one sentence in the viewer's
+ * language ("No online sensor has checkov"), or null when it can. inZone: the
+ * view was limited to a scan zone's sensors.
  */
 export function toolUnavailableReason(
   item: ToolAvailabilityItem | undefined,
+  t: Translate,
   inZone = false
 ): string | null {
   if (!item || isRunnable(item)) return null
-  const where = inZone ? ' in this zone' : ''
+  const tool = item.name
   switch (item.status) {
     case 'disabled':
       return item.in_catalog
-        ? `${item.name} is switched off for this organization`
-        : `${item.name} is not in the tool catalog`
+        ? t('scans.tools.unavailable.disabled', '{tool} is switched off for this organization', {
+            tool,
+          })
+        : t('scans.tools.unavailable.notInCatalog', '{tool} is not in the tool catalog', { tool })
     case 'offline_only':
-      return `No online sensor${where} has ${item.name} (${item.sensors_total} offline)`
+      return inZone
+        ? t(
+            'scans.tools.unavailable.offlineInZone',
+            'No online sensor in this zone has {tool} ({count} offline)',
+            { tool, count: item.sensors_total }
+          )
+        : t('scans.tools.unavailable.offline', 'No online sensor has {tool} ({count} offline)', {
+            tool,
+            count: item.sensors_total,
+          })
     default:
-      return item.sensors_excluded > 0
-        ? `No sensor${where} may run ${item.name}: its grant or local policy does not allow it`
-        : `No sensor${where} has ${item.name}`
+      if (item.sensors_excluded > 0) {
+        return inZone
+          ? t(
+              'scans.tools.unavailable.notAllowedInZone',
+              'No sensor in this zone may run {tool}: its grant or local policy does not allow it',
+              { tool }
+            )
+          : t(
+              'scans.tools.unavailable.notAllowed',
+              'No sensor may run {tool}: its grant or local policy does not allow it',
+              { tool }
+            )
+      }
+      return inZone
+        ? t('scans.tools.unavailable.noSensorInZone', 'No sensor in this zone has {tool}', { tool })
+        : t('scans.tools.unavailable.noSensor', 'No sensor has {tool}', { tool })
   }
 }
 

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Tool } from '@/lib/api/tool-types'
+import { translate } from '@/lib/i18n'
+import { en } from '@/lib/i18n/dictionaries/en'
 import { scannerOptions, scannerUnavailableReason } from '../scanner-select'
+
+const t = (key: string, fallback?: string, vars?: Record<string, string | number>) =>
+  translate(en, key, fallback, vars)
 
 const tool = (over: Partial<Tool>) =>
   ({ id: over.name, name: 'x', display_name: '', is_active: true, ...over }) as Tool
@@ -55,16 +60,18 @@ describe('scannerUnavailableReason', () => {
     ],
   ]) as unknown as Parameters<typeof scannerUnavailableReason>[1]
 
-  it('disables a scanner no online sensor may run, with the reason', () => {
-    expect(scannerUnavailableReason(tool({ name: 'nuclei' }), avail)).toBeNull()
-    expect(scannerUnavailableReason(tool({ name: 'checkov' }), avail)).toBe('No sensor has checkov')
+  it('names why no online sensor may run a scanner', () => {
+    expect(scannerUnavailableReason(tool({ name: 'nuclei' }), avail, t)).toBeNull()
+    expect(scannerUnavailableReason(tool({ name: 'checkov' }), avail, t)).toBe(
+      'No sensor has checkov'
+    )
   })
 
   it('never blocks on unknown availability or a connector', () => {
-    expect(scannerUnavailableReason(tool({ name: 'checkov' }), null)).toBeNull()
-    expect(scannerUnavailableReason(tool({ name: 'unlisted' }), avail)).toBeNull()
+    expect(scannerUnavailableReason(tool({ name: 'checkov' }), null, t)).toBeNull()
+    expect(scannerUnavailableReason(tool({ name: 'unlisted' }), avail, t)).toBeNull()
     expect(
-      scannerUnavailableReason(tool({ name: 'checkov', metadata: { kind: 'connector' } }), avail)
+      scannerUnavailableReason(tool({ name: 'checkov', metadata: { kind: 'connector' } }), avail, t)
     ).toBeNull()
   })
 })

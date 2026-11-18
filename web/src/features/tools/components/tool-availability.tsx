@@ -9,6 +9,7 @@
 
 import { Server } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TonePill } from '@/features/shared'
 import type {
@@ -34,7 +35,8 @@ export function ToolStatusBadge({
   className?: string
 }) {
   const meta = TOOL_STATUS_META[item.status]
-  const reason = toolUnavailableReason(item)
+  const { t } = useTranslation()
+  const reason = toolUnavailableReason(item, t)
   return (
     <TonePill
       tone={meta.tone}
