@@ -196,6 +196,10 @@ type Service struct {
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
+
+	// newRepos keeps the new repositories of all-projects trust
+	// configurations (new_repositories.go).
+	newRepos cirun.NewRepositoryStore
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -352,6 +356,16 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	// workload token verified, so only a trusted pipeline learns the status.
 	if err := s.organizationOpen(ctx, tenantID); err != nil {
 		return nil, err
+	}
+	// An all-projects configuration admits a repository an administrator
+	// approved; a new one waits (checkNewRepository).
+	if cfg.Rules.AllRepositories {
+		if refusal, err := s.checkNewRepository(ctx, tenantID, cfg, claims); err != nil {
+			return nil, err
+		} else if refusal != nil {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+			return nil, publicRefusal(refusal)
+		}
 	}
 	// A repository name stays with the repository id that first reported
 	// under it (checkRepositoryBinding).

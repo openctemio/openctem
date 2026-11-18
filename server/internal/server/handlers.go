@@ -2065,6 +2065,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
 	}
 	admin.SetRefusalService(ciSvc)
+	admin.SetNewRepositoryService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	if svc.ImportMapping != nil {
 		runner.SetMappingResolver(svc.ImportMapping)
@@ -2126,6 +2127,8 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
+	// All-projects trust configurations record new repositories here.
+	ciSvc.SetNewRepositoryStore(repos.CIRun)
 	if svc.Suppression != nil {
 		ciSvc.SetSuppressionRules(svc.Suppression)
 	}

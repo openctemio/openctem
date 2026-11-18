@@ -7,6 +7,7 @@ package cirun
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"regexp"
@@ -66,7 +67,8 @@ func (p Provider) IsValid() bool { return slices.Contains(AllProviders(), p) }
 
 // Rules decide which pipelines a trust configuration admits. A pipeline is
 // admitted when every non-empty rule matches. Owners or Repositories must
-// name something: there is no "any repository" configuration.
+// name something, except with AllRepositories on a self-managed GitLab (see
+// there).
 type Rules struct {
 	// Owners are the first segment of the repository path: GitHub
 	// organizations or users, GitLab top-level groups, the Bitbucket
@@ -114,6 +116,25 @@ type Rules struct {
 	// Bitbucket): the issuer names the workspace by its slug, which a
 	// renamed workspace gives up to whoever takes it next.
 	WorkspaceUUID string `json:"workspace_uuid,omitempty"`
+	// AllRepositories ("Every project on this GitLab") admits projects of
+	// any group of a self-managed GitLab without naming its groups. Refused
+	// for gitlab.com and every other provider: on a shared issuer it would
+	// admit anyone in the world. Any user of the instance can create a
+	// personal project and protect its branches, so a project seen for the
+	// first time is a new repository an administrator approves (the project,
+	// or its whole group, which is then added to Owners) or blocks; Owners
+	// and Repositories hold what was approved. Only approved projects reach
+	// scope (ManageScope).
+	AllRepositories bool `json:"all_repositories,omitempty"`
+	// AdmitNewRepositories (with AllRepositories) admits a new repository's
+	// runs before it is approved: results are imported, but the repository is
+	// not added to scope until approved. Off (the default): its token is
+	// refused (repository_pending_approval) until approved.
+	AdmitNewRepositories bool `json:"admit_new_repositories,omitempty"`
+	// NotifyNewGroups (with AllRepositories) tells the organization's
+	// administrators, in the app and on its channels subscribed to
+	// ci.new_repository_group, when a project of a group not seen before asks.
+	NotifyNewGroups bool `json:"notify_new_groups,omitempty"`
 }
 
 // TrustConfig is one tenant's trust in one CI issuer.
@@ -283,6 +304,9 @@ func (c *TrustConfig) validateProviderRules() error {
 		return fmt.Errorf("environments: this provider's token does not name a deployment environment")
 	case len(c.Rules.WorkflowRefs) > 0 && !hasWorkflowRefClaim(p):
 		return fmt.Errorf("workflow_refs: this provider's token does not name the pipeline definition")
+	case c.Rules.AllRepositories && (p != ProviderGitLab || SharedIssuer(c.Issuer)):
+		return fmt.Errorf("all_repositories: only for a self-managed GitLab; on a shared issuer (gitlab.com, " +
+			"GitHub, other hosted providers) it would admit anyone's projects, so list the groups or projects instead")
 	}
 	if len(c.Rules.WorkflowRefs) > maxWorkflowRefs {
 		return fmt.Errorf("workflow_refs: at most %d entries", maxWorkflowRefs)
@@ -323,8 +347,11 @@ func (r Rules) validate() error {
 	invalid := func(format string, a ...any) error {
 		return fmt.Errorf("%w: %s", shared.ErrValidation, fmt.Sprintf(format, a...))
 	}
-	if len(r.Owners) == 0 && len(r.Repositories) == 0 {
+	if len(r.Owners) == 0 && len(r.Repositories) == 0 && !r.AllRepositories {
 		return invalid("rules must name at least one owner or repository")
+	}
+	if !r.AllRepositories && (r.AdmitNewRepositories || r.NotifyNewGroups) {
+		return invalid("admit_new_repositories and notify_new_groups apply with all_repositories only")
 	}
 	for name, list := range map[string][]string{
 		"owners": r.Owners, "repositories": r.Repositories, "refs": r.Refs,
@@ -425,6 +452,31 @@ func validateIssuerURL(raw string) error {
 		return fmt.Errorf("must be an https URL without credentials, query or fragment")
 	}
 	return nil
+}
+
+// sharedIssuerHosts are the issuer hosts of hosted CI services where anyone
+// can run a pipeline: a rule that does not name owners or repositories
+// would admit strangers there.
+var sharedIssuerHosts = []string{
+	"gitlab.com", "github.com", "token.actions.githubusercontent.com", "vstoken.dev.azure.com",
+	"oidc.circleci.com", "api.bitbucket.org",
+}
+
+// SharedIssuer reports whether issuer belongs to a hosted CI service shared
+// by many customers (gitlab.com and its subdomains included), or has no
+// host.
+func SharedIssuer(issuer string) bool {
+	h := IssuerHost(issuer)
+	if hh, _, err := net.SplitHostPort(h); err == nil {
+		h = hh
+	}
+	h = strings.TrimSuffix(h, ".")
+	for _, s := range sharedIssuerHosts {
+		if h == s || strings.HasSuffix(h, "."+s) {
+			return true
+		}
+	}
+	return h == ""
 }
 
 // IssuerHost is the host part of the configuration's issuer, used to name

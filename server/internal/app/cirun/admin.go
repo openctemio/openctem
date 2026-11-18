@@ -69,6 +69,12 @@ func (s *Service) CreateTrustConfig(ctx context.Context, tenantID shared.ID, in 
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		c.CreatedBy = &uid
 	}
+	if c.Rules.AllRepositories {
+		// Safe defaults of an all-projects trust, which an administrator
+		// may turn off later by editing it: protected branches and tags
+		// only, and a notice when a new group asks.
+		c.Rules.RequireProtectedRef, c.Rules.NotifyNewGroups = true, true
+	}
 	c.Normalize()
 	if err := c.Validate(); err != nil {
 		return nil, err
