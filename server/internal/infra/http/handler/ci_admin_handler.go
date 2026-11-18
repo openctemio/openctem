@@ -108,6 +108,23 @@ type CITrustConfigResponse struct {
 	// Warnings are plain-words notes on a risky configuration (every project
 	// of a GitLab: rules.all_repositories).
 	Warnings []string `json:"warnings,omitempty"`
+	// KeySource is where the provider's signing keys come from: fetch (from
+	// the issuer) or pasted (SigningKeys only; nothing is fetched).
+	KeySource string `json:"key_source" enums:"fetch,pasted"`
+	// SigningKeys is the pasted JWKS document as stored (public keys).
+	SigningKeys string `json:"signing_keys,omitempty"`
+	// SigningKeyList is the pasted keys' ids and algorithms.
+	SigningKeyList []CITrustSigningKey `json:"signing_key_list,omitempty"`
+	// SigningKeysUpdatedAt is when the keys were last pasted.
+	SigningKeysUpdatedAt *time.Time `json:"signing_keys_updated_at,omitempty"`
+	// LastKeyID is the kid of the key that verified the last admitted token.
+	LastKeyID string `json:"last_key_id,omitempty"`
+}
+
+// CITrustSigningKey is one pasted signing key.
+type CITrustSigningKey struct {
+	KID string `json:"kid"`
+	Alg string `json:"alg" enums:"RS256,ES256"`
 }
 
 // AllRepositoriesWarning is the note on an all-projects configuration.
@@ -190,10 +207,19 @@ type ciOwnerPinLister interface {
 }
 
 func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
-	return CITrustConfigResponse{ID: c.ID.String(), Name: c.Name, Provider: string(c.Provider), Issuer: c.Issuer,
+	out := CITrustConfigResponse{ID: c.ID.String(), Name: c.Name, Provider: string(c.Provider), Issuer: c.Issuer,
 		Audience: c.Audience, DefaultBranch: c.DefaultBranch, Rules: c.Rules, Enabled: c.Enabled,
 		ManageScope: c.ManageScope, LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
-		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil, Warnings: trustWarnings(c)}
+		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil,
+		KeySource: string(c.KeySource), SigningKeys: c.SigningKeys, SigningKeysUpdatedAt: c.SigningKeysUpdatedAt,
+		LastKeyID: c.LastKeyID, Warnings: trustWarnings(c)}
+	if out.KeySource == "" {
+		out.KeySource = string(cirun.KeySourceFetch)
+	}
+	for _, k := range c.SigningKeyList() {
+		out.SigningKeyList = append(out.SigningKeyList, CITrustSigningKey{KID: k.KID, Alg: k.Alg})
+	}
+	return out
 }
 
 func trustWarnings(c *cirun.TrustConfig) []string {
@@ -227,6 +253,23 @@ type CITrustConfigRequest struct {
 	// on when the caller holds that permission, omitted on a change it stays.
 	// The entries follow the organization's scope approval rules.
 	ManageScope *bool `json:"manage_scope,omitempty"`
+	// KeySource: fetch (the default: the platform fetches the issuer's keys)
+	// or pasted (the token is verified with SigningKeys only and nothing is
+	// fetched). Omitted on a change it stays.
+	KeySource *string `json:"key_source,omitempty" enums:"fetch,pasted"`
+	// SigningKeys is the provider's public JWKS document, pasted as served
+	// (GitLab: https://<host>/oauth/discovery/keys): at most 64 KiB, 1 to 10
+	// RSA (RS256) or P-256 (ES256) keys, each with a unique kid; a key with
+	// private parameters is refused. Omitted on a change it stays; empty
+	// clears it (key_source must then be fetch).
+	SigningKeys *string `json:"signing_keys,omitempty"`
+}
+
+// input is the service input of a trust configuration request.
+func (req CITrustConfigRequest) input() cirunapp.TrustConfigInput {
+	return cirunapp.TrustConfigInput{Name: req.Name, Provider: req.Provider, Issuer: req.Issuer, Audience: req.Audience,
+		DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled, ManageScope: req.ManageScope,
+		KeySource: req.KeySource, SigningKeys: req.SigningKeys}
 }
 
 // CITrustConfigListResponse lists trust configurations.
@@ -607,7 +650,7 @@ func (h *CIAdminHandler) GetTrustConfig(w http.ResponseWriter, r *http.Request) 
 
 // CreateTrustConfig handles POST /api/v1/ci/trust-configs
 // @Summary      Create a CI trust configuration
-// @Description  Rules must name at least one owner or repository. Fork pull requests are refused unless allow_fork_pull_requests is set. Audited.
+// @Description  Rules must name at least one owner or repository. Fork pull requests are refused unless allow_fork_pull_requests is set. With key_source pasted, job tokens are verified with the pasted signing_keys only and the provider is never contacted. Audited (pasted keys by their kids).
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -628,9 +671,7 @@ func (h *CIAdminHandler) CreateTrustConfig(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	c, err := h.svc.CreateTrustConfig(r.Context(), tenantID, cirunapp.TrustConfigInput{Name: req.Name, Provider: req.Provider,
-		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled,
-		ManageScope: req.ManageScope}, h.actor(r))
+	c, err := h.svc.CreateTrustConfig(r.Context(), tenantID, req.input(), h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "create trust configuration", "CI trust configuration")
 		return
@@ -668,9 +709,7 @@ func (h *CIAdminHandler) UpdateTrustConfig(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	c, err := h.svc.UpdateTrustConfig(r.Context(), tenantID, id, cirunapp.TrustConfigInput{Name: req.Name, Provider: req.Provider,
-		Issuer: req.Issuer, Audience: req.Audience, DefaultBranch: req.DefaultBranch, Rules: req.Rules, Enabled: req.Enabled,
-		ManageScope: req.ManageScope}, h.actor(r))
+	c, err := h.svc.UpdateTrustConfig(r.Context(), tenantID, id, req.input(), h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "change trust configuration", "CI trust configuration")
 		return
@@ -1181,10 +1220,10 @@ func (h *CIAdminHandler) PreviewTrustConfig(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("config and id_token are required").WriteJSON(w)
 		return
 	}
-	c := req.Config
+	cfg := req.Config.input()
+	cfg.Enabled, cfg.ManageScope = nil, nil
 	out, err := h.svc.PreviewTrust(r.Context(), tenantID, cirunapp.PreviewInput{
-		Config: cirunapp.TrustConfigInput{Name: c.Name, Provider: c.Provider, Issuer: c.Issuer, Audience: c.Audience,
-			DefaultBranch: c.DefaultBranch, Rules: c.Rules},
+		Config:  cfg,
 		IDToken: strings.TrimSpace(req.IDToken),
 		Hints:   cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository},
 	})

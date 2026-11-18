@@ -22,7 +22,7 @@ type CINewRepositoryService interface {
 	DecideNewRepositories(ctx context.Context, tenantID, configID shared.ID, d cirun.NewRepositoryDecision, a cirunapp.Actor) (*cirun.TrustConfig, error)
 }
 
-// SetNewRepositoryService wires the new repositories (nil leaves them 404).
+// SetNewRepositoryService wires the new repositories (nil answers 503).
 func (h *CIAdminHandler) SetNewRepositoryService(svc CINewRepositoryService) { h.newRepos = svc }
 
 // CINewProject is one project waiting for approval.
@@ -77,7 +77,7 @@ func (h *CIAdminHandler) ListNewRepositories(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if h.newRepos == nil {
-		apierror.NotFound("CI trust configuration").WriteJSON(w)
+		apierror.ServiceUnavailable("New repositories are not available").WriteJSON(w)
 		return
 	}
 	id, ok := pathID(w, r, "CI trust configuration")
@@ -143,7 +143,7 @@ func (h *CIAdminHandler) DecideNewRepositories(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if h.newRepos == nil {
-		apierror.NotFound("CI trust configuration").WriteJSON(w)
+		apierror.ServiceUnavailable("New repositories are not available").WriteJSON(w)
 		return
 	}
 	id, ok := pathID(w, r, "CI trust configuration")
