@@ -30,6 +30,10 @@ services:
       FAKE_GOOGLE_CLIENT_ID: e2e-google-client
       FAKE_GOOGLE_CA_OUT: /ca/ca.pem
     volumes: ['fake-google-ca:/ca']
+    # Port 443 without root: unprivileged ports start at 0 in this container's
+    # own network namespace only.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     networks:
       default:
         aliases: [oauth2.googleapis.com, www.googleapis.com, accounts.google.com]
