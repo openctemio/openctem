@@ -102,18 +102,21 @@ EPSS. RFC-117 §3.5 has the rules; the path:
 
 ```mermaid
 flowchart LR
-  M["intel.manifest.dsse.json<br/>VerifyIntelManifest (pinned root, sequence)"] --> W{"cards.AsOf < stream as_of?"}
+  M["intel.manifest.dsse.json<br/>VerifyIntelManifest (pinned root, sequence)"] --> W{"cards file SHA-256 differs from the last applied?"}
   W -- no --> S["skip (nothing to download)"]
   W -- yes --> P["ParseIntelCards: size, SHA-256, format v1,<br/>advisory.Decode + Validate per card, ids ascending"]
-  P --> A["AdvisoryCardRepository.Apply (one tx):<br/>newer revision or withdrawal replaces, every revision kept,<br/>vuln_events card_published / card_updated / card_withdrawn"]
+  P --> A["AdvisoryCardRepository.Apply (one tx):<br/>higher revision, or a same-revision withdrawal, replaces; every revision body kept,<br/>vuln_events card_published / card_updated / card_withdrawn"]
   A --> F["planner fan-out: CardsGrouping maps the card's CVEs to the card id"]
-  F --> PL["plan(card): cardVuln (card facts + strongest KEV/EPSS/CVSS of its CVEs),<br/>AffectedAssets (findings, version-less, card ranges), ResolveGrouped"]
+  F --> PL["plan(card): cardVuln (card facts + strongest KEV/EPSS/CVSS of its CVEs),<br/>AffectedAssets (findings, version-less, card ranges),<br/>GroupedTriage, ResolveGrouped (grouped_into_card, note kept)"]
 ```
 
 Tables (platform-wide, public facts, no tenant column): `advisory_cards`
 (current revision, `body` is the validated card), `advisory_card_revisions`,
 `advisory_card_vulns` (grouped ids), `advisory_card_products` (catalog keys,
-joined to `software_products` at read time).
+joined to `software_products` at read time), `advisory_card_stream` (the last
+cards file applied: SHA-256, sequence, data date). `threat_alerts.grouped_into_card`
+holds the card a vulnerability's alert was grouped into. A `reported` card
+(fast lane) alerts only: no exploitation score, no grouping (RFC-117 §3.5).
 
 The importer's status metadata reports a refused cards stream in
 `intel_error` (`cards: ...`); a platform without a card store lists it in

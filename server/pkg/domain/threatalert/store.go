@@ -114,12 +114,17 @@ type PlannerStore interface {
 	CardsGrouping(ctx context.Context, vulnIDs []string) (map[string]string, error)
 	// ResolveGrouped resolves the organization's open alerts of the
 	// vulnerabilities a card groups (ReasonGroupedIntoCard, the card id in
-	// the note) and reports how many.
+	// grouped_into_card; the person's note and the actor are kept, and the
+	// change is marked for the digest) and reports how many.
 	ResolveGrouped(ctx context.Context, tenantID shared.ID, cardID string, vulnIDs []string, at time.Time) (int, error)
 	// GroupedInto lists the organizations' vulnerabilities whose alerts were
 	// resolved as grouped into the card (to plan them on their own again
 	// when the card is withdrawn).
 	GroupedInto(ctx context.Context, cardID string) ([]QueueItem, error)
+	// GroupedTriage is the strongest open triage state (acknowledged or
+	// remediating; new when none) of the organization's alerts of the
+	// vulnerabilities a card groups: the card's alert carries it on.
+	GroupedTriage(ctx context.Context, tenantID shared.ID, vulnIDs []string) (State, error)
 	// ResolveVuln resolves every open alert of a vulnerability (a rejection
 	// upstream) and reports how many.
 	ResolveVuln(ctx context.Context, vulnID, reason string, at time.Time) (int, error)

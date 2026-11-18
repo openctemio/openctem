@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -112,7 +113,8 @@ const (
 	ReasonFixed = "fixed"
 	// ReasonGroupedIntoCard resolves a vulnerability's alert once an
 	// advisory card groups it: the card's alert carries it on (the card id
-	// is in the state note; nothing is deleted).
+	// is in its own column; the person's note and the actor stay, nothing
+	// is deleted).
 	ReasonGroupedIntoCard = "grouped_into_card"
 	// ReasonCardWithdrawn resolves a card's alerts when the card is
 	// withdrawn.
@@ -199,6 +201,10 @@ type Vuln struct {
 	CardID string
 	// Grouped lists the vulnerability ids the card groups.
 	Grouped []string
+	// CardReported is set for a card in the fast lane (reported, not yet
+	// reviewed): it alerts but groups nothing, and its exploitation status
+	// is not counted.
+	CardReported bool
 	// LastEventKind and LastEventAt are the newest material event; SourceAt
 	// is when the source says the triggering fact happened.
 	LastEventKind string
@@ -540,5 +546,49 @@ func Title(vulnID, product string) string {
 }
 
 // CardTitle is the title of an alert keyed by an advisory card: the card's
-// own title, as plain text.
-func CardTitle(title string) string { return PlainText(title, maxTitle) }
+// own title, as plain text. A reported card (fast lane) says so first.
+func CardTitle(title string, reported bool) string {
+	if reported {
+		title = ReportedPrefix + title
+	}
+	return PlainText(title, maxTitle)
+}
+
+// ReportedPrefix marks the title of an alert from a card no person has
+// reviewed yet.
+const ReportedPrefix = "Reported, not yet reviewed: "
+
+// severities, weakest first.
+var severities = []string{"none", "low", "medium", "high", "critical"}
+
+// StrongestSeverity is the strongest of the given severity levels (empty
+// when none is known). A card's alert never rates lower than a
+// vulnerability it groups.
+func StrongestSeverity(levels ...string) string {
+	best, rank := "", -1
+	for _, l := range levels {
+		l = strings.ToLower(l)
+		if r := slices.Index(severities, l); r > rank {
+			best, rank = l, r
+		}
+	}
+	return best
+}
+
+// StrongerTriage is the stronger of two open triage states (remediating
+// over acknowledged over new); anything else counts as new.
+func StrongerTriage(a, b State) State {
+	rank := func(s State) int {
+		switch s {
+		case StateRemediating:
+			return 2
+		case StateAcknowledged:
+			return 1
+		}
+		return 0
+	}
+	if rank(b) > rank(a) {
+		return b
+	}
+	return a
+}

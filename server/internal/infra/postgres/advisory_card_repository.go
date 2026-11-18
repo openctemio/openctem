@@ -36,19 +36,24 @@ func NewAdvisoryCardRepository(db *DB) *AdvisoryCardRepository {
 
 var _ advisory.Store = (*AdvisoryCardRepository)(nil)
 
-// AsOf (see advisory.Store).
-func (r *AdvisoryCardRepository) AsOf(ctx context.Context) (time.Time, error) {
-	var t sql.NullTime
-	if err := r.db.QueryRowContext(ctx, `SELECT max(GREATEST(updated_at, reviewed_at)) FROM advisory_cards`).Scan(&t); err != nil {
-		return time.Time{}, fmt.Errorf("cards as of: %w", err)
+// AppliedFile (see advisory.Store).
+func (r *AdvisoryCardRepository) AppliedFile(ctx context.Context) (string, error) {
+	var sum string
+	err := r.db.QueryRowContext(ctx, `SELECT file_sha256 FROM advisory_card_stream WHERE singleton`).Scan(&sum)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
 	}
-	return t.Time, nil
+	if err != nil {
+		return "", fmt.Errorf("cards stream: %w", err)
+	}
+	return sum, nil
 }
 
 // Apply (see advisory.Store).
 //
-//nolint:cyclop // one transaction, one branch per card change
-func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Card, sequence uint64, now time.Time) (advisory.Applied, error) {
+//nolint:cyclop,gocognit // one transaction, one branch per card change
+func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Card, stream advisory.StreamApplied, now time.Time) (advisory.Applied, error) {
+	sequence := stream.Sequence
 	var res advisory.Applied
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -67,8 +72,10 @@ func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Ca
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return res, fmt.Errorf("card %s: %w", c.ID, err)
 		}
-		if exists && (c.Revision < revision || (c.Revision == revision && c.Review.State == state)) {
-			// Same or older: a replayed stream never rolls a card back.
+		if exists && !advisory.Supersedes(revision, state, c) {
+			// Same, older, or a same-revision change other than a
+			// withdrawal: a replayed or unchecked stream never rolls a card
+			// back nor brings a withdrawn one back.
 			res.Unchanged++
 			continue
 		}
@@ -85,14 +92,14 @@ func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Ca
 				review_mode = EXCLUDED.review_mode, body = EXCLUDED.body, published_at = EXCLUDED.published_at,
 				updated_at = EXCLUDED.updated_at, reviewed_at = EXCLUDED.reviewed_at,
 				feed_sequence = EXCLUDED.feed_sequence, imported_at = EXCLUDED.imported_at`,
-			c.ID, c.Revision, c.Title, c.Severity.Level, c.Exploitation.Status, c.Review.State, c.Review.Mode, body,
-			c.PublishedAt, c.UpdatedAt, *c.Review.ReviewedAt, seq, now); err != nil {
+			c.ID, c.Revision, c.Title, c.Severity.Level, c.Exploitation.Status, c.Review.State, nullStr(c.Review.Mode), body,
+			c.PublishedAt, c.UpdatedAt, nullTime(c.Review.ReviewedAt), seq, now); err != nil {
 			return res, fmt.Errorf("card %s: %w", c.ID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO advisory_card_revisions (card_id, revision, body, imported_at) VALUES ($1, $2, $3, $4)
-			ON CONFLICT (card_id, revision) DO UPDATE SET body = EXCLUDED.body, imported_at = EXCLUDED.imported_at`,
-			c.ID, c.Revision, body, now); err != nil {
+			INSERT INTO advisory_card_revisions (card_id, revision, review_state, body, imported_at) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (card_id, revision, review_state) DO NOTHING`,
+			c.ID, c.Revision, c.Review.State, body, now); err != nil {
 			return res, fmt.Errorf("card %s revision: %w", c.ID, err)
 		}
 		if err := replaceCardLinks(ctx, tx, c); err != nil {
@@ -115,6 +122,15 @@ func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Ca
 			INSERT INTO vuln_events (vuln_id, kind, at, source_at, feed_sequence, detail) VALUES ($1, $2, $3, $4, $5, $6)`,
 			c.ID, string(kind), now, c.UpdatedAt, seq, detail); err != nil {
 			return res, fmt.Errorf("card %s event: %w", c.ID, err)
+		}
+	}
+	if stream.FileSHA256 != "" {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO advisory_card_stream (singleton, file_sha256, feed_sequence, as_of, applied_at) VALUES (true, $1, $2, $3, $4)
+			ON CONFLICT (singleton) DO UPDATE SET file_sha256 = EXCLUDED.file_sha256, feed_sequence = EXCLUDED.feed_sequence,
+				as_of = EXCLUDED.as_of, applied_at = EXCLUDED.applied_at`,
+			stream.FileSHA256, seq, stream.AsOf, now); err != nil {
+			return res, fmt.Errorf("cards stream: %w", err)
 		}
 	}
 	return res, tx.Commit()

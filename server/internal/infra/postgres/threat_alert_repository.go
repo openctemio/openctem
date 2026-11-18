@@ -113,7 +113,7 @@ func (r *ThreatAlertRepository) TenantsAffectedBy(ctx context.Context, vulnIDs [
 	rows, err := r.db.QueryContext(ctx, `
 		WITH ids AS (SELECT DISTINCT unnest($1::text[]) AS key),
 		cards AS (
-			SELECT ids.key, c.card_id FROM ids JOIN advisory_cards c ON c.card_id = ids.key AND c.review_state = 'reviewed'
+			SELECT ids.key, c.card_id FROM ids JOIN advisory_cards c ON c.card_id = ids.key AND c.review_state IN ('reviewed', 'reported')
 		), cv AS (
 			SELECT key, key AS cve FROM ids
 			UNION SELECT cards.key, v.vuln_id FROM cards JOIN advisory_card_vulns v ON v.card_id = cards.card_id
@@ -489,7 +489,8 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 			internet_facing_assets = EXCLUDED.internet_facing_assets, last_event_kind = EXCLUDED.last_event_kind,
 			source_at = EXCLUDED.source_at, event_at = EXCLUDED.event_at, notified_level = EXCLUDED.notified_level,
 			notified_tier = EXCLUDED.notified_tier, digest_pending = EXCLUDED.digest_pending,
-			planned_at = now(), resolved_at = EXCLUDED.resolved_at, updated_at = now()
+			planned_at = now(), resolved_at = EXCLUDED.resolved_at, updated_at = now(),
+			grouped_into_card = CASE WHEN EXCLUDED.state_reason = 'grouped_into_card' THEN threat_alerts.grouped_into_card END
 		WHERE $28::timestamptz IS NULL OR threat_alerts.updated_at = $28::timestamptz
 		RETURNING id, created_at, updated_at`,
 		a.TenantID.String(), a.VulnID, clipStr(a.Title, 200), a.Severity, string(a.Level), string(a.Tier), string(a.State),
@@ -700,7 +701,7 @@ func (r *ThreatAlertRepository) ActiveWindowVulns(ctx context.Context, tenantID 
 		JOIN win ON win.vuln_id = va.cve_id
 		WHERE s.tenant_id = $1 AND s.superseded_at IS NULL AND (v.normalized IS NULL OR v.raw = '')
 		UNION
-		SELECT c.card_id FROM win JOIN advisory_cards c ON c.card_id = win.vuln_id AND c.review_state = 'reviewed'
+		SELECT c.card_id FROM win JOIN advisory_cards c ON c.card_id = win.vuln_id AND c.review_state IN ('reviewed', 'reported')
 		WHERE EXISTS (
 			SELECT 1 FROM advisory_card_products acp
 			JOIN software_products p ON p.tenant_id IS NULL AND p.part = acp.part AND p.cpe_vendor = acp.cpe_vendor AND p.cpe_product = acp.cpe_product

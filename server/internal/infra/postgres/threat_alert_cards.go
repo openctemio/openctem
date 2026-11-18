@@ -22,28 +22,42 @@ import (
 // before any finding exists: likely, never confirmed.
 const cardRangeConfidence = 60
 
-// cardVuln is a card's public facts: its own title, severity, summary and
-// exploitation, and the strongest KEV, EPSS and CVSS facts of the
-// vulnerabilities it groups. A withdrawn card reads as rejected.
+// cardVuln is a card's public facts: its own title and summary, the
+// strongest severity, exploitation, KEV, EPSS and CVSS facts of the card and
+// the vulnerabilities it groups (a card never rates a grouped vulnerability
+// lower than its own record does). A withdrawn card reads as rejected. A
+// reported card (fast lane) adds no exploitation of its own.
 func (r *ThreatAlertRepository) cardVuln(ctx context.Context, cardID string, eventsSince time.Time) (*threatalert.Vuln, error) {
 	c, err := loadCard(ctx, r.db, cardID)
 	if err != nil || c == nil {
 		return nil, err
 	}
 	published := c.PublishedAt
-	v := threatalert.Vuln{ID: c.ID, CardID: c.ID, Title: c.Title, Severity: c.Severity.Level, Description: c.Summary,
-		Published: &published, Rejected: c.Withdrawn(), Exploitation: c.ExploitationStatus()}
-	urls := map[string]string{}
-	for _, s := range c.Sources {
-		urls[s.ID] = s.URL
-	}
-	for _, id := range c.Exploitation.Sources {
-		if u := urls[id]; u != "" {
-			v.ExploitationSources = append(v.ExploitationSources, u)
-		}
-	}
+	v := threatalert.Vuln{ID: c.ID, CardID: c.ID, Title: c.Title, Description: c.Summary,
+		Published: &published, Rejected: c.Withdrawn(), CardReported: c.Reported()}
 	ids := c.VulnIDs()
 	v.Grouped = ids
+	if !c.Reported() {
+		v.Exploitation = c.ExploitationStatus()
+		urls := map[string]string{}
+		for _, s := range c.Sources {
+			urls[s.ID] = s.URL
+		}
+		for _, id := range c.Exploitation.Sources {
+			if u := urls[id]; u != "" {
+				v.ExploitationSources = append(v.ExploitationSources, u)
+			}
+		}
+	}
+	// What reviewed cards (this one included) state for the grouped ids.
+	ex, err := exploitationFor(ctx, r.db, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range ex {
+		v.Exploitation = advisory.Stronger(v.Exploitation, e)
+	}
+	sevs := make([]string, 0, 1)
 	var score, epss sql.NullFloat64
 	var vector, lastKind sql.NullString
 	var kevAdded, lastAt, lastSource sql.NullTime
@@ -56,16 +70,18 @@ func (r *ThreatAlertRepository) cardVuln(ctx context.Context, cardID string, eve
 			(SELECT min(date_added)::timestamptz FROM kev_catalog WHERE cve_id = ANY($1::text[])),
 			(SELECT bool_or(known_ransomware_campaign_use = 'Known') FROM kev_catalog WHERE cve_id = ANY($1::text[])),
 			(SELECT max(epss_score)::float8 FROM epss_scores WHERE cve_id = ANY($1::text[])),
+			(SELECT COALESCE(array_agg(DISTINCT lower(severity)), '{}') FROM cve_records WHERE cve_id = ANY($1::text[]) AND severity IS NOT NULL),
 			ev.kind, ev.at, ev.source_at
 		FROM (SELECT 1) x
 		LEFT JOIN LATERAL (
 			SELECT kind, at, source_at FROM vuln_events
 			WHERE (vuln_id = $2 OR vuln_id = ANY($1::text[])) AND at >= $3 ORDER BY at DESC, id DESC LIMIT 1
 		) ev ON true`, pq.Array(ids), c.ID, eventsSince).
-		Scan(&score, &vector, &inKEV, &kevAdded, &ransomware, &epss, &lastKind, &lastAt, &lastSource)
+		Scan(&score, &vector, &inKEV, &kevAdded, &ransomware, &epss, pq.Array(&sevs), &lastKind, &lastAt, &lastSource)
 	if err != nil {
 		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
 	}
+	v.Severity = threatalert.StrongestSeverity(append(sevs, c.Severity.Level)...)
 	if score.Valid {
 		f := score.Float64
 		v.CVSSScore = &f
@@ -170,14 +186,15 @@ func (r *ThreatAlertRepository) CardsGrouping(ctx context.Context, vulnIDs []str
 	return out, rows.Err()
 }
 
-// ResolveGrouped (see threatalert.PlannerStore).
+// ResolveGrouped (see threatalert.PlannerStore). The person's note and the
+// actor of the last change stay on the row.
 func (r *ThreatAlertRepository) ResolveGrouped(ctx context.Context, tenantID shared.ID, cardID string, vulnIDs []string, at time.Time) (int, error) {
 	if len(vulnIDs) == 0 {
 		return 0, nil
 	}
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE threat_alerts SET state = 'resolved', state_reason = $3, state_note = $4, resolved_at = $5,
-			state_changed_at = $5, state_changed_by = NULL, updated_at = now()
+		UPDATE threat_alerts SET state = 'resolved', state_reason = $3, grouped_into_card = $4, resolved_at = $5,
+			state_changed_at = $5, digest_pending = true, updated_at = now()
 		WHERE tenant_id = $1 AND vuln_id = ANY($2::text[]) AND state IN `+openAlertStates,
 		tenantID.String(), pq.Array(vulnIDs), threatalert.ReasonGroupedIntoCard, cardID, at)
 	if err != nil {
@@ -191,7 +208,7 @@ func (r *ThreatAlertRepository) ResolveGrouped(ctx context.Context, tenantID sha
 func (r *ThreatAlertRepository) GroupedInto(ctx context.Context, cardID string) ([]threatalert.QueueItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id, vuln_id FROM threat_alerts
-		WHERE state = 'resolved' AND state_reason = $1 AND state_note = $2
+		WHERE grouped_into_card = $2 AND state = 'resolved' AND state_reason = $1
 		ORDER BY tenant_id, vuln_id LIMIT 10000`, threatalert.ReasonGroupedIntoCard, cardID)
 	if err != nil {
 		return nil, fmt.Errorf("grouped alerts: %w", err)
@@ -206,4 +223,28 @@ func (r *ThreatAlertRepository) GroupedInto(ctx context.Context, cardID string) 
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// GroupedTriage (see threatalert.PlannerStore).
+func (r *ThreatAlertRepository) GroupedTriage(ctx context.Context, tenantID shared.ID, vulnIDs []string) (threatalert.State, error) {
+	best := threatalert.StateNew
+	if len(vulnIDs) == 0 {
+		return best, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT state FROM threat_alerts
+		WHERE tenant_id = $1 AND vuln_id = ANY($2::text[]) AND state IN ('acknowledged', 'remediating')`,
+		tenantID.String(), pq.Array(vulnIDs))
+	if err != nil {
+		return best, fmt.Errorf("grouped triage: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var st string
+		if err := rows.Scan(&st); err != nil {
+			return best, err
+		}
+		best = threatalert.StrongerTriage(best, threatalert.State(st))
+	}
+	return best, rows.Err()
 }
