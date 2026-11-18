@@ -2,7 +2,6 @@
 
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminAuditChain, type AdminAuditChainBreak } from '../api/use-admin-audit'
 
@@ -15,7 +14,26 @@ export function AdminAuditChainStatus() {
   const { t } = useTranslation()
   const { data, error, isLoading } = useAdminAuditChain()
 
-  if (isLoading) return <Skeleton className="h-16 w-full" />
+  // While the chain is checked, the intact state is drawn with its text kept
+  // invisible: the same height at every width and language, so the list below
+  // does not move when the answer arrives (a skeleton was 4 to 24 px shorter).
+  if (isLoading) {
+    return (
+      <Alert aria-busy="true" data-testid="audit-chain-loading">
+        <ShieldCheck className="invisible size-4" aria-hidden />
+        <AlertTitle className="invisible" aria-hidden>
+          {t('admin.auditChain.okTitle', 'Audit log intact')}
+        </AlertTitle>
+        <AlertDescription className="invisible" aria-hidden>
+          {t(
+            'admin.auditChain.okBody',
+            'All {count} entries verify: none was changed or removed since it was written.',
+            { count: '0000' }
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
   if (error || !data) {
     return (
       <Alert>
