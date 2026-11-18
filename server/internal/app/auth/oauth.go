@@ -392,9 +392,13 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 	// A person who signed up with no other way in gets their own
 	// organization now, before the second-factor step (a provider that does
 	// not vouch for the address leaves it unverified: nothing is made). It
-	// never fails the sign-in.
-	ci := clientInfoFrom(ctx)
-	s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
+	// never fails the sign-in. While the platform 2FA floor would cover the
+	// new owner and the account has no password, nothing is made and the mark
+	// stays pending (SocialSignInMayCreate says why and when to remove this).
+	if s.personalOrgs.SocialSignInMayCreate(ctx, u) {
+		ci := clientInfoFrom(ctx)
+		s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
+	}
 
 	// A password account reached through a linked provider takes the same
 	// second step as its password sign-in (identity_link.go).

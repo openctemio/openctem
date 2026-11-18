@@ -37,9 +37,18 @@ const (
 	PersonalOrgSkipped PersonalOrgStatus = "skipped"
 )
 
+// PersonalOrgMarkLifetime is how long a pending mark is honoured, counted
+// from the sign-up. A person who never signed in again for this long (or who
+// joined an organization and was removed from it months later) keeps the
+// normal "create your organization" step instead of getting one by surprise.
+const PersonalOrgMarkLifetime = 30 * 24 * time.Hour
+
 // PersonalOrgRates bounds how many personal organizations are made per
 // network prefix and per e-mail domain in a rolling hour. Zero means no
-// bound. Above a bound nothing is made and the account stays pending.
+// bound. The domain bound never applies to a consumer mailbox provider
+// (gmail.com, outlook.com): one such domain holds a large share of all
+// sign-ups, so a shared bound would be spent by normal volume or by one
+// person with many accounts. The prefix bound still covers those. Above a bound nothing is made and the account stays pending.
 type PersonalOrgRates struct {
 	PerPrefix int
 	PerDomain int
@@ -71,6 +80,10 @@ var (
 	// ErrPersonalOrgInvited: an invitation (or an ownership invitation)
 	// waits for the account; nothing is made and the mark stays pending.
 	ErrPersonalOrgInvited = errors.New("personal organization: an invitation waits")
+	// ErrPersonalOrgDomainClaimed: an organization verified the address's
+	// domain (rechecked inside the transaction); the person joins that
+	// organization instead. The mark stays pending.
+	ErrPersonalOrgDomainClaimed = errors.New("personal organization: the e-mail domain is claimed")
 	// ErrPersonalOrgRateLimited: a rate bound is reached; the mark stays
 	// pending.
 	ErrPersonalOrgRateLimited = errors.New("personal organization: rate bound reached")
@@ -84,13 +97,13 @@ type PersonalOrgRepository interface {
 	// ReservePersonalOrganization marks a new account (pending). A second
 	// call keeps the first mark.
 	ReservePersonalOrganization(ctx context.Context, userID shared.ID, at time.Time) error
-	// PersonalOrganizationPending reports whether the account is marked and
-	// not settled.
-	PersonalOrganizationPending(ctx context.Context, userID shared.ID) (bool, error)
+	// PersonalOrganizationPending reports, at time at, whether the account is marked and
+	// not settled and was reserved less than PersonalOrgMarkLifetime before at.
+	PersonalOrganizationPending(ctx context.Context, userID shared.ID, at time.Time) (bool, error)
 	// CreatePersonalOrganization makes the organization and its owner, and
 	// settles the mark, in one transaction that holds the mark's row lock:
 	// two sign-ins at once make one organization. It re-checks membership
-	// and invitations inside the transaction.
+	// invitations, claimed domains and the mark's age inside the transaction.
 	CreatePersonalOrganization(ctx context.Context, c PersonalOrgCreation) error
 }
 
