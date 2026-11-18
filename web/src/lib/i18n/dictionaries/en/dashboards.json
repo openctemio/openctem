@@ -275,7 +275,7 @@
   "dashboards.metric.findings_age_bands.name": "Open findings by age",
   "dashboards.metric.findings_closure_quality.definition": "Findings fixed in the period by a person and closed by the platform on its own, fixed findings that came back in the period, and the Ready to close proposals that wait for a person now. Many returns after automatic closes mean the closing mode closes too much. Each row opens its list.",
   "dashboards.metric.findings_closure_quality.name": "Closure quality",
-  "dashboards.metric.findings_open.definition": "Published findings that are open now (not fixed, not dispositioned), in this dashboard's scope.",
+  "dashboards.metric.findings_open.definition": "Published findings that are open now (not fixed, not dismissed), in this dashboard's scope.",
   "dashboards.metric.findings_open.name": "Open findings",
   "dashboards.metric.fix_next.definition": "Open P0 to P2 findings in fix order: priority, then severity, then newest.",
   "dashboards.metric.fix_next.name": "Fix next",
