@@ -519,6 +519,11 @@ reference.
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so the filter tokens neither shrink nor wrap to a third
     line.
+  - a toolbar group that draws none of its controls at this width (the
+    Display menu on a phone, tokens moved into the Filters sheet) takes no
+    line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
+    the first chip opens its own line (the list moves 44 px: the row and its
+    gap) instead of sitting on a line an empty group already opened.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
