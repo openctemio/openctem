@@ -31,7 +31,7 @@ func (f fixedFloor) Policy(context.Context) (platformmfa.Policy, error) { return
 // A person who signed up through a social provider owns a personal
 // organization while the platform floor covers owners and the grace is over.
 // The organization refuses the session with MFA_ENROLLMENT_REQUIRED (a reason,
-// not a sign-out), the person enrols a second factor in place within the
+// not a sign-out), the person enrolls a second factor in place within the
 // window, and the session that step opens reaches the organization. A session
 // older than the window must sign in again first. This is why the social
 // sign-in no longer holds the personal organization back.
@@ -45,7 +45,7 @@ func TestSocialOwnerUnderFloor_DB(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer sqlDB.Close()
-	if err := sqlDB.Ping(); err != nil {
+	if err := sqlDB.PingContext(context.Background()); err != nil {
 		t.Skipf("cannot reach test DB: %v", err)
 	}
 	db := &postgres.DB{DB: sqlDB}
@@ -100,10 +100,10 @@ func TestSocialOwnerUnderFloor_DB(t *testing.T) {
 				`DELETE FROM sessions WHERE user_id = $1`,
 				`DELETE FROM tenant_members WHERE user_id = $1`,
 			} {
-				_, _ = sqlDB.Exec(q, u.ID().String())
+				_, _ = sqlDB.ExecContext(context.Background(), q, u.ID().String())
 			}
-			_, _ = sqlDB.Exec(`DELETE FROM tenants WHERE id = $1`, org.ID().String())
-			_, _ = sqlDB.Exec(`DELETE FROM users WHERE id = $1`, u.ID().String())
+			_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, org.ID().String())
+			_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, u.ID().String())
 		})
 		sess, err := sessiondom.New(u.ID(), "access-"+shared.NewID().String(), "127.0.0.1", "test", time.Hour)
 		if err != nil {
@@ -114,12 +114,12 @@ func TestSocialOwnerUnderFloor_DB(t *testing.T) {
 			t.Fatalf("create session: %v", err)
 		}
 		if age > 0 {
-			if _, err := sqlDB.Exec(`UPDATE sessions SET created_at = $2 WHERE id = $1`, sess.ID().String(), time.Now().Add(-age)); err != nil {
+			if _, err := sqlDB.ExecContext(context.Background(), `UPDATE sessions SET created_at = $2 WHERE id = $1`, sess.ID().String(), time.Now().Add(-age)); err != nil {
 				t.Fatal(err)
 			}
 		}
 		// The account is past the new-account grace.
-		if _, err := sqlDB.Exec(`UPDATE users SET created_at = now() - interval '90 days' WHERE id = $1`, u.ID().String()); err != nil {
+		if _, err := sqlDB.ExecContext(context.Background(), `UPDATE users SET created_at = now() - interval '90 days' WHERE id = $1`, u.ID().String()); err != nil {
 			t.Fatal(err)
 		}
 		rt, _, err = svc.tokenGenerator.GenerateGlobalRefreshToken(u.ID().String(), u.Email(), u.Name(), sess.ID().String())
@@ -136,7 +136,7 @@ func TestSocialOwnerUnderFloor_DB(t *testing.T) {
 		return org, rt, sess.ID()
 	}
 
-	t.Run("fresh session: refused, kept, enrols in place, then opens the organization", func(t *testing.T) {
+	t.Run("fresh session: refused, kept, enrolls in place, then opens the organization", func(t *testing.T) {
 		org, rt, sid := socialOwner(t, 0)
 		if _, err := svc.ExchangeToken(ctx, ExchangeTokenInput{RefreshToken: rt, TenantID: org.ID().String()}); !errors.Is(err, ErrMFAEnrollmentRequired) {
 			t.Fatalf("want ErrMFAEnrollmentRequired, got %v", err)
@@ -146,7 +146,7 @@ func TestSocialOwnerUnderFloor_DB(t *testing.T) {
 		}
 		info, err := svc.SessionMFAChallenge(ctx, rt, "127.0.0.1", "test")
 		if err != nil || info.Purpose != mfa.PurposeEnroll {
-			t.Fatalf("enrol challenge: %+v %v", info, err)
+			t.Fatalf("enroll challenge: %+v %v", info, err)
 		}
 		setup, err := svc.BeginMFAEnrollmentFromChallenge(ctx, info.Token)
 		if err != nil {
