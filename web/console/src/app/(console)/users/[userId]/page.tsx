@@ -5,7 +5,7 @@ import {
   authProviderLabel,
   memberRoleLabel,
 } from '@console/features/admin-console/lib/value-labels'
-import { EmptyCell } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { use } from 'react'
 import Link from '@/components/link'
 import { ChevronLeft } from 'lucide-react'

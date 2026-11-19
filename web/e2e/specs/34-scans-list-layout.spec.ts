@@ -9,7 +9,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * next column's text ("about 3 hours ago"). Now:
  *   1. no two text boxes inside a scan card (or a table row) intersect;
  *   2. no text box sticks out of its card (or its table cell);
- *   3. the card puts the name and the last run's state on the first line;
+ *   3. the name is never broken inside a word (only after a dot or a dash)
+ *      and the last run's state sits on its own line under the name;
  *   4. a blocked last run says why, with a link to fix it, without hovering.
  */
 
@@ -99,7 +100,7 @@ async function openScans(page: Page): Promise<boolean> {
 }
 
 test(
-  'scan cards at 390px: no overlapping text, name and state on one line',
+  'scan cards at 390px: no overlapping text, name broken only after . or -, state on its own line',
   { tag: ['@scans'] },
   async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -115,13 +116,41 @@ test(
       expect(overlaps(boxes), `card ${i}`).toEqual([])
       expect(await outside(card, boxes), `card ${i}`).toEqual([])
 
-      // The name and the state chip start on the same line.
+      // The name is never broken inside a word: a line break may only
+      // follow a dot, a dash or a space.
+      const badBreaks = await card.locator('[data-slot="scan-card-title"] p').evaluate((p) => {
+        const bad: string[] = []
+        const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT)
+        let prev: { ch: string; top: number } | null = null
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const t = n.textContent ?? ''
+          for (let k = 0; k < t.length; k++) {
+            const r = document.createRange()
+            r.setStart(n, k)
+            r.setEnd(n, k + 1)
+            const rect = r.getClientRects()[0]
+            if (!rect) continue
+            if (prev && rect.top > prev.top + rect.height / 2 && !/[.\-\s]/.test(prev.ch))
+              bad.push(`broken after "${prev.ch}" before "${t[k]}"`)
+            prev = { ch: t[k], top: rect.top }
+          }
+        }
+        return bad
+      })
+      expect(badBreaks, `card ${i} name broken inside a word`).toEqual([])
+
+      // The state sits on its own line, under the name. The state button is a
+      // touch-sized target that overhangs its text by design (negative margin),
+      // so measure what is seen: the badge inside it (or the "never" text).
       const title = await card.locator('[data-slot="scan-card-title"]').boundingBox()
       const status = card.locator('[data-slot="scan-card-status"]')
-      if ((await status.count()) > 0 && title) {
-        const s = await status.boundingBox()
-        expect(s && Math.abs(s.y - title.y), `card ${i} state on the title line`).toBeLessThan(12)
-      }
+      expect(await status.count(), `card ${i} has a state`).toBeGreaterThan(0)
+      const shown = await status
+        .first()
+        .evaluate((el) => (el.firstElementChild ?? el).getBoundingClientRect().toJSON())
+      expect(title && shown.y >= title.y + title.height - 1, `card ${i} state under the name`).toBe(
+        true
+      )
     }
 
     // A blocked last run explains itself on the card.
