@@ -36,7 +36,7 @@ export interface VisibleSettingsGroup extends Omit<SettingsNavGroup, 'items'> {
  * An item is hidden when the user lacks its permission, or its module (or
  * integration sub-module) is off for the tenant: the same decision the main
  * sidebar makes (useNavItemAccess, subModuleStatus). A group with no visible
- * item is dropped. "My account" items carry no permission, so every signed-in
+ * item is dropped. "Your membership" items carry no permission, so every signed-in
  * user sees at least that group. An item marked onlyWhenLimitsApply (Usage &
  * limits) is listed only while a limit or a module deny applies to the
  * organization: the session bootstrap says so (limits_apply, owners and

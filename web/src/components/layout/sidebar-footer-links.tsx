@@ -65,7 +65,7 @@ export function SidebarFooterLinks({
   const { t } = useTranslation()
   const pathname = usePathname()
   const settingsActive = isSettingsShellPath(pathname)
-  const settingsLabel = t('nav.item.settings', 'Settings')
+  const settingsLabel = t('nav.item.organizationSettings', 'Organization settings')
 
   return (
     <SidebarFooter>

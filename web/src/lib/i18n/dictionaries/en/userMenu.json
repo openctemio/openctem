@@ -1,7 +1,9 @@
 {
-  "userMenu.allSettings": "All settings",
+  "userMenu.accountSettings": "Account settings",
   "userMenu.fallbackName": "User",
   "userMenu.open": "Open user menu",
   "userMenu.openFor": "Open user menu for {name}",
+  "userMenu.organizationSettings": "Organization settings",
+  "userMenu.organizationSettingsOf": "Settings of {name}",
   "userMenu.signOut": "Sign out"
 }

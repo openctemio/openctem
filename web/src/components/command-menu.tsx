@@ -266,10 +266,24 @@ export function CommandMenu() {
             ))}
           {!commandMode && (
             <CommandGroup heading={t('nav.item.settings', 'Settings')}>
-              {/* The overview, which the sidebar footer's Settings row opens. */}
+              {/* The two settings areas: the person's account (outside the
+                  organization shell) and the organization's overview, which
+                  the sidebar footer's row opens. */}
               <CommandItem
-                value={t('nav.item.settings', 'Settings')}
-                keywords={['Settings']}
+                value={t('userMenu.accountSettings', 'Account settings')}
+                keywords={['Account', 'Profile', 'Password', 'Two-factor', 'Preferences']}
+                onSelect={() => {
+                  runCommand(() => router.push('/account'))
+                }}
+              >
+                <div className="flex size-4 items-center justify-center">
+                  <ArrowRight className="text-muted-foreground/80 size-2" />
+                </div>
+                {t('userMenu.accountSettings', 'Account settings')}
+              </CommandItem>
+              <CommandItem
+                value={t('nav.item.organizationSettings', 'Organization settings')}
+                keywords={['Settings', 'Organization']}
                 onSelect={() => {
                   runCommand(() => router.push('/settings'))
                 }}
@@ -277,7 +291,7 @@ export function CommandMenu() {
                 <div className="flex size-4 items-center justify-center">
                   <ArrowRight className="text-muted-foreground/80 size-2" />
                 </div>
-                {t('nav.item.settings', 'Settings')}
+                {t('nav.item.organizationSettings', 'Organization settings')}
               </CommandItem>
               {settingsGroups.flatMap((group) =>
                 group.items.map((item) => (
