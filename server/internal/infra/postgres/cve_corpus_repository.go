@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -61,6 +62,40 @@ func (r *CVECorpusRepository) Counts(ctx context.Context) (records, ranges int, 
 		return 0, 0, fmt.Errorf("corpus counts: %w", err)
 	}
 	return records, ranges, nil
+}
+
+// CorpusFreshness is what the freshness watch reads from the corpus.
+type CorpusFreshness struct {
+	// NewestPublished: the newest publication date not after now (nil:
+	// empty corpus).
+	NewestPublished *time.Time
+	// Published24h: CVEs published in the 24 hours before now;
+	// PublishedPrior30d: in the 30 days before those.
+	Published24h      int
+	PublishedPrior30d int
+}
+
+// FreshnessStats reads the corpus freshness at now. Both parts are index
+// range scans on published_at (idx_cve_records_published): the newest row,
+// and the about 31 days of rows (some 9,000) the counts need.
+func (r *CVECorpusRepository) FreshnessStats(ctx context.Context, now time.Time) (CorpusFreshness, error) {
+	var out CorpusFreshness
+	var newest sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT (SELECT max(published_at) FROM cve_records WHERE published_at <= $1),
+			count(*) FILTER (WHERE published_at > $1 - interval '24 hours'),
+			count(*) FILTER (WHERE published_at <= $1 - interval '24 hours')
+		FROM cve_records
+		WHERE published_at > $1 - interval '31 days' AND published_at <= $1`, now.UTC()).
+		Scan(&newest, &out.Published24h, &out.PublishedPrior30d)
+	if err != nil {
+		return CorpusFreshness{}, fmt.Errorf("corpus freshness: %w", err)
+	}
+	if newest.Valid {
+		t := newest.Time.UTC()
+		out.NewestPublished = &t
+	}
+	return out, nil
 }
 
 // ApplyPage (see cvecorpus.Store).

@@ -30,7 +30,8 @@ test.describe('CI/CD lists', { tag: ['@sensors'] }, () => {
         await page.setViewportSize({ width, height: 900 })
         const seen: string[] = []
         page.on('request', (r) => {
-          if (isApi(r)) {
+          // The shell's own out-of-date-data read is not the page's (request-budget.json).
+          if (isApi(r) && new URL(r.url()).pathname !== '/api/v1/threat-intel/freshness') {
             const u = new URL(r.url())
             seen.push(`${r.method()} ${u.pathname}${u.search}`)
           }

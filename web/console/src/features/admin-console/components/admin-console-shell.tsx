@@ -19,6 +19,7 @@ import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
 import { FactorEnrollmentGate } from './factor-enrollment-gate'
 import { VersionCheckBanner } from './version-check-banner'
+import { FeedFreshnessBanner } from './feed-freshness-banner'
 import { ElevationRequestContext } from './elevation-request'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import { setAdminEnrollmentListener } from '@console/lib/admin-api/client'
@@ -188,6 +189,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
                 <VersionCheckBanner />
+                <FeedFreshnessBanner />
                 {children}
               </div>
               <AdminStepUpPrompt />

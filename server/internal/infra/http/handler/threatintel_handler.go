@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/datascope"
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 	"github.com/openctemio/openctem/server/internal/app/feedsync"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 	"github.com/openctemio/openctem/server/internal/app/threat"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 
@@ -32,6 +33,8 @@ type ThreatIntelHandler struct {
 	runner    FeedRunner
 	// bundlesConfigured: VULNFEED_ROOT_KEY_ID is set.
 	bundlesConfigured bool
+	// freshness is the freshness watch (nil: not wired).
+	freshness *feedwatch.Service
 }
 
 // FeedRunner starts a feed's sync in the background (*feedsync.Runner).
