@@ -92,6 +92,12 @@ with step-up) controls it:
   sent. Names resolving to the address are not affected. The card shows a
   banner saying scanning of these addresses is paused and why.
 - **Off**: such entries authorize active checks like any other entry.
+  Turning it from on to off lifts every hold of the organization at once, so
+  it needs the critical re-authentication (the same as **Keep scanning**,
+  whatever the organization's sensitive tier says): a stale session gets
+  `403 STEP_UP_REQUIRED` and nothing changes. The change is audited at high
+  severity (`provider_hold_lifted`) and every administrator gets the notice
+  "Hold on shared provider addresses turned off".
 
 Undo is one step per provider: **Keep scanning** (step-up, audited) resumes
 active scanning of those entries at once; **Move to out of scope** keeps the
