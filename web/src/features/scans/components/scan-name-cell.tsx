@@ -5,6 +5,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { ScanConfig } from '@/lib/api/scan-types'
 import { scanDetailHref } from '../lib/scan-link'
 import { ScanApprovalBadge } from './approval/scan-approval-badge'
+import { BreakText } from '@/features/shared/components/break-text'
 
 /**
  * The Name cell of the scans list, on one line: the scan name as a link to
@@ -39,7 +40,7 @@ export function ScanNameCell({
           onOpen()
         }}
       >
-        {config.name}
+        <BreakText>{config.name}</BreakText>
       </Link>
       <ScanApprovalBadge status={config.approval_status} />
     </div>

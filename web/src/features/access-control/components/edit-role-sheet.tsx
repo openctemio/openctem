@@ -319,7 +319,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
         {/* Content - Two columns */}
         <SheetBody className="flex overflow-hidden p-0 sm:p-0">
           {/* Left Column - Form */}
-          <div className="flex-1 flex flex-col min-h-0 border-r">
+          <div className="flex-1 flex flex-col min-h-0 md:border-r">
             <ScrollArea className="flex-1 h-full">
               <div className="p-6 space-y-6">
                 {/* Basic Info */}
@@ -572,7 +572,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
           </div>
 
           {/* Right Column - Preview */}
-          <div className="w-80 flex flex-col min-h-0 bg-muted/30">
+          <div className="hidden w-80 flex-col min-h-0 bg-muted/30 md:flex">
             <div className="p-4 border-b shrink-0">
               <h3 className="font-semibold text-sm">{t('org.roleSheet.preview', 'Preview')}</h3>
             </div>
