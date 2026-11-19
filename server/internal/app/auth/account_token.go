@@ -4,17 +4,12 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
-
-// ErrAccountTokenHasOrganization: the account can open an organization, so
-// it exchanges its refresh token for that organization's token instead.
-var ErrAccountTokenHasOrganization = errors.New("the account belongs to an organization; exchange the token for it")
 
 // AccountTokenResult is an access token with no tenant and the rotated
 // refresh token (for the httpOnly cookie only).
@@ -24,28 +19,24 @@ type AccountTokenResult struct {
 	ExpiresAt    time.Time
 }
 
-// AccountToken mints an access token without a tenant claim for an account
-// that has no organization it can open (none at all, or every one is
-// suspended or closed). That token reaches only the account allow-list
-// (middleware/tenantless.go); every other route refuses it. The refresh
-// token is checked exactly as for an organization token (replay detection,
-// active session and account) and is rotated in the same family. An account
-// that can open an organization is refused, so a member never holds a token
-// that skips the organization's sign-in policies (SSO, 2FA, verified email).
+// AccountToken mints an access token without a tenant claim for any
+// signed-in account, member of an organization or not. That token reaches
+// only the account allow-list (middleware/tenantless.go): the caller's own
+// profile, sign-in methods, second factor, sessions, preferences, invitations
+// and organization creation where allowed. Every other route refuses it with
+// 401 TENANT_REQUIRED, so it opens no organization data and skips none of an
+// organization's sign-in rules (SSO, 2FA, verified e-mail): those are checked
+// when the session asks for that organization's token (ExchangeToken).
+// A person whose organization refuses this session (2FA not set up, its own
+// IdP required, suspended) therefore still reaches their account settings and
+// the one step that admits them, instead of holding no usable token.
+// The refresh token is checked exactly as for an organization token (replay
+// detection, active session and account) and is rotated in the same family;
+// the access token is bound to the same session, so signing out ends both.
 func (s *AuthService) AccountToken(ctx context.Context, refreshToken string) (*AccountTokenResult, error) {
 	storedToken, sess, u, err := s.refreshForMint(ctx, refreshToken, "account_token")
 	if err != nil {
 		return nil, err
-	}
-
-	memberships, err := s.tenantRepo.GetUserMemberships(ctx, u.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user memberships: %w", err)
-	}
-	for _, m := range memberships {
-		if s.organizationOpen(ctx, m.TenantID) == nil {
-			return nil, ErrAccountTokenHasOrganization
-		}
 	}
 
 	if err := s.spendRefreshToken(ctx, storedToken); err != nil {

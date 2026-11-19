@@ -24,6 +24,7 @@ import {
 } from './sensor-version'
 import type { ReleaseChannel } from './fleet'
 import { sensorProtocolOf } from './fleet'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * The drawer's health checklist: one line per thing that can be wrong with a
@@ -271,7 +272,7 @@ export function sensorHealthChecks(
           tr,
           'sensors.checks.outbox.pending',
           '{count} results waiting to upload',
-          { count: ob.pending_count.toLocaleString() }
+          { count: formatNumber(ob.pending_count) }
         )
         const oldest = ob.oldest_age_seconds
           ? msg(tr, 'sensors.checks.outbox.oldest', ', the oldest for {age}', {

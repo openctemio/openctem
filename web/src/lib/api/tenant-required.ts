@@ -4,10 +4,10 @@
  * The API answers `401 TENANT_REQUIRED` for every route outside the account
  * allow-list (api RFC-141). It is not an expired session: the person is
  * signed in and has no organization open, so the page they asked for does not
- * exist for them. The shared API client sends them to /welcome, once.
+ * exist for them. The shared API client sends them to /account/organizations, once.
  */
 
-import { WELCOME_PATH } from '@/lib/middleware/config'
+import { ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
 
 export const TENANT_REQUIRED_CODE = 'TENANT_REQUIRED'
 
@@ -20,18 +20,22 @@ export function isTenantRequired(
 let routing = false
 
 /**
- * Goes to /welcome unless the person is already in the account space (those
+ * Goes to /account/organizations unless the person is already in the account space (those
  * pages call only allow-listed routes, so a refusal there is a bug to show,
  * not a loop to enter).
  */
 export function routeToWelcomeOnce(location: Pick<Location, 'pathname' | 'assign'>): boolean {
   if (routing) return false
   const path = location.pathname
-  if (path === WELCOME_PATH || path.startsWith(`${WELCOME_PATH}/`) || path.startsWith('/account')) {
+  if (
+    path === ACCOUNT_HOME_PATH ||
+    path.startsWith(`${ACCOUNT_HOME_PATH}/`) ||
+    path.startsWith('/account')
+  ) {
     return false
   }
   routing = true
-  location.assign(WELCOME_PATH)
+  location.assign(ACCOUNT_HOME_PATH)
   return true
 }
 

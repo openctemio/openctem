@@ -7,6 +7,7 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 import type { ExposureStats, ExposureSeverity, ExposureState } from '@/lib/api/exposure-types'
 import { SEVERITY_LEVELS } from '@/lib/severity'
+import { formatNumber } from '@/lib/app-locale'
 
 const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
 
@@ -38,7 +39,7 @@ export function ExposureSeverityBreakdown({
               <div key={key} className="space-y-1">
                 <div className="flex items-center justify-between text-sm">
                   <SeverityBadge severity={key} />
-                  <span className="font-medium tabular-nums">{count.toLocaleString()}</span>
+                  <span className="font-medium tabular-nums">{formatNumber(count)}</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
@@ -80,7 +81,11 @@ export function ExposureStateBreakdown({ byState, className }: ExposureStateBrea
             const percentage = total > 0 ? ((count / total) * 100).toFixed(0) : '0'
             return (
               <div key={key} className="px-3 py-2 text-center">
-                <p className="text-2xl font-semibold tabular-nums">{count.toLocaleString()}</p>
+                <p
+                  className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing figure; only its number format changes
+                >
+                  {formatNumber(count)}
+                </p>
                 <p className="text-xs text-muted-foreground">{t(`exposures.state.${key}`)}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">{percentage}%</p>
               </div>

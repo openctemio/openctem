@@ -21,6 +21,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import type { AssetNetworkCount } from '../../hooks/use-assets'
 import { networkFilter } from '../../lib/ip-columns'
+import { formatNumber } from '@/lib/app-locale'
 
 export function InventoryNetworks({
   networks,
@@ -104,7 +105,7 @@ export function InventoryNetworks({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-end tabular-nums">{n.count.toLocaleString()}</TableCell>
+                <TableCell className="text-end tabular-nums">{formatNumber(n.count)}</TableCell>
               </TableRow>
             )
           })}
@@ -115,7 +116,7 @@ export function InventoryNetworks({
           {t(
             'assets.ip.networksCapped',
             'Showing the {count} networks with the most addresses. Narrow the filter to see the rest.',
-            { count: networks.length.toLocaleString() }
+            { count: formatNumber(networks.length) }
           )}
         </p>
       )}

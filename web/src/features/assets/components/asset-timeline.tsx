@@ -34,6 +34,7 @@ import {
   type TrackedAttribute,
 } from '../lib/attribute-sources'
 import { groupByDay, type AssetChange, type ChangeFilters } from '../lib/asset-timeline'
+import { formatDate } from '@/lib/app-locale'
 
 const ALL = 'all'
 
@@ -212,7 +213,7 @@ function TimelineBody({
   filters: ChangeFilters
   onWhy?: (attribute: string) => void
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { events, error, isLoading, hasMore, loadMore, loadingMore, mutate } = useAssetChanges(
     assetId,
     filters
@@ -255,7 +256,7 @@ function TimelineBody({
       {days.map((d) => (
         <section key={d.day} aria-label={d.day}>
           <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-            {new Date(`${d.day}T00:00:00`).toLocaleDateString(locale, {
+            {formatDate(new Date(`${d.day}T00:00:00`), {
               year: 'numeric',
               month: 'short',
               day: 'numeric',

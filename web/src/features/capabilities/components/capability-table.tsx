@@ -20,7 +20,8 @@ import {
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
 import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
-import { TOOL_STATUS_META, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
+import { toolStatusLabel, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface CapabilityTableProps {
   capabilities: Capability[]
@@ -44,6 +45,7 @@ function UsageCell({
   /** Tool availability by name (the Tools page's source); null while unknown. */
   availability: Map<string, ToolAvailabilityItem> | null
 }) {
+  const { t } = useTranslation()
   if (!stats) return <span className="text-muted-foreground">-</span>
   const ready = availability
     ? (stats.tool_names ?? []).filter((n) => {
@@ -66,9 +68,17 @@ function UsageCell({
         <TooltipContent>
           <p className="font-medium">
             {stats.tool_count === 0
-              ? 'No tools using this capability'
-              : `${stats.tool_count} tool${stats.tool_count > 1 ? 's' : ''}`}
-            {ready != null && stats.tool_count > 0 && `, ${ready} ready on your sensors`}
+              ? t('scans.capabilities.usage.noTools', 'No tools using this capability')
+              : stats.tool_count === 1
+                ? t('scans.capabilities.usage.toolsOne', '{count} tool', {
+                    count: stats.tool_count,
+                  })
+                : t('scans.capabilities.usage.toolsMany', '{count} tools', {
+                    count: stats.tool_count,
+                  })}
+            {ready != null &&
+              stats.tool_count > 0 &&
+              t('scans.capabilities.usage.ready', ', {ready} ready on your sensors', { ready })}
           </p>
           {stats.tool_names && stats.tool_names.length > 0 && (
             <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
@@ -77,11 +87,17 @@ function UsageCell({
                 return (
                   <li key={name}>
                     {name}
-                    {a && ` (${TOOL_STATUS_META[a.status].label.toLowerCase()})`}
+                    {a && ` (${toolStatusLabel(a.status, t).toLowerCase()})`}
                   </li>
                 )
               })}
-              {stats.tool_names.length > 5 && <li>+{stats.tool_names.length - 5} more</li>}
+              {stats.tool_names.length > 5 && (
+                <li>
+                  {t('scans.capabilities.usage.more', '+{count} more', {
+                    count: stats.tool_names.length - 5,
+                  })}
+                </li>
+              )}
             </ul>
           )}
         </TooltipContent>
@@ -99,15 +115,27 @@ function UsageCell({
         <TooltipContent>
           <p className="font-medium">
             {stats.sensor_count === 0
-              ? 'No sensors with this capability'
-              : `${stats.sensor_count} sensor${stats.sensor_count > 1 ? 's' : ''}`}
+              ? t('scans.capabilities.usage.noSensors', 'No sensors with this capability')
+              : stats.sensor_count === 1
+                ? t('scans.capabilities.usage.sensorsOne', '{count} sensor', {
+                    count: stats.sensor_count,
+                  })
+                : t('scans.capabilities.usage.sensorsMany', '{count} sensors', {
+                    count: stats.sensor_count,
+                  })}
           </p>
           {stats.sensor_names && stats.sensor_names.length > 0 && (
             <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
               {stats.sensor_names.slice(0, 5).map((name) => (
                 <li key={name}>{name}</li>
               ))}
-              {stats.sensor_names.length > 5 && <li>+{stats.sensor_names.length - 5} more</li>}
+              {stats.sensor_names.length > 5 && (
+                <li>
+                  {t('scans.capabilities.usage.more', '+{count} more', {
+                    count: stats.sensor_names.length - 5,
+                  })}
+                </li>
+              )}
             </ul>
           )}
         </TooltipContent>
@@ -127,6 +155,7 @@ export function CapabilityTable({
   toolbarStart,
   toolbarEnd,
 }: CapabilityTableProps) {
+  const { t } = useTranslation()
   const showActions = Boolean(onViewDetails || (!readOnly && (onEdit || onDelete)))
   // Which of a capability's tools a scan can run now (api tool-availability.md).
   const { data: availData } = useToolAvailability()
@@ -139,7 +168,9 @@ export function CapabilityTable({
     const cols: ColumnDef<Capability>[] = [
       {
         accessorKey: 'display_name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.capabilities.col.name', 'Name')} />
+        ),
         cell: ({ row }) => {
           const c = row.original
           return (
@@ -160,14 +191,21 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Code" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.capabilities.col.code', 'Code')} />
+        ),
         cell: ({ row }) => (
           <code className="text-xs text-muted-foreground">{row.original.name}</code>
         ),
       },
       {
         accessorKey: 'category',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.capabilities.col.category', 'Category')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.category ? (
             <Badge variant="outline" className="capitalize">
@@ -177,18 +215,20 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'is_builtin',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.capabilities.col.type', 'Type')} />
+        ),
         cell: ({ row }) => (
           <Badge variant="secondary" className="gap-1">
             {row.original.is_builtin ? (
               <>
                 <Globe className="h-3 w-3" />
-                Platform
+                {t('scans.capabilities.type.platform', 'Platform')}
               </>
             ) : (
               <>
                 <Sparkles className="h-3 w-3" />
-                Custom
+                {t('scans.capabilities.type.custom', 'Custom')}
               </>
             )}
           </Badge>
@@ -196,7 +236,7 @@ export function CapabilityTable({
       },
       {
         id: 'usage',
-        header: 'Usage',
+        header: t('scans.capabilities.col.usage', 'Usage'),
         enableSorting: false,
         cell: ({ row }) => (
           <UsageCell stats={usageStats?.[row.original.id]} availability={availability} />
@@ -204,7 +244,7 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'description',
-        header: 'Description',
+        header: t('scans.capabilities.col.description', 'Description'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="line-clamp-1 max-w-[300px] text-sm text-muted-foreground">
@@ -224,15 +264,27 @@ export function CapabilityTable({
           const c = row.original
           const actions = [
             ...(onViewDetails
-              ? [{ label: 'View details', icon: Eye, onClick: () => onViewDetails(c) }]
+              ? [
+                  {
+                    label: t('scans.capabilities.action.viewDetails', 'View details'),
+                    icon: Eye,
+                    onClick: () => onViewDetails(c),
+                  },
+                ]
               : []),
             ...(!readOnly && onEdit
-              ? [{ label: 'Edit', icon: Pencil, onClick: () => onEdit(c) }]
+              ? [
+                  {
+                    label: t('scans.capabilities.action.edit', 'Edit'),
+                    icon: Pencil,
+                    onClick: () => onEdit(c),
+                  },
+                ]
               : []),
             ...(!readOnly && onDelete
               ? [
                   {
-                    label: 'Delete',
+                    label: t('scans.capabilities.action.delete', 'Delete'),
                     icon: Trash2,
                     onClick: () => onDelete(c),
                     destructive: true,
@@ -247,7 +299,7 @@ export function CapabilityTable({
     }
 
     return cols
-  }, [usageStats, availability, showActions, onViewDetails, onEdit, onDelete, readOnly])
+  }, [usageStats, availability, showActions, onViewDetails, onEdit, onDelete, readOnly, t])
 
   // Parent (capabilities-section) owns search + tab/category filters, so the
   // table's own search is disabled; DataTable adds sortable headers + pagination.
@@ -259,8 +311,11 @@ export function CapabilityTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
-      emptyMessage="No capabilities"
-      emptyDescription="No capabilities match the current filters."
+      emptyMessage={t('scans.capabilities.table.emptyTitle', 'No capabilities')}
+      emptyDescription={t(
+        'scans.capabilities.table.emptyDesc',
+        'No capabilities match the current filters.'
+      )}
     />
   )
 }

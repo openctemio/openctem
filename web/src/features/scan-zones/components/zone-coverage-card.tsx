@@ -17,6 +17,7 @@ import type { ScanZone, ScanZoneCoverage } from '@/lib/api/scan-zone-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import { isPrivatePrefix, parsePrefix, prefixContainsAddr } from '../lib/ranges'
+import { formatNumber } from '@/lib/app-locale'
 
 interface InventoryAsset {
   id: string
@@ -114,10 +115,10 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
               : 'scans.zones.coverage.desc',
             undefined,
             {
-              total: coverage.inventory_addresses.toLocaleString(),
-              inside: coverage.in_zones.toLocaleString(),
-              private: coverage.outside_private.toLocaleString(),
-              public: coverage.outside_public.toLocaleString(),
+              total: formatNumber(coverage.inventory_addresses),
+              inside: formatNumber(coverage.in_zones),
+              private: formatNumber(coverage.outside_private),
+              public: formatNumber(coverage.outside_public),
             }
           )}
         </CardDescription>
@@ -145,7 +146,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
           ) : !canReadAssets ? (
             <p className="text-sm text-muted-foreground">
               {t('scans.zones.coverage.noAssetsAccess', undefined, {
-                count: outside.toLocaleString(),
+                count: formatNumber(outside),
               })}
             </p>
           ) : isLoading ? (
@@ -156,7 +157,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
             </div>
           ) : error ? (
             <p className="text-sm text-muted-foreground">
-              {t('scans.zones.coverage.listFailed', undefined, { count: outside.toLocaleString() })}
+              {t('scans.zones.coverage.listFailed', undefined, { count: formatNumber(outside) })}
             </p>
           ) : (
             <>
@@ -193,7 +194,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                   : ''}
                 {data?.truncated
                   ? t('scans.zones.coverage.truncated', undefined, {
-                      count: (PER_PAGE * MAX_PAGES).toLocaleString(),
+                      count: formatNumber(PER_PAGE * MAX_PAGES),
                     })
                   : t('scans.zones.coverage.addRanges')}
               </p>
@@ -223,7 +224,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                         })}
                     {z.addresses > 0
                       ? t('scans.zones.coverage.addressesWait', undefined, {
-                          count: z.addresses.toLocaleString(),
+                          count: formatNumber(z.addresses),
                         })
                       : ''}
                   </span>

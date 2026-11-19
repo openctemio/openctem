@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { formatDateTime } from '@/lib/app-locale'
 import type { SensorConfigReport } from '@/lib/api/sensor-types'
 
 import { controlDnsFact, observedValueText, withControlDnsReason } from '../control-dns'
@@ -84,7 +85,7 @@ describe('withControlDnsReason', () => {
 describe('observedValueText', () => {
   it('shows the DNS check times as dates and leaves the rest', () => {
     expect(observedValueText('runtime.control_dns', 'since', '1793001600')).toBe(
-      new Date(1793001600 * 1000).toLocaleString()
+      formatDateTime(new Date(1793001600 * 1000))
     )
     expect(observedValueText('runtime.control_dns', 'host', 'platform.example.com')).toBe(
       'platform.example.com'

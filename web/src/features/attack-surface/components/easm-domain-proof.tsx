@@ -65,6 +65,8 @@ export function EASMDomainProofPanel() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: '',
         cell: ({ row }) => {
           const d = row.original
@@ -95,7 +97,13 @@ export function EASMDomainProofPanel() {
   )
 
   if (error) {
-    return <ErrorState title="domain proof" error={error} onRetry={() => void mutate()} />
+    return (
+      <ErrorState
+        title={t('attackSurface.domainProof.loadTitle', 'domain proof')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
   }
 
   const remove = async () => {

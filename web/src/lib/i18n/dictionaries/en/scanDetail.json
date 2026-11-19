@@ -65,7 +65,7 @@
   "scanDetail.runs.message": "Run message",
   "scanDetail.runs.noun": "runs",
   "scanDetail.runs.reportedFindings": "Findings this scan reported",
-  "scanDetail.runs.steps": "{done}/{total} steps",
+  "scanDetail.runs.steps": "{done}/{total, plural, one {# step} other {# steps}}",
   "scanDetail.runs.viewAll": "View all runs",
   "scanDetail.tab.configuration": "Configuration",
   "scanDetail.tab.details": "Details",

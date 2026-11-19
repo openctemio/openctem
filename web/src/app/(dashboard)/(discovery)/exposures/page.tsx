@@ -116,6 +116,7 @@ import {
 } from '@/lib/api/exposure-types'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
+import { formatNumber } from '@/lib/app-locale'
 
 type ActionType = ExposureActionType
 
@@ -280,7 +281,7 @@ export default function ExposuresPage() {
               t(
                 'exposures.export.truncated',
                 'Export limited to the first {count} exposures. Refine the filters to export the rest.',
-                { count: loaded.toLocaleString() }
+                { count: formatNumber(loaded) }
               )
             ),
         }
@@ -565,7 +566,7 @@ export default function ExposuresPage() {
             key={c.key}
             label={t('exposures.category.withCount', '{name} ({count})', {
               name: categoryLabel(c.key),
-              count: (stats?.by_category?.[c.key] ?? 0).toLocaleString(),
+              count: formatNumber(stats?.by_category?.[c.key] ?? 0),
             })}
             checked={selectedCategories.includes(c.key)}
             onCheckedChange={() => toggleCategory(c.key)}
@@ -609,7 +610,7 @@ export default function ExposuresPage() {
     checkboxLabel: (e) => t('exposures.table.selectRow', 'Select {title}', { title: e.title }),
     actions: bulkParts.actions,
     more: bulkParts.more,
-    noun: t('exposures.bulk.noun', 'exposures selected'),
+    noun: (count) => t('exposures.bulk.noun', 'exposures selected', { count }),
     onSelectionChange: (selection) => {
       const rows = selection?.kind === 'ids' ? selection.rows : []
       setSelectedIds(rows.map((e) => e.id))
@@ -968,7 +969,7 @@ function EventTypeDistribution({ byEventType }: EventTypeDistributionProps) {
               />
             </div>
             <div className="w-24 text-end text-sm text-muted-foreground tabular-nums">
-              {count.toLocaleString()} ({percentage}%)
+              {formatNumber(count)} ({percentage}%)
             </div>
           </div>
         )

@@ -3,6 +3,7 @@
 import { capabilitySwatch } from '@/lib/capability-colors'
 import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import { memo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +31,7 @@ export const CapabilityCard = memo(function CapabilityCard({
   onViewDetails,
   readOnly = false,
 }: CapabilityCardProps) {
+  const { t } = useTranslation()
   const showActions = !readOnly && (onEdit || onDelete)
 
   return (
@@ -60,7 +62,7 @@ export const CapabilityCard = memo(function CapabilityCard({
                 ...(onViewDetails
                   ? [
                       {
-                        label: 'View Details',
+                        label: t('scans.capabilities.action.viewDetails', 'View details'),
                         icon: Eye,
                         onClick: () => onViewDetails(capability),
                       },
@@ -69,7 +71,7 @@ export const CapabilityCard = memo(function CapabilityCard({
                 ...(onEdit
                   ? [
                       {
-                        label: 'Edit',
+                        label: t('scans.capabilities.action.edit', 'Edit'),
                         icon: Pencil,
                         onClick: () => onEdit(capability),
                         separatorBefore: !!onViewDetails,
@@ -79,7 +81,7 @@ export const CapabilityCard = memo(function CapabilityCard({
                 ...(onDelete
                   ? [
                       {
-                        label: 'Delete',
+                        label: t('scans.capabilities.action.delete', 'Delete'),
                         icon: Trash2,
                         onClick: () => onDelete(capability),
                         destructive: true,
@@ -108,12 +110,12 @@ export const CapabilityCard = memo(function CapabilityCard({
             {capability.is_builtin ? (
               <>
                 <Globe className="h-3 w-3" />
-                Platform
+                {t('scans.capabilities.type.platform', 'Platform')}
               </>
             ) : (
               <>
                 <Sparkles className="h-3 w-3" />
-                Custom
+                {t('scans.capabilities.type.custom', 'Custom')}
               </>
             )}
           </Badge>
@@ -133,8 +135,20 @@ export const CapabilityCard = memo(function CapabilityCard({
                 <TooltipContent>
                   <p className="font-medium">
                     {usageStats.tool_count === 0
-                      ? 'No tools using this capability'
-                      : `${usageStats.tool_count} tool${usageStats.tool_count > 1 ? 's' : ''} using this capability`}
+                      ? t('scans.capabilities.usage.noTools', 'No tools using this capability')
+                      : usageStats.tool_count === 1
+                        ? t(
+                            'scans.capabilities.card.toolsUsing',
+                            '{count} tool using this capability',
+                            {
+                              count: usageStats.tool_count,
+                            }
+                          )
+                        : t(
+                            'scans.capabilities.card.toolsUsingMany',
+                            '{count} tools using this capability',
+                            { count: usageStats.tool_count }
+                          )}
                   </p>
                   {usageStats.tool_names && usageStats.tool_names.length > 0 && (
                     <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
@@ -142,7 +156,11 @@ export const CapabilityCard = memo(function CapabilityCard({
                         <li key={name}>{name}</li>
                       ))}
                       {usageStats.tool_names.length > 5 && (
-                        <li>+{usageStats.tool_names.length - 5} more</li>
+                        <li>
+                          {t('scans.capabilities.usage.more', '+{count} more', {
+                            count: usageStats.tool_names.length - 5,
+                          })}
+                        </li>
                       )}
                     </ul>
                   )}
@@ -161,8 +179,20 @@ export const CapabilityCard = memo(function CapabilityCard({
                 <TooltipContent>
                   <p className="font-medium">
                     {usageStats.sensor_count === 0
-                      ? 'No sensors with this capability'
-                      : `${usageStats.sensor_count} sensor${usageStats.sensor_count > 1 ? 's' : ''} with this capability`}
+                      ? t('scans.capabilities.usage.noSensors', 'No sensors with this capability')
+                      : usageStats.sensor_count === 1
+                        ? t(
+                            'scans.capabilities.card.sensorsWith',
+                            '{count} sensor with this capability',
+                            {
+                              count: usageStats.sensor_count,
+                            }
+                          )
+                        : t(
+                            'scans.capabilities.card.sensorsWithMany',
+                            '{count} sensors with this capability',
+                            { count: usageStats.sensor_count }
+                          )}
                   </p>
                   {usageStats.sensor_names && usageStats.sensor_names.length > 0 && (
                     <ul className="mt-1 list-disc ps-4 text-xs text-muted-foreground">
@@ -170,7 +200,11 @@ export const CapabilityCard = memo(function CapabilityCard({
                         <li key={name}>{name}</li>
                       ))}
                       {usageStats.sensor_names.length > 5 && (
-                        <li>+{usageStats.sensor_names.length - 5} more</li>
+                        <li>
+                          {t('scans.capabilities.usage.more', '+{count} more', {
+                            count: usageStats.sensor_names.length - 5,
+                          })}
+                        </li>
                       )}
                     </ul>
                   )}

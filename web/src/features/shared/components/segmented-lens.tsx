@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * A lens: a small segmented control that switches what a list is about
@@ -34,7 +35,7 @@ export interface SegmentedLensProps<V extends string> {
   disabled?: boolean
 }
 
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+const COMPACT: Intl.NumberFormatOptions = { notation: 'compact', maximumFractionDigits: 1 }
 
 export function SegmentedLens<V extends string>({
   label,
@@ -122,7 +123,7 @@ export function SegmentedLens<V extends string>({
                 className="tabular-nums text-muted-foreground"
                 aria-label={`${o.count} ${countNoun}`}
               >
-                {compact.format(o.count)}
+                {formatNumber(o.count, COMPACT)}
               </span>
             )}
           </button>

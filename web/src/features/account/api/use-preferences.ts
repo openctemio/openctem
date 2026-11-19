@@ -110,7 +110,7 @@ export function setLocalPreferences(preferences: Partial<UserPreferences>): void
  * Merge `patch` into the browser-local preferences and save. Keys retired from
  * the model are dropped on the way (the five e-mail toggles that used to live
  * here drove nothing; their server-side equivalents are on
- * /account/notifications).
+ * /settings/me/notifications).
  */
 export function mergeLocalPreferences(patch: Partial<UserPreferences>): void {
   const current = { ...(getLocalPreferences() ?? {}) } as Record<string, unknown>

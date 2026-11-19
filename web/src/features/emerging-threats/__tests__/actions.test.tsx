@@ -116,7 +116,7 @@ describe('create remediation task', () => {
     api.post.mockResolvedValue({ id: 'task-42' })
     wrap(<AlertActions alert={mixed} />)
     await userEvent.click(screen.getByRole('button', { name: /Create remediation task/ }))
-    expect(screen.getByText(/1 findings are already in a task/)).toBeInTheDocument()
+    expect(screen.getByText(/1 finding is already in a task/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Create task with 2 findings' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/remediation/tasks', {

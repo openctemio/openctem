@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
+  EmptyCell,
   EmptyState,
   ErrorState,
   FilterSelect,
@@ -55,6 +56,7 @@ import {
   type TechnologyRow,
   type VersionFilter,
 } from '../lib/technologies'
+import { formatNumber } from '@/lib/app-locale'
 
 const PAGE_SIZES = [20, 50, 100]
 const SORT_FIELDS = [
@@ -118,7 +120,7 @@ function ExploitCell({ row }: { row: TechnologyRow }) {
       />
     )
   }
-  return <span className="text-muted-foreground">-</span>
+  return <EmptyCell title={t('attackSurface.technologies.noExploit', 'No known exploit')} />
 }
 
 function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
@@ -171,7 +173,7 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
               }
             )}
           >
-            {row.original.asset_count}
+            {formatNumber(row.original.asset_count)}
           </Link>
         ),
       },

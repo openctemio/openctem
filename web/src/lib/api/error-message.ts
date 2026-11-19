@@ -278,7 +278,7 @@ export function errorText(d: ErrorDescription, t: Translate): string {
 }
 
 /** Translator for code that has no React context: the page's language. */
-function documentTranslate(): Translate {
+export function documentTranslate(): Translate {
   const lang = typeof document !== 'undefined' ? document.documentElement.lang : undefined
   const dict = getDictionary(lang || undefined)
   return (key, fallback, vars) => translate(dict, key, fallback, vars)

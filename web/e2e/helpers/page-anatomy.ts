@@ -21,7 +21,7 @@ import { checkScrollEnd } from './scroll-end'
  */
 const SAVE_EXCEPTIONS = new Set<string>([
   '/account',
-  '/account/notifications',
+  '/settings/me/notifications',
   '/account/preferences',
   '/settings/ai',
   '/settings/asset-sources',

@@ -30,6 +30,7 @@ import {
 } from '@/features/integrations/lib/tenable-sc'
 import { templateTypeForScanner } from './rule-templates'
 import { apiTargetOptions, isWildcardTarget, toWildcards } from './dynamic-targets'
+import { formatNumber } from '@/lib/app-locale'
 
 /** The scan has no schedule: it runs now, or is saved to start by hand. */
 export function onDemand(schedule: NewScanFormData['schedule']): boolean {
@@ -219,8 +220,8 @@ export function targetsError(form: NewScanFormData, t: Translate = enTranslate):
   const n = directTargets(form).length
   if (n > MAX_DIRECT_TARGETS) {
     return t('scans.err.tooMany', undefined, {
-      max: MAX_DIRECT_TARGETS.toLocaleString(),
-      count: n.toLocaleString(),
+      max: formatNumber(MAX_DIRECT_TARGETS),
+      count: formatNumber(n),
     })
   }
   return null

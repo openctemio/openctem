@@ -54,6 +54,7 @@ import {
 import { CriticalityBadge } from '../classification-badges'
 import type { Criticality } from '../../types'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDateTime } from '@/lib/app-locale'
 import { BreakText } from '@/features/shared/components/break-text'
 
 const PAGE_SIZE = 25
@@ -587,10 +588,10 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         <p className="mt-1 text-muted-foreground">
           {seen
             ? t('assets.related.lastSeenAt', 'Last reported {date}', {
-                date: seen.toLocaleString(),
+                date: formatDateTime(seen),
               })
             : t('assets.related.addedAt', 'Added {date}; not reported by a scan since', {
-                date: added.toLocaleString(),
+                date: formatDateTime(added),
               })}
         </p>
       </TooltipContent>

@@ -8,6 +8,7 @@ import {
   type EvaluatedTransition,
 } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * What a bulk change will do, shown in its confirm dialog before anything is
@@ -62,7 +63,7 @@ export function BulkChangePreview({
         {t(
           'findings.bulk.previewFilter',
           'This changes up to {count} findings that match, in your data scope. The server checks each one again as it applies the change; any it skips are listed when it ends.',
-          { count: selection.total.toLocaleString() }
+          { count: formatNumber(selection.total) }
         )}
       </p>
     )
@@ -95,20 +96,20 @@ export function BulkChangePreview({
     <div className="space-y-1 text-sm" data-testid="bulk-preview" aria-live="polite">
       <p>
         {t('findings.bulk.previewWillChange', '{count} will change', {
-          count: summary.allowed.length.toLocaleString(),
+          count: formatNumber(summary.allowed.length),
         })}
       </p>
       {refusedCount > 0 && (
         <>
           <p className="text-muted-foreground">
             {t('findings.bulk.previewWillNotChange', '{count} will not change:', {
-              count: refusedCount.toLocaleString(),
+              count: formatNumber(refusedCount),
             })}
           </p>
           <ul className="list-disc ps-5 text-muted-foreground">
             {summary.refused.map((r) => (
               <li key={r.reason}>
-                {r.reason} ({r.count.toLocaleString()})
+                {r.reason} ({formatNumber(r.count)})
               </li>
             ))}
           </ul>

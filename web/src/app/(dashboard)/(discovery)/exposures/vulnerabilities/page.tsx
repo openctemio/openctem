@@ -23,7 +23,9 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { Bug, LayoutGrid, List } from 'lucide-react'
 import { VulnerabilityCatalogTab } from '@/features/vulnerabilities'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import { VULNERABILITY_SOURCES } from '@/features/exposures/lib/type-sources'
+import { formatNumber } from '@/lib/app-locale'
 
 const TABS = ['overview', 'catalog'] as const
 
@@ -84,7 +86,7 @@ function OverviewTab() {
           description={t(
             'exposures.vulnerabilities.severityDescription',
             '{count} vulnerabilities by severity',
-            { count: typeStats.total.toLocaleString() }
+            { count: formatNumber(typeStats.total) }
           )}
         >
           <SeverityDonut bySeverity={typeStats.bySeverity} />
@@ -147,10 +149,16 @@ export default function VulnerabilitiesPage() {
       <PageStack>
         <PageHeader
           title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
-          description={t(
-            'exposures.vulnerabilities.description',
-            'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
-          )}
+          // On a phone the catalog list comes first: the description is read
+          // out but not drawn there.
+          description={
+            <span className={tab === 'catalog' ? 'max-md:sr-only' : undefined}>
+              {t(
+                'exposures.vulnerabilities.description',
+                'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
+              )}
+            </span>
+          }
           viewSwitcher={
             canReadCatalog ? (
               <ViewSwitcher
@@ -172,7 +180,14 @@ export default function VulnerabilitiesPage() {
             ) : undefined
           }
         >
-          <div className="flex flex-wrap items-center gap-2">
+          {/* On a phone the catalog list comes first: these links to the
+              findings stay in the Summary view. */}
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-2',
+              tab === 'catalog' && 'max-md:hidden'
+            )}
+          >
             {canOpenList && (
               <Button asChild variant="outline" size="sm">
                 <Link href="/vulnerabilities">

@@ -42,6 +42,7 @@ import type { TranslateVars } from '@/lib/i18n'
 import { formatDurationShort } from './format'
 import { manifestDiffLines } from './manifest'
 import { normalizeSensorVersion } from './sensor-version'
+import { formatDateTime } from '@/lib/app-locale'
 
 /** The app's `t()` (useTranslation). */
 export type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
@@ -151,12 +152,12 @@ function jobDetails(t: Translate, d: SensorActivityDetails): string[] {
 export function describeSensorActivity(
   item: SensorActivityItem,
   t: Translate,
-  locale?: string
+  _locale?: string
 ): SensorActivityView {
   const d: SensorActivityDetails = item.details ?? {}
   const time = (iso: unknown) => {
     const date = new Date(str(iso))
-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(locale)
+    return Number.isNaN(date.getTime()) ? '' : formatDateTime(date)
   }
   const fallback: SensorActivityView = {
     icon: FileText,

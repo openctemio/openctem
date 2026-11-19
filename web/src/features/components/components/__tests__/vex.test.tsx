@@ -179,7 +179,7 @@ describe('VEX import', () => {
       expect(importVexDocument).toHaveBeenCalledWith({ statements: [] }, null, true)
     )
     expect(await screen.findByText('package not in the inventory')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: 'Import 1 statements' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Import 1 statement' }))
     await waitFor(() =>
       expect(importVexDocument).toHaveBeenLastCalledWith({ statements: [] }, null, false)
     )

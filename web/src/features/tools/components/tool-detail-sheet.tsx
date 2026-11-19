@@ -66,6 +66,7 @@ interface ToolDetailSheetProps {
 }
 
 function CommandBlock({ label, command }: { label: string; command: string }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -85,7 +86,7 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
           variant="ghost"
           size="icon"
           className="shrink-0"
-          aria-label={`Copy ${label.toLowerCase()} command`}
+          aria-label={t('scans.tools.detail.copyCommand', 'Copy the command: {label}', { label })}
           onClick={handleCopy}
         >
           {copied ? (
@@ -101,23 +102,48 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
 
 /** How to get a tool onto a sensor: the catalog's install details. */
 function AddToSensorSection({ tool }: { tool: Tool }) {
+  const { t } = useTranslation()
   const hasCommands = tool.install_cmd || tool.version_cmd || tool.update_cmd
   return (
-    <DetailSection title="How to add this tool to a sensor" icon={PackagePlus}>
+    <DetailSection
+      title={t('scans.tools.detail.addTitle', 'How to add this tool to a sensor')}
+      icon={PackagePlus}
+    >
       <p className="mb-3 text-sm text-muted-foreground">
-        Install it on the sensor host (or in the sensor image), then restart the sensor: it reports
-        its tools when it starts, and the tool shows here with its version.
+        {t(
+          'scans.tools.detail.addBody',
+          'Install it on the sensor host (or in the sensor image), then restart the sensor: it reports its tools when it starts, and the tool shows here with its version.'
+        )}
       </p>
       <DetailFieldGrid>
-        <DetailField label="Install method">
+        <DetailField label={t('scans.tools.detail.installMethod', 'Install method')}>
           {INSTALL_METHOD_DISPLAY_NAMES[tool.install_method] ?? tool.install_method}
         </DetailField>
-        {tool.min_version && <DetailField label="Minimum version">{tool.min_version}</DetailField>}
+        {tool.min_version && (
+          <DetailField label={t('scans.tools.detail.minVersion', 'Minimum version')}>
+            {tool.min_version}
+          </DetailField>
+        )}
         {hasCommands && (
           <>
-            {tool.install_cmd && <CommandBlock label="Install" command={tool.install_cmd} />}
-            {tool.version_cmd && <CommandBlock label="Version check" command={tool.version_cmd} />}
-            {tool.update_cmd && <CommandBlock label="Update" command={tool.update_cmd} />}
+            {tool.install_cmd && (
+              <CommandBlock
+                label={t('scans.tools.detail.cmdInstall', 'Install')}
+                command={tool.install_cmd}
+              />
+            )}
+            {tool.version_cmd && (
+              <CommandBlock
+                label={t('scans.tools.detail.cmdVersion', 'Version check')}
+                command={tool.version_cmd}
+              />
+            )}
+            {tool.update_cmd && (
+              <CommandBlock
+                label={t('scans.tools.detail.cmdUpdate', 'Update')}
+                command={tool.update_cmd}
+              />
+            )}
           </>
         )}
       </DetailFieldGrid>
@@ -147,14 +173,22 @@ export function ToolDetailSheet({
 
   const toggle = switchable
     ? item.enabled
-      ? { label: 'Disable', icon: PowerOff, run: () => onToggleEnabled!(item, false) }
-      : { label: 'Enable', icon: Power, run: () => onToggleEnabled!(item, true) }
+      ? {
+          label: t('scans.tools.detail.disable', 'Disable'),
+          icon: PowerOff,
+          run: () => onToggleEnabled!(item, false),
+        }
+      : {
+          label: t('scans.tools.detail.enable', 'Enable'),
+          icon: Power,
+          run: () => onToggleEnabled!(item, true),
+        }
     : null
 
   const menu: DetailMenuItem[] = []
   if (tool?.docs_url) {
     menu.push({
-      label: 'Documentation',
+      label: t('scans.tools.action.docs', 'Documentation'),
       icon: ExternalLink,
       onSelect: () =>
         window.open(sanitizeExternalUrl(tool.docs_url!), '_blank', 'noopener,noreferrer'),
@@ -173,17 +207,17 @@ export function ToolDetailSheet({
   }
   if (tool) {
     menu.push({
-      label: 'Copy ID',
+      label: t('scans.tools.detail.copyId', 'Copy ID'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(tool.id)
-        toast.success('Tool ID copied to clipboard')
+        toast.success(t('scans.tools.detail.idCopied', 'Tool ID copied'))
       },
     })
   }
   if (canDelete) {
     menu.push({
-      label: 'Delete tool',
+      label: t('scans.tools.detail.delete', 'Delete tool'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -196,7 +230,7 @@ export function ToolDetailSheet({
   const primary = canEdit ? (
     <Button size="sm" onClick={() => onEdit!(tool!)}>
       <Settings className="h-4 w-4" />
-      Edit
+      {t('scans.tools.action.edit', 'Edit')}
     </Button>
   ) : toggle ? (
     <Button size="sm" variant={item.enabled ? 'outline' : 'default'} onClick={toggle.run}>
@@ -219,16 +253,18 @@ export function ToolDetailSheet({
               <ToolTrustBadge item={item} />
               {tool?.is_builtin && (
                 <Badge variant="outline" className="text-xs">
-                  Built-in
+                  {t('scans.tools.filter.builtin', 'Built-in')}
                 </Badge>
               )}
               {custom && (
                 <Badge variant="outline" className="text-xs">
-                  Custom
+                  {t('scans.tools.badge.custom', 'Custom')}
                 </Badge>
               )}
               {item.update_available && (
-                <SignalChip icon={ArrowUpCircle}>Update available</SignalChip>
+                <SignalChip icon={ArrowUpCircle}>
+                  {t('scans.tools.detail.updateAvailable', 'Update available')}
+                </SignalChip>
               )}
             </>
           }
@@ -247,40 +283,61 @@ export function ToolDetailSheet({
       <div className="space-y-5">
         {reason && (
           <DetailCallout tone="warning" icon={AlertTriangle} title={reason}>
-            Scans with this tool are refused until a sensor that may run it is online.
+            {t(
+              'scans.tools.detail.refusedBody',
+              'Scans with this tool are refused until a sensor that may run it is online.'
+            )}
           </DetailCallout>
         )}
         {!item.in_catalog && (
-          <DetailCallout tone="info" icon={PackagePlus} title="Not in the tool catalog">
-            A sensor reports this tool, but the catalog does not list it. Add it as a custom tool to
-            scan with it.
+          <DetailCallout
+            tone="info"
+            icon={PackagePlus}
+            title={t('scans.tools.detail.notInCatalogTitle', 'Not in the tool catalog')}
+          >
+            {t(
+              'scans.tools.detail.notInCatalogBody',
+              'A sensor reports this tool, but the catalog does not list it. Add it as a custom tool to scan with it.'
+            )}
           </DetailCallout>
         )}
 
         <DetailSections>
           {tool?.description && (
-            <DetailSection title="Description">
+            <DetailSection title={t('scans.tools.detail.description', 'Description')}>
               <p className="text-sm leading-relaxed text-muted-foreground">{tool.description}</p>
             </DetailSection>
           )}
 
-          <DetailSection title="On your sensors" icon={Server}>
+          <DetailSection title={t('scans.tools.detail.onSensors', 'On your sensors')} icon={Server}>
             <DetailFieldGrid>
-              <DetailField label="Sensors">{sensorsLabel(item)}</DetailField>
-              <DetailField label="Version(s)">
+              <DetailField label={t('scans.tools.col.sensors', 'Sensors')}>
+                {sensorsLabel(item, t)}
+              </DetailField>
+              <DetailField label={t('scans.tools.col.versions', 'Version(s)')}>
                 {versions || '–'}
                 {item.update_available && item.latest_version && (
-                  <span className="text-warning"> (newest known {item.latest_version})</span>
+                  <span className="text-warning">
+                    {' '}
+                    {t('scans.tools.detail.newestKnown', '(newest known {version})', {
+                      version: item.latest_version,
+                    })}
+                  </span>
                 )}
               </DetailField>
               {item.min_version && (
-                <DetailField label="Minimum version">{item.min_version}</DetailField>
+                <DetailField label={t('scans.tools.detail.minVersion', 'Minimum version')}>
+                  {item.min_version}
+                </DetailField>
               )}
-              <DetailField label="Last reported">
+              <DetailField label={t('scans.tools.col.lastReported', 'Last reported')}>
                 {formatRelative(item.last_reported_at, '–')}
               </DetailField>
               {item.content.map((c) => (
-                <DetailField key={c.name} label={`Content: ${c.name}`}>
+                <DetailField
+                  key={c.name}
+                  label={t('scans.tools.detail.content', 'Content: {name}', { name: c.name })}
+                >
                   <span className="tabular-nums">{c.versions.join(', ') || '–'}</span>
                 </DetailField>
               ))}
@@ -289,16 +346,24 @@ export function ToolDetailSheet({
           </DetailSection>
 
           {tool && (
-            <DetailSection title="Details" icon={Layers}>
+            <DetailSection title={t('scans.tools.detail.details', 'Details')} icon={Layers}>
               <DetailFieldGrid>
-                <DetailField label="Category">
+                <DetailField label={t('scans.tools.col.category', 'Category')}>
                   <Badge variant="outline" className="text-xs">
                     <ToolCategoryIcon category={categoryName} className="me-1 h-3 w-3" />
                     {categoryDisplayName}
                   </Badge>
                 </DetailField>
-                <DetailField label="Type">{tool.is_builtin ? 'Built-in' : 'Custom'}</DetailField>
-                <DetailField label="Enabled">{item.enabled ? 'Yes' : 'No'}</DetailField>
+                <DetailField label={t('scans.tools.filter.type', 'Type')}>
+                  {tool.is_builtin
+                    ? t('scans.tools.filter.builtin', 'Built-in')
+                    : t('scans.tools.badge.custom', 'Custom')}
+                </DetailField>
+                <DetailField label={t('scans.tools.col.enabled', 'Enabled')}>
+                  {item.enabled
+                    ? t('scans.tools.detail.yes', 'Yes')
+                    : t('scans.tools.detail.no', 'No')}
+                </DetailField>
               </DetailFieldGrid>
             </DetailSection>
           )}
@@ -306,7 +371,11 @@ export function ToolDetailSheet({
           {tool && <AddToSensorSection tool={tool} />}
 
           {tool && tool.capabilities && tool.capabilities.length > 0 && (
-            <DetailSection title="Capabilities" icon={Zap} count={tool.capabilities.length}>
+            <DetailSection
+              title={t('scans.tools.detail.capabilities', 'Capabilities')}
+              icon={Zap}
+              count={tool.capabilities.length}
+            >
               <div className="flex flex-wrap gap-2">
                 {tool.capabilities.map((cap) => (
                   <CapabilityBadge key={cap} name={cap} showIcon />
@@ -317,7 +386,7 @@ export function ToolDetailSheet({
 
           {tool && tool.supported_targets && tool.supported_targets.length > 0 && (
             <DetailSection
-              title="Supported targets"
+              title={t('scans.tools.detail.targets', 'Supported targets')}
               icon={Target}
               count={tool.supported_targets.length}
             >
@@ -333,7 +402,7 @@ export function ToolDetailSheet({
 
           {tool && tool.output_formats && tool.output_formats.length > 0 && (
             <DetailSection
-              title="Output formats"
+              title={t('scans.tools.detail.outputs', 'Output formats')}
               icon={FileOutput}
               count={tool.output_formats.length}
             >
@@ -348,7 +417,11 @@ export function ToolDetailSheet({
           )}
 
           {tool && tool.tags && tool.tags.length > 0 && (
-            <DetailSection title="Tags" icon={Tag} count={tool.tags.length}>
+            <DetailSection
+              title={t('scans.tools.detail.tags', 'Tags')}
+              icon={Tag}
+              count={tool.tags.length}
+            >
               <div className="flex flex-wrap gap-1.5">
                 {tool.tags.map((tag) => (
                   <Badge key={tag} variant="secondary" className="text-xs font-normal">

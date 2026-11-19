@@ -107,7 +107,7 @@ export default function NotificationsPage() {
             </>
           )}
           <Button variant="outline" size="sm" asChild>
-            <Link href="/account/notifications">
+            <Link href="/settings/me/notifications">
               <Settings className="h-4 w-4 me-1.5" />
               {t('notifications.settings', 'Settings')}
             </Link>

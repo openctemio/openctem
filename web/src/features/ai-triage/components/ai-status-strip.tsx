@@ -6,6 +6,7 @@ import { MetricStrip, type MetricStripItem } from '@/features/shared/components/
 import type { AISettings } from '../api/use-ai-settings'
 import type { AIMaskingPolicy } from '../api/use-ai-masking'
 import type { AIConfig } from '../types/ai-triage.types'
+import { formatNumber } from '@/lib/app-locale'
 
 export type AISettingsTab =
   'provider' | 'use-cases' | 'features' | 'knowledge' | 'limits' | 'activity'
@@ -69,12 +70,11 @@ export function AIStatusStrip({
     {
       key: 'month',
       label: t('settings.ai.status.month', 'This month'),
-      value:
-        limit > 0 ? `${Math.min(100, Math.round((used / limit) * 100))}%` : used.toLocaleString(),
+      value: limit > 0 ? `${Math.min(100, Math.round((used / limit) * 100))}%` : formatNumber(used),
       hint:
         limit > 0
           ? t('settings.ai.status.monthOfLimit', 'of {limit} tokens', {
-              limit: limit.toLocaleString(),
+              limit: formatNumber(limit),
             })
           : t('settings.ai.status.monthNoLimit', 'tokens, no limit'),
       tone: limit > 0 && used >= limit ? 'warning' : 'default',

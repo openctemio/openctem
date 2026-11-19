@@ -23,6 +23,12 @@ import {
   refreshSessionShared,
 } from '@/lib/auth-refresh-lock'
 import { sessionEndReason, type SessionEndReason } from '@/features/auth/lib/session-ended'
+import {
+  refreshFailureAction,
+  TWO_FACTOR_SETUP_PATH,
+  twoFactorSetupHref,
+} from '@/lib/auth/refresh-failure'
+import { routeToWelcomeOnce } from '@/lib/api/tenant-required'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { getCookie, removeCookie } from '@/lib/cookies'
@@ -448,29 +454,34 @@ async function attemptTokenRefresh(): Promise<void> {
         // again once that refresh is no longer recent.
         authRefreshTimeout = setTimeout(() => attemptTokenRefresh(), RECENT_REFRESH_MS + 1000)
       }
-    } else if (outcome.code === 'MFA_ENROLLMENT_REQUIRED') {
-      // The organization now requires two-factor authentication and this
-      // person has not set it up. They stay signed in: a full-page setup
-      // screen enrolls them, re-mints the tenant token and returns here.
-      devLog.warn('[Auth] Two-factor setup required, opening the setup page')
-      authPermanentlyFailed = true
-      redirectToTwoFactorSetup()
-    } else if (
-      outcome.status === 401 ||
-      outcome.code === 'ORGANIZATION_SUSPENDED' ||
-      outcome.code === 'OWN_SIGN_IN_REQUIRED'
-    ) {
-      // 401 = refresh token itself is invalid — no point retrying.
-      // ORGANIZATION_SUSPENDED = the platform operator suspended the
-      // organization; signing in again says so.
-      // OWN_SIGN_IN_REQUIRED = the session came from another organization's
-      // identity provider; this organization wants the account's own sign-in.
-      devLog.warn('[Auth] Refresh token invalid (401), redirecting to login')
-      authPermanentlyFailed = true
-      useAuthStore.getState().clearAuth()
-      safeRedirectToLogin(sessionEndReason(outcome.code))
     } else {
-      // Non-401 failure (500, network, etc.) — retry with backoff
+      // The refresh's answer decides (refresh-failure.ts): only a dead
+      // session signs the person out.
+      const action = refreshFailureAction(outcome.status, outcome.code)
+      if (action === 'two_factor_setup') {
+        // An organization requires two-factor authentication this session has
+        // not proven. They stay signed in: the setup page enrolls them (or asks
+        // for the code), re-mints the tenant token and returns here.
+        devLog.warn('[Auth] Two-factor setup required, opening the setup page')
+        authPermanentlyFailed = true
+        redirectToTwoFactorSetup()
+        return
+      }
+      if (action === 'account_space') {
+        // The organization does not admit this session (suspended, its own
+        // sign-in required): the account space says what is missing.
+        authPermanentlyFailed = true
+        if (typeof window !== 'undefined') routeToWelcomeOnce(window.location)
+        return
+      }
+      if (action === 'sign_out') {
+        devLog.warn('[Auth] Session ended, redirecting to login')
+        authPermanentlyFailed = true
+        useAuthStore.getState().clearAuth()
+        safeRedirectToLogin(sessionEndReason(outcome.code))
+        return
+      }
+      // Server or network failure — retry with backoff
       handleRefreshRetry(`Server error: ${outcome.code || outcome.status}`)
     }
   } catch (error) {
@@ -511,14 +522,12 @@ function safeRedirectToLogin(reason?: SessionEndReason): void {
   endSessionAndSignIn(undefined, { reason })
 }
 
-const TWO_FACTOR_SETUP_PATH = '/two-factor-setup'
-
 /** Send a signed-in person whose refresh was refused for 2FA to the setup page. */
 function redirectToTwoFactorSetup(): void {
   if (typeof window === 'undefined') return
   if (window.location.pathname.startsWith(TWO_FACTOR_SETUP_PATH)) return
   const back = `${window.location.pathname}${window.location.search}`
-  window.location.assign(`${TWO_FACTOR_SETUP_PATH}?next=${encodeURIComponent(back)}`)
+  window.location.assign(twoFactorSetupHref(back))
 }
 
 export function resetAuthFailureFlag(): void {

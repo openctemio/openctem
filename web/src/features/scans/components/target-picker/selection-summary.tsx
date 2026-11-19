@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils'
 import { useDebounce } from '@/hooks/use-debounce'
 import { ScopeCheckList, useScopeCheck, type ApiScopeCheckResult } from '@/features/scope'
 import { MAX_DIRECT_TARGETS } from '../../lib/scan-form'
+import { formatNumber } from '@/lib/app-locale'
 
 /** How many unresolved names the "nothing to scan" note lists. */
 const LISTED_UNRESOLVED = 5
@@ -185,7 +186,7 @@ export function SelectionSummary({
                 {t(
                   targets.length === 1 ? 'scans.summary.targetsOne' : 'scans.summary.targetsMany',
                   undefined,
-                  { count: targets.length.toLocaleString() }
+                  { count: formatNumber(targets.length) }
                 )}
               </span>
               {groupCount > 0 && (
@@ -334,8 +335,8 @@ export function SelectionSummary({
       {over && (
         <p role="alert" className="mt-2 text-xs text-destructive">
           {t('scans.summary.tooMany', undefined, {
-            count: targets.length.toLocaleString(),
-            max: MAX_DIRECT_TARGETS.toLocaleString(),
+            count: formatNumber(targets.length),
+            max: formatNumber(MAX_DIRECT_TARGETS),
           })}
         </p>
       )}

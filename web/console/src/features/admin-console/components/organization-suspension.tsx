@@ -11,6 +11,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { purgeOrganization, setOrganizationSuspended } from '../api/use-admin-organizations'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import type { AdminOrganization } from '../types'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * "Suspended" or "Deletion scheduled" next to an organization's name: the
@@ -221,7 +222,7 @@ export function OrganizationSuspendedNotice({ org }: { org: AdminOrganization })
           {org.deletion_due_at && (
             <p className="mt-1 text-xs">
               {t('admin.org.deletion.due', 'Deleted on {date}', {
-                date: new Date(org.deletion_due_at).toLocaleString(),
+                date: formatDateTime(new Date(org.deletion_due_at)),
               })}
             </p>
           )}

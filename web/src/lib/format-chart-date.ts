@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Safe x-axis / tooltip label formatter for trend, area, bar and timeline
  * charts.
@@ -5,7 +6,7 @@
  * Chart x values arrive in wildly different shapes: full ISO timestamps, plain
  * `YYYY-MM-DD` day strings, month-only strings (`"Jan"`, `"2026-01"`),
  * pre-formatted labels (`"Jan 5"`, `"Week 3"`), numbers, or `null`. Passing any
- * of the non-date shapes straight into `new Date(value).toLocaleDateString()`
+ * of the non-date shapes straight into a raw date formatter
  * yields the literal text "Invalid Date" on every tick.
  *
  * `formatChartDate` degrades gracefully instead:
@@ -36,5 +37,5 @@ export function formatChartDate(value: unknown): string {
   const date = new Date(value as string | number | Date)
   if (Number.isNaN(date.getTime())) return String(value)
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return formatDate(date, { month: 'short', day: 'numeric' })
 }

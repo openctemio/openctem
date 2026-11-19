@@ -172,6 +172,9 @@ Before a table scrolls sideways its columns give way: a column with a range (`mi
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
 name column with a floor is sized by the floor and the room left, never by its text (a long title ends in
 its ellipsis). Widths hold the cell padding, so the visible columns' widths add up to the table.
+A second label beside the name in the same cell (an asset's type) is shown only when the cell has
+room for both (the cell is a size container): at the floor the name gets the width, and the label moves
+into the name's tooltip.
 
 ### Radii
 
@@ -527,11 +530,17 @@ reference.
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
     the first chip opens its own line (the list moves 44 px: the row and its
     gap) instead of sitting on a line an empty group already opened.
+    An icon counts as drawn by its own box (an icon-only Add filter is not
+    empty), and with the tokens out of the flow the end group keeps its own
+    auto margin: it stays at the end of the line before and after the first
+    chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
-  does the same, and never shows a page count below 1.
+  does the same, and never shows a page count below 1. It also draws no
+  column headers and no select-all box at zero rows (empty or failed list);
+  the headers stay while the list loads.
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:
@@ -552,7 +561,11 @@ reference.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
-    A list whose card needs more than that passes its own `mobileRow`.
+    A list whose card needs more than that passes its own `mobileRow`. Such a
+    card keeps the same rule for its title: the name shares its line only
+    with the checkbox, a small mark and the row menu; a state with words
+    ("Waiting for a sensor") goes on the line under the name, so the name is
+    never squeezed into a narrow column beside it (`scan-mobile-card.tsx`).
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
   outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
@@ -571,6 +584,10 @@ reference.
   bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
+- **Display > Columns names a column as its header reads**: `meta.label`, a
+  string header, or the `title` of `DataTableColumnHeader`, in the page's
+  language; never the column id. The phone card's field labels use the same
+  name. A column with no header and no label (the row menu) is not listed.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
 - **The row's name is `RowNameLink`** where the row has a detail page: a real
@@ -606,6 +623,10 @@ reference.
 
   `decisions` is a queue's last column of decision buttons (Approve, Reject,
   More): end-aligned, as wide as the page's `width` says its buttons need.
+  Any last column of labelled buttons (Cancel, Block, Check) is a `decisions`
+  column, without `width` it is as wide as its buttons: the 48 px `actions`
+  column holds the row menu or one icon button only, and cuts a labelled
+  button at the frame's edge (`actions-column-buttons.test.ts`).
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.
@@ -849,6 +870,12 @@ Every settings page is built from the same parts (`@/features/shared`):
   `<BreakText>` with `break-words`. `break-all` breaks every word at any
   letter ("Paym|ents") and is kept for mono machine values (hashes, keys,
   tokens); `src/lib/__tests__/name-break-guard.test.ts` enforces it.
+- A metadata line that must stay on one line (a phone card's "what it is"
+  line) is `<MetaLine oneLine>`: every item but the last keeps its width, the
+  last ends in an ellipsis with its text as a tooltip. Never `flex-nowrap` on a
+  MetaLine: its items then shrink and break inside words ("IP Addres|s").
+  System-written text (a description made by discovery) stays out of list
+  cards and rows; it belongs to the detail view.
 - Sizes come from the type roles in `src/styles/theme.css` (each sets size,
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with
@@ -1313,3 +1340,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   page-level horizontal scroll (a wide table scrolls inside its own frame).
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
+- `e2e/specs/75-layout-breaks.spec.ts` checks the lists and their overlays at
+  390, 1024 and 1440 px with long English and Vietnamese data: no text over
+  text or a control, no word broken inside, nothing cut without an ellipsis,
+  one control height per row, no English left in vi, no label without a value.
+  Stored text shown as written (a dashboard's description) sits in an element
+  with `translate="no"`, which the English check skips.
