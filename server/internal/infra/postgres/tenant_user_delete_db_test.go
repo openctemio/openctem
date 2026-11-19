@@ -268,6 +268,15 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"source_retirement_findings": func(*schemaSeeder) map[string]any {
 		return map[string]any{"prior_status": "new", "restored_at": nil, "restore_outcome": nil}
 	},
+	// A finished apply run (chk_provider_address_moves_finished) and its
+	// journal item with array columns (chk_provider_address_move_items_json).
+	"provider_address_moves": func(*schemaSeeder) map[string]any {
+		return map[string]any{"mode": "apply", "state": "done", "finished_at": "2026-01-01T00:00:00Z",
+			"counts": "{}", "notice": nil}
+	},
+	"provider_address_move_items": func(*schemaSeeder) map[string]any {
+		return map[string]any{"action": "archive", "outcome": "applied", "edges": "[]", "added_edges": "[]", "folded_keys": "[]"}
+	},
 	// An instance scan zone (global) needs at least one private range.
 	"instance_scan_zones": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed zone", "ranges": "{10.0.0.0/8}"}

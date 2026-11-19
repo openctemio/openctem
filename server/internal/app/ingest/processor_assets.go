@@ -51,6 +51,9 @@ type AssetProcessor struct {
 	// are reconciled per source (attribute_sets.go), so a merge leaves the
 	// sets of an existing asset to that reconciliation.
 	trackSets bool
+	// providerRevive revives an address the provider-address move archived
+	// when a report names it directly (nil = disabled).
+	providerRevive ProviderAddressReviver
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -551,6 +554,9 @@ func (p *AssetProcessor) processBatch(
 			}
 			held = append(held, existing)
 			alterable := isNew[id] || scope.mayAlter(existing)
+			if alterable && !isNew[id] {
+				p.reviveProviderAddress(ctx, tenantID, existing)
+			}
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
 				classifyReportedService(existing, ctisAsset, kindEvidence)
