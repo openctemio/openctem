@@ -75,7 +75,7 @@ describe('bulk remove tags', () => {
     // Most common first, with how many selected assets carry each.
     expect(within(dialog).getByText('2 of 3')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByLabelText(/^pci/))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tags from 3 selected' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tag from 3 selected' }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     // Only asset a carries pci: one change naming only that tag, applied by
     // the API to the stored tags (never a list built from the row's copy).

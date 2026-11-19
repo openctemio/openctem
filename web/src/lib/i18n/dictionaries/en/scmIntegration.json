@@ -24,7 +24,7 @@
   "scmIntegration.page.repositories": "Repositories",
   "scmIntegration.page.searchPlaceholder": "Search connections…",
   "scmIntegration.page.title": "SCM connections",
-  "scmIntegration.repoCount": "{count} repos",
+  "scmIntegration.repoCount": "{count, plural, one {# repo} other {# repos}}",
   "scmIntegration.status.connected": "Connected",
   "scmIntegration.status.disconnected": "Disconnected",
   "scmIntegration.status.error": "Error",

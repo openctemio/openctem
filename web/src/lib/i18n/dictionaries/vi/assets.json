@@ -1063,7 +1063,7 @@
   "assets.related.viewLabel": "Chế độ xem",
   "assets.related.viewList": "Danh sách",
   "assets.related.yesterday": "hôm qua",
-  "assets.relationshipAdd.appliedToAll": "— áp dụng cho cả {n} quan hệ",
+  "assets.relationshipAdd.appliedToAll": "(áp dụng cho cả {n} quan hệ)",
   "assets.relationshipAdd.cancel": "Hủy",
   "assets.relationshipAdd.clear": "Bỏ chọn",
   "assets.relationshipAdd.cnameTip": ". Với tên miền con → tên miền cha hoặc bí danh CNAME, hãy dùng",

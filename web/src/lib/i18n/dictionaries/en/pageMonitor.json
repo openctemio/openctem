@@ -85,7 +85,7 @@
   "pageMonitor.tab": "Page changes",
   "pageMonitor.url": "URL of one of your web services",
   "pageMonitor.waiting": "Checks start when a sensor that can fetch web content is available. Your watches are kept until then.",
-  "pageMonitor.watches.count": "{count} of {max} watches used",
+  "pageMonitor.watches.count": "{count} of {max, plural, one {# watch} other {# watches}} used",
   "pageMonitor.watches.description": "Each URL is fetched on its schedule through the same scope checks as every active scan. Scripts only follows what a page loads; full page also follows its text.",
   "pageMonitor.watches.empty": "Watch a sign-in page or a home page to learn when it starts loading a new script.",
   "pageMonitor.watches.emptyTitle": "No watched pages",

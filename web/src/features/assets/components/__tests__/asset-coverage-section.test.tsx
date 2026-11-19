@@ -65,7 +65,7 @@ describe('AssetCoverageSection', () => {
     wrap(<AssetCoverageSection assetId="a1" />)
     expect(await screen.findByText('HTTP probe')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/api/v1/assets/a1/coverage')
-    expect(screen.getByText('1 gaps')).toBeInTheDocument()
+    expect(screen.getByText('1 gap')).toBeInTheDocument()
     expect(screen.getByText(/found nothing/)).toBeInTheDocument()
     expect(screen.getByText(/shared or CDN network/)).toBeInTheDocument()
     expect(screen.getByText('sensor unreachable')).toBeInTheDocument()

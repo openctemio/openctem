@@ -55,7 +55,7 @@
   "queryInput.problem.unknown_field": "Unknown field.",
   "queryInput.problem.unknown_value": "Not a value of this field.",
   "queryInput.problem.wrong_entity": "This box searches another list.",
-  "queryInput.results": "{count} results",
+  "queryInput.results": "{count, plural, one {# result} other {# results}}",
   "queryInput.run": "Apply query",
   "queryInput.suggestions": "Search suggestions",
   "queryInput.type.boolean": "yes or no",
