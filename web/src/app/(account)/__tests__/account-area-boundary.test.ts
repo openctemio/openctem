@@ -64,6 +64,10 @@ describe('the account area', () => {
       expect(statSync(page).isFile(), item.url).toBe(true)
       expect(ACCOUNT_ONLY_PAGES as readonly string[]).toContain(item.url)
     }
-    expect([...ACCOUNT_ONLY_PAGES].sort()).toEqual(ACCOUNT_NAV.map((i) => i.url).sort())
+    // The second-factor setup step is open to an account session too, but is not
+    // an account page (an organization asks for it): it is not in the navigation.
+    expect([...ACCOUNT_ONLY_PAGES].filter((p) => p !== '/two-factor-setup').sort()).toEqual(
+      ACCOUNT_NAV.map((i) => i.url).sort()
+    )
   })
 })
