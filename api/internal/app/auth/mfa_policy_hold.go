@@ -220,6 +220,9 @@ func (s *AuthService) ConfirmMFAReplacement(ctx context.Context, actx auditapp.A
 		WithResourceName(u.Email()).
 		WithMessage("Two-factor authenticator replaced; other sessions signed out").
 		WithMetadata("other_sessions_ended", true))
+	if s.securityNotifier != nil {
+		s.securityNotifier.NotifyMFAReplaced(ctx, u.Email(), u.Name(), actx.ActorIP)
+	}
 	return codes, nil
 }
 
