@@ -106,6 +106,8 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 type AuthService struct {
 	// signups records sign-up events for the platform console (optional).
 	signups signupevent.Recorder
+	// personalOrgs makes the personal organization at sign-up (optional).
+	personalOrgs *PersonalOrganizations
 	// orgGate refuses a token for a suspended organization
 	// (docs/architecture/organization-suspension.md). nil admits all
 	// (tests and tools without the gate).
@@ -467,9 +469,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		s.logger.Warn("domain sign-up policy unreadable; sign-up refused", "error", err)
 		return nil, ErrSignupNotAvailable
 	}
-	switch signupdom.Admit(s.signupPolicyNow(ctx), facts.Apply(signupdom.Identity{
+	outcome := signupdom.Admit(s.signupPolicyNow(ctx), facts.Apply(signupdom.Identity{
 		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
-	})) {
+	}))
+	switch outcome {
 	case signupdom.OutcomeSSORequired:
 		return nil, ErrSignupSSORequired
 	case signupdom.OutcomeNotSetUp:
@@ -562,6 +565,9 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		source = signupevent.SourceInvitation
 	}
 	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: source, Email: email, UserID: newUser.ID()})
+	// A self-service sign-up may get its own organization once its address
+	// is verified (made at that sign-in).
+	s.personalOrgs.Reserve(ctx, newUser.ID(), outcome)
 
 	// Log audit event
 	actx := auditapp.AuditContext{
@@ -822,6 +828,12 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *Logi
 			return nil, ErrEmailNotVerified
 		}
 	}
+
+	// A person who signed up with no other way in gets their own
+	// organization now, before the second-factor step, so a new owner whose
+	// organization asks for a second factor is asked at this sign-in. It
+	// never fails the sign-in.
+	s.personalOrgs.Ensure(ctx, u, input.IPAddress, input.UserAgent)
 
 	// Second factor. When one is needed, no session exists until it is
 	// verified, and the failed-login counter is deliberately NOT reset here:
@@ -2215,6 +2227,9 @@ func (s *AuthService) organizationOpen(ctx context.Context, tenantID string) err
 	}
 	return nil
 }
+
+// SetPersonalOrganizations wires the personal organization at sign-up.
+func (s *AuthService) SetPersonalOrganizations(p *PersonalOrganizations) { s.personalOrgs = p }
 
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
