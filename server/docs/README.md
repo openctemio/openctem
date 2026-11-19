@@ -54,6 +54,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Data provenance](architecture/data-sources.md), [component relationships](architecture/component-relationship-best-practices.md), [web surface](architecture/web-surface.md), [web content pipeline](architecture/web-content-pipeline.md), [web path discovery](architecture/web-discovery.md)
 - [Scoping overview](architecture/scoping-overview.md), [active-probe gate](architecture/active-probe-gate.md), [replacing a scope entry's pattern](architecture/scope-entry-replace.md), [scope entries on provider shared addresses](architecture/provider-shared-addresses.md)
 - [EASM](architecture/easm.md), [exposure taxonomy and monitoring state](architecture/exposure-taxonomy.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
+- [Provider shared addresses: the one-time move](architecture/provider-address-move.md) ([runbook](operations/provider-address-move.md))
 
 **Sensors and scanning**
 - [Sensor and platform workflow](architecture/sensor-platform-workflow.md) (the end-to-end flow and its failure paths), [sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor readiness](architecture/sensor-readiness.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md), [sensor relay](architecture/sensor-relay.md), [AI analyze contract](architecture/ai-analyze-contract.md), [AI harness](architecture/ai-harness.md), [sensor transport v3](architecture/sensor-transport-v3.md), [sensor proxies](architecture/sensor-proxies.md), [task secrets](architecture/task-secrets.md), [scan identification markers](architecture/scan-identification.md)
@@ -104,6 +105,7 @@ because they change with it:
 - [Monitoring and alerting](operations/monitoring.md)
 - [Diagnose and get support](operations/diagnose-and-get-support.md): `server doctor` (what is wrong and how to fix it) and `server support-bundle` (an archive without your data, to send to whoever helps you)
 - [Hotfix and incident response](operations/hotfix-and-incident-response.md): severity, containment, hotfix release, deploy, rollback, disclosure
+- [Moving provider shared addresses into their names' history](operations/provider-address-move.md): the `provider-addresses` command (dry run, apply, restore)
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
 - [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)
 - [Least-privilege database roles](deployment/database-roles.md)
