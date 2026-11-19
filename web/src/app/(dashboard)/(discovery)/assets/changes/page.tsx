@@ -36,6 +36,7 @@ import {
   useAssetChanges,
   type ChangeView,
 } from '@/features/asset-changes'
+import { changeReasonLabel } from '@/features/asset-changes/lib/change-reason'
 
 const PERIODS = [
   {
@@ -145,7 +146,9 @@ function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
       </span>
     )
   }
-  return <span className="text-sm text-muted-foreground">{sentence(change.reason)}</span>
+  return (
+    <span className="text-sm text-muted-foreground">{changeReasonLabel(change.reason, t)}</span>
+  )
 }
 
 function ExposureNow({ change, t }: { change: StateChangeResponse; t: T }) {
