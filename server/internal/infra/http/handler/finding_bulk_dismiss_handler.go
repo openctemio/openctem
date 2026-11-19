@@ -319,8 +319,8 @@ func filterSummary(f FilterValues) string {
 
 func writeBulkDismissTooLarge(w http.ResponseWriter, e *finding.BulkDismissTooLargeError) {
 	apierror.FromCode(apierror.CodeBulkDismissTooLarge).
-		WithDetails(map[string]any{paramCount: e.Count, "max": finding.MaxBulkDismiss}).
-		WithParams(apierror.Params{paramCount: strconv.Itoa(e.Count), "max": strconv.Itoa(finding.MaxBulkDismiss)}).WriteJSON(w)
+		WithDetails(map[string]any{paramCount: e.Count, paramMax: finding.MaxBulkDismiss}).
+		WithParams(apierror.Params{paramCount: strconv.Itoa(e.Count), paramMax: strconv.Itoa(finding.MaxBulkDismiss)}).WriteJSON(w)
 }
 
 func (h *VulnerabilityHandler) writeBulkDismissError(w http.ResponseWriter, err error) {
