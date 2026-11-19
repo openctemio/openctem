@@ -196,11 +196,12 @@ func (s *VulnerabilityService) bulkDecideBatch(ctx context.Context, tid, uid sha
 func (s *VulnerabilityService) checkBulkApprovalFindings(ctx context.Context, tid shared.ID, in BulkDecisionInput) error {
 	count := len(uniqueStrings(in.ApprovalIDs))
 	if batchIDs := uniqueStrings(in.BatchIDs); len(batchIDs) > 0 {
-		store, err := s.batches()
-		if err != nil {
-			return nil
-		}
+		// Without a group store every group fails on its own later.
+		store, _ := s.batches()
 		for _, raw := range batchIDs {
+			if store == nil {
+				break
+			}
 			id, err := shared.IDFromString(raw)
 			if err != nil {
 				continue
