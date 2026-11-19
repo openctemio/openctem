@@ -225,9 +225,14 @@ API for the CI/CD page (CI write, `scans:ci:write`):
   `ref_not_allowed` (rules checked after the organization, owner and
   repository rules, so the token passed those) is the value taken from the
   record and added to Pipeline definitions or Branches and tags; anything
-  else answers 400. The caller never supplies the value. An ordinary audited
+  else answers 400. On an all-projects configuration (`rules.all_repositories`,
+  which skips the owner and repository rules) the refusal's project must be
+  approved on it first (its Owners or Repositories name it), otherwise 400: a
+  stranger's project can produce these refusals and must not widen the rules
+  of every approved project. The caller never supplies the value. An ordinary audited
   change of the configuration (`changed: false` when it was already listed);
   the answer names the `kind` and `value` added.
+
 ### Every project on this GitLab (`rules.all_repositories`)
 
 A trust configuration of a self-managed GitLab may accept every project of
