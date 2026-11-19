@@ -1,7 +1,7 @@
 ### Behaviour change: scope entries on provider shared addresses are paused until answered
 
 - An address, CIDR or range scope entry lying wholly inside a range a provider publishes for infrastructure many organizations share no longer authorizes active checks until someone answers it on the Scope page. Scans skip those addresses with the reason `provider_address`; names that point at them are still scanned, and nothing is deleted. The Scope page explains the pause in a banner, and **Keep scanning** resumes active scanning in one step.
-- Organization scope setting **Hold shared provider addresses until answered** (`hold_provider_entries`, on by default): an organization that turns it off gets the previous behaviour.
+- Organization scope setting **Hold shared provider addresses until answered** (`hold_provider_entries`, on by default): an organization that turns it off gets the previous behaviour. Turning it off needs a recent re-authentication, is audited at high severity and notifies the administrators.
 - **Upgrade note:** after the upgrade, review the Scope page of each organization that has such entries; until answered, active checks of those addresses stop.
 
 ### Added: answer scope entries on provider shared addresses in one place

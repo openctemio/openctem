@@ -171,6 +171,13 @@ func RangeWidened(before, after ScopeSettings) bool {
 	return after.RangePrefix() < before.RangePrefix()
 }
 
+// ProviderHoldLifted reports whether a scope settings change turned the hold
+// on provider shared addresses from on to off. That lifts every hold of the
+// organization at once, so it is as strong as Keep scanning.
+func ProviderHoldLifted(before, after ScopeSettings) bool {
+	return before.HoldsProviderEntries() && !after.HoldsProviderEntries()
+}
+
 // Attestation bounds (RFC-054 §12.5).
 const (
 	MinT2AttestationDays     = 30

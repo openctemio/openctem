@@ -60,7 +60,10 @@ func sharedM365Address(t *testing.T) string {
 	return ""
 }
 
-func TestJobSign_PassiveProviderAddress_NotSigned(t *testing.T) {
+// This tests the active-check gate with a fake scope that holds on demand,
+// not signing: the real dispatch path is tested in internal/app/scan
+// (TestResolveDispatchTargets_HeldProviderEntryIsRefused).
+func TestActiveGate_HeldProviderAddress_IsPassive(t *testing.T) {
 	f := newGateFixture(t)
 	addr := sharedM365Address(t)
 	entry, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeIPAddress, addr, "", "")
@@ -75,7 +78,7 @@ func TestJobSign_PassiveProviderAddress_NotSigned(t *testing.T) {
 	ctx := context.Background()
 	targets := []string{addr, addr + ":443", "mail.scoped.com"}
 
-	// Off (default): the entry authorizes the address.
+	// Hold off (nothing held): the entry authorizes the address.
 	got, err := g.BlockedTargets(ctx, f.tenant, targets)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("hold off: blocked %v, %v", got, err)

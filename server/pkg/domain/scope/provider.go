@@ -18,7 +18,7 @@ import (
 // two ends do and that one published range holds whole. A range that only
 // partly overlaps a shared range, a dedicated prefix (the classifier's "any
 // doubt: not shared"), any other entry type, and an unparsable pattern
-// answer false: they stay ordinary entries (fail closed).
+// answer false: they stay ordinary entries (not held: the hold is the narrow, whole-range case only).
 func SharedProviderEntry(t TargetType, pattern string) (edgeaddr.Result, bool) {
 	switch t {
 	case TargetTypeIPAddress, TargetTypeCIDR, TargetTypeIPRange:
