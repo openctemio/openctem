@@ -1354,6 +1354,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
 	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
 	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
+	// The Scope page's provider addresses card (research/531): decisions,
+	// the move out of scope, the person-confirmed addresses.
+	s.Scope.SetProviderAddresses(postgres.NewScopeProviderRepository(&postgres.DB{DB: deps.DB}))
 	// Out of scope for good closes the findings, back in scope reopens
 	// them (research/320); every exclusion change kicks a pass.
 	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)

@@ -147,6 +147,10 @@ type ScopeSettingsResponse struct {
 	// CIScopeRequiresProof: a CI trust's new repository entries wait
 	// inactive for a verified pipeline run under them (opt-in, default off).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
+	// HoldProviderEntries: scope entries on a provider's shared addresses
+	// authorize no active check until a person answers them on the Scope
+	// page (opt-in, default off).
+	HoldProviderEntries bool `json:"hold_provider_entries"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -218,11 +222,13 @@ type ScopeSettingsRequest struct {
 	// PathDiscovery: true or false; omitted keeps the stored choice.
 	PathDiscovery *bool `json:"path_discovery"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
-	CIScopeRequiresProof *bool  `json:"ci_scope_requires_proof"`
-	OneOffTargets        string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
-	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
-	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
-	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	CIScopeRequiresProof *bool `json:"ci_scope_requires_proof"`
+	// HoldProviderEntries: true or false; omitted keeps the stored value.
+	HoldProviderEntries *bool  `json:"hold_provider_entries"`
+	OneOffTargets       string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
+	OneOffMaxDays       int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
+	WideningApprovals   *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
+	DefaultMaxTier      string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
 	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value. A value
 	// below 16 (wider than a /16) is an opt-in widening: step-up (route),
 	// a high-severity audit and a notice to every administrator.
@@ -243,6 +249,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		InfoCoverage: ss.InfoCoverageOn(), InfoCoverageDays: ss.InfoCoverageEvery(),
 		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
+		HoldProviderEntries:  ss.HoldProviderEntries,
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
@@ -340,11 +347,14 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if req.CIScopeRequiresProof != nil {
 		ss.CIScopeRequiresProof = *req.CIScopeRequiresProof
 	}
+	if req.HoldProviderEntries != nil {
+		ss.HoldProviderEntries = *req.HoldProviderEntries
+	}
 	// A client that does not know confirm_adds_to_scope,
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil || req.InfoCoverage == nil || req.InfoCoverageDays == 0 {
+		req.CIScopeRequiresProof == nil || req.HoldProviderEntries == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil || req.InfoCoverage == nil || req.InfoCoverageDays == 0 {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -371,6 +381,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CIScopeRequiresProof == nil {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
+		}
+		if req.HoldProviderEntries == nil {
+			ss.HoldProviderEntries = before.HoldProviderEntries
 		}
 		if req.AddressAutoAdd == "" {
 			ss.AddressAutoAdd = before.AddressAutoAdd
