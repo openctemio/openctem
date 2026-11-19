@@ -346,7 +346,7 @@ func transientMove(err error) error {
 	if errors.As(err, &pqErr) {
 		switch pqErr.Code {
 		case "55P03", "40001", "40P01", "57014":
-			return fmt.Errorf("%w: %v", provideraddr.ErrTransient, err)
+			return fmt.Errorf("%w (sqlstate %s)", provideraddr.ErrTransient, pqErr.Code)
 		}
 	}
 	return err

@@ -716,13 +716,20 @@ func TestProviderJob_ZeroFindingStatusChanges_DB(t *testing.T) {
 	e.finding(tn, svc, "fp-zero-"+tn.String(), "high")
 	// A trigger that changes the finding when its edge is deleted, for this
 	// organization only.
+	// The trigger is DDL, which the app role may not run: the migrator owns
+	// the schema, as in production.
+	mig := testdb.OpenMigrator(t)
 	fn := "test_pa_" + strings.ReplaceAll(tn.String()[:8], "-", "")
-	e.exec(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-		UPDATE findings SET status = 'confirmed' WHERE tenant_id = '%s'; RETURN OLD; END $$`, fn, tn.String()))
-	e.exec(fmt.Sprintf(`CREATE TRIGGER %s AFTER DELETE ON asset_relationships FOR EACH ROW WHEN (OLD.tenant_id = '%s') EXECUTE FUNCTION %s()`, fn, tn.String(), fn))
+	if _, err := mig.ExecContext(e.ctx, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+		UPDATE findings SET status = 'confirmed' WHERE tenant_id = '%s'; RETURN OLD; END $$`, fn, tn.String())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mig.ExecContext(e.ctx, fmt.Sprintf(`CREATE TRIGGER %s AFTER DELETE ON asset_relationships FOR EACH ROW WHEN (OLD.tenant_id = '%s') EXECUTE FUNCTION %s()`, fn, tn.String(), fn)); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		_, _ = e.db.ExecContext(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON asset_relationships`, fn))
-		_, _ = e.db.ExecContext(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, fn))
+		_, _ = mig.ExecContext(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON asset_relationships`, fn))
+		_, _ = mig.ExecContext(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, fn))
 	})
 	before := e.findingDigest(tn)
 	_, err := e.svc.Run(e.ctx, tn, provideraddr.Options{Mode: pa.ModeApply, Classifier: cls})
