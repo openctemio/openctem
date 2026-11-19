@@ -166,6 +166,30 @@ describe('ListToolbar slots', () => {
     expect(lead.className).toMatch(/(^|\s)contents(\s|$)/)
   })
 
+  it('on a phone in Query mode gives the field the whole line: the end actions step down, the inert tokens go', () => {
+    render(
+      <ListToolbar
+        search={{
+          value: '',
+          onChange: () => {},
+          placeholder: 'Search things',
+          query: { active: true, onActiveChange: () => {}, renderEditor: () => null },
+        }}
+        start={<button type="button">Status: Open</button>}
+        end={<button type="button">Views</button>}
+      />
+    )
+    const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
+    expect(lead.className).toContain('@max-md/toolbar:col-end-4')
+    expect(lead.className).not.toContain('@max-md/toolbar:col-end-3')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:row-start-2')
+    expect(end.className).not.toContain('@max-md/toolbar:row-start-1')
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    expect(tokens.className).toContain('@max-md/toolbar:hidden')
+    expect(tokens.className).not.toContain('@max-md/toolbar:flex ')
+  })
+
   it('on a phone anchors the tokens to the end of line 2 in one scrolling strip, the chips own its start', () => {
     render(
       <ListToolbar
@@ -338,10 +362,11 @@ describe('ListSearch', () => {
     expect(container.querySelector('[data-slot="list-search"]')!.className).not.toMatch(/max-w-xl/)
   })
 
-  it('holds its Basic width in Query mode, so the tokens leaving move nothing', () => {
+  it('holds its Basic width in Query mode, so the tokens leaving move nothing; a phone holds nothing', () => {
     const rect = HTMLElement.prototype.getBoundingClientRect
+    let toolbar = 700
     HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-      const width = this.dataset.slot === 'list-search' ? 333 : 0
+      const width = this.dataset.slot === 'list-search' ? 333 : toolbar
       return { width, height: 32, top: 0, left: 0, right: width, bottom: 32, x: 0, y: 0 } as DOMRect
     }
     try {
@@ -358,6 +383,10 @@ describe('ListSearch', () => {
       expect(field().style.width).toBe('333px')
       expect(field().style.flex).toMatch(/none|0 0 auto/)
       rerender(<ListSearch {...props(false)} />)
+      expect(field().style.width).toBe('')
+      // A phone's toolbar (under 28rem): the Query field takes the whole line.
+      toolbar = 358
+      rerender(<ListSearch {...props(true)} />)
       expect(field().style.width).toBe('')
     } finally {
       HTMLElement.prototype.getBoundingClientRect = rect

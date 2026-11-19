@@ -524,6 +524,9 @@ reference.
     only Views. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so it fits beside the search.
+    In Query mode on a phone the field takes the whole first line (its text
+    keeps at least 55 % of the field at 375 px): the end actions step down to
+    the second line's end and the tokens, inert in that mode, are not drawn.
   - a toolbar group that draws none of its controls at this width (the
     Display menu on a phone, tokens moved into the Filters sheet) takes no
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
