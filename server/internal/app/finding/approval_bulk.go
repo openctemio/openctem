@@ -25,6 +25,11 @@ import (
 // MaxBulkApprovalDecisions bounds the requests and groups decided in one call.
 const MaxBulkApprovalDecisions = 100
 
+// MaxBulkApprovalFindings bounds the findings one bulk approval changes: a
+// group counts every finding inside it (a group of 500 counts 500), so one
+// call under one re-authentication cannot change tens of thousands.
+const MaxBulkApprovalFindings = 1000
+
 // Kinds of a bulk decision item.
 const (
 	BulkItemApproval = "approval"
@@ -95,6 +100,11 @@ func (s *VulnerabilityService) bulkDecide(ctx context.Context, in BulkDecisionIn
 	uid, err := shared.IDFromString(in.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	if !reject {
+		if err := s.checkBulkApprovalFindings(ctx, tid, in); err != nil {
+			return nil, err
+		}
 	}
 	out := make([]BulkDecisionItem, 0, total)
 	seen := make(map[string]bool, total)
@@ -177,4 +187,44 @@ func (s *VulnerabilityService) bulkDecideBatch(ctx context.Context, tid, uid sha
 		item.Err = ErrApprovalNotPending
 	}
 	return item
+}
+
+// checkBulkApprovalFindings refuses, before anything changes, an approval
+// that would change more than MaxBulkApprovalFindings findings: each request
+// is one, each group its members. A group that cannot be read counts as
+// nothing here; it fails on its own later.
+func (s *VulnerabilityService) checkBulkApprovalFindings(ctx context.Context, tid shared.ID, in BulkDecisionInput) error {
+	count := len(uniqueStrings(in.ApprovalIDs))
+	if batchIDs := uniqueStrings(in.BatchIDs); len(batchIDs) > 0 {
+		store, err := s.batches()
+		if err != nil {
+			return nil
+		}
+		for _, raw := range batchIDs {
+			id, err := shared.IDFromString(raw)
+			if err != nil {
+				continue
+			}
+			if members, err := store.BatchMembers(ctx, tid, id); err == nil {
+				count += len(members)
+			}
+		}
+	}
+	if count > MaxBulkApprovalFindings {
+		return fmt.Errorf("%w: this would approve %d findings (a group counts every finding in it); at most %d findings at once, send fewer groups",
+			shared.ErrValidation, count, MaxBulkApprovalFindings)
+	}
+	return nil
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }

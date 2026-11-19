@@ -720,9 +720,13 @@ instead).
   findings and the group's source label (never the note). A single member of a
   group is still never self-approved alone (409 `BATCH_MEMBER`). The list and
   the read of groups carry `self_approval_available` for the requester.
+- **What the card shows.** `policy_reasons` and `eligible_approver_count` are
+  visible to anyone who can read the finding (in their organization and data
+  scope), for example that the requester owns the asset.
 - **Deciding many at once.** In Findings > Approvals an approver selects
   requests and groups: `POST /api/v1/approvals/bulk/approve` (body
-  `{approval_ids, batch_ids}`, together at most 100; `findings:approve` and one
+  `{approval_ids, batch_ids}`, together at most 100 and, for approve, at most
+  1,000 findings counting those inside groups; `findings:approve` and one
   step-up for the call) and `POST /api/v1/approvals/bulk/reject` (same ids and
   a `reason`, required, at most 2000 characters; `findings:approve`). Each id
   goes through its single path (`ApproveStatus` / `ApproveGroupException`,
