@@ -87,9 +87,15 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
   return seen
 }
 
-/** A page of the account area (/account/*), which has its own shell and session. */
+/**
+ * A page of the account area, which has its own shell and session: only the
+ * pages that live in the (account) route group. Other /account/* pages (the
+ * settings rail's My account items that read the organization: connected AI
+ * applications, notification preferences, activity) stay in the organization
+ * shell and send the bootstrap like any dashboard page.
+ */
 function isAccountRoute(route: string): boolean {
-  return route === '/account' || route.startsWith('/account/')
+  return dashboardRoutes(ACCOUNT_DIR).includes(route)
 }
 
 /** Adds the budget, duplicate and session-read problems of one load. */
