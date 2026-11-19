@@ -73,6 +73,8 @@ const OPEN_FOCUS_HANDLERS: Record<string, string> = {
   'components/graph-page/graph-page.tsx':
     "focuses the node's action (a link or button), never a field",
   'components/ui/modal-layout.tsx': 'the kit rule itself',
+  'features/findings/components/bulk-dismiss-dialog.tsx':
+    'focuses the reason picker (a select button), never a text field',
 }
 
 describe('touch focus guard', () => {
