@@ -36,8 +36,15 @@ else
       [ -n "$prev" ] && echo "Full list: https://github.com/${repo}/compare/${prev}...${tag}"
     fi
   } >"$body"
+  # Only the newest release line is GitHub's "Latest" release (install
+  # scripts and the release feed read it); a hotfix of an older line is not.
+  newest="$(git ls-remote --tags --refs "https://github.com/${repo}.git" 'v*' |
+    sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+  [ -n "$newest" ] || { echo "could not list the release tags" >&2; exit 1; }
+  latest=false
+  [ "$newest" = "$tag" ] && latest=true
   if ! GH_RETRY_ATTEMPTS="${GH_RETRY_ATTEMPTS:-6}" bash "$retry" release create "$tag" -R "$repo" \
-      --verify-tag --title "$tag" --notes-file "$body"; then
+      --verify-tag --title "$tag" --notes-file "$body" --latest="$latest"; then
     gh release view "$tag" -R "$repo" >/dev/null 2>&1 || { echo "could not create release ${tag}" >&2; exit 1; }
   fi
 fi
