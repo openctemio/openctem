@@ -1063,7 +1063,7 @@
   "assets.related.viewLabel": "View",
   "assets.related.viewList": "List",
   "assets.related.yesterday": "yesterday",
-  "assets.relationshipAdd.appliedToAll": "— applied to all {n, plural, one {# relationship} other {# relationships}}",
+  "assets.relationshipAdd.appliedToAll": "(applied to all {n, plural, one {# relationship} other {# relationships}})",
   "assets.relationshipAdd.cancel": "Cancel",
   "assets.relationshipAdd.clear": "Clear",
   "assets.relationshipAdd.cnameTip": ". For subdomain → parent domain or CNAME aliases use",
