@@ -10,7 +10,6 @@
   "app/(dashboard)/(scoping)/compliance/page.tsx": 67,
   "app/(dashboard)/(scoping)/error.tsx": 5,
   "app/(dashboard)/(validation)/error.tsx": 5,
-  "app/(dashboard)/(validation)/pentest/campaigns/[id]/page.tsx": 1,
   "app/(dashboard)/(validation)/pentest/campaigns/page.tsx": 2,
   "app/(dashboard)/error.tsx": 5,
   "app/(dashboard)/findings/page.tsx": 9,

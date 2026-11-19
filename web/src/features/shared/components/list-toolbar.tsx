@@ -354,12 +354,13 @@ export function ListToolbar({
       ) : null}
       {end ? (
         // Never wider than the toolbar: on a phone its controls wrap onto a
-        // second line instead of running past the edge.
+        // second line instead of running past the edge (kept on one line,
+        // two links on a scan's runs ran off the left edge in Vietnamese).
         <div
           ref={endRef}
           data-slot="list-toolbar-end"
           className={cn(
-            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2 @max-md/toolbar:flex-nowrap',
+            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2',
             // At the row's top: a start group that grows (two lines, the
             // expanded query editor) never moves Views, Group and Display.
             'items-center self-start',

@@ -52,6 +52,10 @@ const ONE_LINE_RULES = [
   '[&_.flex]:flex-nowrap',
   // A stacked cell lays its lines side by side instead of growing the card.
   '[&_.flex-col]:flex-row',
+  // ...with a gap between them, and the last one ends in the ellipsis (the
+  // outer one cannot reach text inside a flex row).
+  '[&_.flex-col]:gap-x-1.5',
+  '[&_.flex-col>*:last-child]:truncate',
 ]
 
 describe('automatic phone card', () => {

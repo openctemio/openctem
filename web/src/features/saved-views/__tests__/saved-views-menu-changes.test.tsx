@@ -90,6 +90,20 @@ describe('unsaved-changes dot', () => {
     )
   })
 
+  it('puts the dot on the button corner, out of the layout, so the icon stays centred', () => {
+    menu()
+    const dot = screen.getByTestId('saved-view-dirty-dot')
+    const button = screen.getByRole('button', { name: 'Crown jewels, unsaved changes' })
+    expect(dot.parentElement).toBe(button)
+    expect(dot).toHaveAttribute('data-slot', 'corner-dot')
+    expect(dot).toHaveAttribute('aria-hidden')
+    // Absolute on the corner: never a flex item beside the icon.
+    for (const c of ['absolute', '-top-1', '-end-1', 'pointer-events-none'])
+      expect(dot).toHaveClass(c)
+    expect(dot.className).not.toMatch(/\bms-/)
+    expect(button.className).toContain('relative')
+  })
+
   it('shows none when nothing changed', () => {
     menu({ changes: [] })
     expect(screen.queryByTestId('saved-view-dirty-dot')).toBeNull()

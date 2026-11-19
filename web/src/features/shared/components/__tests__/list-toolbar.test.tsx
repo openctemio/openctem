@@ -151,7 +151,9 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).toContain('data-[fade-end=true]')
     expect(tokens).toHaveTextContent('Status: Open')
     const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
-    expect(end.className).toContain('@max-md/toolbar:flex-nowrap')
+    // The pinned actions wrap rather than run past the edge when they do not fit.
+    expect(end.className).not.toContain('@max-md/toolbar:flex-nowrap')
+    expect(end.className).toContain('flex-wrap')
     // Desktop: the wrappers draw no box, the row is as before.
     expect(lead.className).toMatch(/(^|\s)contents(\s|$)/)
     expect(tokens.className).toMatch(/(^|\s)contents(\s|$)/)
