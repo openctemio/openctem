@@ -314,7 +314,8 @@ func (r *ThreatAlertRepository) affectedAssets(ctx context.Context, tenantID sha
 			FROM asset_software s
 			JOIN software_versions v ON v.id = s.software_version_id
 			JOIN software_products p ON p.id = s.product_id
-			WHERE s.tenant_id = $1 AND s.superseded_at IS NULL AND (v.normalized IS NULL OR v.raw = '')
+			WHERE s.tenant_id = $1 AND s.superseded_at IS NULL AND s.version_state = 'established'
+			  AND (v.normalized IS NULL OR v.raw = '')
 			  AND s.product_id IN (SELECT product_id FROM products)
 			  AND NOT EXISTS (SELECT 1 FROM conf WHERE conf.asset_id = s.asset_id)
 			ORDER BY s.asset_id, s.confidence DESC, s.id
