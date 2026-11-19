@@ -41,6 +41,7 @@ import { PageStack } from '@/features/shared/components/page-stack'
 import { activeSettingsItem } from '@/config/settings-nav'
 import { MainRegion } from '@/components/layout/main'
 import { takeSwitchLanding } from '@/components/layout/tenant-epoch-boundary'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface RouteGuardProps {
   children: React.ReactNode
@@ -190,7 +191,7 @@ function formatDate(value: string): string {
   const d = new Date(value)
   return Number.isNaN(d.getTime())
     ? value
-    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : localeFormatDate(d, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /**

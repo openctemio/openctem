@@ -19,6 +19,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useSaveTrustConfig } from '../api/use-ci'
 import type { CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 
 /** Providers whose trusts add their repositories to scope. */
 export function manageScopeSupported(provider: CIProvider | string | undefined): boolean {
@@ -115,13 +116,13 @@ export function CITrustScopeEntries({
                         'A verified pipeline of {repository} ran under this trust on {at}.',
                         {
                           repository: e.seen_repository,
-                          at: new Date(e.seen_at).toLocaleString(),
+                          at: formatDateTime(new Date(e.seen_at)),
                         }
                       )
                     : t(
                         'scans.ci.trust.scope.seenHintNoRepo',
                         'A verified pipeline ran under this trust on {at}.',
-                        { at: new Date(e.seen_at).toLocaleString() }
+                        { at: formatDateTime(new Date(e.seen_at)) }
                       )
                 }
               >
@@ -139,7 +140,7 @@ export function CITrustScopeEntries({
                 {t(
                   'scans.ci.trust.scope.removed',
                   'Removed from scope by a person on {at}; this trust will not add it again.',
-                  { at: new Date(e.removed_at).toLocaleDateString() }
+                  { at: formatDate(new Date(e.removed_at)) }
                 )}
               </span>
             )}

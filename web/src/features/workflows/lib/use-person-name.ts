@@ -2,13 +2,14 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useDisplayUser } from '@/hooks/use-display-user'
+import { formatDate } from '@/lib/app-locale'
 
 /** "22 Nov 2026" in the viewer's language. */
-export function formatDay(value: string | null | undefined, locale: string): string {
+export function formatDay(value: string | null | undefined, _locale: string): string {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
+  return formatDate(d, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /** Who published or approved: "you" for the viewer, else the name the API sent, else the id. */

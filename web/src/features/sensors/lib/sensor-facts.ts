@@ -18,6 +18,7 @@ import {
   type FleetThresholds,
 } from './sensor-state'
 import { normalizeSensorVersion, sensorSdkStatus, sensorSdkVersion } from './sensor-version'
+import { formatNumber } from '@/lib/app-locale'
 
 /** One short fact about a sensor; a tone marks one that needs attention. */
 export interface SensorFact {
@@ -64,7 +65,7 @@ export function sensorFacts(sensor: Sensor, ctx: SensorFactContext, t: Tr): Sens
   if (ob && ob.pending_count > 0) {
     facts.push({
       key: 'outbox',
-      text: `${t('sensors.mobile.resultsWaiting', undefined, { count: ob.pending_count.toLocaleString() })}${ob.oldest_age_seconds ? `, ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
+      text: `${t('sensors.mobile.resultsWaiting', undefined, { count: formatNumber(ob.pending_count) })}${ob.oldest_age_seconds ? `, ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
       tone: sensor.outbox_warning ? 'warning' : undefined,
     })
   }

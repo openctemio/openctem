@@ -15,6 +15,7 @@ import { SignalChip } from '@/components/ui/signal-chip'
 import { Tag } from '@/components/ui/tag'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 import { BreakText } from '@/features/shared/components/break-text'
 
 /** One certificate of the platform's CA bundle (API sensorapp.PlatformCACert). */
@@ -44,11 +45,11 @@ export interface PlatformCAInfo {
 export const PLATFORM_CA_DOWNLOAD_PATH = '/api/v1/sensors/platform-ca'
 
 export function PlatformCAPanel({ ca }: { ca: PlatformCAInfo }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const titleId = useId()
   const date = (iso: string) => {
     const d = new Date(iso)
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(locale)
+    return Number.isNaN(d.getTime()) ? iso : formatDate(d)
   }
   return (
     <section

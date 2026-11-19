@@ -17,6 +17,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 export default function ProfilePage() {
   const { t } = useTranslation()
@@ -227,16 +228,12 @@ export default function ProfilePage() {
               {
                 key: 'created',
                 label: t('account.info.created', 'Created'),
-                value: profile?.created_at
-                  ? new Date(profile.created_at).toLocaleDateString()
-                  : '-',
+                value: profile?.created_at ? formatDate(new Date(profile.created_at)) : '-',
               },
               {
                 key: 'updated',
                 label: t('account.info.updated', 'Last updated'),
-                value: profile?.updated_at
-                  ? new Date(profile.updated_at).toLocaleDateString()
-                  : '-',
+                value: profile?.updated_at ? formatDate(new Date(profile.updated_at)) : '-',
               },
             ]}
           />

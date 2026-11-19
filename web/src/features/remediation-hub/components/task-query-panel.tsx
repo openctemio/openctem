@@ -27,6 +27,7 @@ import {
 import { useOwnerNames } from '../api/use-owner-names'
 import { taskQueryApi, useTaskQuery, type QueryRerunPreview } from '../api/use-task-query'
 import { apiMessage } from './suggestions-inbox'
+import { formatDateTime } from '@/lib/app-locale'
 
 export function TaskQueryPanel({
   taskId,
@@ -98,7 +99,7 @@ export function TaskQueryPanel({
 
   if (!q) return null
   const isAuto = q.mode === 'auto'
-  const lastRun = q.last_run_at ? new Date(q.last_run_at).toLocaleString() : null
+  const lastRun = q.last_run_at ? formatDateTime(new Date(q.last_run_at)) : null
   const owner = owners.user(q.owner_user_id ?? undefined) ?? t('remediationQuery.task.ownerGone')
 
   return (

@@ -41,6 +41,7 @@ import {
   useRemoveSCMInstallation,
   useSCMApps,
 } from '../api/use-ci'
+import { formatDate } from '@/lib/app-locale'
 
 type Pending = { kind: 'github' | 'gitlab'; id: string; label: string } | null
 
@@ -206,7 +207,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                   {c.token_expires_at && (
                     <span className="text-muted-foreground">
                       {t('scans.ci.feedback.expires', 'token expires {date}', {
-                        date: new Date(c.token_expires_at).toLocaleDateString(),
+                        date: formatDate(new Date(c.token_expires_at)),
                       })}
                     </span>
                   )}

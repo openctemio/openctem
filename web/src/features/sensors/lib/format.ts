@@ -1,3 +1,4 @@
+import { formatDateTime } from '@/lib/app-locale'
 /** The translate function of useTranslation(), for helpers that build display text. */
 export type Tr = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
@@ -61,5 +62,5 @@ export function agoShort(iso: string, now: number, tr?: Tr): string {
 export function exactTime(iso: string | null | undefined): string | undefined {
   if (!iso) return undefined
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? undefined : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? undefined : formatDateTime(d)
 }

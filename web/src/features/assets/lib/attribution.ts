@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Asset attribution (RFC-036 §6.4): whether the platform believes an asset
  * is the organization's, and why. Pure helpers shared by the attribution
@@ -272,7 +273,7 @@ export function reviewNetworkText(
 function formatDay(iso: string): string {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return iso
-  return new Date(t).toLocaleDateString('en-GB', {
+  return formatDate(new Date(t), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

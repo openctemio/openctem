@@ -131,6 +131,7 @@ import {
   stateTakesJobs,
   type FleetThresholds,
 } from '../lib/sensor-state'
+import { formatDate, formatDateTime, formatNumber, formatTime } from '@/lib/app-locale'
 
 interface SensorDetailSheetProps {
   sensor: Sensor | null
@@ -388,8 +389,8 @@ function HealthSummary({
 function clockAnchor(ms: number, now: number, t: Tr, bare = false): string {
   const d = new Date(ms)
   const sameDay = new Date(now).toDateString() === d.toDateString()
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const date = d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  const time = formatTime(d, { hour: '2-digit', minute: '2-digit' })
+  const date = formatDate(d, { day: 'numeric', month: 'short' })
   if (bare) return sameDay ? time : date
   return sameDay
     ? t('sensors.detail.clockAt', 'at {time}', { time })
@@ -515,14 +516,14 @@ function SensorStats({
       )}
       <DetailStat
         label={t('sensors.detail.scansToDate', 'Scans to date')}
-        value={sensor.total_scans.toLocaleString()}
+        value={formatNumber(sensor.total_scans)}
         caption={
           sensor.total_findings === 1
             ? t('sensors.detail.findings.one', '{count} finding', {
-                count: sensor.total_findings.toLocaleString(),
+                count: formatNumber(sensor.total_findings),
               })
             : t('sensors.detail.findings.other', '{count} findings', {
-                count: sensor.total_findings.toLocaleString(),
+                count: formatNumber(sensor.total_findings),
               })
         }
       />
@@ -803,8 +804,8 @@ function ConnectionAndIdentity({
         )}
         <DetailField label={t('sensors.detail.f.created', 'Created')}>
           {Number.isNaN(created.getTime()) ? null : (
-            <span title={created.toLocaleString()}>
-              {created.toLocaleDateString(undefined, {
+            <span title={formatDateTime(created)}>
+              {formatDate(created, {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric',
@@ -955,12 +956,12 @@ function SensorJobs({ sensor }: { sensor: Sensor }) {
         )}
         <DetailStat
           label={t('sensors.detail.jobs.scans', 'Scans')}
-          value={sensor.total_scans.toLocaleString()}
+          value={formatNumber(sensor.total_scans)}
           caption={t('sensors.detail.jobs.allTime', 'all time')}
         />
         <DetailStat
           label={t('sensors.detail.jobs.findings', 'Findings')}
-          value={sensor.total_findings.toLocaleString()}
+          value={formatNumber(sensor.total_findings)}
           caption={t('sensors.detail.jobs.allTime', 'all time')}
         />
       </DetailStatGrid>

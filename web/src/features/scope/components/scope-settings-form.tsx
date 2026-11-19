@@ -43,6 +43,7 @@ import {
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
 import { ScopeIntrusiveSettings } from './scope-intrusive-settings'
+import { formatNumber } from '@/lib/app-locale'
 
 /** The platform's proof requirement (RFC-054 §8.1), as the settings show it. */
 export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> = {
@@ -456,7 +457,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                     <SelectItem key={p} value={String(p)}>
                       {t('scope.settings.maxRangeChoice', undefined, {
                         prefix: `/${p}`,
-                        count: (2 ** (32 - p)).toLocaleString(),
+                        count: formatNumber(2 ** (32 - p)),
                       })}
                     </SelectItem>
                   ))}

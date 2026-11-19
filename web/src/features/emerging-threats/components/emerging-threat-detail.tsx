@@ -23,6 +23,7 @@ import type { EmergingThreatDetail, EtsBreakdown } from '../types'
 import { AffectedAssets } from './affected-assets'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
 import { EtsCell, LevelBadge, StateBadge, useEventDetail, useEventKindLabel } from './bits'
+import { formatDate } from '@/lib/app-locale'
 
 export function EmergingThreatDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
@@ -84,7 +85,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
               <>
                 {', '}
                 {t('emergingThreats.suppressedUntil', undefined, {
-                  date: new Date(alert.suppressed_until).toLocaleDateString(),
+                  date: formatDate(new Date(alert.suppressed_until)),
                 })}
               </>
             )}
@@ -189,7 +190,7 @@ function ExploitCard({ alert }: { alert: EmergingThreatDetail }) {
     ],
     [
       t('emergingThreats.detail.published'),
-      alert.published_at ? new Date(alert.published_at).toLocaleDateString() : '—',
+      alert.published_at ? formatDate(new Date(alert.published_at)) : '—',
     ],
   ]
   return (
