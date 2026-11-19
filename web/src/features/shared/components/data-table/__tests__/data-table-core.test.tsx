@@ -123,9 +123,10 @@ describe('sorting', () => {
     expect(names()).toEqual(['alpha', 'beta'])
   })
 
-  it('an empty list has no sort buttons', () => {
+  it('an empty list has no header, so no sort buttons', () => {
     render(<DataTable columns={columns} data={[]} />)
-    expect(within(header('Name')).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /sort/i })).not.toBeInTheDocument()
   })
 })
 
