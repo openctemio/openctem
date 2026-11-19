@@ -19,7 +19,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/vulnevent"
 )
 
-// Card event kinds in vuln_events (the vuln id is the card id).
+// Card event kinds in the vulnerability event log (the vuln id is the card id).
 const (
 	CardEventPublished = vulnevent.KindCardPublished
 	CardEventUpdated   = vulnevent.KindCardUpdated
@@ -116,11 +116,10 @@ func (r *AdvisoryCardRepository) Apply(ctx context.Context, cards []*advisory.Ca
 		default:
 			res.Published++
 		}
-		detail, _ := json.Marshal(map[string]any{"revision": c.Revision, "exploitation": c.Exploitation.Status,
-			"vulns": len(c.Vulns), "review_mode": c.Review.Mode})
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO vuln_events (vuln_id, kind, at, source_at, feed_sequence, detail) VALUES ($1, $2, $3, $4, $5, $6)`,
-			c.ID, string(kind), now, c.UpdatedAt, seq, detail); err != nil {
+		src, seqNo := c.UpdatedAt, seq
+		if err := insertVulnEvents(ctx, tx, []vulnevent.Event{{VulnID: c.ID, Kind: kind, At: now, SourceAt: &src, FeedSequence: &seqNo,
+			Detail: map[string]any{"revision": c.Revision, "exploitation": c.Exploitation.Status,
+				"vulns": len(c.Vulns), "review_mode": c.Review.Mode}}}); err != nil {
 			return res, fmt.Errorf("card %s event: %w", c.ID, err)
 		}
 	}

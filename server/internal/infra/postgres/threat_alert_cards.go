@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/domain/vulncatalog"
 )
 
 // Confidence of an asset whose version a reviewed card's range places,
@@ -57,49 +59,76 @@ func (r *ThreatAlertRepository) cardVuln(ctx context.Context, cardID string, eve
 	for _, e := range ex {
 		v.Exploitation = advisory.Stronger(v.Exploitation, e)
 	}
-	sevs := make([]string, 0, 1)
-	var score, epss sql.NullFloat64
-	var vector, lastKind sql.NullString
-	var kevAdded, lastAt, lastSource sql.NullTime
-	var inKEV, ransomware sql.NullBool
-	err = r.db.QueryRowContext(ctx, `
-		SELECT
-			(SELECT max(cvss_score)::float8 FROM cve_records WHERE cve_id = ANY($1::text[])),
-			(SELECT cvss_vector FROM cve_records WHERE cve_id = ANY($1::text[]) ORDER BY cvss_score DESC NULLS LAST LIMIT 1),
-			(SELECT count(*) > 0 FROM kev_catalog WHERE cve_id = ANY($1::text[])),
-			(SELECT min(date_added)::timestamptz FROM kev_catalog WHERE cve_id = ANY($1::text[])),
-			(SELECT bool_or(known_ransomware_campaign_use = 'Known') FROM kev_catalog WHERE cve_id = ANY($1::text[])),
-			(SELECT max(epss_score)::float8 FROM epss_scores WHERE cve_id = ANY($1::text[])),
-			(SELECT COALESCE(array_agg(DISTINCT lower(severity)), '{}') FROM cve_records WHERE cve_id = ANY($1::text[]) AND severity IS NOT NULL),
-			ev.kind, ev.at, ev.source_at
-		FROM (SELECT 1) x
-		LEFT JOIN LATERAL (
-			SELECT kind, at, source_at FROM vuln_events
-			WHERE (vuln_id = $2 OR vuln_id = ANY($1::text[])) AND at >= $3 ORDER BY at DESC, id DESC LIMIT 1
-		) ev ON true`, pq.Array(ids), c.ID, eventsSince).
-		Scan(&score, &vector, &inKEV, &kevAdded, &ransomware, &epss, pq.Array(&sevs), &lastKind, &lastAt, &lastSource)
+	// The catalog facts of the grouped ids come through the catalog reader
+	// (RFC-143 R3), never from its tables.
+	facts, err := NewVulnCatalogReader(r.db).Facts(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
 	}
+	cf := foldCardFacts(facts)
+	ev, err := lastVulnEvent(ctx, r.db, c.ID, ids, eventsSince)
+	if err != nil {
+		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
+	}
+	sevs, score, vector := cf.severities, cf.score, cf.vector
+	inKEV, kevAdded, ransomware, epss := cf.inKEV, cf.kevAdded, cf.ransomware, cf.epss
+	lastKind, lastAt, lastSource := ev.kind, ev.at, ev.sourceAt
 	v.Severity = threatalert.CardSeverity(c.Reported(), c.Severity.Level, sevs...)
-	if score.Valid {
-		f := score.Float64
-		v.CVSSScore = &f
-	}
-	v.CVSSVector = vector.String
-	v.InKEV, v.KEVRansomware = inKEV.Bool, ransomware.Bool
-	v.KEVDateAdded = timePtr(kevAdded)
-	if epss.Valid {
-		f := epss.Float64
-		v.EPSS = &f
-	}
-	v.LastEventKind = lastKind.String
-	v.LastEventAt = timePtr(lastAt)
-	v.SourceAt = timePtr(lastSource)
+	v.CVSSScore = score
+	v.CVSSVector = vector
+	v.InKEV, v.KEVRansomware = inKEV, ransomware
+	v.KEVDateAdded = kevAdded
+	v.EPSS = epss
+	v.LastEventKind = lastKind
+	v.LastEventAt = lastAt
+	v.SourceAt = lastSource
 	if v.SourceAt == nil {
 		v.SourceAt = v.LastEventAt
 	}
 	return &v, nil
+}
+
+// cardFacts are the catalog facts of a card's grouped ids, folded the way a
+// card states them: the strongest CVSS score (and its vector), any KEV
+// listing (earliest date added, any ransomware use), the highest EPSS score
+// and the distinct severities.
+type cardFacts struct {
+	severities []string
+	score      *float64
+	vector     string
+	inKEV      bool
+	kevAdded   *time.Time
+	ransomware bool
+	epss       *float64
+}
+
+func foldCardFacts(facts []vulncatalog.Fact) cardFacts {
+	var out cardFacts
+	seen := map[string]bool{}
+	for _, f := range facts {
+		if sev := strings.ToLower(strings.TrimSpace(f.Severity)); sev != "" && !seen[sev] {
+			seen[sev] = true
+			out.severities = append(out.severities, sev)
+		}
+		if f.CVSSScore != nil && (out.score == nil || *f.CVSSScore > *out.score) {
+			sc := *f.CVSSScore
+			out.score, out.vector = &sc, f.CVSSVector
+		}
+		if f.KEV != nil {
+			out.inKEV = true
+			out.ransomware = out.ransomware || f.KEV.Ransomware
+			if f.KEV.DateAdded != nil && (out.kevAdded == nil || f.KEV.DateAdded.Before(*out.kevAdded)) {
+				d := *f.KEV.DateAdded
+				out.kevAdded = &d
+			}
+		}
+		if f.EPSS != nil && (out.epss == nil || f.EPSS.Score > *out.epss) {
+			sc := f.EPSS.Score
+			out.epss = &sc
+		}
+	}
+	sort.Strings(out.severities)
+	return out
 }
 
 // cardCandidates lists the organization's assets that run a product the

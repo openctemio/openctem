@@ -660,7 +660,7 @@ type Applied struct {
 func Supersedes(heldRevision int, heldState string, c *Card) bool {
 	switch {
 	case c.Revision > heldRevision:
-		return !(c.Reported() && (heldState == StateReviewed || heldState == StateWithdrawn))
+		return !c.Reported() || (heldState != StateReviewed && heldState != StateWithdrawn)
 	case c.Revision == heldRevision:
 		return heldState != StateWithdrawn && c.Withdrawn()
 	}
