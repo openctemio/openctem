@@ -704,6 +704,59 @@ instead).
   (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
+- **Sole member, group exception.** The same owner may approve their own
+  pending group exception in one call
+  (`POST /api/v1/approvals/batches/{id}/self-approve`, `findings:approve`,
+  body `{code, reason}`; `SelfApproveSoloBatch`) under the same rules: the
+  requester, the only active person and an owner, no member removed or
+  demoted in the last 7 days, not an AI application's request, the group
+  pending and not overdue, every member in the caller's data scope, a reason
+  and one fresh authenticator code. An accepted-risk group follows the risk
+  acceptance level as above, and each member's end is cut to its own
+  `SoloAcceptanceLimit`. Every pending member is applied in one transaction,
+  each marked `self_approved` with its own timeline entry (`batch_id`); the
+  audit row is `finding_approval.batch_self_approved` (high), the channels get
+  a security alert and the backup contact an email with the number of
+  findings and the group's source label (never the note). A single member of a
+  group is still never self-approved alone (409 `BATCH_MEMBER`). The list and
+  the read of groups carry `self_approval_available` for the requester.
+- **Deciding many at once.** In Findings > Approvals an approver selects
+  requests and groups: `POST /api/v1/approvals/bulk/approve` (body
+  `{approval_ids, batch_ids}`, together at most 100; `findings:approve` and one
+  step-up for the call) and `POST /api/v1/approvals/bulk/reject` (same ids and
+  a `reason`, required, at most 2000 characters; `findings:approve`). Each id
+  goes through its single path (`ApproveStatus` / `ApproveGroupException`,
+  `RejectApproval` / `RejectGroupException`), so the policy, four-eyes,
+  eligibility, step-up per tier and data scope are judged per item exactly as
+  for one call, and each decided item gets the audit row of its single call
+  (metadata `bulk: true`). The answer lists every id with an `outcome`
+  (`approved`, `signed`, `rejected`, `skipped`, `failed`) and a stable `code`
+  (`not_found`, `not_pending`, `batch_member`, `own_request`, `overdue`,
+  `approver_not_eligible`, `no_eligible_approver`, `step_up_required`,
+  `forbidden`, `cannot_decide`, `error`), plus counts. An item that fails never
+  stops the rest. An id of another organization or outside the caller's data
+  scope is `skipped`/`not_found`, exactly like a missing one. A decided item
+  answers `skipped`/`not_pending`, so a replay is safe by state and no
+  idempotency record is kept (`internal/app/finding/approval_bulk.go`).
+- **Leaving one member out.** An approver rejects one pending member of a
+  group with a reason
+  (`POST /api/v1/approvals/batches/{id}/members/{finding_id}/reject`,
+  `findings:approve`, body `{reason}`; `LeaveOutGroupMember`) while the rest
+  stays pending and is decided later as usual. Every member must be in the
+  caller's data scope, as for rejecting the whole group; the group's
+  requester is refused (they cancel the group instead). The member request
+  becomes `rejected` with the reason, its finding gets a timeline entry
+  (`left_out`, `batch_id`), the requester is told, and the audit row is
+  `finding_approval.batch_member_rejected`. `member_count` keeps the number
+  the group was asked for; the read of the group shows each member's status.
+  When no pending member is left the group closes as `rejected`.
+- **Why a request waits.** Every request row (`GET /api/v1/findings/{id}/approvals`,
+  `GET /api/v1/approvals`) carries `policy_reasons` (the stable reason codes of
+  the evaluation stored on the request, for example `fp_level`; empty when
+  none), `eligible_approver_count` (how many people could sign it off when it
+  was made; null on a request made before the count was kept) and
+  `self_approval_available` (a pending request the caller made, not part of a
+  group, while the caller is the organization's sole member and owner).
 
 - **Daily digest.** The hourly `approval-digest` controller sends each
   approver, at most once per 23 hours and organization
