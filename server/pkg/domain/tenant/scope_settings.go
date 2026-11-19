@@ -104,6 +104,12 @@ type ScopeSettings struct {
 	// inactive until a verified pipeline run under them (opt-in governance,
 	// default off: a trust's entries are in effect at once).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof,omitempty"`
+	// HoldProviderEntries keeps the scope entries that name a provider's
+	// shared addresses (scope.SharedProviderEntry) from authorizing active
+	// checks until a person answers them on the Scope page: moved out of
+	// scope, or kept (research/531 D3). Default off: such entries authorize
+	// as any other entry.
+	HoldProviderEntries bool `json:"hold_provider_entries,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).

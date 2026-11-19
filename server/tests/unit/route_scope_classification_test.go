@@ -122,6 +122,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/programs":                             {classScoped, "bug-bounty programs (RFC-065): a caller sees only programs whose group has them unless full-data; another program is 404"},
 	"GET /api/v1/scope/stats":                      {classScoped, "inventory coverage counted in SQL over the caller's data scope (research/53 S-3)"},
 	"POST /api/v1/scope/targets/preview":           {classScoped, "names an entry would confirm, counted over the caller's data scope (RFC-054 §4.3)"},
+	"GET /api/v1/scope/provider-addresses":         {classScoped, "scope entries (tenant configuration) plus person-confirmed addresses read with an SQL data-scope condition (research/531)"},
 	"/api/v1/ci/settings":                          {classConfig, "CI settings: tenant configuration (RFC-051)"},
 	"/api/v1/ci/scm-apps":                          {classConfig, "code-host app installations the organization bound for CI checks and comments: tenant configuration (RFC-077)"},
 	"/api/v1/ci/trust-refusals":                    {classConfig, "refused CI token exchanges from the audit log: CI trust administration (scans:ci:write), RFC-051"},
