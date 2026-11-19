@@ -777,6 +777,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
 	))
 
+	// Version-hidden technologies of curated public products: link the ones
+	// stored before ingest linked them, so the matcher sees them.
+	w.ControllerManager.Register(controller.NewAssetSoftwareLinkBackfillController(
+		assettechapp.NewSoftwareLinkBackfill(repos.AssetTechnologyBackfill, repos.Software, softwareChangeSink(svc),
+			log.With("controller", "asset-software-link-backfill")),
+	))
+
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
 		repos.AccessControl,
 		svc.ScopeRule,
@@ -1759,4 +1766,13 @@ func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
 		return nil
 	}
 	return s
+}
+
+// softwareChangeSink is the matcher's queue of changed assets, nil (not a
+// nil pointer in an interface) when matching is not wired.
+func softwareChangeSink(svc *Services) assettechapp.SoftwareChangeSink {
+	if svc == nil || svc.VulnMatch == nil {
+		return nil
+	}
+	return svc.VulnMatch
 }
