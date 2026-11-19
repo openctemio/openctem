@@ -207,11 +207,12 @@ func (im *Importer) relaySideFiles(dir string, ks *vulnbundle.KeySet, seq uint64
 			out = append(out, m.Files...)
 		}
 	}
-	if im.intel != nil {
+	if im.intel != nil || im.cards != nil {
 		if raw, err := readCapped(dir, vulnbundle.IntelManifestFile, vulnbundle.MaxManifestBytes); err == nil {
 			if m, err := vulnbundle.VerifyIntelManifest(ks, raw, seq, now); err == nil {
 				for _, s := range m.Streams {
-					if _, known := intelSources[s.Name]; known {
+					_, known := intelSources[s.Name]
+					if (known && im.intel != nil) || (s.Name == vulnbundle.IntelStreamCards && im.cards != nil) {
 						out = append(out, s.File)
 					}
 				}
