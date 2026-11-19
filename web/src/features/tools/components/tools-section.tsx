@@ -33,7 +33,7 @@ import { AddToolDialog } from './add-tool-dialog'
 import { ToolTable } from './tool-table'
 import { ToolDetailSheet } from './tool-detail-sheet'
 import { CATEGORY_OPTIONS } from '../schemas/tool-schema'
-import { TOOL_STATUS_META, onAnySensor, toolDisplayName, versionsLabel } from '../lib/availability'
+import { onAnySensor, toolDisplayName, toolStatusLabel, versionsLabel } from '../lib/availability'
 
 import {
   useToolAvailability,
@@ -147,21 +147,32 @@ export function ToolsSection() {
 
   const handleRefresh = useCallback(async () => {
     await refresh()
-    toast.success('Tools refreshed')
-  }, [refresh])
+    toast.success(t('scans.tools.toast.refreshed', 'Tools refreshed'))
+  }, [refresh, t])
 
   const handleToggleEnabled = useCallback(
     async (item: ToolAvailabilityItem, on: boolean) => {
       if (!item.tool) return
       try {
         await (on ? enableTool(item.tool.id) : disableTool(item.tool.id))
-        toast.success(`${toolDisplayName(item)} ${on ? 'enabled' : 'disabled'}`)
+        toast.success(
+          on
+            ? t('scans.tools.toast.enabled', '{name} enabled', { name: toolDisplayName(item) })
+            : t('scans.tools.toast.disabled', '{name} disabled', { name: toolDisplayName(item) })
+        )
         await refresh()
       } catch (err) {
-        toast.error(getErrorMessage(err, `Failed to ${on ? 'enable' : 'disable'} the tool`))
+        toast.error(
+          getErrorMessage(
+            err,
+            on
+              ? t('scans.tools.toast.enableFailed', 'Failed to enable the tool')
+              : t('scans.tools.toast.disableFailed', 'Failed to disable the tool')
+          )
+        )
       }
     },
-    [enableTool, disableTool, refresh]
+    [enableTool, disableTool, refresh, t]
   )
 
   const handleEditTool = useCallback((tool: Tool) => {
@@ -180,43 +191,47 @@ export function ToolsSection() {
     if (!deletingTool) return
     try {
       await deleteCustomTool()
-      toast.success(`Tool "${deletingTool.display_name}" deleted`)
+      toast.success(
+        t('scans.tools.toast.deleted', 'Tool "{name}" deleted', { name: deletingTool.display_name })
+      )
       await refresh()
       setDeleteDialogOpen(false)
       setDeletingTool(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete tool'))
+      toast.error(
+        getErrorMessage(err, t('scans.tools.toast.deleteFailed', 'Failed to delete tool'))
+      )
     }
-  }, [deletingTool, deleteCustomTool, refresh])
+  }, [deletingTool, deleteCustomTool, refresh, t])
 
   const handleExport = useCallback(() => {
     const csv = buildCsv(
       [
-        'Name',
-        'Display Name',
-        'Category',
-        'Status',
-        'Sensors online',
-        'Sensors total',
-        'Versions',
-        'Last reported',
-        'Enabled',
+        t('scans.tools.csv.name', 'Name'),
+        t('scans.tools.csv.displayName', 'Display Name'),
+        t('scans.tools.col.category', 'Category'),
+        t('scans.tools.col.status', 'Status'),
+        t('scans.tools.csv.sensorsOnline', 'Sensors online'),
+        t('scans.tools.csv.sensorsTotal', 'Sensors total'),
+        t('scans.tools.csv.versions', 'Versions'),
+        t('scans.tools.col.lastReported', 'Last reported'),
+        t('scans.tools.col.enabled', 'Enabled'),
       ],
       visible.map((i) => [
         i.name,
         toolDisplayName(i),
         getCategoryNameById(categoriesData?.items, i.tool?.category_id),
-        TOOL_STATUS_META[i.status].label,
+        toolStatusLabel(i.status, t),
         String(i.sensors_online),
         String(i.sensors_total),
         versionsLabel(i),
         i.last_reported_at ?? '',
-        i.enabled ? 'Yes' : 'No',
+        i.enabled ? t('scans.tools.csv.yes', 'Yes') : t('scans.tools.csv.no', 'No'),
       ])
     )
     downloadCsv(csv, 'tools.csv')
-    toast.success('Tools exported')
-  }, [visible, categoriesData])
+    toast.success(t('scans.tools.toast.exported', 'Tools exported'))
+  }, [visible, categoriesData, t])
 
   const canEditTool = useCanMutate('PUT /api/v1/tools/{id}')
   const canDeleteTool = useCanMutate('DELETE /api/v1/tools/{id}')
@@ -233,7 +248,7 @@ export function ToolsSection() {
     tone?: MetricStripItem['tone']
   ): MetricStripItem => ({
     key: st,
-    label: TOOL_STATUS_META[st].label,
+    label: toolStatusLabel(st, t),
     value: countOf(st),
     tone,
     onClick: () => toggleStatus(st),
@@ -246,7 +261,7 @@ export function ToolsSection() {
     statusMetric('outdated', 'warning'),
     {
       key: 'updates',
-      label: 'Updates available',
+      label: t('scans.tools.metric.updates', 'Updates available'),
       value: narrowed.filter((i) => i.update_available).length,
       onClick: () => {
         setStatusFilter('')
@@ -259,11 +274,16 @@ export function ToolsSection() {
   const toolbarStart = (
     <>
       <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-        <SelectTrigger className="w-[150px]" aria-label="Category">
-          <SelectValue placeholder="All categories" />
+        <SelectTrigger
+          className="w-[150px]"
+          aria-label={t('scans.tools.filter.category', 'Category')}
+        >
+          <SelectValue placeholder={t('scans.tools.filter.allCategories', 'All categories')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All categories</SelectItem>
+          <SelectItem value="all">
+            {t('scans.tools.filter.allCategories', 'All categories')}
+          </SelectItem>
           {categoryOptions.map((cat) => (
             <SelectItem key={cat.value} value={cat.value}>
               {cat.label}
@@ -272,13 +292,13 @@ export function ToolsSection() {
         </SelectContent>
       </Select>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger className="w-[130px]" aria-label="Type">
+        <SelectTrigger className="w-[130px]" aria-label={t('scans.tools.filter.type', 'Type')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All types</SelectItem>
-          <SelectItem value="builtin">Built-in</SelectItem>
-          <SelectItem value="custom">Custom</SelectItem>
+          <SelectItem value="all">{t('scans.tools.filter.allTypes', 'All types')}</SelectItem>
+          <SelectItem value="builtin">{t('scans.tools.filter.builtin', 'Built-in')}</SelectItem>
+          <SelectItem value="custom">{t('scans.tools.badge.custom', 'Custom')}</SelectItem>
         </SelectContent>
       </Select>
     </>
@@ -294,7 +314,7 @@ export function ToolsSection() {
           onCheckedChange={(on) => setCatalogParam(on ? '1' : '')}
         />
         <Label htmlFor="tools-full-catalog" className="whitespace-nowrap text-sm font-normal">
-          Show full catalog
+          {t('scans.tools.fullCatalog', 'Show full catalog')}
         </Label>
       </div>
       <RefreshButton onClick={handleRefresh} loading={isLoading} />
@@ -311,23 +331,32 @@ export function ToolsSection() {
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="tools" error={error} onRetry={handleRefresh} />
+    body = (
+      <ErrorState
+        title={t('scans.tools.errorTitle', 'tools')}
+        error={error}
+        onRetry={handleRefresh}
+      />
+    )
   } else if (isLoading) {
     body = <TableSkeleton rows={6} />
   } else if (nothingOnSensors && !hasFilter) {
     body = (
       <EmptyState
         icon={Wrench}
-        title="No sensor has reported a tool yet"
-        description="Tools show here once a sensor of this organization reports them. Install a sensor, or look at the full catalog."
+        title={t('scans.tools.empty.noneTitle', 'No sensor has reported a tool yet')}
+        description={t(
+          'scans.tools.empty.noneDesc',
+          'Tools show here once a sensor of this organization reports them. Install a sensor, or look at the full catalog.'
+        )}
         card={false}
         action={
           <div className="flex flex-wrap justify-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setCatalogParam('1')}>
-              Show full catalog
+              {t('scans.tools.fullCatalog', 'Show full catalog')}
             </Button>
             <Button size="sm" asChild>
-              <Link href="/sensors">Go to Sensors</Link>
+              <Link href="/sensors">{t('scans.tools.empty.goToSensors', 'Go to Sensors')}</Link>
             </Button>
           </div>
         }
@@ -352,8 +381,11 @@ export function ToolsSection() {
         toolbarEnd={toolbarEnd}
         emptyMessage={
           showCatalog
-            ? 'No tools match these filters'
-            : 'No tool on your sensors matches these filters'
+            ? t('scans.tools.empty.filters', 'No tools match these filters')
+            : t(
+                'scans.tools.empty.filtersOnSensors',
+                'No tool on your sensors matches these filters'
+              )
         }
       />
     )
@@ -370,12 +402,12 @@ export function ToolsSection() {
       >
         <Button variant="outline" size="sm" onClick={handleExport}>
           <Download className="h-4 w-4" />
-          Export
+          {t('scans.tools.export', 'Export')}
         </Button>
         <Can route="POST /api/v1/tools">
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            Add tool
+            {t('scans.tools.add', 'Add tool')}
           </Button>
         </Can>
       </PageHeader>
