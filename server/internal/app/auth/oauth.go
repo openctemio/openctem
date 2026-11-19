@@ -86,6 +86,8 @@ func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 type OAuthService struct {
 	// signups records sign-up events for the platform console (optional).
 	signups signupevent.Recorder
+	// personalOrgs makes the personal organization at sign-up (optional).
+	personalOrgs *PersonalOrganizations
 	// onSignIn runs after a sign-in created a session (signin_hook.go).
 	onSignIn SignInHook
 	// audit records each sign-in (auth.login), as the password sign-in does.
@@ -144,6 +146,9 @@ type InvitationLookup interface {
 func (s *OAuthService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
 
 func (s *OAuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// SetPersonalOrganizations wires the personal organization at sign-up.
+func (s *OAuthService) SetPersonalOrganizations(p *PersonalOrganizations) { s.personalOrgs = p }
 
 // SetSignupDomainPolicy wires the per-domain sign-up policy of claimed
 // domains.
@@ -384,18 +389,39 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 		return nil, ErrOAuthExchangeFailed
 	}
 
-	// A password account reached through a linked provider takes the same
-	// second step as its password sign-in (identity_link.go).
-	if isPasswordAccount(u) {
-		challenge, cerr := s.linkedAccountChallenge(ctx, u)
-		if cerr != nil {
-			return nil, cerr
-		}
-		if challenge != nil {
-			s.logger.Info("OAuth sign-in to a linked password account waits for its second factor",
-				"user_id", u.ID().String(), "provider", provider)
-			return &CallbackResult{User: u, MFAChallenge: challenge}, nil
-		}
+	// A person who signed up with no other way in gets their own
+	// organization now, before the second-factor step (a provider that does
+	// not vouch for the address leaves it unverified: nothing is made). It
+	// never fails the sign-in. While the platform 2FA floor would cover the
+	// new owner and the account has no password, nothing is made and the mark
+	// stays pending (SocialSignInMayCreate says why and when to remove this).
+	if s.personalOrgs.SocialSignInMayCreate(ctx, u) {
+		ci := clientInfoFrom(ctx)
+		s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
+	}
+
+	// The provider's sign-in is the first factor. Every account then takes the
+	// same second step as a password sign-in (identity_link.go): a verify
+	// challenge when it has a factor, an enrollment challenge when an
+	// organization it belongs to requires one. Without this a social session
+	// could never satisfy an organization that requires 2FA (its token
+	// request refuses a session that skipped our second step), and the person
+	// would be left with no way in. A password account without the gate wired
+	// is refused (linkedAccountChallenge) and so is a social account
+	// (fail closed both ways).
+	if s.secondFactor == nil && !isPasswordAccount(u) {
+		s.logger.Error("OAuth sign-in refused: the second-factor gate is not wired",
+			"user_id", u.ID().String(), "provider", provider)
+		return nil, ErrOAuthExchangeFailed
+	}
+	challenge, cerr := s.linkedAccountChallenge(ctx, u)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if challenge != nil {
+		s.logger.Info("OAuth sign-in waits for its second factor",
+			"user_id", u.ID().String(), "provider", provider, "purpose", string(challenge.Purpose))
+		return &CallbackResult{User: u, MFAChallenge: challenge}, nil
 	}
 
 	// Create session
@@ -1171,7 +1197,8 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		// possible only where sign-up is open.
 		identity.DomainJoinable = false
 	}
-	switch signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), identity) {
+	outcome := signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), identity)
+	switch outcome {
 	case signupdom.OutcomeSSORequired:
 		s.logger.Info("OAuth sign-up refused: the domain requires its organization's SSO", "provider", provider)
 		return nil, ErrSignupSSORequired
@@ -1192,6 +1219,7 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	}
 	recordSignup(ctx, s.signups, signupevent.Event{Kind: signupevent.KindAccountCreated, Source: signupevent.SourceOAuth,
 		Email: newUser.Email(), UserID: newUser.ID()})
+	s.personalOrgs.Reserve(ctx, newUser.ID(), outcome)
 	if key.Valid() {
 		if err := acc.bind(ctx, newUser, key); err != nil {
 			return nil, fmt.Errorf("bind new account: %w", err)

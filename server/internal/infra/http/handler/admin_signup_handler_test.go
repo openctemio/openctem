@@ -181,6 +181,56 @@ func TestAdminSignupHandler(t *testing.T) {
 		})
 	}
 
+	t.Run("personal organization needs self-service", func(t *testing.T) {
+		h, svc := newHandler(nil)
+		rec := httptest.NewRecorder()
+		h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "admin_only", "accounts": "open",
+			"personal_organization": true, "version": 1, "totp_code": "123456"}))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d %s", rec.Code, rec.Body.String())
+		}
+		if svc.Current(context.Background()).PersonalOrganization {
+			t.Fatal("a refused change must not turn the switch on")
+		}
+	})
+
+	t.Run("personal organization saved and reported", func(t *testing.T) {
+		h, svc := newHandler(nil)
+		rec := httptest.NewRecorder()
+		h.Update(rec, signupRequest(t, http.MethodPut, map[string]any{"mode": "self_service", "personal_organization": true,
+			"version": 1, "totp_code": "123456"}))
+		var resp SignupPolicyResponse
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if rec.Code != http.StatusOK || !resp.PersonalOrganization || !resp.EffectivePersonalOrganization {
+			t.Fatalf("got %d %s", rec.Code, rec.Body.String())
+		}
+		if !svc.Current(context.Background()).CreatesPersonalOrganization() {
+			t.Fatal("the switch must be in force")
+		}
+	})
+
+	// SIGNUP_PERSONAL_ORGANIZATION seeds the switch only under an open
+	// ceiling; a lower ceiling keeps it off in force.
+	for _, tc := range []struct {
+		ceiling signupdom.Ceiling
+		want    bool
+	}{{signupdom.CeilingOpen, true}, {signupdom.CeilingDomain, false}, {signupdom.CeilingDisabled, false}} {
+		t.Run("seeded personal organization "+string(tc.ceiling), func(t *testing.T) {
+			svc := signup.NewService(&signupMemRepo{}, nil, nil, nil, logger.NewNop())
+			svc.SetCeiling(tc.ceiling)
+			svc.SetPersonalOrganizationSeed(true)
+			_ = svc.Seed(context.Background())
+			h := NewAdminSignupHandler(svc, fakeStepUp{}, logger.NewNop())
+			rec := httptest.NewRecorder()
+			h.Get(rec, signupRequest(t, http.MethodGet, nil))
+			var resp SignupPolicyResponse
+			_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+			if resp.PersonalOrganization != tc.want || resp.EffectivePersonalOrganization != tc.want {
+				t.Fatalf("seeded under %s: %s", tc.ceiling, rec.Body.String())
+			}
+		})
+	}
+
 	t.Run("no administrator in context", func(t *testing.T) {
 		h, _ := newHandler(nil)
 		rec := httptest.NewRecorder()
