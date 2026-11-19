@@ -87,16 +87,21 @@ describe('list toolbar: a group that draws nothing takes no line', () => {
     expect(group(container, 'tokens')).not.toHaveAttribute('data-empty')
   })
 
-  it('keeps the end group at the end on a phone while the tokens are out of the flow', () => {
+  it('gives the chips the whole second line on a phone while the tokens are out of the flow', () => {
     const { container } = render(
       <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
         start={<span className="phone-hidden">Status: Open</span>}
         end={<button type="button">Export</button>}
+        below={<span>chip</span>}
       />
     )
     expect(group(container, 'tokens')).toHaveAttribute('data-empty')
-    expect(group(container, 'end').className).toContain(
-      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-auto'
+    // The end group keeps its own column on the search line, whatever the tokens do.
+    expect(group(container, 'end').className).toContain('@max-md/toolbar:col-start-3')
+    expect(group(container, 'end').className).toContain('@max-md/toolbar:row-start-1')
+    expect(container.querySelector('[data-slot="list-toolbar-below"]')!.className).toContain(
+      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4'
     )
   })
 })

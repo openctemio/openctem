@@ -293,7 +293,8 @@ describe('the list search field Query mode', () => {
       'h-control',
       'max-md:h-control-touch',
       'basis-full',
-      '@max-md/toolbar:order-last'
+      '@max-md/toolbar:row-start-3',
+      '@max-md/toolbar:col-end-4'
     )
     expect(box()).toHaveAttribute('aria-invalid', 'true')
     // The same live region as before, so the problem is announced.
@@ -334,8 +335,9 @@ describe('the list search field Query mode', () => {
     expect(status).toHaveClass(
       'h-control',
       'flex-[1_1_0%]',
-      '@max-md/toolbar:order-last',
-      '@max-md/toolbar:flex-[0_0_100%]'
+      '@max-md/toolbar:row-start-3',
+      '@max-md/toolbar:col-start-1',
+      '@max-md/toolbar:col-end-4'
     )
     expect(below).toHaveClass('@md/toolbar:flex-[0_0_auto]', '@md/toolbar:max-w-[50%]')
     expect(below.nextElementSibling).toBe(status)

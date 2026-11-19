@@ -46,14 +46,17 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  * row is a size container: controls switch their labels to icons by the
  * toolbar's own width (`@xl/toolbar:`); the view controls (Views, Group, Display) show their labels from a 64rem toolbar (`iconOnlyBelow="@5xl/toolbar"`).
  *
- * Below 28rem (a phone) the toolbar is two lines, never more: the search alone
- * on the first; on the second the chips row owns the start (empty while there
- * is no chip), the `start` tokens are anchored to the end, right before the
- * `end` icon actions pinned at the end. So the first chip appearing moves
- * nothing: it fills the room at the start of the line. Nothing wraps: tokens
- * that do not fit scroll sideways in their strip (with a fade on an edge that
- * hides more), and so do the chips (`FilterChipsRow`). The layout is the same
- * with and without a chips row (the toolbar always sits in its region).
+ * Below 28rem (a phone) the toolbar is two lines, never more, laid out on a
+ * grid: the search with the `end` icon actions (Views, Group) at the end of
+ * its line; on the second the chips row owns the start, the `start` tokens are
+ * anchored to the end. A second line with nothing to draw (no chip, no token
+ * shown on a phone) takes no room, so a list never shows a line holding only
+ * Views. The first chip opens the second line, or fills the room at its start
+ * when tokens already hold it; it never moves a token or an action. Nothing
+ * wraps: tokens that do not fit scroll sideways in their strip (with a fade on
+ * an edge that hides more), and so do the chips (`FilterChipsRow`). The search
+ * keeps at least 12rem beside the actions. The layout is the same with and
+ * without a chips row (the toolbar always sits in its region).
  *
  * Keyboard (the first toolbar on the page answers): `/` focuses the search;
  * `f` opens the filters (the filter trigger) on a list without "Add filter",
@@ -241,6 +244,34 @@ function useEmptyGroups(
   })
 }
 
+/**
+ * The phone layout (below a 28rem toolbar), a grid of three columns: the
+ * second line's start, the room the tokens need beyond the end group, the end
+ * group. Line 1: lead (columns 1-2), end group (3). Line 2: chips (1), tokens
+ * (2-3, at the end). Line 3: the query field's problem. The gaps are margins
+ * of the drawn controls, never grid gaps, so a line or a column that draws
+ * nothing (an empty group is out of the flow) takes no room at all.
+ */
+const PHONE = {
+  layout:
+    '@max-md/toolbar:grid @max-md/toolbar:grid-cols-[minmax(0,1fr)_auto_auto] @max-md/toolbar:gap-0',
+  lead: '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-3 @max-md/toolbar:row-start-1 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:gap-2',
+  // The strip's 4px padding keeps focus rings inside its scroll box; its top
+  // margin makes the 8px over line 2 with it.
+  tokens:
+    '@max-md/toolbar:col-start-2 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-1 @max-md/toolbar:-mb-1 @max-md/toolbar:ms-2 @max-md/toolbar:justify-self-end @max-md/toolbar:max-w-[60cqw]',
+  // No search or trigger: the tokens start the first line, before the end group.
+  tokensAlone:
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-3 @max-md/toolbar:row-start-1 @max-md/toolbar:-my-1 @max-md/toolbar:justify-self-end @max-md/toolbar:max-w-[60cqw]',
+  end: '@max-md/toolbar:col-start-3 @max-md/toolbar:row-start-1 @max-md/toolbar:ms-2 @max-md/toolbar:max-w-[calc(100cqw-12rem)]',
+  belowBesideTokens:
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4',
+  belowAlone:
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2',
+  status:
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-3 @max-md/toolbar:mt-2',
+}
+
 export function ListToolbar({
   search,
   filterToggle,
@@ -293,9 +324,9 @@ export function ListToolbar({
         'items-center',
         // The size container is the region around it (same width), with or
         // without a chips row, so the first chip changes no box. Below 28rem
-        // (a phone) the toolbar lends its controls to the region: the search
-        // keeps the first line and the chips, tokens and end group share the
-        // second, one row fewer before the data.
+        // (a phone) the toolbar lends its controls to the region's grid: the
+        // search and the end group share the first line, the chips and tokens
+        // the second.
         'min-w-0 basis-full @max-md/toolbar:contents'
       )}
     >
@@ -312,23 +343,19 @@ export function ListToolbar({
             'items-start'
           )}
         >
-          {search ? (
-            // A phone gives the search its own line.
-            <div
-              data-slot="list-toolbar-lead"
-              className="contents @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:basis-full @max-md/toolbar:gap-2"
-            >
+          {lead ? (
+            // A phone gives the search (or the lone filter trigger) the start
+            // of the first line, the end group the rest of it.
+            <div data-slot="list-toolbar-lead" className={cn('contents', PHONE.lead)}>
               {lead}
             </div>
-          ) : (
-            lead
-          )}
+          ) : null}
           {start ? (
-            // A phone keeps the tokens on the actions' line in a strip that
+            // A phone keeps the tokens on the second line in a strip that
             // scrolls sideways instead of wrapping (edge fade when more is
-            // hidden), anchored to the end beside the icon actions (Add
-            // filter stays with them), at most 60% of the line: the chips
-            // own the start, so a chip appearing moves no token.
+            // hidden), anchored to the end (Add filter stays with them), at
+            // most 60% of the line: the chips own the start, so a chip
+            // appearing moves no token.
             // In Query mode the text owns the filter: the tokens stay in their
             // place, dimmed and inert (no focus, no click, no `f`), so the
             // switch moves nothing (the end group never re-flows up a line).
@@ -341,9 +368,9 @@ export function ListToolbar({
                 top && '*:opacity-50',
                 'contents @max-md/toolbar:flex @max-md/toolbar:flex-nowrap @max-md/toolbar:items-center @max-md/toolbar:gap-2 @max-md/toolbar:*:max-w-none @max-md/toolbar:*:shrink-0',
                 // The padding keeps focus rings inside the scroll box.
-                'no-scrollbar @max-md/toolbar:-my-1 @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
+                'no-scrollbar @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
                 EDGE_FADE_X_CLASS,
-                '@max-md/toolbar:order-last @max-md/toolbar:ms-auto @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_0_auto]',
+                lead ? PHONE.tokens : PHONE.tokensAlone,
                 EMPTY_GROUP_CLASS
               )}
             >
@@ -353,9 +380,10 @@ export function ListToolbar({
         </div>
       ) : null}
       {end ? (
-        // Never wider than the toolbar: on a phone its controls wrap onto a
-        // second line instead of running past the edge (kept on one line,
-        // two links on a scan's runs ran off the left edge in Vietnamese).
+        // Never wider than the toolbar: its controls wrap instead of running
+        // past the edge (kept on one line, two links on a scan's runs ran off
+        // the left edge in Vietnamese). On a phone it ends the search's line
+        // and leaves the search at least 12rem.
         <div
           ref={endRef}
           data-slot="list-toolbar-end"
@@ -364,15 +392,7 @@ export function ListToolbar({
             // At the row's top: a start group that grows (two lines, the
             // expanded query editor) never moves Views, Group and Display.
             'items-center self-start',
-            '@max-md/toolbar:order-last',
-            // On a phone the tokens' auto margin pushes both to the end: a
-            // second one here would split the free room between them, and the
-            // first chip (which takes that room) would move the tokens. With
-            // the tokens out of the flow (nothing drawn) the end group keeps
-            // its own auto margin, so it sits at the end before and after the
-            // first chip.
-            start &&
-              '@max-md/toolbar:ms-0 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-auto',
+            PHONE.end,
             EMPTY_GROUP_CLASS
           )}
         >
@@ -396,9 +416,10 @@ export function ListToolbar({
               'flex h-control min-w-0 items-center max-md:h-control-touch',
               below
                 ? // Beside the chips row; a phone gives it the last line.
-                  'flex-[1_1_0%] @max-md/toolbar:order-last @max-md/toolbar:flex-[0_0_100%]'
+                  'flex-[1_1_0%]'
                 : // A row of its own under the toolbar; on a phone after line 2.
-                  'basis-full @max-md/toolbar:order-last'
+                  'basis-full',
+              PHONE.status
             )
           : 'contents'
       }
@@ -407,36 +428,42 @@ export function ListToolbar({
 
   return (
     // The region is the size container, so the toolbar's controls answer by
-    // the same width when the toolbar box is lent out (a phone).
+    // the same width when the toolbar box is lent out (a phone). A container
+    // query never styles the container itself, so the layout is the box inside.
     <div
       ref={regionRef}
       data-slot="list-toolbar-region"
       data-fold={fold ? 'true' : undefined}
-      className={cn(
-        'group/toolbar @container/toolbar flex min-w-0 flex-wrap items-center gap-2',
-        className
-      )}
+      className={cn('group/toolbar @container/toolbar min-w-0', className)}
     >
-      {toolbar}
-      {below ? (
-        <div
-          data-testid="data-table-toolbar-below"
-          data-slot="list-toolbar-below"
-          className={cn(
-            // Hidden while it holds nothing to show: an empty row, or a chips row
-            // whose only (leading) chip renders nothing.
-            'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden @max-md/toolbar:min-w-0 @max-md/toolbar:flex-[1_1_0%]',
-            // With a problem shown the row is as wide as what it holds (the
-            // leading chip, at most half the line as before) and the problem
-            // takes the rest of the line: the list does not move.
-            statusShown &&
-              '@md/toolbar:max-w-[50%] @md/toolbar:flex-[0_0_auto] @md/toolbar:[&_[data-slot=filter-chips-leading]]:max-w-full'
-          )}
-        >
-          {below}
-        </div>
-      ) : null}
-      {status}
+      <div
+        data-slot="list-toolbar-layout"
+        className={cn('flex min-w-0 flex-wrap items-center gap-2', PHONE.layout)}
+      >
+        {toolbar}
+        {below ? (
+          <div
+            data-testid="data-table-toolbar-below"
+            data-slot="list-toolbar-below"
+            className={cn(
+              // Hidden while it holds nothing to show: an empty row, or a chips row
+              // whose only (leading) chip renders nothing.
+              'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden',
+              // A phone: the start of the second line; the whole line when no
+              // token is drawn there.
+              lead && start ? PHONE.belowBesideTokens : PHONE.belowAlone,
+              // With a problem shown the row is as wide as what it holds (the
+              // leading chip, at most half the line as before) and the problem
+              // takes the rest of the line: the list does not move.
+              statusShown &&
+                '@md/toolbar:max-w-[50%] @md/toolbar:flex-[0_0_auto] @md/toolbar:[&_[data-slot=filter-chips-leading]]:max-w-full'
+            )}
+          >
+            {below}
+          </div>
+        ) : null}
+        {status}
+      </div>
     </div>
   )
 }
