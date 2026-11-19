@@ -20,6 +20,7 @@
   "activity.item.sending": "Đang gửi…",
   "activity.listLabel": "Hoạt động",
   "activity.loadMore": "Tải thêm",
+  "activity.loadTitle": "hoạt động",
   "activity.repeated": "{count} lần",
   "activity.repeatedLast": "{count} lần, lần cuối lúc {time}",
   "activity.trigger.commentsMany": "{count} bình luận",

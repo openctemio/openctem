@@ -72,6 +72,7 @@ import {
   runTargetNote,
   runTaskProgress,
   runTriggeredByLabel,
+  runTriggerTypeLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
 import { isManagedScan, managedScanLabel } from '@/features/scans/lib/scan-status'
@@ -82,10 +83,6 @@ import { useRunChannels } from '@/hooks/use-websocket'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import {
-  SCAN_RUN_TRIGGER_LABELS,
-  type ScanWorkflowTriggerType,
-} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
@@ -332,10 +329,7 @@ export default function ScanDetailPage() {
             <span>{runTriggeredByLabel(row.original, t)}</span>
           ) : (
             <>
-              <span>
-                {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
-                  row.original.trigger_type}
-              </span>
+              <span>{runTriggerTypeLabel(row.original.trigger_type, t)}</span>
               {runTriggeredByLabel(row.original, t) && (
                 <span className="text-xs text-muted-foreground">
                   {runTriggeredByLabel(row.original, t)}

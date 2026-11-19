@@ -30,6 +30,8 @@
   "vulnPage.cvss.noUserAction": "no user action",
   "vulnPage.cvss.physical": "physical",
   "vulnPage.cvss.userAction": "user action",
+  "vulnPage.detail.loadAffectedAssets": "affected assets",
+  "vulnPage.detail.loadVulnerability": "the vulnerability",
   "vulnPage.emergingState.acknowledged": "acknowledged",
   "vulnPage.emergingState.new": "new",
   "vulnPage.emergingState.not_affected": "not affected",
