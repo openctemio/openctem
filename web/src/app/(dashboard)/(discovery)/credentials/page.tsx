@@ -1,6 +1,14 @@
 'use client'
 
-import { useState, useMemo, useEffect, type ReactNode } from 'react'
+/**
+ * /credentials: leaked credentials tied to the organization, one row per
+ * leak, or grouped by identity. Filters, search, sort, page and grouping live
+ * in the URL; the server filters and counts within the caller's data scope.
+ * The list follows the shared list pattern (web/docs/ui-style-contract.md,
+ * "Lists"). Masked values stay masked: rows and cards never carry the secret.
+ */
+
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react'
 import { post } from '@/lib/api/client'
 import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -8,15 +16,26 @@ import { Main } from '@/components/layout'
 import {
   ErrorState,
   PageHeader,
-  StatusBadge,
   SeverityBadge,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
+  EmptyState,
+  FilterSheet,
   MetricStrip,
   type MetricStripItem,
   PageStack,
 } from '@/features/shared'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import {
+  ListCount,
+  ListTitleRow,
+  ListViewChanged,
+} from '@/features/shared/components/list-title-row'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
+import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
 import {
   AssetDetailSheet,
   StatCard,
@@ -28,6 +47,8 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -44,13 +65,12 @@ import {
   Clock,
   CheckCircle,
   Copy,
-  User,
-  Calendar,
   Layers,
+  MoreHorizontal,
+  RefreshCw,
 } from 'lucide-react'
 import type { Asset } from '@/features/assets'
 import type { CredentialLeakRow } from '@/features/credentials/lib'
-import type { Severity, Status } from '@/features/shared/types'
 import {
   useCredentialsApi,
   useCredentialIdentitiesApi,
@@ -58,74 +78,94 @@ import {
   useRelatedCredentialsApi,
   useCredentialEnumsApi,
   buildCredentialsEndpoint,
-  CREDENTIAL_TYPES,
   mapCredentialsToAssets,
   CredentialIdentityGroups,
   invalidateCredentialsCache,
   LeakedSecretField,
 } from '@/features/credentials'
+import {
+  asSeverity,
+  CREDENTIAL_SEVERITIES,
+  CREDENTIAL_STATUSES,
+  CREDENTIAL_STATUS_STATES,
+  CredentialFacetsPanel,
+  type CredentialFilterName,
+  CredentialPhoneCard,
+  CredentialStatusCell,
+  credentialSeverityLabel,
+  credentialSourceLabel,
+  type CredentialStatus,
+  credentialStatusLabel,
+  credentialTypeLabel,
+  daysSince,
+  LeakDate,
+  listValues,
+} from '@/features/credentials/components/credential-list-parts'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { accessStateOf } from '@/lib/api/access-state'
 import type { ApiCredential } from '@/features/credentials/api/credential-api.types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { exportToCsv } from '@/hooks/use-csv-export'
-import { useUrlFilter } from '@/hooks/use-url-param'
-import { resetListPage, useListParams, DEFAULT_PAGE_SIZES } from '@/hooks/use-list-params'
+import { replaceUrlSearch, useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams, DEFAULT_PAGE_SIZES } from '@/hooks/use-list-params'
 import { useTranslation } from '@/context/i18n-provider'
-import { useSearchQuery } from '@/hooks/use-search-query'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { Permission, usePermissions } from '@/lib/permissions'
 
-// Filter types
-type StatusFilter = Status | 'all'
-
-const STATUS_FILTERS: StatusFilter[] = ['all', 'active', 'completed', 'inactive']
 const PAGE_SIZES = [...DEFAULT_PAGE_SIZES]
 const SORT_FIELDS = ['severity', 'first_seen_at'] as const
-const SEVERITY_FILTERS = ['critical', 'high']
-
-/** The leak date shown in the list: the breach date when the import gave one. */
-function daysSince(date: string): number {
-  return Math.ceil((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24))
+const DEFAULT_SORT = '-first_seen_at'
+const FILTER_DEFAULTS: Record<CredentialFilterName, string> = {
+  status: '',
+  source: '',
+  severity: '',
 }
+const FILTER_NAMES = Object.keys(FILTER_DEFAULTS) as CredentialFilterName[]
+const PANEL_ID = 'credential-filters'
+
+/**
+ * Columns that step aside while the table frame is narrower than this (px);
+ * they stay under Display > Columns. Frame = screen - 326 at 1440 and 1280.
+ */
+const CREDENTIAL_HIDE_BELOW = {
+  username: 1200,
+  discovered: 1000,
+  source: 760,
+  status: 700,
+} as const
+
+/**
+ * Column widths (px). Every column but the credential has a fixed width, so
+ * the credential takes what is left (at least `name`). Source holds
+ * "Underground forum" ("Diễn đàn ngầm"); the leak date holds a date and
+ * "Recent" ("Gần đây").
+ */
+const CREDENTIAL_WIDTH = {
+  name: 220,
+  source: 152,
+  username: 168,
+  leakDate: 152,
+  discovered: 136,
+  status: 152,
+  severity: 152,
+} as const
 
 export default function CredentialsPage() {
   const { t, locale } = useTranslation()
-  // Build API filters based on UI filters. Filters live in the URL so a filtered
-  // view is shareable and survives reload (matching the findings/assets pages).
-  const [statusFilter, setStatusFilterRaw] = useUrlFilter('status', 'all') as [
-    StatusFilter,
-    (v: StatusFilter) => void,
-  ]
-  const [sourceFilter, setSourceFilterRaw] = useUrlFilter('source', 'all')
-  const [severityFilter, setSeverityFilterRaw] = useUrlFilter('severity', '')
-  // Search is server-side (the list and identity endpoints both take it), so it
-  // lives in the URL like the other filters and is debounced per keystroke.
-  const [searchQuery, setSearchQueryRaw] = useUrlFilter('q', '')
-  const debouncedSearch = useSearchQuery(searchQuery).term
-  // A filter change returns to page 1.
-  const setStatusFilter = (v: StatusFilter) => {
-    setStatusFilterRaw(v)
-    resetListPage()
-  }
-  const setSourceFilter = (v: string) => {
-    setSourceFilterRaw(v)
-    resetListPage()
-  }
-  const setSeverityFilter = (v: string) => {
-    setSeverityFilterRaw(v)
-    resetListPage()
-  }
-  const setSearchQuery = (v: string) => {
-    setSearchQueryRaw(v)
-    resetListPage()
-  }
-  // Page, page size and sort are in the URL and go to the API as they are.
-  const list = useListParams({
+  // Page, size, sort, search and the filters are in the URL and go to the
+  // API as they are. Status, source and severity take several values each.
+  const list = useListParams<CredentialFilterName>({
     pageSizes: PAGE_SIZES,
     sortFields: SORT_FIELDS,
-    defaultSort: '-first_seen_at',
+    defaultSort: DEFAULT_SORT,
+    filters: { ...FILTER_DEFAULTS },
   })
+  const statuses = listValues(list.filters.status, CREDENTIAL_STATUSES) as CredentialStatus[]
+  const severities = listValues(list.filters.severity, CREDENTIAL_SEVERITIES)
+  // Sources come from the server's list; the old page's "all" is no source.
+  const sources = listValues(list.filters.source).filter((s) => s !== 'all')
   // Group by identity is a view of the same leaks ("Group by", in the URL). The
   // old List / By identity tabs map over: ?tab=identity → ?group=identity.
   const [groupParam, setGroupParam] = useUrlFilter('group', '')
@@ -135,39 +175,41 @@ export default function CredentialsPage() {
     if (tabParam) setTabParam('')
   }, [tabParam, setTabParam, setGroupParam])
   const viewMode: 'list' | 'identity' = groupParam === 'identity' ? 'identity' : 'list'
+  const identityView = viewMode === 'identity'
 
-  // Map status filter to API state filter
-  const apiStateFilter = useMemo(() => {
-    const statusToState: Partial<Record<StatusFilter, string[]>> = {
-      active: ['active'],
-      completed: ['resolved'],
-      inactive: ['accepted', 'false_positive'],
-    }
-    return statusToState[statusFilter] ?? []
-  }, [statusFilter])
+  // The statuses' API states.
+  const apiStateFilter = useMemo(
+    () => statuses.flatMap((s) => CREDENTIAL_STATUS_STATES[s]),
+    // statuses is derived from the URL value each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [list.filters.status]
+  )
 
   const { data: enums } = useCredentialEnumsApi()
   const sourceOptions = enums?.source_types ?? []
-  const sourceLabel = (v: string) => t(`credentials.source.${v}`, v.replace(/_/g, ' '))
+  const sourceLabel = (v: string) => credentialSourceLabel(t, v)
 
+  const searchTerm = list.searchTerm.trim()
   const listFilters = useMemo(
     () => ({
       page: list.page,
       per_page: list.perPage,
       sort: list.sort || undefined,
       state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
-      source: sourceFilter !== 'all' ? [sourceFilter] : undefined,
-      severity: SEVERITY_FILTERS.includes(severityFilter) ? [severityFilter] : undefined,
-      search: debouncedSearch.trim() || undefined,
+      source: sources.length > 0 ? sources : undefined,
+      severity: severities.length > 0 ? severities : undefined,
+      search: searchTerm || undefined,
     }),
+    // sources and severities are derived from the URL values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       list.page,
       list.perPage,
       list.sort,
       apiStateFilter,
-      sourceFilter,
-      severityFilter,
-      debouncedSearch,
+      list.filters.source,
+      list.filters.severity,
+      searchTerm,
     ]
   )
 
@@ -175,6 +217,7 @@ export default function CredentialsPage() {
   const {
     data: apiResponse,
     isLoading,
+    isValidating,
     error: listError,
     mutate,
   } = useCredentialsApi(listFilters, undefined, viewMode === 'list')
@@ -184,20 +227,30 @@ export default function CredentialsPage() {
   // GET /credentials/stats, built on the same scoped filter as the list, so
   // they agree with it; they used to be counted from the first 100 rows of
   // a second list request, wrong past 100 (research/81).
-  const { data: credentialStats, isLoading: statsLoading } = useCredentialStatsApi()
+  const {
+    data: credentialStats,
+    isLoading: statsLoading,
+    mutate: mutateStats,
+  } = useCredentialStatsApi()
 
   // Fetch identities (grouped by username/email) for identity view
-  const { data: identitiesResponse, isLoading: identitiesLoading } = useCredentialIdentitiesApi(
+  const {
+    data: identitiesResponse,
+    isLoading: identitiesLoading,
+    isValidating: identitiesValidating,
+    error: identitiesError,
+    mutate: mutateIdentities,
+  } = useCredentialIdentitiesApi(
     {
       // Client-side paginated like the credentials table above, over at most
       // 100 identities (the API maximum per page).
       page: 1,
       per_page: 100,
       state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
-      search: debouncedSearch.trim() || undefined,
+      search: searchTerm || undefined,
     },
     undefined,
-    viewMode === 'identity'
+    identityView
   )
 
   // Map API data to CredentialLeakRow type for UI compatibility
@@ -205,7 +258,16 @@ export default function CredentialsPage() {
     if (!apiResponse?.items) return []
     return mapCredentialsToAssets(apiResponse.items)
   }, [apiResponse])
-  const total = apiResponse?.total ?? credentials.length
+  const identities = identitiesResponse?.items ?? []
+  const total = identityView ? identities.length : (apiResponse?.total ?? credentials.length)
+  // When the rows on screen were read: on the first answer and at the end of
+  // each re-read (booleans, so a new response object alone re-renders nothing).
+  const [readAt, setReadAt] = useState<Date | undefined>(undefined)
+  const answered = identityView ? !!identitiesResponse : !!apiResponse
+  const reading = identityView ? !!identitiesValidating : !!isValidating
+  useEffect(() => {
+    if (answered && !reading) setReadAt(new Date())
+  }, [answered, reading])
 
   const stats = useMemo(() => {
     const byState = credentialStats?.by_state ?? {}
@@ -214,8 +276,6 @@ export default function CredentialsPage() {
       total: credentialStats?.total ?? 0,
       active: byState.active ?? 0,
       resolved: byState.resolved ?? 0,
-      accepted: byState.accepted ?? 0,
-      falsePositive: byState.false_positive ?? 0,
       critical: bySeverity.critical ?? 0,
       high: bySeverity.high ?? 0,
     }
@@ -225,131 +285,153 @@ export default function CredentialsPage() {
   const { can } = usePermissions()
   const canResolve = can(Permission.CredentialsWrite)
 
-  // Status counts from API stats
-  const statusCounts = {
-    all: stats.total,
-    active: stats.active,
-    completed: stats.resolved,
-    inactive: stats.accepted + stats.falsePositive,
-  }
-  const statusLabels: Record<string, string> = {
-    all: t('credentials.filter.allStatuses', 'All statuses'),
-    active: t('credentials.status.active', 'Active'),
-    completed: t('credentials.status.resolved', 'Resolved'),
-    inactive: t('credentials.status.inactive', 'Inactive'),
-  }
+  const { setFilter, setSearch } = list
+  const only = (name: CredentialFilterName, value: string) =>
+    list.filters[name] === value ? setFilter(name, '') : setFilter(name, value)
 
   // Headline numbers. The status and severity metrics double as quick filters.
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
       label: t('credentials.metric.total', 'Total leaks'),
-      value: statusCounts.all,
+      value: stats.total,
       onClick: () => {
-        setStatusFilter('all')
-        setSeverityFilter('')
+        setFilter('status', '')
+        setFilter('severity', '')
       },
-      active: statusFilter === 'all' && !severityFilter,
+      active: !list.filters.status && !list.filters.severity,
     },
     {
       key: 'active',
       label: t('credentials.metric.active', 'Active'),
-      value: statusCounts.active,
+      value: stats.active,
       tone: 'danger',
-      onClick: () => setStatusFilter(statusFilter === 'active' ? 'all' : 'active'),
-      active: statusFilter === 'active',
+      onClick: () => only('status', 'active'),
+      active: list.filters.status === 'active',
     },
     {
       key: 'critical',
       label: t('credentials.metric.critical', 'Critical'),
       value: stats.critical,
-      onClick: () => setSeverityFilter(severityFilter === 'critical' ? '' : 'critical'),
-      active: severityFilter === 'critical',
+      onClick: () => only('severity', 'critical'),
+      active: list.filters.severity === 'critical',
     },
     {
       key: 'high',
       label: t('credentials.metric.high', 'High'),
       value: stats.high,
-      onClick: () => setSeverityFilter(severityFilter === 'high' ? '' : 'high'),
-      active: severityFilter === 'high',
+      onClick: () => only('severity', 'high'),
+      active: list.filters.severity === 'high',
     },
     {
       key: 'resolved',
       label: t('credentials.metric.resolved', 'Resolved'),
-      value: statusCounts.completed,
-      onClick: () => setStatusFilter(statusFilter === 'completed' ? 'all' : 'completed'),
-      active: statusFilter === 'completed',
+      value: stats.resolved,
+      onClick: () => only('status', 'completed'),
+      active: list.filters.status === 'completed',
     },
   ]
 
   const formatDate = (date: string) => new Date(date).toLocaleDateString(locale)
 
-  // Table columns. No selection column: the page has no bulk actions, and a
-  // checkbox that selects rows nothing can act on is a dead control.
+  // One-line rows. No selection column: the page has no bulk actions, and a
+  // checkbox that selects rows nothing can act on is a dead control. A row
+  // opens its sheet; the row menu's View details does the same from the
+  // keyboard.
   const columns: ColumnDef<CredentialLeakRow>[] = [
     {
+      id: 'name',
       accessorKey: 'name',
       enableSorting: false,
+      enableHiding: false,
+      meta: {
+        kind: 'name',
+        pin: 'start',
+        minWidth: CREDENTIAL_WIDTH.name,
+        label: t('credentials.col.credential', 'Credential'),
+      },
       header: t('credentials.col.credential', 'Credential'),
-      cell: ({ row }) => (
-        <div className="flex min-w-0 items-center gap-2">
-          <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="truncate font-medium">{row.original.name}</p>
-            {row.original.description && (
-              <p className="truncate text-xs text-muted-foreground">{row.original.description}</p>
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'metadata.source',
-      header: t('credentials.col.source', 'Source'),
-      enableSorting: false,
-      cell: ({ row }) => (
-        <Badge variant="outline">
-          {row.original.metadata.source ? sourceLabel(row.original.metadata.source) : '-'}
-        </Badge>
-      ),
-    },
-    {
-      accessorKey: 'metadata.username',
-      header: t('credentials.col.username', 'Username'),
-      enableSorting: false,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <User className="h-3 w-3 text-muted-foreground" />
-          <span className="font-mono text-sm">{row.original.metadata.username || '-'}</span>
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'metadata.leakDate',
-      header: t('credentials.col.leakDate', 'Leak date'),
-      enableSorting: false,
       cell: ({ row }) => {
-        const date = row.original.metadata.leakDate
-        if (!date) return <span className="text-muted-foreground">-</span>
-        const isRecent = daysSince(date) <= 30
+        const name = toDisplayText(row.original.name, 200)
+        const type = credentialTypeLabel(t, row.original.metadata.credentialType)
         return (
-          <div className="flex items-center gap-1 tabular-nums">
-            <Calendar className="h-3 w-3 text-muted-foreground" />
-            <span className={cn(isRecent && 'font-medium text-destructive')}>
-              {formatDate(date)}
+          // The identifier, then its type where the cell has room for it.
+          <span
+            className="@container flex min-w-0 items-center gap-2 whitespace-nowrap"
+            title={`${name} (${type})`}
+          >
+            <span className="min-w-0 truncate font-medium">
+              {name || <span className="text-muted-foreground">—</span>}
             </span>
-            {isRecent && (
-              <Badge variant="destructive" className="ms-1 text-xs">
-                {t('credentials.badge.recent', 'Recent')}
-              </Badge>
-            )}
-          </div>
+            <span className="hidden min-w-0 shrink-0 truncate text-meta text-muted-foreground @[16rem]:inline">
+              {type}
+            </span>
+          </span>
         )
       },
     },
     {
+      id: 'source',
+      accessorKey: 'metadata.source',
+      enableSorting: false,
+      meta: {
+        kind: 'text',
+        width: CREDENTIAL_WIDTH.source,
+        hideBelow: CREDENTIAL_HIDE_BELOW.source,
+        label: t('credentials.col.source', 'Source'),
+      },
+      header: t('credentials.col.source', 'Source'),
+      cell: ({ row }) => (
+        <span className="block truncate">
+          {row.original.metadata.source ? (
+            sourceLabel(row.original.metadata.source)
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'username',
+      accessorKey: 'metadata.username',
+      enableSorting: false,
+      meta: {
+        kind: 'text',
+        width: CREDENTIAL_WIDTH.username,
+        hideBelow: CREDENTIAL_HIDE_BELOW.username,
+        label: t('credentials.col.username', 'Username'),
+      },
+      header: t('credentials.col.username', 'Username'),
+      cell: ({ row }) => {
+        const user = toDisplayText(row.original.metadata.username, 200)
+        return (
+          <span className="block truncate" title={user}>
+            {user || <span className="text-muted-foreground">—</span>}
+          </span>
+        )
+      },
+    },
+    {
+      id: 'leak_date',
+      accessorKey: 'metadata.leakDate',
+      enableSorting: false,
+      meta: {
+        kind: 'date',
+        width: CREDENTIAL_WIDTH.leakDate,
+        label: t('credentials.col.leakDate', 'Leak date'),
+      },
+      header: t('credentials.col.leakDate', 'Leak date'),
+      cell: ({ row }) => <LeakDate date={row.original.metadata.leakDate} />,
+    },
+    {
       id: 'first_seen_at',
       accessorKey: 'firstSeen',
+      meta: {
+        kind: 'date',
+        width: CREDENTIAL_WIDTH.discovered,
+        hideBelow: CREDENTIAL_HIDE_BELOW.discovered,
+        label: t('credentials.col.discovered', 'Discovered'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -360,18 +442,30 @@ export default function CredentialsPage() {
         row.original.firstSeen ? (
           <span className="tabular-nums">{formatDate(row.original.firstSeen)}</span>
         ) : (
-          <span className="text-muted-foreground">-</span>
+          <span className="text-muted-foreground">—</span>
         ),
     },
     {
+      id: 'status',
       accessorKey: 'status',
-      header: t('credentials.col.status', 'Status'),
       enableSorting: false,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      meta: {
+        kind: 'status',
+        width: CREDENTIAL_WIDTH.status,
+        hideBelow: CREDENTIAL_HIDE_BELOW.status,
+        label: t('credentials.col.status', 'Status'),
+      },
+      header: t('credentials.col.status', 'Status'),
+      cell: ({ row }) => <CredentialStatusCell status={row.original.status} />,
     },
     {
       id: 'severity',
       accessorFn: (row) => row.metadata.severity,
+      meta: {
+        kind: 'severity',
+        width: CREDENTIAL_WIDTH.severity,
+        label: t('credentials.col.severity', 'Severity'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('credentials.col.severity', 'Severity')} />
       ),
@@ -380,6 +474,8 @@ export default function CredentialsPage() {
     {
       id: 'actions',
       enableSorting: false,
+      enableHiding: false,
+      meta: { kind: 'actions' },
       cell: ({ row }) => {
         const credential = row.original
         return (
@@ -491,75 +587,292 @@ export default function CredentialsPage() {
     }
   }
 
-  // Search + status apply to both views (both endpoints take them); the source
-  // filter only applies to the list.
-  const search = {
-    value: searchQuery,
-    onChange: setSearchQuery,
-    placeholder: t('credentials.search.placeholder', 'Search credentials…'),
-    label: t('credentials.search.aria', 'Search credentials'),
+  // The filters that apply to the view on screen: the identities endpoint
+  // takes the search and the status only.
+  const appliedFilters: CredentialFilterName[] = identityView ? ['status'] : FILTER_NAMES
+  // The values each filter really sends (an unknown status or severity in a
+  // link is dropped, so it gets no chip either).
+  const filterValues: Record<CredentialFilterName, string[]> = {
+    status: statuses,
+    severity: severities,
+    source: sources,
   }
-  const statusSelect = (
-    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-      <SelectTrigger
-        className="w-auto min-w-36"
-        aria-label={t('credentials.filter.status', 'Filter by status')}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {STATUS_FILTERS.map((value) => (
-          <SelectItem key={value} value={value}>
-            {statusLabels[value]} ({statusCounts[value as keyof typeof statusCounts] || 0})
-          </SelectItem>
+  const activeCount = appliedFilters.reduce((n, name) => n + filterValues[name].length, 0)
+  const narrowed = activeCount > 0 || list.q !== ''
+  const viewChanged = narrowed || list.sort !== DEFAULT_SORT || identityView
+
+  const clearFilters = useCallback(() => {
+    setSearch('')
+    for (const name of FILTER_NAMES) setFilter(name, '')
+  }, [setSearch, setFilter])
+  // Back to the list as it opens: no filter, no search, no grouping, the
+  // default order (the page size stays).
+  const backToList = useCallback(() => {
+    const next = new URLSearchParams()
+    const perPage = new URLSearchParams(window.location.search).get('per_page')
+    if (perPage) next.set('per_page', perPage)
+    replaceUrlSearch(next)
+  }, [])
+
+  // One chip per filter, its values joined.
+  const chipText: Record<CredentialFilterName, (values: string[]) => string> = {
+    status: (v) =>
+      t('credentials.chip.status', 'Status: {values}', {
+        values: v.map((s) => credentialStatusLabel(t, s as CredentialStatus)).join(', '),
+      }),
+    severity: (v) =>
+      t('credentials.chip.severity', 'Severity: {values}', {
+        values: v.map((s) => credentialSeverityLabel(t, s)).join(', '),
+      }),
+    source: (v) =>
+      t('credentials.chip.source', 'Source: {values}', {
+        values: v.map(sourceLabel).join(', '),
+      }),
+  }
+  const chipList = appliedFilters
+    .filter((name) => filterValues[name].length > 0)
+    .map((name) => ({
+      key: name,
+      text: toDisplayText(chipText[name](filterValues[name]), 120),
+      clear: () => setFilter(name, ''),
+    }))
+  const chipsRow =
+    chipList.length > 0 ? (
+      <FilterChipsRow
+        data-testid="credential-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chipList.map((c) => (
+          <RemovableFilterChip
+            key={c.key}
+            text={c.text}
+            onRemove={c.clear}
+            removeLabel={t('credentials.chip.remove', 'Remove filter {filter}', {
+              filter: c.text,
+            })}
+          />
         ))}
-      </SelectContent>
-    </Select>
+        onClearAll={chipList.length > 1 ? clearFilters : undefined}
+      />
+    ) : undefined
+
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const groupValue: 'none' | 'identity' = identityView ? 'identity' : 'none'
+  const setGroup = (v: 'none' | 'identity') => setGroupParam(v === 'none' ? '' : v)
+  const facets = (withGroup: boolean) => (
+    <CredentialFacetsPanel
+      filters={list.filters}
+      sources={sourceOptions}
+      activeCount={activeCount}
+      identityView={identityView}
+      onChange={setFilter}
+      onClearAll={clearFilters}
+      group={withGroup ? { value: groupValue, onChange: setGroup } : undefined}
+    />
   )
-  const sourceSelect = (
-    <Select value={sourceFilter} onValueChange={setSourceFilter}>
-      <SelectTrigger
-        className="w-auto min-w-36"
-        aria-label={t('credentials.filter.source', 'Filter by source')}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">{t('credentials.filter.allSources', 'All sources')}</SelectItem>
-        {sourceOptions.map((v) => (
-          <SelectItem key={v} value={v}>
-            {sourceLabel(v)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
+
+  const groupLabels = [
+    t('credentials.group.none', 'No grouping'),
+    t('credentials.group.identity', 'Identity'),
+  ]
+  const groupText = groupLabels[identityView ? 1 : 0]
+  // Group sits at the toolbar's end from 768 px; on a phone it is in the
+  // Filters sheet, so the toolbar's second line holds only the chips.
   const groupSelect = (
-    <Select
-      value={viewMode === 'identity' ? 'identity' : 'none'}
-      onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}
-    >
+    <Select value={groupValue} onValueChange={(v) => setGroup(v as 'none' | 'identity')}>
       <SelectTrigger
-        className="w-auto gap-2 sm:min-w-36"
+        iconOnlyBelow="@5xl/toolbar"
+        className="w-auto gap-2 max-md:hidden"
         aria-label={t('credentials.group.aria', 'Group credential leaks')}
+        title={groupText}
       >
-        <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="sr-only sm:not-sr-only">
-          <SelectValue />
+        <Layers className="h-4 w-4 text-muted-foreground" aria-hidden />
+        {/* One width whatever the grouping: sized by every label. */}
+        <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+          <ToolbarSlot options={groupLabels} className="max-w-40">
+            <SelectValue />
+          </ToolbarSlot>
         </span>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="none">{t('credentials.group.none', 'No grouping')}</SelectItem>
-        <SelectItem value="identity">{t('credentials.group.identity', 'Identity')}</SelectItem>
+        <SelectItem value="none">{groupLabels[0]}</SelectItem>
+        <SelectItem value="identity">{groupLabels[1]}</SelectItem>
       </SelectContent>
     </Select>
   )
 
-  const hasFilters =
-    !!searchQuery || statusFilter !== 'all' || sourceFilter !== 'all' || !!severityFilter
-  const emptyDescription = hasFilters
-    ? t('credentials.empty.filtered', 'Try removing a filter or clearing the search.')
-    : t('credentials.empty.none', 'Leaked credentials appear here once imported or discovered.')
+  // Title row: the view, its count once, Modified + Reset; Refresh, Export
+  // and More at the end. Under 42rem of row width (and on a phone) Reset
+  // and Export fold into More.
+  const viewTitle = t('credentials.list.viewAll', 'All credential leaks')
+  const refreshLabel = t('credentials.list.refresh', 'Refresh')
+  const activeValidating = identityView ? false : isValidating && !isLoading
+  const refresh = () => {
+    void mutateStats()
+    void (identityView ? mutateIdentities() : mutate())
+  }
+  const refreshButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={refresh}
+          disabled={activeValidating}
+          aria-label={refreshLabel}
+        >
+          <RefreshCw
+            className={cn('h-4 w-4', activeValidating && 'animate-spin motion-reduce:animate-none')}
+            aria-hidden
+          />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{refreshLabel}</TooltipContent>
+    </Tooltip>
+  )
+  const exportLabel = t('credentials.export.label', 'Export')
+  // Export writes the list's rows; grouped by identity there are none loaded.
+  const exportBlocked = identityView
+    ? t('credentials.export.listOnly', 'Export works on the ungrouped list')
+    : !credentials.length
+      ? t('credentials.export.nothing', 'No leaks to export')
+      : isExporting
+        ? t('credentials.export.running', 'Exporting…')
+        : undefined
+  const moreItems: ActionMenuEntry[] = [
+    ...(viewChanged
+      ? [{ id: 'view-reset', label: t('common.listView.reset', 'Reset'), onSelect: backToList }]
+      : []),
+    {
+      id: 'export',
+      label: exportLabel,
+      section: 'io',
+      disabledReason: exportBlocked,
+      onSelect: () => setConfirmExport(true),
+    },
+  ]
+  const narrowMore = (
+    <ActionMenu
+      title={viewTitle}
+      label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+      items={moreItems}
+      trigger={
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t('common.actionMenu.more', 'More actions')}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      }
+    />
+  )
+  const listLoading = identityView ? identitiesLoading && !identitiesResponse : isLoading
+  const titleRow = (
+    <ListTitleRow
+      data-testid="credentials-title-row"
+      className="@container/actions"
+      title={viewTitle}
+      count={
+        <ListCount
+          total={total}
+          loading={listLoading}
+          label={
+            identityView
+              ? t(
+                  'credentials.list.totalIdentities',
+                  '{count, plural, one {# identity} other {# identities}}',
+                  { count: total }
+                )
+              : t('credentials.list.total', '{count, plural, one {# leak} other {# leaks}}', {
+                  count: total,
+                })
+          }
+        />
+      }
+      start={
+        <ListViewChanged
+          changed={viewChanged}
+          // On a row under 42rem Reset is in the row's More.
+          actionsClassName="hidden @2xl/actions:flex"
+          onReset={backToList}
+        />
+      }
+    >
+      {refreshButton}
+      <Button
+        variant="outline"
+        size="sm"
+        className="hidden @2xl/actions:inline-flex"
+        onClick={() => setConfirmExport(true)}
+        disabled={!!exportBlocked}
+        title={exportBlocked}
+      >
+        <Download aria-hidden />
+        {exportLabel}
+      </Button>
+      <div className="@2xl/actions:hidden">{narrowMore}</div>
+    </ListTitleRow>
+  )
+
+  const activeError = identityView ? identitiesError : listError
+  const noAccess = accessStateOf(activeError) === 'no_access'
+  const hasRows = identityView ? !!identitiesResponse : !!apiResponse
+  const firstRun = hasRows && !activeError && total === 0 && !narrowed
+
+  const search = {
+    value: list.q,
+    onChange: setSearch,
+    placeholder: t('credentials.search.placeholder', 'Search credentials…'),
+    label: t('credentials.search.aria', 'Search credentials'),
+  }
+  const filtersLabel = t('credentials.filtersLabel', 'Credential filters')
+  // The table's shared parts, the same in both views.
+  const tableProps = {
+    showSearch: false,
+    search,
+    // One filter entry per width: Add filter from 768, this button (joined to
+    // the search field) on a phone, where it opens the sheet.
+    filterToggle: {
+      open: false,
+      onToggle: () => setSheetOpen(true),
+      onOpenSheet: () => setSheetOpen(true),
+      activeCount,
+      controlsId: PANEL_ID,
+      label: filtersLabel,
+      sheetOnly: true,
+    },
+    toolbarStart: <AddFilterPanel>{facets(false)}</AddFilterPanel>,
+    toolbarEnd: groupSelect,
+    toolbarBelow: chipsRow,
+    // A first run has nothing to search, filter or arrange.
+    showToolbar: !firstRun,
+    staleAt: readAt,
+    onRefresh: refresh,
+    onRowClick: (c: CredentialLeakRow) => setSelectedCredential(c),
+    mobileRow: (c: CredentialLeakRow) => (
+      <CredentialPhoneCard item={c} onOpen={() => setSelectedCredential(c)} />
+    ),
+    isFiltered: narrowed,
+    onClearFilters: clearFilters,
+    emptyState: {
+      nothingYet: (
+        <EmptyState
+          icon={KeyRound}
+          title={t('credentials.empty.title', 'No credential leaks found')}
+          description={t(
+            'credentials.empty.none',
+            'Leaked credentials appear here once imported or discovered.'
+          )}
+        />
+      ),
+      noMatch: {
+        title: identityView
+          ? t('credentials.identity.emptyTitle', 'No identities found')
+          : t('credentials.noMatch', 'No leaks match these filters'),
+        hint: t('credentials.empty.filtered', 'Try removing a filter or clearing the search.'),
+      },
+    },
+  }
 
   const severityValue = selectedCredential?.metadata.severity
   const leakDate = selectedCredential?.metadata.leakDate
@@ -570,92 +883,101 @@ export default function CredentialsPage() {
         <PageStack>
           <PageHeader
             title={t('credentials.page.title', 'Credential leaks')}
-            description={t(
-              'credentials.page.description',
-              'Leaked passwords, keys and tokens tied to your organisation, from breaches, code and the dark web.'
-            )}
-          >
-            <Button
-              iconOnlyBelow="sm"
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmExport(true)}
-              disabled={!credentials.length || isExporting}
-            >
-              <Download className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">
-                {t('credentials.export.label', 'Export')}
+            // On a phone the list comes first: the description is read out
+            // but not drawn, and the tiles follow the list.
+            description={
+              <span className="max-md:sr-only">
+                {t(
+                  'credentials.page.description',
+                  'Leaked passwords, keys and tokens tied to your organization, from breaches, code and the dark web.'
+                )}
               </span>
-            </Button>
-          </PageHeader>
+            }
+          />
 
-          <MetricStrip loading={statsLoading} items={metrics} />
+          <MetricStrip loading={statsLoading && !credentialStats} items={metrics} listFirst />
+          {titleRow}
 
-          {viewMode === 'identity' ? (
+          {noAccess ? (
+            <NoAccessState title={t('credentials.error.list', 'credential leaks')} />
+          ) : identityView ? (
             <CredentialIdentityGroups
-              identities={identitiesResponse?.items ?? []}
+              identities={identities}
               isLoading={identitiesLoading && !identitiesResponse}
               columns={columns}
               onRowClick={(c) => setSelectedCredential(c)}
-              resetKey={`${debouncedSearch}|${statusFilter}`}
+              resetKey={`${searchTerm}|${list.filters.status}`}
               search={search}
-              toolbarStart={statusSelect}
-              toolbarEnd={groupSelect}
               emptyMessage={t('credentials.identity.emptyTitle', 'No identities found')}
-              emptyDescription={
-                searchQuery || statusFilter !== 'all'
-                  ? t('credentials.empty.filtered', 'Try removing a filter or clearing the search.')
-                  : t(
-                      'credentials.identity.emptyNone',
-                      'Identities appear here once leaked credentials are imported.'
-                    )
-              }
+              error={identitiesError && !identitiesResponse ? identitiesError : undefined}
+              onRetry={() => void mutateIdentities()}
+              errorTitle={t('credentials.error.identities', 'credential identities')}
+              tableProps={{
+                ...tableProps,
+                emptyState: {
+                  ...tableProps.emptyState,
+                  nothingYet: (
+                    <EmptyState
+                      icon={KeyRound}
+                      title={t('credentials.identity.emptyTitle', 'No identities found')}
+                      description={t(
+                        'credentials.identity.emptyNone',
+                        'Identities appear here once leaked credentials are imported.'
+                      )}
+                    />
+                  ),
+                },
+              }}
             />
-          ) : listError && !apiResponse ? (
-            <ErrorState
-              title={t('credentials.error.list', 'credential leaks')}
-              error={listError}
-              onRetry={() => void mutate()}
-            />
-          ) : isLoading ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-72" />
-                <Skeleton className="h-9 w-40" />
-                <Skeleton className="h-9 w-36" />
-              </div>
-              <div className="space-y-2 rounded-md border p-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            </div>
           ) : (
             <DataTable
               columns={columns}
               data={credentials}
+              {...tableProps}
+              // The toolbar's search box reads the server; the table's own box stays off.
               showSearch={false}
-              search={search}
-              toolbarStart={
-                <>
-                  {statusSelect}
-                  {sourceSelect}
-                </>
-              }
-              toolbarEnd={groupSelect}
+              error={listError && !apiResponse ? listError : undefined}
+              onRetry={() => void mutate()}
+              errorTitle={t('credentials.error.list', 'credential leaks')}
               getRowId={(c) => c.id}
               manualPagination
               rowCount={total}
               pagination={list.pagination}
               onPaginationChange={list.setPagination}
+              pageSize={list.perPage}
               pageSizeOptions={PAGE_SIZES}
               sorting={list.sorting}
               onSortingChange={list.setSorting}
-              onRowClick={(c) => setSelectedCredential(c)}
-              emptyMessage={t('credentials.empty.title', 'No credential leaks found')}
-              emptyDescription={emptyDescription}
+              isLoading={isLoading && !apiResponse}
+              isRefreshing={activeValidating}
+              refreshingLabel={t('credentials.list.refreshing', 'Refreshing credential leaks')}
+              refreshFailed={!!listError && !!apiResponse}
+              paginationNoun={t('credentials.list.noun', 'leaks')}
             />
           )}
+
+          <FilterSheet
+            open={sheetOpen}
+            onOpenChange={setSheetOpen}
+            title={filtersLabel}
+            resultLabel={
+              identityView
+                ? t(
+                    'credentials.filter.showIdentities',
+                    '{count, plural, one {Show # identity} other {Show # identities}}',
+                    { count: total }
+                  )
+                : t(
+                    'credentials.filter.show',
+                    '{count, plural, one {Show # leak} other {Show # leaks}}',
+                    {
+                      count: total,
+                    }
+                  )
+            }
+          >
+            {facets(true)}
+          </FilterSheet>
         </PageStack>
       </Main>
 
@@ -805,22 +1127,6 @@ export default function CredentialsPage() {
       />
     </>
   )
-}
-
-/** The translated label of an API credential type; an unknown type shows as returned. */
-function credentialTypeLabel(t: ReturnType<typeof useTranslation>['t'], type: string): string {
-  const known = (CREDENTIAL_TYPES as readonly string[]).includes(type || 'password')
-  const value = type || 'password'
-  return known ? t(`credentials.type.${value}`, value) : value
-}
-
-// ============================================
-// IDENTITY ROW COMPONENT
-// ============================================
-
-/** API severities are free strings; the shared badge falls back for unknown ones. */
-function asSeverity(value: string | undefined): Severity {
-  return (value ?? 'none') as Severity
 }
 
 /** One leaked credential as a clickable line (identity exposures, related exposures). */

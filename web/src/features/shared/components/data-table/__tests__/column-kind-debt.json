@@ -7,7 +7,6 @@
   "console/src/features/admin-console/components/organization-users-section.tsx": 5,
   "console/src/features/verified-domains/components/verified-domains-list.tsx": 4,
   "src/app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx": 13,
-  "src/app/(dashboard)/(discovery)/credentials/page.tsx": 7,
   "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 6,
   "src/app/(dashboard)/(mobilization)/automations/page.tsx": 13,
   "src/app/(dashboard)/(mobilization)/exceptions/page.tsx": 6,
