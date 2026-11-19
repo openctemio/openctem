@@ -89,9 +89,9 @@ describe('/business-impact', () => {
     crown.mockReturnValue({ ...idle, error: apiError, mutate: retryCrown })
     businessUnits.mockReturnValue({ ...idle, data: { data: [], total: 0 } })
     render(<BusinessImpactPage />)
-    expect(screen.getByText(/Failed to load business impact figures/i)).toBeInTheDocument()
-    expect(screen.getByText(/Failed to load asset criticality/i)).toBeInTheDocument()
-    expect(screen.getByText(/Failed to load crown jewels/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load business impact figures/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load asset criticality/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load crown jewels/i)).toBeInTheDocument()
     expect(screen.queryByText(/No crown jewels yet/i)).not.toBeInTheDocument()
     const retries = screen.getAllByRole('button', { name: /retry/i })
     expect(retries).toHaveLength(3)
@@ -114,7 +114,7 @@ describe('/threat-intel', () => {
     const retry = vi.fn()
     threatStats.mockReturnValue({ ...stats, error: apiError, mutate: retry })
     render(<ThreatIntelPage />)
-    expect(screen.getByText(/Failed to load threat intelligence/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load threat intelligence/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
@@ -133,7 +133,7 @@ describe('/threat-intel', () => {
   it('shows a failed CVE lookup as an error with Retry, not as "not found"', async () => {
     await lookup(Object.assign(new Error('upstream 503'), { statusCode: 503 }))
     await waitFor(() =>
-      expect(screen.getByText(/Failed to load the CVE lookup/i)).toBeInTheDocument()
+      expect(screen.getByText(/Couldn't load the CVE lookup/i)).toBeInTheDocument()
     )
     expect(screen.queryByText(/CVE not found/i)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
@@ -143,6 +143,6 @@ describe('/threat-intel', () => {
   it('keeps "not found" for a 404, which is the answer', async () => {
     await lookup(Object.assign(new Error('missing'), { statusCode: 404 }))
     await waitFor(() => expect(screen.getByText(/CVE not found/i)).toBeInTheDocument())
-    expect(screen.queryByText(/Failed to load/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't load/i)).not.toBeInTheDocument()
   })
 })

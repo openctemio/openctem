@@ -133,7 +133,7 @@ export function ConfirmView({ id }: { id: string | null }) {
       <pre className="bg-surface-sunken text-dense max-h-96 overflow-auto rounded-md p-3 break-words whitespace-pre-wrap">
         {item.summary}
       </pre>
-      <EntryBanner tone="warn" role="alert">
+      <EntryBanner tone="warn">
         {t(
           'mcp.confirm.warning',
           'Only confirm if you asked the application to do this. An application can be tricked by content it reads.'

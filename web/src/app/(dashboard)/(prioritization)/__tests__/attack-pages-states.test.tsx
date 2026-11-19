@@ -41,7 +41,7 @@ describe('/exposure-chains', () => {
       mutate: vi.fn(),
     })
     render(<ExposureChainsPage />)
-    expect(screen.getByText(/Failed to load exposure chains/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load exposure chains/i)).toBeInTheDocument()
     expect(screen.queryByText(/No relationship data yet/i)).not.toBeInTheDocument()
   })
 

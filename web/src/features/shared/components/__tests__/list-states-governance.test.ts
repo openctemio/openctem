@@ -16,7 +16,6 @@ const ALLOW_LIST = [
   'src/features/access-control/components/teams-section.tsx',
   'src/features/assets/components/resolved-ports-section.tsx',
   'src/features/capabilities/components/capability-table.tsx',
-  'src/features/credentials/components/credential-identity-groups.tsx',
   'src/features/findings/components/detail/related-tab.tsx',
   'src/features/my-work/components/finding-queue.tsx',
   'src/features/pentest/components/pentest-findings-section.tsx',
@@ -32,7 +31,6 @@ const ALLOW_LIST = [
   'src/features/threat-intel/components/threat-actors-panel.tsx',
   'src/features/threat-model/components/threat-model-table.tsx',
   'src/features/tools/components/tool-table.tsx',
-  'src/features/vulnerabilities/components/vulnerability-catalog-table.tsx',
 ]
 
 const SRC = join(__dirname, '..', '..', '..', '..')

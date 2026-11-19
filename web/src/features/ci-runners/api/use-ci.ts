@@ -136,11 +136,15 @@ export function useSaveCISettings() {
   )
 }
 
-export function useTrustConfigs({ enabled = true }: { enabled?: boolean } = {}) {
+export function useTrustConfigs({
+  enabled = true,
+  refreshInterval = 0,
+}: { enabled?: boolean; refreshInterval?: number } = {}) {
   const { currentTenant } = useTenant()
   return useSWR<{ data?: CITrustConfig[] }>(
     currentTenant && enabled ? TRUST : null,
-    (url: string) => get<{ data?: CITrustConfig[] }>(url)
+    (url: string) => get<{ data?: CITrustConfig[] }>(url),
+    { refreshInterval }
   )
 }
 

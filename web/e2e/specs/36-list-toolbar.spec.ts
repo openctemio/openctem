@@ -34,7 +34,7 @@ const PAGES: readonly { route: string; filter: boolean | 'phone' }[] = [
   { route: '/assets/groups', filter: 'phone' },
   { route: '/settings/audit-log', filter: false },
   { route: '/remediation/tasks', filter: false },
-  { route: '/credentials', filter: false },
+  { route: '/credentials', filter: 'phone' },
 ]
 
 async function openToolbar(page: Page, route: string): Promise<boolean> {
