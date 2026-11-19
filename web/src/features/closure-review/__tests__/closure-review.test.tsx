@@ -89,8 +89,8 @@ describe('ReadyToCloseList', () => {
       })
     )
     // The toast's sentence is said in the status region too.
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Closed 1 findings'))
-    expect(announcer()).toHaveTextContent('Closed 1 findings')
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Closed 1 finding'))
+    expect(announcer()).toHaveTextContent('Closed 1 finding')
   })
 
   it('confirms the selected rows in one decision and says what was skipped', async () => {

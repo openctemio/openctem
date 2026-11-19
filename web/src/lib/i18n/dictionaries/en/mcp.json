@@ -260,7 +260,7 @@
   "mcp.scope.scopeCheck.title": "Check whether a target is inside your authorized testing scope, read only",
   "mcp.status.anyClient": "Unverified applications allowed",
   "mcp.status.canComment": "Read and comment",
-  "mcp.status.days": "Connections last {days} days",
+  "mcp.status.days": "Connections last {days, plural, one {# day} other {# days}}",
   "mcp.status.label": "Status",
   "mcp.status.off": "Off",
   "mcp.status.offHint": "No AI application or API key can use the MCP server.",

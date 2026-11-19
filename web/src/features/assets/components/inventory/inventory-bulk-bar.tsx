@@ -194,7 +194,7 @@ export function useInventoryTableBulk({
         rowLabel: (a) => toDisplayText(a.name, 80),
         checkboxLabel: (a) =>
           t('assets.inv.selectAsset', 'Select asset {name}', { name: toDisplayText(a.name, 80) }),
-        noun: t('assets.bulk.selectedNoun', 'assets selected'),
+        noun: (count) => t('assets.bulk.selectedNoun', 'assets selected', { count }),
         onSelectionChange: setSelection,
         actions: actions.actions,
         more: actions.more,
@@ -212,7 +212,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <BulkActionBar
         count={bulk.available ? selected.length : 0}
         onClear={onClear}
-        noun={t('assets.bulk.selectedNoun', 'assets selected')}
+        noun={(count) => t('assets.bulk.selectedNoun', 'assets selected', { count })}
         more={bulk.more}
       >
         {bulk.actions}

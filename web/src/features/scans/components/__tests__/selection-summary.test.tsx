@@ -94,7 +94,7 @@ describe('SelectionSummary', () => {
     )
     expect(
       screen.getByText(
-        'The scan runs on the 1 targets that can be scanned and leaves out the other 1.'
+        'The scan runs on the 1 target that can be scanned and leaves out the other 1.'
       )
     ).toBeInTheDocument()
     expect(screen.queryByText(/Nothing to scan/)).toBeNull()

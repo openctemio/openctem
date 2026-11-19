@@ -103,7 +103,7 @@
   "notificationChannels.status.pending": "Pending",
   "notificationChannels.toast.deleteFailed": "Failed to delete integration",
   "notificationChannels.toast.deleted": "Integration \"{name}\" deleted",
-  "notificationChannels.toast.rateLimited": "Rate limit exceeded. Please wait {seconds} seconds before trying again.",
+  "notificationChannels.toast.rateLimited": "Rate limit exceeded. Please wait {seconds, plural, one {# second} other {# seconds}} before trying again.",
   "notificationChannels.toast.refreshFailed": "Failed to refresh integrations",
   "notificationChannels.toast.refreshed": "Integrations refreshed",
   "notificationChannels.toast.testError": "Failed to send test notification",

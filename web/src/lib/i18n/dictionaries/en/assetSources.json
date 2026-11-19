@@ -51,7 +51,7 @@
   "assetSources.preview.run": "Preview",
   "assetSources.preview.sample": "Assets with sources (sample)",
   "assetSources.preview.searchAsset": "Search an asset by name",
-  "assetSources.preview.summary": "{assets} of {scanned} assets would change ({values} values). {conflicts} conflicts.",
+  "assetSources.preview.summary": "{assets} of {scanned} assets would change ({values, plural, one {# value} other {# values}}). {conflicts, plural, one {# conflict} other {# conflicts}}.",
   "assetSources.preview.title": "Preview",
   "assetSources.preview.truncated": "Only the first 5000 assets were checked.",
   "assetSources.remove": "Stop ranking {name} separately",

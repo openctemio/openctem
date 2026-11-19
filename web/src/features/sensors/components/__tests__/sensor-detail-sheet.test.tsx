@@ -409,7 +409,7 @@ describe('SensorDetailSheet', () => {
         },
       })
       const stats = screen.getByLabelText('Key numbers')
-      expect(within(stats).getByText('1 slots free, host busy')).toBeInTheDocument()
+      expect(within(stats).getByText('1 slot free, host busy')).toBeInTheDocument()
     })
 
     it('more jobs than the capacity it reports now is said as over capacity, never "0 slots free"', () => {

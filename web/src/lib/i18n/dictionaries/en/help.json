@@ -15,7 +15,7 @@
   "help.licenses.col.component": "Component",
   "help.licenses.col.license": "License",
   "help.licenses.col.version": "Version",
-  "help.licenses.count": "{count} components",
+  "help.licenses.count": "{count, plural, one {# component} other {# components}}",
   "help.licenses.description": "The open-source components this build is made of, with their licenses. The list is generated when the release is built.",
   "help.licenses.empty": "No components listed",
   "help.licenses.lead": "This build is made of {total} open-source components: {api} in the API and {web} in the web app. The list is generated when the release is built.",
