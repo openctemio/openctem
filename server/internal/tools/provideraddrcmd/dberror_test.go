@@ -1,6 +1,7 @@
 package provideraddrcmd
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -19,7 +20,7 @@ func TestDBErrorText_NeverEchoesThePassword(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db, err := sql.Open("postgres", tc.url)
 			if err == nil {
-				err = db.Ping()
+				err = db.PingContext(context.Background())
 				_ = db.Close()
 			}
 			if err == nil {
