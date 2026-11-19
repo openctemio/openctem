@@ -4,7 +4,7 @@
  *
  * The decision comes from the person's memberships, never from a refusal:
  *
- * - no organization they can open: the account space (`/welcome`, or the page
+ * - no organization they can open: the account space (`/account/organizations`, or the page
  *   they came for when an account session may open it, such as an
  *   invitation), with an account-only token;
  * - exactly one: that organization's token. When the organization does not

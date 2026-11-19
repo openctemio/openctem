@@ -34,6 +34,16 @@ export const SIDEBAR_CONTEXT_ROW_CLASS =
 export const SIDEBAR_CHIP_CLASS =
   'flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-cap font-semibold text-sidebar-accent-foreground ring-1 ring-border'
 
+/**
+ * The trailing icon slot of the header's two rows: the collapse button above
+ * and the organization row's chevron below sit in a box of the button's size
+ * (32 px, 36 on phones), flush with the header's 8 px side padding, so both
+ * icons share one centre line. `-me-1.5` lets the slot reach the row's edge
+ * past the context row's own 6 px padding.
+ */
+export const SIDEBAR_TRAILING_SLOT_CLASS =
+  'flex w-control max-md:w-control-touch shrink-0 items-center justify-center'
+
 interface SidebarBrandProps {
   /** Where the logo links to when the sidebar is expanded. */
   href?: string
@@ -95,10 +105,11 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
   }
 
   return (
-    // 36px row, 6px before the logo and 4px after the 32px toggle.
+    // 36px row, 6px before the logo; the toggle ends at the row's edge, like the
+    // organization row's chevron below.
     <div
       data-slot="sidebar-brand-row"
-      className="flex h-9 items-center gap-2 ps-1.5 pe-1 in-data-[mobile=true]:h-11"
+      className="flex h-9 items-center gap-2 ps-1.5 pe-0 in-data-[mobile=true]:h-11"
     >
       <Link
         href={href}

@@ -37,13 +37,13 @@ describe('landingFor', () => {
 
 describe('landingHref', () => {
   it('a new account with no organization lands on /welcome, not on the dashboard', () => {
-    expect(landingHref({ kind: 'account' }, '/')).toBe('/welcome')
-    expect(landingHref({ kind: 'account' }, '/findings')).toBe('/welcome')
+    expect(landingHref({ kind: 'account' }, '/')).toBe('/account/organizations')
+    expect(landingHref({ kind: 'account' }, '/findings')).toBe('/account/organizations')
   })
   it('an invited person without an organization goes back to the invitation', () => {
     expect(landingHref({ kind: 'account' }, '/invitations')).toBe('/invitations')
     expect(landingHref({ kind: 'account' }, '/account/security/')).toBe('/account/security/')
-    expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/welcome')
+    expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/account/organizations')
   })
   it('an organization that requires 2FA opens its setup, then the organization', () => {
     expect(landingHref({ kind: 'two_factor', tenantId: ORG }, '/findings')).toBe(

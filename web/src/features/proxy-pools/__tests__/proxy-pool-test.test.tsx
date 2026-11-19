@@ -208,7 +208,7 @@ describe('Test button', () => {
     const picker = await screen.findByTestId('test-sensor-picker')
     expect(within(picker).getByText('Edge A')).toBeTruthy()
     expect(within(picker).queryByText('Gone')).toBeNull()
-    expect(screen.getByText(/1 other sensors are offline/)).toBeTruthy()
+    expect(screen.getByText(/1 other sensor is offline/)).toBeTruthy()
     const run = screen.getByRole('button', { name: 'Run test' }) as HTMLButtonElement
     expect(run.disabled).toBe(true)
     fireEvent.click(screen.getByLabelText('Edge A'))

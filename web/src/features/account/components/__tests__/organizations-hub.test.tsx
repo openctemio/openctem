@@ -1,7 +1,9 @@
 /**
- * The /welcome hub (api RFC-141): invitations with accept and decline, create
- * an organization only where the API's policy says so, and the guidance for a
- * self-hosted installation where only the administrator creates organizations.
+ * The account's Organizations page (api RFC-141, formerly /welcome): the
+ * person's own memberships with their one next step, invitations with accept
+ * and decline, create an organization only where the API's policy says so, and
+ * the guidance for a self-hosted installation where only the administrator
+ * creates organizations.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -10,23 +12,33 @@ import userEvent from '@testing-library/user-event'
 import type { OnboardingOptions } from '@/features/auth/actions/local-auth-actions'
 import { en, vi as vi_ } from '@/lib/i18n/dictionaries'
 
-import { WelcomeHub } from '../welcome-hub'
+import { OrganizationsHub } from '../organizations-hub'
 
 const mocks = vi.hoisted(() => ({
   options: vi.fn(),
   accept: vi.fn(),
   decline: vi.fn(),
+  tenants: vi.fn(),
+  select: vi.fn(),
+  logout: vi.fn(),
+  profile: vi.fn(),
 }))
 
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
   onboardingOptionsAction: mocks.options,
   onboardingAcceptAction: mocks.accept,
+  selectTenantAction: mocks.select,
+  localLogoutAction: mocks.logout,
 }))
+vi.mock('@/lib/api/user-tenant-hooks', () => ({
+  useMyTenants: () => ({ data: mocks.tenants() }),
+}))
+vi.mock('@/lib/session-navigation', () => ({ navigateAfterSessionChange: vi.fn() }))
 vi.mock('@/features/auth/actions/account-space-actions', () => ({
   onboardingDeclineAction: mocks.decline,
 }))
 vi.mock('../../api', () => ({
-  useProfile: () => ({ profile: { name: 'Alice', email: 'alice@acme.io' } }),
+  useProfile: () => ({ profile: mocks.profile() }),
 }))
 vi.mock('@/features/tenant/components/create-team-form', () => ({
   CreateTeamForm: () => <form aria-label="create organization form" />,
@@ -67,38 +79,43 @@ const INVITATIONS: OnboardingOptions['invitations'] = [
 
 async function renderHub(opts: OnboardingOptions) {
   mocks.options.mockResolvedValue({ success: true, options: opts })
-  render(<WelcomeHub needsSession={false} />)
+  render(<OrganizationsHub needsSession={false} />)
   await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
 }
 
-describe('WelcomeHub', () => {
+describe('OrganizationsHub', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.tenants.mockReturnValue([])
+    mocks.profile.mockReturnValue({ name: 'Alice', email: 'alice@acme.io' })
   })
 
-  it('lists the invitations with accept and decline, and the account links', async () => {
+  it('lists the invitations with accept and decline', async () => {
     await renderHub(options({ invitations: INVITATIONS }))
     expect(screen.getByText('Acme Security')).toBeInTheDocument()
     expect(screen.getByText('Beta Corp')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Join' })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Decline' })).toHaveLength(2)
-    expect(screen.getByRole('link', { name: /Profile/ })).toHaveAttribute('href', '/account')
-    expect(screen.getByRole('link', { name: /Security/ })).toHaveAttribute(
-      'href',
-      '/account/security'
-    )
-    expect(screen.getByRole('link', { name: /Sessions/ })).toHaveAttribute(
-      'href',
-      '/account/security#sessions'
-    )
-    expect(screen.getByRole('link', { name: /Sign-in methods/ })).toHaveAttribute(
-      'href',
-      '/account/security#sign-in-methods'
-    )
-    expect(screen.getByRole('link', { name: /Preferences/ })).toHaveAttribute(
-      'href',
-      '/account/preferences'
-    )
+  })
+
+  it('says which address the invitations were sent to, and never shows the label without it', async () => {
+    await renderHub(options({ invitations: INVITATIONS }))
+    expect(screen.getByText('Sent to alice@acme.io')).toBeInTheDocument()
+  })
+
+  it('drops the "Sent to" line when the person\'s address is not known', async () => {
+    mocks.profile.mockReturnValue({ name: 'Alice' })
+    await renderHub(options({ invitations: INVITATIONS }))
+    expect(screen.getByText('Acme Security')).toBeInTheDocument()
+    expect(screen.queryByText(/Sent to/)).not.toBeInTheDocument()
+  })
+
+  it('asks to verify the address without a dangling name when it is not known', async () => {
+    mocks.profile.mockReturnValue({ name: 'Alice' })
+    await renderHub(options({ email_verified: false }))
+    expect(
+      screen.getByText('Verify your email address to see the invitations sent to it.')
+    ).toBeInTheDocument()
   })
 
   it('accepts an invitation by its reference', async () => {
@@ -129,8 +146,6 @@ describe('WelcomeHub', () => {
     expect(screen.queryByText('Create an organization')).not.toBeInTheDocument()
     expect(screen.queryByRole('form', { name: /create organization/i })).not.toBeInTheDocument()
     expect(screen.queryByText('Your invitations')).not.toBeInTheDocument()
-    // The account links stay.
-    expect(screen.getByText('Your account')).toBeInTheDocument()
   })
 
   it('invitations present, creation forbidden: still no create, still the guidance', async () => {
@@ -160,11 +175,10 @@ describe('WelcomeHub', () => {
     expect(screen.queryByText('Your invitations')).not.toBeInTheDocument()
   })
 
-  it('a failed load keeps the account links and offers a retry', async () => {
+  it('a failed load offers a retry', async () => {
     mocks.options.mockResolvedValue({ success: false, error: 'boom' })
-    render(<WelcomeHub needsSession={false} />)
+    render(<OrganizationsHub needsSession={false} />)
     await screen.findByRole('button', { name: /retry/i })
-    expect(screen.getByText('Your account')).toBeInTheDocument()
     expect(screen.queryByText('Create an organization')).not.toBeInTheDocument()
   })
 
@@ -172,7 +186,7 @@ describe('WelcomeHub', () => {
     const replace = vi.fn()
     vi.stubGlobal('location', { ...window.location, search: '', replace })
     try {
-      render(<WelcomeHub needsSession />)
+      render(<OrganizationsHub needsSession />)
       await waitFor(() => expect(replace).toHaveBeenCalledWith('/auth/continue'))
       // The options are not read before the session exists.
       expect(mocks.options).not.toHaveBeenCalled()
@@ -185,7 +199,7 @@ describe('WelcomeHub', () => {
     const replace = vi.fn()
     vi.stubGlobal('location', { ...window.location, search: '?start_failed=1', replace })
     try {
-      render(<WelcomeHub needsSession />)
+      render(<OrganizationsHub needsSession />)
       await screen.findByRole('button', { name: /retry/i })
       expect(replace).not.toHaveBeenCalled()
     } finally {
@@ -197,9 +211,69 @@ describe('WelcomeHub', () => {
 describe('welcome hub text', () => {
   it('has en and vi text for every welcome key', () => {
     const enKeys = Object.keys(en).filter((k) => k.startsWith('auth.welcome.'))
-    expect(enKeys.length).toBeGreaterThan(30)
+    expect(enKeys.length).toBeGreaterThan(15)
     for (const key of enKeys) {
       expect((vi_ as Record<string, string>)[key], key).toBeTruthy()
     }
+  })
+})
+
+const MEMBERSHIP = {
+  id: 't-1',
+  name: 'Example Org',
+  slug: 'example',
+  role: 'member' as const,
+  joined_at: '2026-01-01T00:00:00Z',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+describe('OrganizationsHub memberships', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('welcomes a person with no organization, and lists nothing else of any organization', async () => {
+    mocks.tenants.mockReturnValue([])
+    await renderHub(options())
+    expect(screen.getByTestId('organizations-first-run')).toHaveTextContent('Alice')
+    expect(screen.queryByTestId('account-memberships')).not.toBeInTheDocument()
+  })
+
+  it('lists only the own memberships: name, role and state, without the welcome', async () => {
+    mocks.tenants.mockReturnValue([
+      MEMBERSHIP,
+      { ...MEMBERSHIP, id: 't-2', name: 'Closed Org', blocked_reason: 'suspended' },
+    ])
+    await renderHub(options())
+    expect(screen.queryByTestId('organizations-first-run')).not.toBeInTheDocument()
+    const list = screen.getByTestId('account-memberships')
+    expect(list).toHaveTextContent('Example Org')
+    expect(list).toHaveTextContent('Your access is disabled')
+    // A blocked organization offers no way in.
+    expect(screen.getAllByRole('button', { name: 'Open' })).toHaveLength(1)
+  })
+
+  it('an organization that requires two-factor offers only setting it up, then opening again', async () => {
+    mocks.tenants.mockReturnValue([MEMBERSHIP])
+    mocks.select.mockResolvedValue({ success: false, code: 'MFA_ENROLLMENT_REQUIRED' })
+    await renderHub(options())
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+    expect(mocks.select).toHaveBeenCalledWith('t-1')
+    const setUp = await screen.findByRole('link', { name: 'Set up two-factor' })
+    expect(setUp).toHaveAttribute('href', '/account/security#two-factor')
+    // Still only the organization's own exchange can open it.
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument()
+  })
+
+  it('an organization that requires its own sign-in offers only that sign-in', async () => {
+    mocks.tenants.mockReturnValue([MEMBERSHIP])
+    mocks.select.mockResolvedValue({ success: false, code: 'SSO_REQUIRED' })
+    await renderHub(options())
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }))
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sign in with single sign-on' })
+    )
+    expect(mocks.logout).toHaveBeenCalledWith('/login?org=example')
+    expect(screen.queryByRole('link', { name: 'Set up two-factor' })).not.toBeInTheDocument()
   })
 })

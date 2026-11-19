@@ -18,7 +18,7 @@
   "letters.revoke": "Revoke",
   "letters.revokeFailed": "The letter could not be revoked",
   "letters.revoked": "Letter revoked: entries naming it no longer authorize",
-  "letters.status.endsSoon": "Ends in {days} days",
+  "letters.status.endsSoon": "Ends in {days, plural, one {# day} other {# days}}",
   "letters.status.expired": "Expired",
   "letters.status.inEffect": "In effect",
   "letters.status.notYet": "Not yet valid",

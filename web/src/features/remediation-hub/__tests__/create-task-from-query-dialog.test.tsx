@@ -162,7 +162,7 @@ describe('CreateTaskFromQueryDialog', () => {
     const panel = await openAndPreview(
       preview({ too_many: true, total: 1500, stats: undefined, conflicts: [] })
     )
-    expect(panel).toHaveTextContent('More than 1000 findings match')
+    expect(panel).toHaveTextContent('More than 1,000 findings match')
     expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
   })
 

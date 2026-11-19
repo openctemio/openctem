@@ -48,25 +48,27 @@ export const PUBLIC_ROUTES = [
 export type PublicRoute = (typeof PUBLIC_ROUTES)[number]
 
 /**
- * The pages a session without an organization (account-only) may open, besides
- * the public ones: the account hub and the personal account pages. Anything
- * else redirects to /welcome. The API enforces the same boundary with its own
+ * The account area (`app/(account)`): pages about the person, served by the
+ * account routes only. Every signed-in session may open them, with or without
+ * an organization, so a person whom an organization does not admit yet (its
+ * two-factor or single sign-on rule) still reaches their own settings. A session
+ * without an organization (account-only) may open nothing else: other pages
+ * redirect to ACCOUNT_HOME_PATH. The API enforces the same boundary with its own
  * allow-list of routes; this list only keeps the person off pages that would
- * show errors. Exact paths: `/account/activity` and the other tenant-data
- * account pages are not on it.
+ * show errors. Exact paths.
  */
 export const ACCOUNT_ONLY_PAGES = [
-  '/welcome',
   '/account',
   '/account/security',
   '/account/preferences',
   // The second-factor step an organization asks for before it admits the
   // session: a member without it holds only an account session.
   '/two-factor-setup',
+  '/account/organizations',
 ] as const
 
-/** Where an account-only session lands. */
-export const WELCOME_PATH = '/welcome'
+/** Where an account-only session lands: its organizations and invitations. */
+export const ACCOUNT_HOME_PATH = '/account/organizations'
 
 /** The tenant app's sign-in page. */
 export const LOGIN_PATH = '/login'

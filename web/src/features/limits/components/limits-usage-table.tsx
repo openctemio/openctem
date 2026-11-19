@@ -47,7 +47,7 @@ export function useLimitKeyLabel() {
 
 /**
  * Used/limit per limit of one organization: the console's organization
- * Limits tab and the organization's Settings > Usage & limits. Lowering a
+ * Limits tab and the organization's Settings > Usage and limits. Lowering a
  * limit never removes anything, so a row can be over its limit; it is
  * flagged, not hidden.
  */

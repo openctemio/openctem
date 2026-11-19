@@ -230,7 +230,7 @@ describe('an account-only session (signed in, no organization)', () => {
   const accountOnly = { refresh_token: JWT, auth_token: JWT, app_account_only: '1' }
 
   it.each([
-    '/welcome',
+    '/account/organizations',
     '/account',
     '/account/security',
     '/account/preferences',
@@ -253,10 +253,10 @@ describe('an account-only session (signed in, no organization)', () => {
     '/account/notifications',
     '/account/connected-apps',
     '/accountx',
-  ])('%s redirects to /welcome', (pathname) => {
+  ])('%s redirects to /account/organizations', (pathname) => {
     expect(decideAuth({ pathname, search: '?x=1', cookie: jar(accountOnly) })).toEqual({
       type: 'redirect',
-      location: '/welcome',
+      location: '/account/organizations',
       clearCookies: [],
     })
   })
@@ -276,7 +276,9 @@ describe('an account-only session (signed in, no organization)', () => {
   })
 
   it('treats a trailing slash like the page itself', () => {
-    expect(decideAuth({ pathname: '/welcome/', search: '', cookie: jar(accountOnly) })).toEqual({
+    expect(
+      decideAuth({ pathname: '/account/organizations/', search: '', cookie: jar(accountOnly) })
+    ).toEqual({
       type: 'allow',
     })
   })
@@ -288,25 +290,25 @@ describe('an account-only session (signed in, no organization)', () => {
     })
   })
 
-  it('sends a signed-out visitor of /welcome to the sign-in page, and clears the marker', () => {
+  it('sends a signed-out visitor of /account/organizations to the sign-in page, and clears the marker', () => {
     const decision = decideAuth({
-      pathname: '/welcome',
+      pathname: '/account/organizations',
       search: '',
       cookie: jar({ app_account_only: '1' }),
     })
     expect(decision).toMatchObject({
       type: 'redirect',
-      location: `/login?next=${encodeURIComponent('/welcome')}`,
+      location: `/login?next=${encodeURIComponent('/account/organizations')}`,
     })
     if (decision.type === 'redirect') expect(decision.clearCookies).toContain('app_account_only')
   })
 
-  it('redirects a page load through the proxy handler with a 307 to /welcome', () => {
+  it('redirects a page load through the proxy handler with a 307 to /account/organizations', () => {
     const req = new NextRequest('https://app.example/findings', {
       headers: { cookie: `refresh_token=${JWT}; app_account_only=1` },
     })
     const res = handleAuth(req)
     expect(res?.status).toBe(307)
-    expect(new URL(res!.headers.get('location')!).pathname).toBe('/welcome')
+    expect(new URL(res!.headers.get('location')!).pathname).toBe('/account/organizations')
   })
 })

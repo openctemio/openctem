@@ -5,7 +5,7 @@
  */
 
 import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
-import { ACCOUNT_ONLY_PAGES, WELCOME_PATH } from '@/lib/middleware/config'
+import { ACCOUNT_ONLY_PAGES, ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
 import { validateRedirectUrl } from '@/lib/redirect'
 
 import type { Landing } from './sign-in-landing'
@@ -13,7 +13,7 @@ import type { Landing } from './sign-in-landing'
 /** The route that decides the landing for the session in the cookies. */
 export const CONTINUE_PATH = '/auth/continue'
 
-/** On /welcome: the landing could not start an account session (no loop). */
+/** On /account/organizations: the landing could not start an account session (no loop). */
 export const CONTINUE_FAILED_PARAM = 'start_failed'
 
 export function continueHref(next: string): string {
@@ -43,9 +43,9 @@ export function landingHref(landing: Landing, rawNext: string | null | undefined
     case 'two_factor':
       return twoFactorSetupHref(next, landing.tenantId)
     case 'account':
-      return next !== '/' && accountSessionMayOpen(next) ? next : WELCOME_PATH
+      return next !== '/' && accountSessionMayOpen(next) ? next : ACCOUNT_HOME_PATH
     case 'unavailable':
-      return `${WELCOME_PATH}?${CONTINUE_FAILED_PARAM}=1`
+      return `${ACCOUNT_HOME_PATH}?${CONTINUE_FAILED_PARAM}=1`
     case 'signed_out':
       return '/login'
   }

@@ -90,9 +90,10 @@ const REVIEWED = new Set([
   // Step detail: href is linkHref() (features/exploration/lib/leads.ts), a fixed same-origin prefix
   // (/assets via assetDetailHref, /findings/, /scans/runs?run=) with the id URI-encoded.
   'features/exploration/components/lead-detail-sheet.tsx|Link|href={href}',
-  // Account space links: NAV and ACCOUNT_LINKS are constant same-origin paths in the same file.
-  'features/account/components/account-shell.tsx|Link|href={item.href}',
-  'features/account/components/welcome-hub.tsx|Link|href={item.href}',
+  // Account area navigation: ACCOUNT_NAV (config/account-nav.ts) holds literal same-origin paths;
+  // the brand link picks between ACCOUNT_HOME_PATH (a literal in lib/middleware/config.ts) and a literal.
+  'features/account/components/account-shell.tsx|Link|href={item.url}',
+  "features/account/components/account-shell.tsx|Link|href={organizationName === undefined ? ACCOUNT_HOME_PATH : '/account'}",
   // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
   // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
   'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',

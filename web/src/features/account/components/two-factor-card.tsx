@@ -102,7 +102,7 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
     !!requiredBy && (status?.enabled || status?.required_by_organization || !status?.grace_due_at)
 
   return (
-    <Card>
+    <Card id="two-factor" className="scroll-mt-4">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Smartphone className="h-5 w-5" aria-hidden />

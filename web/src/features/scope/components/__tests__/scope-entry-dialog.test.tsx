@@ -478,7 +478,7 @@ describe('ScopeEntryDialog: a pasted list', () => {
   it('refuses more than 1,000 values with a clear message', async () => {
     await paste(Array.from({ length: 1001 }, (_, i) => `h${i}.acme.io`).join('\n'))
     expect(await screen.findByTestId('scope-list-too-many')).toHaveTextContent(
-      'at most 1000 values and this one has 1001'
+      'at most 1,000 values and this one has 1001'
     )
   })
 
