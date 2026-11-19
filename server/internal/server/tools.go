@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/tools/compliancechecks"
 	"github.com/openctemio/openctem/server/internal/tools/findingpractice"
 	"github.com/openctemio/openctem/server/internal/tools/findingsourcebackfill"
+	"github.com/openctemio/openctem/server/internal/tools/provideraddrcmd"
 	"github.com/openctemio/openctem/server/internal/tools/receiptreattribute"
 	"github.com/openctemio/openctem/server/internal/tools/refingerprintcmd"
 	"github.com/openctemio/openctem/server/internal/tools/repomerge"
@@ -31,6 +32,7 @@ var tools = map[string]func(){
 	"finding-practice":        findingpractice.Main,
 	"finding-source-backfill": findingsourcebackfill.Main,
 	"compliance-checks":       compliancechecks.Main,
+	"provider-addresses":      provideraddrcmd.Main,
 }
 
 // toolFor returns the command named by argv0, or nil for the server.
