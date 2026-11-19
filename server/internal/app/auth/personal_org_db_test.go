@@ -312,6 +312,39 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		}
 	})
 
+	// A refused social sign-in (the second-factor gate is not wired) creates
+	// nothing: no organization row is left behind.
+	t.Run("social sign-in refused for the unwired 2FA gate creates no organization", func(t *testing.T) {
+		authCfg := config.AuthConfig{JWTSecret: "test-secret-test-secret-test-secret!", AccessTokenDuration: time.Minute,
+			RefreshTokenDuration: time.Hour, SessionDuration: time.Hour}
+		oauth := NewOAuthService(users, postgres.NewSessionRepository(sqlDB), postgres.NewRefreshTokenRepository(sqlDB),
+			config.OAuthConfig{Enabled: true, Google: config.OAuthProviderConfig{Enabled: true, ClientID: "c", ClientSecret: "s"}},
+			authCfg, logger.NewNop())
+		oauth.SetIdentityRepo(postgres.NewUserIdentityRepository(db))
+		oauth.SetSignupPolicy(policy)
+		oauth.SetInvitationLookup(tenants)
+		oauth.SetPersonalOrganizations(newService())
+		// No SetSecondFactorGate: fail closed.
+		email := "po-ng-" + shared.NewID().String() + "@example.com"
+		t.Cleanup(func() {
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE created_by IN (SELECT id FROM users WHERE email = $1)`, email)
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)`, email)
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM users WHERE email = $1`, email)
+		})
+		_, err := oauth.signIn(WithClientInfo(ctx, "198.51.100.31", "test"),
+			&OAuthUserInfo{Email: email, Name: "Gale Chen", HD: "example.com"}, OAuthProviderGoogle, "")
+		if !errors.Is(err, ErrOAuthExchangeFailed) {
+			t.Fatalf("sign-in without the gate: %v", err)
+		}
+		var n int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM tenant_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1`, email).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("a refused sign-in left %d membership(s)", n)
+		}
+	})
+
 	// L1: a domain claimed after the service read the domain facts is
 	// caught inside the transaction.
 	t.Run("a domain claim is rechecked in the transaction", func(t *testing.T) {
