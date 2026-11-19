@@ -34,7 +34,7 @@ export interface DismissSkip {
   reason: string
 }
 
-/** `POST /findings/bulk/dismiss[/preview]`: the outcome, or what it would be. */
+/** `POST /findings/bulk-dismissals[/preview]`: the outcome, or what it would be. */
 export interface DismissResult {
   bulk_id?: string
   status: string
@@ -52,7 +52,7 @@ export interface DismissResult {
   same_rule?: { tool: string; rule_id: string; count: number; suggest: boolean }
 }
 
-/** `POST /findings/bulk/dismiss/{id}/undo`. */
+/** `POST /findings/bulk-dismissals/{id}/reopen`. */
 export interface DismissUndoResult {
   bulk_id: string
   reopened: string[] | null
@@ -86,7 +86,7 @@ export function dismissBody(
 }
 
 export function previewBulkDismiss(body: Record<string, unknown>): Promise<DismissResult> {
-  return post<DismissResult>('/api/v1/findings/bulk/dismiss/preview', body)
+  return post<DismissResult>('/api/v1/findings/bulk-dismissals/preview', body)
 }
 
 /** Applies a Dismiss. A 403 STEP_UP_REQUIRED is answered by the API client's step-up flow. */
@@ -94,14 +94,17 @@ export function applyBulkDismiss(
   body: Record<string, unknown>,
   idempotencyKey: string
 ): Promise<DismissResult> {
-  return post<DismissResult>('/api/v1/findings/bulk/dismiss', {
+  return post<DismissResult>('/api/v1/findings/bulk-dismissals', {
     ...body,
     idempotency_key: idempotencyKey,
   })
 }
 
-export function undoBulkDismiss(bulkId: string): Promise<DismissUndoResult> {
-  return post<DismissUndoResult>(`/api/v1/findings/bulk/dismiss/${encodeURIComponent(bulkId)}/undo`)
+/** Undo: reopens what this Dismiss decided (the server calls it reopen). */
+export function reopenBulkDismiss(bulkId: string): Promise<DismissUndoResult> {
+  return post<DismissUndoResult>(
+    `/api/v1/findings/bulk-dismissals/${encodeURIComponent(bulkId)}/reopen`
+  )
 }
 
 /**
