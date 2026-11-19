@@ -308,8 +308,10 @@ func (r *AttributionRepository) AddressesOf(ctx context.Context, tenantID shared
 	for _, n := range names {
 		lower = append(lower, strings.ToLower(strings.TrimSpace(n)))
 	}
+	// Names are stored normalized (lower case, asset.NormalizeName): an exact
+	// match uses idx_assets_name_tenant_unique instead of scanning every asset.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT lower(src.name),
+		SELECT src.name,
 		       COALESCE((SELECT array_agg(DISTINCT ip.name)
 		                   FROM asset_relationships rel
 		                   JOIN assets ip ON ip.id = rel.target_asset_id AND ip.tenant_id = src.tenant_id
@@ -321,7 +323,7 @@ func (r *AttributionRepository) AddressesOf(ctx context.Context, tenantID shared
 		                        THEN src.properties->'ip_addresses' ELSE '[]'::jsonb END) e), '{}')
 		FROM assets src
 		WHERE src.tenant_id = $1 AND src.deleted_at IS NULL AND src.asset_type IN ('domain', 'subdomain')
-		  AND lower(src.name) = ANY($2)`, tenantID.String(), pq.Array(lower))
+		  AND src.name = ANY($2)`, tenantID.String(), pq.Array(lower))
 	if err != nil {
 		return nil, fmt.Errorf("addresses of names: %w", err)
 	}
