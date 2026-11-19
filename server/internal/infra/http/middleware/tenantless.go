@@ -10,8 +10,9 @@ import (
 
 // Account-only sessions (docs/architecture/tenantless-account-space.md).
 //
-// A signed-in person who belongs to no organization holds an access token
-// without a tenant claim. That token reaches only the routes below: the
+// Any signed-in person may hold an access token without a tenant claim: one
+// with no organization, and a member whose organization does not admit this
+// session yet (2FA not set up, its own sign-in required, suspended). That token reaches only the routes below: the
 // person's own account (profile, security, sessions, sign-in methods,
 // preferences), the organizations list (their own memberships, which is
 // empty) and creating one where the policy allows it, accepting an
@@ -55,6 +56,16 @@ var tenantlessRoutes = []string{
 	"POST /api/v1/me/pending-sign-in-link/describe",
 	"POST /api/v1/me/pending-sign-in-link/complete",
 	"POST /api/v1/me/pending-sign-in-link/cancel",
+	// Linking or unlinking an organization's own sign-in to this account
+	// (the service checks the membership and a typed proof): the step an
+	// organization that requires its identity provider asks for.
+	"GET /api/v1/me/sso-links",
+	"POST /api/v1/me/sso-links/{provider}/start",
+	"POST /api/v1/me/sso-links/{provider}/complete",
+	"DELETE /api/v1/me/sso-links/identities/{identity}",
+	// Leaving one of the account's organizations (step-up): the way out of
+	// one that does not admit the session.
+	"POST /api/v1/me/memberships/{id}/leave",
 	// Deleting the account (step-up).
 	"DELETE /api/v1/me/account",
 	"GET /api/v1/me/account/deletion",

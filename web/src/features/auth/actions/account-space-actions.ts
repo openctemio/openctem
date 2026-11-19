@@ -1,6 +1,6 @@
 /**
- * Server Actions of the account space (/welcome): start the account-only
- * session, and decline an invitation. Accepting an invitation and listing the
+ * Server Actions of the account space (/welcome): decline an invitation (the
+ * account-only session itself is started by /auth/continue). Accepting an invitation and listing the
  * offers stay in local-auth-actions.ts (onboardingAcceptAction,
  * onboardingOptionsAction).
  */
@@ -12,26 +12,6 @@ import { cookies } from 'next/headers'
 import { authEndpoints } from '@/lib/api/endpoints'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { env } from '@/lib/env'
-
-import { requestAccountToken, storeAccountSession } from '../lib/account-session'
-
-export type StartAccountSessionResult =
-  { success: true } | { success: false; code: 'HAS_ORGANIZATION' | 'SESSION' | 'ERROR' }
-
-/**
- * Gives the signed-in person an account-only access token (POST
- * /auth/account-token) when they hold only a refresh token, or a token that
- * has no organization (a social sign-in). A person who can open an
- * organization gets HAS_ORGANIZATION and is sent to the organization flow.
- */
-export async function startAccountSessionAction(): Promise<StartAccountSessionResult> {
-  const refreshToken = (await cookies()).get(env.auth.refreshCookieName)?.value
-  if (!refreshToken) return { success: false, code: 'SESSION' }
-  const result = await requestAccountToken(refreshToken)
-  if (!result.ok) return { success: false, code: result.code }
-  await storeAccountSession(result)
-  return { success: true }
-}
 
 export type OnboardingDeclineResult =
   { success: true } | { success: false; code?: string; error: string }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
 	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/server/internal/app/query"
@@ -50,6 +51,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/server/internal/app/module"
 	"github.com/openctemio/openctem/server/internal/app/orgrelay"
+	"github.com/openctemio/openctem/server/internal/app/privatedestinations"
 	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
@@ -141,7 +143,6 @@ import (
 	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
 	"github.com/openctemio/openctem/server/internal/app/tenantai"
 	"github.com/openctemio/openctem/server/internal/app/threatmodel"
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/server/internal/app/ticketmap"
 	toolsourceapp "github.com/openctemio/openctem/server/internal/app/toolsource"
@@ -1026,6 +1027,9 @@ type Services struct {
 	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
 	// is configured, which keeps the OAuth routes unregistered.
 	OAuth *auth.OAuthService
+	// PersonalOrgs makes the personal organization at sign-up (the sign-up
+	// policy switch).
+	PersonalOrgs *auth.PersonalOrganizations
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
@@ -1059,10 +1063,12 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
-	ThreatSource        *threatsource.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
+	// FeedWatch alerts and raises the all-user banner when vulnerability
+	// data goes stale, in every feed mode; nil without platform settings.
+	FeedWatch *feedwatch.Service
 	// LookupJobs asks the platform's instance-scope sensors passive
 	// questions for an organization (lookup.ct@1).
 	LookupJobs    *lookupjobapp.Service
@@ -1073,7 +1079,9 @@ type Services struct {
 	// LeakedSecretPolicy is the platform default of whether imported leaked
 	// secret values are kept (organizations may override it).
 	LeakedSecretPolicy *leakedsecretpolicy.Service
-	PlatformMFA        *platformmfa.Service
+	// PrivateDestinations: the console's private ranges for outbound requests.
+	PrivateDestinations *privatedestinations.Service
+	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1233,6 +1241,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 		s.LeakedSecretPolicy = leakedsecretpolicy.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, log)
+		s.PrivateDestinations = privatedestinations.NewService(repos.PlatformSetting, s.SettingRecorder, log)
+		s.PrivateDestinations.SetSignupOpen(cfg.Auth.SignupMode == config.SignupModeOpen)
+		// Every replica applies the console ranges now and keeps them current.
+		s.PrivateDestinations.Start(context.Background())
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -1567,19 +1579,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	if repos.PlatformSetting != nil {
-		// Where KEV and EPSS come from (console setting, default: the
-		// platform's own fetch).
-		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
-		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
-	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
-	// relayed release; the platform never calls CISA or FIRST.
+	// Feed relay (RFC-142): the signed releases (vulnerability data with
+	// KEV and EPSS, release notices) through a platform relay sensor.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
-	if s.FeedRelay != nil && s.ThreatSource != nil {
-		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
-	}
+	s.FeedWatch = newFeedWatch(repos, s, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,
@@ -3707,6 +3713,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
 	}
 	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	s.Signup.SetPersonalOrganizationSeed(cfg.Auth.SignupPersonalOrganization)
 	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
@@ -3883,6 +3890,24 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
+	// The personal organization at sign-up: a self-service sign-up with no
+	// other way in gets its own organization once its address is verified
+	// (the sign-up policy switch, off by default).
+	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
+	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
+	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
+	if floorSource != nil {
+		s.PersonalOrgs.SetOwnerMFAApplies(func(ctx context.Context) (bool, error) {
+			p, err := floorSource.Policy(ctx)
+			return p.Floor != tenant.MFAFloorNone, err
+		})
+	}
+	s.PersonalOrgs.SetAuditService(s.Audit)
+	if s.Entitlement != nil {
+		s.PersonalOrgs.SetLimits(s.Entitlement)
+	}
+	s.Auth.SetPersonalOrganizations(s.PersonalOrgs)
+
 	// Trusted organizations (RFC-058): home-realm sign-in for external
 	// members, the role ceiling, proposed end of access and API keys.
 	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
@@ -3933,6 +3958,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPersonalOrganizations(s.PersonalOrgs)
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}

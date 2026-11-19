@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Claims are the verified OIDC claims of a CI job, normalized across
@@ -184,6 +186,10 @@ func ReportBranchName(branch, event, pullRequest string, fork bool) string {
 type Refusal struct {
 	Code   string
 	Detail string
+	// ConfigID and ConfigName: the trust configuration that refused (set
+	// when several configurations were tried; audit metadata only).
+	ConfigID   shared.ID
+	ConfigName string
 }
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Detail }
@@ -207,6 +213,12 @@ const (
 	// RefuseWorkflow: the job runs a pipeline definition the workflow_refs
 	// rule does not list (or the token names none).
 	RefuseWorkflow = "workflow_not_allowed"
+	// RefuseRepositoryPending: with all_repositories, a repository seen for
+	// the first time waits for an administrator's approval.
+	RefuseRepositoryPending = "repository_pending_approval"
+	// RefuseRepositoryBlocked: with all_repositories, an administrator
+	// blocked the repository or its group.
+	RefuseRepositoryBlocked = "repository_blocked"
 )
 
 func refuse(code, format string, a ...any) *Refusal {
@@ -227,15 +239,14 @@ func (r Rules) Admit(c Claims) *Refusal {
 	if c.IsForkEvent() && !r.AllowForkPullRequests {
 		return refuse(RefuseForkPullRequest, "event %q can run fork code; this configuration does not admit fork pull requests", c.Event)
 	}
-	if len(r.Owners) > 0 && !slices.Contains(r.Owners, c.Owner()) {
+	// With AllRepositories the owner and repository lists hold what an
+	// administrator approved; the caller decides a new repository
+	// (NewRepositoryDecision).
+	if !r.AllRepositories && len(r.Owners) > 0 && !slices.Contains(r.Owners, c.Owner()) {
 		return refuse(RefuseOwner, "owner %q is not listed", c.Owner())
 	}
-	if len(r.Repositories) > 0 && repositoriesByID(c.Provider) {
-		if !slices.Contains(r.Repositories, NormalizeUUID(c.RepositoryID)) {
-			return refuse(RefuseRepository, "repository id %q is not listed", c.RepositoryID)
-		}
-	} else if len(r.Repositories) > 0 && !slices.ContainsFunc(r.Repositories, func(p string) bool { return repoMatch(p, c.Repository) }) {
-		return refuse(RefuseRepository, "repository %q is not listed", c.Repository)
+	if refusal := r.admitRepository(c); refusal != nil {
+		return refusal
 	}
 	if len(r.Refs) > 0 && !slices.ContainsFunc(r.Refs, func(p string) bool { return refMatch(p, c.Ref) || refMatch(p, c.RefName()) }) {
 		return refuse(RefuseRef, "ref %q is not listed", c.Ref)
@@ -259,6 +270,31 @@ func (r Rules) Admit(c Claims) *Refusal {
 		}
 	}
 	return nil
+}
+
+// admitRepository checks the repositories rule (not with AllRepositories,
+// where the list holds approved projects and the caller decides).
+func (r Rules) admitRepository(c Claims) *Refusal {
+	switch {
+	case r.AllRepositories || len(r.Repositories) == 0:
+		return nil
+	case repositoriesByID(c.Provider):
+		if !slices.Contains(r.Repositories, NormalizeUUID(c.RepositoryID)) {
+			return refuse(RefuseRepository, "repository id %q is not listed", c.RepositoryID)
+		}
+	case !slices.ContainsFunc(r.Repositories, func(p string) bool { return repoMatch(p, c.Repository) }):
+		return refuse(RefuseRepository, "repository %q is not listed", c.Repository)
+	}
+	return nil
+}
+
+// ApprovedRepository reports whether an all_repositories configuration's
+// approved lists name the job's group or project.
+func (r Rules) ApprovedRepository(c Claims) bool {
+	if slices.Contains(r.Owners, c.Owner()) {
+		return true
+	}
+	return slices.ContainsFunc(r.Repositories, func(p string) bool { return repoMatch(p, c.Repository) })
 }
 
 // WorkflowDefinition is the pipeline definition the job runs, as the

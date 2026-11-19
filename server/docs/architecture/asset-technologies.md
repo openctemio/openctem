@@ -23,7 +23,13 @@ library, CDN, hosting, WAF or security service, analytics, security header, othe
    `SetProperties` drop it, and `tests/unit/retired_technologies_property_test.go` fails on any read in
    the API or the web console.
 5. `recordSoftware` (`internal/app/ingest/software.go`) turns a technology into a software component
-   only when `assettech.IsSoftwareCandidate` holds: software kind and a version or CPE.
+   only when `assettech.IsSoftwareCandidate` holds: software kind and a version or CPE, or a name the
+   curated list knows for a public application (`software.IsCuratedAppName`; the version is hidden, the
+   product is certain). A version-less detection of any other name (a private product, a CDN, a header)
+   stays a technology, so a private name never becomes a catalog row this way. An HTTP `Server` header
+   that is only a curated name ("nginx") is linked the same way. Technologies stored before this rule
+   are linked once by the `asset-software-link-backfill` controller
+   ([vulnerability-matching.md](vulnerability-matching.md#version-hidden)).
 
 Template scanner info matches add technologies through the template facts
 mapping ([template-facts.md](template-facts.md)): source `nuclei`, confidence

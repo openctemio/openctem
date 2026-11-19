@@ -86,6 +86,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // otherwise once a minute.
   'console/features/admin-console/api/use-system.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
+  // Data freshness is judged by a server check every 10 minutes that no event
+  // announces: an open page asks again every 5 minutes, one shared request.
+  'console/features/admin-console/components/feed-freshness-banner.tsx': 1,
+  'features/threat-intel/hooks/use-feed-freshness.ts': 1,
   // Dashboard figures are precomputed snapshots on a refresh schedule no event
   // announces: one read when the next snapshot is due (at least 30 s apart),
   // every 15 s only while the first build runs.

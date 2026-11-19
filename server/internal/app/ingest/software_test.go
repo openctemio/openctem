@@ -21,11 +21,14 @@ func TestSoftwareObservations(t *testing.T) {
 			{Name: "nginx", CPE: "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"},
 			{Name: "HSTS", Categories: []string{"Security"}},
 			{Name: "Acme Pages", Version: "3", Categories: []string{"PaaS"}},
-			// Only a product with a version is a component: a CDN, a
-			// hosting platform, a security header or a bare name is not.
+			// A product with a version is a component, and so is a public
+			// product the curated list knows with its version hidden; a CDN,
+			// a hosting platform, a security header or a private bare name is
+			// not.
 			{Name: "PHP", Version: "7.4.3"},
 			{Name: "Cloudflare"},
 			{Name: "jQuery"},
+			{Name: "Acme Widget"},
 		},
 		Technical:     &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: "Apache/2.4.6 (CentOS) OpenSSL/1.0.2k-fips"}},
 		IdentityHints: &ctis.IdentityHints{OSCPE: "cpe:/o:canonical:ubuntu_linux:20.04"},
@@ -42,6 +45,7 @@ func TestSoftwareObservations(t *testing.T) {
 		{"WordPress", "6.1.1", "", software.SourceTechnology, ""},
 		{"nginx", "", "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*", software.SourceTechnology, ""},
 		{"PHP", "7.4.3", "", software.SourceTechnology, ""},
+		{"jQuery", "", "", software.SourceTechnology, ""},
 		{"Apache", "2.4.6 (CentOS)", "", software.SourceService, ""},
 		{"OpenSSL", "1.0.2k-fips", "", software.SourceService, ""},
 		{"", "", "cpe:/o:canonical:ubuntu_linux:20.04", software.SourceOS, ""},
@@ -56,6 +60,23 @@ func TestSoftwareObservations(t *testing.T) {
 	}
 	if got[0].ToolConfidence != 90 {
 		t.Errorf("tool confidence lost")
+	}
+}
+
+// A Server header that names a curated product without its version links the
+// product with no version; a bare private name or a generic word does not.
+func TestSoftwareObservations_VersionHiddenServerHeader(t *testing.T) {
+	cases := map[string]int{"nginx": 1, " NGINX ": 1, "Acme Server": 0, "cloudflare": 0, "nginx/1.25.3": 1}
+	for header, want := range cases {
+		a := &ctis.Asset{ID: "a1", Type: ctis.AssetTypeWebOrigin,
+			Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: header}}}
+		got := softwareObservations(a)
+		if len(got) != want {
+			t.Fatalf("%q: got %d observations %+v, want %d", header, len(got), got, want)
+		}
+		if want == 1 && header != "nginx/1.25.3" && (got[0].Version != "" || got[0].Source != software.SourceService) {
+			t.Fatalf("%q: unexpected %+v", header, got[0])
+		}
 	}
 }
 

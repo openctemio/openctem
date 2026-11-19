@@ -262,6 +262,14 @@ func registerUserRoutes(
 		r.GET("/deletion", h.GetMyDeletion)
 	}, middlewares...)
 
+	// Leaving one of this account's organizations by its id, from the account
+	// space (an organization that does not admit the session cannot give the
+	// token /organization/leave needs). Only the caller's own membership;
+	// step-up, as for leaving from inside.
+	router.Group("/api/v1/me/memberships", func(r Router) {
+		r.POST("/{id}/leave", h.LeaveMembership, requireStepUp())
+	}, middlewares...)
+
 	// Ownership invitations addressed to this account
 	// (docs/architecture/organization-ownership-invitations.md). Accepting
 	// makes the caller an organization's owner: step-up.
