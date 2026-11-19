@@ -20,6 +20,7 @@
   "activity.item.sending": "Sending…",
   "activity.listLabel": "Activity",
   "activity.loadMore": "Load more",
+  "activity.loadTitle": "activity",
   "activity.repeated": "{count, plural, one {# time} other {# times}}",
   "activity.repeatedLast": "{count, plural, one {# time} other {# times}}, the last at {time}",
   "activity.trigger.commentsMany": "{count, plural, one {# comment} other {# comments}}",

@@ -61,6 +61,7 @@ import {
   runKindQuery,
   runOriginQuery,
   runTriggeredByLabel,
+  runTriggerTypeLabel,
 } from '@/features/scans/lib/run-display'
 import { COVERAGE_SETTINGS_HREF } from './managed-scan-banner'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
@@ -383,7 +384,9 @@ function ScanRunsTable() {
         header: t('scans.runs.colTriggeredBy'),
         enableSorting: false,
         cell: ({ row }) => {
-          const who = runTriggeredByLabel(row.original, t) ?? row.original.trigger_type
+          const who =
+            runTriggeredByLabel(row.original, t) ??
+            runTriggerTypeLabel(row.original.trigger_type, t)
           return (
             <span className="block truncate text-sm text-muted-foreground" title={who}>
               {who}

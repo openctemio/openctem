@@ -172,6 +172,9 @@ Before a table scrolls sideways its columns give way: a column with a range (`mi
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
 name column with a floor is sized by the floor and the room left, never by its text (a long title ends in
 its ellipsis). Widths hold the cell padding, so the visible columns' widths add up to the table.
+A second label beside the name in the same cell (an asset's type) is shown only when the cell has
+room for both (the cell is a size container): at the floor the name gets the width, and the label moves
+into the name's tooltip.
 
 ### Radii
 
@@ -613,6 +616,10 @@ reference.
 
   `decisions` is a queue's last column of decision buttons (Approve, Reject,
   More): end-aligned, as wide as the page's `width` says its buttons need.
+  Any last column of labelled buttons (Cancel, Block, Check) is a `decisions`
+  column, without `width` it is as wide as its buttons: the 48 px `actions`
+  column holds the row menu or one icon button only, and cuts a labelled
+  button at the frame's edge (`actions-column-buttons.test.ts`).
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.

@@ -14,6 +14,7 @@ import { useCallback, useMemo } from 'react'
 import useSWR from 'swr'
 import { del, get, post, put } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ActivityCommentItem, ActivityItem, ActivityReaction } from '@/features/activity/types'
 import type { ActivityLiveStatus } from '@/features/activity/components/activity-panel'
 import type { ApiCommentReaction, ApiFindingComment } from '../api/finding-api.types'
@@ -70,6 +71,7 @@ export function useFindingActivityFeed(
   }: UseFindingActivityFeedOptions = {}
 ) {
   const { currentTenant } = useTenant()
+  const { t } = useTranslation()
   const id = enabled && findingId ? findingId : null
 
   const {
@@ -115,8 +117,9 @@ export function useFindingActivityFeed(
     () =>
       toFindingActivityItems(activities, commentsError ? undefined : commentList?.data, {
         visibility: pentest,
+        t,
       }),
-    [activities, commentList, commentsError, pentest]
+    [activities, commentList, commentsError, pentest, t]
   )
 
   const refresh = useCallback(async () => {

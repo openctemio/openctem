@@ -191,6 +191,8 @@
   "common.noAccessHint": "Ask an organization administrator to grant access.",
   "common.noAccessTo": "You do not have access to {title}",
   "common.noData": "No data",
+  "common.notFoundDescription": "It may have been deleted, or the link is out of date.",
+  "common.notFoundTitle": "Couldn't find {title}",
   "common.oneTimeLink.copy": "Copy link",
   "common.oneTimeLink.done": "Done",
   "common.oneTimeLink.expires": "It expires {expiry}. It will not be shown again; copy a new link if it is lost.",
