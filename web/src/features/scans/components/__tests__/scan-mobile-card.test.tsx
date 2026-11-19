@@ -84,6 +84,38 @@ describe('ScanMobileCard', () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
+  it('gives the name its own line and wraps a host name only after its dots and dashes', () => {
+    const host = 'checkout-refunds-payments-gateway-production-eu-west-1.internal.example.com'
+    const { container } = render(
+      <ScanMobileCard
+        config={config({
+          name: host,
+          last_run: {
+            id: 'r31',
+            status: 'pending',
+            created_at: at,
+            task_summary: { total: 2, queued: 2, running: 0, completed: 0, failed: 0, canceled: 0 },
+          },
+        })}
+        selection={selection}
+        actions={<button type="button">menu</button>}
+        onOpen={vi.fn()}
+        onOpenRun={vi.fn()}
+      />
+    )
+    const title = container.querySelector('[data-slot="scan-card-title"]')!
+    // The state is not on the name's line: it cannot squeeze the name.
+    const titleLine = title.parentElement!
+    expect(titleLine.querySelector('[data-slot="scan-card-status"]')).toBeNull()
+    expect(screen.getByText('Waiting for a sensor')).toBeInTheDocument()
+    // The text is unchanged; every break opportunity follows a separator.
+    const name = title.querySelector('p')!
+    expect(name.textContent).toBe(host)
+    const wbrs = Array.from(name.querySelectorAll('wbr'))
+    expect(wbrs.length).toBe((host.match(/[.-]/g) ?? []).length)
+    for (const w of wbrs) expect(w.previousSibling?.textContent).toMatch(/^[.-]$/)
+  })
+
   it('reads Never and no history for a scan that never ran', () => {
     render(
       <ScanMobileCard
