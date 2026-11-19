@@ -15,3 +15,5 @@ RUN CGO_ENABLED=0 go build -trimpath -tags authtestseam -o /out/server ./cmd/ser
 
 FROM ${API_IMAGE}
 COPY --from=build /out/server /app/server
+# Runs as the production API image's non-root user (server/Dockerfile).
+USER 1000:1000
