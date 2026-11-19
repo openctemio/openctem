@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
 import type { AssetGroup } from '../types'
 import { shareableLink } from '@/lib/org-link'
+import { formatDate } from '@/lib/app-locale'
 import { BreakText } from '@/features/shared/components/break-text'
 
 // ============================================
@@ -318,10 +319,10 @@ export function GroupQuickView({
                   {group.owner || t('assetGroups.detail.notAssigned', 'Not assigned')}
                 </DetailField>
                 <DetailField label={t('assetGroups.detail.info.created', 'Created')}>
-                  {new Date(group.createdAt).toLocaleDateString()}
+                  {formatDate(new Date(group.createdAt))}
                 </DetailField>
                 <DetailField label={t('assetGroups.detail.stat.lastUpdated', 'Last updated')}>
-                  {new Date(group.updatedAt).toLocaleDateString()}
+                  {formatDate(new Date(group.updatedAt))}
                 </DetailField>
                 <DetailField label={t('assetGroups.quickView.id', 'ID')} full>
                   <DetailCopyId id={group.id} label={t('assetGroups.detail.info.id', 'Group ID')} />

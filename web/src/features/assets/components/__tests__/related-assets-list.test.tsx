@@ -261,7 +261,7 @@ describe('RelatedAssetsList data scope', () => {
       wrap(<RelatedAssetsList assetId="a1" onNavigateToAsset={onNavigate} />)
     )
     expect(await screen.findByText('2 related assets you can’t access')).toBeInTheDocument()
-    expect(screen.getByText('1 related assets in 1 groups')).toBeInTheDocument()
+    expect(screen.getByText('1 related asset in 1 group')).toBeInTheDocument()
     // Exactly one navigable neighbour: the hidden ones are not links.
     expect(screen.getAllByRole('button', { name: /^Open / })).toHaveLength(1)
     expect(container.querySelectorAll('li')).toHaveLength(1)

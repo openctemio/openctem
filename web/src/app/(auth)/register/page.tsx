@@ -20,7 +20,7 @@ export default async function SignUp() {
     if (hasTenant) {
       redirect('/')
     } else {
-      redirect('/welcome')
+      redirect('/account/organizations')
     }
   }
 

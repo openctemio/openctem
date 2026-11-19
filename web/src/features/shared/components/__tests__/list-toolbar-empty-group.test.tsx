@@ -15,7 +15,8 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
-// jsdom has no layout: an element inside `.phone-hidden` draws nothing, every
+// jsdom has no layout: an element inside `.phone-hidden` draws nothing, a
+// shape inside an icon a line with no area (as an icon's strokes measure), every
 // other element a 36 px box.
 const proto = Element.prototype
 const saved = Object.getOwnPropertyDescriptor(proto, 'getClientRects')
@@ -23,7 +24,9 @@ beforeEach(() => {
   Object.defineProperty(proto, 'getClientRects', {
     configurable: true,
     value(this: Element) {
-      return this.closest('.phone-hidden') ? [] : [{ width: 36, height: 36 }]
+      if (this.closest('.phone-hidden')) return []
+      if (this.tagName.toLowerCase() === 'path') return [{ width: 12, height: 0 }]
+      return [{ width: 36, height: 36 }]
     },
   })
 })
@@ -63,5 +66,37 @@ describe('list toolbar: a group that draws nothing takes no line', () => {
   it('leaves a group that draws a control in the flow', () => {
     const { container } = render(<ListToolbar end={<button type="button">Export</button>} />)
     expect(group(container, 'end')).not.toHaveAttribute('data-empty')
+  })
+
+  it('leaves an icon-only control in the flow: its icon draws, though its strokes have no area', () => {
+    // A tokens strip holding only the icon-only Add filter (a desktop list
+    // whose value tokens are chips) was marked empty: no pointer events
+    // reached the button.
+    const { container } = render(
+      <ListToolbar
+        start={
+          <button type="button" aria-label="Add filter">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 6h16" />
+              <path d="M18 9v6" />
+            </svg>
+          </button>
+        }
+      />
+    )
+    expect(group(container, 'tokens')).not.toHaveAttribute('data-empty')
+  })
+
+  it('keeps the end group at the end on a phone while the tokens are out of the flow', () => {
+    const { container } = render(
+      <ListToolbar
+        start={<span className="phone-hidden">Status: Open</span>}
+        end={<button type="button">Export</button>}
+      />
+    )
+    expect(group(container, 'tokens')).toHaveAttribute('data-empty')
+    expect(group(container, 'end').className).toContain(
+      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-auto'
+    )
   })
 })

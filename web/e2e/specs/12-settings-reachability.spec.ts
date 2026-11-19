@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { test as base, request, type Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { loginAs } from '../helpers/auth'
@@ -20,6 +22,29 @@ import { LEGACY_SETTINGS_ROUTE_REDIRECTS } from '../../src/config/legacy-routes'
 
 const rail = '[data-sidebar="content"] nav'
 
+/**
+ * The pages of the account area (src/app/(account)), as URLs. They have their
+ * own shell and navigation (the "Your account" bar), not the organization's
+ * settings rail, so a rail entry that points into it opens that shell.
+ */
+function accountAreaPages(
+  dir = path.resolve(__dirname, '../../src/app/(account)/account'),
+  prefix = '/account'
+) {
+  const out = new Set<string>()
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name.startsWith('[')) continue
+      for (const url of accountAreaPages(path.join(dir, entry.name), `${prefix}/${entry.name}`))
+        out.add(url)
+    } else if (entry.name === 'page.tsx') {
+      out.add(prefix)
+    }
+  }
+  return out
+}
+const accountNav = 'nav[aria-label="Your account"]'
+
 test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible({
@@ -38,12 +63,16 @@ test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async 
   // the default 60 s, which a cold server exceeds once the rail passes ~25 entries.
   test.setTimeout(60_000 + hrefs.length * 10_000)
 
+  const accountPages = accountAreaPages()
   for (const href of hrefs) {
     await page.goto(href)
-    await expect(page.locator(rail), href).toBeVisible({ timeout: 30_000 })
+    // An entry that opens the account area shows that area's own navigation
+    // (its current page marked), every other entry shows the settings rail.
+    const nav = accountPages.has(href.split('?')[0]) ? accountNav : rail
+    await expect(page.locator(nav), href).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('h1'), href).toHaveCount(1)
     await expect(page.locator('[data-route-denied]'), href).toHaveCount(0)
-    await expect(page.locator(`${rail} a[aria-current="page"]`), href).toHaveCount(1)
+    await expect(page.locator(`${nav} a[aria-current="page"]`), href).toHaveCount(1)
   }
 })
 
@@ -77,15 +106,15 @@ for (const collapsed of [false, true]) {
   )
 }
 
-// Six groups; the long ones carry sub-headings (Access & security: API access,
-// Sign-in, Oversight; Findings & assets: Risk and threats, Assets; Scanning:
-// Tools, Sensors, Detection content, Scanner content). Desktop rail and phone sheet.
+// Nine groups, the long ones with sub-headings (Findings and assets: Risk and
+// threats, Assets; Tools and sensors: Detection content, Scanner content), under
+// Back to app and All settings. Desktop rail and phone sheet.
 for (const vp of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
 ]) {
   test(
-    `the rail shows six groups with sub-headings (${vp.name})`,
+    `the rail shows the nine groups with sub-headings (${vp.name})`,
     { tag: ['@settings', '@smoke'] },
     async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height })
@@ -95,22 +124,32 @@ for (const vp of [
       }
       const nav = page.locator(rail)
       await expect(nav).toBeVisible({ timeout: 30_000 })
-      for (const label of ['My account', 'Organization', 'Access & security', 'Scanning']) {
-        await expect(nav.getByText(label, { exact: true }), label).toBeVisible()
+      await expect(nav.getByRole('link', { name: 'All settings', exact: true })).toBeVisible()
+      for (const label of [
+        'Your membership',
+        'Organization',
+        'People and access',
+        'Sign-in and oversight',
+        'Approvals',
+        'Findings and assets',
+        'Scanning',
+        'Tools and sensors',
+        'Integrations',
+      ]) {
+        // A group heading is the rail's group label span (text-cap-m); a row can
+        // carry the same words (the Approvals group has an Approvals row), so
+        // match the heading by its own span, not by text alone.
+        await expect(
+          nav.locator('span.text-cap-m').getByText(label, { exact: true }),
+          label
+        ).toBeVisible()
       }
-      // The old "Security" group heading is gone. The My account row named
+      // The old "Security" group heading is gone. A row named
       // "Security" is a link, so only a "Security" that is not a link counts.
       const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
       await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
-      for (const sub of [
-        'API access',
-        'Sign-in',
-        'Oversight',
-        'Risk and threats',
-        'Tools',
-        'Detection content',
-      ]) {
-        // "Tools" is also the name of a rail link, so match the sub-heading
+      for (const sub of ['Risk and threats', 'Assets', 'Detection content', 'Scanner content']) {
+        // "Assets" may also be the name of a link, so match the sub-heading
         // by its own span, not by text alone (strict mode would see two).
         await expect(nav.locator('span.text-xs').getByText(sub, { exact: true }), sub).toBeVisible()
       }
@@ -150,7 +189,7 @@ test(
     ).toBe(true)
 
     // Settings: back to the settings rail, still open.
-    await drawer.getByRole('button', { name: 'Settings', exact: true }).click()
+    await drawer.getByRole('button', { name: 'Organization settings', exact: true }).click()
     await expect(drawer.locator('[data-nav-view="settings"]')).toBeVisible()
     await expect(drawer.getByRole('button', { name: 'Back to app' })).toBeFocused()
 
@@ -207,7 +246,7 @@ test('Cmd+K finds settings pages', { tag: ['@settings', '@smoke'] }, async ({ pa
 // The user menu ignores a click on its button for a moment after it closes
 // (under 100ms: after Escape, or after a menu item navigates), so the open
 // is retried instead of clicked once.
-async function openUserMenuItem(page: Page, name: string) {
+async function openUserMenuItem(page: Page, name: string | RegExp) {
   await expect(async () => {
     await page.getByRole('button', { name: 'Open user menu' }).click()
     await page.getByRole('menuitem', { name }).click({ timeout: 2_000 })
@@ -226,12 +265,13 @@ base(
 
     await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
 
-    await openUserMenuItem(page, 'Notifications')
-    await expect(page).toHaveURL(/\/account\/notifications/)
+    // The person's pages in this organization are "Your membership" in its settings.
+    await page.goto('/settings/me/notifications')
+    await expect(page).toHaveURL(/\/settings\/me\/notifications/)
     await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
     await expect(page.locator('[data-route-denied]')).toHaveCount(0)
 
-    await openUserMenuItem(page, 'All settings')
+    await openUserMenuItem(page, /^(Settings of .+|Organization settings)$/)
     await expect(page).toHaveURL(/\/settings$/)
     await expect(page.locator('[data-route-denied]')).toHaveCount(0)
     // Owner/admin-only entries are hidden, not shown and refused.

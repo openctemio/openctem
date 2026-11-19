@@ -52,6 +52,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
+import { formatNumber } from '@/lib/app-locale'
 
 function relative(iso: string | null | undefined, locale: string): string {
   return formatRelative(iso, '—', locale)
@@ -197,7 +198,7 @@ export default function ExceptionsPage() {
               'confirm.suppression.approvedClosed',
               'Rule approved; {count} open findings closed.',
               {
-                count: closed.toLocaleString(),
+                count: formatNumber(closed),
               }
             )
           : t('confirm.suppression.approved', 'Rule approved.')
@@ -431,7 +432,7 @@ export default function ExceptionsPage() {
         },
       },
     ],
-    [openApprove, openReject, openEdit, openDelete, can, t]
+    [openApprove, openReject, openEdit, openDelete, can, t, locale]
   )
 
   const metrics: MetricStripItem[] = [

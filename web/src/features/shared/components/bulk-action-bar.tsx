@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatNumber } from '@/lib/app-locale'
 
 /** The CSS property that holds the room the bar takes at the bottom of the screen. */
 export const BULK_BAR_SPACE_VAR = '--bulk-bar-space'
@@ -38,6 +39,9 @@ const BAR_GAP = 16
  * `selectMenu` the count is a menu (select the page, select all that match,
  * clear), since a phone card list has no header checkbox.
  */
+/** The words after the selection count, given the count (plural forms in the catalog). */
+export type BulkNoun = string | ((count: number) => string)
+
 export function BulkActionBar({
   count,
   onClear,
@@ -52,8 +56,11 @@ export function BulkActionBar({
   onClear: () => void
   /** At most two direct actions. */
   children: ReactNode
-  /** Text after the count, e.g. "findings selected". */
-  noun?: string
+  /**
+   * Text after the count, e.g. "findings selected": a function of the count,
+   * so the catalog string picks its plural form (`{count, plural, ...}`).
+   */
+  noun?: BulkNoun
   /** Beside the count: the select-all-matching offer or its state. */
   status?: ReactNode
   /** The other actions, under More (the shared `ActionMenu`). */
@@ -89,14 +96,15 @@ export function BulkActionBar({
   useFloatingObstruction(barRef, shown)
 
   if (!shown) return null
+  const nounText = typeof noun === 'function' ? noun(count) : noun
   const countText = (
     <>
-      {count.toLocaleString()}{' '}
-      {noun ? (
+      {formatNumber(count)}{' '}
+      {nounText ? (
         // A phone shows the short word only, so X stays on screen; screen
         // readers hear the page's noun at every width.
         <>
-          <span className="sr-only sm:not-sr-only">{noun}</span>
+          <span className="sr-only sm:not-sr-only">{nounText}</span>
           <span aria-hidden="true" className="sm:hidden">
             {t('common.bulkBar.selected', 'selected')}
           </span>
@@ -138,7 +146,7 @@ export function BulkActionBar({
                     'common.bulkBar.selectMenu',
                     '{count} selected: selection options',
                     {
-                      count: count.toLocaleString(),
+                      count: formatNumber(count),
                     }
                   )}
                 >
@@ -173,7 +181,7 @@ export function BulkActionBar({
             {more && more.length > 0 && (
               <ActionMenu
                 items={more}
-                title={`${count.toLocaleString()} ${noun ?? t('common.bulkBar.selected', 'selected')}`}
+                title={`${formatNumber(count)} ${nounText ?? t('common.bulkBar.selected', 'selected')}`}
                 label={t('common.bulkBar.label', 'Actions for selected rows')}
                 trigger={
                   <Button

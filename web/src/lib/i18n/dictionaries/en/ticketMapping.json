@@ -103,7 +103,7 @@
   "ticketMapping.fields.target": "Jira field",
   "ticketMapping.fields.templateBelow": "template below",
   "ticketMapping.fields.unknownInTemplate": "Unknown: {names}",
-  "ticketMapping.fields.values": "{n} values",
+  "ticketMapping.fields.values": "{n, plural, one {# value} other {# values}}",
   "ticketMapping.fields.winner": "On conflict",
   "ticketMapping.history.compare": "Compare",
   "ticketMapping.history.compareWith": "Compare with v{v}",

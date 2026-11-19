@@ -9,6 +9,7 @@ import {
   ColumnFiltersState,
   type Column,
   type Header,
+  type HeaderContext,
   type Table as TanstackTable,
   type Row,
   SortingState,
@@ -95,6 +96,7 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import { formatNumber } from '@/lib/app-locale'
 import {
   knownRowCount,
   loadingRowCount,
@@ -549,23 +551,34 @@ function valueSays(el: Element | null | undefined, titleText: string): boolean {
  * line, cut with an ellipsis, inside a fixed line height. So every card of a
  * list has the same height, and a long text beside a chip can never make a
  * tall sliver (a run's message beside its state once made one field thousands
- * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17).
+ * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17). A cell
+ * that stacks two lines (a trigger over who started it) keeps a gap between
+ * them on the one line, and its last line ends in the ellipsis: the outer
+ * ellipsis cannot reach text inside a flex row ("Manuale2e-owne" cut at the
+ * card's edge on a scan's runs).
  */
 const CARD_LINE_CLASS =
-  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row'
+  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row [&_.flex-col]:gap-x-1.5 [&_.flex-col>*:not(:last-child)]:shrink-0 [&_.flex-col>*:last-child]:min-w-0 [&_.flex-col>*:last-child]:truncate'
 
 /**
  * A column's readable label for the phone card: `meta.label`, a string
  * header, or the `title` of a `DataTableColumnHeader` header; else its id.
  */
-function columnLabel<TData>(header: Header<TData, unknown>): string {
-  const def = header.column.columnDef
+function columnLabel<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>,
+  header?: Header<TData, unknown>
+): string {
+  const def = column.columnDef
   const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
   if (typeof metaLabel === 'string') return metaLabel
   if (typeof def.header === 'string') return def.header
   if (typeof def.header === 'function') {
     try {
-      const el = def.header(header.getContext())
+      // A hidden column has no header object: its header still reads its
+      // column (the usual `DataTableColumnHeader column title`).
+      const ctx = header?.getContext() ?? ({ column, table } as HeaderContext<TData, unknown>)
+      const el = def.header(ctx)
       if (React.isValidElement<{ title?: unknown }>(el) && typeof el.props.title === 'string') {
         return el.props.title
       }
@@ -573,8 +586,28 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
       // A header that needs React context cannot be read here; fall through.
     }
   }
-  const id = header.column.id.replace(/[_.-]+/g, ' ').trim()
+  const id = column.id.replace(/[_.-]+/g, ' ').trim()
   return id.charAt(0).toUpperCase() + id.slice(1)
+}
+
+/**
+ * A column with neither a header nor `meta.label` draws nothing in the
+ * header row: a control column (row menu, selection). Display > Columns does
+ * not offer it, since it has no name to show ("Actions" would be its English
+ * id) and hiding it would only take the row's actions away.
+ */
+function columnHasName<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>
+): boolean {
+  const def = column.columnDef
+  const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
+  // TanStack fills a missing header with its default (the id as text).
+  const header = def.header
+  return (
+    typeof metaLabel === 'string' ||
+    (header !== undefined && header !== table._getDefaultColumnDef().header)
+  )
 }
 
 /**
@@ -585,6 +618,15 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
  */
 const CARD_TITLE_CLASS =
   'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+
+/**
+ * A control in the card's title line (a chip that opens a popover beside the
+ * status) gets the row menu's 36 px box with its chip centred in it: every
+ * control of the line has one height and one centre, and the chip keeps its
+ * own size.
+ */
+const CARD_HEAD_CONTROL_CLASS =
+  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
@@ -771,8 +813,10 @@ function AutoMobileCard<TData>({
       }}
     >
       {/* Title line, never wrapped: the name (up to two lines), the status
-          chip and the row menu. */}
-      <div data-slot="mobile-card-head" className="flex items-start gap-x-3">
+          chip and the row menu, centred on one line. The menu and any control
+          in the status keep their 36 px box without making the line taller
+          (negative margins), so a chip and the menu share one centre. */}
+      <div data-slot="mobile-card-head" className="flex items-center gap-x-3">
         {select && (
           <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
@@ -782,7 +826,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
-            className={cn('min-w-0 flex-1 self-center', CARD_TITLE_CLASS)}
+            className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
@@ -791,7 +835,11 @@ function AutoMobileCard<TData>({
           <div
             ref={statusRef}
             data-slot="mobile-card-status"
-            className={cn('flex h-5 max-w-[45%] shrink-0 items-center', CARD_LINE_CLASS)}
+            className={cn(
+              '-my-2 flex h-9 max-w-[45%] shrink-0 items-center',
+              CARD_LINE_CLASS,
+              CARD_HEAD_CONTROL_CLASS
+            )}
           >
             {flexRender(status.column.columnDef.cell, status.getContext())}
           </div>
@@ -800,7 +848,7 @@ function AutoMobileCard<TData>({
           <div
             ref={actionsRef}
             data-slot="mobile-card-actions"
-            className="-my-1.5 flex shrink-0 items-center"
+            className="-my-2 flex h-9 shrink-0 items-center"
           >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
@@ -1227,13 +1275,25 @@ export function DataTable<TData, TValue>({
     },
   })
 
-  // Field labels for the automatic phone cards.
-  const mobileLabels = new Map<string, string>()
-  if (phoneCards && !mobileRow) {
-    for (const header of table.getFlatHeaders()) {
-      mobileLabels.set(header.column.id, columnLabel(header as Header<TData, unknown>))
+  // Readable column labels (the header the user sees, in their language):
+  // field labels of the automatic phone cards and the Display > Columns list.
+  const columnLabels = new Map<string, string>()
+  if ((phoneCards && !mobileRow) || showColumnToggle) {
+    const headers = new Map(table.getFlatHeaders().map((h) => [h.column.id, h]))
+    // Every column, hidden ones too (Display lists them to turn them back on).
+    for (const column of table.getAllLeafColumns()) {
+      const header = headers.get(column.id)
+      columnLabels.set(
+        column.id,
+        columnLabel(
+          column as Column<TData, unknown>,
+          table,
+          header as Header<TData, unknown> | undefined
+        )
+      )
     }
   }
+  const mobileLabels = columnLabels
 
   // Frozen columns: the checkbox (if first) and the row's identifying
   // columns (`meta.pin`, else the first data column), within a share of the
@@ -1522,7 +1582,13 @@ export function DataTable<TData, TValue>({
       const s = sorting[0]
       if (!s) return ''
       const header = table.getFlatHeaders().find((h) => h.column.id === s.id)
-      const label = header ? columnLabel(header as Header<TData, unknown>) : s.id
+      const label = header
+        ? columnLabel(
+            header.column as Column<TData, unknown>,
+            table,
+            header as Header<TData, unknown>
+          )
+        : s.id
       return t('common.table.sortedBy', 'Sorted by {column}, {direction}', {
         column: label,
         direction: s.desc
@@ -1544,17 +1610,17 @@ export function DataTable<TData, TValue>({
         ? t('common.table.selectModeOn', 'Selecting: check the rows to act on')
         : filterSelected
           ? t('common.table.allMatchingSelected', 'All {count} that match are selected', {
-              count: matchingTotal.toLocaleString(),
+              count: formatNumber(matchingTotal),
             })
           : selectedCount > 0
             ? t('common.table.selectedCount', '{count} selected', {
-                count: selectedCount.toLocaleString(),
+                count: formatNumber(selectedCount),
               })
             : t('common.table.selectionCleared', 'Selection cleared'),
     refreshing: isRefreshing,
     refreshedMessage: () =>
       t('common.table.resultsCount', '{count} {noun}', {
-        count: paginationTotal.toLocaleString(),
+        count: formatNumber(paginationTotal),
         noun: paginationNoun,
       }),
   })
@@ -1732,17 +1798,19 @@ export function DataTable<TData, TValue>({
                   {showColumnToggle &&
                     table
                       .getAllColumns()
-                      .filter((column) => column.getCanHide())
+                      .filter(
+                        (column) =>
+                          column.getCanHide() &&
+                          columnHasName(column as Column<TData, unknown>, table)
+                      )
                       .map((column) => {
                         return (
                           <DropdownMenuCheckboxItem
                             key={column.id}
-                            className="capitalize"
                             checked={column.getIsVisible()}
                             onCheckedChange={(value) => column.toggleVisibility(!!value)}
                           >
-                            {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                              column.id.replace(/_/g, ' ')}
+                            {columnLabels.get(column.id) ?? column.id}
                           </DropdownMenuCheckboxItem>
                         )
                       })}
@@ -1893,37 +1961,43 @@ export function DataTable<TData, TValue>({
           aria-busy={isLoading && !hasBody ? true : undefined}
         >
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      {...cellProps(header.column.id, true)}
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? ariaSort(header.column.getIsSorted())
-                          : undefined
-                      }
-                    >
-                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
-                        flexRender(header.column.columnDef.header, header.getContext())
-                      ) : (
-                        // A column with no visible header (row actions, the
-                        // selection box) still names itself to screen readers.
-                        <span className="sr-only">
-                          {header.column.id === 'select'
-                            ? t('common.table.selectColumn', 'Select')
-                            : t('common.table.actionsColumn', 'Actions')}
-                        </span>
-                      )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
+          {/* No rows to head (an empty or failed list): no column headers and
+              no select-all box over nothing; the empty state or error block
+              stands alone in the frame. While loading the header stays, so
+              the skeleton rows sit under it. */}
+          {(hasBody || isLoading) && (
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead
+                        key={header.id}
+                        {...cellProps(header.column.id, true)}
+                        aria-sort={
+                          header.column.getCanSort()
+                            ? ariaSort(header.column.getIsSorted())
+                            : undefined
+                        }
+                      >
+                        {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        ) : (
+                          // A column with no visible header (row actions, the
+                          // selection box) still names itself to screen readers.
+                          <span className="sr-only">
+                            {header.column.id === 'select'
+                              ? t('common.table.selectColumn', 'Select')
+                              : t('common.table.actionsColumn', 'Actions')}
+                          </span>
+                        )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+          )}
           {hasBody ? (
             displayGroups.map((group, gi) => {
               const expanded = groupExpansion.isExpanded(group.key)
@@ -2107,7 +2181,7 @@ export function DataTable<TData, TValue>({
                 {!allPageSelected && selectableOnPage > 0 && (
                   <DropdownMenuItem onSelect={() => table.toggleAllPageRowsSelected(true)}>
                     {t('common.table.selectPage', 'Select all on this page ({count})', {
-                      count: selectableOnPage.toLocaleString(),
+                      count: formatNumber(selectableOnPage),
                     })}
                   </DropdownMenuItem>
                 )}
@@ -2121,7 +2195,7 @@ export function DataTable<TData, TValue>({
                         'common.table.matchingTooMany',
                         'Up to {max} at once: narrow the filters',
                         {
-                          max: matchingMax.toLocaleString(),
+                          max: formatNumber(matchingMax),
                         }
                       )}
                     </DropdownMenuItem>
@@ -2133,7 +2207,7 @@ export function DataTable<TData, TValue>({
                       }}
                     >
                       {t('common.table.selectAllMatching', 'Select all {count} that match', {
-                        count: matchingTotal.toLocaleString(),
+                        count: formatNumber(matchingTotal),
                       })}
                     </DropdownMenuItem>
                   ))}
@@ -2160,20 +2234,20 @@ export function DataTable<TData, TValue>({
             filterSelected ? (
               <span className="text-cap text-muted-foreground whitespace-nowrap">
                 {t('common.table.allMatchingSelected', 'All {count} that match are selected', {
-                  count: matchingTotal.toLocaleString(),
+                  count: formatNumber(matchingTotal),
                 })}
               </span>
             ) : canOfferMatching && matchingMax != null && matchingTotal > matchingMax ? (
               // Above the server's limit for one change: say why there is no offer.
               <span className="text-cap text-muted-foreground whitespace-nowrap">
                 {t('common.table.matchingTooMany', 'Up to {max} at once: narrow the filters', {
-                  max: matchingMax.toLocaleString(),
+                  max: formatNumber(matchingMax),
                 })}
               </span>
             ) : canOfferMatching ? (
               <Button variant="ghost" size="sm" onClick={() => setMatchingSelected(true)}>
                 {t('common.table.selectAllMatching', 'Select all {count} that match', {
-                  count: matchingTotal.toLocaleString(),
+                  count: formatNumber(matchingTotal),
                 })}
               </Button>
             ) : undefined
@@ -2260,7 +2334,7 @@ export function DataTable<TData, TValue>({
                       end,
                       total: rowCountCapped
                         ? t('common.table.cappedCount', '{count}+', {
-                            count: total.toLocaleString(),
+                            count: formatNumber(total),
                           })
                         : total,
                       noun: paginationNoun,

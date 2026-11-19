@@ -740,7 +740,7 @@ export default function AssetGroupsPage() {
     canWrite || canDelete
       ? {
           rowLabel: (g) => g.name,
-          noun: t('assetGroups.bulk.noun', 'groups selected'),
+          noun: (count) => t('assetGroups.bulk.noun', 'groups selected', { count }),
           onSelectionChange,
           actions: canWrite ? (
             <>

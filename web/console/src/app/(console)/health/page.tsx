@@ -33,6 +33,7 @@ import {
 } from '@console/features/admin-console/lib/system'
 import type { AdminOperations, AdminSystem } from '@console/features/admin-console/types'
 import { DOCS } from '@/lib/docs-links'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * One health page: what the host reports (services, storage, backup,
@@ -77,7 +78,9 @@ function BackgroundJobs({ o }: { o: AdminOperations }) {
       {
         accessorKey: 'errors_total',
         header: t('admin.ops.jobs.errors', 'Errors since start'),
-        cell: ({ row }) => <span className="tabular-nums">{row.original.errors_total}</span>,
+        cell: ({ row }) => (
+          <span className="tabular-nums">{formatNumber(row.original.errors_total)}</span>
+        ),
       },
       {
         id: 'state',

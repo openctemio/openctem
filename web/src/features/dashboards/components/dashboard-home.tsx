@@ -39,6 +39,7 @@ import {
   DASHBOARDS_KEY,
   addFlowPanel,
   createDashboard,
+  fetchMyDashboards,
   deleteDashboard,
   duplicateOrgDashboard,
   setDashboardSchedule,
@@ -156,7 +157,11 @@ export function DashboardHome() {
 
   // A person with no dashboard at all (none of their own, none from the
   // organization) gets a personal copy of the default template, computed in
-  // their own scope. Created once; a failure leaves the empty state.
+  // their own scope. Created once. When the copy is refused, another tab of
+  // the same person may have made it a moment earlier (names are unique per
+  // person, so the server answers the second copy with a conflict): the list
+  // is read once more and the page lands on what is there. Only an empty list
+  // after that leaves the empty state.
   const seeding = useRef(false)
   const [seededName, setSeeded] = useState<string | null>(null)
   const [seedFailed, setSeedFailed] = useState(false)
@@ -186,7 +191,14 @@ export function DashboardHome() {
         setChosen({ kind: 'personal', id: d.id })
         writeChoice({ kind: 'personal', id: d.id })
       })
-      .catch(() => setSeedFailed(true))
+      .catch(async () => {
+        const list = await fetchMyDashboards().catch(() => null)
+        if (list && list.data.length > 0) {
+          await mutate(DASHBOARDS_KEY, list, { revalidate: false })
+          return
+        }
+        setSeedFailed(true)
+      })
   }, [nothing, mutate, t])
 
   const active = useMemo(

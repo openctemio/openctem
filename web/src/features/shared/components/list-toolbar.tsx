@@ -193,9 +193,12 @@ function useToolbarFold(
 const EMPTY_GROUP_CLASS =
   'data-[empty]:pointer-events-none data-[empty]:absolute data-[empty]:size-0 data-[empty]:overflow-hidden'
 
+// An icon counts by its own box: the shapes inside it are often a line with no
+// area (an icon-only Add filter draws only such lines), which is not "nothing".
 function drawsSomething(group: HTMLElement): boolean {
-  return Array.from(group.querySelectorAll<HTMLElement>('*')).some((el) => {
-    if (el.children.length > 0) return false
+  return Array.from(group.querySelectorAll<Element>('*')).some((el) => {
+    const icon = el.closest('svg')
+    if (icon ? icon !== el : el.children.length > 0) return false
     return Array.from(el.getClientRects()).some((r) => r.width > 0 && r.height > 0)
   })
 }
@@ -351,20 +354,25 @@ export function ListToolbar({
       ) : null}
       {end ? (
         // Never wider than the toolbar: on a phone its controls wrap onto a
-        // second line instead of running past the edge.
+        // second line instead of running past the edge (kept on one line,
+        // two links on a scan's runs ran off the left edge in Vietnamese).
         <div
           ref={endRef}
           data-slot="list-toolbar-end"
           className={cn(
-            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2 @max-md/toolbar:flex-nowrap',
+            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2',
             // At the row's top: a start group that grows (two lines, the
             // expanded query editor) never moves Views, Group and Display.
             'items-center self-start',
             '@max-md/toolbar:order-last',
             // On a phone the tokens' auto margin pushes both to the end: a
             // second one here would split the free room between them, and the
-            // first chip (which takes that room) would move the tokens.
-            start && '@max-md/toolbar:ms-0',
+            // first chip (which takes that room) would move the tokens. With
+            // the tokens out of the flow (nothing drawn) the end group keeps
+            // its own auto margin, so it sits at the end before and after the
+            // first chip.
+            start &&
+              '@max-md/toolbar:ms-0 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-auto',
             EMPTY_GROUP_CLASS
           )}
         >

@@ -31,7 +31,6 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -59,6 +58,7 @@ import { CIOverrides } from './ci-overrides'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
 import { CISetupEntry } from './ci-setup-wizard'
+import { formatDate } from '@/lib/app-locale'
 
 /** Whether a load error is a 404: the run is missing or out of the caller's data scope. */
 function isNotFound(error: unknown): boolean {
@@ -400,7 +400,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canOverride = can(Permission.CIOverride)
   // Code-host connections are managed with scans:ci:write (Pull request feedback).
@@ -408,7 +408,6 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const [overrideOpen, setOverrideOpen] = useState(false)
   const { data: run, error, mutate } = useCIRun(id)
   const v = run?.verdict_detail
-  const dfLocale = dateFnsLocaleFor(locale)
   const reasons = v?.reasons ?? []
   const isInfo = (r: CIGateReason) => INFO_REASON_CODES.includes(r.code ?? '')
   const blocking = reasons.filter((r) => r.mode !== 'comment' && !isInfo(r))
@@ -579,7 +578,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   {v?.baseline?.due_at && (
                     <span className="ms-1 font-normal text-muted-foreground">
                       {t('scans.ci.runDetail.baselineDue', ', baseline blocks again from {date}', {
-                        date: new Date(v.baseline.due_at).toLocaleDateString(),
+                        date: formatDate(new Date(v.baseline.due_at)),
                       })}
                     </span>
                   )}

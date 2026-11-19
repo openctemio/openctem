@@ -12,6 +12,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { decideSSOChange, useSSOChanges, type SSOChange } from '../api/use-sso-changes'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDateTime } from '@/lib/app-locale'
 
 const kindLabel: Record<SSOChange['kind'], { key: string; fallback: string }> = {
   saml_config: { key: 'settings.ssoApprovals.kind.samlConfig', fallback: 'SAML configuration' },
@@ -69,8 +70,8 @@ function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () =>
               who:
                 change.requested_by ||
                 t('settings.ssoApprovals.platformAdmin', 'a platform administrator'),
-              created: new Date(change.created_at).toLocaleString(),
-              expires: new Date(change.expires_at).toLocaleString(),
+              created: formatDateTime(new Date(change.created_at)),
+              expires: formatDateTime(new Date(change.expires_at)),
             }
           )}
         </CardDescription>

@@ -38,14 +38,14 @@ function renderFooter(props: Parameters<typeof SidebarFooterLinks>[0], defaultOp
   )
 }
 
-const settingsLink = () => screen.getByRole('link', { name: 'Settings' })
+const settingsLink = () => screen.getByRole('link', { name: 'Organization settings' })
 
 describe('SidebarFooterLinks', () => {
   beforeEach(() => {
     vi.mocked(usePathname).mockReturnValue('/findings')
   })
 
-  it('renders Settings and Help as sidebar rows under a separator', () => {
+  it('renders Organization settings and Help as sidebar rows under a separator', () => {
     const { container } = renderFooter({ shell: 'app', showSettings: true })
     const footer = container.querySelector('[data-sidebar="footer"]')!
     expect(footer).toBeTruthy()
@@ -58,8 +58,8 @@ describe('SidebarFooterLinks', () => {
     }
   })
 
-  it.each(['/settings', '/settings/members', '/settings/scanning/profiles/1', '/account/security'])(
-    'marks Settings active on %s',
+  it.each(['/settings', '/settings/members', '/settings/scanning/profiles/1', '/settings/me'])(
+    'marks Organization settings active on %s',
     (path) => {
       vi.mocked(usePathname).mockReturnValue(path)
       renderFooter({ shell: 'app', showSettings: true })
@@ -67,8 +67,8 @@ describe('SidebarFooterLinks', () => {
     }
   )
 
-  it.each(['/', '/findings', '/scan-profiles-x', '/settingsx'])(
-    'does not mark Settings active on %s',
+  it.each(['/', '/findings', '/scan-profiles-x', '/settingsx', '/account/security'])(
+    'does not mark Organization settings active on %s',
     (path) => {
       vi.mocked(usePathname).mockReturnValue(path)
       renderFooter({ shell: 'app', showSettings: true })
@@ -90,7 +90,7 @@ describe('SidebarFooterLinks', () => {
         </SidebarFooterLinks>
       </SidebarProvider>
     )
-    expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Organization settings' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
     expect(screen.getByText('Sign out row')).toBeInTheDocument()
   })

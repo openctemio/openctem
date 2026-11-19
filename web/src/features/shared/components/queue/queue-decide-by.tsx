@@ -3,6 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { formatAbsoluteTime } from '@/lib/format-metric'
 import { cn } from '@/lib/utils'
+import { EmptyCell } from '../empty-cell'
 import { decideByState, formatDecideByDate } from './decide-by'
 
 /**
@@ -23,7 +24,12 @@ export function QueueDecideBy({
   const { t, locale } = useTranslation()
   const state = decideByState(value, now)
   if (state === 'none' || !value) {
-    return <span className={cn('text-sm text-muted-foreground', className)}>-</span>
+    return (
+      <EmptyCell
+        className={cn('text-sm', className)}
+        title={t('common.notWaiting', 'Not waiting for a decision')}
+      />
+    )
   }
   const date = formatDecideByDate(value, locale, now)
   return (

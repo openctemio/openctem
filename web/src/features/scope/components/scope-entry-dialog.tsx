@@ -99,6 +99,7 @@ import {
   ScopeTargetTypeSelect,
   type ScopeKind,
 } from './scope-target-type'
+import { formatDate } from '@/lib/app-locale'
 
 export type ScopeEntryDuration = 'permanent' | 'one_off'
 export type DomainCoverage = 'name' | 'subdomains'
@@ -769,7 +770,7 @@ export function ScopeEntryDialog({
                         <SelectItem key={l.id} value={l.id}>
                           {t('scope.entry.letter', 'Letter: {title} (until {date})', {
                             title: l.title,
-                            date: new Date(l.valid_until).toLocaleDateString(locale),
+                            date: formatDate(new Date(l.valid_until)),
                           })}
                         </SelectItem>
                       ))}

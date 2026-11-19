@@ -66,6 +66,7 @@ import {
   type Focus,
   type PathMode,
 } from '@/features/attack-surface/lib/attack-path-model'
+import { formatTime } from '@/lib/app-locale'
 
 type View = 'canvas' | 'list'
 
@@ -79,7 +80,7 @@ function BodySkeleton() {
 }
 
 export default function AttackPathsPage() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const router = useRouter()
   const params = useSearchParams()
   const isMobile = useIsMobile()
@@ -176,7 +177,7 @@ export default function AttackPathsPage() {
   const computedAt = detail?.computedAt ? new Date(detail.computedAt) : null
   const computedLabel =
     computedAt && !Number.isNaN(computedAt.getTime())
-      ? computedAt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      ? formatTime(computedAt, { hour: '2-digit', minute: '2-digit' })
       : ''
 
   // The title and the line under it never change with the data, so the header

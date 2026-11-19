@@ -12,6 +12,7 @@ import { Scissors } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { splitCidr, targetReasonText, type ClassifiedTarget } from '../../lib/target-format'
+import { formatNumber } from '@/lib/app-locale'
 
 /** How many entries are named one by one; the rest are counted. */
 export const LISTED_INVALID = 3
@@ -37,7 +38,7 @@ export function SplitRangeButton({
     >
       <Scissors className="h-3.5 w-3.5" aria-hidden />
       {t('scans.targetReason.splitInto', undefined, {
-        count: count.toLocaleString(),
+        count: formatNumber(count),
         prefix: `/${bits}`,
       })}
     </Button>

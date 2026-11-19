@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useRecentDetections, iocTypeLabel, type IOCMatch, type IOCType } from '../api/use-iocs-api'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDateTime } from '@/lib/app-locale'
 
 // Detections view — the tenant-wide Detect/Respond feed. Each row is a runtime
 // detection (from an EDR/XDR/SIEM forwarder via /telemetry-events) that matched
@@ -58,7 +59,7 @@ export function DetectionsPanel() {
         ),
         cell: ({ row }) => (
           <span className="whitespace-nowrap tabular-nums">
-            {new Date(row.original.matched_at).toLocaleString()}
+            {formatDateTime(new Date(row.original.matched_at))}
           </span>
         ),
       },

@@ -53,6 +53,8 @@ vi.mock('../api/use-dashboards-api', () => ({
   useRevalidateAllDashboards: () => async () => {},
   DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
+  // The re-read after a refused copy: nothing there (no other tab made one).
+  fetchMyDashboards: () => Promise.resolve({ data: [] }),
   addFlowPanel: api.addFlow,
   undoFlowPanel: api.undoFlow,
   updateDashboard: api.update,

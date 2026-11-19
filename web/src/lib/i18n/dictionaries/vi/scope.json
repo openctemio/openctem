@@ -1,4 +1,5 @@
 {
+  "scope.allKinds": "Mọi loại",
   "scope.approvals.approve": "Duyệt",
   "scope.approvals.approveSelected": "Duyệt các mục đã chọn ({count})",
   "scope.approvals.approvedMany": "Đã duyệt {count} thay đổi",
@@ -358,6 +359,7 @@
   "scope.kind.ip_range": "Dải IP",
   "scope.kind.repository": "Kho mã",
   "scope.kind.url": "URL",
+  "scope.kindPlaceholder": "Loại",
   "scope.list.backToRest": "Quay lại các giá trị chưa gửi",
   "scope.list.coverName": "Chỉ từng tên miền",
   "scope.list.coverSub": "Từng tên miền và mọi tên bên dưới",

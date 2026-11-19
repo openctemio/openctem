@@ -30,7 +30,7 @@
   "assetFreshness.state.never": "Never observed",
   "assetFreshness.state.stale": "Stale",
   "assetFreshness.title": "Data freshness",
-  "assetFreshness.ttl.days": "fresh for {n} days",
+  "assetFreshness.ttl.days": "fresh for {n, plural, one {# day} other {# days}}",
   "assetFreshness.ttl.hours": "fresh for {n} h",
   "assetFreshness.viewRun": "View run"
 }

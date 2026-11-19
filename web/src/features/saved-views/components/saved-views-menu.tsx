@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { CornerDot } from '@/components/ui/corner-dot'
 import { Bookmark, Building2, Copy, Pin, PinOff, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
-import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -436,20 +436,9 @@ export function SavedViewsMenu({
                 {triggerName}
               </ToolbarSlot>
             </span>
-            {/* The unsaved-changes dot: state by shape and colour, never colour
-                alone (the button's name says it too). Its room is kept while
-                nothing is unsaved, so it appears without moving anything. */}
-            <span
-              data-testid={dirty ? 'saved-view-dirty-dot' : undefined}
-              aria-hidden
-              className={cn(
-                'ms-1.5 size-2 shrink-0 rounded-full',
-                dirty
-                  ? 'bg-warning'
-                  : // Icon only (a square either way): no room kept, the icon centred.
-                    'invisible @max-5xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden'
-              )}
-            />
+            {/* Unsaved changes: a dot on the corner, out of the layout, so the
+                icon stays centred in its square (the button's name says it too). */}
+            {dirty && <CornerDot data-testid="saved-view-dirty-dot" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>

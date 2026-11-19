@@ -87,6 +87,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { confirmName } from '@/lib/confirm-name'
 import { shareableLink } from '@/lib/org-link'
+import { formatDate } from '@/lib/app-locale'
 
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
@@ -368,7 +369,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {new Date(row.original.lastSeen).toLocaleDateString()}
+            {formatDate(new Date(row.original.lastSeen))}
           </span>
         ),
       },
@@ -448,7 +449,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {new Date(row.original.discoveredAt).toLocaleDateString()}
+            {formatDate(new Date(row.original.discoveredAt))}
           </span>
         ),
       },
@@ -809,7 +810,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                 key="updated"
                 label={t('assetGroups.detail.stat.lastUpdated', 'Last updated')}
               >
-                {new Date(group.updatedAt).toLocaleDateString()}
+                {formatDate(new Date(group.updatedAt))}
               </MetaItem>,
             ]}
           />
@@ -980,14 +981,14 @@ function AssetGroupDetailContent({ params }: PageProps) {
                         <span className="text-muted-foreground">
                           {t('assetGroups.detail.info.created', 'Created')}
                         </span>
-                        <span>{new Date(group.createdAt).toLocaleDateString()}</span>
+                        <span>{formatDate(new Date(group.createdAt))}</span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
                           {t('assetGroups.detail.info.updated', 'Updated')}
                         </span>
-                        <span>{new Date(group.updatedAt).toLocaleDateString()}</span>
+                        <span>{formatDate(new Date(group.updatedAt))}</span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">

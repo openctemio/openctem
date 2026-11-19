@@ -52,6 +52,7 @@ import { RunZoneSplitPanel } from './run-zone-split'
 import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
+import { formatDateTime } from '@/lib/app-locale'
 
 // Lazy: the run flow loads only when a workflow run is opened.
 const RunMap = dynamic(() => import('./run-map').then((m) => m.RunMap), {
@@ -64,7 +65,7 @@ interface RunDetailSheetProps {
 }
 
 function formatTime(ts?: string) {
-  return ts ? new Date(ts).toLocaleString() : '—'
+  return ts ? formatDateTime(new Date(ts)) : '—'
 }
 
 function durationOf(run: ScanRun, t: Translate): string | null {

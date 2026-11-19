@@ -15,7 +15,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   through the bulk bar; a saved view opens through ?view=<id>.
  *
  * The CI seed (e2e/ci/seed.sh) gives two findings E2E_CVE (default
- * CVE-2099-0101); without it the tests skip.
+ * CVE-2099-0101); without it the tests fail.
  */
 
 const AXE = path.resolve(__dirname, '../../node_modules/axe-core/axe.min.js')
@@ -80,7 +80,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.emulateMedia({ colorScheme: scheme })
       const row = await openList(page, '?state=all')
-      test.skip(!row, `no seeded finding of ${CVE}`)
+      expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
 
       await expect(page.getByRole('heading', { level: 1, name: 'Vulnerabilities' })).toBeVisible()
       await expect(
@@ -104,7 +104,7 @@ test(
   { tag: ['@vulnerabilities'] },
   async ({ page }) => {
     const row = await openList(page, '?state=all')
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     const total = await page.evaluate(async (cve) => {
       const res = await fetch(`/api/v1/findings?cve_id=${cve}&state=all&per_page=1`, {
         credentials: 'same-origin',
@@ -120,7 +120,7 @@ test(
   { tag: ['@vulnerabilities'] },
   async ({ page }) => {
     const row = await openList(page)
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     const next = page.waitForResponse(
       (r) => r.url().includes('/api/v1/vulnerability-exposures?') && r.url().includes('kev=true')
     )
@@ -139,7 +139,7 @@ test(
   { tag: ['@vulnerabilities'] },
   async ({ page }) => {
     const row = await openList(page, '?state=all&sort=cve')
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     await page
       .getByRole('link', { name: `Vulnerability page for ${CVE}` })
       .first()
@@ -159,7 +159,7 @@ for (const locale of ['en', 'vi'] as const) {
       await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
       await page.setViewportSize({ width: 768, height: 900 })
       const row = await openList(page, '?state=all')
-      test.skip(!row, `no seeded finding of ${CVE}`)
+      expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
       const toolbar = page.locator('main [data-slot="list-toolbar"]:visible').first()
       const centres = await toolbar
         .locator(
@@ -190,7 +190,7 @@ test(
   async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 })
     const row = await openList(page, '?state=all')
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     await expect(page.locator('[data-slot="vuln-card"]').first()).toBeVisible()
     expect(await noHorizontalScroll(page)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath('vulnerabilities-390.png'), fullPage: true })
@@ -202,7 +202,7 @@ test(
   { tag: ['@vulnerabilities'] },
   async ({ page }) => {
     const row = await openList(page, '?state=all')
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     await page
       .getByRole('checkbox', { name: `Select ${CVE}` })
       .first()
@@ -244,7 +244,7 @@ test(
   { tag: ['@vulnerabilities'] },
   async ({ page }) => {
     const row = await openList(page, '?state=all')
-    test.skip(!row, `no seeded finding of ${CVE}`)
+    expect(row, `the CI seed has findings of ${CVE}`).not.toBeNull()
     const id = await page.evaluate(async () => {
       const res = await fetch('/api/v1/views', {
         method: 'POST',

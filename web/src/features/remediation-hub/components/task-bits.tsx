@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { useRemediationCampaign } from '@/features/remediation/api/use-remediation-campaigns'
 import type { RemediationTask, TaskState } from '../api/types'
 import { DEADLINE_TONE, deadlineStatus, progressParts } from '../lib/hub'
+import { formatDate } from '@/lib/app-locale'
 
 export function useTaskStateLabel() {
   const { t } = useTranslation()
@@ -35,14 +36,14 @@ export function DeadlinePill({
 }: {
   task: Pick<RemediationTask, 'deadline' | 'deadline_source'>
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const status = deadlineStatus(task.deadline)
   if (status === 'none' || !task.deadline) {
     return (
       <span className="text-muted-foreground text-xs">{t('remediationHub.deadline.none')}</span>
     )
   }
-  const date = new Date(task.deadline).toLocaleDateString(locale, {
+  const date = formatDate(new Date(task.deadline), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
