@@ -357,6 +357,8 @@ func (h *CIAdminHandler) SetRefusalService(svc CIRefusalService) { h.refusals = 
 
 // CITokenRefusalResponse is one refused CI token exchange.
 type CITokenRefusalResponse struct {
+	// ID names the refusal for POST /ci/trust-configs/{id}/allow.
+	ID         string    `json:"id"`
 	At         time.Time `json:"at"`
 	Repository string    `json:"repository,omitempty"`
 	Provider   string    `json:"provider,omitempty"`
@@ -366,6 +368,19 @@ type CITokenRefusalResponse struct {
 	// owner_not_allowed, workflow_not_allowed, replay, ...).
 	Reasons []string `json:"reasons"`
 	Message string   `json:"message,omitempty"`
+	// The token's own values the rules compared (absent on records written
+	// before they were kept): issuer, owner (organization or group),
+	// deployment environment and pipeline definition (GitHub
+	// job_workflow_ref, GitLab ci_config_ref_uri).
+	Issuer             string `json:"issuer,omitempty"`
+	Owner              string `json:"owner,omitempty"`
+	Environment        string `json:"environment,omitempty"`
+	WorkflowDefinition string `json:"workflow_definition,omitempty"`
+	// Configs say which trust configuration refused with which code; a
+	// workflow_not_allowed or ref_not_allowed refusal can be fixed with POST
+	// /ci/trust-configs/{id}/allow on that configuration, naming this
+	// refusal's id.
+	Configs []cirun.RefusalConfig `json:"configs"`
 }
 
 // ListTokenRefusals handles GET /api/v1/ci/trust-refusals
@@ -401,8 +416,13 @@ func (h *CIAdminHandler) ListTokenRefusals(w http.ResponseWriter, r *http.Reques
 		if reasons == nil {
 			reasons = []string{}
 		}
+		configs := t.Configs
+		if configs == nil {
+			configs = []cirun.RefusalConfig{}
+		}
 		data = append(data, CITokenRefusalResponse{At: t.At, Repository: t.Repository, Provider: t.Provider, Ref: t.Ref,
-			Event: t.Event, Reasons: reasons, Message: t.Message})
+			Event: t.Event, Reasons: reasons, Message: t.Message, Issuer: t.Issuer, Owner: t.Owner,
+			Environment: t.Environment, WorkflowDefinition: t.WorkflowDefinition, Configs: configs, ID: t.ID})
 	}
 	ciWriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
