@@ -519,11 +519,22 @@ reference.
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so the filter tokens neither shrink nor wrap to a third
     line.
+  - a toolbar group that draws none of its controls at this width (the
+    Display menu on a phone, tokens moved into the Filters sheet) takes no
+    line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
+    the first chip opens its own line (the list moves 44 px: the row and its
+    gap) instead of sitting on a line an empty group already opened.
+    An icon counts as drawn by its own box (an icon-only Add filter is not
+    empty), and with the tokens out of the flow the end group keeps its own
+    auto margin: it stays at the end of the line before and after the first
+    chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
   "Page 1 of 0". `DataTable` hides its footer at zero rows; a hand-built pager
-  does the same, and never shows a page count below 1.
+  does the same, and never shows a page count below 1. It also draws no
+  column headers and no select-all box at zero rows (empty or failed list);
+  the headers stay while the list loads.
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:
@@ -563,6 +574,10 @@ reference.
   bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
+- **Display > Columns names a column as its header reads**: `meta.label`, a
+  string header, or the `title` of `DataTableColumnHeader`, in the page's
+  language; never the column id. The phone card's field labels use the same
+  name. A column with no header and no label (the row menu) is not listed.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
 - **The row's name is `RowNameLink`** where the row has a detail page: a real
@@ -896,7 +911,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
   `info` (running, informational) and `destructive` (failed, errors). Use them
   as `text-success` or a tint such as `bg-warning/15 text-warning`.
 - Errors that replace content use the shared `ErrorState` (a destructive
-  `Alert` with Retry), never a hand-made red box.
+  `Alert` with Retry), never a hand-made red box. It reads "Couldn't load
+  {what}" and, for a server failure or a bare code, "The server did not
+  answer. Nothing was changed." (never the server's code). Inside a table
+  frame it is start-aligned like every alert: icon, title, sentence and
+  buttons share one edge.
 - Severity: `SeverityBadge` / `src/lib/severity-colors.ts`, on the
   `sev-*` tokens (marks), `sev-*-text` (text at AA) and `sev-*-ink` (text on
   a solid mark). Severity colour is for severity only. Criticality:
@@ -926,7 +945,11 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 ## 7. States
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
-  (`Loader2`) only inside buttons that are working.
+  (`Loader2`) only inside buttons that are working. A `DataTable` draws as
+  many placeholder rows as the list showed last time in this browser session
+  (same page and table), else five, never more than its page size or than fit
+  on the screen, and at least one (`data-table/loading-rows.ts`); it reads its frame
+  width before the first paint, so columns do not move when the rows arrive.
 - **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
   `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
   read never looks like an empty list or a row of zeros. The route guard
@@ -958,6 +981,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
+  **One filled button per screen**: the empty state's action is filled only
+  when no other filled button is shown (`OneFilledAction`, before paint); beside
+  the page's main action in the header it is an outline button. A page whose
+  header has no main action in that state keeps it filled (Findings first run:
+  "Run a scan"). It reaches a kit `Button` written in the action (also inside
+  `Can`); a filled button drawn by a component of its own is reported by a
+  warning outside production. The table's empty body follows the same rule.
   Three kinds, each worded for its case:
   - **no data yet** (first use): the setup action;
   - **no results** (filters active): "Clear filters"; a list that wants its

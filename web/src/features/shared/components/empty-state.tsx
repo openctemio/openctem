@@ -1,7 +1,10 @@
+'use client'
+
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { OneFilledAction } from './one-filled-action'
 
 interface EmptyStateProps {
   /** Icon shown above the title. */
@@ -21,6 +24,9 @@ interface EmptyStateProps {
  * Shared empty-state placeholder. Replaces the per-page `EmptyState`
  * components that were copy-pasted across ~19 files, so the "no data" look
  * stays consistent (icon + title + description, centered, muted) everywhere.
+ * Its action is filled only when no other filled button is shown on the
+ * screen; beside the page's main action it is an outline button
+ * (`OneFilledAction`).
  */
 export function EmptyState({
   icon: Icon,
@@ -40,7 +46,7 @@ export function EmptyState({
       <Icon className="mb-4 h-12 w-12 text-muted-foreground" />
       <p className="text-lg font-medium">{title}</p>
       {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+      {action && <OneFilledAction className="mt-4">{action}</OneFilledAction>}
     </div>
   )
 

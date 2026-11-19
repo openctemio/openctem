@@ -9,6 +9,7 @@ import {
   ColumnFiltersState,
   type Column,
   type Header,
+  type HeaderContext,
   type Table as TanstackTable,
   type Row,
   SortingState,
@@ -32,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
+import { OneFilledAction } from '../one-filled-action'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -94,6 +96,13 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import {
+  knownRowCount,
+  loadingRowCount,
+  rememberRowCount,
+  ROW_HEIGHT,
+  rowCountKey,
+} from './loading-rows'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -430,8 +439,14 @@ const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
   center: 'text-center',
 }
 
-/** Skeleton rows shown in an empty body while `isLoading`. */
-const LOADING_ROWS = 5
+/** Height of one phone placeholder card (two skeleton lines + padding). */
+const PHONE_LOADING_ROW_HEIGHT = 64
+
+const noSubscribe = () => () => {}
+const subscribeResize = (onChange: () => void) => {
+  window.addEventListener('resize', onChange)
+  return () => window.removeEventListener('resize', onChange)
+}
 
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
@@ -539,14 +554,21 @@ const CARD_LINE_CLASS =
  * A column's readable label for the phone card: `meta.label`, a string
  * header, or the `title` of a `DataTableColumnHeader` header; else its id.
  */
-function columnLabel<TData>(header: Header<TData, unknown>): string {
-  const def = header.column.columnDef
+function columnLabel<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>,
+  header?: Header<TData, unknown>
+): string {
+  const def = column.columnDef
   const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
   if (typeof metaLabel === 'string') return metaLabel
   if (typeof def.header === 'string') return def.header
   if (typeof def.header === 'function') {
     try {
-      const el = def.header(header.getContext())
+      // A hidden column has no header object: its header still reads its
+      // column (the usual `DataTableColumnHeader column title`).
+      const ctx = header?.getContext() ?? ({ column, table } as HeaderContext<TData, unknown>)
+      const el = def.header(ctx)
       if (React.isValidElement<{ title?: unknown }>(el) && typeof el.props.title === 'string') {
         return el.props.title
       }
@@ -554,8 +576,28 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
       // A header that needs React context cannot be read here; fall through.
     }
   }
-  const id = header.column.id.replace(/[_.-]+/g, ' ').trim()
+  const id = column.id.replace(/[_.-]+/g, ' ').trim()
   return id.charAt(0).toUpperCase() + id.slice(1)
+}
+
+/**
+ * A column with neither a header nor `meta.label` draws nothing in the
+ * header row: a control column (row menu, selection). Display > Columns does
+ * not offer it, since it has no name to show ("Actions" would be its English
+ * id) and hiding it would only take the row's actions away.
+ */
+function columnHasName<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>
+): boolean {
+  const def = column.columnDef
+  const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
+  // TanStack fills a missing header with its default (the id as text).
+  const header = def.header
+  return (
+    typeof metaLabel === 'string' ||
+    (header !== undefined && header !== table._getDefaultColumnDef().header)
+  )
 }
 
 /**
@@ -566,6 +608,15 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
  */
 const CARD_TITLE_CLASS =
   'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+
+/**
+ * A control in the card's title line (a chip that opens a popover beside the
+ * status) gets the row menu's 36 px box with its chip centred in it: every
+ * control of the line has one height and one centre, and the chip keeps its
+ * own size.
+ */
+const CARD_HEAD_CONTROL_CLASS =
+  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
@@ -738,8 +789,10 @@ function AutoMobileCard<TData>({
       }}
     >
       {/* Title line, never wrapped: the name (up to two lines), the status
-          chip and the row menu. */}
-      <div data-slot="mobile-card-head" className="flex items-start gap-x-3">
+          chip and the row menu, centred on one line. The menu and any control
+          in the status keep their 36 px box without making the line taller
+          (negative margins), so a chip and the menu share one centre. */}
+      <div data-slot="mobile-card-head" className="flex items-center gap-x-3">
         {select && (
           <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
@@ -749,7 +802,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
-            className={cn('min-w-0 flex-1 self-center', CARD_TITLE_CLASS)}
+            className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
@@ -758,7 +811,11 @@ function AutoMobileCard<TData>({
           <div
             ref={statusRef}
             data-slot="mobile-card-status"
-            className={cn('flex h-5 max-w-[45%] shrink-0 items-center', CARD_LINE_CLASS)}
+            className={cn(
+              '-my-2 flex h-9 max-w-[45%] shrink-0 items-center',
+              CARD_LINE_CLASS,
+              CARD_HEAD_CONTROL_CLASS
+            )}
           >
             {flexRender(status.column.columnDef.cell, status.getContext())}
           </div>
@@ -767,7 +824,7 @@ function AutoMobileCard<TData>({
           <div
             ref={actionsRef}
             data-slot="mobile-card-actions"
-            className="-my-1.5 flex shrink-0 items-center"
+            className="-my-2 flex h-9 shrink-0 items-center"
           >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
@@ -1025,9 +1082,14 @@ export function DataTable<TData, TValue>({
   // viewer turned on or off (the state has its key); a controlled one's state
   // names every column, so only the click counts there.
   const [frameWidth, setFrameWidth] = React.useState(0)
-  React.useEffect(() => {
+  // Read before the first paint (a layout effect), so the column widths that
+  // depend on the frame (fit, pins, dropped columns) are right on the first
+  // frame instead of settling a frame later (cells moved sideways on load).
+  React.useLayoutEffect(() => {
     const el = tableWrapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    if (!el) return
+    setFrameWidth(el.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
     ro.observe(el)
     return () => ro.disconnect()
@@ -1188,13 +1250,25 @@ export function DataTable<TData, TValue>({
     },
   })
 
-  // Field labels for the automatic phone cards.
-  const mobileLabels = new Map<string, string>()
-  if (phoneCards && !mobileRow) {
-    for (const header of table.getFlatHeaders()) {
-      mobileLabels.set(header.column.id, columnLabel(header as Header<TData, unknown>))
+  // Readable column labels (the header the user sees, in their language):
+  // field labels of the automatic phone cards and the Display > Columns list.
+  const columnLabels = new Map<string, string>()
+  if ((phoneCards && !mobileRow) || showColumnToggle) {
+    const headers = new Map(table.getFlatHeaders().map((h) => [h.column.id, h]))
+    // Every column, hidden ones too (Display lists them to turn them back on).
+    for (const column of table.getAllLeafColumns()) {
+      const header = headers.get(column.id)
+      columnLabels.set(
+        column.id,
+        columnLabel(
+          column as Column<TData, unknown>,
+          table,
+          header as Header<TData, unknown> | undefined
+        )
+      )
     }
   }
+  const mobileLabels = columnLabels
 
   // Frozen columns: the checkbox (if first) and the row's identifying
   // columns (`meta.pin`, else the first data column), within a share of the
@@ -1311,6 +1385,34 @@ export function DataTable<TData, TValue>({
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
+
+  // Placeholder rows while loading (loading-rows.ts): the last count this list
+  // showed, else five, capped to the page size and the viewport, so the list
+  // keeps its height when the rows arrive. Read through useSyncExternalStore:
+  // the server render (no storage, no viewport) draws five.
+  // Keyed by the page path (read from the location on the client only, so the
+  // table needs no router) and the table's name.
+  const tableName = caption ?? labelledBy ?? ''
+  const knownRows = React.useSyncExternalStore(
+    noSubscribe,
+    () => knownRowCount(rowCountKey(tableName)) ?? -1,
+    () => -1
+  )
+  const viewportHeight = React.useSyncExternalStore(
+    subscribeResize,
+    () => window.innerHeight,
+    () => 0
+  )
+  const settled = !isLoading && !error
+  React.useEffect(() => {
+    if (settled) rememberRowCount(rowCountKey(tableName), pageRows.length)
+  }, [settled, tableName, pageRows.length])
+  const loadingRows = loadingRowCount(
+    knownRows < 0 ? undefined : knownRows,
+    table.getState().pagination.pageSize,
+    viewportHeight,
+    phoneCards ? PHONE_LOADING_ROW_HEIGHT : ROW_HEIGHT[density]
+  )
   const displayGroups = !rowGroups
     ? [{ key: 'all', rows: pageRows }]
     : rowGroups.groups
@@ -1455,7 +1557,13 @@ export function DataTable<TData, TValue>({
       const s = sorting[0]
       if (!s) return ''
       const header = table.getFlatHeaders().find((h) => h.column.id === s.id)
-      const label = header ? columnLabel(header as Header<TData, unknown>) : s.id
+      const label = header
+        ? columnLabel(
+            header.column as Column<TData, unknown>,
+            table,
+            header as Header<TData, unknown>
+          )
+        : s.id
       return t('common.table.sortedBy', 'Sorted by {column}, {direction}', {
         column: label,
         direction: s.desc
@@ -1524,13 +1632,15 @@ export function DataTable<TData, TValue>({
   ) : (
     (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
   )
+  // One filled button per screen: the empty body's action is an outline
+  // button beside the page's main action (`OneFilledAction`).
   const emptyBody = (
-    <div
+    <OneFilledAction
       data-slot="table-empty"
       className="[&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none"
     >
       {emptyContent}
-    </div>
+    </OneFilledAction>
   )
 
   // A stale read says so in the footer, with a refresh.
@@ -1663,17 +1773,19 @@ export function DataTable<TData, TValue>({
                   {showColumnToggle &&
                     table
                       .getAllColumns()
-                      .filter((column) => column.getCanHide())
+                      .filter(
+                        (column) =>
+                          column.getCanHide() &&
+                          columnHasName(column as Column<TData, unknown>, table)
+                      )
                       .map((column) => {
                         return (
                           <DropdownMenuCheckboxItem
                             key={column.id}
-                            className="capitalize"
                             checked={column.getIsVisible()}
                             onCheckedChange={(value) => column.toggleVisibility(!!value)}
                           >
-                            {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                              column.id.replace(/_/g, ' ')}
+                            {columnLabels.get(column.id) ?? column.id}
                           </DropdownMenuCheckboxItem>
                         )
                       })}
@@ -1780,7 +1892,7 @@ export function DataTable<TData, TValue>({
             })
           ) : isLoading ? (
             <div aria-busy="true" aria-label={t('common.table.loading', 'Loading')}>
-              {Array.from({ length: LOADING_ROWS }).map((_, i) => (
+              {Array.from({ length: loadingRows }).map((_, i) => (
                 <div key={i} className="space-y-2 px-3 py-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />
@@ -1824,37 +1936,43 @@ export function DataTable<TData, TValue>({
           aria-busy={isLoading && !hasBody ? true : undefined}
         >
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      {...cellProps(header.column.id, true)}
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? ariaSort(header.column.getIsSorted())
-                          : undefined
-                      }
-                    >
-                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
-                        flexRender(header.column.columnDef.header, header.getContext())
-                      ) : (
-                        // A column with no visible header (row actions, the
-                        // selection box) still names itself to screen readers.
-                        <span className="sr-only">
-                          {header.column.id === 'select'
-                            ? t('common.table.selectColumn', 'Select')
-                            : t('common.table.actionsColumn', 'Actions')}
-                        </span>
-                      )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
+          {/* No rows to head (an empty or failed list): no column headers and
+              no select-all box over nothing; the empty state or error block
+              stands alone in the frame. While loading the header stays, so
+              the skeleton rows sit under it. */}
+          {(hasBody || isLoading) && (
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead
+                        key={header.id}
+                        {...cellProps(header.column.id, true)}
+                        aria-sort={
+                          header.column.getCanSort()
+                            ? ariaSort(header.column.getIsSorted())
+                            : undefined
+                        }
+                      >
+                        {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        ) : (
+                          // A column with no visible header (row actions, the
+                          // selection box) still names itself to screen readers.
+                          <span className="sr-only">
+                            {header.column.id === 'select'
+                              ? t('common.table.selectColumn', 'Select')
+                              : t('common.table.actionsColumn', 'Actions')}
+                          </span>
+                        )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+          )}
           {hasBody ? (
             displayGroups.map((group, gi) => {
               const expanded = groupExpansion.isExpanded(group.key)
@@ -1988,7 +2106,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableBody>
               {isLoading ? (
-                Array.from({ length: LOADING_ROWS }).map((_, i) => (
+                Array.from({ length: loadingRows }).map((_, i) => (
                   <TableRow key={`loading-${i}`} aria-busy="true" data-loading-row="">
                     {table.getVisibleLeafColumns().map((column) => (
                       <TableCell key={column.id}>
@@ -2001,7 +2119,17 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
+                  {/* An error block is start-aligned like every alert: icon,
+                      title, sentence and buttons share one edge (a centred
+                      cell centred only its text). */}
+                  <TableCell
+                    colSpan={columns.length}
+                    data-slot={errorState ? 'table-error-cell' : undefined}
+                    className={cn(
+                      'h-48',
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                    )}
+                  >
                     {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>

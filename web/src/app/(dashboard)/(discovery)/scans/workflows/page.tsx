@@ -788,6 +788,7 @@ export default function ScanWorkflowsPage() {
                     action={
                       <NewScanWorkflowButton
                         label={t('scans.workflows.createWorkflow')}
+                        variant="outline"
                         onClick={handleOpenCreateForm}
                       />
                     }

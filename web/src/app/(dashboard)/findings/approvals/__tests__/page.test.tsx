@@ -262,7 +262,7 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
           <div data-slot="skeleton" />
         ) : error && data.length === 0 ? (
           <div role="alert">
-            Failed to load {errorTitle}
+            {`Couldn't load ${errorTitle}`}
             <button type="button" onClick={onRetry}>
               Retry
             </button>
