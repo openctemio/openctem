@@ -282,3 +282,50 @@ func TestAdvisoryCardReported_DB(t *testing.T) {
 		t.Fatalf("%+v %v", v, err)
 	}
 }
+
+// A card keeps the KEV listing and the EPSS score of a grouped CVE that has
+// no cve_records row yet (CISA lists a CVE before its record arrives), so the
+// card alert is never weaker than the alert it replaces. Requires DATABASE_URL.
+func TestAdvisoryCardKEVWithoutRecord_DB(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	cleanupCards(db)
+	t.Cleanup(func() {
+		cleanupCards(db)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM kev_catalog WHERE cve_id LIKE 'CVE-2026-9000%';
+			DELETE FROM epss_scores WHERE cve_id LIKE 'CVE-2026-9000%'`)
+	})
+	c := testCard(t)
+	if res, err := NewAdvisoryCardRepository(&DB{DB: db}).Apply(ctx, []*advisory.Card{c}, stream(1, "a"), time.Now()); err != nil || res.Published != 1 {
+		t.Fatal(res, err)
+	}
+	ids := c.VulnIDs()
+	var cve string
+	for _, id := range ids {
+		if strings.HasPrefix(id, "CVE-2026-9000") {
+			cve = id
+			break
+		}
+	}
+	if cve == "" {
+		t.Fatalf("fixture groups no CVE-2026-9000x id: %v", ids)
+	}
+	// No cve_records row for it (cleanupCards removed them): only the lists.
+	if _, err := db.ExecContext(ctx, `INSERT INTO kev_catalog (cve_id, vendor_project, product, vulnerability_name, date_added, due_date, known_ransomware_campaign_use)
+		VALUES ($1, 'Vendor', 'Widget', 'Widget RCE', '2026-11-18', '2026-12-09', 'Known')`, cve); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO epss_scores (cve_id, epss_score, model_version) VALUES ($1, 0.87654, 'v2025')`, cve); err != nil {
+		t.Fatal(err)
+	}
+	v, err := NewThreatAlertRepository(&DB{DB: db}).Vuln(ctx, c.ID, time.Time{})
+	if err != nil || v == nil {
+		t.Fatal(v, err)
+	}
+	if !v.InKEV || !v.KEVRansomware || v.KEVDateAdded == nil {
+		t.Fatalf("card lost the KEV listing of a CVE with no record: inKEV=%v ransomware=%v added=%v", v.InKEV, v.KEVRansomware, v.KEVDateAdded)
+	}
+	if v.EPSS == nil || *v.EPSS < 0.87 || *v.EPSS > 0.88 {
+		t.Fatalf("card lost the EPSS score of a CVE with no record: %v", v.EPSS)
+	}
+}

@@ -64,7 +64,18 @@ func (r *ThreatAlertRepository) cardVuln(ctx context.Context, cardID string, eve
 	if err != nil {
 		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
 	}
-	cf := foldCardFacts(facts)
+	// KEV and EPSS are read by id on their own: a CVE listed in KEV before
+	// its catalog record arrives has no fact, and the card must not lose it.
+	rd := NewVulnCatalogReader(r.db)
+	kevs, err := rd.KEVs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("card %s kev: %w", c.ID, err)
+	}
+	scores, err := rd.EPSS(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("card %s epss: %w", c.ID, err)
+	}
+	cf := foldCardFacts(facts, kevs, scores)
 	ev, err := lastVulnEvent(ctx, r.db, c.ID, ids, eventsSince)
 	if err != nil {
 		return nil, fmt.Errorf("card %s facts: %w", c.ID, err)
@@ -101,7 +112,7 @@ type cardFacts struct {
 	epss       *float64
 }
 
-func foldCardFacts(facts []vulncatalog.Fact) cardFacts {
+func foldCardFacts(facts []vulncatalog.Fact, kevs []vulncatalog.KEV, scores []vulncatalog.EPSS) cardFacts {
 	var out cardFacts
 	seen := map[string]bool{}
 	for _, f := range facts {
@@ -113,16 +124,18 @@ func foldCardFacts(facts []vulncatalog.Fact) cardFacts {
 			sc := *f.CVSSScore
 			out.score, out.vector = &sc, f.CVSSVector
 		}
-		if f.KEV != nil {
-			out.inKEV = true
-			out.ransomware = out.ransomware || f.KEV.Ransomware
-			if f.KEV.DateAdded != nil && (out.kevAdded == nil || f.KEV.DateAdded.Before(*out.kevAdded)) {
-				d := *f.KEV.DateAdded
-				out.kevAdded = &d
-			}
+	}
+	for _, k := range kevs {
+		out.inKEV = true
+		out.ransomware = out.ransomware || k.Ransomware
+		if k.DateAdded != nil && (out.kevAdded == nil || k.DateAdded.Before(*out.kevAdded)) {
+			d := *k.DateAdded
+			out.kevAdded = &d
 		}
-		if f.EPSS != nil && (out.epss == nil || f.EPSS.Score > *out.epss) {
-			sc := f.EPSS.Score
+	}
+	for _, e := range scores {
+		if out.epss == nil || e.Score > *out.epss {
+			sc := e.Score
 			out.epss = &sc
 		}
 	}
