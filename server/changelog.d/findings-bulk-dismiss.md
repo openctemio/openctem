@@ -6,7 +6,7 @@
   their risk. Each finding follows the same approval policy as a single request: the ones the person may decide
   alone are applied now (each with its own timeline entry and audit row), the rest becomes one approval group
   (source type `selection`), and the skipped ones say why.
-- Guardrails: more than 25 decided alone needs a recent re-authentication; at most 1,000 decided alone per
+- Guardrails: more than 25 decided alone, in one call or across the calls of the last hour, needs a recent re-authentication; at most 1,000 decided alone per
   person per 24 hours (the rest goes to approval); a bulk audit event (`finding.bulk_dismissed`, high severity
   and an immediate notice to the owners above 100 decided alone); a retry with the same idempotency key returns
   the first result. Undo by its creator within 24 hours reopens the findings it decided alone and cancels its
@@ -16,6 +16,8 @@
 - Second look: a bulk that decides 10 or more findings alone, with the organization's second-look share above
   0, always gets at least one second look (one decided finding chosen at random when the per-finding sampling
   raised none).
+- The audit rows of a bulk are written even when the client disconnects during the apply; an undo while the apply is still running answers 409 (retry it); the requester is recorded by the same identity the approve paths compare with.
+- Known limit: undo reopens every finding to `confirmed`, whatever status it had before the dismissal.
 - Known limit: an apply of 500 decided alone takes about 17 seconds (the findings are written one at a time).
   A batched write path is a planned follow-up.
 - Migration 20261119095221 (`finding_bulk_dismissals`, and `selection` added to the approval group source

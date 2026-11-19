@@ -62,9 +62,13 @@ const (
 	// BulkDismissDailyBudget is how many findings one person may decide alone
 	// by bulk dismiss in a rolling 24 hours; the rest goes to approval.
 	BulkDismissDailyBudget = 1000
-	// BulkDismissStepUpAbove: deciding more than this many alone in one call
-	// needs a recent re-authentication.
+	// BulkDismissStepUpAbove: deciding more than this many alone in one call,
+	// or within one hour counting the earlier calls, needs a recent
+	// re-authentication.
 	BulkDismissStepUpAbove = 25
+	// BulkDismissStepUpWindow is the span over which calls add up for the
+	// step-up rule.
+	BulkDismissStepUpWindow = time.Hour
 	// BulkDismissNoticeAbove: deciding more than this many alone in one call
 	// is a high-severity audit event and a notice to the owners.
 	BulkDismissNoticeAbove = 100
@@ -294,13 +298,22 @@ type bulkPlan struct {
 	group          []bulkMember
 	skipped        []BulkDismissItem
 	budgetOverflow int
-	groupTier      string
-	groupMinNote   int
-	lifecycleNote  int
-	sameRule       *BulkDismissSameRule
-	memo           *approvalMemo
-	ctx            context.Context // carries the memo
-	label          string
+	// recentAlone is what the person decided alone by bulk in the last hour
+	// (across calls), for the step-up rule.
+	recentAlone   int
+	groupTier     string
+	groupMinNote  int
+	lifecycleNote int
+	sameRule      *BulkDismissSameRule
+	memo          *approvalMemo
+	ctx           context.Context // carries the memo
+	label         string
+}
+
+// stepUpRequired: more than BulkDismissStepUpAbove decided alone, counting
+// the calls of the last hour.
+func (p *bulkPlan) stepUpRequired() bool {
+	return len(p.decide) > 0 && p.recentAlone+len(p.decide) > BulkDismissStepUpAbove
 }
 
 // noteMin is the shortest note the plan needs (0: optional).
@@ -364,7 +377,7 @@ func (s *VulnerabilityService) BulkDismiss(ctx context.Context, in BulkDismissIn
 	if need := plan.noteMin(); noteLength(in.Note) < need {
 		return nil, errNoteRequired(need, approvalpolicy.Tier(plan.groupTierOr()))
 	}
-	if len(plan.decide) > BulkDismissStepUpAbove {
+	if plan.stepUpRequired() {
 		if err := s.requireApproverStepUp(ctx, in.UserID); err != nil {
 			return nil, err
 		}
@@ -601,6 +614,13 @@ func (s *VulnerabilityService) planBulkDismiss(ctx context.Context, in BulkDismi
 		plan.group = append(plan.group, plan.decide[room:]...)
 		plan.decide = plan.decide[:room]
 	}
+	// Splitting into small calls must not avoid the step-up: the last hour's
+	// decisions count with this call's.
+	recent, err := s.bulkDismissals.DecidedSince(ctx, in.TenantID, in.UserID, now.Add(-BulkDismissStepUpWindow))
+	if err != nil {
+		return nil, err
+	}
+	plan.recentAlone = recent
 	plan.label = bulkDismissLabel(len(ids), in.FilterSummary)
 
 	// The group as it will be asked (tier, members still able to join), so
@@ -879,7 +899,7 @@ func (s *VulnerabilityService) raiseBulkSecondLook(ctx context.Context, approval
 func (p *bulkPlan) result(in BulkDismissInput, preview bool) *BulkDismissResult {
 	out := &BulkDismissResult{
 		Status: string(p.status), Decided: []string{}, Skipped: make([]BulkDismissSkip, 0, len(p.skipped)),
-		StepUpRequired: len(p.decide) > BulkDismissStepUpAbove,
+		StepUpRequired: p.stepUpRequired(),
 		NoteMinLength:  p.noteMin(),
 		Counts: BulkDismissCounts{Decided: len(p.decide), Grouped: len(p.group), Skipped: len(p.skipped),
 			BudgetOverflow: p.budgetOverflow},
@@ -1033,6 +1053,11 @@ func (s *VulnerabilityService) UndoBulkDismiss(ctx context.Context, in UndoBulkD
 		return nil, err
 	}
 	if !moved {
+		// An apply that has not recorded its outcome yet has nothing to
+		// reopen: answer "running" instead of closing the undo for good.
+		if row.Status == BulkDismissApplied && (len(row.Result) == 0 || string(row.Result) == "{}") {
+			return nil, ErrBulkDismissRunning
+		}
 		if row.Status == BulkDismissUndone {
 			return nil, ErrBulkDismissUndone
 		}

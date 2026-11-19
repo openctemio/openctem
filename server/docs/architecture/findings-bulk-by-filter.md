@@ -135,9 +135,9 @@ Errors: 400 `BULK_DISMISS_TOO_LARGE` (`details.count`, `details.max` 500;
 more than 500 ids, or a filter selecting more: the count is exact), 409
 `SELECTION_CHANGED` (`details.count`), 422 `IDEMPOTENCY_KEY_REUSED` (the key
 was used with another request), 403 `STEP_UP_REQUIRED` (more than 25 decided
-alone, nothing changed), 400 for a missing reason or a note shorter than the
-plan needs, 404 for an undo of another person's bulk, 409 for a second undo or
-one after 24 hours.
+alone in the call and the last hour together, nothing changed), 400 for a missing reason or a note shorter than the
+plan needs, 404 for an undo of another person's bulk, 409 for a second undo, one after 24 hours, or one while the apply is
+still running.
 
 ### How it works
 
@@ -167,7 +167,8 @@ apply):
    members it takes; the note it needs is known before anything changes.
 
 Apply: replay by key first (the stored result, `replay: true`); then the
-note and the re-authentication (more than 25 decided alone) are checked
+note and the re-authentication (more than 25 decided alone, counting the
+calls of the last hour) are checked
 before anything changes; the bulk row is inserted under a per-(tenant,
 person) advisory lock that reserves the budget; each decided-alone finding
 goes through `applySinglePerson` (its own transaction, timeline entry with
@@ -181,7 +182,8 @@ not stop with the request (5-minute bound); a client that gave up retries
 with its key.
 
 Undo: the creator only, within 24 hours, once (the row moves `applied` to
-`undone` in one conditional update). Each finding the bulk decided alone that
+`undone` in one conditional update, once the apply has recorded its outcome;
+before that the undo answers 409 and can be retried). Each finding the bulk decided alone that
 is still in the status it set goes back to `confirmed` through the normal
 status path (`UpdateFindingStatus`, note "Undo of bulk dismissal <id>"); one
 that moved since is left as it is (`changed`). The bulk's pending group is
@@ -214,7 +216,7 @@ Bulk dismiss is the cheapest way to hide findings (an insider, a stolen
 session, an API key, an AI agent). Controls: the same per-finding policy as a
 single request with the in-transaction re-check (no bulk shortcut); tenant from
 the principal and scope filtering with not-found answers; 500 per call;
-1,000 decided alone per person per day; step-up above 25; per-finding
+1,000 decided alone per person per day; step-up above 25 (calls of the last hour add up); per-finding
 activity and audit rows plus one `finding.bulk_dismissed` audit event (high
 severity above 100 decided alone, with an immediate notice to the owners:
 in-app and the organization's security alert channel); undo through the

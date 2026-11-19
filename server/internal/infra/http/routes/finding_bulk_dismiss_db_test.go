@@ -795,3 +795,113 @@ func TestBulkDismiss_SecondLookFloor_DB(t *testing.T) {
 		}
 	}
 }
+
+// A client that leaves mid-apply gets its findings decided (the apply runs
+// on its own context) and must not escape the audit trail: the per-decision
+// rows and the bulk row are written all the same, and the retry is a replay.
+func TestBulkDismiss_AuditSurvivesDisconnect_DB(t *testing.T) {
+	h := newBulkDismissHarness(t)
+	org := h.org()
+	setFPLevel(h.findingApprovalHarness, org, `{"fp_approval":"off"}`)
+	admin := h.member(org, "admin")
+	h.member(org, "owner")
+	ids := h.findings(org, "low", 300)
+	body := dismissBody(ids, nil)
+	b, _ := json.Marshal(body)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, h.srv.URL+"/api/v1/findings/bulk-dismissals", strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+admin.token)
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+		t.Skip("the apply finished before the client gave up; inconclusive")
+	}
+	// Wait for the apply, then for its audit trail, which the handler
+	// writes after the apply.
+	waitFor := func(q string, want int) int {
+		deadline := time.Now().Add(120 * time.Second)
+		n := 0
+		for time.Now().Before(deadline) {
+			if n = h.countRows(q, org); n >= want {
+				return n
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		return n
+	}
+	waitFor(`SELECT COUNT(*) FROM finding_bulk_dismissals WHERE tenant_id = $1 AND result <> '{}'::jsonb`, 1)
+	decided := waitFor(`SELECT COUNT(*) FROM finding_status_approvals WHERE tenant_id = $1 AND single_person AND status = 'approved'`, len(ids))
+	bulkAudit := waitFor(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding.bulk_dismissed'`, 1)
+	singleAudit := waitFor(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.single_person_decided'`, decided)
+	if decided != len(ids) || singleAudit != decided || bulkAudit != 1 {
+		t.Fatalf("decided alone %d of %d, per-decision audit rows %d, bulk audit rows %d", decided, len(ids), singleAudit, bulkAudit)
+	}
+	if out := h.call(admin, "", body, http.StatusOK); !out.Replay {
+		t.Fatal("the retry is not a replay")
+	}
+}
+
+// The step-up counts the last hour, not only the call: two calls of 25
+// decide 50 alone, and the second needs the re-authentication a single call
+// of 50 needs.
+func TestBulkDismiss_StepUpCountsTheLastHour_DB(t *testing.T) {
+	h := newBulkDismissHarness(t)
+	org := h.org()
+	setFPLevel(h.findingApprovalHarness, org, `{"fp_approval":"off"}`)
+	admin := h.member(org, "admin")
+	h.member(org, "owner")
+	h.stepUp.refuse.Store(true)
+	ids := h.findings(org, "low", 50)
+	h.call(admin, "", dismissBody(ids, nil), http.StatusForbidden)
+	if a := h.call(admin, "", dismissBody(ids[:25], nil), http.StatusOK); len(a.Decided) != 25 {
+		t.Fatalf("first 25: %+v", a.Counts)
+	}
+	p := h.call(admin, "/preview", dismissBody(ids[25:], nil), http.StatusOK)
+	if !p.StepUpRequired {
+		t.Fatalf("preview of the second 25 does not announce the step-up: %+v", p.BulkDismissResult)
+	}
+	if e := h.call(admin, "", dismissBody(ids[25:], nil), http.StatusForbidden); e.Code != "STEP_UP_REQUIRED" {
+		t.Fatalf("second 25 without step-up: %+v", e)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND status <> 'confirmed'`, org); n != 25 {
+		t.Fatalf("%d findings moved, want 25", n)
+	}
+	// An hour on, the first call no longer counts.
+	h.exec(`UPDATE finding_bulk_dismissals SET created_at = now() - interval '61 minutes' WHERE tenant_id = $1`, org)
+	if b := h.call(admin, "", dismissBody(ids[25:], nil), http.StatusOK); len(b.Decided) != 25 {
+		t.Fatalf("second 25 an hour later: %+v", b.Counts)
+	}
+	// With the step-up granted, a larger call goes through as before.
+	h.stepUp.refuse.Store(false)
+	more := h.findings(org, "low", 30)
+	if c := h.call(admin, "", dismissBody(more, nil), http.StatusOK); len(c.Decided) != 30 {
+		t.Fatalf("with step-up: %+v", c.Counts)
+	}
+}
+
+// An undo that arrives while the apply is still running (the row is
+// reserved, its outcome not recorded) answers 409 and leaves the row
+// undoable; once the outcome is recorded the undo works.
+func TestBulkDismiss_UndoWhileRunningIsRefused_DB(t *testing.T) {
+	h := newBulkDismissHarness(t)
+	org := h.org()
+	admin := h.member(org, "admin")
+	h.member(org, "owner")
+	id := uuid.NewString()
+	h.exec(`INSERT INTO finding_bulk_dismissals (id, tenant_id, created_by, idempotency_key, request_hash, requested_status, closure_reason, decided_count)
+		VALUES ($1, $2, $3, 'k-running', 'x', 'false_positive', 'detection_error', 10)`, id, org, admin.id)
+	code, resp := h.do(admin, http.MethodPost, "/api/v1/findings/bulk-dismissals/"+id+"/reopen", "{}")
+	if code != http.StatusConflict {
+		t.Fatalf("undo of a running bulk: %d %s", code, resp)
+	}
+	st := ""
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status FROM finding_bulk_dismissals WHERE id = $1`, id).Scan(&st); err != nil || st != "applied" {
+		t.Fatalf("row status %q (%v), want applied", st, err)
+	}
+	h.exec(`UPDATE finding_bulk_dismissals SET result = '{"bulk_id":"x"}'::jsonb WHERE id = $1`, id)
+	if code, resp := h.do(admin, http.MethodPost, "/api/v1/findings/bulk-dismissals/"+id+"/reopen", "{}"); code != http.StatusOK {
+		t.Fatalf("undo once recorded: %d %s", code, resp)
+	}
+}
