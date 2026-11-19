@@ -228,6 +228,93 @@ API for the CI/CD page (CI write, `scans:ci:write`):
   else answers 400. The caller never supplies the value. An ordinary audited
   change of the configuration (`changed: false` when it was already listed);
   the answer names the `kind` and `value` added.
+### Every project on this GitLab (`rules.all_repositories`)
+
+A trust configuration of a self-managed GitLab may accept every project of
+the instance without naming its groups. Refused for gitlab.com (and its
+subdomains), the hosted GitLab services jihulab.com and gitlab.cn, every
+GitHub issuer (including `*.ghe.com` data residency) and every other
+provider: on a shared issuer it would admit anyone in the world
+(`cirun.SharedIssuer`, checked when the configuration is saved). A
+self-managed GitLab with open sign-up has the same exposure; there the
+pending approval below is what protects the configuration.
+
+Risk: any user of the instance can create a personal project and protect its
+branches, so "protected branches only" does not stop them. Therefore:
+
+- A project seen for the first time is a **new repository**: recorded as
+  pending (`ci_trust_new_repositories`) with the verified `project_id`,
+  `namespace_path` and `namespace_id` of that first sighting and, by
+  default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an
+  administrator approves it. At most 25 pending projects per top-level group
+  and 500 per configuration: one instance user creating many projects or
+  personal namespaces fills only their own group's list. Past either bound a
+  project is refused without being listed, and the list names the full
+  groups (`full_groups`) or says the whole list is full (`list_full`).
+- Approval binds to what the administrator saw. Approving pins each covered
+  namespace to the `namespace_id` its pending projects were seen with (an
+  existing pin to another id, or sightings that disagree, refuse the
+  approval), and an approved project keeps its row (state `approved`, not
+  listed) with the `project_id` seen: its runs must carry that id, or they
+  are refused with `CI_TOKEN_REPOSITORY_BINDING`. When the configuration no
+  longer lists the project, its next sighting makes it pending again with the
+  new ids. With `admit_new_repositories` its runs are
+  admitted and imported while it waits, but it is not added to scope.
+- Approving a project adds it to the configuration's Repositories; approving
+  a whole group adds the group to Owners, approves its pending projects at
+  once, and admits every current and future project of the group with no
+  further approval (a group already approved never produces a pending item
+  again). Only approved groups and projects become scope patterns
+  (`ScopePatterns`), so Manage scope applies only after approval.
+- Blocking a project or a group refuses it at once
+  (`CI_TOKEN_REPOSITORY_BLOCKED`), takes it out of the configuration and
+  lists it as blocked; unblocking makes it new again. A block wins over an
+  approved group.
+- Approving a whole group trusts its name, not an id: a GitLab token carries
+  no top-level group id, only the id of the project's direct namespace. The
+  approval pins the namespaces already seen in the group's pending rows, so a
+  group renamed or re-registered afterwards is refused for those names, but a
+  subgroup never seen before (`acme/new`) is pinned on its first use and
+  admitted if the top-level name has changed hands. Prefer approving single
+  projects where the group's owners can change. Follow-up (not in this
+  change): a configuration option "Approve projects one by one" as the
+  default, with "Approve whole groups" as the explicit choice.
+- A user allowed to create top-level groups (the self-managed default) can fill
+  the pending list with new groups (500 rows, 25 per group, 10 notices per
+  hour). Existing decisions are unaffected, and blocking a group in bulk
+  clears its pending rows; watch the held-back count in the notice.
+- Approval is never guessed from the namespace: a GitLab token does not say
+  whether a namespace is a group or a personal namespace.
+- Saved with all_repositories, a new configuration turns on "Protected
+  branches and tags only" and "Notify me when a new group asks"
+  (`notify_new_groups`: in the app and on the organization's channels
+  subscribed to `ci.new_repository_group`, once per group, at most 10 per
+  configuration and hour per server; the first notice after a busy hour says
+  how many were held back); an administrator may turn them off by editing it.
+- Approving or blocking changes the configuration's owners or repositories.
+  That keeps the owner pins of every name still listed: only the pins of
+  names no longer listed are dropped (any configuration, not only this kind).
+  A routine approval therefore never lets a group renamed on the instance
+  and registered again by someone else take its old name over.
+- The trust preview reports the same step as the exchange: a project the
+  draft does not approve is refused as pending approval, or admitted with
+  `pending_approval` when the draft admits new repositories. The configuration's response carries a
+  plain-words warning (`warnings`).
+
+API (CI write, `scans:ci:write`; decisions need a recent sign-in):
+
+- `GET /api/v1/ci/trust-configs/{id}/new-repositories`:
+  `{all_repositories, admit_new_repositories, pending: [{group, full,
+  projects: [{name, first_seen, last_seen, count, project_id,
+  namespace_id}]}], blocked: [{kind, name, blocked_by, blocked_at}],
+  approved_groups, approved_projects, list_full, full_groups}`.
+- `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions`:
+  `{decision: approve | block | unblock, items: [{kind: project | group,
+  name}]}` (1 to 100 items, so several pending projects or groups are decided
+  together); answers the list as above. Audited as
+  `ci_trust_config.new_repositories_decided` with its items, plus the
+  ordinary `ci_trust_config.updated` with before and after when the
+  configuration's lists change.
 
 ## Request chains
 

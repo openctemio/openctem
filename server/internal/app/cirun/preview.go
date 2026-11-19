@@ -75,6 +75,10 @@ type PreviewResult struct {
 	Repository   string          `json:"repository_asset,omitempty"`
 	PipelineKey  string          `json:"pipeline_key,omitempty"`
 	ReplayKeyJTI bool            `json:"replay_key_from_jti"`
+	// PendingApproval: the configuration admits every project and this one
+	// is not approved yet; with admit_new_repositories its runs are admitted
+	// and it is listed for approval (not added to scope until approved).
+	PendingApproval bool `json:"pending_approval,omitempty"`
 }
 
 // errPreviewToken: the sample is not a readable JWT.
@@ -145,6 +149,18 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	if refusal != nil {
 		out.Refusal = refusal
 		return out, nil
+	}
+	// An all-projects configuration admits only approved projects (the
+	// exchange's checkNewRepository). The draft's approvals are its owners
+	// and repositories; blocks and the ids of past sightings are not read.
+	if cfg.Rules.AllRepositories {
+		if r := pendingRefusal(cfg, c); r != nil {
+			if !cfg.Rules.AdmitNewRepositories {
+				out.Refusal = &PreviewRefusal{Code: r.Code, Detail: r.Detail}
+				return out, nil
+			}
+			out.PendingApproval = true
+		}
 	}
 	out.PipelineKey = key.ExternalRepoID + " " + key.WorkflowPath
 	out.Admitted = true

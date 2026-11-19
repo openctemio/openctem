@@ -45,6 +45,25 @@ type AllowRepositoryGate func(ctx context.Context, tenantID shared.ID, cur *ciru
 // SetAllowRepositoryGate wires the AllowRepositoryGate.
 func (s *Service) SetAllowRepositoryGate(g AllowRepositoryGate) { s.allowGate = g }
 
+// ApprovedRepositoryGate is the AllowRepositoryGate of the server: a
+// configuration that names its owners and repositories already admitted the
+// refused token's project, so it passes; a configuration that admits every
+// project (rules.all_repositories) passes only a project it has approved
+// (its owner or repository lists name it, as an approval records it).
+// Pending, new and blocked projects are not approved, so one click never
+// adds a stranger's branch or pipeline file to the rules of every approved
+// project.
+func ApprovedRepositoryGate(_ context.Context, _ shared.ID, cur *cirun.TrustConfig, repository string) (bool, error) {
+	if !cur.Rules.AllRepositories {
+		return true, nil
+	}
+	repository = strings.ToLower(strings.TrimSpace(repository))
+	if repository == "" {
+		return false, nil
+	}
+	return cur.Rules.ApprovedRepository(cirun.Claims{Repository: repository}), nil
+}
+
 // Allowed is what a one-click fix added.
 type Allowed struct {
 	Kind  string
