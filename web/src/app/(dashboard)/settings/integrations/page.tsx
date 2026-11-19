@@ -95,6 +95,8 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
     },
     {
       id: 'actions',
+      // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+      meta: { kind: 'decisions' },
       enableSorting: false,
       cell: ({ row }) => (
         <Can permission={Permission.IntegrationsRead} mode="hide">

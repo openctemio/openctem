@@ -613,6 +613,10 @@ reference.
 
   `decisions` is a queue's last column of decision buttons (Approve, Reject,
   More): end-aligned, as wide as the page's `width` says its buttons need.
+  Any last column of labelled buttons (Cancel, Block, Check) is a `decisions`
+  column, without `width` it is as wide as its buttons: the 48 px `actions`
+  column holds the row menu or one icon button only, and cuts a labelled
+  button at the frame's edge (`actions-column-buttons.test.ts`).
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.

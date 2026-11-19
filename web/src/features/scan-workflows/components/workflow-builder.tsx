@@ -24,6 +24,7 @@ import {
   applyEdgeChanges,
   useReactFlow,
   useUpdateNodeInternals,
+  useNodesInitialized,
   ReactFlowProvider,
   MarkerType,
 } from '@xyflow/react'
@@ -35,6 +36,7 @@ import type { ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { makeIsValidConnection } from '@/components/flow/connection-rules'
 import { useTranslation } from '@/context/i18n-provider'
 import { DataFlowEdge } from './data-flow-edge'
+import { spreadOverlapping } from '../lib/node-spacing'
 import {
   EMPTY_TABLE,
   capabilityForStep,
@@ -297,7 +299,9 @@ function WorkflowBuilderInner({
   const { t } = useTranslation()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, getNodes, fitView } = useReactFlow()
+  const nodesInitialized = useNodesInitialized()
+  const spreadFor = useRef('')
   const updateNodeInternals = useUpdateNodeInternals()
 
   // Calculate default End node position based on steps (fallback if no saved position)
@@ -477,6 +481,39 @@ function WorkflowBuilderInner({
     updateNodeInternals,
     t,
   ])
+
+  // Step cards are taller than the layout assumes (tool, timeout and
+  // capability rows): once they are measured, move overlapping cards down so
+  // none is drawn over another. Once per set of steps; a drag after that is
+  // the person's choice.
+  useEffect(() => {
+    if (!nodesInitialized) return
+    const key = steps
+      .map((s) => s.id)
+      .sort()
+      .join(',')
+    if (!key || spreadFor.current === key) return
+    spreadFor.current = key
+    const moved = spreadOverlapping(
+      getNodes()
+        .filter((n) => n.type === 'scanner' && n.measured?.width && n.measured?.height)
+        .map((n) => ({
+          id: n.id,
+          x: n.position.x,
+          y: n.position.y,
+          width: n.measured!.width!,
+          height: n.measured!.height!,
+        })),
+      VERTICAL_GAP
+    )
+    if (!moved.size) return
+    setNodes((current) =>
+      current.map((n) =>
+        moved.has(n.id) ? { ...n, position: { x: n.position.x, y: moved.get(n.id)! } } : n
+      )
+    )
+    requestAnimationFrame(() => void fitView({ padding: 0.3 }))
+  }, [nodesInitialized, steps, getNodes, setNodes, fitView])
 
   // Define node types
   const nodeTypes: NodeTypes = useMemo(
