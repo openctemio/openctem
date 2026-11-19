@@ -1,4 +1,5 @@
 {
+  "scope.allKinds": "All kinds",
   "scope.approvals.approve": "Approve",
   "scope.approvals.approveSelected": "Approve selected ({count})",
   "scope.approvals.approvedMany": "{count, plural, one {# change} other {# changes}} approved",
@@ -358,6 +359,7 @@
   "scope.kind.ip_range": "IP range",
   "scope.kind.repository": "Repository",
   "scope.kind.url": "URL",
+  "scope.kindPlaceholder": "Kind",
   "scope.list.backToRest": "Back to the values not sent",
   "scope.list.coverName": "Each domain only",
   "scope.list.coverSub": "Each domain and every name below it",
