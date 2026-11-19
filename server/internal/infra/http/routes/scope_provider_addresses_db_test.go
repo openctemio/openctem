@@ -23,8 +23,9 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
-// holdSettings is the scope settings reader with the hold switch only.
-type holdSettings struct{ hold *bool }
+// holdSettings is the scope settings reader with the hold switch only
+// (nil: the stored value is unset, the default).
+type holdSettings struct{ hold **bool }
 
 func (s holdSettings) GetScopeSettings(context.Context, string) (*tenant.ScopeSettings, error) {
 	return &tenant.ScopeSettings{HoldProviderEntries: *s.hold}, nil
@@ -63,7 +64,7 @@ func microsoft365Fixture(t *testing.T) providerFixture {
 }
 
 func TestScopeProviderAddresses_DB(t *testing.T) {
-	hold := false
+	var hold *bool // unset: the default, on
 	var store *postgres.ScopeProviderRepository
 	h := newChangeAuditHarness(t, func(s *scopeapp.Service, _ *handler.ScopeHandler, db *postgres.DB) {
 		cov := postgres.NewScopeCoverageRepository(db)
@@ -115,7 +116,7 @@ func TestScopeProviderAddresses_DB(t *testing.T) {
 		return out
 	}
 	c := card(reader)
-	if len(c.Groups) != 1 || c.Groups[0].Provider != fx.provider || c.Groups[0].EntryCount != 2 || c.DatasetVersion == "" || c.Holding {
+	if len(c.Groups) != 1 || c.Groups[0].Provider != fx.provider || c.Groups[0].EntryCount != 2 || c.DatasetVersion == "" || !c.Holding {
 		t.Fatalf("card = %+v", c)
 	}
 	listed := map[string]handler.ScopeProviderEntryResponse{}
@@ -254,9 +255,10 @@ func TestScopeProviderAddresses_DB(t *testing.T) {
 }
 
 // Keep scanning (B3, D3): step-up, audited, the entries leave the card and
-// are never held; the hold applies only while the setting is on.
+// are never held; the hold is on by default and off only when the
+// organization turns it off.
 func TestScopeProviderAddresses_KeepAndHold_DB(t *testing.T) {
-	hold := false
+	var hold *bool
 	var svc *scopeapp.Service
 	h := newChangeAuditHarness(t, func(s *scopeapp.Service, _ *handler.ScopeHandler, db *postgres.DB) {
 		s.SetCoverage(postgres.NewScopeCoverageRepository(db), unrestrictedScope{})
@@ -291,10 +293,15 @@ func TestScopeProviderAddresses_KeepAndHold_DB(t *testing.T) {
 		eid, _ := shared.IDFromString(id)
 		return m[eid]
 	}
-	if held() {
-		t.Fatal("held with the setting off (the default)")
+	if !held() {
+		t.Fatal("not held with the setting unset (the default is on) and no answer")
 	}
-	hold = true
+	off, on := false, true
+	hold = &off
+	if held() {
+		t.Fatal("held with the setting turned off")
+	}
+	hold = &on
 	if !held() {
 		t.Fatal("not held with the setting on and no answer")
 	}

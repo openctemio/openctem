@@ -107,9 +107,9 @@ type ScopeSettings struct {
 	// HoldProviderEntries keeps the scope entries that name a provider's
 	// shared addresses (scope.SharedProviderEntry) from authorizing active
 	// checks until a person answers them on the Scope page: moved out of
-	// scope, or kept (research/531 D3). Default off: such entries authorize
-	// as any other entry.
-	HoldProviderEntries bool `json:"hold_provider_entries,omitempty"`
+	// scope, or kept (research/531 D3, owner decision 2026-11-19). Nil is
+	// the default: on. False lets such entries authorize as any other.
+	HoldProviderEntries *bool `json:"hold_provider_entries,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
@@ -145,6 +145,12 @@ const (
 	MaxRangePrefix     = 24
 	DefaultRangePrefix = 16
 )
+
+// HoldsProviderEntries reports whether unanswered scope entries on a
+// provider's shared addresses are held (default on).
+func (s ScopeSettings) HoldsProviderEntries() bool {
+	return s.HoldProviderEntries == nil || *s.HoldProviderEntries
+}
 
 // RangePrefix returns the widest range prefix with its default (/16).
 func (s ScopeSettings) RangePrefix() int {

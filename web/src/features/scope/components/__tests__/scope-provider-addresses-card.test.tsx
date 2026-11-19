@@ -136,7 +136,7 @@ describe('provider addresses card', () => {
     api.get.mockResolvedValue({ ...card, holding: true })
     wrap()
     expect(await screen.findByTestId('scope-provider-holding')).toHaveTextContent(
-      'scans skip these addresses'
+      'Scanning of these addresses is paused'
     )
   })
 

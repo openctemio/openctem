@@ -74,30 +74,30 @@ activation (both ask for a re-authentication because they widen).
 
 ## Holding unanswered entries (`hold_provider_entries`)
 
-The organization's scope setting `hold_provider_entries` (Settings > Scope,
-`PUT /api/v1/scope/settings`, scope approvers with step-up) decides what an
-unanswered entry does until someone answers it:
+Until someone answers them, unanswered entries on a provider's shared
+addresses are paused (owner decision 2026-11-19). The organization's scope
+setting `hold_provider_entries` (Settings > Scope, "Hold shared provider
+addresses until answered"; `PUT /api/v1/scope/settings`, scope approvers
+with step-up) controls it:
 
-- **Off (default)**: the entry authorizes active checks like any other
-  entry. Deploying this feature changes no scan.
-- **On**: the entry authorizes nothing. `scopeauth.Load` asks the scope
-  service (`HeldProviderEntries`, the `scopeauth.ProviderHolds` interface)
-  and drops held entries from the authority. An address only a held entry
-  covers is refused by the active-probe gate with the state
-  `provider_held` (refusal code `provider_address`) instead of being probed
-  or getting the low-impact checks of an unclassified asset. Typed targets
-  are refused by the act-scope check with the same code. A scan run lists
-  them as skipped with the reason `provider_address`; no job targeting
-  them is built, signed or sent. Names resolving to the address are not
-  affected. "Keep scanning" or "Move to out of scope" ends the hold for
-  those entries.
+- **On (default, also when never set)**: an unanswered entry authorizes
+  nothing. `scopeauth.Load` asks the scope service (`HeldProviderEntries`,
+  the `scopeauth.ProviderHolds` interface) and drops held entries from the
+  authority. An address only a held entry covers is refused by the
+  active-probe gate with the state `provider_held` (refusal code
+  `provider_address`) instead of being probed or getting the low-impact
+  checks of an unclassified asset; typed targets are refused by the
+  act-scope check with the same code. A scan run lists them as skipped with
+  the reason `provider_address`; no job targeting them is built, signed or
+  sent. Names resolving to the address are not affected. The card shows a
+  banner saying scanning of these addresses is paused and why.
+- **Off**: such entries authorize active checks like any other entry.
 
-A settings read that fails refuses (the gate dispatches nothing), as every
+Undo is one step per provider: **Keep scanning** (step-up, audited) resumes
+active scanning of those entries at once; **Move to out of scope** keeps the
+entries (deactivated) and their history and never excludes the names. A
+settings read that fails refuses (the gate dispatches nothing), as every
 other authority lookup does.
-
-To turn it on for an organization: Settings > Scope > "Hold shared provider
-addresses until answered", or `PUT /api/v1/scope/settings` with
-`{"hold_provider_entries": true}`.
 
 ## Review rules never add one
 

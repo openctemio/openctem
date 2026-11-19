@@ -130,8 +130,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...autoCoverageOf(s),
     ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
-    hold_provider_entries:
-      (s as { hold_provider_entries?: boolean }).hold_provider_entries ?? false,
+    hold_provider_entries: (s as { hold_provider_entries?: boolean }).hold_provider_entries ?? true,
     max_range_prefix: s.max_range_prefix || 16,
   }
 }
@@ -687,12 +686,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               htmlFor={`${id}-holdproviders`}
               hint={t(
                 'scope.settings.holdProviderEntriesHint',
-                "Off (default): scope entries on a provider's shared addresses are scanned like any other entry. On: until someone answers them on the Scope page, scans skip those addresses. Names that point at them are still scanned."
+                "On (default): until someone answers them on the Scope page, scans skip the scope entries on a provider's shared addresses. Names that point at them are still scanned. Off: such entries are scanned like any other entry."
               )}
             >
               <Switch
                 id={`${id}-holdproviders`}
-                checked={form.hold_provider_entries ?? false}
+                checked={form.hold_provider_entries ?? true}
                 onCheckedChange={(v) => setForm({ ...form, hold_provider_entries: v })}
                 disabled={disabled}
               />
