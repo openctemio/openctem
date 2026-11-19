@@ -1277,6 +1277,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// A suspended organization takes no new member: accepting its invitation
+	// is refused before anything changes.
+	s.Tenant.SetOrganizationGate(s.OrganizationGate)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -3944,6 +3947,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		)
 		if s.PlatformSocialLogin != nil {
 			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
+		}
+		if auth.TestSeamActive() {
+			log.Warn("TEST BUILD: social sign-in providers are reached at a stand-in (build tag authtestseam); never run this binary in production")
 		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without

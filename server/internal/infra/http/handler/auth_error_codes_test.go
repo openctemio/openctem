@@ -163,3 +163,54 @@ func TestAuthInfoHasNoVerificationField(t *testing.T) {
 		t.Fatalf("auth info still carries a verification field: %s", b)
 	}
 }
+
+// A per-request refusal of an organization's entry requirements (the routes
+// that name the organization in the URL) carries the code and status token
+// issuance answers for the same requirement, so the console takes the person
+// to the same next step whichever request was refused first.
+func TestEntryRefusal_SameCodeAsTokenIssuance(t *testing.T) {
+	h := &LocalAuthHandler{logger: logger.NewNop()}
+	for _, sentinel := range []error{
+		auth.ErrSSORequired,
+		auth.ErrSSOMFAEvidenceRequired,
+		auth.ErrMFAEnrollmentRequired,
+		auth.ErrEmailNotVerified,
+		auth.ErrOwnSignInRequired,
+		auth.ErrPersonalAccountsBlocked,
+	} {
+		t.Run(sentinel.Error(), func(t *testing.T) {
+			var refusal *auth.EntryRefusal
+			if !errors.As(auth.EntryRefusalFor(fmt.Errorf("check: %w", sentinel)), &refusal) {
+				t.Fatalf("%v is not an entry refusal", sentinel)
+			}
+			rec := httptest.NewRecorder()
+			h.handleAuthError(rec, fmt.Errorf("mint: %w", sentinel))
+			var body struct {
+				Code string `json:"code"`
+			}
+			_ = json.NewDecoder(rec.Body).Decode(&body)
+			if refusal.ErrorCode() != body.Code || refusal.HTTPStatus() != rec.Code {
+				t.Fatalf("per request %d %s, at token issuance %d %s", refusal.HTTPStatus(), refusal.ErrorCode(), rec.Code, body.Code)
+			}
+		})
+	}
+}
+
+// Accepting an invitation sent to another address is its own refusal, so the
+// invitation page can say "sign in with that account" instead of offering
+// Accept again.
+func TestInvitationForAnotherAddressHasItsCode(t *testing.T) {
+	if !errors.Is(tenantapp.ErrInvitationForAnotherAddress, shared.ErrValidation) {
+		t.Fatal("it must stay a validation error for other callers")
+	}
+	rec := httptest.NewRecorder()
+	(&TenantHandler{logger: logger.NewNop()}).handleServiceError(rec, fmt.Errorf("accept: %w", tenantapp.ErrInvitationForAnotherAddress))
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "INVITATION_FOR_ANOTHER_ADDRESS") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	(&LocalAuthHandler{logger: logger.NewNop()}).handleAuthError(rec, tenantapp.ErrInvitationForAnotherAddress)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "INVITATION_FOR_ANOTHER_ADDRESS") {
+		t.Fatalf("accept-with-refresh: %d %s", rec.Code, rec.Body.String())
+	}
+}
