@@ -63,6 +63,10 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 			im.WithRelay(svc.FeedRelay.DirIfRelay(feedrelayVulnFeed))
 		}
 		f.importer = im
+		// Advisory cards ride the same side manifest (the cards stream).
+		if repos.AdvisoryCards != nil {
+			im.WithCards(repos.AdvisoryCards)
+		}
 		// KEV and EPSS ride the same release as a signed side manifest: applied
 		// when newer than what the platform holds, then the same findings sweep
 		// and event log as after a direct sync.
