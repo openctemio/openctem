@@ -93,7 +93,7 @@ API a two-way channel to every allowlisted host, which zero egress is meant to r
 
 The feed egress category has the modes `direct` and `relay`. In `relay` the platform makes no
 outbound feed request: the vulnerability feed and its KEV/EPSS side manifest come from the relay,
-the direct KEV/EPSS fetchers are off, the release feed comes through the relay, and program feed
+the direct KEV/EPSS fetchers are off (removed altogether on 2026-11-18: KEV and EPSS now come only from the release in every mode), the release feed comes through the relay, and program feed
 URL origins are not fetched (listed as not relayed). A configured bundle directory or a missing job
 signer locks relay mode off.
 

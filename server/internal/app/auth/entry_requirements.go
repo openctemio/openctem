@@ -79,7 +79,7 @@ func (s *AuthService) CheckEntry(ctx context.Context, sessionID, userID, tenantI
 
 	for _, check := range []func() error{
 		func() error { return s.enforceEmailVerificationPolicy(ctx, u, tenantID) },
-		func() error { return s.enforceSSOPolicy(ctx, sess, tenantID, m.Role().String()) },
+		func() error { return s.enforceSSOPolicy(ctx, sess, tenantID, m.Role().String(), admitCheck) },
 		func() error { return s.enforceIdPBindingPolicy(ctx, sess, uid, tenantID) },
 		func() error { return s.enforceMFAPolicy(ctx, sess, uid, tenantID) },
 		func() error { return s.enforcePersonalPolicy(ctx, sess, uid, tenantID) },
