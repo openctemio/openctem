@@ -191,7 +191,7 @@ vars:
     component: api
     group: "HTTP server"
     type: list
-    description: "Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console."
+    description: "Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console. List the web console server only when a proxy that sets `X-Forwarded-For` sits in front of it; with no such proxy, its forwarded header is the caller's own and must not be believed."
   - name: SERVER_WRITE_TIMEOUT
     component: api
     group: "HTTP server"
