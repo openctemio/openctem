@@ -209,6 +209,8 @@ function AddressHistoryDialog({
             columns={columns}
             data={items}
             getRowId={(a) => a.address}
+            // Opened only once the list is loaded; a failed read hides the card.
+            error={null}
             showSearch={items.length > 10}
             showColumnToggle={false}
             showPagination={items.length > 20}
