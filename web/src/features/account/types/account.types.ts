@@ -146,7 +146,7 @@ export interface UserPreferences {
   date_format: string
   time_format: '12h' | '24h'
   /**
-   * Browser-local (no server field): set on /account/notifications, under
+   * Browser-local (no server field): set on /settings/me/notifications, under
    * "This browser". Optional because older stored objects may lack it.
    */
   desktop_notifications?: boolean
