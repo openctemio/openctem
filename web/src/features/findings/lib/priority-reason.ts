@@ -3,7 +3,7 @@
  *
  * The API sends `priority_class_reason` as English text built by the server's
  * classifier (server/pkg/domain/vulnerability/priority.go): one base sentence,
- * then notes joined with " · " (a raised floor, the ownership cap, ...). Each
+ * then notes joined by a middle dot (a raised floor, the ownership cap, ...). Each
  * part with a known shape is worded from the catalog (`findings.priorityReason.*`)
  * with its values (severity, EPSS, criticality) kept; a part this build does not
  * know, such as a tenant rule's own reason, is shown as written.
@@ -49,7 +49,7 @@ const sev = (m: RegExpExecArray, t: T) => ({ severity: severity(m[1], t) })
 
 const RULES: Rule[] = [
   {
-    re: /^Informational finding — no remediation required$/,
+    re: /^Informational finding \u2014 no remediation required$/,
     key: 'informational',
     en: 'Informational finding, no fix required',
   },
@@ -128,7 +128,7 @@ const RULES: Rule[] = [
     vars: sev,
   },
   {
-    re: new RegExp(`^${WORD} severity — track and fix opportunistically$`),
+    re: new RegExp(`^${WORD} severity \u2014 track and fix opportunistically$`),
     key: 'severityOpportunistic',
     en: '{severity} severity; fix when convenient',
     vars: sev,
@@ -168,7 +168,7 @@ function part(text: string, t: T): string {
 export function priorityReasonText(reason: string | null | undefined, t: T = enT): string {
   if (!reason?.trim()) return ''
   return reason
-    .split(' · ')
+    .split(' \u00b7 ')
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => {
