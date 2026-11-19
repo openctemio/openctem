@@ -1,10 +1,12 @@
 {
   "$comment": "API requests a hard load of each dashboard page may send (research/81). A page not listed gets defaultMax. Lower a number when a page gets cheaper; raising one needs a reviewer to agree the new request cannot come from the bootstrap, the cache or an event.",
   "defaultMax": 5,
+  "shellRequests": ["GET /api/v1/threat-intel/freshness"],
+  "$comment_shellRequests": "Reads the page shell sends on every page, which a page budget does not count (each is still sent at most once per load). The out-of-date-data banner reads GET /api/v1/threat-intel/freshness once: the answer is the server's own 10-minute check of the platform's data, the same for every user of the install, so it is not bootstrap data of the session, and one request on a hard load (then every 5 minutes) is its whole cost.",
   "routes": {
     "/": 2,
     "/compliance": 3,
-    "/scope": 5,
+    "/scope": 6,
     "/sensors": 8,
     "/assets": 9,
     "/assets/attention": 9,
@@ -22,6 +24,7 @@
     "/settings/scanning/scan-windows": 6,
     "/settings/scanning/sensor-safety": 6
   },
+  "$comment_providers": "/scope sends one more request than its counts need: GET /api/v1/scope/provider-addresses lists the entries that lie on a provider's shared addresses and still wait for the person's answer (move out of scope, or keep scanning). It is its own resource: the count strip and the table read other lists, and the card has its own mutations that refresh only it. Folding it into the entries list would make every entries page carry provider groups it does not show.",
   "$comment_security": "/account/security reads the account's own sign-in methods (one request, GET /api/v1/me/sign-in-methods): they are per account and change only by the person's own link or unlink, so neither the bootstrap nor the cache holds them. The organization sign-in card adds one more for the same reason (GET /api/v1/me/sso-links: the account's organizations with single sign-on and its identity at each).",
   "$comment_counts": "/scope reads its strip, tab and approval counts from two one-row lists with include=status_counts (entries, exclusions) next to its table; /compliance reads every framework card's stats from the frameworks list (include=stats); /sensors reads the fleet and its stats in one poll-mode request (changed_since), which its 15 s refresh repeats with only the changed sensors.",
   "$comment_posture": "/attack-surface sends the bootstrap, the suggestion count, the summary, the stats, the monitoring settings and the posture score (GET /api/v1/attack-surface/posture, one precomputed row per organization). The score is per organization and changes on the posture refresh schedule, so neither the bootstrap nor the cache holds it; folding it into the summary would couple two cards that refresh on different schedules.",

@@ -905,6 +905,7 @@ func registerAdminRoutes(
 	if h.ThreatIntel != nil {
 		router.Group("/api/v1/admin/threat-intel", func(r Router) {
 			r.GET("/sync", h.ThreatIntel.GetSyncStatuses)
+			r.GET("/freshness", h.ThreatIntel.GetFreshnessAdmin)
 			feedWrite := []Middleware{}
 			// Turning a feed off changes every organization's prioritization.
 			syncMW, toggleMW := cloneMW(feedWrite), append(cloneMW(feedWrite), stepUp("threat_intel.sync_toggle"))

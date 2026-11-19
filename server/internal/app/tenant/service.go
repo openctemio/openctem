@@ -65,6 +65,9 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
+	// orgGate refuses accepting an invitation of a suspended organization
+	// (optional; nil admits).
+	orgGate tenantdom.AccessGate
 	// tagRules drops the cached governing-tag set when approval rules change.
 	tagRules TagRulesInvalidator
 	// signups reports organizations created to the sign-up feed (optional).
@@ -203,6 +206,11 @@ var (
 	ErrMembershipSuspendedReactivate = fmt.Errorf("%w: this person's membership is suspended; reactivate it in Members instead", shared.ErrValidation)
 	// ErrInvitationMembershipSuspended: the invitee's own membership is suspended.
 	ErrInvitationMembershipSuspended = fmt.Errorf("%w: your access to this organization is suspended; contact an administrator to be reactivated", shared.ErrValidation)
+	// ErrInvitationForAnotherAddress: the signed-in account is not the one the
+	// invitation was sent to. Its own code lets the console say to sign in
+	// with that account instead of offering Accept again; the address is
+	// already shown to whoever holds the invitation link.
+	ErrInvitationForAnotherAddress = fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
 )
 
 // SSOEnforcementStore is what Require SSO needs to know and do beyond the
@@ -1629,6 +1637,10 @@ func (s *TenantService) GetInvitationByToken(ctx context.Context, token string) 
 	return s.repo.GetInvitationByToken(ctx, crypto.HashToken(token))
 }
 
+// SetOrganizationGate wires the organization access gate: an invitation of a
+// suspended organization cannot be accepted.
+func (s *TenantService) SetOrganizationGate(g tenantdom.AccessGate) { s.orgGate = g }
+
 // AcceptInvitation accepts an invitation and creates a membership.
 // userID is the local user ID (from users table) of the person accepting the invitation.
 // userEmail is used to verify the invitation is intended for this user.
@@ -1697,7 +1709,7 @@ func (s *TenantService) DeclineInvitationByID(ctx context.Context, tenantID, inv
 func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
 	// Verify the invitation is for this user's email (case-insensitive)
 	if !strings.EqualFold(invitation.Email(), userEmail) {
-		return nil, fmt.Errorf("%w: this invitation was sent to a different email address", shared.ErrValidation)
+		return nil, ErrInvitationForAnotherAddress
 	}
 
 	if !invitation.IsPending() {
@@ -1706,6 +1718,18 @@ func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenant
 		}
 		if invitation.IsAccepted() {
 			return nil, fmt.Errorf("%w: invitation has already been accepted", shared.ErrValidation)
+		}
+	}
+
+	// A suspended organization takes no new member (docs/architecture/
+	// organization-suspension.md). Refused before anything changes, so the
+	// invitation stays pending for when the suspension is lifted.
+	if s.orgGate != nil {
+		if err := s.orgGate.CheckAccess(ctx, invitation.TenantID()); err != nil {
+			if errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("organization status: %w", err)
 		}
 	}
 
@@ -3201,6 +3225,14 @@ func (s *TenantService) UpdateScopeSettings(
 	var before tenantdom.ScopeSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionScope, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Scope
+		// Turning the hold on provider shared addresses off lifts every hold
+		// of the organization at once: the same critical re-login as Keep
+		// scanning, whatever the sensitive tier says.
+		if tenantdom.ProviderHoldLifted(before, ss) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		// The owner-only fields are never changed here.
 		return t.UpdateScopeSettings(ss.WithIntrusive(before.Intrusive()))
 	})
@@ -3218,6 +3250,10 @@ func (s *TenantService) UpdateScopeSettings(
 	if tenantdom.RangeWidened(before, out) {
 		event = event.WithMessage(fmt.Sprintf("Scope settings updated: the widest scan target range was raised from /%d to /%d", before.RangePrefix(), out.RangePrefix())).
 			WithMetadata("range_widened", true)
+	}
+	if tenantdom.ProviderHoldLifted(before, out) {
+		event = event.WithMessage("Scope settings updated: the hold on shared provider addresses was turned off").
+			WithMetadata("provider_hold_lifted", true)
 	}
 	s.logAudit(ctx, actx, event)
 	return &out, nil
