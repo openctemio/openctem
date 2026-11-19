@@ -247,13 +247,14 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
                 <Label htmlFor="ci-setup-owners">{ownersLabel}</Label>
                 <Input
                   id="ci-setup-owners"
+                  placeholder={t('scans.ci.setup.ownersPlaceholder', 'acme, acme-labs')}
                   value={owners}
                   onChange={(e) => setOwners(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t(
                     'scans.ci.setup.ownersHint',
-                    'Comma separated. Only pipelines of these may report; you can narrow by repository and branch later.'
+                    'Several values: separate them with commas. Only pipelines of these may report; you can narrow by repository and branch later.'
                   )}
                 </p>
               </div>

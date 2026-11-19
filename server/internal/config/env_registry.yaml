@@ -912,6 +912,12 @@ vars:
     type: int
     default: "120"
     description: "Per-user budget (and burst) for authenticated `GET` requests. Values of 0 or less fall back to the default."
+  - name: RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN
+    component: api
+    group: "CORS and rate limiting"
+    type: int
+    default: "20"
+    description: "Per-address budget for token requests (`/auth/token`: an invitation's Open, a team switch). Only a test stack where every simulated browser shares one address raises it; production refuses a value above 20. Values of 0 or less keep the default."
   - name: RATE_LIMIT_RPS
     component: api
     group: "CORS and rate limiting"
@@ -1614,7 +1620,7 @@ vars:
     component: api
     group: "Integrations"
     type: string
-    description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+    description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. A platform owner can also open ranges at runtime in the console (System > Private networks); the guard allows both lists, and the console shows this one read only."
   - name: OPENCTEM_HTTPSEC_FEED_PROXY
     component: api
     group: "Integrations"

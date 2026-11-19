@@ -203,6 +203,11 @@ type Service struct {
 	// verification (refusal_reasons.go).
 	unverified      unverifiedRecorder
 	unverifiedStore cirun.UnverifiedRefusalStore
+	// newRepos keeps the new repositories of all-projects trust
+	// configurations (new_repositories.go).
+	newRepos cirun.NewRepositoryStore
+	// groupNotices throttles the new-group notices per configuration.
+	groupNotices groupNotices
 
 	// keyNotices throttles the pasted-key rotation notices.
 	keyNotices noticeThrottle
@@ -387,6 +392,16 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	// workload token verified, so only a trusted pipeline learns the status.
 	if err := s.organizationOpen(ctx, tenantID); err != nil {
 		return nil, err
+	}
+	// An all-projects configuration admits a repository an administrator
+	// approved; a new one waits (checkNewRepository).
+	if cfg.Rules.AllRepositories {
+		if refusal, err := s.checkNewRepository(ctx, tenantID, cfg, claims); err != nil {
+			return nil, err
+		} else if refusal != nil {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+			return nil, publicRefusal(refusal)
+		}
 	}
 	// A repository name stays with the repository id that first reported
 	// under it (checkRepositoryBinding).
