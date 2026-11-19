@@ -5,6 +5,7 @@ import { CalendarClock, Globe, ShieldCheck, Users } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
 import type { RoleSummary } from '@/features/access-control/types/role.types'
+import { formatDate } from '@/lib/app-locale'
 
 /** What an invitation gives, as the public lookup returns it (api RFC-095 §5). */
 export interface InvitationGrants {
@@ -16,10 +17,10 @@ export interface InvitationGrants {
   mfa_reason?: 'outside_privileged' | 'organization_policy' | string
 }
 
-function formatDay(iso: string, locale: string): string {
+function formatDay(iso: string, _locale: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+  return formatDate(d, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /**

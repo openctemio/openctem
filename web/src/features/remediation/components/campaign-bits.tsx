@@ -7,6 +7,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useOwnerNames } from '@/features/remediation-hub/api/use-owner-names'
 import { cn } from '@/lib/utils'
 import type { CampaignSummary, RemediationCampaign } from '../api/use-remediation-campaigns'
+import { formatDate } from '@/lib/app-locale'
 
 /** "Sam · Ops", or "Unassigned". */
 export function useCampaignOwner() {
@@ -30,8 +31,8 @@ export function daysUntil(iso: string, now = Date.now()): number {
   return Math.round((Date.parse(iso) - now) / 86_400_000)
 }
 
-export function formatDay(iso: string, locale: string) {
-  return new Date(iso).toLocaleDateString(locale, {
+export function formatDay(iso: string, _locale: string) {
+  return formatDate(new Date(iso), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

@@ -45,6 +45,7 @@ import {
   type RefusalGroup,
 } from '../../lib/refusal-groups'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Examples shown before "Show all". */
 export const GROUP_EXAMPLES = 5
@@ -131,7 +132,7 @@ export function ReadinessLine({
       <span className="font-medium">
         {total === 1
           ? t('scans.readiness.targetsOne')
-          : t('scans.readiness.targetsMany', undefined, { count: total.toLocaleString() })}
+          : t('scans.readiness.targetsMany', undefined, { count: formatNumber(total) })}
       </span>
       {groupCount > 0 && (
         <span className="font-medium">

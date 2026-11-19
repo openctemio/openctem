@@ -43,9 +43,10 @@ import { EMPTY_TEAM_ACCESS, TeamAccessFields, type TeamAccessValue } from './tea
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

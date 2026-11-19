@@ -59,6 +59,7 @@ import {
 } from '@/features/pentest/components/flagged-attachment'
 import Image from 'next/image'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface EvidenceTabProps {
   evidence: Evidence[]
@@ -133,7 +134,7 @@ function RepositoryLink({
 }
 
 export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTabProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
   const { data: evidenceItems, mutate: refreshToolEvidence } = useFindingEvidenceItems(
@@ -210,7 +211,7 @@ export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTa
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(locale, {
+    return localeFormatDate(new Date(dateString), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

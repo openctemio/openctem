@@ -46,6 +46,7 @@ import type {
   CIRepositoryCoverage,
 } from '../types'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDateTime } from '@/lib/app-locale'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -61,7 +62,7 @@ function capabilityTitle(c: CICapabilityCoverage, t: TFn): string {
     parts.push(
       t('scans.ci.coverage.last', 'Last: {source}', {
         source: `${kind}${c.source_name ? ` (${c.source_name})` : ''}`,
-      }) + (c.last_at ? `, ${new Date(c.last_at).toLocaleString()}` : '')
+      }) + (c.last_at ? `, ${formatDateTime(new Date(c.last_at))}` : '')
     )
   }
   if (c.expected)

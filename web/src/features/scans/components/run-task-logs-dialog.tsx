@@ -19,6 +19,7 @@ import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskLogLine, RunTaskLogs } from '@/lib/api/generated'
 import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
+import { formatTime } from '@/lib/app-locale'
 
 /** The pill tone of a log level. */
 export function logLevelTone(level?: string): PillTone {
@@ -106,7 +107,7 @@ export function attemptBoundaries(lines: RunTaskLogLine[]): Map<number, number> 
 function lineTime(ts?: string): string {
   if (!ts) return '-'
   const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleTimeString(undefined, { hour12: false })
+  return Number.isNaN(d.getTime()) ? '-' : formatTime(d, { hour12: false })
 }
 
 function LogLineRow({ line }: { line: RunTaskLogLine }) {

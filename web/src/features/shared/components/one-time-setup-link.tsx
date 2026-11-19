@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * What the API returns after creating an account for someone (or re-issuing
@@ -42,7 +43,7 @@ function formatExpiry(iso?: string): string | null {
   if (!iso) return null
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleString(undefined, {
+  return formatDateTime(d, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

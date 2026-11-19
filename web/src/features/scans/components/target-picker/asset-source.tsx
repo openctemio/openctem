@@ -33,6 +33,7 @@ import type { Asset, AssetType } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
 import { CRITICALITY_LABELS, type CriticalityLevel } from '@/lib/criticality'
 import { MAX_DIRECT_TARGETS } from '../../lib/scan-form'
+import { formatNumber } from '@/lib/app-locale'
 
 export const ASSET_PAGE_SIZE = 25
 const ALL = 'all'
@@ -115,8 +116,8 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
       if (all.length > capped.length) {
         toast.warning(
           t('scans.assets.selectedFirst', undefined, {
-            max: MAX_DIRECT_TARGETS.toLocaleString(),
-            total: all.length.toLocaleString(),
+            max: formatNumber(MAX_DIRECT_TARGETS),
+            total: formatNumber(all.length),
           })
         )
       }
@@ -214,7 +215,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
               disabled={selectingAll}
             >
               {selectingAll && <Loader2 className="me-1 h-3 w-3 animate-spin" aria-hidden />}
-              {t('scans.assets.selectAllMatching', undefined, { count: total.toLocaleString() })}
+              {t('scans.assets.selectAllMatching', undefined, { count: formatNumber(total) })}
             </Button>
           )}
           <div className="flex items-center gap-2">
@@ -323,7 +324,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground text-xs">
             {t(total === 1 ? 'scans.assets.countOne' : 'scans.assets.countMany', undefined, {
-              count: total.toLocaleString(),
+              count: formatNumber(total),
             })}
           </p>
           {totalPages > 1 && (

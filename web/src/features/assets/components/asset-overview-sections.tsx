@@ -35,6 +35,7 @@ import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
 import type { Asset } from '../types/asset.types'
 import { ProgramTargetBadge } from './program-target-badge'
 import { AssetRiskExplanation } from './asset-risk-explanation'
+import { formatDateTime } from '@/lib/app-locale'
 
 // The property list gets a search box from this many values.
 const SEARCH_FROM = 8
@@ -59,7 +60,7 @@ function DateWithRelative({ iso }: { iso?: string }) {
   if (!iso) return null
   return (
     <span className="flex flex-wrap items-baseline gap-x-1.5">
-      <span>{new Date(iso).toLocaleString()}</span>
+      <span>{formatDateTime(new Date(iso))}</span>
       <RelativeTime date={iso} className="text-xs text-muted-foreground" />
     </span>
   )

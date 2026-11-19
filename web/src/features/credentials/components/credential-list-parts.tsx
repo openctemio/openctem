@@ -13,6 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { FacetOption, FacetPanel, FacetSection, SeverityBadge } from '@/features/shared'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import type { Severity } from '@/features/shared/types'
+import { formatDate } from '@/lib/app-locale'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
@@ -105,13 +106,13 @@ export function CredentialStatusCell({ status }: { status: string }) {
 
 /** The leak date, with "Recent" when it is within the last 30 days. */
 export function LeakDate({ date, className }: { date: string; className?: string }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   if (!date) return <span className="text-muted-foreground">—</span>
   const recent = daysSince(date) <= RECENT_DAYS
   return (
     <span className={cn('inline-flex items-baseline gap-1.5 tabular-nums', className)}>
       <span className={cn(recent && 'font-medium text-destructive')}>
-        {new Date(date).toLocaleDateString(locale)}
+        {formatDate(new Date(date))}
       </span>
       {recent && (
         <span className="text-meta text-destructive">
@@ -225,7 +226,7 @@ export function CredentialPhoneCard({
   item: CredentialLeakRow
   onOpen: () => void
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const name = toDisplayText(item.name, 200)
   const user = toDisplayText(item.metadata.username, 200)
   const facts = [
@@ -260,7 +261,7 @@ export function CredentialPhoneCard({
             leakDate ? (
               <span key="leak" className={cn('tabular-nums', recent && 'text-destructive')}>
                 {t('credentials.mobile.leaked', 'Leaked {date}', {
-                  date: new Date(leakDate).toLocaleDateString(locale),
+                  date: formatDate(new Date(leakDate)),
                 })}
               </span>
             ) : null,
@@ -272,7 +273,7 @@ export function CredentialPhoneCard({
             !leakDate && item.firstSeen ? (
               <span key="seen" className="tabular-nums">
                 {t('credentials.mobile.discovered', 'Discovered {date}', {
-                  date: new Date(item.firstSeen).toLocaleDateString(locale),
+                  date: formatDate(new Date(item.firstSeen)),
                 })}
               </span>
             ) : null,

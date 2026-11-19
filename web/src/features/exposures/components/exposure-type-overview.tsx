@@ -34,6 +34,7 @@ import { SEVERITY_CHART_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib
 import { findingsHrefForSources } from './exposures-section'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatNumber } from '@/lib/app-locale'
 
 export const SEVERITY_LABELS: Record<SeverityLevel, string> = SHARED_SEVERITY_LABELS
 
@@ -116,7 +117,7 @@ export function TypeBreakdownUnavailable({
   return (
     <EmptyState
       icon={icon}
-      title={`${total.toLocaleString()} ${total === 1 ? noun[0] : noun[1]}`}
+      title={`${formatNumber(total)} ${total === 1 ? noun[0] : noun[1]}`}
       description={t(
         'findings.typeOverview.breakdownUnavailable',
         'The breakdown for this type is not available here. The findings list shows it in full.'
@@ -341,7 +342,7 @@ export function SeverityShareList({
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between gap-2 text-sm">
                 <span className="font-medium tabular-nums">
-                  {row.value.toLocaleString()} {row.value === 1 ? noun[0] : noun[1]}
+                  {formatNumber(row.value)} {row.value === 1 ? noun[0] : noun[1]}
                 </span>
                 <span className="text-muted-foreground tabular-nums">{percentage.toFixed(1)}%</span>
               </div>
@@ -379,7 +380,7 @@ export function RankedBarList({
             <div className="mb-1 flex items-center justify-between gap-2 text-sm">
               <span className="truncate font-medium">{row.name}</span>
               <span className="shrink-0 text-muted-foreground tabular-nums">
-                {row.count.toLocaleString()} {row.count === 1 ? unit[0] : unit[1]}
+                {formatNumber(row.count)} {row.count === 1 ? unit[0] : unit[1]}
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">

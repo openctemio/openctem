@@ -31,6 +31,7 @@ import {
 import type { Wordlist } from '../types'
 import { WordlistDialog } from './wordlist-dialog'
 import { WordlistPreviewCard } from './wordlist-preview'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Settings, Scanning, Wordlists. Reading needs scans:content:read, changes scans:content:write. */
 export function WordlistsPanel() {
@@ -140,9 +141,7 @@ export function WordlistsPanel() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">
-                      {w.lines.toLocaleString()}
-                    </TableCell>
+                    <TableCell className="text-end tabular-nums">{formatNumber(w.lines)}</TableCell>
                     <TableCell className="text-end">
                       <Badge variant="secondary" className="font-normal tabular-nums">
                         {t('wordlists.versionValue', 'v{version}', { version: w.version })}

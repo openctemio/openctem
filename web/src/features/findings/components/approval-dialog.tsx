@@ -29,6 +29,7 @@ import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { ApiApproval, FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
+import { formatDate } from '@/lib/app-locale'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
 const DEFAULT_ACCEPTANCE_DAYS = 90
@@ -184,7 +185,7 @@ export function ApprovalDialog({
           ? t(
               'findingApprovals.single.appliedAccept',
               'Risk accepted until {date}. It is recorded with your name and reason.',
-              { date: new Date(`${expiresAt}T00:00:00`).toLocaleDateString() }
+              { date: formatDate(new Date(`${expiresAt}T00:00:00`)) }
             )
           : appliedAlone
             ? t(
@@ -413,7 +414,7 @@ export function ApprovalDialog({
                     <span className="font-medium text-muted-foreground">
                       {t('findings.approvalDialog.expires', 'Expires:')}
                     </span>{' '}
-                    {new Date(`${expiresAt}T00:00:00`).toLocaleDateString()}
+                    {formatDate(new Date(`${expiresAt}T00:00:00`))}
                   </div>
                 )}
               </div>

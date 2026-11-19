@@ -7,6 +7,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { DetailPosition } from '@/features/shared/components/detail'
 import { useFindingListNav } from '../../hooks/use-finding-list-nav'
 import { TYPING_TARGETS } from '../../hooks/use-drawer-navigation'
+import { formatNumber } from '@/lib/app-locale'
 
 export interface FindingPosition {
   /** The list the finding was opened from (back with its filters). */
@@ -65,8 +66,8 @@ export function useFindingPosition(findingId: string): FindingPosition {
     control: (
       <DetailPosition
         label={t('findings.detail.listNav.position', '{n} of {total}', {
-          n: nav.position.toLocaleString(),
-          total: nav.total.toLocaleString(),
+          n: formatNumber(nav.position),
+          total: formatNumber(nav.total),
         })}
         listHref={returnHref}
         listLabel={t('findings.detail.listNav.backTo', 'Back to {list}', { list: listLabel })}
