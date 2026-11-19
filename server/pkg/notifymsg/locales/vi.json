@@ -38,6 +38,7 @@
   "event.ci.break_glass": "CI đã dùng quyền khẩn cấp",
   "event.ci.coverage_regression": "CI mất độ phủ quét",
   "event.ci.gate_failing": "Nhánh mặc định CI đang lỗi",
+  "event.ci.new_repository_group": "Nhóm mới gửi kết quả CI",
   "event.ci.runner_outdated": "CI runner đã cũ",
   "event.ci.schedule_missed": "CI bỏ lỡ lượt quét theo lịch",
   "event.ci.token_refusals": "CI từ chối token",

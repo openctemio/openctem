@@ -247,6 +247,10 @@ func TestMFAReplace(t *testing.T) {
 		if !h.audits.has(audit.ActionAuthMFAReplaced) {
 			t.Fatal("the replacement was not audited")
 		}
+		// One notice for the enrolment in setup, one for the replacement.
+		if h.notifier.mfaReplaced != 1 || h.notifier.mfaEnabled != 1 {
+			t.Fatalf("notices: replaced=%d enabled=%d, want 1 and 1", h.notifier.mfaReplaced, h.notifier.mfaEnabled)
+		}
 		// Old code no longer signs in, new one does; old recovery codes are gone.
 		h.forgetLastStep(uid)
 		ch := h.login(t, "swap@example.com").MFAChallenge

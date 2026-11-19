@@ -84,6 +84,16 @@ services:
       # One account drives every test; at the default 120 reads a minute per
       # user the suite gets 429s and their error toasts cover what it clicks.
       RATE_LIMIT_READ_PER_MIN: '3000'
+      # Every browser of the run reaches the API from one address, and the
+      # API allows 20 token requests a minute per address (an invitation's
+      # Open and a team switch each take one), so the sign-in journeys got
+      # 429 on Open. Only this stack raises it; production refuses above 20.
+      RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN: '600'
+      # The sign-in journeys spec seeds each simulated person from the test
+      # runner with their own X-Forwarded-For address (documentation range),
+      # so the per-address sign-in limit applies per person, as behind the
+      # production proxy. Only the stack's own networks are trusted.
+      SERVER_TRUSTED_PROXIES: 127.0.0.1/32,172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
     healthcheck:
       test: ['CMD', '/app/server', '-healthcheck']
       interval: 2s

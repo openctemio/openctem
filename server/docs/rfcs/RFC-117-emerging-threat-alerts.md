@@ -171,11 +171,20 @@ cannot see). Out of scope answers 404.
 
 Shipped by this RFC's pull requests: §2 (event log, hourly KEV), §3, §4.
 
+Shipped with RFC-066 §12 (2026-11-18): possibly affected assets from
+version-less technologies. A technology or `Server` header that names a
+curated public product without a version is a software link, so the alert's
+possible tier lists those hosts. An urgent vulnerability (in KEV; critical
+with a public exploit or EPSS 0.1 or more; an open **immediate** alert of the
+organization; or the platform's urgent list) gives them a finding marked
+Possible, which the alert counts in its possible tier, never as likely. An
+immediate alert therefore also widens what the matcher turns into findings
+for that organization.
+
 Planned: exploit and PoC events from the feed (`weaponised`,
 `exploit_public`, `detection_available`) and removal of the direct KEV/EPSS
-fetch; possibly affected assets from version-less technologies; targeted
-confirmation scans; per-asset verdicts; learning from *not affected*;
-vendor advisory grouping; signal-based early warnings (opt-in).
+fetch; targeted confirmation scans; per-asset verdicts; learning from *not
+affected*; vendor advisory grouping; signal-based early warnings (opt-in).
 
 ## 7. Implementation
 
