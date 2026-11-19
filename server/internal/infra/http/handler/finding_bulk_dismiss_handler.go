@@ -105,7 +105,7 @@ func (h *VulnerabilityHandler) PreviewBulkDismiss(w http.ResponseWriter, r *http
 // @Description  skipped. More than 25 decided alone needs a recent re-authentication (403 STEP_UP_REQUIRED, nothing
 // @Description  changed). At most 1,000 decided alone per person per 24 hours; more go to the group
 // @Description  (counts.budget_overflow). idempotency_key is required; the same key replays the first result
-// @Description  (replay: true), with another request it answers 409 IDEMPOTENCY_MISMATCH.
+// @Description  (replay: true), with another request it answers 422 IDEMPOTENCY_KEY_REUSED.
 // @Tags         Findings
 // @Accept       json
 // @Produce      json
@@ -331,7 +331,7 @@ func (h *VulnerabilityHandler) writeBulkDismissError(w http.ResponseWriter, err 
 		apierror.New(http.StatusConflict, apierror.CodeSelectionChanged, changed.Error()).
 			WithDetails(map[string]int{paramCount: changed.Count}).WriteJSON(w)
 	case errors.Is(err, finding.ErrIdempotencyMismatch):
-		apierror.New(http.StatusConflict, apierror.CodeIdempotencyMismatch, err.Error()).WriteJSON(w)
+		apierror.New(http.StatusUnprocessableEntity, apierror.CodeIdempotencyKeyReused, err.Error()).WriteJSON(w)
 	case middleware.WriteStepUpError(w, err, authapp.StepUpWindow):
 	case errors.Is(err, finding.ErrBulkDismissNotFound):
 		apierror.NotFound("Bulk dismissal").WriteJSON(w)

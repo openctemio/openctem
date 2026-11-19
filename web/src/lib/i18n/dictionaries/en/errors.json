@@ -18,7 +18,6 @@
   "errors.FORBIDDEN": "You do not have permission to do this.",
   "errors.FULL_DATA_ACCESS_REQUIRED": "This changes findings of the whole organization, so it needs a role with access to all data.",
   "errors.IDEMPOTENCY_KEY_REUSED": "This idempotency key was already used for a different request.",
-  "errors.IDEMPOTENCY_MISMATCH": "This request was already sent with different values. Start a new one.",
   "errors.INTEGRATION_AUTH_FAILED": "The service refused the API token. Check it, or create a new one, and test again.",
   "errors.INTEGRATION_AUTH_FAILED.action": "Update API token",
   "errors.INTEGRATION_CREDENTIALS_UNREADABLE": "The saved API token of this connection cannot be read. Enter it again.",

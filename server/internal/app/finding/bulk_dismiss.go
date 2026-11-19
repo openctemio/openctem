@@ -32,9 +32,11 @@ package finding
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 	"time"
@@ -763,6 +765,8 @@ func (s *VulnerabilityService) applyBulkDismiss(ctx context.Context, in BulkDism
 	groupMembers := append([]bulkMember{}, plan.group...)
 	var raced []bulkMember
 	applied := make([]*vulnerability.Finding, 0, len(plan.decide))
+	secondLookRaised := false
+	secondLookShare := 0
 	for _, m := range plan.decide {
 		level := m.ev.org.fpLevel
 		if plan.status == vulnerability.FindingStatusAccepted {
@@ -774,12 +778,16 @@ func (s *VulnerabilityService) applyBulkDismiss(ctx context.Context, in BulkDism
 		a.DecisionFacts = factsJSON(m.ev.facts)
 		done, err := s.applySinglePerson(s.ticketSyncCtx(ctx, in.TenantID, []*vulnerability.Finding{m.f}), a, FPPolicyDecision{
 			Level: level, SinglePerson: true, SecondLookPercent: m.ev.org.secondLookPercent,
+			SecondLookRaised: &secondLookRaised,
 		}, extras)
 		switch {
 		case err == nil:
 			out.Decided = append(out.Decided, m.f.ID().String())
 			out.Applied = append(out.Applied, done)
 			applied = append(applied, m.f)
+			if m.ev.org.secondLookPercent > secondLookShare {
+				secondLookShare = m.ev.org.secondLookPercent
+			}
 		case errors.Is(err, vulnerability.ErrSinglePersonNotAllowed):
 			// Raced with a raised level or a finding that turned serious:
 			// a second person decides it, never this call alone.
@@ -789,6 +797,10 @@ func (s *VulnerabilityService) applyBulkDismiss(ctx context.Context, in BulkDism
 			s.logger.Warn("bulk dismiss: decide alone", "finding_id", m.f.ID().String(), "error", logger.SanitizeError(err))
 			out.Skipped = append(out.Skipped, BulkDismissSkip{ID: m.f.ID().String(), Reason: BulkSkipFailed})
 		}
+	}
+	if plan.status != vulnerability.FindingStatusAccepted && secondLookShare > 0 &&
+		len(applied) >= BulkSecondLookMin && !secondLookRaised {
+		s.raiseBulkSecondLook(ctx, out.Applied, secondLookShare)
 	}
 	if len(applied) > 0 {
 		s.afterApplied(ctx, in.TenantID, in.UserID.String(), applied, plan.status)
@@ -836,6 +848,28 @@ func (s *VulnerabilityService) applyBulkDismiss(ctx context.Context, in BulkDism
 		out.Counts.Grouped = out.Grouped.Count
 	}
 	return out
+}
+
+// BulkSecondLookMin is the number of findings decided alone from which a
+// bulk always gets at least one second look (when the share is above 0).
+const BulkSecondLookMin = 10
+
+// raiseBulkSecondLook raises a second look on one randomly chosen decided
+// finding (crypto/rand), after the per-finding sampling raised none.
+func (s *VulnerabilityService) raiseBulkSecondLook(ctx context.Context, approvals []*vulnerability.Approval, share int) {
+	raiser, ok := s.findingRepo.(decisionReviewRaiser)
+	if !ok || len(approvals) == 0 {
+		return
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(approvals))))
+	if err != nil {
+		n = big.NewInt(0)
+	}
+	a := approvals[int(n.Int64())]
+	if _, err := raiser.RaiseDecisionReview(ctx, a.TenantID, a.FindingID, DecisionReviewSecondLook,
+		map[string]any{"approval_id": a.ID.String(), "second_look_percent": share}); err != nil {
+		s.logger.Warn("bulk dismiss: raise the guaranteed second look", "error", logger.SanitizeError(err))
+	}
 }
 
 // result is the response shape of the plan (a preview lists the findings).

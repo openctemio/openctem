@@ -53,7 +53,6 @@ var registry = map[Code]Spec{
 	CodeIdempotencyKeyReused:    {http.StatusUnprocessableEntity, "This idempotency key was already used for a different request."},
 	// Bulk dismiss of findings (details.count, details.max).
 	CodeBulkDismissTooLarge: {http.StatusBadRequest, "Dismiss takes at most 500 findings at a time. Narrow the selection, or create a rule for a repeating pattern."},
-	CodeIdempotencyMismatch: {http.StatusConflict, "This request was already sent with different values. Start a new one."},
 
 	// Integrations (test connection and calls to a connected service).
 	CodeIntegrationNoCredentials:         {http.StatusUnprocessableEntity, "This connection has no credentials. Add them to use it."},
@@ -112,9 +111,6 @@ const (
 	// CodeBulkDismissTooLarge: a bulk dismiss selects more than 500 findings
 	// (details.count, details.max).
 	CodeBulkDismissTooLarge Code = "BULK_DISMISS_TOO_LARGE"
-	// CodeIdempotencyMismatch: the idempotency key was used with another
-	// request (other ids, filter, status, reason or note).
-	CodeIdempotencyMismatch Code = "IDEMPOTENCY_MISMATCH"
 )
 
 // SAML metadata import codes, registered above.

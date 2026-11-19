@@ -11,7 +11,13 @@
   and an immediate notice to the owners above 100 decided alone); a retry with the same idempotency key returns
   the first result. Undo by its creator within 24 hours reopens the findings it decided alone and cancels its
   pending group; nothing is deleted.
-- New error codes: `BULK_DISMISS_TOO_LARGE` (400, with the count) and `IDEMPOTENCY_MISMATCH` (409).
+- New error code: `BULK_DISMISS_TOO_LARGE` (400, with the count). A key reused with another request answers
+  the existing `IDEMPOTENCY_KEY_REUSED` (422), as bulk-by-filter does.
+- Second look: a bulk that decides 10 or more findings alone, with the organization's second-look share above
+  0, always gets at least one second look (one decided finding chosen at random when the per-finding sampling
+  raised none).
+- Known limit: an apply of 500 decided alone takes about 17 seconds (the findings are written one at a time).
+  A batched write path is a planned follow-up.
 - Migration 20261119095221 (`finding_bulk_dismissals`, and `selection` added to the approval group source
   types). Its down migration stops while a `selection` group exists, so no decision record is deleted.
 - Docs: server/docs/architecture/findings-bulk-by-filter.md#bulk-dismiss

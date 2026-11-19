@@ -114,6 +114,9 @@ type FPPolicyDecision struct {
 	PendingAt    *time.Time
 	// SecondLookPercent is the organization's second-look share.
 	SecondLookPercent int
+	// SecondLookRaised, when set, is set to true once a second look was
+	// raised for the decision (a bulk uses it to guarantee at least one).
+	SecondLookRaised *bool
 }
 
 // FalsePositivePolicy answers how a false positive on the finding would be
@@ -213,6 +216,8 @@ func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnera
 			if _, err := raiser.RaiseDecisionReview(ctx, a.TenantID, a.FindingID, DecisionReviewSecondLook,
 				map[string]any{"approval_id": a.ID.String(), "second_look_percent": d.SecondLookPercent}); err != nil {
 				s.logger.Warn("second look: raise review", "error", logger.SanitizeError(err))
+			} else if d.SecondLookRaised != nil {
+				*d.SecondLookRaised = true
 			}
 		}
 	}
