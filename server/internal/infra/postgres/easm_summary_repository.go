@@ -56,14 +56,18 @@ func notRejectedFor(col string) string { return fmt.Sprintf(notRejected, col) }
 // discovered by automation without anyone's claim, not in the review queue
 // and not rejected. Counts and metrics use it, so discovery noise never
 // inflates the organization's surface or risk (research/124).
-const attributed = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('discovered', 'needs_review', 'candidate', 'rejected'))`
+// Provider addresses (attribution.IsProviderAddress) are third-party
+// infrastructure: out of both populations (research/531 D6).
+var attributed = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND (iv.state IN ('discovered', 'needs_review', 'candidate', 'rejected') OR ` +
+	attribution.ProviderAddressSQL("iv") + `))`
 
 // AttributedSQL is the attributed-inventory condition for an asset id column.
 func AttributedSQL(col string) string { return fmt.Sprintf(attributed, col) }
 
 // inventory keeps the whole inventory (attribution.InInventory): discovered
 // assets included, the review queue and rejected assets left out.
-const inventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('needs_review', 'candidate', 'rejected'))`
+var inventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND (iv.state IN ('needs_review', 'candidate', 'rejected') OR ` +
+	attribution.ProviderAddressSQL("iv") + `))`
 
 // MetricsInventorySQL is the population a metric counts for an asset id
 // column: the attributed inventory, or the whole inventory when the request
@@ -213,22 +217,25 @@ func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shar
 	args := []any{tenantID.String(), pq.Array(EASMSurfaceTypes)}
 	sc, args := scopeClause("a.id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.asset_type, COALESCE(aa.state, ''), count(*)
+		SELECT a.asset_type, COALESCE(aa.state, ''), COALESCE(`+attribution.ProviderAddressSQL("aa")+`, false), count(*)
 		FROM assets a
 		LEFT JOIN asset_attributions aa ON aa.asset_id = a.id
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+sc+`
-		GROUP BY 1, 2`, args...)
+		GROUP BY 1, 2, 3`, args...)
 	if err != nil {
 		return fmt.Errorf("easm surface counts: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var typ, state string
+		var provider bool
 		var n int
-		if err := rows.Scan(&typ, &state, &n); err != nil {
+		if err := rows.Scan(&typ, &state, &provider, &n); err != nil {
 			return err
 		}
-		if metricsCounts(ctx, attribution.State(state)) {
+		// A provider address stays in its attribution state's count but is
+		// not part of the surface (research/531 D6).
+		if !provider && metricsCounts(ctx, attribution.State(state)) {
 			out.AssetsByType[typ] += n
 		}
 		out.AttributionByState[state] += n
