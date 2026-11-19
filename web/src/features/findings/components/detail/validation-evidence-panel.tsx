@@ -17,6 +17,7 @@ import {
   useFindingValidationEvidenceApi,
   type ValidationEvidenceItem,
 } from '../../api/use-findings-api'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface ValidationEvidencePanelProps {
   findingId: string
@@ -139,10 +140,10 @@ function DetectionBadge({ item }: { item: ValidationEvidenceItem }) {
   )
 }
 
-function formatTimestamp(value: string | undefined, locale: string): string {
+function formatTimestamp(value: string | undefined, _locale: string): string {
   if (!value) return ''
   const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString(locale)
+  return Number.isNaN(d.getTime()) ? value : formatDateTime(d)
 }
 
 function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {

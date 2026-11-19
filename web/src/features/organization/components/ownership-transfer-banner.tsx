@@ -18,11 +18,12 @@ import {
   type OwnershipTransfer,
 } from '../api/use-ownership-transfer'
 import { transferErrorKey } from '../lib/ownership-transfer'
+import { formatDateTime } from '@/lib/app-locale'
 
-function formatDate(iso: string, locale: string): string {
+function formatDate(iso: string, _locale: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+  return formatDateTime(d, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 /**

@@ -70,6 +70,7 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDate } from '@/lib/app-locale'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const { t } = useTranslation()
@@ -395,7 +396,7 @@ export function ScannerTemplatesSection() {
         ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {new Date(row.original.updated_at).toLocaleDateString()}
+            {formatDate(new Date(row.original.updated_at))}
           </span>
         ),
       },

@@ -1,3 +1,4 @@
+import { CORNER_MARK } from '@/components/ui/corner-dot'
 /**
  * The classes every top-bar control shares (shell package 0.2): ghost icon
  * buttons 32 x 32 with a 16 px icon (36 x 36 with a 20 px icon below 768 px,
@@ -50,4 +51,4 @@ export const HEADER_ACTIONS_GROUP =
   'flex flex-none items-center gap-1 max-md:gap-2 [&>:last-child]:ms-1 max-md:[&>:last-child]:ms-0'
 
 /** A count on the corner of a top-bar button (Counter `size="badge"`, ink). */
-export const HEADER_BADGE = 'pointer-events-none absolute -end-1 -top-1'
+export const HEADER_BADGE = CORNER_MARK

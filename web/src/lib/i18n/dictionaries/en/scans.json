@@ -3182,6 +3182,7 @@
   "scans.trigger.failed": "Failed to trigger scan \"{name}\"",
   "scans.trigger.hasRun": "{name} has a run that is {state}{started}{progress}.",
   "scans.trigger.inProgressTitle": "A run is already in progress",
+  "scans.trigger.manual": "Manual",
   "scans.trigger.notStarted": "\"{name}\" was not started",
   "scans.trigger.policy.coverage": "Automatic coverage",
   "scans.trigger.policy.enrichment": "Automatic enrichment",

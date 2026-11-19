@@ -193,6 +193,8 @@
   "common.noData": "No data",
   "common.noScore": "No score yet",
   "common.nobodyRecorded": "Nobody recorded",
+  "common.notFoundDescription": "It may have been deleted, or the link is out of date.",
+  "common.notFoundTitle": "Couldn't find {title}",
   "common.notRecorded": "Not recorded",
   "common.notWaiting": "Not waiting for a decision",
   "common.oneTimeLink.copy": "Copy link",

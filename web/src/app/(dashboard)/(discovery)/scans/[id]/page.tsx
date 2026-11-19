@@ -72,6 +72,7 @@ import {
   runTargetNote,
   runTaskProgress,
   runTriggeredByLabel,
+  runTriggerTypeLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
 import { isManagedScan, managedScanLabel } from '@/features/scans/lib/scan-status'
@@ -82,10 +83,6 @@ import { useRunChannels } from '@/hooks/use-websocket'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import {
-  SCAN_RUN_TRIGGER_LABELS,
-  type ScanWorkflowTriggerType,
-} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
@@ -332,10 +329,7 @@ export default function ScanDetailPage() {
             <span>{runTriggeredByLabel(row.original, t)}</span>
           ) : (
             <>
-              <span>
-                {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
-                  row.original.trigger_type}
-              </span>
+              <span>{runTriggerTypeLabel(row.original.trigger_type, t)}</span>
               {runTriggeredByLabel(row.original, t) && (
                 <span className="text-xs text-muted-foreground">
                   {runTriggeredByLabel(row.original, t)}
@@ -386,6 +380,8 @@ export default function ScanDetailPage() {
     },
     {
       id: 'actions',
+      // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+      meta: { kind: 'decisions' },
       enableHiding: false,
       cell: ({ row }) => {
         const run = row.original
@@ -522,7 +518,7 @@ export default function ScanDetailPage() {
           description={
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
-              <span>{scanTypeLabel(config).label}</span>
+              <span>{scanTypeLabel(config, t).label}</span>
               {managed ? (
                 <>
                   <Badge variant="secondary">{t('scans.managed.system')}</Badge>
@@ -530,8 +526,17 @@ export default function ScanDetailPage() {
                 </>
               ) : (
                 <>
-                  <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
-                  <span>{scanStateLabel(config)}</span>
+                  {/* A manual scan's state already says "Manual": the
+                      schedule type would only repeat it. */}
+                  {config.schedule_type !== 'manual' && (
+                    <span>
+                      {t(
+                        `scans.scheduleType.${config.schedule_type}`,
+                        SCHEDULE_TYPE_LABELS[config.schedule_type]
+                      )}
+                    </span>
+                  )}
+                  <span>{scanStateLabel(config, t)}</span>
                 </>
               )}
               <span>
@@ -663,7 +668,10 @@ export default function ScanDetailPage() {
               <DetailSection title={t('scanDetail.cfg.schedule')}>
                 <DetailFieldGrid>
                   <DetailField label={t('scanDetail.cfg.frequency')}>
-                    {SCHEDULE_TYPE_LABELS[config.schedule_type]}
+                    {t(
+                      `scans.scheduleType.${config.schedule_type}`,
+                      SCHEDULE_TYPE_LABELS[config.schedule_type]
+                    )}
                   </DetailField>
                   {config.schedule_time && (
                     <DetailField label={t('scanDetail.cfg.time')}>

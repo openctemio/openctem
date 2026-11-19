@@ -36,6 +36,7 @@ import { EPSSScoreBadge, EPSSScoreMeter } from '@/features/shared/components/eps
 import { KEVIndicatorBadge, KEVStatus } from '@/features/shared/components/kev-indicator-badge'
 import type { CVEEnrichment } from '@/lib/api/threatintel-types'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 
 const TABS = ['overview', 'actors', 'lookup', 'sync']
 
@@ -315,7 +316,7 @@ function CVELookup() {
               </div>
               <CardDescription>
                 {t('threatIntel.lookup.enriched', undefined, {
-                  time: new Date(result.enriched_at).toLocaleString(),
+                  time: formatDateTime(new Date(result.enriched_at)),
                 })}
               </CardDescription>
             </CardHeader>
@@ -361,7 +362,7 @@ function CVELookup() {
                     <p className="text-lg font-medium">{result.epss.model_version}</p>
                     <p className="text-xs text-muted-foreground">
                       {t('threatIntel.lookup.scoreDate', undefined, {
-                        date: new Date(result.epss.score_date).toLocaleDateString(),
+                        date: formatDate(new Date(result.epss.score_date)),
                       })}
                     </p>
                   </div>

@@ -33,6 +33,7 @@ import { ReviewStep } from './review-step'
 import { DEFAULT_CREATE_GROUP_FORM, type CreateGroupFormData } from './types'
 import type { Asset } from '@/features/assets/types'
 import type { CreateAssetGroupInput, CreateAssetInGroupInput } from '../../types'
+import { formatNumber } from '@/lib/app-locale'
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -94,7 +95,7 @@ export function CreateGroupDialog({
         if (countPasteLines(formData.pasteText) > MAX_PASTE_LINES) {
           toast.error(
             t('assetGroups.members.paste.tooLong', 'A list has at most {max} lines.', {
-              max: MAX_PASTE_LINES.toLocaleString(),
+              max: formatNumber(MAX_PASTE_LINES),
             })
           )
           return false

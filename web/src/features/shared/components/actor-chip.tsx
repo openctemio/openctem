@@ -23,6 +23,7 @@ import { fetcher } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
+import { formatDateTime } from '@/lib/app-locale'
 
 export interface ActorRef {
   kind?: 'user' | 'system' | string
@@ -192,7 +193,7 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     label = t('actor.former', 'Former member')
   }
 
-  const title = at ? `${label}, ${new Date(at).toLocaleString()}` : label
+  const title = at ? `${label}, ${formatDateTime(new Date(at))}` : label
   return (
     <span
       className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', className)}

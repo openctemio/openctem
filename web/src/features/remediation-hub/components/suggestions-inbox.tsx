@@ -51,6 +51,7 @@ import { SuggestionPanel } from './suggestion-panel'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDate } from '@/lib/app-locale'
 
 const PER_PAGE = 25
 
@@ -62,7 +63,7 @@ export function apiMessage(err: unknown, fallback: string): string {
 }
 
 export function SuggestionsInbox() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const router = useRouter()
   const params = useSearchParams()
@@ -209,7 +210,7 @@ export function SuggestionsInbox() {
         await done()
         toast.success(
           t('remediationHub.toast.snoozedUntil', undefined, {
-            date: new Date(until).toLocaleDateString(locale, { dateStyle: 'medium' }),
+            date: formatDate(new Date(until), { dateStyle: 'medium' }),
           }),
           {
             action: {
@@ -230,7 +231,7 @@ export function SuggestionsInbox() {
         setBusy(false)
       }
     },
-    [done, t, locale, openId, setOpenId]
+    [done, t, openId, setOpenId]
   )
 
   const bulkAccept = useCallback(async () => {

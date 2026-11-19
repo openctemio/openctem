@@ -34,6 +34,7 @@ import {
   type TargetKind,
 } from '../../lib/target-format'
 import { SplitRangeButton } from '../new-scan/invalid-targets-note'
+import { formatNumber } from '@/lib/app-locale'
 
 const EXAMPLES = ['example.com', '*.example.com', '203.0.113.0/24', 'https://app.example.com']
 
@@ -195,7 +196,7 @@ export function PasteSource({
         tone: 'error',
         text: t('scans.paste.fileTooMany', undefined, {
           name: file.name,
-          max: MAX_TARGET_FILE_ENTRIES.toLocaleString(),
+          max: formatNumber(MAX_TARGET_FILE_ENTRIES),
         }),
       })
       return

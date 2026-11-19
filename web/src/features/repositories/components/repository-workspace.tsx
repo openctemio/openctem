@@ -566,6 +566,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
 import type { CriticalityLevel } from '@/lib/criticality'
+import { formatDate } from '@/lib/app-locale'
 
 // ============================================
 // Helper Components
@@ -666,7 +667,7 @@ function formatTimeAgo(dateString: string | undefined | null): string {
   if (diffMins < 60) return `${diffMins}m ago`
   if (diffHours < 24) return `${diffHours}h ago`
   if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString()
+  return formatDate(date)
 }
 
 // ============================================

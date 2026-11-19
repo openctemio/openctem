@@ -11,6 +11,7 @@ import { useTenantModules } from '@/features/integrations/api/use-tenant-modules
 import { useOrganizationLimits } from '../api/use-organization-limits'
 import { isLimitKey } from '../lib/limit-keys'
 import { LimitsUsageTable, type LimitUsageRow } from './limits-usage-table'
+import { formatDate } from '@/lib/app-locale'
 
 /**
  * Settings > Usage and limits: the limits that apply to this organization and
@@ -19,7 +20,7 @@ import { LimitsUsageTable, type LimitUsageRow } from './limits-usage-table'
  * (the default) the page says so and the settings rail does not list it.
  */
 export function OrganizationLimitsUsage() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useOrganizationLimits()
   const { modules } = useTenantModules()
   const moduleName = (id: string) =>
@@ -134,7 +135,7 @@ export function OrganizationLimitsUsage() {
                   {d.read_only_until && (
                     <span className="text-muted-foreground">
                       {t('limits.readOnlyUntil', 'Read-only until {date}', {
-                        date: new Date(d.read_only_until).toLocaleDateString(locale),
+                        date: formatDate(new Date(d.read_only_until)),
                       })}
                     </span>
                   )}

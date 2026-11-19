@@ -1,3 +1,4 @@
+import { appLocale, formatDate } from '@/lib/app-locale'
 /**
  * The decide-by moment of a queue item: the latest time a pending request can
  * still be decided. Past it, the request is overdue (the server expires it on
@@ -18,7 +19,7 @@ export function decideByState(
 /** "12 Nov" / "12 thg 11"; with the year when it is not the current one. */
 export function formatDecideByDate(
   value: string | Date,
-  locale = 'en',
+  locale: string = appLocale(),
   now: Date = new Date()
 ): string {
   const d = typeof value === 'string' ? new Date(value) : value
@@ -27,9 +28,5 @@ export function formatDecideByDate(
     d.getFullYear() === now.getFullYear()
       ? { day: 'numeric', month: 'short' }
       : { day: 'numeric', month: 'short', year: 'numeric' }
-  try {
-    return new Intl.DateTimeFormat(locale, options).format(d)
-  } catch {
-    return new Intl.DateTimeFormat('en', options).format(d)
-  }
+  return formatDate(d, options, locale)
 }

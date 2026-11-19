@@ -148,6 +148,8 @@ export default function AiApplicationsPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: '',
         cell: ({ row }) => {
           const c = row.original

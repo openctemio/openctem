@@ -28,6 +28,7 @@ import {
   type FindingApprovalSettingsUpdate,
   type FPApprovalLevel,
 } from '../api/use-findings-api'
+import { formatDateTime } from '@/lib/app-locale'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -147,7 +148,7 @@ function LevelSelector({
           'findingApprovals.fpLevel.description',
           'When marking a finding a false positive needs a second person.'
         )
-  const at = pendingAt ? new Date(pendingAt).toLocaleString() : ''
+  const at = pendingAt ? formatDateTime(new Date(pendingAt)) : ''
   return (
     <fieldset className="min-w-0 space-y-3" aria-labelledby={`${id}-title`}>
       <div className="space-y-1">
@@ -321,7 +322,7 @@ export function ApprovalLevelsSection({
     onChange({ ...draft, [key]: value })
 
   const pendingPercentAt = settings.pending_second_look_at
-    ? new Date(settings.pending_second_look_at).toLocaleString()
+    ? formatDateTime(new Date(settings.pending_second_look_at))
     : ''
 
   // Cancel the waiting lowerings: the API drops them all and keeps the values

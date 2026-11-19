@@ -18,6 +18,7 @@ import {
 } from '@/lib/severity-colors'
 import type { AITriageResult, Exploitability } from '../types'
 import { EXPLOITABILITY_CONFIG, EFFORT_CONFIG } from '../types'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface TriageResultCardProps {
   result: AITriageResult
@@ -27,7 +28,7 @@ interface TriageResultCardProps {
 export function TriageResultCard({ result, className }: TriageResultCardProps) {
   const { t } = useTranslation()
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString()
+    return formatDateTime(new Date(dateStr))
   }
 
   const getSeverityColor = (severity: string | undefined) => {

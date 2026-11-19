@@ -24,16 +24,6 @@ export const SCAN_RUN_TRIGGERS = [
 ] as const
 export type ScanWorkflowTriggerType = (typeof SCAN_RUN_TRIGGERS)[number]
 
-export const SCAN_RUN_TRIGGER_LABELS: Record<ScanWorkflowTriggerType, string> = {
-  manual: 'Manual',
-  schedule: 'Scheduled',
-  webhook: 'Webhook',
-  api: 'API',
-  on_asset_discovery: 'On Asset Discovery',
-  automation: 'Automation',
-  system: 'System',
-}
-
 // ============================================
 // CONDITION TYPES
 // ============================================
