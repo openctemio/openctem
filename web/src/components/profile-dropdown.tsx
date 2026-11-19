@@ -2,7 +2,7 @@
 
 import { useDisplayUser } from '@/hooks/use-display-user'
 import Link from '@/components/link'
-import { LogOut, Settings } from 'lucide-react'
+import { LogOut, Settings, UserRound } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import useDialogState from '@/hooks/use-dialog-state'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -20,7 +20,7 @@ import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { SignOutDialog } from '@/components/sign-out-dialog'
 import { LanguageSwitcher, LOCALE_LABELS, selectLocale } from '@/components/language-switcher'
 import { useTranslation } from '@/context/i18n-provider'
-import { useSettingsNav } from '@/hooks/use-settings-nav'
+import { useTenant } from '@/context/tenant-provider'
 import { supportedLocales } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { HEADER_MENU, PHONE_TOUCH_SQUARE } from '@/components/layout/header-controls'
@@ -28,10 +28,9 @@ import { useIsMobile } from '@/hooks/use-mobile'
 
 /**
  * The user menu (header avatar). The only one: the sidebar no longer has its
- * own. Its personal links are the "My account" group of
- * src/config/settings-nav.ts, so the menu, the settings rail and the /settings
- * overview list the same pages under the same names. Organization settings
- * are one click away through "All settings".
+ * own. It names the two settings areas apart: "Account settings" (the person,
+ * the same in every organization, outside the organization shell) and
+ * "Organization settings" (this organization, with its name).
  *
  * On a phone it is the shared action menu, which opens as a bottom sheet
  * (floating-surfaces rule): Language and Theme are steps inside the sheet
@@ -43,7 +42,8 @@ export function ProfileDropdown() {
   const user = useDisplayUser()
   const { t, locale } = useTranslation()
   const { theme, setTheme } = useTheme()
-  const account = useSettingsNav().find((g) => g.id === 'account')
+  const { currentTenant } = useTenant()
+  const orgName = currentTenant?.name
   const isMobile = useIsMobile()
 
   // Generate initials from name or email
@@ -82,13 +82,18 @@ export function ProfileDropdown() {
       ['system', t('nav.header.themeSystem', 'System')],
     ] as const
     const items: ActionMenuEntry[] = [
-      ...(account?.items ?? []).map((item) => ({
-        id: item.id,
-        label: item.label,
-        href: item.url,
-        group: account?.label,
-      })),
-      { id: 'all-settings', label: t('userMenu.allSettings', 'All settings'), href: '/settings' },
+      {
+        id: 'account-settings',
+        label: t('userMenu.accountSettings', 'Account settings'),
+        href: '/account',
+      },
+      {
+        id: 'organization-settings',
+        label: orgName
+          ? t('userMenu.organizationSettingsOf', 'Settings of {name}', { name: orgName })
+          : t('userMenu.organizationSettings', 'Organization settings'),
+        href: '/settings',
+      },
       {
         kind: 'sub',
         id: 'language',
@@ -149,31 +154,24 @@ export function ProfileDropdown() {
 
           <DropdownMenuSeparator />
 
-          {account && (
-            <>
-              <DropdownMenuLabel className="text-cap-m text-fg-dim">
-                {account.label}
-              </DropdownMenuLabel>
-              <DropdownMenuGroup>
-                {account.items.map((item) => (
-                  <DropdownMenuItem key={item.id} asChild>
-                    <Link href={item.url}>
-                      <item.icon aria-hidden />
-                      {item.label}
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-            </>
-          )}
-
-          <DropdownMenuItem asChild>
-            <Link href="/settings">
-              <Settings aria-hidden />
-              {t('userMenu.allSettings', 'All settings')}
-            </Link>
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link href="/account">
+                <UserRound aria-hidden />
+                {t('userMenu.accountSettings', 'Account settings')}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings">
+                <Settings aria-hidden />
+                <span className="min-w-0 truncate">
+                  {orgName
+                    ? t('userMenu.organizationSettingsOf', 'Settings of {name}', { name: orgName })
+                    : t('userMenu.organizationSettings', 'Organization settings')}
+                </span>
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
           <LanguageSwitcher />
 
           <DropdownMenuSeparator />

@@ -67,8 +67,8 @@ test(
       '/',
       '/findings',
       '/settings/members',
-      '/account/activity',
-      '/account/notifications',
+      '/settings/me/activity',
+      '/settings/me/notifications',
       '/onboarding/create-team',
     ]) {
       const res = await request.get(path, { maxRedirects: 0, headers: { cookie: ACCOUNT_ONLY } })
