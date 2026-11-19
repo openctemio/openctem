@@ -209,6 +209,13 @@ func (s *Service) recordUnverified(ctx context.Context, tenantID shared.ID, issu
 		return
 	}
 	issuer = strings.TrimSpace(issuer)
+	if reason != UnverifiedNoConfiguration {
+		// The configuration matched on the issuer without its trailing
+		// slashes (EnabledTrustConfigs), so the record carries the matched
+		// form: slash variants of one issuer are one record, and a caller
+		// cannot fill the list with them.
+		issuer = strings.TrimRight(issuer, "/")
+	}
 	if !plainIssuer(issuer) {
 		issuer = ""
 	}
