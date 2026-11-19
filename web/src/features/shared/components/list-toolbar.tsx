@@ -268,6 +268,12 @@ const PHONE = {
     '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4',
   belowAlone:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2',
+  // Query mode: the field takes the whole first line; the end group steps
+  // down to the second line's end (the tokens, inert in this mode, are out).
+  leadQuery: '@max-md/toolbar:col-end-4',
+  endQuery:
+    '@max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-0 @max-md/toolbar:justify-self-end',
+  tokensQuery: '@max-md/toolbar:hidden',
   status:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-3 @max-md/toolbar:mt-2',
 }
@@ -346,7 +352,10 @@ export function ListToolbar({
           {lead ? (
             // A phone gives the search (or the lone filter trigger) the start
             // of the first line, the end group the rest of it.
-            <div data-slot="list-toolbar-lead" className={cn('contents', PHONE.lead)}>
+            <div
+              data-slot="list-toolbar-lead"
+              className={cn('contents', PHONE.lead, top && PHONE.leadQuery)}
+            >
               {lead}
             </div>
           ) : null}
@@ -371,6 +380,7 @@ export function ListToolbar({
                 'no-scrollbar @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
                 EDGE_FADE_X_CLASS,
                 lead ? PHONE.tokens : PHONE.tokensAlone,
+                top && PHONE.tokensQuery,
                 EMPTY_GROUP_CLASS
               )}
             >
@@ -393,6 +403,7 @@ export function ListToolbar({
             // expanded query editor) never moves Views, Group and Display.
             'items-center self-start',
             PHONE.end,
+            top && search && PHONE.endQuery,
             EMPTY_GROUP_CLASS
           )}
         >
