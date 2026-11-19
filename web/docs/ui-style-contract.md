@@ -574,6 +574,10 @@ reference.
   bare control. The switch keeps its own name and state for a screen reader.
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
+- **Display > Columns names a column as its header reads**: `meta.label`, a
+  string header, or the `title` of `DataTableColumnHeader`, in the page's
+  language; never the column id. The phone card's field labels use the same
+  name. A column with no header and no label (the row menu) is not listed.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
 - **The row's name is `RowNameLink`** where the row has a detail page: a real
