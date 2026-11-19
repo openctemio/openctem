@@ -297,6 +297,7 @@ func (r *FindingRepository) cveExposureSoftware(ctx context.Context, tx *sql.Tx,
 		JOIN software_products p ON p.id = asw.product_id AND (p.tenant_id IS NULL OR p.tenant_id = asw.tenant_id)
 		JOIN assets a ON a.tenant_id = asw.tenant_id AND a.id = asw.asset_id AND a.deleted_at IS NULL
 		WHERE asw.tenant_id = $` + strconv.Itoa(tenantArg) + ` AND asw.superseded_at IS NULL
+		  AND asw.version_state = 'established'
 		  AND asw.product_id IN (SELECT va.product_id FROM vulnerability_affected va WHERE va.cve_id = $` + strconv.Itoa(cveArg) + `)
 		  AND asw.asset_id NOT IN (SELECT s.asset_id FROM scoped s)
 		  AND ` + scopeCond + `

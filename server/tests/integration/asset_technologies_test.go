@@ -2,12 +2,14 @@ package integration
 
 // Asset technologies (RFC-112) through the real ingest on a migrated
 // database: every detection is a categorized technology; only a product
-// with a version becomes a software component; a technology the same probe
+// with a version, or a curated public product with its version hidden,
+// becomes a software component; a technology the same probe
 // no longer sees leaves with the reconciled set; nothing crosses tenants.
 
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,8 +86,8 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 		t.Errorf("version lost: %+v", got["next.js"])
 	}
 
-	// Only Next.js (a product with a version) is a component; HSTS, Vercel
-	// and a versionless nginx are not.
+	// Next.js (a product with a version) and nginx (a curated public product
+	// with its version hidden) are components; HSTS and Vercel are not.
 	var components []string
 	rows, err := g.r.db.QueryContext(context.Background(), `
 		SELECT p.name FROM asset_software s JOIN software_products p ON p.id = s.product_id
@@ -102,8 +104,8 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(components) != 1 {
-		t.Fatalf("components = %v, want only the versioned framework", components)
+	if strings.Join(components, ",") != "next.js,nginx" {
+		t.Fatalf("components = %v, want the versioned framework and the version-hidden nginx", components)
 	}
 
 	// The same probe no longer sees Vercel: the technology leaves with the
