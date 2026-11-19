@@ -290,6 +290,7 @@ var PagesWithoutViews = map[string]string{
 	"/account/activity":       noViewsAccount,
 	"/account/connected-apps": noViewsAccount,
 	"/account/notifications":  noViewsAccount,
+	"/account/organizations":  noViewsAccount,
 	"/account/preferences":    noViewsAccount,
 	"/account/security":       noViewsAccount,
 
