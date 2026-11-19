@@ -248,7 +248,7 @@ func TestGroupException_LeaveOutMember_DB(t *testing.T) {
 	keep, _ := h.findingOnAsset(org, "low")
 	drop, dropAsset := h.findingOnAsset(org, "low")
 	b := h.batch(org, requester, keep, drop)
-	url := func(f string) string { return "/api/v1/approvals/batches/" + b + "/members/" + f + "/reject" }
+	url := func(f string) string { return "/api/v1/approvals/batches/" + b + "/items/" + f + "/reject" }
 	body := `{"reason":"this host is in scope of the audit"}`
 
 	h.expect(outsider, http.MethodPost, url(drop), body, http.StatusNotFound)
@@ -308,7 +308,7 @@ func TestGroupException_LeaveOutMember_DB(t *testing.T) {
 	// Leaving out the last pending member closes the group as rejected.
 	solo, _ := h.findingOnAsset(org, "low")
 	b2 := h.batch(org, requester, solo)
-	_ = json.Unmarshal([]byte(h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b2+"/members/"+solo+"/reject", body, http.StatusOK)), &d)
+	_ = json.Unmarshal([]byte(h.expect(a1, http.MethodPost, "/api/v1/approvals/batches/"+b2+"/items/"+solo+"/reject", body, http.StatusOK)), &d)
 	if d.Status != "rejected" {
 		t.Fatalf("group with no member left: %s", d.Status)
 	}

@@ -740,7 +740,7 @@ instead).
   idempotency record is kept (`internal/app/finding/approval_bulk.go`).
 - **Leaving one member out.** An approver rejects one pending member of a
   group with a reason
-  (`POST /api/v1/approvals/batches/{id}/members/{finding_id}/reject`,
+  (`POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject`,
   `findings:approve`, body `{reason}`; `LeaveOutGroupMember`) while the rest
   stays pending and is decided later as usual. Every member must be in the
   caller's data scope, as for rejecting the whole group; the group's

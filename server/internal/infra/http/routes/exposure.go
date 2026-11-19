@@ -514,7 +514,7 @@ func registerVulnerabilityRoutes(
 		r.POST("/batches/{id}/self-approve", h.SelfApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
 		// Leave one member out (reject it with a reason); the rest stays
 		// pending. The service refuses the group's requester.
-		r.POST("/batches/{id}/members/{finding_id}/reject", h.LeaveOutApprovalBatchMember, middleware.Require(permission.FindingsApprove))
+		r.POST("/batches/{id}/items/{finding_id}/reject", h.LeaveOutApprovalBatchMember, middleware.Require(permission.FindingsApprove))
 		// Decide many at once: each id goes through its single path; one
 		// step-up for the whole approve call.
 		r.POST("/bulk/approve", h.BulkApproveApprovals, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
