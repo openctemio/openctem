@@ -17,6 +17,7 @@ import {
   SettingChangedLine,
   handleSaveConflict,
 } from './console-setting-parts'
+import { formatDate } from '@/lib/app-locale'
 
 const RANK: Record<MFAFloor, number> = { none: 0, admins: 1, everyone: 2 }
 const MAX_GRACE_DAYS = 90
@@ -212,7 +213,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
             {settings.effective_from &&
               ' ' +
                 t('admin.mfaFloor.effectiveFrom', 'In force since {date}.', {
-                  date: new Date(settings.effective_from).toLocaleDateString(),
+                  date: formatDate(new Date(settings.effective_from)),
                 })}
           </p>
           <SettingChangedLine change={settings} />

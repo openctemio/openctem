@@ -80,6 +80,7 @@ import { LargeRangeConfirm } from './large-range-confirm'
 import { largeRangeSummary } from '../../lib/large-range'
 import { BulkTargetsPanel } from './bulk-targets-panel'
 import { CoreInfraWarning } from './core-infra-warning'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Typed targets shown as chips; past this they move to the list. */
 export const CHIP_LIMIT = 20
@@ -466,8 +467,8 @@ export function TargetsStep({
         {over && (
           <p role="alert" className="text-xs text-destructive">
             {t('scans.summary.tooMany', undefined, {
-              count: sent.length.toLocaleString(),
-              max: MAX_DIRECT_TARGETS.toLocaleString(),
+              count: formatNumber(sent.length),
+              max: formatNumber(MAX_DIRECT_TARGETS),
             })}
           </p>
         )}

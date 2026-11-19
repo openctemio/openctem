@@ -1,4 +1,5 @@
 import { DEFAULT_BRAND } from './brand'
+import { formatNumber } from '@/lib/app-locale'
 
 export const rtlLocales = new Set(['ar', 'he', 'fa', 'ur'])
 export function getDirFromLocale(locale?: string): 'ltr' | 'rtl' {
@@ -155,7 +156,7 @@ const PLURAL_BRANCH = /(=\d+|\w+)\s*\{([^{}]*)\}/g
 const pluralRules = new Intl.PluralRules('en')
 
 function groupedNumber(n: number, locale: string): string {
-  return new Intl.NumberFormat(locale).format(n)
+  return formatNumber(n, undefined, locale)
 }
 
 function countOf(raw: string | number): number {

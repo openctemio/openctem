@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Number and period formatting shared by the executive summary, program health
  * and the reports page, so one figure reads the same wherever it appears.
@@ -36,8 +37,8 @@ export function formatCount(value: number, locale?: string): string {
 }
 
 /** A date tick for a chart axis, in the app locale. */
-export function formatTickDate(iso: string, locale?: string): string {
+export function formatTickDate(iso: string, _locale?: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+  return formatDate(d, { month: 'short', day: 'numeric' })
 }

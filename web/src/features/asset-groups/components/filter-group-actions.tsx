@@ -41,6 +41,7 @@ import { AssetGroupSelect } from './asset-group-select'
 import { ImpactNotice } from './members/impact-notice'
 import { RulePreview } from './members/rule-preview'
 import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
+import { formatNumber } from '@/lib/app-locale'
 
 interface FilterGroupActionsProps {
   /** The Assets list query parameters of the filter on screen. */
@@ -173,7 +174,7 @@ export function FilterGroupActions({
           <Button type="button" variant="outline" size="sm" onClick={() => setDialog('add')}>
             <ListPlus className="me-2 h-4 w-4" aria-hidden />
             {t('assetGroups.filterActions.addAll', 'Add all {count} matching to group', {
-              count: total.toLocaleString(),
+              count: formatNumber(total),
             })}
           </Button>
         </div>
@@ -263,7 +264,7 @@ export function FilterGroupActions({
           <DialogHeader>
             <DialogTitle>
               {t('assetGroups.filterActions.addTitle', 'Add all {count} matching to a group', {
-                count: total.toLocaleString(),
+                count: formatNumber(total),
               })}
             </DialogTitle>
             <DialogDescription>

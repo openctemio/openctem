@@ -11,6 +11,7 @@ import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { feedName, feedProblem, stateHint, stateLabel, stateTone } from '../lib/feed-status'
 import type { ThreatIntelFeed } from '../types'
+import { formatNumber } from '@/lib/app-locale'
 
 interface FeedCardProps {
   feed: ThreatIntelFeed
@@ -93,10 +94,10 @@ export function FeedCard({
             {feed.data_as_of ? <RelativeTime date={feed.data_as_of} /> : never}
           </Row>
           <Row label={t('admin.ti.catalog', 'In the catalog')}>
-            {feed.catalog_records.toLocaleString()}
+            {formatNumber(feed.catalog_records)}
           </Row>
           <Row label={t('admin.ti.changed', 'Changed in the last run')}>
-            {feed.records_changed.toLocaleString()}
+            {formatNumber(feed.records_changed)}
           </Row>
           <Row label={t('admin.ti.lastAttempt', 'Last attempt')}>
             {feed.last_attempt_at ? <RelativeTime date={feed.last_attempt_at} /> : never}

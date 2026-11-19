@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
 import { complianceCheckOf } from '../../lib/compliance-check'
 import { ComplianceCheckSection } from './compliance-check-section'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 function meta(f: FindingDetail, ...keys: string[]): string {
   for (const k of keys) {
@@ -36,12 +37,12 @@ function Mono({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-body break-all">{children}</span>
 }
 
-function formatDate(iso: string | undefined, locale: string) {
+function formatDate(iso: string | undefined, _locale: string) {
   if (!iso) return undefined
   const d = new Date(iso)
   return isNaN(d.getTime())
     ? undefined
-    : d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+    : localeFormatDate(d, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ---------------------------------------------------------------------------

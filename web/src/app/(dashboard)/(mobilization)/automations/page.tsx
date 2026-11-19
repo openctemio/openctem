@@ -91,6 +91,7 @@ import type {
   UpdateWorkflowGraphRequest,
 } from '@/lib/api/workflow-types'
 import { useAutomationLabels } from '@/features/workflows/lib/use-automation-labels'
+import { formatDate } from '@/lib/app-locale'
 
 type T = ReturnType<typeof useTranslation>['t']
 
@@ -107,7 +108,7 @@ function formatRelativeTime(dateStr: string, t: T): string {
   if (diffMins < 60) return t('automations.time.minutesAgo', '{n} min ago', { n: diffMins })
   if (diffHours < 24) return t('automations.time.hoursAgo', '{n} h ago', { n: diffHours })
   if (diffDays < 7) return t('automations.time.daysAgo', '{n} d ago', { n: diffDays })
-  return date.toLocaleDateString()
+  return formatDate(date)
 }
 
 // Helper to get trigger type display

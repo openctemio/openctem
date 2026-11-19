@@ -54,6 +54,7 @@ import {
   type ProgramFormValues,
 } from '@/features/programs'
 import { confirmName } from '@/lib/confirm-name'
+import { formatDateTime } from '@/lib/app-locale'
 
 function formFromProgram(p: ProgramDetail): ProgramFormValues {
   const lines = (inScope: boolean) =>
@@ -250,7 +251,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               {p.accepted_at && (
                 <span className="text-muted-foreground">
                   {' '}
-                  ({new Date(p.accepted_at).toLocaleString()})
+                  ({formatDateTime(new Date(p.accepted_at))})
                 </span>
               )}
             </div>

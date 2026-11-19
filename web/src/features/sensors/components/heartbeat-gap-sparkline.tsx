@@ -6,6 +6,7 @@ import { Sparkline } from '@/components/ui/sparkline'
 import { cn } from '@/lib/utils'
 
 import { formatDurationShort, type Tr } from '../lib/format'
+import { formatTime } from '@/lib/app-locale'
 
 /** A bucket whose largest gap is above this many intervals is late (as the card). */
 const LATE_GAP_FACTOR = 1.5
@@ -49,7 +50,7 @@ export function bucketIsLate(b: SensorHeartbeatBucket): boolean {
 function slotTitle(slot: HeartbeatSlot, widthMs: number, t: Tr): string {
   const from = new Date(slot.start)
   const to = new Date(slot.start + widthMs)
-  const range = `${from.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${to.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  const range = `${formatTime(from, { hour: '2-digit', minute: '2-digit' })}–${formatTime(to, { hour: '2-digit', minute: '2-digit' })}`
   const b = slot.bucket
   if (!b) return t('sensors.sparkline.slotEmpty', undefined, { range })
   const parts = [
