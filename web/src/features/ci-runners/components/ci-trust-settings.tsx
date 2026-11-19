@@ -422,6 +422,9 @@ function TrustConfigDialog({
   )
   const [signingKeys, setSigningKeys] = useState(config?.signing_keys ?? '')
   const traits = PROVIDER_TRAITS[provider]
+  // Every list field is parsed by parseList: commas or new lines separate values.
+  const withSeveral = (hint: string) =>
+    `${hint} ${t('scans.ci.trust.listSeveral', 'Several values: separate them with commas.')}`
 
   const chooseProvider = (p: CIProvider) => {
     setProvider(p)
@@ -632,18 +635,23 @@ function TrustConfigDialog({
               id="ci-owners"
               hint={
                 provider === 'gitlab'
-                  ? t('scans.ci.trust.ownersGitlab', 'Top-level groups.')
+                  ? t(
+                      'scans.ci.trust.ownersGitlab',
+                      'Top-level groups. One configuration can hold many groups: separate them with commas.'
+                    )
                   : provider === 'bitbucket'
-                    ? t('scans.ci.trust.ownersBitbucket', 'The workspace.')
-                    : t(
-                        'scans.ci.trust.ownersHint',
-                        'Organizations or users that own the repositories.'
+                    ? withSeveral(t('scans.ci.trust.ownersBitbucket', 'The workspace.'))
+                    : withSeveral(
+                        t(
+                          'scans.ci.trust.ownersHint',
+                          'Organizations or users that own the repositories.'
+                        )
                       )
               }
             >
               <Input
                 id="ci-owners"
-                placeholder="acme"
+                placeholder="acme, acme-labs"
                 value={owners}
                 onChange={(e) => setOwners(e.target.value)}
               />
@@ -651,20 +659,23 @@ function TrustConfigDialog({
             <Field
               label={t('scans.ci.trust.repositories', 'Repositories')}
               id="ci-repos"
-              hint={
+              hint={withSeveral(
                 traits.repositoriesById
                   ? t(
                       'scans.ci.trust.repositoriesById',
                       'Repository UUIDs: the token signs the id, never the name.'
                     )
                   : t('scans.ci.trust.repositoriesHint', 'owner/name, owner/* or owner/**.')
-              }
+              )}
             >
               <Input
                 id="ci-repos"
                 placeholder={
                   traits.repositoriesById
-                    ? t('scans.ci.trust.repositoryUuidPlaceholder', '{repository uuid}')
+                    ? t(
+                        'scans.ci.trust.repositoryUuidPlaceholder',
+                        '{repository uuid}, {repository uuid}'
+                      )
                     : 'acme/api, acme/web'
                 }
                 value={repositories}
@@ -674,9 +685,11 @@ function TrustConfigDialog({
             <Field
               label={t('scans.ci.trust.refs', 'Branches and tags')}
               id="ci-refs"
-              hint={t(
-                'scans.ci.trust.refsHint',
-                'Empty admits every ref. For a pull request, its source branch.'
+              hint={withSeveral(
+                t(
+                  'scans.ci.trust.refsHint',
+                  'Empty admits every ref. For a pull request, its source branch.'
+                )
               )}
             >
               <Input
@@ -690,7 +703,7 @@ function TrustConfigDialog({
               <Field
                 label={t('scans.ci.trust.environments', 'Environments')}
                 id="ci-envs"
-                hint={
+                hint={withSeveral(
                   provider === 'bitbucket'
                     ? t(
                         'scans.ci.trust.environmentsBitbucket',
@@ -700,10 +713,18 @@ function TrustConfigDialog({
                         'scans.ci.trust.environmentsHint',
                         'Optional: require a deployment environment.'
                       )
-                }
+                )}
               >
                 <Input
                   id="ci-envs"
+                  placeholder={
+                    provider === 'bitbucket'
+                      ? t(
+                          'scans.ci.trust.environmentUuidPlaceholder',
+                          '{environment uuid}, {environment uuid}'
+                        )
+                      : t('scans.ci.trust.environmentsPlaceholder', 'production, staging')
+                  }
                   value={environments}
                   onChange={(e) => setEnvironments(e.target.value)}
                 />
@@ -713,19 +734,26 @@ function TrustConfigDialog({
               <Field
                 label={t('scans.ci.trust.events', 'Events')}
                 id="ci-events"
-                hint={t(
-                  'scans.ci.trust.eventsHint',
-                  'Optional: push, pull_request, merge_request_event, schedule...'
+                hint={withSeveral(
+                  t(
+                    'scans.ci.trust.eventsHint',
+                    'Optional: push, pull_request, merge_request_event, schedule...'
+                  )
                 )}
               >
-                <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
+                <Input
+                  id="ci-events"
+                  placeholder={t('scans.ci.trust.eventsPlaceholder', 'push, pull_request')}
+                  value={events}
+                  onChange={(e) => setEvents(e.target.value)}
+                />
               </Field>
             )}
             {traits.workflowRefs && (
               <Field
                 label={t('scans.ci.trust.workflowRefs', 'Pipeline definitions')}
                 id="ci-workflow-refs"
-                hint={
+                hint={withSeveral(
                   provider === 'gitlab'
                     ? t(
                         'scans.ci.trust.workflowRefsGitlab',
@@ -735,14 +763,14 @@ function TrustConfigDialog({
                         'scans.ci.trust.workflowRefsHint',
                         'Optional: admit only jobs that run your central workflow, as owner/repo/.github/workflows/<file>@<ref> (the job_workflow_ref claim; * in the ref). A pull request that edits or adds a workflow is refused.'
                       )
-                }
+                )}
               >
                 <Input
                   id="ci-workflow-refs"
                   placeholder={
                     provider === 'gitlab'
-                      ? 'gitlab.com/acme/ci//scan.yml@refs/heads/main'
-                      : 'acme/security/.github/workflows/scan.yml@refs/heads/main'
+                      ? 'gitlab.com/acme/ci//scan.yml@refs/heads/main, gitlab.com/acme/ci//deploy.yml@refs/heads/main'
+                      : 'acme/security/.github/workflows/scan.yml@refs/heads/main, acme/security/.github/workflows/deploy.yml@refs/heads/main'
                   }
                   value={workflowRefs}
                   onChange={(e) => setWorkflowRefs(e.target.value)}
