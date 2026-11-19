@@ -44,6 +44,10 @@ test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/runs')
   saysItsCountOnce('/scans/runs')
 })
+test.describe('Credential leaks list header', { tag: ['@credentials'] }, () => {
+  headerHoldsStill('/credentials')
+  saysItsCountOnce('/credentials')
+})
 test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/workflows')
   saysItsCountOnce('/scans/workflows')
