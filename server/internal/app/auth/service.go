@@ -1014,7 +1014,7 @@ type ExchangeTokenResult struct {
 // issued by THIS tenant's own SAML/OIDC provider and the tenant OWNER always
 // pass (break-glass); any other non-owner session — password, social OAuth, or
 // another organization's IdP — is refused when the tenant enforces SSO.
-func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string) error {
+func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Session, tenantID, role string, mode admitMode) error {
 	// Cheap exit: this tenant's own SSO sessions never trip enforcement, so
 	// skip the tenant lookup entirely for them.
 	if sess.FederatedFor(tenantID) {
@@ -1038,7 +1038,7 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		return nil
 	}
 	if role == string(tenantdom.RoleOwner) {
-		return s.admitBreakGlassOwner(ctx, sess, t)
+		return s.admitBreakGlassOwner(ctx, sess, t, mode)
 	}
 	if ssoEnforcementDenied(method, role, sec.SSOEnforced) && !s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
@@ -1072,7 +1072,7 @@ func (s *AuthService) SetBreakGlassNotifier(n BreakGlassNotifier) { s.breakGlass
 // phished password alone must not open an organization whose point is "IdP
 // only". Enabling Require SSO needs an owner with a factor, so a correctly
 // configured organization always has a way in.
-func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) error {
+func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant, mode admitMode) error {
 	proven, err := s.ownSecondFactorProven(ctx, sess, sess.UserID())
 	if err != nil {
 		return fmt.Errorf("failed to verify owner second factor: %w", err)
@@ -1082,7 +1082,11 @@ func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom
 			"tenant_id", t.ID().String(), "user_id", sess.UserID().String())
 		return ErrSSOBreakGlassNeedsMFA
 	}
-	s.recordBreakGlass(ctx, sess, t)
+	// Only a token that is actually minted is a sign-in: a check (the
+	// memberships listing, an entry check) answers the same and records nothing.
+	if mode == admitMint {
+		s.recordBreakGlass(ctx, sess, t)
+	}
 	return nil
 }
 
@@ -1287,6 +1291,49 @@ func (s *AuthService) refreshForMint(ctx context.Context, refreshToken string, f
 	return storedToken, sess, u, nil
 }
 
+// admitMode says whether an admission decision belongs to a token that is
+// about to be minted (admitMint: owner break-glass is recorded and announced)
+// or only answers "would this session be admitted" (admitCheck: nothing is
+// recorded, nobody is notified).
+type admitMode int
+
+const (
+	admitMint admitMode = iota
+	admitCheck
+)
+
+// admitSession runs every rule an organization applies before it admits a
+// session: the token exchange refuses with the first error, and the account's
+// memberships listing reports it (MembershipAdmission), so both always agree.
+func (s *AuthService) admitSession(ctx context.Context, sess *sessiondom.Session, u *userdom.User, tenantID, role string, mode admitMode) error {
+	// Per-tenant SSO enforcement (break-glass safe): a session not issued by
+	// this tenant's own IdP cannot mint a tenant-scoped token for an
+	// SSO-enforced tenant unless it is the owner.
+	if err := s.enforceSSOPolicy(ctx, sess, tenantID, role, mode); err != nil {
+		return err
+	}
+	// Another organization's identity provider never stands in for the
+	// account's own sign-in here (idp_binding.go).
+	if err := s.enforceIdPBindingPolicy(ctx, sess, u.ID(), tenantID); err != nil {
+		return err
+	}
+	// Per-tenant 2FA requirement: a session that has not been through the
+	// second step cannot mint a token for a tenant that requires 2FA.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), tenantID); err != nil {
+		return err
+	}
+	if err := s.enforceEmailVerificationPolicy(ctx, u, tenantID); err != nil {
+		return err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), tenantID); err != nil {
+		return err
+	}
+	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), tenantID); err != nil {
+		return err
+	}
+	return s.organizationOpen(ctx, tenantID)
+}
+
 // ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
 // This is the main method for getting access tokens after login.
 func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInput) (*ExchangeTokenResult, error) {
@@ -1317,32 +1364,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantAccessDenied
 	}
 
-	// Per-tenant SSO enforcement (break-glass safe): a session not issued by
-	// this tenant's own IdP cannot mint a tenant-scoped token for an
-	// SSO-enforced tenant unless it is the owner.
-	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
-		return nil, err
-	}
-	// Another organization's identity provider never stands in for the
-	// account's own sign-in here (idp_binding.go).
-	if err := s.enforceIdPBindingPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
-		return nil, err
-	}
-	// Per-tenant 2FA requirement: a password session whose user has not
-	// enrolled cannot mint a token for a tenant that requires 2FA.
-	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
-		return nil, err
-	}
-	if err := s.enforceEmailVerificationPolicy(ctx, u, input.TenantID); err != nil {
-		return nil, err
-	}
-	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
-		return nil, err
-	}
-	if err := s.enforceOutsidePrivilegePolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
-		return nil, err
-	}
-	if err := s.organizationOpen(ctx, input.TenantID); err != nil {
+	if err := s.admitSession(ctx, sess, u, input.TenantID, targetMembership.Role, admitMint); err != nil {
 		return nil, err
 	}
 
@@ -1737,7 +1759,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// so toggling sso_enforced on takes effect the next time a non-SSO session
 	// refreshes its tenant-scoped token. Sessions issued by this tenant's own
 	// IdP and the owner pass.
-	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role, admitMint); err != nil {
 		return nil, err
 	}
 	// Another organization's identity provider never stands in for the
@@ -2524,7 +2546,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	if err := s.enforceEmailVerificationPolicy(ctx, u, t.ID().String()); err != nil {
 		return nil, err
 	}
-	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
+	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String(), admitMint); err != nil {
 		return nil, err
 	}
 	// Another organization's identity provider never stands in for the

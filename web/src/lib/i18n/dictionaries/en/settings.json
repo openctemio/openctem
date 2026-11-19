@@ -1363,6 +1363,7 @@
   "settings.twoFactor.on": "On",
   "settings.twoFactor.passwordOnly": "Anyone with your password can sign in.",
   "settings.twoFactor.protected": "Protected",
+  "settings.twoFactor.providerOnly": "Only your sign-in provider protects this account.",
   "settings.twoFactor.regenerateBody": "This replaces all of your recovery codes. Enter a code from your authenticator app to confirm.",
   "settings.twoFactor.regenerateTitle": "Generate new recovery codes",
   "settings.twoFactor.replace": "Replace authenticator",

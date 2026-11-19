@@ -139,6 +139,10 @@ export interface LoginResult {
   error?: string
   /** The API's error code, e.g. CAPTCHA_REQUIRED. */
   code?: string
+  /** The API's HTTP status when it refused the call; 0 when it did not answer. */
+  status?: number
+  /** The API's Retry-After header (seconds or an HTTP date) on a refusal. */
+  retryAfter?: string
   message?: string
   // Multi-tenant selection
   requiresTenantSelection?: boolean
@@ -238,19 +242,30 @@ async function backendFetchWithMeta<T>(
 ): Promise<{ data: T; refreshToken?: string }> {
   const url = `${env.api.url}${endpoint}`
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(await browserContextHeaders()),
-      ...options.headers,
-    },
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await browserContextHeaders()),
+        ...options.headers,
+      },
+    })
+  } catch (cause) {
+    // No answer from the API: status 0, so a caller can tell it from a refusal.
+    const err = new Error(cause instanceof Error ? cause.message : 'Request failed')
+    ;(err as Error & { status?: number }).status = 0
+    throw err
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
     const err = new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
     if (typeof errorData.code === 'string') (err as Error & { code?: string }).code = errorData.code
+    ;(err as Error & { status?: number }).status = response.status
+    const retryAfter = response.headers.get('Retry-After')
+    if (retryAfter) (err as Error & { retryAfter?: string }).retryAfter = retryAfter
     throw err
   }
 
@@ -928,10 +943,13 @@ export async function selectTenantAction(tenantId: string): Promise<LoginResult>
     }
   } catch (error) {
     devLog.error('[SelectTenant] Error:', error)
+    const { status, retryAfter } = error as { status?: unknown; retryAfter?: unknown }
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to select team',
       code: errorCode(error),
+      ...(typeof status === 'number' ? { status } : {}),
+      ...(typeof retryAfter === 'string' ? { retryAfter } : {}),
     }
   }
 }
@@ -1373,7 +1391,7 @@ export async function onboardingOptionsAction(): Promise<OnboardingOptionsResult
 
 export type OnboardingAcceptResult =
   | { success: true; status: 'joined' | 'requested'; organizationName: string }
-  | { success: false; code?: string; error: string }
+  | { success: false; code?: string; error: string; organizationId?: string }
 
 /**
  * Takes one offer. When the account joined, the organization is selected at
@@ -1393,8 +1411,20 @@ export async function onboardingAcceptAction(ref: string): Promise<OnboardingAcc
     })
     if (res.status === 'joined' && res.organization_id) {
       const selected = await selectTenantAction(res.organization_id)
-      if (!selected.success)
+      if (!selected.success) {
+        // Joined, but the organization does not admit this session yet: it
+        // requires two-factor authentication. The caller sends the person to
+        // set it up (the session stays), then into the organization.
+        if (selected.code === 'MFA_ENROLLMENT_REQUIRED') {
+          return {
+            success: false,
+            code: 'MFA_ENROLLMENT_REQUIRED',
+            error: selected.error ?? 'error',
+            organizationId: res.organization_id,
+          }
+        }
         return { success: false, code: 'SELECT_FAILED', error: selected.error ?? 'error' }
+      }
     }
     return { success: true, status: res.status, organizationName: res.organization_name }
   } catch (error) {
