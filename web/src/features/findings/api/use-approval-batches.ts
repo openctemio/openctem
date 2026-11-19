@@ -99,6 +99,11 @@ export interface ApprovalBatch {
   canceled?: string[]
   /** Members whose end was cut to their cap at decision time. */
   shortened?: number
+  /**
+   * The caller asked for this pending group and is the organization's only
+   * active person and its owner: they may approve it themselves.
+   */
+  self_approval_available?: boolean
 }
 
 export interface ApprovalBatchList {
@@ -170,6 +175,8 @@ export function usePendingTaskException(taskId: string | undefined, enabled = tr
 }
 
 export const approvalBatchApi = {
+  /** One group with its members and whether the caller may approve it alone. */
+  get: (id: string) => get<ApprovalBatch>(`${BATCHES}/${encodeURIComponent(id)}`),
   preview: (taskId: string, body: GroupExceptionInput) =>
     post<GroupExceptionPreview>(`${taskExceptionUrl(taskId)}/preview`, body),
   request: (taskId: string, body: GroupExceptionInput) =>
@@ -179,4 +186,60 @@ export const approvalBatchApi = {
   reject: (id: string, reason: string) =>
     post<ApprovalBatch>(`${BATCHES}/${encodeURIComponent(id)}/reject`, { reason }),
   cancel: (id: string) => post<ApprovalBatch>(`${BATCHES}/${encodeURIComponent(id)}/cancel`, {}),
+  /**
+   * The sole member approves their own group with a reason and a fresh code
+   * from their authenticator app; every pending member is applied.
+   */
+  selfApprove: (id: string, input: { reason: string; code: string }) =>
+    post<ApprovalBatch>(`${BATCHES}/${encodeURIComponent(id)}/self-approve`, input),
+  /**
+   * Leave one member out: its request is rejected with the reason, the rest
+   * of the group stays pending (closed as rejected when none is left).
+   */
+  leaveOut: (id: string, findingId: string, reason: string) =>
+    post<ApprovalBatch>(
+      `${BATCHES}/${encodeURIComponent(id)}/items/${encodeURIComponent(findingId)}/reject`,
+      { reason }
+    ),
+}
+
+/** Most requests and groups one bulk decision takes (the API's limit). */
+export const APPROVAL_BULK_MAX = 100
+
+/** What happened to one id of a bulk decision. */
+export interface ApprovalBulkItem {
+  id: string
+  kind: 'approval' | 'batch'
+  outcome: 'approved' | 'signed' | 'rejected' | 'skipped' | 'failed'
+  /** Why it was skipped or failed (a stable code). */
+  code?: string
+  message?: string
+  status?: string
+}
+
+/** POST /approvals/bulk/approve and /bulk/reject: every id and the counts. */
+export interface ApprovalBulkResult {
+  results: ApprovalBulkItem[]
+  approved: number
+  signed: number
+  rejected: number
+  skipped: number
+  failed: number
+}
+
+export interface ApprovalBulkSelection {
+  approval_ids: string[]
+  batch_ids: string[]
+}
+
+/**
+ * Decide many requests and groups at once. Each id goes through its own
+ * single path on the server; approve asks for a recent sign-in once for the
+ * call (the API client prompts and retries).
+ */
+export const approvalBulkApi = {
+  approve: (sel: ApprovalBulkSelection) =>
+    post<ApprovalBulkResult>('/api/v1/approvals/bulk/approve', sel),
+  reject: (sel: ApprovalBulkSelection, reason: string) =>
+    post<ApprovalBulkResult>('/api/v1/approvals/bulk/reject', { ...sel, reason }),
 }

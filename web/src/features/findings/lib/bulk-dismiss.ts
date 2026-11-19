@@ -108,21 +108,6 @@ export function reopenBulkDismiss(bulkId: string): Promise<DismissUndoResult> {
 }
 
 /**
- * The shortest note this Dismiss needs; 0 means the note is optional. The
- * server decides (its preview's `note_required` / `note_min_length`): the note
- * is optional only when every finding is decided by the caller alone and none
- * is serious. Without a preview (still loading, or it failed) the note is
- * required, so the form never promises less than the server asks.
- */
-export function dismissNoteMinLength(
-  preview: Pick<DismissResult, 'note_required' | 'note_min_length'> | null | undefined
-): number {
-  if (!preview) return 1
-  if (!preview.note_required) return 0
-  return Math.max(1, preview.note_min_length || 0)
-}
-
-/**
  * The reason the preview sends while none is chosen yet: how the selection
  * splits does not depend on which reason it is, and the server requires one.
  */
@@ -343,30 +328,4 @@ export function idempotencyKeyFor(
   const text = JSON.stringify(body)
   if (prev && prev.body === text) return prev
   return { key: newKey(), body: text }
-}
-
-const LAST_REASON_KEY = 'openctem.findings.dismiss.lastReason'
-
-/** The reason last chosen for this status (a convenience only: browser storage may be off). */
-export function readLastReason(status: DismissStatus): string {
-  try {
-    const raw = window.localStorage.getItem(LAST_REASON_KEY)
-    const saved = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
-    const reason = saved[status]
-    return typeof reason === 'string' && PERSON_CLOSURE_REASONS[status]?.includes(reason as never)
-      ? reason
-      : ''
-  } catch {
-    return ''
-  }
-}
-
-export function writeLastReason(status: DismissStatus, reason: string): void {
-  try {
-    const raw = window.localStorage.getItem(LAST_REASON_KEY)
-    const saved = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
-    window.localStorage.setItem(LAST_REASON_KEY, JSON.stringify({ ...saved, [status]: reason }))
-  } catch {
-    // Storage is off (private window, blocked site data): nothing to remember.
-  }
 }

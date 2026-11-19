@@ -341,6 +341,10 @@ export interface AuditLog {
 const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
   'finding.bulk_updated': 'Findings bulk updated',
+  'finding.bulk_dismissed': 'Several findings dismissed at once',
+  'finding.bulk_dismiss_undone': 'Dismissal of several findings undone',
+  'finding_approval.batch_member_rejected': 'Finding left out of a group request',
+  'finding_approval.batch_self_approved': 'Group request self-approved by owner',
   'finding.duplicate_marked': 'Finding marked duplicate',
   'finding.location_changed': 'Finding service location changed',
   'finding.issue_unlinked': 'Finding taken out of a same-issue group',

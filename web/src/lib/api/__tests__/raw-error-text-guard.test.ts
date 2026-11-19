@@ -40,6 +40,8 @@ const REVIEWED = new Set<string>([
   'src/app/(dashboard)/findings/page.tsx:toast of a raw error or result text',
   // The bulk Dismiss summary built from the result counts (translated).
   'src/features/findings/components/bulk-dismiss-result.ts:toast of a raw error or result text',
+  // The bulk approve/reject summary built from the result counts and reason codes (translated).
+  'src/features/findings/components/approval-bulk-decide.tsx:toast of a raw error or result text',
   // describeScanZoneError is the zone mapper (code -> translated sentence).
   'src/features/scan-zones/components/zone-sensors-dialog.tsx:toast of a raw error or result text',
   // The import dialog's error is set through safeText.

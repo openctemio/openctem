@@ -64,6 +64,7 @@ import {
 import { ApprovalTierCell } from '@/features/findings/components/approval-tier-cell'
 import { GroupExceptionsPanel } from '@/features/findings/components/group-exceptions-panel'
 import { useApprovalBatches } from '@/features/findings/api/use-approval-batches'
+import { useApprovalBulkDecide } from '@/features/findings/components/approval-bulk-decide'
 
 // ============================================
 // CONSTANTS
@@ -136,6 +137,9 @@ const APPROVALS_HIDE_BELOW = {
     decideBy: 808,
   },
 } as const
+
+/** The table's selection column (`bulkSelectColumn`), in px. */
+const SELECT_COLUMN_WIDTH = 40
 
 // ============================================
 // HELPERS
@@ -273,6 +277,21 @@ export default function ApprovalsPage() {
   const { announce } = announcer
   // Approve and reject: the shared decision dialogs (also on My Work).
   const decision = useApprovalDecision({ onDecided: mutate, announce })
+  // Approve or reject the selected requests at once (pending and every
+  // status: a decided one is reported as already decided).
+  const requestName = useCallback(
+    (a: ApiApproval) =>
+      toDisplayText(a.finding_title || t('findings.approvalLink.untitled', 'Untitled finding'), 80),
+    [t]
+  )
+  const bulkDecide = useApprovalBulkDecide<ApiApproval>({
+    kind: 'approval',
+    idOf: (a) => a.id,
+    nameOf: requestName,
+    canDecide: can(Permission.FindingsApprove) && (lens === 'pending' || lens === 'all'),
+    onDecided: mutate,
+    announce,
+  })
   const { trigger: triggerCancel, isMutating: isCancelling } = useCancelApproval(
     selectedApproval?.id ?? ''
   )
@@ -419,7 +438,10 @@ export default function ApprovalsPage() {
       const mayCancel = canCancelApproval(approval, currentUserId)
       // The four-eyes rule: someone else decides your own request.
       const own = isOwnApproval(approval, currentUserId)
-      const mineSelf = selfApprovalAvailable && approval.requested_by === currentUserId
+      // Per row from the API; the list-wide flag for an older server.
+      const mineSelf =
+        approval.self_approval_available === true ||
+        (selfApprovalAvailable && approval.requested_by === currentUserId)
       const findingTitle = toDisplayText(
         approval.finding_title || t('findings.approvalLink.untitled', 'Untitled finding'),
         80
@@ -545,6 +567,7 @@ export default function ApprovalsPage() {
   // Under the Pending lens every row is pending: the Status column would say
   // one word down the whole table, so it shows on the other lenses only.
   const showStatusColumn = lens !== 'pending'
+  const selectable = !!bulkDecide.bulk
 
   const columns: ColumnDef<ApiApproval>[] = useMemo(() => {
     const label = {
@@ -560,9 +583,15 @@ export default function ApprovalsPage() {
       actions: t('findings.approvals.col.actions', 'Decision'),
     }
     const meta = (m: DataTableColumnMeta) => m
-    const hideBelow = showStatusColumn
+    // The selection column (an approver's) takes its width from every threshold.
+    const base: Record<string, number> = showStatusColumn
       ? APPROVALS_HIDE_BELOW.withStatus
       : APPROVALS_HIDE_BELOW.pending
+    const extra = selectable ? SELECT_COLUMN_WIDTH : 0
+    const hideBelow = Object.fromEntries(
+      Object.entries(base).map(([k, v]) => [k, v + extra])
+    ) as Record<keyof typeof APPROVALS_HIDE_BELOW.withStatus, number> &
+      Partial<Record<'decideBy', number>>
     const all: ColumnDef<ApiApproval>[] = [
       {
         // The row's name: what the request is about. Frozen at the start.
@@ -646,7 +675,7 @@ export default function ApprovalsPage() {
         meta: meta({
           kind: 'due',
           width: APPROVALS_WIDTH.decideBy,
-          hideBelow: 'decideBy' in hideBelow ? hideBelow.decideBy : undefined,
+          hideBelow: hideBelow.decideBy,
           label: label.decideBy,
         }),
         header: label.decideBy,
@@ -703,7 +732,16 @@ export default function ApprovalsPage() {
     return showStatusColumn
       ? all
       : all.filter((c) => !('accessorKey' in c && c.accessorKey === 'status'))
-  }, [actionsCell, currentUserId, locale, requestedCell, showStatusColumn, statusCell, t])
+  }, [
+    actionsCell,
+    currentUserId,
+    locale,
+    requestedCell,
+    selectable,
+    showStatusColumn,
+    statusCell,
+    t,
+  ])
 
   // ============================================
   // STATES
@@ -860,9 +898,16 @@ export default function ApprovalsPage() {
                     showSearch={false}
                     toolbarStart={statusLens}
                     emptyState={emptyState}
-                    mobileRow={(approval) => (
+                    bulk={bulkDecide.bulk}
+                    resetSelectionKey={bulkDecide.resetKey}
+                    showSelectionCount={false}
+                    mobileRow={(approval, selection) => (
                       <QueueCard
                         data-testid="approval-phone-card"
+                        selection={selection}
+                        selectLabel={t('findings.bulkDecide.selectRow', 'Select {name}', {
+                          name: requestName(approval),
+                        })}
                         title={
                           <ApprovalFindingLink
                             findingId={approval.finding_id}
@@ -910,6 +955,7 @@ export default function ApprovalsPage() {
 
       {announcer.region}
       {decision.dialogs}
+      {bulkDecide.dialogs}
 
       <ConfirmDialog
         open={remindTarget !== null}

@@ -58,8 +58,8 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/dashboards/layout-hint.ts': 'not-org-data',
   // Whether the Compliance benchmarks block is folded (a UI preference).
   'src/features/findings/components/compliance-benchmarks-panel.tsx': 'not-org-data',
-  // The reason last chosen in bulk Dismiss (a reason code, a convenience).
-  'src/features/findings/lib/bulk-dismiss.ts': 'not-org-data',
+  // The reason last chosen in a dismiss form (a reason code, a convenience).
+  'src/features/findings/lib/approval-note.ts': 'not-org-data',
   // The expanded query editor's height (a UI preference).
   'src/features/query/components/query-input.tsx': 'not-org-data',
   'src/features/remediation-hub/components/task-detail.tsx': 'not-org-data',

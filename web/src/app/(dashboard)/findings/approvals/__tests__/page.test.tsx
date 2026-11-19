@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 
@@ -25,6 +25,13 @@ import { toast } from 'sonner'
 const captured = vi.hoisted(() => ({
   columns: [] as unknown[],
   mobileRow: undefined as undefined | ((row: unknown) => React.ReactNode),
+  // The selection actions the page gives the table (undefined: no checkboxes).
+  bulk: undefined as
+    | undefined
+    | {
+        actions: React.ReactNode
+        onSelectionChange?: (s: { kind: 'ids'; rows: unknown[] } | null) => void
+      },
 }))
 
 const mockMutate = vi.fn()
@@ -64,6 +71,8 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
     isLoading: false,
   })),
 }))
+
+const bulkApi = vi.hoisted(() => ({ approve: vi.fn(), reject: vi.fn() }))
 
 // Group exceptions: the pending count and the panel's list.
 const batchState = vi.hoisted(() => ({ pendingTotal: 0 }))
@@ -106,6 +115,8 @@ vi.mock('@/features/findings/api/use-approval-batches', () => ({
     mutate: vi.fn(),
   })),
   approvalBatchApi: { approve: vi.fn(), reject: vi.fn(), cancel: vi.fn() },
+  approvalBulkApi: bulkApi,
+  APPROVAL_BULK_MAX: 100,
 }))
 
 // What the signed-in user may do; a test removes a permission to check a gate.
@@ -186,7 +197,7 @@ vi.mock('@/features/findings/types', () => ({
 }))
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
 vi.mock('@/lib/api/error-handler', () => ({
@@ -232,7 +243,9 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
     mobileRow,
     toolbarStart,
     toolbarEnd,
+    bulk,
   }: {
+    bulk?: typeof captured.bulk
     data: unknown[]
     toolbarStart?: React.ReactNode
     toolbarEnd?: React.ReactNode
@@ -252,6 +265,7 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
   }) => {
     captured.columns = columns
     captured.mobileRow = mobileRow
+    captured.bulk = bulk
     return (
       <div data-testid="data-table">
         <div data-testid="toolbar">
@@ -1249,5 +1263,102 @@ describe('ApprovalsPage gates', () => {
     expect(own.querySelector('[data-slot="queue-own-request"]')).toHaveTextContent(
       'Your request Another approver must decide your own request.'
     )
+  })
+})
+
+describe('ApprovalsPage deciding many at once', () => {
+  const row = {
+    ...mockApprovals[0],
+    id: 'approval-o',
+    requested_by: 'user-2',
+    finding_title: 'SQL injection in orders search',
+  }
+  const row2 = { ...row, id: 'approval-p', finding_title: 'Open redirect' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listState.view = ''
+    permState.denied = new Set()
+    captured.bulk = undefined
+    mockHook({
+      data: {
+        data: [row, row2] as unknown as typeof mockApprovals,
+        total: 2,
+        page: 1,
+        per_page: 20,
+        status_counts: COUNTS,
+      },
+    })
+  })
+
+  function select(rows: unknown[]) {
+    act(() => captured.bulk?.onSelectionChange?.({ kind: 'ids', rows }))
+    return render(<div>{captured.bulk?.actions}</div>)
+  }
+
+  it('approves the selected requests in one call and reports each outcome', async () => {
+    bulkApi.approve.mockResolvedValue({
+      results: [
+        { id: 'approval-o', kind: 'approval', outcome: 'approved' },
+        { id: 'approval-p', kind: 'approval', outcome: 'skipped', code: 'own_request' },
+      ],
+      approved: 1,
+      signed: 0,
+      rejected: 0,
+      skipped: 1,
+      failed: 0,
+    })
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const bar = select([row, row2])
+    await user.click(within(bar.container).getByRole('button', { name: 'Approve selected' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Approve 2 selected requests?')
+    await user.click(within(dialog).getByRole('button', { name: 'Approve 2' }))
+    await waitFor(() =>
+      expect(bulkApi.approve).toHaveBeenCalledWith({
+        approval_ids: ['approval-o', 'approval-p'],
+        batch_ids: [],
+      })
+    )
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith('1 approved, 1 skipped', {
+        description: 'Your own request: someone else decides it: 1',
+      })
+    )
+    expect(mockMutate).toHaveBeenCalled()
+  })
+
+  it('rejects the selected requests with one reason', async () => {
+    bulkApi.reject.mockResolvedValue({
+      results: [{ id: 'approval-o', kind: 'approval', outcome: 'rejected' }],
+      approved: 0,
+      signed: 0,
+      rejected: 1,
+      skipped: 0,
+      failed: 0,
+    })
+    const user = userEvent.setup()
+    render(<ApprovalsPage />)
+    const bar = select([row])
+    await user.click(within(bar.container).getByRole('button', { name: 'Reject selected' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Reject 1 selected request?' })
+    const confirm = within(dialog).getByRole('button', { name: 'Reject 1' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Not proven' } })
+    await user.click(confirm)
+    await waitFor(() =>
+      expect(bulkApi.reject).toHaveBeenCalledWith(
+        { approval_ids: ['approval-o'], batch_ids: [] },
+        'Not proven'
+      )
+    )
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('1 rejected', undefined))
+  })
+
+  it('offers no selection without the approve permission', () => {
+    permState.denied = new Set(['findings:approve'])
+    render(<ApprovalsPage />)
+    expect(captured.bulk).toBeUndefined()
   })
 })
