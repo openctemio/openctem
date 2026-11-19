@@ -241,7 +241,16 @@ export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
 ]
 
+/**
+ * The account area: the no-organization hub became the account's
+ * Organizations page (memberships, invitations, new organization).
+ */
+export const LEGACY_ACCOUNT_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  { source: '/welcome', destination: '/account/organizations', permanent: true },
+]
+
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  ...LEGACY_ACCOUNT_ROUTE_REDIRECTS,
   ...LEGACY_SENSOR_ROUTE_REDIRECTS,
   ...LEGACY_SETTINGS_ROUTE_REDIRECTS,
   ...LEGACY_VALIDATION_ROUTE_REDIRECTS,
