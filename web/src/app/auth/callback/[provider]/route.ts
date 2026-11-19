@@ -27,6 +27,7 @@ import {
 import { OAUTH_LINK_INTENT_COOKIE } from '@/features/auth/lib/oauth-cookies'
 import { linkResultHref } from '@/features/account/lib/link-result'
 import { validateRedirectUrl } from '@/lib/redirect'
+import { continueHref } from '@/features/auth/lib/continue-href'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,5 +72,7 @@ export async function GET(
     if (result.code === SSO_REQUIRED) redirect('/login')
     redirect(loginErrorHref(loginErrorCodeFor(result.code)))
   }
-  redirect(redirectTo)
+  // Signed in, no organization selected yet: /auth/continue decides from the
+  // memberships (a new request, so it reads the cookies just set).
+  redirect(continueHref(redirectTo))
 }

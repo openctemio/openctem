@@ -27,6 +27,9 @@ export const PUBLIC_ROUTES = [
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
+  // After a sign-in: decides the landing from the memberships (it sends a
+  // visitor without a session to /login itself).
+  '/auth/continue',
   // Metadata routes (app/icon.tsx, app/apple-icon.tsx, app/opengraph-image.tsx):
   // the sign-in page's favicon and a shared link's preview image must load
   // without a session. They render the instance brand only.
@@ -58,6 +61,9 @@ export const ACCOUNT_ONLY_PAGES = [
   '/account',
   '/account/security',
   '/account/preferences',
+  // The second-factor step an organization asks for before it admits the
+  // session: a member without it holds only an account session.
+  '/two-factor-setup',
   '/account/organizations',
 ] as const
 
