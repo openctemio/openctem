@@ -113,9 +113,10 @@ var (
 	ErrSSOMFAEvidenceRequired = fmt.Errorf("%w: the identity provider did not confirm a second factor", ErrMFAEnrollmentRequired)
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
-	// ErrMFAFederatedSession: a session from a social or identity-provider
-	// sign-in cannot start our own second-factor step from an invitation.
-	ErrMFAFederatedSession = errors.New("this session was started through an identity provider; sign in with your password to set up two-factor authentication")
+	// ErrMFAFederatedSession: a session issued by an organization's own
+	// identity provider cannot start our second-factor step: that provider
+	// owns the second factor.
+	ErrMFAFederatedSession = errors.New("this session was started through an organization's identity provider; sign in with your password to set up two-factor authentication")
 	// ErrReauthRequired: an enrollment challenge was asked for with a session
 	// that was not signed in recently. Binding a first authenticator is
 	// account takeover if a stolen refresh token alone could do it, so the
@@ -179,6 +180,11 @@ type MFAStatus struct {
 	// CanTurnOff is false while anybody requires the factor or that could not
 	// be read: POST /users/me/2fa/disable would refuse.
 	CanTurnOff bool `json:"can_turn_off"`
+	// EnrollThroughSession is true for an account that signs in only through
+	// a social provider: it has no password for the self-service setup, so
+	// the page sets the factor up with the session step
+	// (POST /auth/mfa/enroll/session, within minutes of signing in).
+	EnrollThroughSession bool `json:"enroll_through_session,omitempty"`
 }
 
 // MFASetup is a freshly generated secret awaiting confirmation.
@@ -453,6 +459,14 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 		return nil, err
 	}
 	st := &MFAStatus{Supported: isPasswordAccount(u)}
+	if !st.Supported && isSocialAccount(u) {
+		// No password to confirm a self-service change with: the factor is
+		// set up through the signed-in session step instead
+		// (SessionMFAChallenge, a recent sign-in), and turning it off is not
+		// offered.
+		st.Supported = true
+		st.EnrollThroughSession = true
+	}
 	if !st.Supported {
 		return st, nil
 	}
@@ -472,7 +486,7 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 		st.CanTurnOff = false
 	} else {
 		st.RequiredBy = holders
-		st.CanTurnOff = !holders.Any()
+		st.CanTurnOff = !holders.Any() && !st.EnrollThroughSession
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
@@ -747,8 +761,10 @@ func (s *AuthService) tenantNeedsSecondFactor(ctx context.Context, t *tenantdom.
 // for example right after accepting an invitation or when a token refresh is
 // refused. The caller proves the session with its refresh token, exactly as
 // AcceptInvitationWithRefreshToken does; the token is not spent. A user without an enabled factor gets an enrollment challenge, a
-// user who has one gets a verify challenge. Enrollment needs a recent sign-in (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does not. Federated sessions are refused:
-// they cannot complete our second step here.
+// user who has one gets a verify challenge. Enrollment needs a recent sign-in
+// (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does
+// not. A session issued by an organization's own identity provider is
+// refused (that provider owns the second factor); a social sign-in is not.
 func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip, ua string) (*MFAChallengeInfo, error) {
 	if !s.mfaEnabled() {
 		return nil, ErrMFAUnavailable
@@ -778,7 +794,11 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 	if !sess.IsActive() {
 		return nil, sessiondom.ErrSessionExpired
 	}
-	if sess.AuthMethod().IsFederated() {
+	// A session an organization's own identity provider issued leaves the
+	// second factor to that provider. A social sign-in (no issuing
+	// organization) is a first factor like a password: it may enroll and
+	// verify our second step, which opens a new session that went through it.
+	if sess.AuthMethod().IsFederated() && !sess.IDPTenantID().IsZero() {
 		return nil, ErrMFAFederatedSession
 	}
 	userID, err := shared.IDFromString(claims.UserID)
@@ -826,7 +846,10 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 //   - Any other federated session (social OAuth, another organization's IdP)
 //     never went through our second step, and its IdP is not one this tenant
 //     chose, so it is refused whether or not the user has enrolled. The user
-//     signs in again — with password and 2FA, or through this tenant's IdP.
+//     takes our second step: in place (SessionMFAChallenge, for a social
+//     session), or by signing in again — a social or password sign-in asks
+//     for the factor, and the session it opens went through it — or signs in
+//     through this tenant's IdP.
 func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {
 	if !s.mfaEnabled() {
 		return nil
@@ -905,6 +928,20 @@ func (s *AuthService) mfaSatisfied(ctx context.Context, sess *sessiondom.Session
 
 func isPasswordAccount(u *userdom.User) bool {
 	return u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil
+}
+
+// isSocialAccount reports an account without a password that signs in through
+// a social provider (Google, GitHub, personal Microsoft). An organization's
+// own identity provider is not one: it owns the second factor.
+func isSocialAccount(u *userdom.User) bool {
+	if u.PasswordHash() != nil {
+		return false
+	}
+	switch u.AuthProvider() {
+	case userdom.AuthProviderGoogle, userdom.AuthProviderGitHub, userdom.AuthProviderMicrosoft:
+		return true
+	}
+	return false
 }
 
 func (s *AuthService) mfaUser(ctx context.Context, userID string) (*userdom.User, error) {

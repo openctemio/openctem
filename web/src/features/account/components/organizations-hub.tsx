@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { Building2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
+import { CONTINUE_FAILED_PARAM, CONTINUE_PATH } from '@/features/auth/lib/continue-href'
 
 import { Button } from '@/components/ui/button'
 import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
@@ -15,10 +17,7 @@ import {
   onboardingOptionsAction,
   type OnboardingOptions,
 } from '@/features/auth/actions/local-auth-actions'
-import {
-  onboardingDeclineAction,
-  startAccountSessionAction,
-} from '@/features/auth/actions/account-space-actions'
+import { onboardingDeclineAction } from '@/features/auth/actions/account-space-actions'
 import { ResendVerification } from '@/features/auth/components/resend-verification'
 import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
 import { ErrorState, PageStack } from '@/features/shared'
@@ -38,8 +37,6 @@ interface OrganizationsHubProps {
    */
   needsSession: boolean
 }
-
-const SESSION_RETRY_KEY = 'welcome-organization-retry'
 
 /**
  * /account/organizations (api RFC-141): the person's own memberships, each
@@ -76,40 +73,16 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
       void load()
       return
     }
-    let cancelled = false
-    void (async () => {
-      const res = await startAccountSessionAction()
-      if (cancelled) return
-      if (res.success) {
-        // The cookies are set: load the page again with the account session.
-        window.location.reload()
-        return
-      }
-      if (res.code === 'SESSION') {
-        window.location.replace('/login')
-        return
-      }
-      if (res.code === 'HAS_ORGANIZATION') {
-        // The person can open an organization: send them to it, once.
-        let tried = false
-        try {
-          tried = sessionStorage.getItem(SESSION_RETRY_KEY) === '1'
-          sessionStorage.setItem(SESSION_RETRY_KEY, '1')
-        } catch {
-          // Storage blocked: treat as tried, show the notice instead of looping.
-          tried = true
-        }
-        if (!tried) {
-          navigateAfterSessionChange('/', { replace: true })
-          return
-        }
-      }
+    // No account session in the cookies yet (a social sign-in, or a link
+    // from elsewhere): /auth/continue decides from the memberships and comes
+    // back here only when there is no organization to open. When it could not
+    // start one (the API did not answer), it says so instead of looping.
+    if (new URLSearchParams(window.location.search).has(CONTINUE_FAILED_PARAM)) {
       setStarting(false)
       setFailed(true)
-    })()
-    return () => {
-      cancelled = true
+      return
     }
+    window.location.replace(CONTINUE_PATH)
   }, [needsSession, load])
 
   const view = welcomeView(options)
@@ -136,6 +109,11 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
       }
       if (res.success) {
         toast.success(t('org.onboarding.requested', undefined, { name: res.organizationName }))
+      } else if (res.code === 'MFA_ENROLLMENT_REQUIRED' && res.organizationId) {
+        // Joined; the organization requires two-factor authentication: set it
+        // up now (the session stays), then go straight into the organization.
+        window.location.assign(twoFactorSetupHref('/', res.organizationId))
+        return
       } else if (res.code === 'OFFER_UNAVAILABLE') {
         toast.error(t('org.onboarding.unavailable'))
       } else {
