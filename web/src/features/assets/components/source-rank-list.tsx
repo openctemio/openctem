@@ -134,7 +134,7 @@ function SourceRow({
           aria-label={t('assetSources.dragHandle', 'Reorder {name}', { name: label })}
           onKeyDown={(e) => onHandleKeyDown(e, index)}
           onBlur={onHandleBlur}
-          className="hidden h-control cursor-grab touch-none items-center rounded px-1 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
+          className="hidden h-control w-control cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
         >
           <GripVertical className="h-4 w-4" />
         </button>
