@@ -9,7 +9,7 @@ Every organization is **unlimited and may use every feature** unless someone set
   denies through the internal API.
 
 So a self-hosted install with default settings shows nothing limit-like: no
-Usage & limits page, no badges, no prompts. An installation that serves
+Usage and limits page, no badges, no prompts. An installation that serves
 several customers (a hosting provider, a group with subsidiaries) uses the
 same limits to cap each organization, in neutral words.
 
@@ -242,7 +242,7 @@ not a security boundary; that overshoot is accepted.
 | `PUT/DELETE /api/v1/admin/tenants/{id}/modules/{module}/deny` | **ops_admin+** + reason + a fresh authenticator code, audited high |
 | `GET /api/v1/organization/limits` | the organization's owners and admins: only the limits that apply and the unavailable features, without operator notes; `applies: false` when nothing applies |
 
-A hosted service can set `ACCOUNT_PORTAL_URL` (an absolute https URL): when a limit or deny applies, `GET /api/v1/organization/limits` returns it as `account_portal_url` and Usage & limits links to it. Unset (the default) there is no link anywhere.
+A hosted service can set `ACCOUNT_PORTAL_URL` (an absolute https URL): when a limit or deny applies, `GET /api/v1/organization/limits` returns it as `account_portal_url` and Usage and limits links to it. Unset (the default) there is no link anywhere.
 
 The operator can only edit rows of origin `operator`. Rows of origin
 `control_plane` are shown in the console as set by the service operator.

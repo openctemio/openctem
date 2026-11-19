@@ -185,15 +185,21 @@ test.describe('Findings phone cards', { tag: ['@findings'] }, () => {
     expect(Math.round(target.height)).toBeGreaterThanOrEqual(44)
     // At the end of the list the whole footer is above the bar.
     const footer = page.locator('[data-slot="phone-more-footer"]')
-    await page
-      .locator('main')
-      .first()
-      .evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    // A list page keeps its header still (a fixed layout), so the cards scroll
+    // in an inner region, not in main: scroll whichever ancestor of the footer
+    // scrolls.
+    const scrollListToEnd = () =>
+      footer.evaluate((el) => {
+        for (let n = el.parentElement; n; n = n.parentElement) {
+          const overflowY = getComputedStyle(n).overflowY
+          if (/(auto|scroll)/.test(overflowY) && n.scrollHeight > n.clientHeight) {
+            n.scrollTo(0, n.scrollHeight)
+          }
+        }
+      })
+    await scrollListToEnd()
     await footer.scrollIntoViewIfNeeded()
-    await page
-      .locator('main')
-      .first()
-      .evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await scrollListToEnd()
     const f = (await footer.boundingBox())!
     const b = (await bar.boundingBox())!
     expect(f.y + f.height).toBeLessThanOrEqual(b.y)
