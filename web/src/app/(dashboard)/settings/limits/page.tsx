@@ -6,7 +6,7 @@ import { OrganizationLimitsUsage } from '@/features/limits/components/organizati
 import { PageHeader, PageStack } from '@/features/shared'
 
 /**
- * Settings > Organization > Usage & limits (owners and admins). Listed in the
+ * Settings > Organization > Usage and limits (owners and admins). Listed in the
  * settings rail only while a limit applies to the organization.
  */
 export default function UsageAndLimitsPage() {
@@ -15,7 +15,7 @@ export default function UsageAndLimitsPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('settings.item.limits', 'Usage & limits')}
+          title={t('settings.item.limits', 'Usage and limits')}
           description={t(
             'settings.desc.limits',
             'The limits that apply to this organization and what it uses.'

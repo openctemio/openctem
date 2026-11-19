@@ -77,15 +77,15 @@ for (const collapsed of [false, true]) {
   )
 }
 
-// Six groups; the long ones carry sub-headings (Access & security: API access,
-// Sign-in, Oversight; Findings & assets: Risk and threats, Assets; Scanning:
-// Tools, Sensors, Detection content, Scanner content). Desktop rail and phone sheet.
+// Nine groups, the long ones with sub-headings (Findings and assets: Risk and
+// threats, Assets; Tools and sensors: Detection content, Scanner content), under
+// Back to app and All settings. Desktop rail and phone sheet.
 for (const vp of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
 ]) {
   test(
-    `the rail shows six groups with sub-headings (${vp.name})`,
+    `the rail shows the nine groups with sub-headings (${vp.name})`,
     { tag: ['@settings', '@smoke'] },
     async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height })
@@ -95,22 +95,32 @@ for (const vp of [
       }
       const nav = page.locator(rail)
       await expect(nav).toBeVisible({ timeout: 30_000 })
-      for (const label of ['My account', 'Organization', 'Access & security', 'Scanning']) {
-        await expect(nav.getByText(label, { exact: true }), label).toBeVisible()
+      await expect(nav.getByRole('link', { name: 'All settings', exact: true })).toBeVisible()
+      for (const label of [
+        'My account',
+        'Organization',
+        'People and access',
+        'Sign-in and oversight',
+        'Approvals',
+        'Findings and assets',
+        'Scanning',
+        'Tools and sensors',
+        'Integrations',
+      ]) {
+        // A group heading is the rail's group label span (text-cap-m); a row can
+        // carry the same words (the Approvals group has an Approvals row), so
+        // match the heading by its own span, not by text alone.
+        await expect(
+          nav.locator('span.text-cap-m').getByText(label, { exact: true }),
+          label
+        ).toBeVisible()
       }
       // The old "Security" group heading is gone. The My account row named
       // "Security" is a link, so only a "Security" that is not a link counts.
       const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
       await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
-      for (const sub of [
-        'API access',
-        'Sign-in',
-        'Oversight',
-        'Risk and threats',
-        'Tools',
-        'Detection content',
-      ]) {
-        // "Tools" is also the name of a rail link, so match the sub-heading
+      for (const sub of ['Risk and threats', 'Assets', 'Detection content', 'Scanner content']) {
+        // "Assets" may also be the name of a link, so match the sub-heading
         // by its own span, not by text alone (strict mode would see two).
         await expect(nav.locator('span.text-xs').getByText(sub, { exact: true }), sub).toBeVisible()
       }
