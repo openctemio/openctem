@@ -93,6 +93,15 @@ describe('AssetSourcesSettingsForm', () => {
     expect(screen.getByText('Applies to: Exposure')).toBeInTheDocument()
   })
 
+  it('the reorder handle is a square icon button (control height and width)', () => {
+    setup()
+    const handle = within(defaultList()).getByRole('button', {
+      name: 'Reorder Sensors and scanners',
+    })
+    expect(handle.className).toMatch(/\bh-control\b/)
+    expect(handle.className).toMatch(/\bw-control\b/)
+  })
+
   it('reorders by keyboard: Space picks up, arrows move, Space drops, announced', async () => {
     const { onSave, user } = setup()
     const handle = within(defaultList()).getByRole('button', {
