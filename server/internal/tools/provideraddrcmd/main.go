@@ -44,6 +44,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -104,11 +106,11 @@ func Main() {
 	defer cancel()
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		fail(2, "open database: "+err.Error())
+		fail(2, dbErrorText("open database", err, dbURL))
 	}
 	defer func() { _ = db.Close() }()
 	if err := db.PingContext(ctx); err != nil {
-		fail(2, "connect: "+err.Error())
+		fail(2, dbErrorText("connect", err, dbURL))
 	}
 	os.Exit(run(ctx, db, *tenantFlag, mode, batchSize{read: *batch, shared: *batchShared}, *maxBatches, *asJSON, *progress))
 }
@@ -183,6 +185,30 @@ func run(ctx context.Context, db *sql.DB, tenantArg string, mode pa.Mode, batch 
 func fail(code int, msg string) {
 	fmt.Fprintln(os.Stderr, "provider-addresses: "+msg)
 	os.Exit(code)
+}
+
+// userinfoInText matches user:password@ after a scheme, for a URL the parser
+// refused and the driver quoted anyway.
+var userinfoInText = regexp.MustCompile(`://([^:@/\s]*):[^@\s]*@`)
+
+// dbErrorText is the operator-facing text of a database error. The driver can
+// echo the connection string (a malformed DATABASE_URL, for one), password
+// included, so the URL and its password are removed from the driver's text and
+// the connection is named by its redacted form instead.
+func dbErrorText(stage string, err error, dbURL string) string {
+	text := err.Error()
+	named := "<DATABASE_URL could not be parsed>"
+	if u, perr := url.Parse(dbURL); perr == nil {
+		named = u.Redacted()
+		if pw, ok := u.User.Password(); ok && pw != "" {
+			text = strings.ReplaceAll(text, pw, "xxxxx")
+		}
+	}
+	if dbURL != "" {
+		text = strings.ReplaceAll(text, dbURL, named)
+	}
+	text = userinfoInText.ReplaceAllString(text, "://${1}:xxxxx@")
+	return stage + ": " + text + " (database " + named + ")"
 }
 
 // databaseURL returns DATABASE_URL, or builds it from the server's DB_*
