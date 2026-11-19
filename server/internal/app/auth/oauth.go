@@ -389,15 +389,6 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 		return nil, ErrOAuthExchangeFailed
 	}
 
-	// A person who signed up with no other way in gets their own
-	// organization now, before the second-factor step (a provider that does
-	// not vouch for the address leaves it unverified: nothing is made). It
-	// never fails the sign-in. A new owner under a platform 2FA floor enrolls
-	// the second factor in place at this sign-in (SessionMFAChallenge), then
-	// opens the organization.
-	ci := clientInfoFrom(ctx)
-	s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
-
 	// The provider's sign-in is the first factor. Every account then takes the
 	// same second step as a password sign-in (identity_link.go): a verify
 	// challenge when it has a factor, an enrollment challenge when an
@@ -412,6 +403,16 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 			"user_id", u.ID().String(), "provider", provider)
 		return nil, ErrOAuthExchangeFailed
 	}
+	// Only now, with the sign-in not refused above, the organization is made.
+	// A person who signed up with no other way in gets their own
+	// organization now, before the second-factor step (a provider that does
+	// not vouch for the address leaves it unverified: nothing is made). It
+	// never fails the sign-in. A new owner under a platform 2FA floor enrolls
+	// the second factor in place at this sign-in (SessionMFAChallenge), then
+	// opens the organization.
+	ci := clientInfoFrom(ctx)
+	s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
+
 	challenge, cerr := s.linkedAccountChallenge(ctx, u)
 	if cerr != nil {
 		return nil, cerr
