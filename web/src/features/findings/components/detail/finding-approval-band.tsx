@@ -28,6 +28,7 @@ import { formatRelative } from '@/lib/format-date'
 import { Permission } from '@/lib/permissions'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
+import { closureReasonLabel } from '../../lib/closure'
 import { ApprovalDecisionButtons, useApprovalDecision } from '../approval-decision'
 import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
@@ -103,7 +104,8 @@ function PendingRequest({
         who: requesterLabel(t, approval, currentUserId),
         when: formatRelative(approval.created_at),
       })}
-      reason={approval.justification || undefined}
+      reason={approval.closure_reason ? closureReasonLabel(t, approval.closure_reason) : undefined}
+      note={approval.justification || undefined}
       details={
         <>
           <AIProposalBadge approval={approval} />

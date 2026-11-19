@@ -41,6 +41,7 @@ import { useFindingApi, useFindingApprovals } from '../api/use-findings-api'
 import { useFindingTriage } from '../hooks/use-finding-triage'
 import { findingDescription, isTriageLocked, toFindingDetail } from '../lib/finding-detail'
 import { displayTitle } from '../lib/finding-display'
+import { closureReasonLabel } from '../lib/closure'
 import {
   APPROVAL_STATUS_CONFIG,
   FINDING_STATUS_CONFIG,
@@ -416,11 +417,18 @@ export function FindingDetailDrawer({
                         <AIProposalBadge approval={a} />
                         {/* Member text: plain, capped and bidi-isolated, so a
                             right-to-left override cannot change how it reads. */}
+                        {a.closure_reason && (
+                          <p className="text-muted-foreground">
+                            {t('common.awaitingApproval.reason', 'Reason:')}{' '}
+                            {closureReasonLabel(t, a.closure_reason)}
+                          </p>
+                        )}
                         {a.justification && (
                           <p
                             dir="auto"
                             className="line-clamp-2 text-muted-foreground [unicode-bidi:isolate]"
                           >
+                            {t('common.awaitingApproval.note', 'Note:')}{' '}
                             {toDisplayText(a.justification, 500)}
                           </p>
                         )}
