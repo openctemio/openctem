@@ -117,16 +117,16 @@ func (m *approvalMemo) setOrg(op orgPolicy) {
 	m.mu.Unlock()
 }
 
-func (m *approvalMemo) cachedAIAgent(id shared.ID) (isAgent, ok bool) {
+func (m *approvalMemo) cachedAIAgent(id shared.ID) (isAI, ok bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	isAgent, ok = m.aiAgent[id]
-	return isAgent, ok
+	isAI, ok = m.aiAgent[id]
+	return isAI, ok
 }
 
-func (m *approvalMemo) setAIAgent(id shared.ID, isAgent bool) {
+func (m *approvalMemo) setAIAgent(id shared.ID, isAI bool) {
 	m.mu.Lock()
-	m.aiAgent[id] = isAgent
+	m.aiAgent[id] = isAI
 	m.mu.Unlock()
 }
 

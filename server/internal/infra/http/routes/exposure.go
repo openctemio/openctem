@@ -299,9 +299,9 @@ func registerVulnerabilityRoutes(
 		// Bulk "Dismiss" (false positive / accepted risk): each finding under
 		// the single-request approval policy, a group for the rest, step-up
 		// above 25 decided alone in the service; undo by its creator.
-		r.POST("/bulk/dismiss/preview", h.PreviewBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
-		r.POST("/bulk/dismiss", h.BulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
-		r.POST("/bulk/dismiss/{id}/undo", h.UndoBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
+		r.POST("/bulk-dismissals/preview", h.PreviewBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
+		r.POST("/bulk-dismissals", h.BulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
+		r.POST("/bulk-dismissals/{id}/reopen", h.UndoBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {

@@ -105,8 +105,8 @@ All three need `findings:bulk_update` and `findings:write`
 (`internal/infra/http/routes/exposure.go`).
 
 ```
-POST /api/v1/findings/bulk/dismiss/preview
-POST /api/v1/findings/bulk/dismiss
+POST /api/v1/findings/bulk-dismissals/preview
+POST /api/v1/findings/bulk-dismissals
 {
   "finding_ids": ["<id>", ...],            // or "filter": {...} + "expected_count": N
   "status": "false_positive",              // or "accepted" (+ "expires_at", RFC 3339)
@@ -127,7 +127,7 @@ POST /api/v1/findings/bulk/dismiss
   "same_rule": {"tool": "semgrep", "rule_id": "...", "count": 300, "suggest": true}
 }
 
-POST /api/v1/findings/bulk/dismiss/{id}/undo
+POST /api/v1/findings/bulk-dismissals/{id}/reopen
 -> 200 {"bulk_id": "<id>", "reopened": ["<id>"], "skipped": [{"id", "reason": "changed|not_found|not_allowed"}], "group_canceled": true}
 ```
 

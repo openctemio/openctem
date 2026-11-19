@@ -183,7 +183,7 @@ var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // regi
 	"PUT /api/v1/ai/agents/{id}/executor":                           "test: TestAIWorker_ChangeExecutor_DB",
 	"GET /api/v1/ci/trust-configs/{id}/new-repositories":            "test: TestCIAllProjects_PendingApproveBlock",
 	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions": "test: TestCIAllProjects_PendingApproveBlock",
-	"POST /api/v1/findings/bulk/dismiss/{id}/undo":                  "test: TestBulkDismiss_Undo_DB",
+	"POST /api/v1/findings/bulk-dismissals/{id}/reopen":             "test: TestBulkDismiss_Undo_DB",
 	"POST /api/v1/me/memberships/{id}/leave":                        "scope: the id only selects the caller's own membership (GetMembership with the token's user and that organization); any organization the caller is not a member of answers 404 and nothing is read or changed",
 }
 

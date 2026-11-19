@@ -836,7 +836,7 @@ A member without `findings:approve` still files a pending request, and so does
 a delegated credential (an API key or an MCP access token) whatever its
 permissions: the one person who decides is a person in their own session. Only a
 person's own request on one finding, or each finding of that person's bulk
-dismiss (`POST /findings/bulk/dismiss`, evaluated finding by finding exactly
+dismiss (`POST /findings/bulk-dismissals`, evaluated finding by finding exactly
 like that request; [findings-bulk-by-filter.md](findings-bulk-by-filter.md#bulk-dismiss)),
 decides alone: suppression rules, group exceptions on remediation tasks, bulk
 status moves, imports and requests made by automation (AI triage, VEX, ticket

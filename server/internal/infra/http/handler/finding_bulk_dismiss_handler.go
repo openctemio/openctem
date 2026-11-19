@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ type BulkDismissRequest struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
-// PreviewBulkDismiss handles POST /api/v1/findings/bulk/dismiss/preview
+// PreviewBulkDismiss handles POST /api/v1/findings/bulk-dismissals/preview
 // @Summary      Preview a bulk dismiss of findings
 // @Description  How a bulk Dismiss (false positive, or accepted risk) would split, changing nothing: findings
 // @Description  decided now by the caller alone (the organization's level, per finding, as a single request), the
@@ -83,9 +84,9 @@ type BulkDismissRequest struct {
 // @Failure      403  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Failure      422  {object}  apierror.Error
-// @Router       /findings/bulk/dismiss/preview [post]
+// @Router       /findings/bulk-dismissals/preview [post]
 func (h *VulnerabilityHandler) PreviewBulkDismiss(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.parseBulkDismiss(w, r, "POST /findings/bulk/dismiss/preview")
+	in, ok := h.parseBulkDismiss(w, r, "POST /findings/bulk-dismissals/preview")
 	if !ok {
 		return
 	}
@@ -97,7 +98,7 @@ func (h *VulnerabilityHandler) PreviewBulkDismiss(w http.ResponseWriter, r *http
 	writeJSONOK(w, out)
 }
 
-// BulkDismiss handles POST /api/v1/findings/bulk/dismiss
+// BulkDismiss handles POST /api/v1/findings/bulk-dismissals
 // @Summary      Dismiss findings in bulk
 // @Description  Marks up to 500 findings a false positive (default) or accepts their risk. Each finding follows the
 // @Description  same approval policy as a single request: the ones the caller may decide alone are applied now
@@ -116,9 +117,9 @@ func (h *VulnerabilityHandler) PreviewBulkDismiss(w http.ResponseWriter, r *http
 // @Failure      403  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Failure      422  {object}  apierror.Error
-// @Router       /findings/bulk/dismiss [post]
+// @Router       /findings/bulk-dismissals [post]
 func (h *VulnerabilityHandler) BulkDismiss(w http.ResponseWriter, r *http.Request) {
-	in, ok := h.parseBulkDismiss(w, r, "POST /findings/bulk/dismiss")
+	in, ok := h.parseBulkDismiss(w, r, "POST /findings/bulk-dismissals")
 	if !ok {
 		return
 	}
@@ -133,7 +134,7 @@ func (h *VulnerabilityHandler) BulkDismiss(w http.ResponseWriter, r *http.Reques
 	writeJSONOK(w, out)
 }
 
-// UndoBulkDismiss handles POST /api/v1/findings/bulk/dismiss/{id}/undo
+// UndoBulkDismiss handles POST /api/v1/findings/bulk-dismissals/{id}/reopen
 // @Summary      Undo a bulk dismiss
 // @Description  Reopens (to confirmed, through the normal status path, note "Undo of bulk dismissal <id>") the
 // @Description  findings the caller's bulk dismiss decided alone that are still in the status it set, and cancels
@@ -147,7 +148,7 @@ func (h *VulnerabilityHandler) BulkDismiss(w http.ResponseWriter, r *http.Reques
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /findings/bulk/dismiss/{id}/undo [post]
+// @Router       /findings/bulk-dismissals/{id}/reopen [post]
 func (h *VulnerabilityHandler) UndoBulkDismiss(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, err := shared.IDFromString(chi.URLParam(r, "id"))
@@ -317,8 +318,9 @@ func filterSummary(f FilterValues) string {
 }
 
 func writeBulkDismissTooLarge(w http.ResponseWriter, e *finding.BulkDismissTooLargeError) {
-	apierror.New(http.StatusBadRequest, apierror.CodeBulkDismissTooLarge, e.Error()).
-		WithDetails(map[string]int{paramCount: e.Count, "max": finding.MaxBulkDismiss}).WriteJSON(w)
+	apierror.FromCode(apierror.CodeBulkDismissTooLarge).
+		WithDetails(map[string]any{paramCount: e.Count, "max": finding.MaxBulkDismiss}).
+		WithParams(apierror.Params{paramCount: strconv.Itoa(e.Count), "max": strconv.Itoa(finding.MaxBulkDismiss)}).WriteJSON(w)
 }
 
 func (h *VulnerabilityHandler) writeBulkDismissError(w http.ResponseWriter, err error) {
@@ -328,10 +330,11 @@ func (h *VulnerabilityHandler) writeBulkDismissError(w http.ResponseWriter, err 
 	case errors.As(err, &tooLarge):
 		writeBulkDismissTooLarge(w, tooLarge)
 	case errors.As(err, &changed):
-		apierror.New(http.StatusConflict, apierror.CodeSelectionChanged, changed.Error()).
-			WithDetails(map[string]int{paramCount: changed.Count}).WriteJSON(w)
+		apierror.FromCode(apierror.CodeSelectionChanged).
+			WithDetails(map[string]any{paramCount: changed.Count}).
+			WithParams(apierror.Params{paramCount: strconv.Itoa(changed.Count)}).WriteJSON(w)
 	case errors.Is(err, finding.ErrIdempotencyMismatch):
-		apierror.New(http.StatusUnprocessableEntity, apierror.CodeIdempotencyKeyReused, err.Error()).WriteJSON(w)
+		apierror.FromCode(apierror.CodeIdempotencyKeyReused).WriteJSON(w)
 	case middleware.WriteStepUpError(w, err, authapp.StepUpWindow):
 	case errors.Is(err, finding.ErrBulkDismissNotFound):
 		apierror.NotFound("Bulk dismissal").WriteJSON(w)

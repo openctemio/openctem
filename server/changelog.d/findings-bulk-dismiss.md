@@ -1,7 +1,7 @@
 ### Added: dismiss findings in bulk, with a preview and undo
 
-- `POST /api/v1/findings/bulk/dismiss/preview`, `POST /api/v1/findings/bulk/dismiss` and
-  `POST /api/v1/findings/bulk/dismiss/{id}/undo` (`findings:bulk_update` and `findings:write`): mark up to
+- `POST /api/v1/findings/bulk-dismissals/preview`, `POST /api/v1/findings/bulk-dismissals` and
+  `POST /api/v1/findings/bulk-dismissals/{id}/reopen` (`findings:bulk_update` and `findings:write`): mark up to
   500 selected findings (by ids, or by the list's filter with the confirmed count) a false positive or accept
   their risk. Each finding follows the same approval policy as a single request: the ones the person may decide
   alone are applied now (each with its own timeline entry and audit row), the rest becomes one approval group
