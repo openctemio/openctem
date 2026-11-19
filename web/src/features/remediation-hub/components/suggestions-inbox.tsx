@@ -63,7 +63,7 @@ export function apiMessage(err: unknown, fallback: string): string {
 }
 
 export function SuggestionsInbox() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const router = useRouter()
   const params = useSearchParams()
