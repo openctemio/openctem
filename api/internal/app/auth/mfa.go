@@ -137,6 +137,11 @@ const sessionEnrollFreshness = 15 * time.Minute
 // committed and failures are only logged.
 type SecurityNotifier interface {
 	NotifyMFADisabled(ctx context.Context, email, name, ipAddress string)
+	// NotifyMFAEnabled and NotifyMFAReplaced tell the person a second factor
+	// was turned on or moved to a new authenticator, so a hijacked session
+	// that binds its own authenticator is noticed.
+	NotifyMFAEnabled(ctx context.Context, email, name, ipAddress string)
+	NotifyMFAReplaced(ctx context.Context, email, name, ipAddress string)
 	NotifyRecoveryCodeUsed(ctx context.Context, email, name, ipAddress string, remaining int)
 	NotifyPasswordChanged(ctx context.Context, email, name, ipAddress string)
 }
@@ -802,6 +807,13 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
 	}
+	// The in-place step is for social-provider sessions only, named by the
+	// account's provider kind rather than by the absence of an issuing
+	// organization: a federated session recorded without one (before the
+	// issuing organization was stored) of any other account stays refused.
+	if sess.AuthMethod().IsFederated() && !isSocialAccount(u) {
+		return nil, ErrMFAFederatedSession
+	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
 		return nil, fmt.Errorf("load mfa factor: %w", err)
@@ -1151,6 +1163,9 @@ func (s *AuthService) secondFactorTurnedOn(ctx context.Context, actx auditapp.Au
 		WithMessage("Two-factor authentication enabled; other sessions signed out").
 		WithMetadata("via", via).
 		WithMetadata("other_sessions_ended", true))
+	if s.securityNotifier != nil {
+		s.securityNotifier.NotifyMFAEnabled(ctx, u.Email(), u.Name(), actx.ActorIP)
+	}
 }
 
 func (s *AuthService) audit(ctx context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) {

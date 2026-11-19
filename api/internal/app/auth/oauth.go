@@ -391,17 +391,21 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 	// could never satisfy an organization that requires 2FA (its token
 	// request refuses a session that skipped our second step), and the person
 	// would be left with no way in. A password account without the gate wired
-	// is refused (fail closed); a social account keeps the session it had.
-	if isPasswordAccount(u) || s.secondFactor != nil {
-		challenge, cerr := s.linkedAccountChallenge(ctx, u)
-		if cerr != nil {
-			return nil, cerr
-		}
-		if challenge != nil {
-			s.logger.Info("OAuth sign-in waits for its second factor",
-				"user_id", u.ID().String(), "provider", provider, "purpose", string(challenge.Purpose))
-			return &CallbackResult{User: u, MFAChallenge: challenge}, nil
-		}
+	// is refused (linkedAccountChallenge) and so is a social account
+	// (fail closed both ways).
+	if s.secondFactor == nil && !isPasswordAccount(u) {
+		s.logger.Error("OAuth sign-in refused: the second-factor gate is not wired",
+			"user_id", u.ID().String(), "provider", provider)
+		return nil, ErrOAuthExchangeFailed
+	}
+	challenge, cerr := s.linkedAccountChallenge(ctx, u)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if challenge != nil {
+		s.logger.Info("OAuth sign-in waits for its second factor",
+			"user_id", u.ID().String(), "provider", provider, "purpose", string(challenge.Purpose))
+		return &CallbackResult{User: u, MFAChallenge: challenge}, nil
 	}
 
 	// Create session

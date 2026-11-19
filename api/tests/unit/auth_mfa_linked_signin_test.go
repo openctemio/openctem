@@ -89,6 +89,9 @@ func TestSocialAccount_EnrollsAndEntersTwoFactorOrganization(t *testing.T) {
 	if !h.audits.has(audit.ActionAuthMFAEnabled) {
 		t.Fatal("enrollment not audited")
 	}
+	if h.notifier.mfaEnabled != 1 {
+		t.Fatalf("social enrolment sent %d notices, want 1", h.notifier.mfaEnabled)
+	}
 
 	// The next sign-in through the provider asks for the code.
 	h.forgetLastStep(u.ID())

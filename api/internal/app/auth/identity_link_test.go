@@ -258,15 +258,21 @@ func TestSignIn_NoSecondFactorNeeded(t *testing.T) {
 			t.Fatalf("provider account: %+v %v asked=%v", res, err, gate.asked)
 		}
 	})
-	t.Run("provider account without the gate wired keeps its session", func(t *testing.T) {
-		acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
-		f := newLinkFixture(t, acct)
-		f.idents.bindTo(acct, googleIssuer, "g-9")
-		res, err := f.svc.signIn(context.Background(), googleInfo("g@gmail.com", "g-9", ""), OAuthProviderGoogle, "/")
-		if err != nil || res.AccessToken == "" {
-			t.Fatalf("provider account: %+v %v", res, err)
-		}
-	})
+}
+
+// Without the second-factor gate a provider account gets no session either:
+// a missing wiring must never skip a factor the account has.
+func TestSignIn_ProviderAccountWithoutGateIsRefused(t *testing.T) {
+	acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
+	f := newLinkFixture(t, acct)
+	f.idents.bindTo(acct, googleIssuer, "g-9")
+	res, err := f.svc.signIn(context.Background(), googleInfo("g@gmail.com", "g-9", ""), OAuthProviderGoogle, "/")
+	if !errors.Is(err, ErrOAuthExchangeFailed) {
+		t.Fatalf("want refusal, got %+v %v", res, err)
+	}
+	if f.sessions.created != 0 {
+		t.Fatal("session issued without the gate")
+	}
 }
 
 // An account of the provider itself (no password) takes our second step too

@@ -8,6 +8,11 @@
   with 401, or the session came from another organization's identity provider). A route that
   needs an organization, an organization that requires two-factor authentication, a suspended
   organization, or a server error never signs anybody out.
+- Turning two-factor authentication on, or moving it to a new authenticator, now sends the person an
+  e-mail (`notice.mfaOn`, `notice.mfaReplaced`, en and vi) from every path, so a hijacked session
+  that binds its own authenticator is noticed. A social sign-in is refused when the second-factor
+  gate is not wired (fail closed), and the in-place enrolment step is for social-provider
+  accounts only.
 - Docs: api/docs/architecture/tenantless-account-space.md
 
 ### Behaviour change: social sign-in accounts can satisfy an organization's two-factor requirement
