@@ -133,7 +133,7 @@ POST /api/v1/findings/bulk/dismiss/{id}/undo
 
 Errors: 400 `BULK_DISMISS_TOO_LARGE` (`details.count`, `details.max` 500;
 more than 500 ids, or a filter selecting more: the count is exact), 409
-`SELECTION_CHANGED` (`details.count`), 409 `IDEMPOTENCY_MISMATCH` (the key
+`SELECTION_CHANGED` (`details.count`), 422 `IDEMPOTENCY_KEY_REUSED` (the key
 was used with another request), 403 `STEP_UP_REQUIRED` (more than 25 decided
 alone, nothing changed), 400 for a missing reason or a note shorter than the
 plan needs, 404 for an undo of another person's bulk, 409 for a second undo or
@@ -200,6 +200,13 @@ policy facts of every finding) are read once per call (`approval_memo.go`;
 `PolicyFactsMany`; `datascope.Enforcer.PrimeAssets`); the preview of 500 runs
 about 20 statements. An apply costs the per-decision write of a single request
 per finding decided alone (about 8 statements) and a few per group member.
+Known limit: an apply of 500 decided alone takes about 17 seconds, because the
+findings are written one at a time; a batched write path is a planned
+follow-up.
+Second look: a bulk deciding 10 or more findings alone, with the organization's
+second-look share above 0, always raises at least one second look (per-finding
+sampling as for a single request; when it raised none, one decided finding is
+chosen with crypto/rand).
 
 ### Threat model
 

@@ -18,7 +18,6 @@
   "errors.FORBIDDEN": "Bạn không có quyền thực hiện thao tác này.",
   "errors.FULL_DATA_ACCESS_REQUIRED": "Thao tác này thay đổi phát hiện của toàn tổ chức nên cần một vai trò được truy cập mọi dữ liệu.",
   "errors.IDEMPOTENCY_KEY_REUSED": "Khóa idempotency này đã được dùng cho một yêu cầu khác.",
-  "errors.IDEMPOTENCY_MISMATCH": "Yêu cầu này đã được gửi với giá trị khác. Hãy bắt đầu một yêu cầu mới.",
   "errors.INTEGRATION_AUTH_FAILED": "Dịch vụ từ chối API token. Kiểm tra token hoặc tạo token mới rồi kiểm tra lại.",
   "errors.INTEGRATION_AUTH_FAILED.action": "Cập nhật API token",
   "errors.INTEGRATION_CREDENTIALS_UNREADABLE": "Không đọc được API token đã lưu của kết nối này. Nhập lại token.",

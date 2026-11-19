@@ -434,7 +434,7 @@ func TestBulkDismiss_SizeAndSelection_DB(t *testing.T) {
 
 // A retry with the same key returns the stored result (replay) and changes
 // nothing more; the same key with another request is 409
-// IDEMPOTENCY_MISMATCH; a key is required to apply.
+// IDEMPOTENCY_KEY_REUSED; a key is required to apply.
 func TestBulkDismiss_Idempotency_DB(t *testing.T) {
 	h := newBulkDismissHarness(t)
 	org := h.org()
@@ -451,7 +451,7 @@ func TestBulkDismiss_Idempotency_DB(t *testing.T) {
 		t.Fatalf("a replay decided again: %d requests", n)
 	}
 	body["note"] = "different"
-	if e := h.call(admin, "", body, http.StatusConflict); e.Code != "IDEMPOTENCY_MISMATCH" {
+	if e := h.call(admin, "", body, http.StatusUnprocessableEntity); e.Code != "IDEMPOTENCY_KEY_REUSED" {
 		t.Fatalf("mismatch: %+v", e)
 	}
 	delete(body, "idempotency_key")
@@ -766,5 +766,32 @@ func topStatements(t *testing.T, db *sql.DB) {
 	}
 	if err := rows.Err(); err != nil {
 		t.Log(err)
+	}
+}
+
+// A bulk that decides 10 or more findings alone gets at least one second
+// look when the organization's share is above 0 (even at 1%), and none when
+// the share is 0.
+func TestBulkDismiss_SecondLookFloor_DB(t *testing.T) {
+	h := newBulkDismissHarness(t)
+	count := func(org string) int {
+		return h.countRows(`SELECT COUNT(*) FROM finding_decision_reviews WHERE tenant_id = $1 AND reason = 'second_look_sample'`, org)
+	}
+	for _, tc := range []struct {
+		share string
+		min   int
+		max   int
+	}{{"1", 1, 10}, {"0", 0, 0}} {
+		org := h.org()
+		setFPLevel(h.findingApprovalHarness, org, `{"fp_approval":"off","second_look_percent":`+tc.share+`}`)
+		admin := h.member(org, "admin")
+		ids := h.findings(org, "low", 10)
+		r := h.call(admin, "", dismissBody(ids, map[string]any{"note": "fixtures"}), http.StatusOK)
+		if len(r.Decided) != 10 {
+			t.Fatalf("share %s: decided %d", tc.share, len(r.Decided))
+		}
+		if n := count(org); n < tc.min || n > tc.max {
+			t.Fatalf("share %s: %d second looks, want %d..%d", tc.share, n, tc.min, tc.max)
+		}
 	}
 }
