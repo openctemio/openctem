@@ -15,6 +15,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 	"github.com/openctemio/openctem/server/pkg/domain/liveness"
@@ -150,12 +151,21 @@ func (r *AssetLivenessRepository) Observe(ctx context.Context, tenantID shared.I
 	}
 	out := map[shared.ID]liveness.Transition{}
 	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		providers, err := providerAddressIDs(ctx, tx, tenantID, ids)
+		if err != nil {
+			return err
+		}
 		current, err := lockEvidence(ctx, tx, tenantID, ids)
 		if err != nil {
 			return err
 		}
 		touched := map[shared.ID]liveness.Evidence{}
 		for _, o := range obs {
+			if providers[o.AssetID] {
+				// A provider's shared address: unreachable is never "gone"
+				// for it, and it is not the tenant's to track (research/531).
+				continue
+			}
 			e, ok := touched[o.AssetID]
 			if !ok {
 				e = current[o.AssetID]
@@ -184,6 +194,29 @@ func (r *AssetLivenessRepository) Observe(ctx context.Context, tenantID shared.I
 		return nil, err
 	}
 	return out, nil
+}
+
+// providerAddressIDs are the provider addresses (attribution.IsProviderAddress)
+// among the tenant's assets ids.
+func providerAddressIDs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) (map[shared.ID]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT pa.asset_id::text FROM asset_attributions pa
+		WHERE pa.tenant_id = $1 AND pa.asset_id = ANY($2::uuid[]) AND `+attribution.ProviderAddressSQL("pa"),
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("provider addresses: %w", err)
+	}
+	defer rows.Close()
+	out := map[shared.ID]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if v, err := shared.IDFromString(id); err == nil {
+			out[v] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // lockEvidence reads and locks the stored evidence of the tenant's assets.

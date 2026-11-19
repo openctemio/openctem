@@ -104,6 +104,7 @@ import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryHiddenChip } from './inventory-hidden-chip'
+import { InventoryProviderChip } from './inventory-provider-chip'
 import { InventoryFilterBar } from './inventory-filter-bar'
 import { inventoryChips } from '../../lib/inventory-chips'
 import { propertyLabel as attributeLabel } from '@/features/asset-types/lib/property-schema'
@@ -303,6 +304,20 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const filterParams = useMemo(() => buildAssetQueryParams(searchFilters), [searchFilters])
   const { assets, total, totalCapped, isFirstLoad, isLoading, isError, error, mutate } =
     useAssetsKeepingPrevious(searchFilters)
+  // Provider addresses (research/531) leave the default list and its totals;
+  // the chip counts them for the same view, and is not asked for otherwise.
+  const providerOnly = useMemo(
+    () => ({
+      ...searchFilters,
+      attribution: ['provider_address'],
+      withTriage: false,
+      page: 1,
+      pageSize: 1,
+      skip: !!runFilters.attribution?.length,
+    }),
+    [searchFilters, runFilters.attribution]
+  )
+  const { total: providerCount, hasLoaded: providerLoaded } = useAssets(providerOnly)
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
   // The External surface lens's own counts, for its type tabs (the same request
   // as the tenant-wide stats above everywhere else).
@@ -646,10 +661,13 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const hideActive = !filters.attribution?.length
   const viewTotal = tab ? (tabTotals?.[tab.id] ?? 0) : (scopeLabel ? typeStats : stats).total
   const onlyDefaults = isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
+  const providerHidden = hideActive && providerLoaded ? providerCount : undefined
   const hiddenCount =
     hideActive && onlyDefaults && !isLoading && !statsLoading && !typeStatsLoading
-      ? Math.max(0, viewTotal - total)
+      ? Math.max(0, viewTotal - total - (providerHidden ?? 0))
       : undefined
+  const showProviderAddresses = () =>
+    setFilters({ ...filters, attribution: ['provider_address'], page: 1 })
   const showAllAttributions = () =>
     setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
   // An empty list while the default hide is on is not "nothing yet": say what
@@ -855,9 +873,17 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                   <InventoryFilterBar
                     locked={
                       !filters.attribution?.length &&
-                      hiddenCount !== undefined &&
-                      hiddenCount > 0 ? (
-                        <InventoryHiddenChip count={hiddenCount} onShowAll={showAllAttributions} />
+                      ((hiddenCount ?? 0) > 0 || (providerHidden ?? 0) > 0) ? (
+                        <>
+                          <InventoryHiddenChip
+                            count={hiddenCount}
+                            onShowAll={showAllAttributions}
+                          />
+                          <InventoryProviderChip
+                            count={providerHidden}
+                            onShow={showProviderAddresses}
+                          />
+                        </>
                       ) : undefined
                     }
                     chips={chips}

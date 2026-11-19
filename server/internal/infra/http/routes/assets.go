@@ -76,6 +76,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// The addresses a domain or subdomain resolved to, with history
+		// (shared provider addresses are recorded only here).
+		r.GET("/{id}/addresses", h.GetNameAddresses, middleware.Require(permission.AssetsRead))
 		// How the asset was found: its ancestor chain, each ancestor data-scope
 		// checked (docs/architecture/easm.md, Discovery lineage).
 		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
