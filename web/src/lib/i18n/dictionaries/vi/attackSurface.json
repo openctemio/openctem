@@ -256,6 +256,7 @@
   "attackSurface.discovery.status.paused": "Tạm dừng",
   "attackSurface.discovery.status.running": "Đang chạy",
   "attackSurface.discovery.updated": "Cập nhật",
+  "attackSurface.domainProof.loadTitle": "bằng chứng tên miền",
   "attackSurface.exposures.activeFilters": "Bộ lọc đang dùng",
   "attackSurface.exposures.assetCount": "{count} tài sản",
   "attackSurface.exposures.byType": "Theo loại",
