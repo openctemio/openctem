@@ -45,10 +45,6 @@ type PersonalOrganizations struct {
 	log         *logger.Logger
 	rates       tenantdom.PersonalOrgRates
 	now         func() time.Time
-	// ownerMFAApplies tells whether the platform 2FA floor would cover a
-	// new owner (see SocialSignInMayCreate). Nil means no floor source, which
-	// counts as applying (fail closed).
-	ownerMFAApplies func(ctx context.Context) (bool, error)
 }
 
 // NewPersonalOrganizations creates the service.
@@ -75,47 +71,6 @@ func (p *PersonalOrganizations) SetSignupRecorder(r signupevent.Recorder) { p.si
 
 // SetAuditService wires the tenant.created audit event.
 func (p *PersonalOrganizations) SetAuditService(a *auditapp.AuditService) { p.audit = a }
-
-// SetOwnerMFAApplies wires the platform 2FA floor: it reports whether a new
-// owner would be asked for a second factor. An error counts as "applies".
-func (p *PersonalOrganizations) SetOwnerMFAApplies(f func(ctx context.Context) (bool, error)) {
-	p.ownerMFAApplies = f
-}
-
-// SocialSignInMayCreate reports whether a social sign-in may make the
-// personal organization now.
-//
-// A social session counts as federated, so the platform 2FA floor refuses it
-// a tenant token whether or not the person enrolled, and it cannot enroll
-// (the challenge needs a password). An owner made here with a floor that
-// covers owners would be locked out of the organization it owns. So the
-// social path makes it only for a password account (its password sign-in
-// takes the second step) or while the floor is "none". Otherwise the mark
-// stays pending and the person keeps the normal "create your organization"
-// step; once they have a password and a factor, the password sign-in makes
-// it. An unreadable floor, or no floor source wired, counts as applying (fail
-// closed).
-//
-// REMOVE this guard when a person who signed in through a social provider can
-// enroll 2FA (for example set a password and enroll from the account space)
-// and the floor accepts that enrolment.
-func (p *PersonalOrganizations) SocialSignInMayCreate(ctx context.Context, u *userdom.User) bool {
-	if p == nil {
-		return false
-	}
-	if isPasswordAccount(u) {
-		return true
-	}
-	if p.ownerMFAApplies == nil {
-		return false
-	}
-	applies, err := p.ownerMFAApplies(ctx)
-	if err != nil {
-		p.log.Warn("read the platform 2FA floor for a personal organization", "error", err)
-		return false
-	}
-	return !applies
-}
 
 // SetRates replaces the rate bounds (tests).
 func (p *PersonalOrganizations) SetRates(r tenantdom.PersonalOrgRates) { p.rates = r }

@@ -18,7 +18,6 @@ import (
 	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
-	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/password"
 )
@@ -269,11 +268,7 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		oauth.SetIdentityRepo(postgres.NewUserIdentityRepository(db))
 		oauth.SetSignupPolicy(policy)
 		oauth.SetInvitationLookup(tenants)
-		// No platform 2FA floor: a social sign-up may make the organization
-		// (an unreadable or unwired floor counts as applying, see below).
-		po := newService()
-		po.SetOwnerMFAApplies(func(context.Context) (bool, error) { return false, nil })
-		oauth.SetPersonalOrganizations(po)
+		oauth.SetPersonalOrganizations(newService())
 		// A social sign-in takes the second-factor step; without the gate wired it is refused.
 		oauth.SetSecondFactorGate(noChallenge{})
 
@@ -315,81 +310,6 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		if marks != 0 {
 			t.Fatal("an invited sign-up must not be marked")
 		}
-	})
-
-	// H1 at the sign-in step: with a 2FA floor that covers owners, a social
-	// sign-up makes no organization and the mark stays pending; without a
-	// floor it does; a social sign-in to a linked password account still
-	// does (its password sign-in takes the second step).
-	t.Run("social sign-in and the platform 2FA floor", func(t *testing.T) {
-		authCfg := config.AuthConfig{JWTSecret: "test-secret-test-secret-test-secret!", AccessTokenDuration: time.Minute,
-			RefreshTokenDuration: time.Hour, SessionDuration: time.Hour}
-		newOAuth := func(floorApplies bool) *OAuthService {
-			oauth := NewOAuthService(users, postgres.NewSessionRepository(sqlDB), postgres.NewRefreshTokenRepository(sqlDB),
-				config.OAuthConfig{Enabled: true, Google: config.OAuthProviderConfig{Enabled: true, ClientID: "c", ClientSecret: "s"}},
-				authCfg, logger.NewNop())
-			oauth.SetIdentityRepo(postgres.NewUserIdentityRepository(db))
-			oauth.SetSignupPolicy(policy)
-			oauth.SetInvitationLookup(tenants)
-			p := newService()
-			p.SetOwnerMFAApplies(func(context.Context) (bool, error) { return floorApplies, nil })
-			oauth.SetPersonalOrganizations(p)
-			oauth.secondFactor = noChallenge{}
-			return oauth
-		}
-		cleanup := func(t *testing.T, id string) {
-			t.Cleanup(func() {
-				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE created_by = $1`, id)
-				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
-				_, _ = sqlDB.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
-			})
-		}
-		signIn := func(t *testing.T, o *OAuthService, info *OAuthUserInfo) *userdom.User {
-			t.Helper()
-			res, err := o.signIn(WithClientInfo(ctx, "198.51.100.40", "test"), info, OAuthProviderGoogle, "")
-			if err != nil || res.User == nil {
-				t.Fatalf("social sign-in: %+v %v", res, err)
-			}
-			cleanup(t, res.User.ID().String())
-			return res.User
-		}
-
-		t.Run("floor admins: no organization, mark pending", func(t *testing.T) {
-			u := signIn(t, newOAuth(true), &OAuthUserInfo{Email: "po-f-" + shared.NewID().String() + "@example.com", Name: "Fay Lin", HD: "example.com"})
-			if ownedOrgs(t, u) != 0 || markStatus(t, u) != string(tenantdom.PersonalOrgPending) {
-				t.Fatalf("owned=%d mark=%s", ownedOrgs(t, u), markStatus(t, u))
-			}
-		})
-		t.Run("floor none: organization made", func(t *testing.T) {
-			u := signIn(t, newOAuth(false), &OAuthUserInfo{Email: "po-n-" + shared.NewID().String() + "@example.com", Name: "Noa Roy", HD: "example.com"})
-			if ownedOrgs(t, u) != 1 || markStatus(t, u) != string(tenantdom.PersonalOrgCreated) {
-				t.Fatalf("owned=%d mark=%s", ownedOrgs(t, u), markStatus(t, u))
-			}
-		})
-		t.Run("linked password account: organization made under a floor", func(t *testing.T) {
-			pu, err := userdom.NewLocalUser("po-l-"+shared.NewID().String()+"@example.com", "Lee Kim", "hash")
-			if err != nil {
-				t.Fatal(err)
-			}
-			pu.VerifyEmail()
-			if err := users.Create(ctx, pu); err != nil {
-				t.Fatal(err)
-			}
-			cleanup(t, pu.ID().String())
-			newService().Reserve(ctx, pu.ID(), signupdom.OutcomeSelfService)
-			ident, err := useridentity.New(pu.ID(), useridentity.Key{Issuer: googleIssuer, Subject: "po-sub-" + shared.NewID().String()})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := postgres.NewUserIdentityRepository(db).Create(ctx, ident); err != nil {
-				t.Fatal(err)
-			}
-			got := signIn(t, newOAuth(true), &OAuthUserInfo{Email: pu.Email(), Name: "Lee Kim", HD: "example.com",
-				Issuer: ident.Key.Issuer, Subject: ident.Key.Subject})
-			if got.ID() != pu.ID() || ownedOrgs(t, pu) != 1 {
-				t.Fatalf("owned=%d", ownedOrgs(t, pu))
-			}
-		})
 	})
 
 	// L1: a domain claimed after the service read the domain facts is

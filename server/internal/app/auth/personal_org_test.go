@@ -347,45 +347,6 @@ func TestPersonalOrgMarkExpires(t *testing.T) {
 	}
 }
 
-// H1: a social sign-in makes the organization only when the owner can later
-// reach it: a password account, or no platform 2FA floor. An unreadable
-// floor counts as applying.
-func TestSocialSignInMayCreate(t *testing.T) {
-	social := verifiedUser(t, "s@example.com", "S")
-	password, err := userdom.NewLocalUser("p@example.com", "P", "hash")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cases := []struct {
-		name  string
-		u     *userdom.User
-		floor func(context.Context) (bool, error)
-		want  bool
-	}{
-		{"social, floor applies", social, func(context.Context) (bool, error) { return true, nil }, false},
-		{"social, floor none", social, func(context.Context) (bool, error) { return false, nil }, true},
-		{"social, floor unreadable", social, func(context.Context) (bool, error) { return false, errors.New("down") }, false},
-		{"social, no floor source", social, nil, false},
-		{"password account, no floor source", password, nil, true},
-		{"password account, floor applies", password, func(context.Context) (bool, error) { return true, nil }, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			p := NewPersonalOrganizations(newFakePersonalOrgs(), personalOn, logger.NewNop())
-			if c.floor != nil {
-				p.SetOwnerMFAApplies(c.floor)
-			}
-			if got := p.SocialSignInMayCreate(context.Background(), c.u); got != c.want {
-				t.Fatalf("got %v, want %v", got, c.want)
-			}
-		})
-	}
-	var none *PersonalOrganizations
-	if none.SocialSignInMayCreate(context.Background(), social) {
-		t.Fatal("nil service may create")
-	}
-}
-
 // L2: the per-domain bound does not apply to consumer mail domains; the
 // per-network bound does.
 func TestPersonalOrgRatesForConsumerDomain(t *testing.T) {
