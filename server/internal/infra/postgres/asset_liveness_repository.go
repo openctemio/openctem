@@ -15,7 +15,6 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 	"github.com/openctemio/openctem/server/pkg/domain/liveness"
@@ -196,10 +195,11 @@ func (r *AssetLivenessRepository) Observe(ctx context.Context, tenantID shared.I
 	return out, nil
 }
 
-// providerAddressIDsSQL selects the provider addresses among ids (static
-// text: ProviderAddressSQL is built from constants).
-var providerAddressIDsSQL = `SELECT pa.asset_id::text FROM asset_attributions pa
-		WHERE pa.tenant_id = $1 AND pa.asset_id = ANY($2::uuid[]) AND ` + attribution.ProviderAddressSQL("pa")
+// providerAddressIDsSQL selects the provider addresses among ids; its last
+// condition is attribution.ProviderAddressSQL("pa") spelled out (a test
+// keeps them equal).
+const providerAddressIDsSQL = `SELECT pa.asset_id::text FROM asset_attributions pa
+		WHERE pa.tenant_id = $1 AND pa.asset_id = ANY($2::uuid[]) AND (pa.state = 'dependency' AND pa.reason = 'provider_shared_front_end')`
 
 // providerAddressIDs are the provider addresses (attribution.IsProviderAddress)
 // among the tenant's assets ids.
