@@ -105,7 +105,7 @@ build_server() {
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
 	# The operator commands: links to the server binary (server/internal/server/tools.go).
-	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute; do
+	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute provider-addresses; do
 		ln -s openctem-server "$d/bin/$t"
 	done
 	# The migration runner (server/cmd/openctem-migrate), as in the migrations image.

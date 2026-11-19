@@ -2819,6 +2819,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
 	// the same review queue.
 	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
+	// An address the provider-address move archived comes back on a direct result.
+	s.Ingest.SetProviderAddressReviver(postgres.NewProviderAddressMoveRepository(&postgres.DB{DB: deps.DB}))
 	// Result binding (RFC-040 §5.3): reports name the command they belong
 	// to; reports without one are applied with limits, or quarantined per the
 	// tenant's policy.
