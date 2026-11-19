@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
 	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/server/internal/app/query"
@@ -1026,6 +1027,9 @@ type Services struct {
 	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
 	// is configured, which keeps the OAuth routes unregistered.
 	OAuth *auth.OAuthService
+	// PersonalOrgs makes the personal organization at sign-up (the sign-up
+	// policy switch).
+	PersonalOrgs *auth.PersonalOrganizations
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
@@ -1062,6 +1066,9 @@ type Services struct {
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
+	// FeedWatch alerts and raises the all-user banner when vulnerability
+	// data goes stale, in every feed mode; nil without platform settings.
+	FeedWatch *feedwatch.Service
 	// LookupJobs asks the platform's instance-scope sensors passive
 	// questions for an organization (lookup.ct@1).
 	LookupJobs    *lookupjobapp.Service
@@ -1270,6 +1277,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// A suspended organization takes no new member: accepting its invitation
+	// is refused before anything changes.
+	s.Tenant.SetOrganizationGate(s.OrganizationGate)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1578,6 +1588,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Feed relay (RFC-142): the signed releases (vulnerability data with
 	// KEV and EPSS, release notices) through a platform relay sensor.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
+	s.FeedWatch = newFeedWatch(repos, s, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,
@@ -3706,6 +3717,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
 	}
 	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	s.Signup.SetPersonalOrganizationSeed(cfg.Auth.SignupPersonalOrganization)
 	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
@@ -3882,6 +3894,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
+	// The personal organization at sign-up: a self-service sign-up with no
+	// other way in gets its own organization once its address is verified
+	// (the sign-up policy switch, off by default).
+	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
+	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
+	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
+	s.PersonalOrgs.SetAuditService(s.Audit)
+	if s.Entitlement != nil {
+		s.PersonalOrgs.SetLimits(s.Entitlement)
+	}
+	s.Auth.SetPersonalOrganizations(s.PersonalOrgs)
+
 	// Trusted organizations (RFC-058): home-realm sign-in for external
 	// members, the role ceiling, proposed end of access and API keys.
 	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
@@ -3917,6 +3941,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		if s.PlatformSocialLogin != nil {
 			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
 		}
+		if auth.TestSeamActive() {
+			log.Warn("TEST BUILD: social sign-in providers are reached at a stand-in (build tag authtestseam); never run this binary in production")
+		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
@@ -3932,6 +3959,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPersonalOrganizations(s.PersonalOrgs)
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}

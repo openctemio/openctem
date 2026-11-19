@@ -18,6 +18,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
@@ -106,17 +107,31 @@ func (r *ThreatAlertRepository) TenantsAffectedBy(ctx context.Context, vulnIDs [
 	if len(vulnIDs) == 0 {
 		return out, nil
 	}
+	// A key is a CVE id or an advisory card id; a card stands for the
+	// vulnerabilities it groups and the products it names (any version: the
+	// planner narrows by version when it plans).
 	rows, err := r.db.QueryContext(ctx, `
-		WITH ids AS (SELECT DISTINCT unnest($1::text[]) AS vuln_id)
-		SELECT f.cve_id, f.tenant_id FROM findings f
-		JOIN ids ON ids.vuln_id = f.cve_id
+		WITH ids AS (SELECT DISTINCT unnest($1::text[]) AS key),
+		cards AS (
+			SELECT ids.key, c.card_id FROM ids JOIN advisory_cards c ON c.card_id = ids.key AND c.review_state IN ('reviewed', 'reported')
+		), cv AS (
+			SELECT key, key AS cve FROM ids
+			UNION SELECT cards.key, v.vuln_id FROM cards JOIN advisory_card_vulns v ON v.card_id = cards.card_id
+		)
+		SELECT cv.key, f.tenant_id FROM findings f
+		JOIN cv ON cv.cve = f.cve_id
 		WHERE `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
 		UNION
-		SELECT va.cve_id, s.tenant_id FROM ids
-		JOIN vulnerability_affected va ON va.cve_id = ids.vuln_id
+		SELECT cv.key, s.tenant_id FROM cv
+		JOIN vulnerability_affected va ON va.cve_id = cv.cve
 		JOIN asset_software s ON s.product_id = va.product_id AND s.superseded_at IS NULL
 		JOIN software_versions v ON v.id = s.software_version_id
 		WHERE v.normalized IS NULL OR v.raw = ''
+		UNION
+		SELECT cards.key, s.tenant_id FROM cards
+		JOIN advisory_card_products acp ON acp.card_id = cards.card_id
+		JOIN software_products p ON p.tenant_id IS NULL AND p.part = acp.part AND p.cpe_vendor = acp.cpe_vendor AND p.cpe_product = acp.cpe_product
+		JOIN asset_software s ON s.product_id = p.id AND s.superseded_at IS NULL
 		ORDER BY 1, 2`, pq.Array(vulnIDs))
 	if err != nil {
 		return nil, fmt.Errorf("tenants affected: %w", err)
@@ -177,8 +192,25 @@ func (r *ThreatAlertRepository) Dequeue(ctx context.Context, limit int) ([]threa
 	return out, rows.Err()
 }
 
-// Vuln (see threatalert.PlannerStore).
+// Vuln (see threatalert.PlannerStore). A card key gives the card's facts
+// over the vulnerabilities it groups (cardVuln).
 func (r *ThreatAlertRepository) Vuln(ctx context.Context, vulnID string, eventsSince time.Time) (*threatalert.Vuln, error) {
+	if advisory.IsCardID(vulnID) {
+		return r.cardVuln(ctx, vulnID, eventsSince)
+	}
+	v, err := r.cveVuln(ctx, vulnID, eventsSince)
+	if err != nil || v == nil {
+		return v, err
+	}
+	ex, err := exploitationFor(ctx, r.db, []string{vulnID})
+	if err != nil {
+		return nil, err
+	}
+	v.Exploitation = ex[vulnID]
+	return v, nil
+}
+
+func (r *ThreatAlertRepository) cveVuln(ctx context.Context, vulnID string, eventsSince time.Time) (*threatalert.Vuln, error) {
 	v := threatalert.Vuln{ID: vulnID}
 	var sev, vector, desc, status, ransomware, lastKind sql.NullString
 	var score, epss sql.NullFloat64
@@ -239,15 +271,43 @@ func (r *ThreatAlertRepository) Vuln(ctx context.Context, vulnID string, eventsS
 	return &v, nil
 }
 
-// AffectedAssets (see threatalert.PlannerStore).
+// AffectedAssets (see threatalert.PlannerStore). A card key covers the
+// findings of every vulnerability the card groups, the version-less assets
+// of every product they or the card name, and (cardCandidates) the assets
+// of the card's products whose version the card's ranges place.
 func (r *ThreatAlertRepository) AffectedAssets(ctx context.Context, tenantID shared.ID, vulnID string) ([]threatalert.Asset, error) {
+	cves, cardID := []string{vulnID}, ""
+	var card *advisory.Card
+	if advisory.IsCardID(vulnID) {
+		c, err := loadCard(ctx, r.db, vulnID)
+		if err != nil || c == nil || c.Withdrawn() {
+			return nil, err
+		}
+		card, cves, cardID = c, c.VulnIDs(), c.ID
+	}
+	out, err := r.affectedAssets(ctx, tenantID, cves, cardID)
+	if err != nil || card == nil {
+		return out, err
+	}
+	more, err := r.cardCandidates(ctx, tenantID, card, out)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, more...), nil
+}
+
+func (r *ThreatAlertRepository) affectedAssets(ctx context.Context, tenantID shared.ID, cves []string, cardID string) ([]threatalert.Asset, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		WITH products AS (
-			SELECT DISTINCT product_id FROM vulnerability_affected WHERE cve_id = $2
+			SELECT product_id FROM vulnerability_affected WHERE cve_id = ANY($2::text[])
+			UNION
+			SELECT p.id FROM advisory_card_products acp
+			JOIN software_products p ON p.tenant_id IS NULL AND p.part = acp.part AND p.cpe_vendor = acp.cpe_vendor AND p.cpe_product = acp.cpe_product
+			WHERE acp.card_id = $3
 		), conf AS (
 			SELECT DISTINCT ON (f.asset_id) f.asset_id, f.id AS finding_id, COALESCE(f.confidence, 100) AS confidence
 			FROM findings f
-			WHERE f.tenant_id = $1 AND f.cve_id = $2 AND f.asset_id IS NOT NULL AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
+			WHERE f.tenant_id = $1 AND f.cve_id = ANY($2::text[]) AND f.asset_id IS NOT NULL AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
 			ORDER BY f.asset_id, COALESCE(f.confidence, 100) DESC, f.id
 		), poss AS (
 			SELECT DISTINCT ON (s.asset_id) s.asset_id, p.name AS product, v.raw AS version, s.confidence
@@ -279,7 +339,7 @@ func (r *ThreatAlertRepository) AffectedAssets(ctx context.Context, tenantID sha
 		FROM rows x
 		JOIN assets a ON a.tenant_id = $1 AND a.id = x.asset_id AND a.status <> 'archived'
 		ORDER BY x.possible, a.name
-		LIMIT 5000`, tenantID.String(), vulnID)
+		LIMIT 5000`, tenantID.String(), pq.Array(cves), cardID)
 	if err != nil {
 		return nil, fmt.Errorf("affected assets: %w", err)
 	}
@@ -430,7 +490,8 @@ func (r *ThreatAlertRepository) SaveAlert(ctx context.Context, a *threatalert.Al
 			internet_facing_assets = EXCLUDED.internet_facing_assets, last_event_kind = EXCLUDED.last_event_kind,
 			source_at = EXCLUDED.source_at, event_at = EXCLUDED.event_at, notified_level = EXCLUDED.notified_level,
 			notified_tier = EXCLUDED.notified_tier, digest_pending = EXCLUDED.digest_pending,
-			planned_at = now(), resolved_at = EXCLUDED.resolved_at, updated_at = now()
+			planned_at = now(), resolved_at = EXCLUDED.resolved_at, updated_at = now(),
+			grouped_into_card = CASE WHEN EXCLUDED.state_reason = 'grouped_into_card' THEN threat_alerts.grouped_into_card END
 		WHERE $28::timestamptz IS NULL OR threat_alerts.updated_at = $28::timestamptz
 		RETURNING id, created_at, updated_at`,
 		a.TenantID.String(), a.VulnID, clipStr(a.Title, 200), a.Severity, string(a.Level), string(a.Tier), string(a.State),
@@ -640,6 +701,13 @@ func (r *ThreatAlertRepository) ActiveWindowVulns(ctx context.Context, tenantID 
 		JOIN vulnerability_affected va ON va.product_id = s.product_id
 		JOIN win ON win.vuln_id = va.cve_id
 		WHERE s.tenant_id = $1 AND s.superseded_at IS NULL AND (v.normalized IS NULL OR v.raw = '')
+		UNION
+		SELECT c.card_id FROM win JOIN advisory_cards c ON c.card_id = win.vuln_id AND c.review_state IN ('reviewed', 'reported')
+		WHERE EXISTS (
+			SELECT 1 FROM advisory_card_products acp
+			JOIN software_products p ON p.tenant_id IS NULL AND p.part = acp.part AND p.cpe_vendor = acp.cpe_vendor AND p.cpe_product = acp.cpe_product
+			JOIN asset_software s ON s.tenant_id = $1 AND s.product_id = p.id AND s.superseded_at IS NULL
+			WHERE acp.card_id = c.card_id)
 		LIMIT 5000`, tenantID.String(), eventsSince, kevSince)
 	if err != nil {
 		return nil, fmt.Errorf("active window vulns: %w", err)
