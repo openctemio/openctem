@@ -8,11 +8,14 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/app/compliance"
+	"github.com/openctemio/openctem/server/internal/app/integration"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/pentest"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -255,5 +258,81 @@ func TestCampaignRoleRank_Precedence(t *testing.T) {
 	}
 	if pentest.CampaignRole("bogus").Rank() != 0 {
 		t.Fatal("unknown role must rank 0")
+	}
+}
+
+// notifyCounter counts the notification rows a team change inserts.
+type notifyCounter struct {
+	notification.Repository
+	created int
+}
+
+func (n *notifyCounter) Create(_ context.Context, _ *notification.Notification) error {
+	n.created++
+	return nil
+}
+
+func manyUsers(n int) []shared.ID {
+	out := make([]shared.ID, n)
+	for i := range out {
+		out[i] = shared.NewID()
+	}
+	return out
+}
+
+// A group of thousands must not become thousands of inserts on the request:
+// at most 50 people are told one by one, and the audit row carries both the
+// number who gained access and the number notified.
+func TestAddCampaignGroup_NotificationsCapped(t *testing.T) {
+	h := newGroupHarness(t)
+	counter := &notifyCounter{}
+	h.svc.SetUserNotificationService(integration.NewNotificationService(counter, nil, logger.NewNop()))
+	h.grants.uncovered = manyUsers(5000)
+	if _, err := h.svc.AddCampaignGroup(context.Background(), h.input("tester")); err != nil {
+		t.Fatal(err)
+	}
+	if counter.created != 50 {
+		t.Fatalf("notifications inserted: %d, want 50", counter.created)
+	}
+	md := h.audited(audit.ActionCampaignGroupAdded)[0].Metadata()
+	if md["members_added"] != 5000 || md["members_notified"] != 50 {
+		t.Fatalf("audit metadata %v", md)
+	}
+}
+
+func TestRemoveCampaignGroup_NotificationsCapped(t *testing.T) {
+	h := newGroupHarness(t)
+	counter := &notifyCounter{}
+	h.svc.SetUserNotificationService(integration.NewNotificationService(counter, nil, logger.NewNop()))
+	h.grants.uncovered = manyUsers(5000)
+	if err := h.svc.RemoveCampaignGroup(context.Background(), h.input("")); err != nil {
+		t.Fatal(err)
+	}
+	if counter.created != 50 {
+		t.Fatalf("notifications inserted: %d, want 50", counter.created)
+	}
+	md := h.audited(audit.ActionCampaignGroupRemoved)[0].Metadata()
+	if md["members_removed"] != 5000 || md["members_notified"] != 50 {
+		t.Fatalf("audit metadata %v", md)
+	}
+}
+
+// A group whose name cannot be found is named "a group" in the audit text:
+// the id is in the metadata, never in the message.
+func TestCampaignGroupAudit_MessageCarriesNoGroupID(t *testing.T) {
+	h := newGroupHarness(t)
+	in := h.input("observer")
+	if err := h.svc.UpdateCampaignGroupRole(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	logs := h.audited(audit.ActionCampaignGroupRoleChanged)
+	if len(logs) != 1 {
+		t.Fatalf("want one audit row, got %d", len(logs))
+	}
+	if strings.Contains(logs[0].Message(), in.GroupID) {
+		t.Fatalf("audit message carries the group id: %q", logs[0].Message())
+	}
+	if logs[0].Metadata()["group_id"] != in.GroupID {
+		t.Fatalf("group id missing from metadata: %v", logs[0].Metadata())
 	}
 }
