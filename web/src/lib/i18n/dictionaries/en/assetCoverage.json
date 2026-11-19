@@ -19,7 +19,7 @@
   "assetCoverage.edge.rate_limited": "Not covered: rate limited",
   "assetCoverage.errorTitle": "coverage",
   "assetCoverage.gap": "Gap",
-  "assetCoverage.gaps": "{n} gaps",
+  "assetCoverage.gaps": "{n, plural, one {# gap} other {# gaps}}",
   "assetCoverage.lastSuccess": "Last done",
   "assetCoverage.neverDone": "Never done",
   "assetCoverage.nextDue": "next",

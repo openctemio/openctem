@@ -133,7 +133,7 @@ describe('/assets/groups', () => {
       },
     ]
     render(<AssetGroupsPage />)
-    expect(screen.getByText(/Showing the first 1000 of 1500 groups/)).toBeInTheDocument()
+    expect(screen.getByText(/Showing the first 1,000 of 1,500 groups/)).toBeInTheDocument()
   })
 
   it('the title row says the list name, its one count and its actions', () => {

@@ -1,5 +1,5 @@
 {
-  "contentRules.atLimit": "An organization has at most {count} rules",
+  "contentRules.atLimit": "An organization has at most {count, plural, one {# rule} other {# rules}}",
   "contentRules.col.actions": "Actions",
   "contentRules.col.enabled": "In use",
   "contentRules.col.kind": "Kind",
@@ -53,7 +53,7 @@
   "contentRules.page.description": "Rules read the web responses your scans already fetch: technology rules name products and versions, sensitive-data rules find keys, tokens and internal names. A found secret is kept masked, never in full. Every scan records the rule versions it used.",
   "contentRules.platform.description": "Curated by the platform and updated with it. Every scan result is matched with them and with your rules.",
   "contentRules.platform.none": "No platform rule pack is installed yet.",
-  "contentRules.platform.rules": "{count} rules",
+  "contentRules.platform.rules": "{count, plural, one {# rule} other {# rules}}",
   "contentRules.platform.title": "Platform rules",
   "contentRules.save": "Save",
   "contentRules.secretCategory.credential": "Credential",

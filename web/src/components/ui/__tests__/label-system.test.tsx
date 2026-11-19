@@ -271,7 +271,7 @@ describe('Counter', () => {
   it('caps at 99+, keeping the real number for assistive tech', () => {
     const { container } = render(<Counter value={1200} />)
     expect(container.textContent).toBe('99+')
-    expect(container.firstElementChild?.getAttribute('aria-label')).toBe('1200 items')
+    expect(container.firstElementChild?.getAttribute('aria-label')).toBe('1,200 items')
   })
   it('honours max', () => {
     const { container } = render(<Counter value={11} max={9} />)

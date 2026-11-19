@@ -82,7 +82,7 @@
   "findingLifecycle.move.count": "{count} of {n}",
   "findingLifecycle.move.hint": "Your organization's lifecycle asks for the details below. They are kept on the finding's timeline.",
   "findingLifecycle.move.note": "Note (required)",
-  "findingLifecycle.move.noteMin": "Note (at least {n} characters)",
+  "findingLifecycle.move.noteMin": "Note (at least {n, plural, one {# character} other {# characters}})",
   "findingLifecycle.move.title": "Move to {target}",
   "findingLifecycle.personMoves.canonical_plus_listed": "Platform moves plus the listed ones",
   "findingLifecycle.personMoves.canonical_plus_listedHint": "People keep every platform move (landing on the default label) and get the listed moves too.",
