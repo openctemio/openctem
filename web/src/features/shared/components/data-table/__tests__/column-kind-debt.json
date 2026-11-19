@@ -80,7 +80,6 @@
   "src/features/threat-intel/components/threat-actors-panel.tsx": 6,
   "src/features/threat-model/components/threat-model-table.tsx": 8,
   "src/features/tools/components/tool-table.tsx": 7,
-  "src/features/vulnerabilities/components/vulnerability-catalog-table.tsx": 8,
   "src/features/web-surface/components/origin-web-section.tsx": 6,
   "src/features/web-surface/components/web-surface-columns.tsx": 11,
   "src/features/web-surface/components/web-surface-view.tsx": 13
