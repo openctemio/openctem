@@ -1363,6 +1363,7 @@
   "settings.twoFactor.on": "Bật",
   "settings.twoFactor.passwordOnly": "Bất kỳ ai có mật khẩu của bạn đều có thể đăng nhập.",
   "settings.twoFactor.protected": "Đã bảo vệ",
+  "settings.twoFactor.providerOnly": "Tài khoản này chỉ được bảo vệ bởi nhà cung cấp đăng nhập của bạn.",
   "settings.twoFactor.regenerateBody": "Thao tác này thay thế toàn bộ mã khôi phục của bạn. Nhập mã từ ứng dụng xác thực để xác nhận.",
   "settings.twoFactor.regenerateTitle": "Tạo mã khôi phục mới",
   "settings.twoFactor.replace": "Thay ứng dụng xác thực",

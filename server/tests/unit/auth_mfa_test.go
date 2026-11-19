@@ -296,6 +296,7 @@ func (c *capturingAuditRepo) has(a audit.Action) bool {
 type fakeNotifier struct {
 	mu                       sync.Mutex
 	mfaDisabled, recoveryUse int
+	mfaEnabled, mfaReplaced  int
 	passwordChanged          int
 	lastRemaining            int
 }
@@ -303,6 +304,18 @@ type fakeNotifier struct {
 func (n *fakeNotifier) NotifyMFADisabled(context.Context, string, string, string) {
 	n.mu.Lock()
 	n.mfaDisabled++
+	n.mu.Unlock()
+}
+
+func (n *fakeNotifier) NotifyMFAEnabled(context.Context, string, string, string) {
+	n.mu.Lock()
+	n.mfaEnabled++
+	n.mu.Unlock()
+}
+
+func (n *fakeNotifier) NotifyMFAReplaced(context.Context, string, string, string) {
+	n.mu.Lock()
+	n.mfaReplaced++
 	n.mu.Unlock()
 }
 
@@ -462,6 +475,9 @@ func TestMFA_Enrollment(t *testing.T) {
 		}
 		if !h.audits.has(audit.ActionAuthMFAEnabled) {
 			t.Error("auth.mfa_enabled was not audited")
+		}
+		if h.notifier.mfaEnabled != 1 {
+			t.Errorf("self-service enable sent %d notices, want 1", h.notifier.mfaEnabled)
 		}
 	})
 
@@ -1291,6 +1307,9 @@ func TestMFA_ChallengeEnrollmentEndsOlderSessions(t *testing.T) {
 		}
 		if !h.audits.has(audit.ActionAuthMFAEnabled) {
 			t.Error("enabling was not audited")
+		}
+		if h.notifier.mfaEnabled != 1 {
+			t.Errorf("turning 2FA on sent %d notices, want exactly 1", h.notifier.mfaEnabled)
 		}
 		var ended bool
 		for _, l := range h.audits.logs {

@@ -11,6 +11,8 @@ import { validateRedirectUrl } from '@/lib/redirect'
 import { localLogoutAction } from '../actions/local-auth-actions'
 import { MfaSessionStep } from './mfa-session-step'
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** The organization the person was in, from the (JS-readable) tenant cookie. */
 function currentTenantId(): string | undefined {
   const raw = getCookie(env.cookies.tenant)
@@ -28,9 +30,14 @@ function currentTenantId(): string | undefined {
  * back. On completion the tenant token is minted again and the person returns
  * to the page they were on. A gone session goes to sign-in with the reason.
  */
-export function TwoFactorSetup({ next }: { next?: string }) {
+export function TwoFactorSetup({ next, org }: { next?: string; org?: string }) {
   const { t } = useTranslation()
   const target = validateRedirectUrl(next, '/')
+  // The organization to open afterwards: the one named by the page that sent
+  // the person here (an invitation just accepted, a sign-in landing), else the
+  // one they were in. The API checks the membership and the rule on the
+  // exchange; the id is never trusted on its own.
+  const tenantId = org && UUID.test(org) ? org : currentTenantId()
 
   const onComplete = useCallback(() => {
     navigateAfterSessionChange(target)
@@ -60,7 +67,7 @@ export function TwoFactorSetup({ next }: { next?: string }) {
         </p>
       </div>
       <MfaSessionStep
-        tenantId={currentTenantId()}
+        tenantId={tenantId}
         onComplete={onComplete}
         onSessionExpired={onSessionExpired}
         onReauthRequired={onSessionExpired}

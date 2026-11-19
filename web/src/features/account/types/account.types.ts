@@ -63,6 +63,13 @@ export interface TwoFactorStatus {
    * off is refused, the person replaces the authenticator instead.
    */
   can_turn_off?: boolean
+  /**
+   * The account signs in only through a social provider (no password): it
+   * sets the factor up with the signed-in session step (the two-factor setup
+   * page, soon after signing in), and the password-confirmed actions (turn
+   * off, replace, new codes) are not offered.
+   */
+  enroll_through_session?: boolean
 }
 
 export interface TwoFactorRequiredBy {
