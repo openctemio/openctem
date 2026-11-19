@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/context/i18n-provider'
 import { useAssetGroups } from '../hooks/use-asset-groups'
 
 interface AssetGroupSelectProps {
@@ -28,10 +29,11 @@ interface AssetGroupSelectProps {
 export function AssetGroupSelect({
   value,
   onValueChange,
-  placeholder = 'Select group',
+  placeholder,
   disabled = false,
   required = false,
 }: AssetGroupSelectProps) {
+  const { t } = useTranslation()
   const { data: assetGroups, isLoading } = useAssetGroups()
 
   if (isLoading) {
@@ -43,11 +45,15 @@ export function AssetGroupSelect({
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled} required={required}>
       <SelectTrigger>
-        <SelectValue placeholder={placeholder} />
+        <SelectValue
+          placeholder={placeholder ?? t('assetGroups.select.placeholder', 'Select group')}
+        />
       </SelectTrigger>
       <SelectContent>
         {groups.length === 0 ? (
-          <div className="py-2 px-3 text-sm text-muted-foreground">No asset groups found</div>
+          <div className="py-2 px-3 text-sm text-muted-foreground">
+            {t('assetGroups.empty.title', 'No asset groups found')}
+          </div>
         ) : (
           groups.map((group) => (
             <SelectItem key={group.id} value={group.id}>

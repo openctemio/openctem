@@ -123,7 +123,7 @@ describe('fix plan', () => {
     results.mine.data = undefined
     results.mine.error = new Error('boom')
     render(<FixPlan />)
-    expect(screen.getByText(/Failed to load the fix plan/)).toBeTruthy()
+    expect(screen.getByText(/Couldn't load the fix plan/)).toBeTruthy()
     expect(screen.queryByText('0')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /retry|try again/i }))
     expect(mutate).toHaveBeenCalled()

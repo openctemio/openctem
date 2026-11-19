@@ -196,7 +196,7 @@ export function AdminConfirmDialog({
               <div className="space-y-1.5">
                 <Label htmlFor={typedId} className="block font-normal">
                   {typeBefore}
-                  <span className="font-semibold break-all">{typeToConfirm}</span>
+                  <span className="font-semibold break-words">{typeToConfirm}</span>
                   {typeAfter}
                 </Label>
                 <Input

@@ -162,7 +162,7 @@ export default function ProfilePage() {
                       'account.profile.managedByProvider',
                       'Managed by your identity provider ({provider})',
                       {
-                        provider: identityProviderLabel(profile.auth_provider),
+                        provider: identityProviderLabel(profile.auth_provider, t),
                       }
                     )}
                   </p>
@@ -222,7 +222,7 @@ export default function ProfilePage() {
               {
                 key: 'provider',
                 label: t('account.info.authProvider', 'Sign-in method'),
-                value: identityProviderLabel(profile?.auth_provider),
+                value: identityProviderLabel(profile?.auth_provider, t),
               },
               {
                 key: 'created',

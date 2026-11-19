@@ -23,6 +23,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { CIRepositoryPicker } from './ci-repository-picker'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCreateGateOverride } from '../api/use-ci'
@@ -81,8 +82,8 @@ export function CIOverrideDialog({
         </DialogHeader>
         <DialogBody>
           <div className="space-y-3">
-            <Field label={t('scans.ci.repositoryAssetId', 'Repository asset ID')} id="ov-asset">
-              <Input id="ov-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
+            <Field label={t('scans.ci.col.repository', 'Repository')} id="ov-asset">
+              <CIRepositoryPicker id="ov-asset" value={assetId} onChange={setAssetId} />
             </Field>
             <Field
               label={t('scans.ci.breakGlass.commit', 'Commit')}

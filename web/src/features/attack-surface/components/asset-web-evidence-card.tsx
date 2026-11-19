@@ -18,6 +18,7 @@ import type { WebEvidenceItem } from '@/lib/api/generated'
 import { safeImageSrc } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { useWebEvidence, webEvidenceScreenshotUrl } from '../hooks/use-web-evidence'
+import { BreakText } from '@/features/shared/components/break-text'
 
 function Capture({ assetId, item }: { assetId: string; item: WebEvidenceItem }) {
   const { t } = useTranslation()
@@ -26,28 +27,32 @@ function Capture({ assetId, item }: { assetId: string; item: WebEvidenceItem }) 
     <article className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {item.status_code ? <Badge variant="outline">{item.status_code}</Badge> : null}
-        <span className="break-all font-medium">{item.title || item.final_url || item.url}</span>
+        <span className="break-words font-medium">{item.title || item.final_url || item.url}</span>
         <RelativeTime date={item.captured_at} className="ms-auto text-xs" />
       </div>
       <dl className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-[8rem_1fr]">
         <dt>{t('webEvidence.url', 'URL')}</dt>
-        <dd className="break-all">{item.url}</dd>
+        <dd className="break-words">
+          <BreakText>{item.url}</BreakText>
+        </dd>
         {item.final_url && item.final_url !== item.url && (
           <>
             <dt>{t('webEvidence.finalUrl', 'Final URL')}</dt>
-            <dd className="break-all">{item.final_url}</dd>
+            <dd className="break-words">
+              <BreakText>{item.final_url}</BreakText>
+            </dd>
           </>
         )}
         {item.server && (
           <>
             <dt>{t('webEvidence.server', 'Server')}</dt>
-            <dd className="break-all">{item.server}</dd>
+            <dd className="break-words">{item.server}</dd>
           </>
         )}
         {item.content_type && (
           <>
             <dt>{t('webEvidence.contentType', 'Content type')}</dt>
-            <dd className="break-all">{item.content_type}</dd>
+            <dd className="break-words">{item.content_type}</dd>
           </>
         )}
       </dl>
@@ -73,7 +78,7 @@ function Capture({ assetId, item }: { assetId: string; item: WebEvidenceItem }) 
           </p>
           <pre
             className={cn(
-              'max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-2 text-xs'
+              'max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 text-xs'
             )}
           >
             {item.snippet}

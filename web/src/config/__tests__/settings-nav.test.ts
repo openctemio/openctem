@@ -89,14 +89,17 @@ const isMembership = (url: string) => url === '/settings/me' || url.startsWith('
 const isAccountArea = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  // The six groups decided 2026-10-01 (item placement: research 346).
-  it('has the six groups in order', () => {
+  // The groups of the redesign's boards: each is the task a person comes with.
+  it('has the nine groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'membership',
       'organization',
       'access',
+      'oversight',
+      'approvals',
       'findings',
       'scanning',
+      'tools',
       'integrations',
     ])
   })
@@ -122,33 +125,52 @@ describe('settings nav config', () => {
     expect(sections).toEqual({
       membership: [undefined],
       organization: [undefined],
-      access: [undefined, 'api-access', 'sign-in', 'oversight'],
+      access: [undefined],
+      oversight: [undefined],
+      approvals: [undefined],
       findings: [undefined, 'risk', 'assets'],
-      scanning: [undefined, 'tools', 'sensors', 'detection', 'content'],
+      scanning: [undefined],
+      tools: [undefined, 'detection', 'content'],
       integrations: [undefined],
     })
   })
 
   // Items research 369 moved: each sits with the task it serves.
   it.each([
-    ['sign-in', 'access', 'sign-in'],
-    ['audit-log', 'access', 'oversight'],
-    ['mcp', 'access', 'api-access'],
-    ['service-accounts', 'access', 'api-access'],
-    ['api-keys', 'access', 'api-access'],
+    ['members', 'access', undefined],
+    ['scim', 'access', undefined],
+    ['mcp', 'access', undefined],
+    ['service-accounts', 'access', undefined],
+    ['api-keys', 'access', undefined],
+    ['sign-in', 'oversight', undefined],
+    ['security-overview', 'oversight', undefined],
+    ['audit-log', 'oversight', undefined],
+    ['support-access', 'oversight', undefined],
+    ['approvals', 'approvals', undefined],
+    ['scan-approval', 'scanning', undefined],
     ['risk-scoring', 'findings', 'risk'],
     ['license-policy', 'findings', 'risk'],
-    ['sensor-products', 'scanning', 'sensors'],
-    ['proxies', 'scanning', 'sensors'],
+    ['scan-profiles', 'scanning', undefined],
+    ['tools', 'tools', undefined],
+    ['tool-defaults', 'tools', undefined],
+    ['capabilities', 'tools', undefined],
+    ['sensor-products', 'tools', undefined],
+    ['proxies', 'tools', undefined],
     // The catalog first, then what is drawn from it (research/504: these four had no visible place).
-    ['content', 'scanning', 'detection'],
-    ['scanner-templates', 'scanning', 'detection'],
-    ['detectionRules', 'scanning', 'detection'],
-    ['wordlists', 'scanning', 'detection'],
+    ['content', 'tools', 'detection'],
+    ['scanner-templates', 'tools', 'detection'],
+    ['detectionRules', 'tools', 'detection'],
+    ['wordlists', 'tools', 'detection'],
   ])('%s is in %s > %s', (id, groupId, section) => {
     const group = settingsNav.find((g) => g.items.some((i) => i.id === id))
     expect(group?.id).toBe(groupId)
     expect(group?.items.find((i) => i.id === id)?.section).toBe(section)
+  })
+
+  // Plain words in the rail: "and", never "&" (group and page names).
+  it('names groups and pages with "and", never "&"', () => {
+    const titles = [...settingsNav.map((g) => g.title), ...settingsNavItems.map((i) => i.title)]
+    expect(titles.filter((title) => title.includes('&'))).toEqual([])
   })
 
   it('has unique ids and urls', () => {
@@ -158,10 +180,21 @@ describe('settings nav config', () => {
     expect(new Set(urls).size).toBe(urls.length)
   })
 
+  // The boards draw Approvals as a group of its own holding one page; every
+  // other group keeps at least two items.
+  const ONE_ITEM_GROUPS = ['approvals']
+
+  it('only Approvals is a one-item group', () => {
+    expect(settingsNav.filter((g) => g.items.length === 1).map((g) => g.id)).toEqual(
+      ONE_ITEM_GROUPS
+    )
+  })
+
   for (const group of settingsNav) {
     // Keep groups scannable: a long group is split into titled sections of 2
     // to 10, its first section untitled, each section's items contiguous.
-    it(`group "${group.title}" has 2 to 10 items per section`, () => {
+    const min = ONE_ITEM_GROUPS.includes(group.id) ? 1 : 2
+    it(`group "${group.title}" has ${min} to 10 items per section`, () => {
       const chunks: { section?: string; n: number }[] = []
       for (const item of group.items) {
         const last = chunks.at(-1)
@@ -172,7 +205,7 @@ describe('settings nav config', () => {
       const ids = chunks.map((c) => c.section)
       expect(new Set(ids).size, 'a section appears once').toBe(ids.length)
       for (const c of chunks) {
-        expect(c.n, String(c.section)).toBeGreaterThanOrEqual(2)
+        expect(c.n, String(c.section)).toBeGreaterThanOrEqual(min)
         expect(c.n, String(c.section)).toBeLessThanOrEqual(10)
       }
     })

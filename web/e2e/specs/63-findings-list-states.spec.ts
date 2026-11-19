@@ -111,10 +111,10 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
     await expect(page.locator('[data-slot=list-count]')).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Triage/ })).toBeVisible()
 
-    // The table header offers neither select-all nor sorting.
-    await expect(
-      page.getByRole('checkbox', { name: 'Select all rows on this page' })
-    ).toBeDisabled()
+    // An empty list draws no column headers: no select-all and no sorting.
+    await expect(page.getByRole('checkbox', { name: 'Select all rows on this page' })).toHaveCount(
+      0
+    )
     await expect(page.locator('thead button:not([role=checkbox])')).toHaveCount(0)
     // No pager on an empty list.
     await expect(page.locator('[data-slot=data-table-pager]')).toHaveCount(0)
@@ -162,7 +162,7 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
       })
     )
     await page.goto('/findings')
-    await expect(page.getByRole('alert').filter({ hasText: /failed to load/i })).toBeVisible({
+    await expect(page.getByRole('alert').filter({ hasText: /couldn't load/i })).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByRole('button', { name: /retry/i })).toBeVisible()
@@ -236,7 +236,7 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
     // The rows and the pager stay; the failure is not an alert in their place.
     await expect(rows).toHaveCount(before)
     await expect(page.locator('[data-slot=data-table-pager]')).toBeVisible()
-    await expect(page.getByRole('alert').filter({ hasText: /failed to load/i })).toHaveCount(0)
+    await expect(page.getByRole('alert').filter({ hasText: /couldn't load/i })).toHaveCount(0)
     const refresh = stale.getByRole('button', { name: 'Refresh now' })
     expect(Math.round((await refresh.boundingBox())!.height)).toBe(32)
 

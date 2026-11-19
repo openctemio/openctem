@@ -9,7 +9,7 @@ export const ORGANIZATION_LIMITS_URL = '/api/v1/organization/limits'
 
 /**
  * The limits and unavailable modules that apply to the organization
- * (Settings > Usage & limits; owners and admins). `enabled: false` skips the
+ * (Settings > Usage and limits; owners and admins). `enabled: false` skips the
  * request (a member may not read it).
  */
 export function useOrganizationLimits(enabled = true) {

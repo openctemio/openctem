@@ -162,7 +162,7 @@ describe('buildAttention', () => {
       overview({ security: { failed_admin_actions_24h: 3 } }),
       'readonly'
     )
-    expect(item.href).toBe('/security/activity?outcome=failure')
+    expect(item.href).toBe('/security/activity?kind=all&outcome=failure')
   })
 
   it('reports platform health problems', () => {

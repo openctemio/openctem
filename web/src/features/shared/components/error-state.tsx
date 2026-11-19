@@ -64,7 +64,7 @@ function errorMessage(error: unknown, t: Translate): string {
 function serverFailed(t: Translate): string {
   return t(
     'common.loadFailedPlain',
-    'Something went wrong while loading. Try again; if it keeps failing, report the problem.'
+    'The server did not answer. Nothing was changed. Try again; if it keeps failing, report the problem.'
   )
 }
 
@@ -78,7 +78,7 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   return (
     <Alert variant="destructive">
       <AlertCircle />
-      <AlertTitle>{t('common.failedToLoad', 'Failed to load {title}', { title })}</AlertTitle>
+      <AlertTitle>{t('common.failedToLoad', "Couldn't load {title}", { title })}</AlertTitle>
       <AlertDescription>
         <p>{errorMessage(error, t)}</p>
         {/* Ink, not the alert's red: these are ways on, not part of the error text. */}

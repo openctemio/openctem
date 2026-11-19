@@ -10,6 +10,7 @@
 import * as React from 'react'
 import type { ColumnDef, Row, Table as TanstackTable } from '@tanstack/react-table'
 import type { ActionMenuEntry } from '@/components/ui/action-menu'
+import type { BulkNoun } from '@/features/shared/components/bulk-action-bar'
 import { Checkbox } from '@/components/ui/checkbox'
 
 /**
@@ -46,8 +47,8 @@ export interface DataTableBulk<TData> {
   matching?: { total: number; max?: number }
   /** The selection whenever it changes; `null` when nothing is selected. */
   onSelectionChange?: (selection: DataTableSelection<TData> | null) => void
-  /** Text after the count in the bar, e.g. "findings selected". */
-  noun?: string
+  /** Text after the count in the bar, e.g. "findings selected" (see `BulkNoun`). */
+  noun?: BulkNoun
 }
 
 /** Where a `x` press or a checkbox click must not toggle a row. */

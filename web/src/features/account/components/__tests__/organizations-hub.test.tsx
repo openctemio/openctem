@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   tenants: vi.fn(),
   select: vi.fn(),
   logout: vi.fn(),
+  profile: vi.fn(),
 }))
 
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
@@ -39,7 +40,7 @@ vi.mock('@/features/auth/actions/account-space-actions', () => ({
   startAccountSessionAction: mocks.start,
 }))
 vi.mock('../../api', () => ({
-  useProfile: () => ({ profile: { name: 'Alice', email: 'alice@acme.io' } }),
+  useProfile: () => ({ profile: mocks.profile() }),
 }))
 vi.mock('@/features/tenant/components/create-team-form', () => ({
   CreateTeamForm: () => <form aria-label="create organization form" />,
@@ -88,6 +89,7 @@ describe('OrganizationsHub', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.tenants.mockReturnValue([])
+    mocks.profile.mockReturnValue({ name: 'Alice', email: 'alice@acme.io' })
   })
 
   it('lists the invitations with accept and decline', async () => {
@@ -96,6 +98,26 @@ describe('OrganizationsHub', () => {
     expect(screen.getByText('Beta Corp')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Join' })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Decline' })).toHaveLength(2)
+  })
+
+  it('says which address the invitations were sent to, and never shows the label without it', async () => {
+    await renderHub(options({ invitations: INVITATIONS }))
+    expect(screen.getByText('Sent to alice@acme.io')).toBeInTheDocument()
+  })
+
+  it('drops the "Sent to" line when the person\'s address is not known', async () => {
+    mocks.profile.mockReturnValue({ name: 'Alice' })
+    await renderHub(options({ invitations: INVITATIONS }))
+    expect(screen.getByText('Acme Security')).toBeInTheDocument()
+    expect(screen.queryByText(/Sent to/)).not.toBeInTheDocument()
+  })
+
+  it('asks to verify the address without a dangling name when it is not known', async () => {
+    mocks.profile.mockReturnValue({ name: 'Alice' })
+    await renderHub(options({ email_verified: false }))
+    expect(
+      screen.getByText('Verify your email address to see the invitations sent to it.')
+    ).toBeInTheDocument()
   })
 
   it('accepts an invitation by its reference', async () => {

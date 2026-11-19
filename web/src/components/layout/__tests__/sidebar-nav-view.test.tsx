@@ -211,6 +211,17 @@ describe('sidebar navigation sets', () => {
       )
     })
 
+    it('the settings rail starts with Back to app, then All settings (current on the overview)', () => {
+      viewport.mobile = false
+      vi.mocked(usePathname).mockReturnValue('/settings')
+      render(<Shell />)
+      const all = screen.getByRole('link', { name: 'All settings' })
+      expect(all).toHaveAttribute('href', '/settings')
+      expect(all).toHaveAttribute('aria-current', 'page')
+      const back = screen.getByRole('link', { name: 'Back to app' })
+      expect(back.compareDocumentPosition(all) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
     it('shows the app navigation on app routes', () => {
       viewport.mobile = false
       vi.mocked(usePathname).mockReturnValue('/findings')

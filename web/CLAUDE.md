@@ -222,9 +222,11 @@ tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 ## Settings navigation
 
 Every settings page is listed once, in `src/config/settings-nav.ts` (groups My
-account, Organization, Access & security, Findings & assets, Scanning,
-Integrations; a long group has `section` sub-headings, e.g. Access & security:
-API access, Sign-in, Oversight). Place a page by the task it serves, and never
+account, Organization, People and access, Sign-in and oversight, Approvals,
+Findings and assets, Scanning, Tools and sensors, Integrations; a long group has
+`section` sub-headings, e.g. Tools and sensors: Detection content, Scanner
+content). The rail starts with "Back to app" and "All settings" (the `/settings`
+overview). Place a page by the task it serves, and never
 put an organization page in My account or a personal page elsewhere. That config drives the settings rail (the left sidebar
 swaps to it on `/settings/*`, `/account/*` and each item's URL; in the phone
 drawer "Settings" and "Back to app" switch the open drawer between the two sets

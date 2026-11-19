@@ -9,6 +9,7 @@ import {
   ColumnFiltersState,
   type Column,
   type Header,
+  type HeaderContext,
   type Table as TanstackTable,
   type Row,
   SortingState,
@@ -32,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
+import { OneFilledAction } from '../one-filled-action'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -74,7 +76,14 @@ import {
 import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
 import { pinStartColumns, PIN_SELECT_WIDTH, type StartPin } from './pin-columns'
 import { fitColumnWidths } from './fit-columns'
-import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } from './column-meta'
+import {
+  ariaSort,
+  columnKind,
+  columnLayout,
+  type ColumnKind,
+  type ColumnLayout,
+  type DataTableColumnMeta,
+} from './column-meta'
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
@@ -87,6 +96,13 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import {
+  knownRowCount,
+  loadingRowCount,
+  rememberRowCount,
+  ROW_HEIGHT,
+  rowCountKey,
+} from './loading-rows'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -423,8 +439,14 @@ const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
   center: 'text-center',
 }
 
-/** Skeleton rows shown in an empty body while `isLoading`. */
-const LOADING_ROWS = 5
+/** Height of one phone placeholder card (two skeleton lines + padding). */
+const PHONE_LOADING_ROW_HEIGHT = 64
+
+const noSubscribe = () => () => {}
+const subscribeResize = (onChange: () => void) => {
+  window.addEventListener('resize', onChange)
+  return () => window.removeEventListener('resize', onChange)
+}
 
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
@@ -484,43 +506,69 @@ const ACTIONS_COLLAPSED_CLASS = 'overflow-hidden border-0 p-0'
 
 /** Columns the automatic phone card treats as controls rather than fields. */
 const CONTROL_COLUMN_IDS = new Set(['select', 'actions'])
-/** Fields shown under the title on an automatic phone card. */
-const MOBILE_CARD_FIELDS = 4
+/** Inline fields on the line under the subtitle of an automatic phone card. */
+const MOBILE_CARD_FIELDS = 2
+
+/** Column kinds that make the card's status chip (beside the title). */
+const CARD_STATUS_KINDS = new Set<ColumnKind>(['status', 'status-edit'])
+/** Column kinds that may make the card's muted subtitle line. */
+const CARD_SUBTITLE_KINDS = new Set<ColumnKind>(['asset', 'owner', 'id', 'text'])
 
 /**
- * How a table cell's one-line text behaves inside an automatic phone card
- * (the title and every field value). A cut text (`truncate`) and a
- * `whitespace-nowrap` text wrap, as the card has the height, but a cut text
- * stops at three lines; and a cell's flex row wraps, so a long text moves
- * under the chip beside it and gets the whole field width. Only rows: a
- * wrapping column (`flex-col`) sizes its items to their longest line instead
- * of the field, and they stick out of it.
- *
- * Without the last two, a long text beside a chip (a run's message beside its
- * state) wrapped in the sliver of width the chip left: one field became
- * thousands of pixels tall, with the chip centred far down and the rest of
- * the card empty (/scans/runs at 390 px, owner report 2026-11-17).
- *
- * `overflow-wrap: anywhere` (not `break-word`) lets a word longer than the
- * card (an 88-character e-mail address, a URL) break, AND stops it from
- * setting the minimum width of its flex item: with `break-word` the address
- * kept its one-line width and ran under the row's menu button.
+ * Widest actions cell kept on a phone card's title line: one icon button (the
+ * row menu, 44 px touch target at most). A wider cell (labelled buttons, two
+ * icons) moves to one trailing line at the card's end.
  */
-const CARD_WRAP_CLASS =
-  '[overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3 [&_.whitespace-nowrap]:whitespace-normal [&_.flex:not(.flex-col)]:flex-wrap'
+const CARD_INLINE_ACTIONS_MAX = 48
+
+/** A value that only marks "nothing here": a dash of any width. */
+const EMPTY_MARK = /^[-‐-―−]$/
+
+/** Text as read on screen: trimmed, inner runs of white space as one. */
+function normalText(text: string | null | undefined): string {
+  return (text ?? '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Whether a drawn value says something: text that is not only a dash and
+ * not the card's title again, or a switch (a switch is a value: "On"/"Off").
+ */
+function valueSays(el: Element | null | undefined, titleText: string): boolean {
+  if (!el) return false
+  if (el.querySelector('[role=switch]')) return true
+  const value = normalText(el.textContent)
+  return value !== '' && !EMPTY_MARK.test(value) && value !== titleText
+}
+
+/**
+ * One line of the automatic phone card: whatever a cell draws stays on one
+ * line, cut with an ellipsis, inside a fixed line height. So every card of a
+ * list has the same height, and a long text beside a chip can never make a
+ * tall sliver (a run's message beside its state once made one field thousands
+ * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17).
+ */
+const CARD_LINE_CLASS =
+  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row'
 
 /**
  * A column's readable label for the phone card: `meta.label`, a string
  * header, or the `title` of a `DataTableColumnHeader` header; else its id.
  */
-function columnLabel<TData>(header: Header<TData, unknown>): string {
-  const def = header.column.columnDef
+function columnLabel<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>,
+  header?: Header<TData, unknown>
+): string {
+  const def = column.columnDef
   const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
   if (typeof metaLabel === 'string') return metaLabel
   if (typeof def.header === 'string') return def.header
   if (typeof def.header === 'function') {
     try {
-      const el = def.header(header.getContext())
+      // A hidden column has no header object: its header still reads its
+      // column (the usual `DataTableColumnHeader column title`).
+      const ctx = header?.getContext() ?? ({ column, table } as HeaderContext<TData, unknown>)
+      const el = def.header(ctx)
       if (React.isValidElement<{ title?: unknown }>(el) && typeof el.props.title === 'string') {
         return el.props.title
       }
@@ -528,12 +576,53 @@ function columnLabel<TData>(header: Header<TData, unknown>): string {
       // A header that needs React context cannot be read here; fall through.
     }
   }
-  const id = header.column.id.replace(/[_.-]+/g, ' ').trim()
+  const id = column.id.replace(/[_.-]+/g, ' ').trim()
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
-const CARD_VALUE_CLASS =
-  'mt-0.5 min-w-0 text-sm [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal'
+/**
+ * A column with neither a header nor `meta.label` draws nothing in the
+ * header row: a control column (row menu, selection). Display > Columns does
+ * not offer it, since it has no name to show ("Actions" would be its English
+ * id) and hiding it would only take the row's actions away.
+ */
+function columnHasName<TData>(
+  column: Column<TData, unknown>,
+  table: TanstackTable<TData>
+): boolean {
+  const def = column.columnDef
+  const metaLabel = (def.meta as { label?: unknown } | undefined)?.label
+  // TanStack fills a missing header with its default (the id as text).
+  const header = def.header
+  return (
+    typeof metaLabel === 'string' ||
+    (header !== undefined && header !== table._getDefaultColumnDef().header)
+  )
+}
+
+/**
+ * The phone card's title: the name cell as drawn in the table, allowed to
+ * wrap to two lines (then cut) instead of being cut on one. Widths a table
+ * cell sets for its column (`w-0 min-w-full`, a fixed `max-w-*`) give way
+ * to the card's width, so the name is never squeezed out of sight.
+ */
+const CARD_TITLE_CLASS =
+  'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+
+/**
+ * A control in the card's title line (a chip that opens a popover beside the
+ * status) gets the row menu's 36 px box with its chip centred in it: every
+ * control of the line has one height and one centre, and the chip keeps its
+ * own size.
+ */
+const CARD_HEAD_CONTROL_CLASS =
+  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
+
+const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
+
+/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+const CARD_CHIP_SELECTOR =
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch
@@ -566,13 +655,7 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect()
   }, [])
   return (
-    <dd
-      className={cn(
-        CARD_VALUE_CLASS,
-        CARD_WRAP_CLASS,
-        switchOn !== null && 'flex items-center gap-2'
-      )}
-    >
+    <dd className={cn(CARD_VALUE_CLASS, switchOn !== null && 'flex items-center gap-2')}>
       <span ref={cellRef} className="contents">
         {children}
       </span>
@@ -585,15 +668,29 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
   )
 }
 
-/**
- * Phone layout for a table with no `mobileRow`: the first data column is the
- * title, the next few become label/value fields, and the row's checkbox and
- * actions stay reachable. Built from the same cells, so it needs no per-page code.
- */
 /** A card that takes the focus after "Show more" (never in the tab order). */
 const PHONE_CARD_FOCUS_CLASS =
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
 
+/**
+ * Phone layout for a table with no `mobileRow`, built from the same cells, so
+ * it needs no per-page code. A compact card of fixed lines:
+ * - the title line: the row's name (the column of kind `name`, else the
+ *   first data column; never guessed from the values), up to two lines, then
+ *   the status chip (the first `status` column) and the row's checkbox and
+ *   row menu. Nothing on it wraps under the title: a status cell too wide
+ *   for its place gets a line of its own under the title, and an actions
+ *   cell wider than one icon button gets one trailing line at the card's end;
+ * - one muted subtitle line: the first remaining column of a naming kind
+ *   (asset, owner, id, text), kept empty (same height) on a row where it
+ *   says nothing or repeats the title;
+ * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
+ *   other columns that say something (no empty or dash-only value, no repeat
+ *   of the title; a switch counts as a value), chosen before paint. A chip
+ *   value is never cut: a field whose chip does not fit half the line takes
+ *   the whole line and the other field goes on the line under it.
+ * Every line but the title is one line high whatever its cell draws.
+ */
 function AutoMobileCard<TData>({
   row,
   labels,
@@ -609,8 +706,70 @@ function AutoMobileCard<TData>({
   const cells = row.getVisibleCells()
   const select = showSelect ? cells.find((c) => c.column.id === 'select') : undefined
   const actions = cells.find((c) => c.column.id === 'actions')
-  const [title, ...rest] = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
-  const fields = rest.slice(0, MOBILE_CARD_FIELDS)
+  const kindOf = (c: (typeof cells)[number]) =>
+    columnKind(c.column.id, c.column.columnDef.meta as DataTableColumnMeta | undefined)
+  const data = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
+  const title = data.find((c) => kindOf(c) === 'name') ?? data[0]
+  const rest = data.filter((c) => c !== title)
+  const status = rest.find((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  // Only a column the page marked as a naming kind; an unmarked column stays a
+  // labelled field (its meaning would be lost on an unlabelled line).
+  const subtitle = rest.find((c) => {
+    const kind = (c.column.columnDef.meta as DataTableColumnMeta | undefined)?.kind
+    return c !== status && !!kind && CARD_SUBTITLE_KINDS.has(kind)
+  })
+  const candidates = rest.filter((c) => c !== status && c !== subtitle)
+
+  const titleRef = React.useRef<HTMLDivElement>(null)
+  const subtitleRef = React.useRef<HTMLDivElement>(null)
+  const fieldsRef = React.useRef<HTMLDListElement>(null)
+  const statusRef = React.useRef<HTMLDivElement>(null)
+  const actionsRef = React.useRef<HTMLDivElement>(null)
+  // Chosen before paint, once per row value: every candidate renders on the
+  // first pass (status and actions on the title line), the card measures
+  // which fields say something and what fits, then keeps that layout.
+  const [chosen, setChosen] = React.useState<{
+    of: TData
+    fields: string[]
+    // Fields whose chip does not fit half the line: they take the whole line.
+    wide: string[]
+    subtitle: boolean
+    statusLine: boolean
+    actionsLine: boolean
+  } | null>(null)
+  const pick = chosen && chosen.of === row.original ? chosen : null
+  React.useLayoutEffect(() => {
+    if (pick) return
+    const titleText = normalText(titleRef.current?.textContent)
+    const fields: string[] = []
+    const wide: string[] = []
+    for (const field of Array.from(fieldsRef.current?.children ?? [])) {
+      const id = field.getAttribute('data-column') ?? ''
+      if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
+        fields.push(id)
+        // A chip is never cut (it has no ellipsis): one that overflows its half
+        // of the line gets the whole line, and the other field moves under it.
+        const dd = field.querySelector('dd')
+        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+          wide.push(id)
+        }
+      }
+    }
+    const statusEl = statusRef.current
+    setChosen({
+      of: row.original,
+      fields,
+      wide,
+      subtitle: valueSays(subtitleRef.current, titleText),
+      statusLine: !!statusEl && statusEl.scrollWidth > statusEl.clientWidth + 1,
+      actionsLine:
+        (actionsRef.current?.getBoundingClientRect().width ?? 0) > CARD_INLINE_ACTIONS_MAX,
+    })
+  }, [pick, row.original])
+  const shownFields = pick
+    ? candidates.filter((c) => pick.fields.includes(c.column.id))
+    : candidates
+
   return (
     <div
       data-slot="mobile-card"
@@ -629,50 +788,107 @@ function AutoMobileCard<TData>({
         onRowClick?.(row.original)
       }}
     >
-      {/* Header: the title keeps at least 60% of the width, so a row menu
-          (the usual "...") sits beside it while wide action buttons wrap onto
-          their own line instead of covering the title. */}
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+      {/* Title line, never wrapped: the name (up to two lines), the status
+          chip and the row menu, centred on one line. The menu and any control
+          in the status keep their 36 px box without making the line taller
+          (negative margins), so a chip and the menu share one centre. */}
+      <div data-slot="mobile-card-head" className="flex items-center gap-x-3">
         {select && (
-          <div className="shrink-0 pt-0.5">
+          <div className="flex min-h-5 shrink-0 items-center">
             {flexRender(select.column.columnDef.cell, select.getContext())}
           </div>
         )}
         {title && (
-          <div className={cn('min-w-0 flex-[1_1_60%] text-sm font-medium', CARD_WRAP_CLASS)}>
+          <div
+            ref={titleRef}
+            data-slot="mobile-card-title"
+            className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
+          >
             {flexRender(title.column.columnDef.cell, title.getContext())}
           </div>
         )}
-        {actions && (
-          <div className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+        {status && !pick?.statusLine && (
+          <div
+            ref={statusRef}
+            data-slot="mobile-card-status"
+            className={cn(
+              '-my-2 flex h-9 max-w-[45%] shrink-0 items-center',
+              CARD_LINE_CLASS,
+              CARD_HEAD_CONTROL_CLASS
+            )}
+          >
+            {flexRender(status.column.columnDef.cell, status.getContext())}
+          </div>
+        )}
+        {actions && !pick?.actionsLine && (
+          <div
+            ref={actionsRef}
+            data-slot="mobile-card-actions"
+            className="-my-2 flex h-9 shrink-0 items-center"
+          >
             {flexRender(actions.column.columnDef.cell, actions.getContext())}
           </div>
         )}
       </div>
-      {fields.length > 0 && (
-        // Full card width, two equal columns (minmax(0,1fr): a long value
-        // cannot widen its column). The wrap rule only splits a word that is
-        // longer than the column; "High" stays whole.
-        <dl
+      {status && pick?.statusLine && (
+        <div
+          data-slot="mobile-card-status"
+          className={cn('mt-1 flex h-5 items-center', CARD_LINE_CLASS, select && 'ps-7')}
+        >
+          {flexRender(status.column.columnDef.cell, status.getContext())}
+        </div>
+      )}
+      {subtitle && (
+        <div
+          ref={subtitleRef}
+          data-slot="mobile-card-subtitle"
           className={cn(
-            'mt-2 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 gap-y-2',
+            'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
+            CARD_LINE_CLASS,
+            select && 'ps-7',
+            pick && !pick.subtitle && 'invisible'
+          )}
+          aria-hidden={pick && !pick.subtitle ? true : undefined}
+        >
+          {flexRender(subtitle.column.columnDef.cell, subtitle.getContext())}
+        </div>
+      )}
+      {candidates.length > 0 && (
+        <dl
+          ref={fieldsRef}
+          className={cn(
+            'mt-1 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
         >
-          {fields.map((cell) => (
-            <div key={cell.id} data-slot="mobile-card-field" className="min-w-0">
-              <dt className="truncate text-xs text-muted-foreground">
+          {shownFields.map((cell) => (
+            <div
+              key={cell.id}
+              data-slot="mobile-card-field"
+              data-column={cell.column.id}
+              className={cn(
+                'flex min-w-0 items-baseline gap-1.5',
+                pick?.wide.includes(cell.column.id) && 'col-span-2'
+              )}
+            >
+              <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
-              {/* Cells are written for a wide table row: whatever they keep on
-                  one line may wrap here, as in the title, so a value never runs
-                  into the next column (CARD_WRAP_CLASS). */}
               <CardFieldValue>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>
           ))}
         </dl>
+      )}
+      {actions && pick?.actionsLine && (
+        <div
+          data-slot="mobile-card-actions"
+          className="mt-2 flex items-center justify-end gap-2 overflow-hidden"
+        >
+          {flexRender(actions.column.columnDef.cell, actions.getContext())}
+        </div>
       )}
     </div>
   )
@@ -866,9 +1082,14 @@ export function DataTable<TData, TValue>({
   // viewer turned on or off (the state has its key); a controlled one's state
   // names every column, so only the click counts there.
   const [frameWidth, setFrameWidth] = React.useState(0)
-  React.useEffect(() => {
+  // Read before the first paint (a layout effect), so the column widths that
+  // depend on the frame (fit, pins, dropped columns) are right on the first
+  // frame instead of settling a frame later (cells moved sideways on load).
+  React.useLayoutEffect(() => {
     const el = tableWrapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    if (!el) return
+    setFrameWidth(el.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth))
     ro.observe(el)
     return () => ro.disconnect()
@@ -1029,13 +1250,25 @@ export function DataTable<TData, TValue>({
     },
   })
 
-  // Field labels for the automatic phone cards.
-  const mobileLabels = new Map<string, string>()
-  if (phoneCards && !mobileRow) {
-    for (const header of table.getFlatHeaders()) {
-      mobileLabels.set(header.column.id, columnLabel(header as Header<TData, unknown>))
+  // Readable column labels (the header the user sees, in their language):
+  // field labels of the automatic phone cards and the Display > Columns list.
+  const columnLabels = new Map<string, string>()
+  if ((phoneCards && !mobileRow) || showColumnToggle) {
+    const headers = new Map(table.getFlatHeaders().map((h) => [h.column.id, h]))
+    // Every column, hidden ones too (Display lists them to turn them back on).
+    for (const column of table.getAllLeafColumns()) {
+      const header = headers.get(column.id)
+      columnLabels.set(
+        column.id,
+        columnLabel(
+          column as Column<TData, unknown>,
+          table,
+          header as Header<TData, unknown> | undefined
+        )
+      )
     }
   }
+  const mobileLabels = columnLabels
 
   // Frozen columns: the checkbox (if first) and the row's identifying
   // columns (`meta.pin`, else the first data column), within a share of the
@@ -1152,6 +1385,34 @@ export function DataTable<TData, TValue>({
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
   const pageRows = table.getRowModel().rows
+
+  // Placeholder rows while loading (loading-rows.ts): the last count this list
+  // showed, else five, capped to the page size and the viewport, so the list
+  // keeps its height when the rows arrive. Read through useSyncExternalStore:
+  // the server render (no storage, no viewport) draws five.
+  // Keyed by the page path (read from the location on the client only, so the
+  // table needs no router) and the table's name.
+  const tableName = caption ?? labelledBy ?? ''
+  const knownRows = React.useSyncExternalStore(
+    noSubscribe,
+    () => knownRowCount(rowCountKey(tableName)) ?? -1,
+    () => -1
+  )
+  const viewportHeight = React.useSyncExternalStore(
+    subscribeResize,
+    () => window.innerHeight,
+    () => 0
+  )
+  const settled = !isLoading && !error
+  React.useEffect(() => {
+    if (settled) rememberRowCount(rowCountKey(tableName), pageRows.length)
+  }, [settled, tableName, pageRows.length])
+  const loadingRows = loadingRowCount(
+    knownRows < 0 ? undefined : knownRows,
+    table.getState().pagination.pageSize,
+    viewportHeight,
+    phoneCards ? PHONE_LOADING_ROW_HEIGHT : ROW_HEIGHT[density]
+  )
   const displayGroups = !rowGroups
     ? [{ key: 'all', rows: pageRows }]
     : rowGroups.groups
@@ -1296,7 +1557,13 @@ export function DataTable<TData, TValue>({
       const s = sorting[0]
       if (!s) return ''
       const header = table.getFlatHeaders().find((h) => h.column.id === s.id)
-      const label = header ? columnLabel(header as Header<TData, unknown>) : s.id
+      const label = header
+        ? columnLabel(
+            header.column as Column<TData, unknown>,
+            table,
+            header as Header<TData, unknown>
+          )
+        : s.id
       return t('common.table.sortedBy', 'Sorted by {column}, {direction}', {
         column: label,
         direction: s.desc
@@ -1365,13 +1632,15 @@ export function DataTable<TData, TValue>({
   ) : (
     (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
   )
+  // One filled button per screen: the empty body's action is an outline
+  // button beside the page's main action (`OneFilledAction`).
   const emptyBody = (
-    <div
+    <OneFilledAction
       data-slot="table-empty"
       className="[&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none"
     >
       {emptyContent}
-    </div>
+    </OneFilledAction>
   )
 
   // A stale read says so in the footer, with a refresh.
@@ -1504,17 +1773,19 @@ export function DataTable<TData, TValue>({
                   {showColumnToggle &&
                     table
                       .getAllColumns()
-                      .filter((column) => column.getCanHide())
+                      .filter(
+                        (column) =>
+                          column.getCanHide() &&
+                          columnHasName(column as Column<TData, unknown>, table)
+                      )
                       .map((column) => {
                         return (
                           <DropdownMenuCheckboxItem
                             key={column.id}
-                            className="capitalize"
                             checked={column.getIsVisible()}
                             onCheckedChange={(value) => column.toggleVisibility(!!value)}
                           >
-                            {(column.columnDef.meta as { label?: string } | undefined)?.label ??
-                              column.id.replace(/_/g, ' ')}
+                            {columnLabels.get(column.id) ?? column.id}
                           </DropdownMenuCheckboxItem>
                         )
                       })}
@@ -1621,7 +1892,7 @@ export function DataTable<TData, TValue>({
             })
           ) : isLoading ? (
             <div aria-busy="true" aria-label={t('common.table.loading', 'Loading')}>
-              {Array.from({ length: LOADING_ROWS }).map((_, i) => (
+              {Array.from({ length: loadingRows }).map((_, i) => (
                 <div key={i} className="space-y-2 px-3 py-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />
@@ -1665,37 +1936,43 @@ export function DataTable<TData, TValue>({
           aria-busy={isLoading && !hasBody ? true : undefined}
         >
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      {...cellProps(header.column.id, true)}
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? ariaSort(header.column.getIsSorted())
-                          : undefined
-                      }
-                    >
-                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
-                        flexRender(header.column.columnDef.header, header.getContext())
-                      ) : (
-                        // A column with no visible header (row actions, the
-                        // selection box) still names itself to screen readers.
-                        <span className="sr-only">
-                          {header.column.id === 'select'
-                            ? t('common.table.selectColumn', 'Select')
-                            : t('common.table.actionsColumn', 'Actions')}
-                        </span>
-                      )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
+          {/* No rows to head (an empty or failed list): no column headers and
+              no select-all box over nothing; the empty state or error block
+              stands alone in the frame. While loading the header stays, so
+              the skeleton rows sit under it. */}
+          {(hasBody || isLoading) && (
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead
+                        key={header.id}
+                        {...cellProps(header.column.id, true)}
+                        aria-sort={
+                          header.column.getCanSort()
+                            ? ariaSort(header.column.getIsSorted())
+                            : undefined
+                        }
+                      >
+                        {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        ) : (
+                          // A column with no visible header (row actions, the
+                          // selection box) still names itself to screen readers.
+                          <span className="sr-only">
+                            {header.column.id === 'select'
+                              ? t('common.table.selectColumn', 'Select')
+                              : t('common.table.actionsColumn', 'Actions')}
+                          </span>
+                        )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+          )}
           {hasBody ? (
             displayGroups.map((group, gi) => {
               const expanded = groupExpansion.isExpanded(group.key)
@@ -1829,7 +2106,7 @@ export function DataTable<TData, TValue>({
           ) : (
             <TableBody>
               {isLoading ? (
-                Array.from({ length: LOADING_ROWS }).map((_, i) => (
+                Array.from({ length: loadingRows }).map((_, i) => (
                   <TableRow key={`loading-${i}`} aria-busy="true" data-loading-row="">
                     {table.getVisibleLeafColumns().map((column) => (
                       <TableCell key={column.id}>
@@ -1842,7 +2119,17 @@ export function DataTable<TData, TValue>({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-48 text-center">
+                  {/* An error block is start-aligned like every alert: icon,
+                      title, sentence and buttons share one edge (a centred
+                      cell centred only its text). */}
+                  <TableCell
+                    colSpan={columns.length}
+                    data-slot={errorState ? 'table-error-cell' : undefined}
+                    className={cn(
+                      'h-48',
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                    )}
+                  >
                     {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>

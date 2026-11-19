@@ -262,7 +262,7 @@ vi.mock('@/features/shared/components/data-table/data-table', () => ({
           <div data-slot="skeleton" />
         ) : error && data.length === 0 ? (
           <div role="alert">
-            Failed to load {errorTitle}
+            {`Couldn't load ${errorTitle}`}
             <button type="button" onClick={onRetry}>
               Retry
             </button>
@@ -901,7 +901,7 @@ describe('ApprovalsPage group exceptions', () => {
     }
     const { container } = cell('task', row)
     expect(within(container).getByRole('link')).toHaveAttribute('href', '/remediation/tasks/task-1')
-    expect(cell('tier', row).container.textContent).toContain('0 of 1 approvals')
+    expect(cell('tier', row).container.textContent).toContain('0 of 1 approval')
     expect(cell('members', row).container.textContent).toBe('3')
   })
 })

@@ -29,6 +29,7 @@ export const TRIAGE_ACTION_LABELS: Record<TriageAction, { key: string; fallback:
   evidence: { key: 'findings.triageMode.action.evidence', fallback: 'Evidence' },
   openPage: { key: 'findings.triageMode.action.openPage', fallback: 'Full page' },
   help: { key: 'findings.triageMode.action.help', fallback: 'All keys' },
+  queue: { key: 'findings.triageMode.action.queue', fallback: 'Queue' },
   exit: { key: 'findings.triageMode.exit', fallback: 'Exit' },
 }
 

@@ -69,7 +69,7 @@ export function PolicyPreview({ draft }: { draft: ScanWindowPolicyRequest | null
                 {(data.assets?.length ?? 0) > 0 && (
                   <ul className="space-y-0.5 text-xs text-muted-foreground">
                     {data.assets!.slice(0, LISTED_ASSETS).map((a) => (
-                      <li key={a.id} className="break-all">
+                      <li key={a.id} className="break-words">
                         {a.name}
                       </li>
                     ))}

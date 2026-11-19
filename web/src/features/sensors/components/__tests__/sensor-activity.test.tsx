@@ -202,7 +202,7 @@ describe('SensorActivity', () => {
   it('shows an error with a retry', async () => {
     api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(page([item({ id: 'o' })]))
     renderActivity()
-    expect(await screen.findByText('Failed to load sensor activity')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't load sensor activity")).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Retry/ }))
     expect(await screen.findByText('Came back online')).toBeInTheDocument()
   })

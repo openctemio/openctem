@@ -106,7 +106,7 @@ describe('Before going live', () => {
     )
     const checks = screen.getByTestId('golive-checks')
     expect(checks).toHaveTextContent('Save the draft before going live.')
-    expect(checks).toHaveTextContent('1 problems block going live')
+    expect(checks).toHaveTextContent('1 problem blocks going live')
   })
 })
 

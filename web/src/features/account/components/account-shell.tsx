@@ -3,11 +3,13 @@
 import Link from '@/components/link'
 import { ArrowLeft } from 'lucide-react'
 import { usePathname } from 'next/navigation'
+import { useRef } from 'react'
 
 import { BrandMark, usesBuiltInLogo } from '@/components/brand-logo'
 import { LogoFull } from '@/assets/logo'
 import { MainRegion } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
 import { SkipToMain } from '@/components/skip-to-main'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -48,6 +50,10 @@ export function AccountShell({
   const pathname = usePathname()
   const { t } = useTranslation()
   const brand = useBrand()
+  // The shared tab-strip behaviour: the open page's tab is scrolled into view
+  // and an edge with hidden tabs fades, so no label is cut mid-word at rest.
+  const navRef = useRef<HTMLElement>(null)
+  useTabStripScroll(navRef)
 
   return (
     <AccountSpaceProvider>
@@ -71,8 +77,12 @@ export function AccountShell({
               )}
             </Link>
             <nav
+              ref={navRef}
               aria-label={t('account.area.navLabel', 'Your account')}
-              className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:flex-1"
+              className={cn(
+                'no-scrollbar order-3 -mx-1 flex w-full gap-0.5 overflow-x-auto overscroll-x-contain sm:order-none sm:mx-0 sm:w-auto sm:flex-1',
+                EDGE_FADE_X_CLASS
+              )}
             >
               {ACCOUNT_NAV.map((item) => {
                 const active = activeAccountItem(pathname)?.id === item.id
@@ -82,7 +92,7 @@ export function AccountShell({
                     href={item.url}
                     aria-current={active ? 'page' : undefined}
                     className={cn(
-                      'rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                      'rounded-md px-1.5 py-1.5 text-sm whitespace-nowrap transition-colors sm:px-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                       active
                         ? 'bg-muted font-medium text-foreground'
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'

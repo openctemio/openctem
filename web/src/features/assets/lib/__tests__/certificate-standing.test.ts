@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import enAssets from '@/lib/i18n/dictionaries/en/assets.json'
 import viAssets from '@/lib/i18n/dictionaries/vi/assets.json'
+import { translate } from '@/lib/i18n'
 import { certificateStandingText, type CertificateStanding } from '../attribution'
 
-// A translator over the real English dictionary, with {vars} filled in.
-const t = (key: string, fallback?: string, vars?: Record<string, string | number>) => {
-  const raw = (enAssets as Record<string, string>)[key] ?? fallback ?? key
-  return raw.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? ''))
-}
+// The app's translator over the real English dictionary (plurals included).
+const t = (key: string, fallback?: string, vars?: Record<string, string | number>) =>
+  translate(enAssets as Record<string, string>, key, fallback, vars, 'en')
 
 const base: CertificateStanding = {
   standing: 'in_scope',

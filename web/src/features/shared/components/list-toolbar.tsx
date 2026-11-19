@@ -182,6 +182,65 @@ function useToolbarFold(
   return fold
 }
 
+/**
+ * A group of controls that draws none of them (every control hidden at this
+ * width: the Display menu on a phone, tokens moved into the Filters sheet)
+ * takes no line: it is marked `data-empty` and leaves the flow (absolute, no
+ * size), so it never wraps onto a line of its own, where the first chip would
+ * then sit instead of opening a new line. Its controls keep their boxes, so the
+ * mark goes as soon as one is drawn again (width change, new control).
+ */
+const EMPTY_GROUP_CLASS =
+  'data-[empty]:pointer-events-none data-[empty]:absolute data-[empty]:size-0 data-[empty]:overflow-hidden'
+
+// An icon counts by its own box: the shapes inside it are often a line with no
+// area (an icon-only Add filter draws only such lines), which is not "nothing".
+function drawsSomething(group: HTMLElement): boolean {
+  return Array.from(group.querySelectorAll<Element>('*')).some((el) => {
+    const icon = el.closest('svg')
+    if (icon ? icon !== el : el.children.length > 0) return false
+    return Array.from(el.getClientRects()).some((r) => r.width > 0 && r.height > 0)
+  })
+}
+
+function useEmptyGroups(
+  region: React.RefObject<HTMLElement | null>,
+  groups: React.RefObject<HTMLElement | null>[]
+) {
+  React.useLayoutEffect(() => {
+    const root = region.current
+    if (!root) return
+    const mark = () => {
+      for (const ref of groups) {
+        const group = ref.current
+        if (!group) continue
+        const empty = !drawsSomething(group)
+        if (empty !== group.hasAttribute('data-empty')) group.toggleAttribute('data-empty', empty)
+      }
+    }
+    mark()
+    // No observers (an old browser, a test without them): the first mark stays.
+    if (typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
+    const resize = new ResizeObserver(mark)
+    resize.observe(root)
+    const mutation = new MutationObserver(mark)
+    for (const ref of groups) {
+      if (ref.current) {
+        mutation.observe(ref.current, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['class', 'hidden', 'style'],
+        })
+      }
+    }
+    return () => {
+      resize.disconnect()
+      mutation.disconnect()
+    }
+  })
+}
+
 export function ListToolbar({
   search,
   filterToggle,
@@ -217,6 +276,8 @@ export function ListToolbar({
   const startRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
   const fold = useToolbarFold(ref, startRef, endRef)
+  const regionRef = React.useRef<HTMLDivElement>(null)
+  useEmptyGroups(regionRef, [tokensRef, endRef])
   // One alignment in both modes (centre: controls of a few px more, such as
   // a bordered view switch, share the row's centre line), and the tokens
   // stay in Query mode, so switching modes never re-flows the row. `top`
@@ -282,7 +343,8 @@ export function ListToolbar({
                 // The padding keeps focus rings inside the scroll box.
                 'no-scrollbar @max-md/toolbar:-my-1 @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
                 EDGE_FADE_X_CLASS,
-                '@max-md/toolbar:order-last @max-md/toolbar:ms-auto @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_0_auto]'
+                '@max-md/toolbar:order-last @max-md/toolbar:ms-auto @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_0_auto]',
+                EMPTY_GROUP_CLASS
               )}
             >
               {start}
@@ -304,8 +366,13 @@ export function ListToolbar({
             '@max-md/toolbar:order-last',
             // On a phone the tokens' auto margin pushes both to the end: a
             // second one here would split the free room between them, and the
-            // first chip (which takes that room) would move the tokens.
-            start && '@max-md/toolbar:ms-0'
+            // first chip (which takes that room) would move the tokens. With
+            // the tokens out of the flow (nothing drawn) the end group keeps
+            // its own auto margin, so it sits at the end before and after the
+            // first chip.
+            start &&
+              '@max-md/toolbar:ms-0 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-auto',
+            EMPTY_GROUP_CLASS
           )}
         >
           {end}
@@ -341,6 +408,7 @@ export function ListToolbar({
     // The region is the size container, so the toolbar's controls answer by
     // the same width when the toolbar box is lent out (a phone).
     <div
+      ref={regionRef}
       data-slot="list-toolbar-region"
       data-fold={fold ? 'true' : undefined}
       className={cn(

@@ -159,7 +159,7 @@ function ScalarValue({ value, format }: { value: Scalar; format?: AssetPropertyF
       )
     case 'url':
       return (
-        <SafeExternalLink href={text} className="break-all text-primary hover:underline">
+        <SafeExternalLink href={text} className="break-words text-primary hover:underline">
           {text}
         </SafeExternalLink>
       )
@@ -321,7 +321,7 @@ export function PropertyValue({ value, format, depth = 0 }: PropertyValueProps) 
       return (
         <span className="flex flex-wrap gap-x-3 gap-y-1">
           {value.map((v, i) => (
-            <span key={`${String(v)}-${i}`} className={cn(!format && 'break-all')}>
+            <span key={`${String(v)}-${i}`} className={cn(!format && 'break-words')}>
               <ScalarValue value={v} format={format} />
             </span>
           ))}

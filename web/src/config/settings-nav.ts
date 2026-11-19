@@ -9,18 +9,23 @@
  * security, preferences, organizations) is not here: it is the account area,
  * src/config/account-nav.ts, outside the organization shell.
  *
- * Six groups (settings IA decided 2026-10-01; placement research 346, then
- * research 369 sorted items by the task and the person who uses them):
+ * Nine groups (settings IA decided 2026-10-01, regrouped by the redesign's
+ * boards: each group is the task a person comes with):
  * - Your membership: the signed-in person inside this organization (role,
  *   leaving, notifications, activity, connected applications); no role needed;
  * - Organization: what the organization is, its modules, usage and AI;
- * - Access & security: people and their roles, then API access (service
- *   accounts, keys, AI assistants), Sign-in, and Oversight (security
- *   overview, audit log, support access);
- * - Findings & assets: how findings are handled, then Risk and threats
+ * - People and access: members, teams, roles, service accounts, API keys,
+ *   AI assistants and directory sync;
+ * - Sign-in and oversight: sign-in rules, security overview, audit log and
+ *   support access;
+ * - Approvals: who approves findings decisions (one page; the boards give it
+ *   a group of its own so it is found without knowing it is about findings);
+ * - Findings and assets: how findings are handled, then Risk and threats
  *   (scoring, matching, alerts, licenses), then Assets;
- * - Scanning: what scans may do, then Tools, Sensors, Detection content (the
- *   catalog and the rules, templates and wordlists drawn from it) and Scanner content;
+ * - Scanning: what scans may do and when, and which need approval;
+ * - Tools and sensors: the tools, their defaults and capabilities, sensor
+ *   builds and proxies, then Detection content (the catalog and the rules,
+ *   templates and wordlists drawn from it) and Scanner content;
  * - Integrations.
  * A long group is split by `section` sub-headings. URLs never move with the
  * grouping, so a regrouping needs no redirect.
@@ -30,7 +35,8 @@
  * - `permission` / `module` equal what the route guard enforces for the url,
  *   and membership items (/settings/me) carry neither;
  * - a "Soon" badge if and only if the page is a ComingSoonPage;
- * - 2 to 10 items per group, or per section in a group with sections (a
+ * - 2 to 10 items per group (Approvals alone has one, as on the boards), or
+ *   per section in a group with sections (a
  *   group's first section is untitled; items of a section are contiguous);
  *   titles in sentence case;
  * - every title, group, description and anchor has en and vi strings.
@@ -239,7 +245,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'limits',
-        title: 'Usage & limits',
+        title: 'Usage and limits',
         description: 'The limits that apply to this organization and what it uses.',
         url: '/settings/limits',
         icon: Gauge,
@@ -302,7 +308,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
   },
   {
     id: 'access',
-    title: 'Access & security',
+    title: 'People and access',
     items: [
       {
         id: 'members',
@@ -344,7 +350,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // roles, teams and API keys. Not module gated: the API gates none of
         // its routes on the integrations module.
         id: 'service-accounts',
-        section: 'api-access',
         title: 'Service accounts',
         description: 'Identities for integrations, with their own roles and API keys.',
         url: '/settings/service-accounts',
@@ -361,7 +366,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'api-keys',
-        section: 'api-access',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',
         url: '/settings/api-keys',
@@ -371,7 +375,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'mcp',
-        section: 'api-access',
         title: 'AI assistants (MCP)',
         description: 'Let AI assistants work with your data over MCP; approve applications.',
         url: '/settings/mcp',
@@ -380,12 +383,26 @@ const coreSettingsNav: SettingsNavGroup[] = [
         keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
       },
       {
+        id: 'scim',
+        title: 'Directory sync (SCIM)',
+        description: 'Provision members from your identity provider.',
+        url: '/settings/scim',
+        icon: UserCog,
+        permission: Permission.MembersRead,
+        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
+      },
+    ],
+  },
+  {
+    id: 'oversight',
+    title: 'Sign-in and oversight',
+    items: [
+      {
         // One page, two tabs: Sign-in (two-factor, re-verification, email
         // verification, IP allowlist) and Joining (who may join, personal
         // accounts, verified domains, trusted organizations, SSO changes).
         // Viewing needs team:update; saving is owner only in the API.
         id: 'sign-in',
-        section: 'sign-in',
         title: 'Sign-in',
         description: 'Two-factor, re-verification, the IP allowlist, and who may join.',
         url: '/settings/sign-in',
@@ -458,21 +475,10 @@ const coreSettingsNav: SettingsNavGroup[] = [
         ],
       },
       {
-        id: 'scim',
-        section: 'sign-in',
-        title: 'Directory sync (SCIM)',
-        description: 'Provision members from your identity provider.',
-        url: '/settings/scim',
-        icon: UserCog,
-        permission: Permission.MembersRead,
-        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
-      },
-      {
         // The organization's posture checks and score (api: GET
         // /organization/security-overview, owners and admins): the first page of
         // Oversight.
         id: 'security-overview',
-        section: 'oversight',
         title: 'Security overview',
         description: 'A score and checklist of what to fix first in your organization.',
         url: '/settings/security',
@@ -482,7 +488,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'audit-log',
-        section: 'oversight',
         title: 'Audit log',
         description: 'Who did what, and when, across the organization.',
         url: '/settings/audit-log',
@@ -494,7 +499,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Time-boxed, read-only, audited access for platform support (api
         // RFC-063): owners grant, owners and admins revoke and see history.
         id: 'support-access',
-        section: 'oversight',
         title: 'Support access',
         description: 'Let platform support read your data for a limited time.',
         url: '/settings/support-access',
@@ -505,26 +509,9 @@ const coreSettingsNav: SettingsNavGroup[] = [
     ],
   },
   {
-    id: 'findings',
-    title: 'Findings & assets',
+    id: 'approvals',
+    title: 'Approvals',
     items: [
-      {
-        id: 'finding-lifecycle',
-        title: 'Finding lifecycle',
-        description: 'Your own sub-statuses, moves and the requirements each move needs.',
-        url: '/settings/finding-lifecycle',
-        icon: GitBranch,
-        permission: Permission.FindingsRead,
-        module: 'findings',
-        keywords: ['sub-status', 'status', 'transition', 'move', 'lifecycle', 'publish'],
-        anchors: [
-          {
-            id: 'closing-mode',
-            title: 'Closing findings',
-            keywords: ['auto close', 'auto-resolve', 'ready to close', 'review', 'critical'],
-          },
-        ],
-      },
       {
         id: 'approvals',
         title: 'Approvals',
@@ -559,6 +546,29 @@ const coreSettingsNav: SettingsNavGroup[] = [
             id: 'approval-limits',
             title: 'Limits and deadlines',
             keywords: ['longest acceptance', 'decision deadline', 'epss'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'findings',
+    title: 'Findings and assets',
+    items: [
+      {
+        id: 'finding-lifecycle',
+        title: 'Finding lifecycle',
+        description: 'Your own sub-statuses, moves and the requirements each move needs.',
+        url: '/settings/finding-lifecycle',
+        icon: GitBranch,
+        permission: Permission.FindingsRead,
+        module: 'findings',
+        keywords: ['sub-status', 'status', 'transition', 'move', 'lifecycle', 'publish'],
+        anchors: [
+          {
+            id: 'closing-mode',
+            title: 'Closing findings',
+            keywords: ['auto close', 'auto-resolve', 'ready to close', 'review', 'critical'],
           },
         ],
       },
@@ -820,7 +830,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scan-profiles',
-        section: 'tools',
         title: 'Scan profiles',
         description: 'Reusable scan configurations: tools, intensity and duration.',
         url: '/settings/scanning/profiles',
@@ -829,9 +838,14 @@ const coreSettingsNav: SettingsNavGroup[] = [
         module: 'scans',
         keywords: ['profiles', 'scan config'],
       },
+    ],
+  },
+  {
+    id: 'tools',
+    title: 'Tools and sensors',
+    items: [
       {
         id: 'tools',
-        section: 'tools',
         title: 'Tools',
         description: 'The tools your sensors have, and whether a scan can run with each.',
         url: '/settings/scanning/tools',
@@ -842,7 +856,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'tool-defaults',
-        section: 'tools',
         title: 'Tool defaults',
         description: 'Default options for each tool on every sensor; a sensor can override them.',
         url: '/settings/scanning/tool-defaults',
@@ -853,7 +866,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'capabilities',
-        section: 'tools',
         title: 'Capabilities',
         description: 'The capability taxonomy that tools are matched on.',
         url: '/settings/scanning/capabilities',
@@ -864,7 +876,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'sensor-products',
-        section: 'sensors',
         title: 'Sensor products',
         description: 'Latest and minimum release of the sensors your organization builds.',
         url: '/settings/scanning/sensor-products',
@@ -875,7 +886,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'proxies',
-        section: 'sensors',
         title: 'Proxies',
         description:
           "Send your sensors' scan traffic through proxies, with automatic health checks.",
@@ -1052,7 +1062,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'siem',
-        title: 'SIEM',
+        title: 'Event forwarding',
         description: 'Forward security events to Splunk.',
         url: '/settings/integrations/siem',
         icon: Shield,

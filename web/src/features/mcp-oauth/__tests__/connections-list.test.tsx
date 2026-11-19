@@ -36,7 +36,7 @@ describe('ConnectionsList', () => {
       />
     )
     expect(screen.queryByText('No connected applications')).not.toBeInTheDocument()
-    expect(screen.getByText('Failed to load connected applications')).toBeInTheDocument()
+    expect(screen.getByText("Couldn't load connected applications")).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalled()
   })
