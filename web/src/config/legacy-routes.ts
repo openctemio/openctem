@@ -34,7 +34,7 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     permanent: true,
   },
   // Personal notification settings moved to the user's own area.
-  { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
+  { source: '/settings/notifications', destination: '/settings/me/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.
   {
     source: '/settings/access-control/assignment-rules',
@@ -247,6 +247,15 @@ export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
  */
 export const LEGACY_ACCOUNT_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   { source: '/welcome', destination: '/account/organizations', permanent: true },
+  // The per-organization personal pages read the organization's data, so they
+  // moved to the organization's settings, "Your membership".
+  { source: '/account/notifications', destination: '/settings/me/notifications', permanent: true },
+  { source: '/account/activity', destination: '/settings/me/activity', permanent: true },
+  {
+    source: '/account/connected-apps',
+    destination: '/settings/me/connected-apps',
+    permanent: true,
+  },
 ]
 
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [

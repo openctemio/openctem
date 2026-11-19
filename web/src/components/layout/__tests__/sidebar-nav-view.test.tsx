@@ -20,9 +20,9 @@ vi.mock('@/hooks/use-mobile', async (orig) => ({
 vi.mock('@/hooks/use-settings-nav', () => ({
   useSettingsNav: () => [
     {
-      id: 'account',
-      label: 'My account',
-      items: [{ id: 'profile', label: 'Profile', url: '/account/profile', icon: User }],
+      id: 'membership',
+      label: 'Your membership',
+      items: [{ id: 'membership', label: 'Membership', url: '/settings/me', icon: User }],
     },
   ],
   settingsSections: (items: unknown[]) => [{ items }],
@@ -99,7 +99,7 @@ describe('sidebar navigation sets', () => {
 
   describe('on a phone (drawer)', () => {
     it('Back to app shows the app navigation and keeps the drawer open', async () => {
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       const user = userEvent.setup()
       render(<Shell />)
       await openDrawer(user)
@@ -117,14 +117,14 @@ describe('sidebar navigation sets', () => {
       expect(document.activeElement).toBe(within(drawer()!).getByRole('link', { name: 'Findings' }))
     })
 
-    it('Settings shows the settings rail and keeps the drawer open', async () => {
+    it('Organization settings shows the settings rail and keeps the drawer open', async () => {
       vi.mocked(usePathname).mockReturnValue('/findings')
       const user = userEvent.setup()
       render(<Shell />)
       await openDrawer(user)
       expect(navView()).toBe('app')
 
-      await user.click(within(drawer()!).getByRole('button', { name: 'Settings' }))
+      await user.click(within(drawer()!).getByRole('button', { name: 'Organization settings' }))
 
       expect(drawer()).toBeTruthy()
       expect(navView()).toBe('settings')
@@ -138,7 +138,7 @@ describe('sidebar navigation sets', () => {
     })
 
     it('picking a page closes the drawer, without flashing the other set', async () => {
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       const restore = stopNavigation()
       const user = userEvent.setup()
       render(<Shell />)
@@ -155,7 +155,7 @@ describe('sidebar navigation sets', () => {
     })
 
     it('a navigation (picked row or browser back) hands the set back to the route', async () => {
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       const user = userEvent.setup()
       const { rerender } = render(<Shell />)
       await openDrawer(user)
@@ -163,13 +163,13 @@ describe('sidebar navigation sets', () => {
       expect(navView()).toBe('app')
 
       // Browser back to another settings page, drawer still open.
-      vi.mocked(usePathname).mockReturnValue('/account/security')
+      vi.mocked(usePathname).mockReturnValue('/settings/me/activity')
       rerender(<Shell />)
       expect(navView()).toBe('settings')
     })
 
     it('a drawer that opens again starts on the page’s own set', async () => {
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       const user = userEvent.setup()
       render(<Shell />)
       await openDrawer(user)
@@ -187,26 +187,28 @@ describe('sidebar navigation sets', () => {
       expect(navView()).toBe('settings')
     })
 
-    it('Settings is the overview link when the settings rail is already shown', async () => {
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+    it('Organization settings is the overview link when the settings rail is already shown', async () => {
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       const user = userEvent.setup()
       render(<Shell />)
       await openDrawer(user)
-      expect(within(drawer()!).getByRole('link', { name: 'Settings' })).toHaveAttribute(
-        'href',
-        '/settings'
-      )
+      expect(
+        within(drawer()!).getByRole('link', { name: 'Organization settings' })
+      ).toHaveAttribute('href', '/settings')
     })
   })
 
   describe('on desktop (rail)', () => {
-    it('Back to app is the link to the last app page, and Settings the overview link', () => {
+    it('Back to app is the link to the last app page, and Organization settings the overview link', () => {
       viewport.mobile = false
-      vi.mocked(usePathname).mockReturnValue('/account/profile')
+      vi.mocked(usePathname).mockReturnValue('/settings/me')
       render(<Shell />)
       expect(navView()).toBe('settings')
       expect(screen.getByRole('link', { name: 'Back to app' })).toHaveAttribute('href', '/')
-      expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+      expect(screen.getByRole('link', { name: 'Organization settings' })).toHaveAttribute(
+        'href',
+        '/settings'
+      )
     })
 
     it('the settings rail starts with Back to app, then All settings (current on the overview)', () => {

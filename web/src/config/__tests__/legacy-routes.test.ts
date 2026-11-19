@@ -121,7 +121,7 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/pentest/findings/f7')).toBe('/findings/f7')
     expect(redirectOnce('/pentest/findings/new')).toBeNull()
     expect(redirectOnce('/pentest/findings/f7/edit')).toBeNull()
-    expect(redirectOnce('/settings/notifications')).toBe('/account/notifications')
+    expect(redirectOnce('/settings/notifications')).toBe('/settings/me/notifications')
     // Renamed pages have no redirect; these three led to pages that do not exist.
     expect(redirectOnce('/settings/users')).toBeNull()
     expect(redirectOnce('/settings/access-control/groups/abc')).toBeNull()

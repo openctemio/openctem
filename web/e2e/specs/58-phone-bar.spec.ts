@@ -174,7 +174,15 @@ test(
     expect(top.past).toBe(0)
     expect(top.short).toBe(0)
     expect(top.labels.at(-1)).toBe('Sign out')
-    expect(top.labels).toEqual(expect.arrayContaining(['Language', 'Theme', 'All settings']))
+    // Account settings, then the organization's own settings (named after it).
+    expect(top.labels).toEqual(
+      expect.arrayContaining([
+        'Account settings',
+        expect.stringMatching(/^Settings of \S/),
+        'Language',
+        'Theme',
+      ])
+    )
 
     // Language is a step of the sheet, not a side submenu.
     await rows.filter({ hasText: 'Language' }).click()
