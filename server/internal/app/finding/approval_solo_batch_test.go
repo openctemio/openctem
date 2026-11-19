@@ -421,3 +421,38 @@ func TestBulkDecide_ValidationAndPerItemIsolation(t *testing.T) {
 		t.Fatal("a skipped item reached the store")
 	}
 }
+
+// The cap of a bulk approval counts the findings inside groups: a group
+// counts every member, so a group of 1,001 is refused with a clear error
+// before anything is approved, while the same group named twice and a few
+// requests beside a group of 501 stay within the cap.
+func TestBulkDecide_CapCountsFindingsInsideGroups(t *testing.T) {
+	fx := newSoloBatchFixture(t, vulnerability.FindingStatusFalsePositive, 1)
+	ctx := context.Background()
+	user := shared.NewID().String()
+	grow := func(n int) {
+		for i := 0; i < n; i++ {
+			fx.store.members = append(fx.store.members, vulnerability.ApprovalBatchMember{
+				ApprovalID: shared.NewID(), FindingID: shared.NewID(), Status: vulnerability.ApprovalStatusPending,
+			})
+		}
+	}
+	batch := fx.store.batch.ID.String()
+	ids := make([]string, 99)
+	for i := range ids {
+		ids[i] = shared.NewID().String()
+	}
+	grow(500) // 501 members
+	within := BulkDecisionInput{TenantID: fx.tenant.String(), UserID: user, ApprovalIDs: ids, BatchIDs: []string{batch, batch}}
+	if err := fx.svc.checkBulkApprovalFindings(ctx, fx.tenant, within); err != nil {
+		t.Fatalf("99 requests and one group of 501: %v", err)
+	}
+	grow(500) // 1,001 members
+	_, err := fx.svc.BulkApproveApprovals(ctx, BulkDecisionInput{TenantID: fx.tenant.String(), UserID: user, BatchIDs: []string{batch}})
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "1001 findings") {
+		t.Fatalf("a group of 1001: %v", err)
+	}
+	if fx.store.signed != 0 {
+		t.Fatal("a refused call reached the store")
+	}
+}
