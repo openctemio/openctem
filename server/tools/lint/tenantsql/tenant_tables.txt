@@ -233,6 +233,7 @@ pentest_report_files
 pentest_report_templates
 pentest_reports
 pentest_retests
+personal_organizations
 priority_class_audit_log
 priority_override_rules
 proxy_command_egress

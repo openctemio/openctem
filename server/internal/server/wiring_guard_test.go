@@ -310,6 +310,7 @@ var optionalServiceSetters = map[string]string{
 	"OrgDeletion.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"SignupEvents.SetClock":                 "test seam: replaces the clock; production uses time.Now",
 	"ContentSource.SetClock":                "test seam: replaces the clock; production uses time.Now",
+	"PersonalOrgs.SetRates":                 "test seam: replaces the creation rate bounds; production uses the defaults set in NewPersonalOrganizations",
 	"ContentSource.SetFetcher":              "test seam: replaces the git fetch and the private-host check; production uses the SSRF-guarded fetcher",
 	"ContentSource.SetCredential":           "request operation (stores a rule source's credential), called by the content source handler",
 	"ContentSource.SetMaxConcurrentFetches": "test seam: replaces the fetch cap; production uses the default of 3 per process",
