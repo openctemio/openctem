@@ -23,6 +23,8 @@ import budget from '../request-budget.json'
  */
 
 const APP_DIR = path.resolve(__dirname, '../../src/app/(dashboard)')
+// The account area (/account/*) lives in its own route group with its own shell.
+const ACCOUNT_DIR = path.resolve(__dirname, '../../src/app/(account)')
 const QUIET_MS = 1200
 const CAP_MS = 20_000
 
@@ -85,6 +87,17 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
   return seen
 }
 
+/**
+ * A page of the account area, which has its own shell and session: only the
+ * pages that live in the (account) route group. Other /account/* pages (the
+ * settings rail's My account items that read the organization: connected AI
+ * applications, notification preferences, activity) stay in the organization
+ * shell and send the bootstrap like any dashboard page.
+ */
+function isAccountRoute(route: string): boolean {
+  return dashboardRoutes(ACCOUNT_DIR).includes(route)
+}
+
 /** Adds the budget, duplicate and session-read problems of one load. */
 function checkLoad(route: string, max: number, requests: string[], problems: string[]): void {
   if (requests.length > max) {
@@ -97,6 +110,13 @@ function checkLoad(route: string, max: number, requests: string[], problems: str
   for (const [r, n] of counts) if (n > 1) problems.push(`${route}: ${r} sent ${n} times`)
 
   const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
+  if (isAccountRoute(route)) {
+    // The account area runs on the account session, outside any organization:
+    // it never reads the organization bootstrap, and the account's own reads
+    // (/users/me, /users/me/tenants, ownership invitations) are asked directly.
+    if (bootstraps !== 0) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 0)`)
+    return
+  }
   if (bootstraps !== 1) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
   const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
   for (const r of requests) {
@@ -150,7 +170,7 @@ for (let part = 0; part < PARTS; part++) {
     { tag: ['@budget'] },
     async ({ page }) => {
       test.setTimeout(8 * 60_000)
-      const all = dashboardRoutes()
+      const all = [...dashboardRoutes(), ...dashboardRoutes(ACCOUNT_DIR)].sort()
       expect(all.length).toBeGreaterThan(50)
       // Budget entries must name real pages, so a removed page does not keep a
       // stale allowance.

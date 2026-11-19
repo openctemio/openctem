@@ -7,7 +7,7 @@
  * exist for them. The shared API client sends them to /welcome, once.
  */
 
-import { WELCOME_PATH } from '@/lib/middleware/config'
+import { ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
 
 export const TENANT_REQUIRED_CODE = 'TENANT_REQUIRED'
 
@@ -27,11 +27,15 @@ let routing = false
 export function routeToWelcomeOnce(location: Pick<Location, 'pathname' | 'assign'>): boolean {
   if (routing) return false
   const path = location.pathname
-  if (path === WELCOME_PATH || path.startsWith(`${WELCOME_PATH}/`) || path.startsWith('/account')) {
+  if (
+    path === ACCOUNT_HOME_PATH ||
+    path.startsWith(`${ACCOUNT_HOME_PATH}/`) ||
+    path.startsWith('/account')
+  ) {
     return false
   }
   routing = true
-  location.assign(WELCOME_PATH)
+  location.assign(ACCOUNT_HOME_PATH)
   return true
 }
 

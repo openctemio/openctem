@@ -28,7 +28,7 @@ const HIDDEN: Array<{ file: string; text: string; why: string }> = [
     why: 'organization language has no reader (B6); the time zone moved to General, where alert hours and scan approval read it',
   },
   {
-    file: 'app/(dashboard)/account/preferences/page.tsx',
+    file: 'app/(account)/account/preferences/page.tsx',
     text: 'htmlFor="language"',
     why: 'a second language picker that drove nothing (the user menu picks the language)',
   },
@@ -43,12 +43,12 @@ const HIDDEN: Array<{ file: string; text: string; why: string }> = [
     why: 'no desktop notifications are sent',
   },
   {
-    file: 'app/(dashboard)/account/preferences/page.tsx',
+    file: 'app/(account)/account/preferences/page.tsx',
     text: 'htmlFor="timezone"',
     why: 'a personal time zone saved in the browser that no date formatter read (research 273 D9)',
   },
   {
-    file: 'app/(dashboard)/account/preferences/page.tsx',
+    file: 'app/(account)/account/preferences/page.tsx',
     text: 'htmlFor="date-format"',
     why: 'a personal date and time format that no date formatter read (research 273 D9)',
   },

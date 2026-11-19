@@ -7,7 +7,7 @@ import { submitSignIn } from '../helpers/auth'
  * Regression this guards: Accept added the membership but left the session
  * on the previous organization (or none), then moved client-side to `/`. An
  * account with its own organization landed in that one; an account without
- * one was sent to /welcome ("you are not in an organization yet"), and
+ * one was sent to /account/organizations ("you are not in an organization yet"), and
  * opening the link again showed "Invitation already accepted" with only
  * "Go to sign in". Now Accept selects the invited organization and loads
  * its home as a new page, with "You joined <organization>." shown there, and
@@ -79,7 +79,7 @@ test.describe('invitation accept', { tag: ['@auth'] }, () => {
   test('an account without an organization lands in it too, at phone width', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await signIn(page, WITHOUT_ORG.email!, WITHOUT_ORG.password!)
-    await page.waitForURL((url) => url.pathname.startsWith('/welcome'))
+    await page.waitForURL((url) => url.pathname.startsWith('/account/organizations'))
 
     await page.goto(`/invitations#token=${WITHOUT_ORG.token}`)
     await page.getByRole('button', { name: /accept invitation/i }).click()
@@ -87,7 +87,7 @@ test.describe('invitation accept', { tag: ['@auth'] }, () => {
     await page.waitForURL((url) => url.pathname === '/', { timeout: 30_000 })
     expect(await sessionOrgSlug(page)).toBe(SLUG)
     await expect(page.getByText(`You joined ${ORG}.`)).toBeVisible({ timeout: 15_000 })
-    expect(new URL(page.url()).pathname).not.toBe('/welcome')
+    expect(new URL(page.url()).pathname).not.toBe('/account/organizations')
 
     // The link again: accepted, with a way into the organization.
     await page.goto(`/invitations#token=${WITHOUT_ORG.token}`)

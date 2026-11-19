@@ -13,7 +13,7 @@ import { isLimitKey } from '../lib/limit-keys'
 import { LimitsUsageTable, type LimitUsageRow } from './limits-usage-table'
 
 /**
- * Settings > Usage & limits: the limits that apply to this organization and
+ * Settings > Usage and limits: the limits that apply to this organization and
  * what it uses, and the modules not available to it. Read-only: the limits
  * are set by the administrator of this installation. When nothing applies
  * (the default) the page says so and the settings rail does not list it.

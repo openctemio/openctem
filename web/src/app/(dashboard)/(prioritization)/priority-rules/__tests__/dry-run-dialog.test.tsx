@@ -118,7 +118,7 @@ describe('DryRunDialog', () => {
 
     const sampled = await screen.findByText(/^Sample:/)
     expect(sampled).toHaveTextContent('20000')
-    expect(sampled).toHaveTextContent('54321')
+    expect(sampled).toHaveTextContent('54,321')
     const note = screen.getByText(/Showing 50 of 200 matches/)
     expect(note).toBeInTheDocument()
   })
