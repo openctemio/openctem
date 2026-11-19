@@ -465,8 +465,16 @@ export default function CompliancePage() {
             name: row.original.title,
           })}
           actions={[
-            { label: 'View details', icon: Eye, onClick: () => setViewRequirement(row.original) },
-            { label: 'Update status', icon: Pencil, onClick: () => openEdit(row.original) },
+            {
+              label: t('scoping.compliance.action.viewDetails', 'View details'),
+              icon: Eye,
+              onClick: () => setViewRequirement(row.original),
+            },
+            {
+              label: t('scoping.compliance.action.updateStatus', 'Update status'),
+              icon: Pencil,
+              onClick: () => openEdit(row.original),
+            },
           ]}
         />
       ),

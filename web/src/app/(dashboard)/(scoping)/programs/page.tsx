@@ -61,7 +61,7 @@ export default function ProgramsPage() {
             </Button>
           )}
         </PageHeader>
-        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
+        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
         {!canRead ? (
           <NoAccessState title={t('programs.title', 'Programs')} />
