@@ -30,6 +30,7 @@ import {
 import { ArrowDown, History, Loader2, Wifi, WifiOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailHeader, DetailSheet } from '@/features/shared/components/detail-sheet-layout'
 import { EmptyState } from '@/features/shared/components/empty-state'
@@ -179,6 +180,7 @@ export function ActivityPanel({
   emptyDescription,
   customBody,
 }: ActivityPanelProps) {
+  const { t } = useTranslation()
   const bodyRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<ActivityComposerHandle>(null)
   const filterRef = useRef<HTMLDivElement>(null)
@@ -550,7 +552,9 @@ export function ActivityPanel({
 
   let body
   if (error && merged.length === 0) {
-    body = <ErrorState title="activity" error={error} onRetry={onRetry} />
+    body = (
+      <ErrorState title={t('activity.loadTitle', 'activity')} error={error} onRetry={onRetry} />
+    )
   } else if (loading && merged.length === 0) {
     body = <FeedSkeleton />
   } else if (rows.length === 0) {
@@ -656,7 +660,11 @@ export function ActivityPanel({
         </ol>
         {error ? (
           <div className="mt-4">
-            <ErrorState title="activity" error={error} onRetry={onRetry} />
+            <ErrorState
+              title={t('activity.loadTitle', 'activity')}
+              error={error}
+              onRetry={onRetry}
+            />
           </div>
         ) : null}
       </>

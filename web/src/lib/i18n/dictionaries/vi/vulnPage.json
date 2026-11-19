@@ -30,6 +30,8 @@
   "vulnPage.cvss.noUserAction": "không cần người dùng",
   "vulnPage.cvss.physical": "vật lý",
   "vulnPage.cvss.userAction": "cần người dùng",
+  "vulnPage.detail.loadAffectedAssets": "tài sản bị ảnh hưởng",
+  "vulnPage.detail.loadVulnerability": "lỗ hổng",
   "vulnPage.emergingState.acknowledged": "đã ghi nhận",
   "vulnPage.emergingState.new": "mới",
   "vulnPage.emergingState.not_affected": "không bị ảnh hưởng",

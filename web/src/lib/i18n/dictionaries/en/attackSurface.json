@@ -256,6 +256,7 @@
   "attackSurface.discovery.status.paused": "Paused",
   "attackSurface.discovery.status.running": "Running",
   "attackSurface.discovery.updated": "Updated",
+  "attackSurface.domainProof.loadTitle": "domain proof",
   "attackSurface.exposures.activeFilters": "Active filters",
   "attackSurface.exposures.assetCount": "{count, plural, one {# asset} other {# assets}}",
   "attackSurface.exposures.byType": "By type",
