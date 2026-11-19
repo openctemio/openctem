@@ -249,6 +249,19 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
   -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
+log "credential leaks"
+# /credentials (specs 36 and 62): a list with rows, so its toolbar, chips and
+# grouping are drawn. Every severity, four sources, one long identifier, one
+# leak dated today ("Recent"), one without a breach date. No secret values.
+TODAY=$(date -u +%F)
+call POST /api/v1/credentials/import "{\"credentials\":[
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"password\",\"severity\":\"critical\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e breach\"},\"dedup_key\":{\"breach_name\":\"e2e breach\",\"breach_date\":\"$TODAY\"},\"context\":{\"email\":\"e2e-alice@example.com\",\"username\":\"alice\"}},
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"access_token\",\"severity\":\"high\",\"source\":{\"type\":\"dark_web\"},\"dedup_key\":{\"breach_name\":\"e2e market\",\"breach_date\":\"2024-03-01\"},\"context\":{\"email\":\"e2e-alice@example.com\"}},
+  {\"identifier\":\"e2e-ci-deploy-key\",\"credential_type\":\"api_key\",\"severity\":\"medium\",\"source\":{\"type\":\"code_repository\"},\"dedup_key\":{\"repository\":\"example.com/e2e/app\",\"file_path\":\"deploy/ci.env\"}},
+  {\"identifier\":\"e2e-a-very-long-service-account-name-for-the-reporting-pipeline@example.com\",\"credential_type\":\"refresh_token\",\"severity\":\"low\",\"source\":{\"type\":\"paste_site\"},\"dedup_key\":{\"paste_id\":\"e2e-paste-1\"}},
+  {\"identifier\":\"e2e-bob\",\"credential_type\":\"password\",\"severity\":\"info\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e old breach\"},\"dedup_key\":{\"breach_name\":\"e2e old breach\",\"breach_date\":\"2019-07-15\"},\"context\":{\"username\":\"e2e-bob\"}}
+]}"
+
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
