@@ -113,6 +113,7 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/ci/settings",
 	"POST /api/v1/ci/trust-configs",
 	"PUT /api/v1/ci/trust-configs/{id}",
+	"POST /api/v1/ci/trust-configs/{id}/allow",
 	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions",
 	// Binding a code-host app installation or a GitLab group token decides
 	// which organization posts the gate for the account's repositories.

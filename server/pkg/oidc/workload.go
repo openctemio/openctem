@@ -204,7 +204,7 @@ func (c *Client) staleDiscovery(d *discoveredJWKS, err error) (string, error) {
 	if d.uri != "" && c.now().Sub(d.fetchedAt) < jwksMaxStale {
 		return d.uri, nil
 	}
-	return "", fmt.Errorf("%w: discovery: %v", ErrJWKSUnavailable, err)
+	return "", fmt.Errorf("%w: discovery: %w", ErrJWKSUnavailable, err)
 }
 
 func (c *Client) fetchDiscovery(ctx context.Context, issuer string) (string, error) {
@@ -220,7 +220,7 @@ func (c *Client) fetchDiscovery(ctx context.Context, issuer string) (string, err
 		return "", errors.New("invalid document")
 	}
 	if doc.Issuer != issuer {
-		return "", fmt.Errorf("issuer %q does not match %q", doc.Issuer, issuer)
+		return "", fmt.Errorf("%w: %q does not match %q", ErrIssuerMismatch, doc.Issuer, issuer)
 	}
 	if err := requireHTTPS(doc.JWKSURI, true); err != nil {
 		return "", fmt.Errorf("jwks_uri %w", err)
