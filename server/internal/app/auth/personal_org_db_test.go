@@ -270,6 +270,8 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		oauth.SetSignupPolicy(policy)
 		oauth.SetInvitationLookup(tenants)
 		oauth.SetPersonalOrganizations(newService())
+		// A social sign-in takes the second-factor step; without the gate wired it is refused.
+		oauth.SetSecondFactorGate(noChallenge{})
 
 		signInAs := func(t *testing.T, email string) *userdom.User {
 			t.Helper()
