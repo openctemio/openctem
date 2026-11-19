@@ -81,8 +81,17 @@ async function checkToolbar(page: Page, label: string, wide: boolean, oneLine = 
   ] as const) {
     const overflow = await row.evaluate((el) => {
       const edge = el.getBoundingClientRect().right
+      // A control inside a strip that scrolls sideways is clipped by it, not
+      // drawn past the row (the class may be a container variant, so the
+      // computed style decides).
+      const inScroller = (c: HTMLElement) => {
+        for (let p = c.parentElement; p && p !== el; p = p.parentElement) {
+          if (getComputedStyle(p).overflowX !== 'visible') return true
+        }
+        return false
+      }
       return [...el.querySelectorAll<HTMLElement>('button, input, [role="combobox"]')]
-        .filter((c) => c.offsetParent !== null && !c.closest('.overflow-x-auto'))
+        .filter((c) => c.offsetParent !== null && !inScroller(c))
         .some((c) => c.getBoundingClientRect().right > edge + 1)
     })
     expect(overflow, `${label}: a ${name} control overflows the row`).toBe(false)
