@@ -75,7 +75,7 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
   },
   {
     id: 'siem',
-    title: 'SIEM',
+    title: 'Event forwarding',
     description: 'Forward security events to Splunk',
     icon: Shield,
     href: '/settings/integrations/siem',
