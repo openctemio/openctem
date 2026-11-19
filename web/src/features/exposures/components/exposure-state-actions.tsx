@@ -600,7 +600,7 @@ export function ExposureBulkActions(props: ExposureBulkActionsProps) {
       <BulkActionBar
         count={props.selectedIds.length}
         onClear={props.onClearSelection}
-        noun={t('exposures.bulk.noun', 'exposures selected')}
+        noun={(count) => t('exposures.bulk.noun', 'exposures selected', { count })}
         more={more}
       >
         {actions}

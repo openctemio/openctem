@@ -901,7 +901,7 @@ describe('ApprovalsPage group exceptions', () => {
     }
     const { container } = cell('task', row)
     expect(within(container).getByRole('link')).toHaveAttribute('href', '/remediation/tasks/task-1')
-    expect(cell('tier', row).container.textContent).toContain('0 of 1 approvals')
+    expect(cell('tier', row).container.textContent).toContain('0 of 1 approval')
     expect(cell('members', row).container.textContent).toBe('3')
   })
 })

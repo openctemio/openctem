@@ -323,7 +323,7 @@ describe('ImportResultsDialog', () => {
       /3 hosts are outside your scope/
     )
     expect(recon).toHaveTextContent('2 files skipped on purpose')
-    expect(screen.getByText('1 files not recognized')).toBeInTheDocument()
+    expect(screen.getByText('1 file not recognized')).toBeInTheDocument()
     await user.click(screen.getByText('2 files skipped on purpose'))
     expect(screen.getByText('osint/emails.txt')).toBeInTheDocument()
   })

@@ -76,7 +76,7 @@
   "importMappings.preview.noPermission": "Previewing a sample needs the permission to manage integrations.",
   "importMappings.preview.noSample": "Choose a sample file to see the findings and assets this mapping makes from it.",
   "importMappings.preview.recordN": "Record {n}",
-  "importMappings.preview.stats": "{records} records: {findings} findings, {assets} assets, {skipped} skipped.",
+  "importMappings.preview.stats": "{records, plural, one {# record} other {# records}}: {findings, plural, one {# finding} other {# findings}}, {assets, plural, one {# asset} other {# assets}}, {skipped} skipped.",
   "importMappings.preview.truncated": "Only the first part of the sample was read.",
   "importMappings.preview.unmapped": "Columns not used ({count})",
   "importMappings.problem.duplicate": "Rule {rule}: {target} is set twice.",
