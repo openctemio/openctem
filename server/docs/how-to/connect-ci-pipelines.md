@@ -29,8 +29,11 @@ its snippet. The fields:
   issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, in
   **GitHub Enterprise issuer** (the wizard covers github.com only). The
   platform fetches the issuer's keys over HTTPS through the outbound-request
-  guard; an issuer on a private address needs its subnet in
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API. When the issuer cannot be
+  guard; an issuer on a private address needs its subnet opened by a platform
+  administrator under console System > Private networks (or in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API). "Test a destination"
+  there shows what the issuer's name resolves to and whether it is reachable.
+  When the issuer cannot be
   reached, keys fetched earlier keep verifying for at most 6 hours. When the
   platform cannot or must not reach the provider, paste its keys instead
   (**Signing keys**, below).
@@ -303,7 +306,7 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 |---|---|
 | `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** under **Settings > Trusted pipelines** lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `CI_TOKEN_UNKNOWN_KEY` | The trust uses pasted signing keys and the token is signed with another key: the provider rotated its keys. Paste its current key document in the trust (**Signing keys**) |
-| `503 CI_ISSUER_UNAVAILABLE` | The trust fetches the provider's keys and the platform cannot reach the provider: allow the address (`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`) or switch the trust to pasted keys |
+| `503 CI_ISSUER_UNAVAILABLE` | The trust fetches the provider's keys and the platform cannot reach the provider: open the address (console System > Private networks, or `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`) or switch the trust to pasted keys |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `CI_TOKEN_PIPELINE_IDENTITY` | The token carries no repository/project id or no usable workflow path |

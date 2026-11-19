@@ -138,8 +138,11 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   `https://gitlab.example.com`). It must match the `iss` claim exactly.
 - By default OpenCTEM fetches your GitLab's signing keys over HTTPS through
   its outbound-request guard. A GitLab on a private address needs its subnet
-  in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
-  `10.20.0.0/16`), and its certificate must be trusted by the API (a public
+  opened: a platform administrator adds it under console System > Private
+  networks (for example `10.20.0.0/24`, note "GitLab"; applied without a
+  restart), or the operator sets `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the
+  API. "Test a destination" on that page resolves the GitLab host name and
+  says which range would open each address. Its certificate must be trusted by the API (a public
   CA, or your CA added to the API container).
 - When the platform cannot or must not reach your GitLab, choose **Use keys I
   paste** under **Signing keys** in the trust: open
@@ -151,6 +154,34 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 - A custom audience in the trust configuration replaces
   `openctem:tenant:<id>`; it must contain the organization id. Set the same
   value in `id_tokens`.
+
+### Every project on this GitLab
+
+On a self-managed GitLab, a trust configuration can accept every project
+without naming its groups ("Every project on this GitLab",
+`rules.all_repositories`; not available for gitlab.com). Any user of your
+GitLab can create a personal project, so a project seen for the first time is
+not trusted on sight: it is listed under **New repositories**, grouped by
+top-level group, and its jobs are refused with
+`CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until you approve it. Approve the
+project, or the whole group (every current and future project of that group
+is then accepted with no further step), or block either (refused with
+`CI_TOKEN_REPOSITORY_BLOCKED`, reversible). Several items can be decided at
+once. Only approved projects are added to scope. An approval binds to the
+project and namespace ids that were seen: if the path changes hands
+afterwards, the new project's jobs are refused. A group lists at most 25
+pending projects; past that its new projects are refused without being
+listed until you decide some of them. "Protected branches and tags
+only" and "Notify me when a new group asks" are on by default for such a
+configuration.
+
+Approving a whole group trusts its name. A GitLab token carries no top-level
+group id, so if the group is renamed or deleted and its name is taken by
+someone else, a subgroup that was never seen before is accepted under the
+approved name. Approve single projects when you do not control who owns the
+group. Anyone who can create top-level groups on your GitLab can also fill the
+New repositories list with new groups; block such a group in one step to clear
+its rows.
 
 ## Security notes
 
