@@ -58,6 +58,16 @@ export const CREDENTIAL_TYPES = [
   'session_token',
   'jwt_token',
   'certificate',
+  'password_hash',
+  'access_token',
+  'refresh_token',
+  'aws_key',
+  'gcp_key',
+  'azure_key',
+  'jwt_secret',
+  'encryption_key',
+  'webhook_secret',
+  'smtp_cred',
   'other',
 ] as const
 
