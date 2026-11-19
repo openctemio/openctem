@@ -131,8 +131,13 @@ func expect(m method, r rule) expectation {
 		// the organization then applies its own rules to that sign-in.
 		final := r.name != "idp-required" && r.name != "ip-allowlist" && r.name != "suspended"
 		codes := own
-		if r.name == "idp-required" {
+		switch r.name {
+		case "idp-required":
 			codes = append(slices.Clone(own), "SSO_REQUIRED")
+		case "suspended":
+			// A suspended organization refuses the acceptance itself, before
+			// the sign-in method is looked at (it takes no new member).
+			codes = append(slices.Clone(own), "ORGANIZATION_SUSPENDED")
 		}
 		return expectation{codes: codes, remedy: remedyPassword, final: final}
 	}

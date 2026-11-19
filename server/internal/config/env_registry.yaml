@@ -59,6 +59,16 @@ vars:
     group: "Application"
     type: string
     description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists."
+  - name: AUTHTESTSEAM_PROVIDER_URL
+    component: api
+    group: "Application"
+    type: url
+    description: "Test environments only. Base URL of a stand-in social sign-in provider as the API reaches it, so the sign-in test suites run a sign-in end to end without Google, Microsoft or GitHub. Read only by a test binary with the sign-in test seam compiled in, and only while `APP_ENV` is `test` or `e2e`; release builds never read it."
+  - name: AUTHTESTSEAM_PROVIDER_BROWSER_URL
+    component: api
+    group: "Application"
+    type: url
+    description: "Test environments only. The same stand-in provider as the browser reaches it (the authorization endpoint). Unset: `AUTHTESTSEAM_PROVIDER_URL`. Read only by a test binary with the sign-in test seam compiled in, and only while `APP_ENV` is `test` or `e2e`."
   - name: BRAND_FILE
     component: api
     group: "Brand"
