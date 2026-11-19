@@ -114,6 +114,22 @@ SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
  WHERE a.id = :'asset';
 SQL
 
+# 62-list-toolbar-stability (CVE catalog tab): the shared CVE catalog is filled
+# by intelligence feeds, which a CI stack does not sync, so the seed inserts a
+# few catalog entries (reserved 2099 block, none of the CVEs the findings above
+# name). Global rows: no tenant.
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA >/dev/null <<'SQL'
+INSERT INTO vulnerabilities (cve_id, external_id, namespace, origin, title, severity, cvss_score, epss_score,
+                             exploit_available, exploit_maturity, cisa_kev_date_added, cisa_kev_due_date, published_at)
+VALUES ('CVE-2099-0201', 'CVE-2099-0201', 'CVE', 'nvd', 'Remote code execution in the e2e request parser', 'critical', 9.8, 0.97, true, 'weaponized', '2099-01-02', '2099-01-23', '2099-01-01'),
+       ('CVE-2099-0202', 'CVE-2099-0202', 'CVE', 'nvd', 'Path traversal in the e2e archive extractor', 'high', 8.1, 0.12, true, 'poc', NULL, NULL, '2099-01-05'),
+       ('CVE-2099-0203', 'CVE-2099-0203', 'CVE', 'nvd', 'SQL injection in the e2e report filter', 'high', 7.5, 0.004, false, 'none', NULL, NULL, '2099-02-01'),
+       ('CVE-2099-0204', 'CVE-2099-0204', 'CVE', 'nvd', 'Cross-site scripting in the e2e search page', 'medium', 6.1, 0.0004, false, 'none', NULL, NULL, '2099-02-10'),
+       ('CVE-2099-0205', 'CVE-2099-0205', 'CVE', 'nvd', 'Information disclosure in the e2e status endpoint', 'low', 3.1, NULL, false, 'none', NULL, NULL, '2099-03-01')
+ON CONFLICT DO NOTHING;
+SQL
+
 log "risk trend"
 # Program health draws open findings over time from the daily risk snapshots
 # (a controller writes them once a day): 90 days of them, the page's default
