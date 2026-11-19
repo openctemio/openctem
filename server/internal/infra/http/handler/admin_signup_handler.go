@@ -56,6 +56,13 @@ type SignupPolicyResponse struct {
 	EffectiveAccounts string `json:"effective_accounts"`
 	// RequestAccess: people who cannot sign up may ask for an organization.
 	RequestAccess bool `json:"request_access"`
+	// PersonalOrganization: a person who signs up with no other way in gets
+	// their own organization once their address is verified (needs
+	// self_service). The stored value.
+	PersonalOrganization bool `json:"personal_organization"`
+	// EffectivePersonalOrganization: the switch in force (off whenever
+	// self_service is not in force).
+	EffectivePersonalOrganization bool `json:"effective_personal_organization"`
 	// Version to send back on PUT (optimistic concurrency).
 	Version int `json:"version"`
 	// Source: environment (seeded from SIGNUP_MODE at first start), console
@@ -89,6 +96,9 @@ type UpdateSignupPolicyRequest struct {
 	// self_service, closed otherwise).
 	Accounts      string `json:"accounts"`
 	RequestAccess bool   `json:"request_access"`
+	// PersonalOrganization turns on the personal organization at sign-up;
+	// it needs self_service.
+	PersonalOrganization bool `json:"personal_organization"`
 	// Version is the version the administrator read.
 	Version int `json:"version"`
 	// TOTPCode is a fresh code from the administrator's authenticator.
@@ -99,16 +109,18 @@ func (h *AdminSignupHandler) toSignupPolicyResponse(st signupdom.State) SignupPo
 	ceiling := h.svc.Ceiling()
 	effective := h.svc.Effective(st.Policy)
 	resp := SignupPolicyResponse{
-		Mode:              string(st.Policy.Mode),
-		Accounts:          string(st.Policy.AccountSignup()),
-		MaxAccounts:       string(ceiling.MaxAccounts()),
-		EffectiveAccounts: string(effective.AccountSignup()),
-		RequestAccess:     st.Policy.RequestAccess,
-		Version:           st.Version,
-		Source:            string(st.Source),
-		DeploymentMode:    ceiling.String(),
-		SelfServiceLocked: !ceiling.Permits(signupdom.Policy{Mode: signupdom.ModeSelfService}),
-		EffectiveMode:     string(effective.Mode),
+		Mode:                          string(st.Policy.Mode),
+		Accounts:                      string(st.Policy.AccountSignup()),
+		MaxAccounts:                   string(ceiling.MaxAccounts()),
+		EffectiveAccounts:             string(effective.AccountSignup()),
+		RequestAccess:                 st.Policy.RequestAccess,
+		PersonalOrganization:          st.Policy.PersonalOrganization,
+		EffectivePersonalOrganization: effective.CreatesPersonalOrganization(),
+		Version:                       st.Version,
+		Source:                        string(st.Source),
+		DeploymentMode:                ceiling.String(),
+		SelfServiceLocked:             !ceiling.Permits(signupdom.Policy{Mode: signupdom.ModeSelfService}),
+		EffectiveMode:                 string(effective.Mode),
 	}
 	if !st.UpdatedAt.IsZero() {
 		resp.UpdatedAt = st.UpdatedAt.UTC().Format(time.RFC3339)
@@ -157,9 +169,10 @@ func (h *AdminSignupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policy := signupdom.Policy{Mode: signupdom.Mode(strings.TrimSpace(req.Mode)),
-		Accounts: signupdom.Accounts(strings.TrimSpace(req.Accounts)), RequestAccess: req.RequestAccess}
+		Accounts: signupdom.Accounts(strings.TrimSpace(req.Accounts)), RequestAccess: req.RequestAccess,
+		PersonalOrganization: req.PersonalOrganization}
 	if err := policy.Validate(); err != nil {
-		apierror.BadRequest("mode must be admin_only or self_service, accounts closed, domain or open, and self_service needs open accounts").WriteJSON(w)
+		apierror.BadRequest("mode must be admin_only or self_service, accounts closed, domain or open, self_service needs open accounts, and a personal organization at sign-up needs self_service").WriteJSON(w)
 		return
 	}
 	// Above the ceiling: refused before the authenticator code is spent.

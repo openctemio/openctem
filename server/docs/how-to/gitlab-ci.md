@@ -229,7 +229,7 @@ its rows.
 
 | Symptom | Cause and fix |
 |---|---|
-| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Settings > Trusted pipelines > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Settings > Trusted pipelines > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify, which are listed per issuer under Tokens refused before verification. A rule refusal quotes the job's own value, such as its `ci_config_ref_uri`, so a pipeline file missing from Pipeline definitions is visible in the job log |
 | `CI_TOKEN_REPLAY_LIMIT`, `CI_TOKEN_REPLAY_RUN_CLOSED` | The job's ID token was already exchanged five times, or its run already has its verdict: rerun the job for a new token |
 | `CI_TOKEN_REPLAY` | A different token under an ID token id already used, or a token presented to another organization: refused and audited at high severity |
 | `the gitlab OIDC token was already exchanged` (openctem-ci v0.3.0 and older) | The first exchange of the job failed and the CLI hid why; update the pinned `openctemio/ci` release, which prints the real cause |

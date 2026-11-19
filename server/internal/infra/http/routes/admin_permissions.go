@@ -132,6 +132,7 @@ var adminRoutePermissions = map[string]platformauthz.Permission{
 	"GET /api/v1/admin/tenants/{tenantId}/sso/verified-domains":              platformauthz.TenantsRead,
 	"GET /api/v1/admin/tenants/{tenantId}/users":                             platformauthz.TenantsRead,
 	"GET /api/v1/admin/threat-intel/sync":                                    platformauthz.SettingsRead,
+	"GET /api/v1/admin/threat-intel/freshness":                               platformauthz.SettingsRead,
 	"GET /api/v1/admin/users/":                                               platformauthz.AdminsRead,
 	"GET /api/v1/admin/users/{id}":                                           platformauthz.AdminsRead,
 	"GET /api/v1/admin/version":                                              platformauthz.ConsoleRead,
