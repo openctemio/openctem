@@ -381,7 +381,7 @@ func (c *Client) get(ctx context.Context, rawURL string) ([]byte, error) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
-		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("%w %d", ErrHTTPStatus, resp.StatusCode)
 	}
 	return httpsec.ReadLimited(resp.Body, maxBody)
 }

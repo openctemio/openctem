@@ -230,3 +230,16 @@ export const KEV_STATUS_CONFIG = {
     description: 'Not in the CISA Known Exploited Vulnerabilities catalog',
   },
 } as const
+
+/**
+ * GET /threat-intel/freshness: whether the platform's vulnerability data is
+ * older than its limit. `reasons`: data_stale, newest_record_old,
+ * check_not_running. Dates are RFC 3339 (absent when unknown).
+ */
+export interface FeedFreshness {
+  stale: boolean
+  reasons: string[]
+  stale_since?: string
+  data_as_of?: string
+  checked_at?: string
+}

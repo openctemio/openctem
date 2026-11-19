@@ -16,3 +16,4 @@ export {
   enrichCVE,
   useCVEEnrichment,
 } from './use-threat-intel'
+export { useFeedFreshness } from './use-feed-freshness'
