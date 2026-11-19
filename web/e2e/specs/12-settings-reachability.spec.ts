@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { test as base, request, type Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { loginAs } from '../helpers/auth'
@@ -20,6 +22,29 @@ import { LEGACY_SETTINGS_ROUTE_REDIRECTS } from '../../src/config/legacy-routes'
 
 const rail = '[data-sidebar="content"] nav'
 
+/**
+ * The pages of the account area (src/app/(account)), as URLs. They have their
+ * own shell and navigation (the "Your account" bar), not the organization's
+ * settings rail, so a rail entry that points into it opens that shell.
+ */
+function accountAreaPages(
+  dir = path.resolve(__dirname, '../../src/app/(account)/account'),
+  prefix = '/account'
+) {
+  const out = new Set<string>()
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name.startsWith('[')) continue
+      for (const url of accountAreaPages(path.join(dir, entry.name), `${prefix}/${entry.name}`))
+        out.add(url)
+    } else if (entry.name === 'page.tsx') {
+      out.add(prefix)
+    }
+  }
+  return out
+}
+const accountNav = 'nav[aria-label="Your account"]'
+
 test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible({
@@ -38,12 +63,16 @@ test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async 
   // the default 60 s, which a cold server exceeds once the rail passes ~25 entries.
   test.setTimeout(60_000 + hrefs.length * 10_000)
 
+  const accountPages = accountAreaPages()
   for (const href of hrefs) {
     await page.goto(href)
-    await expect(page.locator(rail), href).toBeVisible({ timeout: 30_000 })
+    // An entry that opens the account area shows that area's own navigation
+    // (its current page marked), every other entry shows the settings rail.
+    const nav = accountPages.has(href.split('?')[0]) ? accountNav : rail
+    await expect(page.locator(nav), href).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('h1'), href).toHaveCount(1)
     await expect(page.locator('[data-route-denied]'), href).toHaveCount(0)
-    await expect(page.locator(`${rail} a[aria-current="page"]`), href).toHaveCount(1)
+    await expect(page.locator(`${nav} a[aria-current="page"]`), href).toHaveCount(1)
   }
 })
 
