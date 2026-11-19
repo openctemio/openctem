@@ -109,6 +109,13 @@ beforeEach(() => {
 })
 
 describe('WatchersControl rail rows', () => {
+  it('draws no Watchers label when the list could not be read', () => {
+    participants = undefined
+    const { container } = renderControl()
+    expect(screen.queryByText('Watchers')).not.toBeInTheDocument()
+    expect(container.querySelector('dt, dd, [aria-busy]')).toBeNull()
+  })
+
   it('summarises watchers in one row and has no control that removes anyone', () => {
     renderControl()
     expect(screen.getByText('3 watching')).toBeInTheDocument()
