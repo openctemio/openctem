@@ -95,7 +95,7 @@ export function DeleteOrganizationItem() {
       }
     } else {
       removeCookie(env.cookies.tenant)
-      target = '/welcome'
+      target = '/account/organizations'
     }
     navigateAfterSessionChange(target, { replace: true, flash: scheduled })
   }
