@@ -610,7 +610,7 @@ export default function ExposuresPage() {
     checkboxLabel: (e) => t('exposures.table.selectRow', 'Select {title}', { title: e.title }),
     actions: bulkParts.actions,
     more: bulkParts.more,
-    noun: t('exposures.bulk.noun', 'exposures selected'),
+    noun: (count) => t('exposures.bulk.noun', 'exposures selected', { count }),
     onSelectionChange: (selection) => {
       const rows = selection?.kind === 'ids' ? selection.rows : []
       setSelectedIds(rows.map((e) => e.id))

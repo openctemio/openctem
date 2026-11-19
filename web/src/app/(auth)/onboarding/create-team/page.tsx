@@ -49,7 +49,7 @@ export default async function CreateFirstTeamPage() {
   // A first-time account (no organization at all) belongs in the account
   // space, which also lists invitations and the account pages.
   if (!hasPendingTenants) {
-    redirect('/welcome')
+    redirect('/account/organizations')
   }
 
   return (

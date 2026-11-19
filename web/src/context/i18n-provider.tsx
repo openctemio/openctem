@@ -95,8 +95,8 @@ function LoadedI18nProvider({
   // Numbers and dates formatted outside components follow the page's language.
   setAppLocale(locale)
   const t = useCallback<TranslateFn>(
-    (key, fallback, vars) => translate(dict, key, fallback, brandVars(brand, vars)),
-    [dict, brand]
+    (key, fallback, vars) => translate(dict, key, fallback, brandVars(brand, vars), locale),
+    [dict, brand, locale]
   )
   const value = useMemo(() => ({ locale, t }), [locale, t])
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>

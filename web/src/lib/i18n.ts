@@ -99,36 +99,82 @@ export function translate(
   dict: Dictionary,
   key: string,
   fallback?: string,
-  vars?: TranslateVars
+  vars?: TranslateVars,
+  locale: string = localeOf(dict)
 ): string {
   let str = dict[key] ?? loaded.en?.[key] ?? fallback ?? key
   // The brand variables default to the OpenCTEM brand; I18nProvider passes
   // the instance brand (src/context/i18n-provider.tsx).
   const all = { product: DEFAULT_BRAND.name, productShort: DEFAULT_BRAND.shortName, ...vars }
-  str = applyPlurals(str, all)
+  str = applyPlurals(str, all, locale)
+  // A variable the English string counts with (its plural selector) is a
+  // count in every language: a Vietnamese "{count} tài sản" shows "12.840",
+  // not "12840", though Vietnamese strings carry no plural block.
+  // A page loads one catalog, so on a Vietnamese page the English string is
+  // usually not there and the call's English fallback may predate its plural
+  // block: then the usual count names are counts too.
+  const english = loaded.en?.[key]
+  const counts = pluralNames(english ?? fallback ?? '')
+  if (english === undefined) for (const name of COUNT_NAMES) counts.add(name)
   for (const [name, value] of Object.entries(all)) {
-    str = str.split(`{${name}}`).join(String(value))
+    const shown =
+      typeof value === 'number' && counts.has(name) && Number.isFinite(value)
+        ? groupedNumber(value, locale)
+        : String(value)
+    str = str.split(`{${name}}`).join(shown)
   }
   return str
 }
 
+/** Variable names that hold a count wherever they appear. */
+const COUNT_NAMES = ['count', 'total']
+
+/** The variables a string selects plural branches with. */
+function pluralNames(str: string): Set<string> {
+  const names = new Set<string>()
+  if (!str.includes('plural,')) return names
+  for (const m of str.matchAll(PLURAL_BLOCK)) names.add(m[1])
+  return names
+}
+
+/** The locale a loaded catalog belongs to (English when it is not one of them). */
+function localeOf(dict: Dictionary): string {
+  for (const [code, d] of Object.entries(loaded)) if (d === dict) return code
+  return defaultLocale
+}
+
 // ICU plural blocks: `{n, plural, one {# finding} other {# findings}}`.
 // Branches are `=N` or a CLDR category (zero one two few many other); `#` is
-// the number. Branch text holds no braces. Vietnamese has only `other`, so one
-// rule set (English) selects correctly for both shipped catalogs.
+// the number, grouped in the reader's locale ("12,840" / "12.840"). Branch
+// text holds no braces. Vietnamese has only `other`, so one rule set
+// (English) selects correctly for both shipped catalogs. A count passed as
+// text ("12,840", "99+") still selects a branch, and `#` shows that text.
+// `plural-strings.test.ts` fails on an English string that puts a count
+// before a plural noun without a plural block.
 const PLURAL_BLOCK = /\{(\w+),\s*plural,((?:\s*(?:=\d+|\w+)\s*\{[^{}]*\})+)\s*\}/g
 const PLURAL_BRANCH = /(=\d+|\w+)\s*\{([^{}]*)\}/g
 const pluralRules = new Intl.PluralRules('en')
 
-function applyPlurals(str: string, vars: TranslateVars): string {
+function groupedNumber(n: number, locale: string): string {
+  return formatNumber(n, undefined, locale)
+}
+
+function countOf(raw: string | number): number {
+  if (typeof raw === 'number') return raw
+  return Number(raw.replace(/[\s,.\u00a0](?=\d{3}(\D|$))/g, ''))
+}
+
+function applyPlurals(str: string, vars: TranslateVars, locale: string): string {
   if (!str.includes('plural,')) return str
   return str.replace(PLURAL_BLOCK, (whole, name: string, branches: string) => {
     const raw = vars[name]
-    const n = Number(raw)
-    if (raw === undefined || Number.isNaN(n)) return whole
+    if (raw === undefined) return whole
+    const n = countOf(raw)
     const byKey = new Map<string, string>()
     for (const m of branches.matchAll(PLURAL_BRANCH)) byKey.set(m[1], m[2])
-    const text = byKey.get(`=${n}`) ?? byKey.get(pluralRules.select(n)) ?? byKey.get('other') ?? ''
-    return text.split('#').join(formatNumber(n))
+    const category = Number.isNaN(n) ? 'other' : pluralRules.select(n)
+    const text = byKey.get(`=${n}`) ?? byKey.get(category) ?? byKey.get('other') ?? ''
+    const shown = typeof raw === 'number' ? groupedNumber(raw, locale) : raw
+    return text.split('#').join(shown)
   })
 }

@@ -75,11 +75,11 @@ describe('Relationship suggestions: approving asks first', () => {
     render(<RelationshipSuggestionsPage />)
     await userEvent.click(screen.getByRole('button', { name: /approve all/i }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Approve all 1 suggestions?')
+    expect(dialog).toHaveTextContent('Approve all 1 suggestion?')
     // Relationships can be removed afterwards, so it must not claim otherwise.
     expect(dialog).not.toHaveTextContent(/cannot be undone/i)
     expect(perms.approveAll).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestions' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestion' }))
     await waitFor(() => expect(perms.approveAll).toHaveBeenCalled())
   })
 
@@ -92,7 +92,7 @@ describe('Relationship suggestions: approving asks first', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('api.example.com to 192.0.2.10')).toBeInTheDocument()
     expect(perms.approveBatch).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestions' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestion' }))
     await waitFor(() => expect(perms.approveBatch).toHaveBeenCalledWith(['s1']))
   })
 })

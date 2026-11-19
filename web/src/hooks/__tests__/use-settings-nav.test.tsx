@@ -91,7 +91,7 @@ describe('useSettingsNav', () => {
     expect(ids()).toContain('siem')
   })
 
-  it('lists Usage & limits only while a limit applies to the organization', () => {
+  it('lists Usage and limits only while a limit applies to the organization', () => {
     state.perms = new Set([Permission.TeamUpdate])
     expect(ids()).not.toContain('limits') // nothing seeded: hidden
     state.limitsApply = false
@@ -108,7 +108,7 @@ describe('useSettingsNav', () => {
     expect(state.fetchers.every((f) => f === null)).toBe(true)
   })
 
-  it('hides Usage & limits from a user who may not open it', () => {
+  it('hides Usage and limits from a user who may not open it', () => {
     state.perms = new Set([Permission.AuditRead])
     state.limitsApply = true
     expect(ids()).not.toContain('limits')

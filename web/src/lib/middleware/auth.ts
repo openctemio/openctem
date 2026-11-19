@@ -27,7 +27,7 @@ import {
   LOGIN_PATH,
   NEXT_PARAM,
   PUBLIC_ROUTES,
-  WELCOME_PATH,
+  ACCOUNT_HOME_PATH,
 } from './config'
 
 /** Reads one cookie's value. */
@@ -163,7 +163,7 @@ export function decideAuth({ pathname, search, cookie }: AuthRequest): AuthDecis
   if (hasSessionCookie(cookie)) {
     // No organization: the account space is the only app page there is.
     if (isAccountOnlySession(cookie) && !isAccountOnlyPage(pathname)) {
-      return { type: 'redirect', location: WELCOME_PATH, clearCookies: [] }
+      return { type: 'redirect', location: ACCOUNT_HOME_PATH, clearCookies: [] }
     }
     return { type: 'allow' }
   }

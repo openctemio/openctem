@@ -70,7 +70,7 @@
   "assetTimeline.filterSource": "Source",
   "assetTimeline.filterTag": "Asset tag, e.g. bug-bounty",
   "assetTimeline.filterTagLabel": "Asset tag",
-  "assetTimeline.flapped": "Changed {count} times within an hour",
+  "assetTimeline.flapped": "Changed {count, plural, one {# time} other {# times}} within an hour",
   "assetTimeline.loadMore": "Show older changes",
   "assetTimeline.noAccess": "You do not have permission to view assets. Ask your administrator for access.",
   "assetTimeline.noAccessTitle": "Access denied",
