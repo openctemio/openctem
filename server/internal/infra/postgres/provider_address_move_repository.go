@@ -450,7 +450,7 @@ func findingStatusDigest(ctx context.Context, tx *sql.Tx, tenant string, assets 
 }
 
 // loadBatch reads the next address assets after a cursor and, for those
-// inside a shared range, everything their plan reads.
+// inside a shared range, everything the move reads.
 func (r *ProviderAddressMoveRepository) loadBatch(ctx context.Context, tx *sql.Tx, req provideraddr.BatchRequest, after string) (
 	in provideraddr.BatchInput, scanned int, last string, done bool, err error) {
 	in = provideraddr.BatchInput{Classes: map[string]edgeaddr.Result{}, Assets: map[string]provideraddr.Asset{},
