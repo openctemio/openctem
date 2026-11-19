@@ -236,7 +236,7 @@ export function AddScannerTemplateDialog({
         })
 
         toast.success(
-          t('scans.templates.add.created', 'Template "{name}" created successfully', {
+          t('scans.templates.add.created', 'Template "{name}" created.', {
             name: values.name,
           })
         )

@@ -274,7 +274,7 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                         <Input
                           placeholder={t(
                             'scans.credentials.add.namePlaceholder',
-                            'GitHub Personal Access Token'
+                            'GitHub personal access token'
                           )}
                           {...field}
                         />
