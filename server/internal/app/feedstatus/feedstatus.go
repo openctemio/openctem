@@ -108,6 +108,9 @@ const (
 	CodeNotConfigured    = "not_configured"
 	CodeInterrupted      = "interrupted"
 	CodeFailed           = "failed"
+	// CodeSourceStale: a signed release carried a feed (KEV, EPSS) the
+	// collector last read longer ago than the feed's stale limit.
+	CodeSourceStale = "source_stale"
 )
 
 // refused codes: a feed that verified and then refused what it was offered.

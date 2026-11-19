@@ -32,7 +32,6 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/scanidentity"
 	"github.com/openctemio/openctem/server/internal/app/scopenames"
 	"github.com/openctemio/openctem/server/internal/app/storagequota"
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
@@ -65,10 +64,6 @@ type AdminPlatformSettingsHandler struct {
 	StorageQuota *storagequota.Service
 	Alerts       *platformalert.Service
 	AI           *platformai.Service
-	// ThreatSource is where KEV and EPSS come from; ThreatReadiness reports
-	// how the signed release is doing for them.
-	ThreatSource    *threatsource.Service
-	ThreatReadiness ThreatIntelReadiness
 	// ScanIdentity is the platform layer of the scan identification markers.
 	ScanIdentity *scanidentity.Service
 	SocialLogin  *platformsociallogin.Service
