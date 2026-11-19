@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
 	"github.com/openctemio/openctem/server/pkg/domain/software"
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
@@ -83,6 +84,9 @@ type Importer struct {
 	// The removal guard (maxEmptiedShare, minEmptiedLimit; tests lower it).
 	emptiedShare float64
 	minEmptied   int
+
+	// cards keeps the advisory cards stream (nil: the stream is skipped).
+	cards advisory.Store
 
 	// Chunked (v2) bundles; nil chunks: v1 only.
 	chunks             ChunkStore
