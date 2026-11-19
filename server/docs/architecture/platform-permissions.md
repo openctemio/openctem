@@ -268,8 +268,6 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/social-login-providers/{provider}/test` | `platform.settings.signup.write` |
 | `GET /api/v1/admin/settings/storage-quota/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/storage-quota/` | `platform.settings.general.write` |
-| `GET /api/v1/admin/settings/threat-intel-source/` | `platform.settings.read` |
-| `PUT /api/v1/admin/settings/threat-intel-source/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/shared-sensors/` | `platform.sensors.read` |
 | `POST /api/v1/admin/shared-sensors/enrollment-tokens` | `platform.sensors.manage` |
 | `GET /api/v1/admin/shared-sensors/jobs` | `platform.sensors.read` |

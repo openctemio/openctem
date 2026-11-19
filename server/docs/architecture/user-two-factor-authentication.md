@@ -123,8 +123,17 @@ organization and fails closed when it cannot.
   another organization's IdP, or an SSO session created before migration `000269`
   recorded the issuing organization — never went through our second step, so it
   gets `403 {code:"MFA_ENROLLMENT_REQUIRED"}` for an organization that requires
-  2FA, enrolled or not. The UI signs the user out; they sign in again with
-  password and 2FA, or through that organization's IdP. Users and sessions are
+  2FA, enrolled or not. The user is never signed out for it: they keep an
+  account-only token (account settings stay reachable) and take our second
+  step. A social sign-in is a first factor like a password: the session step
+  (`POST /auth/mfa/enroll/session`, within 15 minutes of signing in) enrolls
+  or verifies in place, and every later social sign-in of an account with a
+  factor, or of a member of an organization that requires one, asks for the
+  code before any session is issued (the same challenge as a password
+  sign-in). The session that step opens went through it and passes. A
+  session from another organization's own IdP cannot start our step (that
+  IdP owns the factor): the user signs in with password and 2FA, or through
+  this organization's IdP. Users and sessions are
   global, so without this a sign-in through organization B's IdP would get into
   organization A without A's 2FA. Organization B's IdP does not open
   organization A without 2FA either: when the account has its own password or
@@ -198,10 +207,10 @@ integration credentials are.
 
 | Event | Audit action | E-mail (system SMTP) |
 |---|---|---|
-| 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | |
+| 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | yes |
 | 2FA turned off | `auth.mfa_disabled` (metadata `other_sessions_ended`) | yes |
 | Turning 2FA off refused by policy | `auth.mfa_disabled`, result failure (metadata `required_by_organizations`, `required_by_platform`) | |
-| Authenticator replaced | `auth.mfa_replaced` (metadata `other_sessions_ended`) | |
+| Authenticator replaced | `auth.mfa_replaced` (metadata `other_sessions_ended`) | yes |
 | 2FA reset by an organization owner/admin | `auth.mfa_reset` (high; actor, target user, metadata `membership_id`, `target_role`; in the caller's organization) | yes (same "turned off" notice) |
 | Wrong second factor at login | `auth.mfa_failed` | |
 | Recovery code used to sign in | `auth.mfa_recovery_code_used` (metadata `recovery_codes_remaining`) | yes |

@@ -142,7 +142,6 @@ import (
 	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
 	"github.com/openctemio/openctem/server/internal/app/tenantai"
 	"github.com/openctemio/openctem/server/internal/app/threatmodel"
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/server/internal/app/ticketmap"
 	toolsourceapp "github.com/openctemio/openctem/server/internal/app/toolsource"
@@ -1060,7 +1059,6 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
-	ThreatSource        *threatsource.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
@@ -1577,19 +1575,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	if repos.PlatformSetting != nil {
-		// Where KEV and EPSS come from (console setting, default: the
-		// platform's own fetch).
-		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
-		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
-	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
-	// relayed release; the platform never calls CISA or FIRST.
+	// Feed relay (RFC-142): the signed releases (vulnerability data with
+	// KEV and EPSS, release notices) through a platform relay sensor.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
-	if s.FeedRelay != nil && s.ThreatSource != nil {
-		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
-	}
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,

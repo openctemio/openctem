@@ -502,6 +502,54 @@ describe('InvitationView', () => {
       expect(selectTenantAction).toHaveBeenCalledTimes(2)
     })
 
+    it.each([
+      [
+        '429 with Retry-After',
+        { status: 429, retryAfter: '30' },
+        /Too many requests.*Try again in 30 seconds/,
+      ],
+      ['a server failure', { status: 503 }, /did not answer.*Try again in 2 seconds/],
+      ['no answer', { status: 0 }, /did not answer.*Try again in 2 seconds/],
+    ])(
+      'opening refused for now (%s): says why and holds Open until the wait is over',
+      async (_name, refusal, message) => {
+        answers({
+          '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+        })
+        selectTenantAction.mockResolvedValue({ success: false, error: 'x', ...refusal })
+        render(<InvitationView hasSession />)
+        fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+        expect(await screen.findByText(message)).toBeInTheDocument()
+        // Never a silent "Open": the button names the wait and cannot be used.
+        expect(screen.queryByRole('button', { name: 'Open Acme' })).toBeNull()
+        expect(screen.getByRole('button', { name: /^Try again in \d+ s$/ })).toBeDisabled()
+        expect(selectTenantAction).toHaveBeenCalledTimes(1)
+        expect(navigate).not.toHaveBeenCalled()
+      }
+    )
+
+    it('offers Open again once the wait is over, and it opens the organization', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      selectTenantAction.mockResolvedValueOnce({
+        success: false,
+        error: 'x',
+        status: 429,
+        retryAfter: '1',
+      })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+      expect(await screen.findByText(/Too many requests/)).toBeInTheDocument()
+
+      const open = await screen.findByRole('button', { name: 'Open Acme' }, { timeout: 4000 })
+      await waitFor(() => expect(open).toBeEnabled())
+      selectTenantAction.mockResolvedValue({ success: true })
+      fireEvent.click(open)
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
+    })
+
     it('session gone at selection: sign in again (the membership exists)', async () => {
       answers({
         '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
