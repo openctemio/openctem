@@ -9,7 +9,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   summarizeDismiss,
   summarizeUndo,
-  undoBulkDismiss,
+  reopenBulkDismiss,
   type DismissResult,
   type DismissSummary,
 } from '../lib/bulk-dismiss'
@@ -41,7 +41,7 @@ export async function runDismissUndo(
   onChanged: () => void
 ): Promise<void> {
   try {
-    const undo = await undoBulkDismiss(bulkId)
+    const undo = await reopenBulkDismiss(bulkId)
     show(summarizeUndo(t, undo))
     onChanged()
   } catch (error) {

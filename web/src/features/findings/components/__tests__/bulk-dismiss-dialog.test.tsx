@@ -87,7 +87,7 @@ describe('BulkDismissDialog', () => {
     expect(within(panel).getByText('2 skipped: already waiting for approval.')).toBeInTheDocument()
     // The preview asked with the ids and a reason, changing nothing.
     const [path, body] = post.mock.calls[0]
-    expect(path).toBe('/api/v1/findings/bulk/dismiss/preview')
+    expect(path).toBe('/api/v1/findings/bulk-dismissals/preview')
     expect(body).toMatchObject({ finding_ids: ['f1', 'f2', 'f3'], status: 'false_positive' })
     expect(body).not.toHaveProperty('idempotency_key')
 
@@ -213,7 +213,7 @@ describe('BulkDismissDialog', () => {
       /test or (sample|example) code/i
     )
     fireEvent.keyDown(screen.getByTestId('bulk-dismiss-preview'), { key: 'Enter', ctrlKey: true })
-    await waitFor(() => expect(callsTo('/api/v1/findings/bulk/dismiss')).toHaveLength(1))
+    await waitFor(() => expect(callsTo('/api/v1/findings/bulk-dismissals')).toHaveLength(1))
     // The first try failed: the retry sends the same request with the same key.
     await waitFor(() => expect(screen.getByTestId('bulk-dismiss-submit')).toBeEnabled())
     post.mockImplementation((path: string) =>
@@ -223,7 +223,7 @@ describe('BulkDismissDialog', () => {
     )
     await userEvent.click(screen.getByTestId('bulk-dismiss-submit'))
     await waitFor(() => expect(onApplied).toHaveBeenCalled())
-    const applies = callsTo('/api/v1/findings/bulk/dismiss')
+    const applies = callsTo('/api/v1/findings/bulk-dismissals')
     expect(applies).toHaveLength(2)
     expect(applies[0][1]).toMatchObject({ closure_reason: 'test_or_example_code' })
     expect(applies[0][1].idempotency_key).toBeTruthy()
@@ -280,7 +280,7 @@ describe('the Dismiss result toast', () => {
       opts.action.onClick()
     })
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    expect(post).toHaveBeenCalledWith('/api/v1/findings/bulk/dismiss/bulk-1/undo')
+    expect(post).toHaveBeenCalledWith('/api/v1/findings/bulk-dismissals/bulk-1/reopen')
     expect(toastFns.warning).toHaveBeenCalledTimes(1)
   })
 
