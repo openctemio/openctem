@@ -144,7 +144,7 @@ describe('CIPipelinesPanel', () => {
     perms = ['scans:ci:write']
     render(<CIPipelinesPanel />)
     expect(screen.getByText('No CI pipelines yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /connect a ci provider/i })).toBeInTheDocument()
     // One way to start: the wizard (its advanced settings stay on the Trust tab).
     expect(screen.queryByRole('link', { name: /set up ci trust/i })).not.toBeInTheDocument()
     perms = []
@@ -153,7 +153,7 @@ describe('CIPipelinesPanel', () => {
   it('tells readers to ask an administrator when there is no pipeline', () => {
     perms = []
     render(<CIPipelinesPanel />)
-    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /connect a ci provider/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /set up ci trust/i })).not.toBeInTheDocument()
     expect(screen.getByText(/ask an administrator/i)).toBeInTheDocument()
   })

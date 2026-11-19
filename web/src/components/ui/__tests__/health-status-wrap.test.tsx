@@ -65,7 +65,7 @@ describe('HealthStatus with a detail', () => {
 type Row = { id: string; name: string; status: string; tasks: string }
 
 describe('DataTable phone card fields', () => {
-  it('let nowrap content in a field wrap inside its column', () => {
+  it('keep nowrap content inside its column, on one cut line', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
     const columns: ColumnDef<Row>[] = [
       { accessorKey: 'name', header: 'Name' },
@@ -90,9 +90,12 @@ describe('DataTable phone card fields', () => {
     expect(fields).toHaveLength(2)
     const value = fields[0].querySelector('dd') as HTMLElement
     expect(value.textContent).toContain('9 unreachable, 373 skipped')
-    // Same relaxation as the card title: nothing in a field may refuse to wrap.
-    expect(value.className).toContain('[&_.whitespace-nowrap]:whitespace-normal')
-    expect(value.className).toContain('[&_.truncate]:whitespace-normal')
+    // The compact card keeps every value on one line, cut with an ellipsis
+    // inside its column (min-w-0 + overflow-hidden), so a long note can never
+    // stick out of the column nor make a tall field.
     expect(value.className).toContain('min-w-0')
+    expect(value.className).toContain('overflow-hidden')
+    expect(value.className).toContain('truncate')
+    expect(value.className).toContain('[&_*]:whitespace-nowrap')
   })
 })

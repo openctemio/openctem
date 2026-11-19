@@ -153,6 +153,9 @@ export function getActionCategory(action: string): string {
 }
 
 // Label for an audit action: one source for every audit view.
-export function formatAction(action: string): string {
-  return getActionLabel(action)
+export function formatAction(
+  action: string,
+  t?: (key: string, fallback: string) => string
+): string {
+  return getActionLabel(action, t)
 }

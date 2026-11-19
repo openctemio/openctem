@@ -1,12 +1,12 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import type { TriageAction } from '../../lib/triage-keys'
-import type { TriageProgress } from '../../lib/triage-session'
 import { Kbd } from './kbd'
 
 export interface TriageDecisionState {
@@ -107,130 +107,199 @@ function ConfirmButton({
 }
 
 /**
- * A phone's bottom bar: what this session decided and Confirm, the one main
- * action, always on screen without scrolling. It sticks to the bottom of the
- * screen and ends the page, so it never covers the last of the queue. The
- * rest of the decision panel follows the finding.
+ * A phone's bottom bar: back to the previous finding, Skip, and Confirm, the
+ * one main action, always on screen without scrolling. It sticks to the
+ * bottom of the screen and ends the page. The other decisions are folded
+ * under the finding; the session's counts are in the status line.
  */
 export function TriagePhoneBar({
   state,
-  progress,
   onAction,
 }: {
   state: TriageDecisionState
-  progress: TriageProgress | null
   onAction: (a: TriageAction) => void
 }) {
   const { t } = useTranslation()
   return (
     <div
       role="region"
-      aria-label={t('findings.triageMode.phoneBar', 'Confirm and session summary')}
+      aria-label={t('findings.triageMode.phoneBar', 'Confirm, skip or go back')}
       data-testid="triage-phone-bar"
-      className="sticky bottom-0 z-20 -mx-4 space-y-2 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="sticky bottom-0 z-20 -mx-4 flex items-center gap-2 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     >
-      <p className="text-cap text-muted-foreground tabular-nums" data-testid="triage-bar-counts">
-        {progress
-          ? t(
-              'findings.triageMode.counts',
-              '{decided} decided, {sent} sent for approval, {skipped} skipped',
-              {
-                decided: progress.decided,
-                sent: progress.sentForApproval,
-                skipped: progress.skipped,
-              }
-            )
-          : '…'}
-      </p>
-      <ConfirmButton state={state} onAction={onAction} className="w-full" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => onAction('prev')}
+        disabled={!state.canPrev}
+        aria-label={t('findings.triageMode.action.prev', 'Previous')}
+        data-triage-action="prev"
+      >
+        <ChevronLeft className="rtl:rotate-180" aria-hidden />
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => onAction('skip')}
+        disabled={state.busy}
+        data-triage-action="skip"
+      >
+        {t('findings.triageMode.action.skip', 'Skip')}
+      </Button>
+      <Button
+        type="button"
+        className="min-w-0 flex-1"
+        onClick={() => onAction('confirm')}
+        disabled={!!state.lockedReason || !state.canConfirm || state.busy}
+        data-triage-action="confirm"
+      >
+        {state.busy && <Loader2 className="animate-spin" aria-hidden />}
+        <span className="truncate">
+          {t('findings.triageMode.action.confirmPhone', 'Confirm, a real issue')}
+        </span>
+      </Button>
     </div>
   )
 }
 
 /**
- * The decision panel: one key per action, each a visible labelled button,
- * then Previous / Next. Decisions use the finding page's endpoints and
- * checks; false positive and risk acceptance stay requests the
- * organization's policy decides. Undo, the keys and Exit are in the page
- * header; Evidence and Full page on the finding.
+ * The decisions on the shown finding, under it in the same card: one key
+ * per action, each a visible labelled button, then Previous / Next.
+ * Decisions use the finding page's endpoints and checks; false positive and
+ * risk acceptance stay requests the organization's policy decides. Undo,
+ * the queue, the keys and Exit are in the page header; Evidence and Full
+ * page on the finding.
+ *
+ * On a phone Confirm, Skip and Previous are in the bar at the bottom of the
+ * screen and the other decisions are folded under "Other decisions", so the
+ * finding and its main action fit on one screen.
  */
 export function TriageDecisionPanel({
   state,
   onAction,
   assignControl,
-  confirmInBar = false,
+  phone = false,
   className,
 }: {
   state: TriageDecisionState
   onAction: (a: TriageAction) => void
   /** The assignee picker (opened by `o`). */
   assignControl: ReactNode
-  /** A phone: Confirm is in the bar at the bottom of the screen, not in this panel. */
-  confirmInBar?: boolean
+  /** A phone: the bar holds the main actions; the rest is folded. */
+  phone?: boolean
   className?: string
 }) {
   const { t } = useTranslation()
+  const [othersOpen, setOthersOpen] = useState(false)
   const locked = !!state.lockedReason
+  const others = (
+    <>
+      <ActionButton
+        action="falsePositive"
+        keyLabel="f"
+        label={t('findings.triageMode.action.falsePositive', 'Request false positive')}
+        hint={t('findings.triageMode.action.falsePositiveHint', 'Reason and note required')}
+        onAction={onAction}
+        disabled={locked || !state.canRequest || state.busy}
+      />
+      <ActionButton
+        action="accept"
+        keyLabel="a"
+        label={t('findings.triageMode.action.accept', 'Request risk acceptance')}
+        hint={t('findings.triageMode.action.acceptHint', 'Approval and an end date')}
+        onAction={onAction}
+        disabled={locked || !state.canRequest || state.busy}
+      />
+      <ActionButton
+        action="assign"
+        keyLabel="o"
+        label={t('findings.triageMode.action.assign', 'Assign')}
+        onAction={onAction}
+        disabled={locked || !state.canAssign || state.busy}
+      />
+      {/* The picker the Assign key opens: its own cell, one height per row. */}
+      <div className="min-w-0" data-testid="triage-assign">
+        {assignControl}
+      </div>
+      <ActionButton
+        action="task"
+        keyLabel="m"
+        label={t('findings.triageMode.action.task', 'Add to task')}
+        onAction={onAction}
+        disabled={locked || !state.canTask || state.busy}
+      />
+      <ActionButton
+        action="retest"
+        keyLabel="r"
+        label={t('findings.triageMode.action.retest', 'Retest')}
+        onAction={onAction}
+        disabled={locked || !state.canRetest || state.busy}
+      />
+    </>
+  )
+  const note = state.lockedReason && (
+    <p className="rounded-md border bg-muted/50 p-2 text-xs" role="note">
+      {state.lockedReason}
+    </p>
+  )
+
+  if (phone) {
+    return (
+      <section
+        role="region"
+        aria-label={t('findings.triageMode.decision', 'Decision')}
+        className={cn('space-y-3', className)}
+        data-testid="triage-decision"
+      >
+        {note}
+        <Collapsible className="rounded-lg border" open={othersOpen} onOpenChange={setOthersOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="group flex w-full min-h-control-touch items-center justify-between gap-3 px-4 py-2.5 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              data-testid="triage-other-decisions"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="text-sm font-medium">
+                  {t('findings.triageMode.otherDecisions', 'Other decisions')}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t(
+                    'findings.triageMode.otherDecisionsHint',
+                    'False positive, risk acceptance, assign, task, retest'
+                  )}
+                </span>
+              </span>
+              <ChevronDown
+                className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+                aria-hidden
+              />
+            </button>
+          </CollapsibleTrigger>
+          {/* Kept mounted while folded, so the assign key still finds its picker. */}
+          <CollapsibleContent forceMount hidden={!othersOpen} className="grid gap-2 px-4 pb-4">
+            {others}
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
+    )
+  }
+
   return (
-    <aside
+    <section
       role="region"
       aria-label={t('findings.triageMode.decision', 'Decision')}
-      className={cn('space-y-3 rounded-lg border bg-card p-4', className)}
+      className={cn('space-y-3', className)}
       data-testid="triage-decision"
     >
-      <h2 className="text-sm font-medium">
+      <h2 className="sr-only">
         {t('findings.triageMode.decideHint', 'Decide, one key per action')}
       </h2>
-      {state.lockedReason && (
-        <p className="rounded-md border bg-muted/50 p-2 text-xs" role="note">
-          {state.lockedReason}
-        </p>
-      )}
-      <div className="grid gap-2">
-        {!confirmInBar && <ConfirmButton state={state} onAction={onAction} />}
-        <ActionButton
-          action="falsePositive"
-          keyLabel="f"
-          label={t('findings.triageMode.action.falsePositive', 'Request false positive')}
-          hint={t('findings.triageMode.action.falsePositiveHint', 'Reason and note required')}
-          onAction={onAction}
-          disabled={locked || !state.canRequest || state.busy}
-        />
-        <ActionButton
-          action="accept"
-          keyLabel="a"
-          label={t('findings.triageMode.action.accept', 'Request risk acceptance')}
-          hint={t('findings.triageMode.action.acceptHint', 'Approval and an end date')}
-          onAction={onAction}
-          disabled={locked || !state.canRequest || state.busy}
-        />
-        {/* The Assign key and its picker, each on its own line: one height per row. */}
-        <div className="grid gap-1.5">
-          <ActionButton
-            action="assign"
-            keyLabel="o"
-            label={t('findings.triageMode.action.assign', 'Assign')}
-            onAction={onAction}
-            disabled={locked || !state.canAssign || state.busy}
-          />
-          <div className="min-w-0" data-testid="triage-assign">
-            {assignControl}
-          </div>
-        </div>
-        <ActionButton
-          action="task"
-          keyLabel="m"
-          label={t('findings.triageMode.action.task', 'Add to task')}
-          onAction={onAction}
-          disabled={locked || !state.canTask || state.busy}
-        />
-        <ActionButton
-          action="retest"
-          keyLabel="r"
-          label={t('findings.triageMode.action.retest', 'Retest')}
-          onAction={onAction}
-          disabled={locked || !state.canRetest || state.busy}
-        />
+      {note}
+      <div className="grid gap-2 @xl/content:grid-cols-2 @5xl/content:grid-cols-4">
+        <ConfirmButton state={state} onAction={onAction} />
+        {others}
         <ActionButton
           action="skip"
           keyLabel="s"
@@ -239,10 +308,10 @@ export function TriageDecisionPanel({
           disabled={state.busy}
         />
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           onClick={() => onAction('prev')}
           disabled={!state.canPrev}
           aria-keyshortcuts="k"
@@ -250,18 +319,18 @@ export function TriageDecisionPanel({
         >
           <ChevronLeft className="rtl:rotate-180" aria-hidden />
           {t('findings.triageMode.action.prev', 'Previous')}
-          <Kbd className="max-sm:hidden">k</Kbd>
+          <Kbd>k</Kbd>
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           onClick={() => onAction('next')}
           disabled={!state.canNext}
           aria-keyshortcuts="j"
           data-triage-action="next"
         >
           {t('findings.triageMode.action.next', 'Next')}
-          <Kbd className="max-sm:hidden">j</Kbd>
+          <Kbd>j</Kbd>
           <ChevronRight className="rtl:rotate-180" aria-hidden />
         </Button>
       </div>
@@ -271,6 +340,6 @@ export function TriageDecisionPanel({
           'Decisions use the same checks as the finding page: your permissions, your data scope, approvals and re-authentication. Re-authentication is asked once per window, not per finding.'
         )}
       </p>
-    </aside>
+    </section>
   )
 }

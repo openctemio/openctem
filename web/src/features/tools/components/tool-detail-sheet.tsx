@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
@@ -140,7 +141,8 @@ export function ToolDetailSheet({
   const canEdit = custom && !!onEdit
   const canDelete = custom && !!onDelete
   const switchable = !!onToggleEnabled && !!tool && tool.is_active
-  const reason = toolUnavailableReason(item)
+  const { t } = useTranslation()
+  const reason = toolUnavailableReason(item, t)
   const versions = versionsLabel(item)
 
   const toggle = switchable

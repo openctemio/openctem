@@ -10,6 +10,7 @@
  * Results and findings are never shown here.
  */
 
+import { EmptyCell } from '@/features/assets/components/service-cells'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Info, ListChecks, Server } from 'lucide-react'
@@ -166,9 +167,12 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
           hideBelow: 900,
           label: t('admin.sharedFleet.col.version'),
         },
-        cell: ({ row }) => (
-          <span className="block truncate font-mono text-code">{row.original.version || '-'}</span>
-        ),
+        cell: ({ row }) =>
+          row.original.version ? (
+            <span className="block truncate font-mono text-code">{row.original.version}</span>
+          ) : (
+            <EmptyCell title={t('admin.sharedFleet.noVersion', 'Version not reported')} />
+          ),
       },
       {
         id: 'tools',
@@ -181,7 +185,7 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
         },
         cell: ({ row }) =>
           row.original.tools.length === 0 ? (
-            <span className="text-cap text-muted-foreground">-</span>
+            <EmptyCell title={t('admin.sharedFleet.noTools', 'No tools reported')} />
           ) : (
             <span
               className="block truncate font-mono text-code"
@@ -494,9 +498,12 @@ export function SharedQueuePanel() {
           hideBelow: 900,
           label: t('admin.sharedFleet.col.sensor'),
         },
-        cell: ({ row }) => (
-          <span className="block truncate">{row.original.sensor_name || '-'}</span>
-        ),
+        cell: ({ row }) =>
+          row.original.sensor_name ? (
+            <span className="block truncate">{row.original.sensor_name}</span>
+          ) : (
+            <EmptyCell title={t('admin.sharedFleet.noSensor', 'No sensor')} />
+          ),
       },
       {
         accessorKey: 'created_at',

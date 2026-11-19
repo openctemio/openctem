@@ -340,7 +340,7 @@ export function FeedRelayCard({ canEdit }: { canEdit: boolean }) {
       </CardHeader>
       <CardContent className="space-y-5 text-sm">
         {data.alerts.length > 0 && (
-          <Alert role="alert">
+          <Alert>
             <AlertDescription>
               <p className="font-medium">
                 {t('admin.feedRelay.alertsTitle', 'Administrators were alerted')}

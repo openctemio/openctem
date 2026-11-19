@@ -4,7 +4,6 @@
     "(account)/account/security/page.tsx",
     "(dashboard)/(scoping)/attack-surface/page.tsx",
     "(dashboard)/(validation)/pentest/findings/[id]/edit/page.tsx",
-    "(dashboard)/dashboards/page.tsx",
     "(dashboard)/findings/[id]/page.tsx",
     "(dashboard)/notifications/page.tsx",
     "(dashboard)/settings/pentest/checklists/page.tsx",

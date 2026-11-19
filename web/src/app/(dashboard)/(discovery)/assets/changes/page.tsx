@@ -1,5 +1,6 @@
 'use client'
 
+import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetsSectionTabs } from '@/features/assets/components/assets-section-tabs'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -263,7 +264,7 @@ export default function AssetChangesPage() {
                 <span className="truncate text-muted-foreground">{name}</span>
               )}
               <span className="shrink-0 text-xs text-muted-foreground">
-                {sentence(c.asset_type)}
+                {c.asset_type ? getAssetTypeLabel(c.asset_type, t) : sentence(c.asset_type)}
               </span>
             </span>
           )

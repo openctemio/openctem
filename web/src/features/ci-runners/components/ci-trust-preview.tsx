@@ -18,6 +18,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePreviewTrustConfig } from '../api/use-ci'
 import type { CIProvider, CITrustConfigRequest, CITrustPreview } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
+import { CIVerifyCause } from './ci-verify-cause'
 import { BreakText } from '@/features/shared/components/break-text'
 
 /** Normalized claim, its catalog key (scans.ci.preview.field.<key>) and English label. */
@@ -40,9 +41,12 @@ const NORMALIZED_LABELS: [string, string][] = [
 export function CITrustPreview({
   provider,
   draft,
+  onUseIssuer,
 }: {
   provider: CIProvider
   draft: () => CITrustConfigRequest
+  /** Replace the draft's issuer with the one the sample token names. */
+  onUseIssuer?: (issuer: string) => void
 }) {
   const { t } = useTranslation()
   const { trigger, isMutating } = usePreviewTrustConfig()
@@ -153,7 +157,11 @@ export function CITrustPreview({
             )}
           </div>
           {result.verify_error && (
-            <p className="break-words text-muted-foreground">{result.verify_error}</p>
+            <CIVerifyCause
+              message={result.verify_error}
+              issuer={draft().issuer}
+              onUseIssuer={onUseIssuer}
+            />
           )}
           {result.refusal?.detail && (
             <p className="break-words text-muted-foreground">{result.refusal.detail}</p>
