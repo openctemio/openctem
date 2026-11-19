@@ -161,7 +161,7 @@ func (s *VulnerabilityService) planGroupException(ctx context.Context, in GroupE
 	var org orgPolicy
 	for _, fid := range in.FindingIDs {
 		m := GroupExceptionMember{FindingID: fid}
-		f, err := s.findingRepo.GetByID(ctx, in.TenantID, fid)
+		f, err := s.memoFinding(ctx, in.TenantID, fid)
 		if err != nil {
 			m.Skipped = GroupSkipNotFound
 			preview.Members = append(preview.Members, m)
@@ -254,8 +254,9 @@ func (s *VulnerabilityService) RequestGroupException(ctx context.Context, in Gro
 		return nil, err
 	}
 	res := preview.Result
-	if n := len([]rune(strings.TrimSpace(in.Justification))); n < res.MinNoteLength || n == 0 {
-		return nil, fmt.Errorf("%w: this exception needs a note of at least %d characters (%s tier)", shared.ErrValidation, max(res.MinNoteLength, 1), res.Tier)
+	// A group is always decided by another person: it always needs a note.
+	if need := noteRequired(false, approvalpolicy.Facts{}, 0, res.MinNoteLength); noteLength(in.Justification) < need {
+		return nil, fmt.Errorf("%w: this exception needs a note of at least %d characters (%s tier)", shared.ErrValidation, need, res.Tier)
 	}
 	now := time.Now()
 	status := vulnerability.FindingStatus(in.RequestedStatus)

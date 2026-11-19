@@ -442,7 +442,7 @@ The engine decides:
 | Target | Rule | Mode | Needs |
 |---|---|---|---|
 | any | an edge of `ValidStatusTransitions`; a pentest finding belongs to the pentest module | | |
-| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, note (and the acceptance end) |
+| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, a note unless decided alone on a finding that is not serious (see "When a note is required"), and the acceptance end |
 | `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`; never carries a decision across findings) | `duplicate_picker` | `duplicate_of` |
 | `resolved` | `findings:verify`, from every status | `direct` | a note unless the checklist is complete |
 | `fix_applied` | `findings:fix_apply`, a person, whose finding it is (assignee, assigned group, asset owner) | `direct` | a note |
@@ -835,10 +835,30 @@ facts with the finding locked), audited `finding_approval.single_person_decided`
 A member without `findings:approve` still files a pending request, and so does
 a delegated credential (an API key or an MCP access token) whatever its
 permissions: the one person who decides is a person in their own session. Only a
-person's own request on one finding decides alone: suppression rules, group
-exceptions on remediation tasks, bulk status moves, imports and requests made
-by automation (AI triage, VEX, ticket integrations) keep a second person
-whatever the level. An organization cell above the platform default still
+person's own request on one finding, or each finding of that person's bulk
+dismiss (`POST /findings/bulk/dismiss`, evaluated finding by finding exactly
+like that request; [findings-bulk-by-filter.md](findings-bulk-by-filter.md#bulk-dismiss)),
+decides alone: suppression rules, group exceptions on remediation tasks, bulk
+status moves, imports and requests made by automation (AI triage, VEX, ticket
+integrations) keep a second person whatever the level.
+
+#### When a note is required
+
+The reason code (`closure_reason`) is always required. The free-text note
+(`justification` on a request, `note` on a bulk dismiss) is **optional only
+when the requester decides alone** (the decision is applied at once, never an
+automation's request) **on a finding that is not serious**; "serious" is the
+classifier of the `high_and_above` level (`approvalpolicy.MaterialForFalsePositive`:
+critical or high, KEV, P0/P1, EPSS at or above the threshold, a validated
+exploit, a crown-jewel or internet-exposed asset). Whenever a second person
+approves (every pending request and every group exception) or the finding is
+serious, the note is required with the tier's minimum length (1, or 20 for the
+`security` and `dual` tiers). One helper decides it (`noteRequired`,
+`internal/app/finding/approval_note.go`). A request that raced with a raised
+level and now waits for a second person is refused (400) when it has no note,
+rather than saved without one. This replaces the earlier rule that a
+single-person false positive always carried a note (research/533 D4, approved
+2026-11-19). An organization cell above the platform default still
 applies under a relaxing risk acceptance level.
 
 Safeguards: a later severity rise, KEV listing or new evidence on a false
