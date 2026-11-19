@@ -44,7 +44,7 @@ sequenceDiagram
     PA->>API: Enable SAML login + Save
     alt organization has an owner
         API-->>OO: pending change (in-app + email)
-        OO->>API: Settings > Access & security > SSO approvals > Approve (step-up)
+        OO->>API: Settings > Sign-in and oversight > Sign-in > SSO approvals > Approve (step-up)
     end
     PA->>API: Verified domains: add domain, publish TXT, Verify now
     API->>API: DNS TXT lookup (_openctem-verify.domain)
