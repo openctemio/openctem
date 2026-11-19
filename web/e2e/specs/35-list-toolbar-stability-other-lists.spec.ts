@@ -16,6 +16,10 @@ test.describe('Vulnerabilities list header', { tag: ['@vulnerabilities'] }, () =
   pagingHoldsStill('/vulnerabilities')
   saysItsCountOnce('/vulnerabilities')
 })
+test.describe('CVE catalog list header', { tag: ['@vulnerabilities'] }, () => {
+  headerHoldsStill('/exposures/vulnerabilities?tab=catalog')
+  saysItsCountOnce('/exposures/vulnerabilities?tab=catalog')
+})
 test.describe('Emerging threats list header', { tag: ['@prioritization'] }, () => {
   headerHoldsStill('/emerging-threats')
   pagingHoldsStill('/emerging-threats')
@@ -39,6 +43,10 @@ test.describe('Sensors list header', { tag: ['@sensors'] }, () => {
 test.describe('Scan runs list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/runs')
   saysItsCountOnce('/scans/runs')
+})
+test.describe('Credential leaks list header', { tag: ['@credentials'] }, () => {
+  headerHoldsStill('/credentials')
+  saysItsCountOnce('/credentials')
 })
 test.describe('Scan workflows list header', { tag: ['@scans'] }, () => {
   headerHoldsStill('/scans/workflows')
