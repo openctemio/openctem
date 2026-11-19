@@ -3898,12 +3898,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
 	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
 	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
-	if floorSource != nil {
-		s.PersonalOrgs.SetOwnerMFAApplies(func(ctx context.Context) (bool, error) {
-			p, err := floorSource.Policy(ctx)
-			return p.Floor != tenant.MFAFloorNone, err
-		})
-	}
 	s.PersonalOrgs.SetAuditService(s.Audit)
 	if s.Entitlement != nil {
 		s.PersonalOrgs.SetLimits(s.Entitlement)
