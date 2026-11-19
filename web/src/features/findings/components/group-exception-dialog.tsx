@@ -51,6 +51,7 @@ import {
 import { groupSkipText, tierLabel } from '../lib/approval-policy'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
+import { formatDate } from '@/lib/app-locale'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
 const DEFAULT_ACCEPTANCE_DAYS = 90
@@ -511,7 +512,7 @@ export function GroupExceptionMemberList({
               {accepted && m.end && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
                   {t('findingApprovals.group.endsOn', 'ends {date}', {
-                    date: new Date(m.end).toLocaleDateString(),
+                    date: formatDate(new Date(m.end)),
                   })}
                 </span>
               )}

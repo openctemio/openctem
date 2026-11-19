@@ -26,4 +26,17 @@ describe('ErrorState message', () => {
     render(<ErrorState title="threats" error={apiError('The filter value is too long.', 400)} />)
     expect(screen.getByText('The filter value is too long.')).toBeInTheDocument()
   })
+
+  it('a record that is not there says so, without Retry or the server text', () => {
+    render(
+      <ErrorState
+        title="this cycle"
+        error={apiError('cycle not found not found', 404)}
+        onRetry={() => {}}
+      />
+    )
+    expect(screen.getByText("Couldn't find this cycle")).toBeInTheDocument()
+    expect(screen.queryByText('cycle not found not found')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
 })

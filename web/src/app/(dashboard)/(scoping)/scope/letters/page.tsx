@@ -42,6 +42,7 @@ import {
   type AuthorizationLetter,
 } from '@/features/scope-letters'
 import { confirmName } from '@/lib/confirm-name'
+import { formatDate } from '@/lib/app-locale'
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback
@@ -229,7 +230,7 @@ export default function ScopeLettersPage() {
             </Button>
           )}
         </PageHeader>
-        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
+        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
         <>
           {uploading && canUpload && (
@@ -281,8 +282,7 @@ export default function ScopeLettersPage() {
                     </TableCell>
                     <TableCell className="text-sm">{l.issuer || '-'}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap">
-                      {new Date(l.valid_from).toLocaleDateString()} –{' '}
-                      {new Date(l.valid_until).toLocaleDateString()}
+                      {formatDate(new Date(l.valid_from))} – {formatDate(new Date(l.valid_until))}
                     </TableCell>
                     <TableCell>
                       <LetterStatus letter={l} />

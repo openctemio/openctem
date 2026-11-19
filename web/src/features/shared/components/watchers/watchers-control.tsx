@@ -52,7 +52,7 @@ export function WatchersControl({
   const [open, setOpen] = useState(false)
   const summaryRef = useRef<HTMLButtonElement>(null)
 
-  if (isLoading || !participants) {
+  if (isLoading) {
     return (
       <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
         <span
@@ -63,6 +63,10 @@ export function WatchersControl({
       </PropertyRow>
     )
   }
+
+  // The list could not be read (no access, the item is gone): no row, never a
+  // "Watchers" label over a skeleton that never fills.
+  if (!participants) return null
 
   const watching = participants.me.state === 'subscribed'
   const count = participants.watcher_count

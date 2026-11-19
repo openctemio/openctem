@@ -11,6 +11,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { useWordlistPreview } from '../api/use-wordlists'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * Preview for a domain: how many labels a standard discovery run of it
@@ -22,7 +23,7 @@ export function WordlistPreviewCard() {
   const [input, setInput] = useState('')
   const [root, setRoot] = useState<string | null>(null)
   const { data, error, isLoading } = useWordlistPreview(root)
-  const n = (v: number) => v.toLocaleString()
+  const n = (v: number) => formatNumber(v)
 
   return (
     <Card data-testid="wordlist-preview">

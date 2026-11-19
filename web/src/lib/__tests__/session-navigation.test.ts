@@ -95,8 +95,8 @@ describe('navigateAfterSessionChange', () => {
   })
 
   it('replaces the history entry when asked', () => {
-    navigateAfterSessionChange('/welcome', { replace: true })
-    expect(replace).toHaveBeenCalledWith('/welcome')
+    navigateAfterSessionChange('/account/organizations', { replace: true })
+    expect(replace).toHaveBeenCalledWith('/account/organizations')
     expect(assign).not.toHaveBeenCalled()
   })
 

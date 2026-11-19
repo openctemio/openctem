@@ -135,6 +135,7 @@ import { InventoryAddFilter, InventoryFilterBar } from './inventory-filter-bar'
 import { inventoryChips } from '../../lib/inventory-chips'
 import { propertyLabel as attributeLabel } from '@/features/asset-types/lib/property-schema'
 import { inventoryLenses, lensCounts } from '../../lib/inventory-lenses'
+import { formatDate, formatNumber } from '@/lib/app-locale'
 
 /** Translate the inventory filter model into the useAssets query shape. */
 function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
@@ -687,7 +688,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     propertyLabel: (key) => attributeLabel(key, locale),
     formatDate: (iso) => {
       const d = new Date(iso)
-      return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString()
+      return Number.isNaN(d.getTime()) ? iso : formatDate(d)
     },
   })
 
@@ -799,7 +800,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
             label: groupReason
               ? t('assetGroups.filterActions.addAllShort', 'Add all matching to group')
               : t('assetGroups.filterActions.addAll', 'Add all {count} matching to group', {
-                  count: total.toLocaleString(),
+                  count: formatNumber(total),
                 }),
             onSelect: () => setGroupDialog('add'),
             disabledReason: groupReason,
@@ -933,7 +934,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               label={
                 totalCapped
                   ? t('assets.filters.resultsCapped', '{count}+ assets', {
-                      count: total.toLocaleString(),
+                      count: formatNumber(total),
                     })
                   : t('assets.filters.results', '{count, plural, one {# asset} other {# assets}}', {
                       count: total,

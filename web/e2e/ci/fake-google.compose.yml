@@ -1,0 +1,55 @@
+# Overlay for the first sign-in spec (e2e/specs/66-first-sign-in.spec.ts):
+# the API signs people in with "Google" against a test-only stand-in
+# (server/tests/fakegoogle), never the real provider. The API binary is the
+# one under test, unchanged: the stand-in answers on Google's host names on
+# this network only, and the API trusts its certificate authority, and only
+# it, through SSL_CERT_FILE.
+#
+#   docker compose -f web/e2e/ci/compose.yml -f web/e2e/ci/fake-google.compose.yml up -d --wait
+#   (set -a; . web/e2e/ci/.env; E2E_FAKE_GOOGLE=1 bash web/e2e/ci/seed.sh) > web/e2e/.env
+#
+# The browser side of the provider (accounts.google.com) is answered by the
+# spec itself (page.route), so no browser ever leaves the stack.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  fake-google-ca: {}
+
+services:
+  fake-google:
+    image: ${FAKE_GOOGLE_IMAGE:-local/openctem-fake-google:e2e}
+    build:
+      context: ../../../server
+      dockerfile: tests/fakegoogle/Dockerfile
+    entrypoint: ['/app/fakegoogle']
+    environment:
+      FAKE_GOOGLE_CLIENT_ID: e2e-google-client
+      FAKE_GOOGLE_CA_OUT: /ca/ca.pem
+    volumes: ['fake-google-ca:/ca']
+    # Port 443 without root: unprivileged ports start at 0 in this container's
+    # own network namespace only.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    networks:
+      default:
+        aliases: [oauth2.googleapis.com, www.googleapis.com, accounts.google.com]
+
+  api:
+    environment:
+      OAUTH_ENABLED: 'true'
+      OAUTH_GOOGLE_ENABLED: 'true'
+      OAUTH_GOOGLE_CLIENT_ID: e2e-google-client
+      OAUTH_GOOGLE_CLIENT_SECRET: e2e-google-secret-not-real
+      OAUTH_STATE_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}
+      OAUTH_FRONTEND_CALLBACK_URL: http://localhost:${E2E_WEB_PORT:-3000}/auth/callback
+      # Only the stand-in's authority: the API reaches no other TLS host here.
+      SSL_CERT_FILE: /fake-google-ca/ca.pem
+      # The stand-in has an address on this private network.
+      OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS: 172.31.250.0/24
+    volumes: ['fake-google-ca:/fake-google-ca:ro']
+    depends_on:
+      fake-google: { condition: service_started }

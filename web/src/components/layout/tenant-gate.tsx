@@ -161,7 +161,7 @@ export function TenantGate({ children }: TenantGateProps) {
     if (tenants.length === 0) {
       hasRedirected.current = true
       devLog.log('[TenantGate] No tenants found - redirecting to onboarding')
-      window.location.replace('/welcome')
+      window.location.replace('/account/organizations')
     }
   }, [hasCookieChecked, hasTenantCookie, isLoading, error, tenants.length])
 

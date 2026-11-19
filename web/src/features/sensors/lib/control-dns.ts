@@ -3,6 +3,7 @@ import type { SensorConfigCheck, SensorConfigReport } from '@/lib/api/sensor-typ
 import { msg } from './content'
 import type { Tr } from './format'
 import type { HealthIssue } from './health-issues'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * The control channel's DNS as the sensor reports it (config check
@@ -37,7 +38,7 @@ const TIME_PARAMS = new Set(['since', 'resolved_at', 'failed_at', 'recovered_at'
  */
 export function observedValueText(checkId: string, label: string, value: string): string {
   if (checkId !== CONTROL_DNS_CHECK || !TIME_PARAMS.has(label)) return value
-  return unixParam(value)?.toLocaleString() ?? value
+  return formatDateTime(unixParam(value)) ?? value
 }
 
 export function controlDnsFact(report?: SensorConfigReport | null): ControlDnsFact | null {

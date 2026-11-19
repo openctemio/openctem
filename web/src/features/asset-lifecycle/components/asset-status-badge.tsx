@@ -4,6 +4,7 @@ import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 type AssetStatus = 'active' | 'stale' | 'inactive' | 'archived' | string
 
@@ -62,7 +63,7 @@ export function AssetStatusBadge({
   snoozedUntil,
   className,
 }: AssetStatusBadgeProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const known = status in STATUS_CONFIG ? status : 'unknown'
   const config = STATUS_CONFIG[status] ?? UNKNOWN_CONFIG
   const label = t(`assets.lifecycle.status.${known}`, config.label)
@@ -106,7 +107,7 @@ export function AssetStatusBadge({
         {snoozeActive && (
           <p className="mt-1 text-muted-foreground">
             {t('assets.lifecycle.pausedUntil', 'Lifecycle worker paused until {date}.', {
-              date: new Date(snoozedUntil).toLocaleDateString(locale),
+              date: formatDate(new Date(snoozedUntil)),
             })}
           </p>
         )}

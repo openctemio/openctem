@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import en from '@/lib/i18n/dictionaries/en/sensors.json'
+import { translate } from '@/lib/i18n'
 import vi_ from '@/lib/i18n/dictionaries/vi/sensors.json'
 import type { ToolDefaults } from '@/lib/api/sensor-tool-settings-hooks'
 
@@ -82,7 +83,7 @@ describe('ToolDefaultsSettings', () => {
     render(<ToolDefaultsSettings />)
     expect(screen.getByText(en['sensors.toolDefaults.title'])).toBeInTheDocument()
     expect(screen.getByTestId('tool-settings-nuclei')).toHaveTextContent(
-      en['sensors.toolDefaults.sensorsCount.other'].replace('{count}', '3')
+      translate(en, 'sensors.toolDefaults.sensorsCount.other', undefined, { count: 3 }, 'en')
     )
     expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
       '1 changed: rate-limit 900'

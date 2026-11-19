@@ -63,6 +63,13 @@ export interface TwoFactorStatus {
    * off is refused, the person replaces the authenticator instead.
    */
   can_turn_off?: boolean
+  /**
+   * The account signs in only through a social provider (no password): it
+   * sets the factor up with the signed-in session step (the two-factor setup
+   * page, soon after signing in), and the password-confirmed actions (turn
+   * off, replace, new codes) are not offered.
+   */
+  enroll_through_session?: boolean
 }
 
 export interface TwoFactorRequiredBy {
@@ -139,7 +146,7 @@ export interface UserPreferences {
   date_format: string
   time_format: '12h' | '24h'
   /**
-   * Browser-local (no server field): set on /account/notifications, under
+   * Browser-local (no server field): set on /settings/me/notifications, under
    * "This browser". Optional because older stored objects may lack it.
    */
   desktop_notifications?: boolean

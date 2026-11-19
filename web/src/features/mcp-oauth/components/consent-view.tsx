@@ -44,6 +44,7 @@ import {
 } from '../api/consent'
 import { TERMINAL_CLIENT_ID } from '../lib/client-snippets'
 import { useMcpLabels } from '../lib/use-mcp-labels'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface ConsentViewProps {
   requestId: string | null
@@ -565,7 +566,7 @@ function DeviceOrigin({ request }: { request: ConsentRequest }) {
                 {
                   key: 'when',
                   label: t('mcp.consent.device.when', 'Asked at'),
-                  value: <time dateTime={request.requested_at}>{at.toLocaleString()}</time>,
+                  value: <time dateTime={request.requested_at}>{formatDateTime(at)}</time>,
                 },
               ]
             : []),

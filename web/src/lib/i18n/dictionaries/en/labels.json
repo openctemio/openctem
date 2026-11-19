@@ -1,5 +1,5 @@
 {
-  "labels.counter.aria": "{count} items",
+  "labels.counter.aria": "{count, plural, one {# item} other {# items}}",
   "labels.due.in": "Due in {days} d",
   "labels.due.overdue": "Overdue {days} d",
   "labels.due.today": "Due today",

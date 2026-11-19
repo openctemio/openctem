@@ -10,6 +10,9 @@ import {
   onAnySensor,
   sensorToolExclusions,
   sensorsLabel,
+  toolExclusionLabel,
+  toolStatusDescription,
+  toolStatusLabel,
   toolUnavailableReason,
   versionsLabel,
 } from '../availability'
@@ -119,6 +122,10 @@ describe('tool availability helpers', () => {
   it('labels sensors and versions', () => {
     expect(sensorsLabel(availItem({ sensors_online: 2, sensors_total: 3 }))).toBe('2/3 online')
     expect(sensorsLabel(availItem({ sensors_online: 0, sensors_total: 0 }))).toBe('none')
+    expect(sensorsLabel(availItem({ sensors_online: 2, sensors_total: 3 }), tVi)).toBe(
+      '2/3 trực tuyến'
+    )
+    expect(sensorsLabel(availItem({ sensors_online: 0, sensors_total: 0 }), tVi)).toBe('không có')
     expect(versionsLabel(availItem({}))).toBe('')
     expect(
       versionsLabel(availItem({ min_reported_version: 'v3.4.2', max_reported_version: 'v3.4.2' }))
@@ -160,5 +167,17 @@ describe('tool availability helpers', () => {
     expect([...ex.keys()]).toEqual(['nuclei'])
     expect(ex.get('nuclei')).toEqual({ reason: 'grant', detail: 'outside the grant (tools)' })
     expect(sensorToolExclusions(items, 'other').size).toBe(0)
+  })
+
+  it('reads statuses and exclusion reasons in Vietnamese', () => {
+    for (const status of ['ready', 'outdated', 'offline_only', 'no_sensor', 'disabled'] as const) {
+      expect(toolStatusLabel(status, tVi)).not.toBe(toolStatusLabel(status, tEn))
+      expect(toolStatusDescription(status, tVi)).not.toBe(toolStatusDescription(status, tEn))
+    }
+    expect(toolStatusLabel('no_sensor', tVi)).toBe('Không có sensor')
+    expect(toolExclusionLabel('grant', tVi)).not.toBe(toolExclusionLabel('grant', tEn))
+    expect(toolExclusionLabel('local_policy', tVi)).not.toBe(
+      toolExclusionLabel('local_policy', tEn)
+    )
   })
 })

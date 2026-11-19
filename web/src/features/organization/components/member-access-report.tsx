@@ -13,6 +13,7 @@ import { DetailChipList, DetailSection, DetailStat, DetailStatGrid } from '@/fea
 import type { LifecycleRef, MemberAccessReport } from '../types/member.types'
 import { ownedScheduleCount } from '../lib/member-lifecycle'
 import { useUserTeamAccess } from '@/features/access-control/api/use-team-access'
+import { formatDate } from '@/lib/app-locale'
 
 function chips(refs: LifecycleRef[] | undefined, withDetail = true) {
   return (refs ?? []).map((r) => ({
@@ -90,7 +91,7 @@ export function MemberAccessReportView({
                 }),
                 meta: g.member_until
                   ? t('org.accessReport.until', 'until {date}', {
-                      date: new Date(g.member_until).toLocaleDateString(),
+                      date: formatDate(new Date(g.member_until)),
                     })
                   : undefined,
                 tag: g.privileged ? t('org.accessReport.elevated', 'elevated') : undefined,

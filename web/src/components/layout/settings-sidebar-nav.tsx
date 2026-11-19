@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft, Search } from 'lucide-react'
+import { ArrowLeft, Search, Settings2 } from 'lucide-react'
 import { SidebarInput, SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useTranslation } from '@/context/i18n-provider'
 import { settingsSections, useSettingsNav } from '@/hooks/use-settings-nav'
@@ -46,8 +46,8 @@ function readReturnPath(): string {
  * (see isSettingsShellPath), in place of the CTEM navigation.
  *
  * "Back to app" (on a phone it shows the app navigation in the open drawer;
- * on desktop it returns to the last app page, see SidebarViewSwitch), a
- * search box that finds pages and the settings inside them
+ * on desktop it returns to the last app page, see SidebarViewSwitch), "All
+ * settings" (the /settings overview), a search box that finds pages and the settings inside them
  * (src/config/settings-search.ts), then the groups from
  * src/config/settings-nav.ts, hidden per permission and module.
  */
@@ -111,6 +111,8 @@ export function SettingsSidebarNav() {
   )
   const noMatch = query.trim() !== '' && sections.every((s) => s.items.length === 0)
   const backLabel = t('settings.backToApp', 'Back to app')
+  const allLabel = t('settings.allSettings', 'All settings')
+  const onOverview = pathname === '/settings'
   const filterLabel = t('settings.filter', 'Search settings')
 
   return (
@@ -122,6 +124,16 @@ export function SettingsSidebarNav() {
             href={backHref}
             label={backLabel}
             icon={<ArrowLeft className="rtl:rotate-180" />}
+          />
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarViewSwitch
+            view="settings"
+            href="/settings"
+            label={allLabel}
+            icon={<Settings2 />}
+            isActive={onOverview}
+            aria-current={onOverview ? 'page' : undefined}
           />
         </SidebarMenuItem>
       </SidebarMenu>

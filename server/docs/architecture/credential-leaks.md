@@ -103,6 +103,19 @@ rows encrypts them as they are.
 - **Tenant isolation**: the organization comes from the authenticated
   principal, never the request body; every update is pinned to `tenant_id`.
 
+## The Credentials list
+
+The list (`/credentials`) follows the shared list pattern of the console: one
+line per leak (identifier and credential type, source, username, leak date
+with a "Recent" mark for the last 30 days, discovery date, status, severity),
+a title row with the count once, Reset, Refresh and Export, and Add filter for
+status, severity and source (several values each, every filter a removable
+chip). "Group by" shows the same leaks grouped by identity; that view reads
+`GET /credentials/identities`, which takes the search and the status only, so
+only those apply there. A row, a phone card and a CSV export never carry the
+secret: only the detail sheet shows the mask, and the plaintext stays behind
+the reveal endpoint.
+
 ## Key files
 
 - `pkg/domain/credential/secret.go`: protector, fingerprint recipes, re-key outcomes

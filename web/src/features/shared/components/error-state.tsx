@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, Copy, RefreshCw } from 'lucide-react'
+import { AlertCircle, Copy, RefreshCw, SearchX } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { accessStateOf, errorDetails } from '@/lib/api/access-state'
 import { AccessNotice } from './access-notice'
+import { EmptyState } from './empty-state'
 import { ReportProblem } from './report-problem'
 
 interface ErrorStateProps {
@@ -30,7 +31,9 @@ interface ErrorStateProps {
  *
  * A refusal is not a failure: a missing permission says so and who can grant
  * it, a switched-off module says that, and neither offers a Retry that cannot
- * help or shows the raw API message.
+ * help or shows the raw API message. A record that is not there (404, the
+ * usual case: a detail page opened from an old link) says so in plain words,
+ * without a Retry that cannot bring it back or the server's English message.
  */
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -74,6 +77,18 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   const requestId = (error as { requestId?: unknown } | undefined)?.requestId
   if (access === 'no_access' || access === 'module_off') {
     return <AccessNotice kind={access} title={title} details={errorDetails(error)} />
+  }
+  if ((error as { statusCode?: unknown } | undefined)?.statusCode === 404) {
+    return (
+      <EmptyState
+        icon={SearchX}
+        title={t('common.notFoundTitle', "Couldn't find {title}", { title })}
+        description={t(
+          'common.notFoundDescription',
+          'It may have been deleted, or the link is out of date.'
+        )}
+      />
+    )
   }
   return (
     <Alert variant="destructive">

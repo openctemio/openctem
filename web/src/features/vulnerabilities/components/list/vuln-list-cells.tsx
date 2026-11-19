@@ -25,6 +25,7 @@ import {
   rowFindingsHref,
 } from '../../lib/vuln-list'
 import type { VulnListItem } from '../../types/list'
+import { formatNumber } from '@/lib/app-locale'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -273,7 +274,7 @@ export function AssetsCell({ item, params }: { item: VulnListItem; params: URLSe
           { count: item.assets }
         )}
       >
-        {item.assets.toLocaleString()}
+        {formatNumber(item.assets)}
       </Link>
       {item.internet_facing_assets > 0 && (
         <span
@@ -281,7 +282,7 @@ export function AssetsCell({ item, params }: { item: VulnListItem; params: URLSe
           title={internet}
         >
           <Globe className="size-3.5 shrink-0" aria-hidden />
-          <span aria-hidden>{item.internet_facing_assets.toLocaleString()}</span>
+          <span aria-hidden>{formatNumber(item.internet_facing_assets)}</span>
           <span className="sr-only">{internet}</span>
         </span>
       )}

@@ -87,7 +87,7 @@ export function invalidateBootstrapSla(): Promise<unknown> {
 
 /**
  * SWR key of the bootstrap's limits_apply: read from the cache only (no
- * request), so the settings rail decides whether to list Usage & limits
+ * request), so the settings rail decides whether to list Usage and limits
  * without a call on every page.
  */
 export const LIMITS_APPLY_KEY = 'bootstrap:limits_apply'

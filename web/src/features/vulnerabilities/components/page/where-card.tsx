@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { useCveExposureAssets } from '../../api/use-cve-exposure'
 import type { CveExposureAsset } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
+import { formatNumber } from '@/lib/app-locale'
 
 const PER_PAGE = 10
 
@@ -60,7 +61,7 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
         <CardTitle className="text-base">
           {t('vulnPage.where.title', 'Where')}{' '}
           <span className="ms-1 rounded border px-1.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-            {total.toLocaleString()}
+            {formatNumber(total)}
           </span>
         </CardTitle>
         <CardAction className="self-center">
@@ -214,7 +215,7 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
           href={cveFindingsHref(cve, { asset_id: asset.asset_id, state: 'open' })}
           className="hover:underline"
         >
-          {asset.open_findings.toLocaleString()}
+          {formatNumber(asset.open_findings)}
         </Link>
       </TableCell>
       <TableCell className="pe-6">

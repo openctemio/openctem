@@ -413,7 +413,7 @@ export default function RelationshipSuggestionsPage() {
   const bulk: DataTableBulk<RelationshipSuggestion> | undefined = canReview
     ? {
         rowLabel: rowName,
-        noun: t('assets.suggestions.bulk.noun', 'suggestions selected'),
+        noun: (count) => t('assets.suggestions.bulk.noun', 'suggestions selected', { count }),
         onSelectionChange,
         actions: (
           <Button

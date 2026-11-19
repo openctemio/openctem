@@ -14,6 +14,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveConsoleMfaPolicy, useConsoleMfaPolicy } from '../api/use-console-factors'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * System > Admin sign-in: "Require security keys" (RFC-078 §7.2). Super admin
@@ -23,7 +24,7 @@ import { saveConsoleMfaPolicy, useConsoleMfaPolicy } from '../api/use-console-fa
  * the authority.
  */
 export function ConsoleMfaPolicyCard() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const switchId = useId()
   const { data, error, isLoading, mutate } = useConsoleMfaPolicy()
   const [pending, setPending] = useState<boolean | null>(null)
@@ -155,7 +156,7 @@ export function ConsoleMfaPolicyCard() {
               {t(
                 'admin.mfaPolicy.grace',
                 'Administrators who hold no key may use the authenticator app until {date}; after that they are refused and must be reset by another super admin or sign in with a recovery code.',
-                { date: new Date(data.grace_until).toLocaleString(locale) }
+                { date: formatDateTime(new Date(data.grace_until)) }
               )}
             </li>
           )}

@@ -11,6 +11,7 @@
  * labelled through `scopeTargetTypeLabel` (`subdomain` reads as Domain).
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Cloud, GitBranch, Globe, Link, Server } from 'lucide-react'
 import {
   Select,
@@ -168,19 +169,20 @@ export function ScopeTargetTypeSelect({
   id,
   'aria-label': ariaLabel,
 }: ScopeKindSelectProps) {
+  const { t } = useTranslation()
   const kinds = only ?? SCOPE_KINDS
   return (
     <Select value={scopeKindOf(value) ?? value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger className={className} aria-label={ariaLabel} id={id}>
-        <SelectValue placeholder="Kind" />
+        <SelectValue placeholder={t('scope.kindPlaceholder', 'Kind')} />
       </SelectTrigger>
       <SelectContent>
-        {withAll && <SelectItem value="all">All kinds</SelectItem>}
+        {withAll && <SelectItem value="all">{t('scope.allKinds', 'All kinds')}</SelectItem>}
         {kinds.map((k) => (
           <SelectItem key={k} value={k}>
             <div className="flex items-center gap-2">
               {SCOPE_TARGET_TYPE_ICON[k]}
-              {SCOPE_KIND_LABEL[k]}
+              {t(`scope.kind.${k}`, SCOPE_KIND_LABEL[k])}
             </div>
           </SelectItem>
         ))}

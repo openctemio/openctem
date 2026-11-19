@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 /**
  * Secret Store API Types
  *
@@ -219,7 +220,7 @@ export const CREDENTIAL_TYPE_DISPLAY_NAMES: Record<CredentialType, string> = {
 // Credential type descriptions
 export const CREDENTIAL_TYPE_DESCRIPTIONS: Record<CredentialType, string> = {
   api_key: 'API key for HTTP authentication headers',
-  basic_auth: 'Username and password for HTTP Basic Authentication',
+  basic_auth: 'Username and password for HTTP basic authentication',
   bearer_token: 'Bearer token for Git providers (GitHub, GitLab, etc.)',
   ssh_key: 'SSH private key for Git SSH access',
   aws_role: 'AWS IAM role ARN for S3 access via STS AssumeRole',
@@ -288,6 +289,6 @@ export function formatLastUsed(lastUsedAt?: string): string {
   } else if (diffDays < 30) {
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
   } else {
-    return date.toLocaleDateString()
+    return formatDate(date)
   }
 }

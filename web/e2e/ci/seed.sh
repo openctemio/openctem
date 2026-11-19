@@ -38,6 +38,13 @@ call() {
   [[ -n "$csrf" ]] && args+=(-H "X-CSRF-Token: $csrf")
   [[ -n "$data" ]] && args+=(-d "$data")
   code=$(curl "${args[@]}")
+  # Sign-in routes allow a few calls a minute per address: wait and retry.
+  local tries=0
+  while [[ "$code" == 429 && $tries -lt 8 ]]; do
+    tries=$((tries + 1))
+    sleep 10
+    code=$(curl "${args[@]}")
+  done
   BODY=$(cat "$WORK/body")
   if [[ ! "$code" =~ ^2 ]]; then
     log "$method $path -> $code: $(head -c 300 <<<"$BODY")"
@@ -112,6 +119,22 @@ SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
        (VALUES ('nginx', 'nginx', '1.25.3', 'web_server'), ('react', 'React', '18.3.1', 'js_library'),
                ('cloudflare', 'Cloudflare', '', 'cdn'), ('hsts', 'HSTS', '', 'security_header')) AS t(k, n, v, c)
  WHERE a.id = :'asset';
+SQL
+
+# 62-list-toolbar-stability (CVE catalog tab): the shared CVE catalog is filled
+# by intelligence feeds, which a CI stack does not sync, so the seed inserts a
+# few catalog entries (reserved 2099 block, none of the CVEs the findings above
+# name). Global rows: no tenant.
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA >/dev/null <<'SQL'
+INSERT INTO vulnerabilities (cve_id, external_id, namespace, origin, title, severity, cvss_score, epss_score,
+                             exploit_available, exploit_maturity, cisa_kev_date_added, cisa_kev_due_date, published_at)
+VALUES ('CVE-2099-0201', 'CVE-2099-0201', 'CVE', 'nvd', 'Remote code execution in the e2e request parser', 'critical', 9.8, 0.97, true, 'weaponized', '2099-01-02', '2099-01-23', '2099-01-01'),
+       ('CVE-2099-0202', 'CVE-2099-0202', 'CVE', 'nvd', 'Path traversal in the e2e archive extractor', 'high', 8.1, 0.12, true, 'poc', NULL, NULL, '2099-01-05'),
+       ('CVE-2099-0203', 'CVE-2099-0203', 'CVE', 'nvd', 'SQL injection in the e2e report filter', 'high', 7.5, 0.004, false, 'none', NULL, NULL, '2099-02-01'),
+       ('CVE-2099-0204', 'CVE-2099-0204', 'CVE', 'nvd', 'Cross-site scripting in the e2e search page', 'medium', 6.1, 0.0004, false, 'none', NULL, NULL, '2099-02-10'),
+       ('CVE-2099-0205', 'CVE-2099-0205', 'CVE', 'nvd', 'Information disclosure in the e2e status endpoint', 'low', 3.1, NULL, false, 'none', NULL, NULL, '2099-03-01')
+ON CONFLICT DO NOTHING;
 SQL
 
 log "risk trend"
@@ -233,6 +256,19 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
   -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
+log "credential leaks"
+# /credentials (specs 36 and 62): a list with rows, so its toolbar, chips and
+# grouping are drawn. Every severity, four sources, one long identifier, one
+# leak dated today ("Recent"), one without a breach date. No secret values.
+TODAY=$(date -u +%F)
+call POST /api/v1/credentials/import "{\"credentials\":[
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"password\",\"severity\":\"critical\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e breach\"},\"dedup_key\":{\"breach_name\":\"e2e breach\",\"breach_date\":\"$TODAY\"},\"context\":{\"email\":\"e2e-alice@example.com\",\"username\":\"alice\"}},
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"access_token\",\"severity\":\"high\",\"source\":{\"type\":\"dark_web\"},\"dedup_key\":{\"breach_name\":\"e2e market\",\"breach_date\":\"2024-03-01\"},\"context\":{\"email\":\"e2e-alice@example.com\"}},
+  {\"identifier\":\"e2e-ci-deploy-key\",\"credential_type\":\"api_key\",\"severity\":\"medium\",\"source\":{\"type\":\"code_repository\"},\"dedup_key\":{\"repository\":\"example.com/e2e/app\",\"file_path\":\"deploy/ci.env\"}},
+  {\"identifier\":\"e2e-a-very-long-service-account-name-for-the-reporting-pipeline@example.com\",\"credential_type\":\"refresh_token\",\"severity\":\"low\",\"source\":{\"type\":\"paste_site\"},\"dedup_key\":{\"paste_id\":\"e2e-paste-1\"}},
+  {\"identifier\":\"e2e-bob\",\"credential_type\":\"password\",\"severity\":\"info\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e old breach\"},\"dedup_key\":{\"breach_name\":\"e2e old breach\",\"breach_date\":\"2019-07-15\"},\"context\":{\"username\":\"e2e-bob\"}}
+]}"
+
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
@@ -344,6 +380,12 @@ INVITEE_NEW_EMAIL="e2e-invitee-new-$RUN@openctem-test.local"
 INVITEE_NEW_PASSWORD="$(openssl rand -hex 10)N$(openssl rand -hex 3)"
 call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_NEW_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
 INVITEE_NEW_TOKEN=$(jq -r .token <<<"$BODY")
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  # 66-first-sign-in: a pending invitation into organization B for an address
+  # that signs in with Google for the first time (closed sign-up admits it).
+  SOCIAL_INVITED_EMAIL="e2e-social-invited-$RUN@openctem-test.local"
+  call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$SOCIAL_INVITED_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+fi
 call POST /api/v1/auth/logout '{}'
 
 log "invitees (E2E_INVITEE_*)"
@@ -374,6 +416,59 @@ call POST /api/v1/auth/reset-password "{\"token\":\"$INVITEE_SET_TOKEN\",\"new_p
 JAR="$WORK/invitee-new-cookies"
 call POST /api/v1/auth/register "{\"email\":\"$INVITEE_NEW_EMAIL\",\"password\":\"$INVITEE_NEW_PASSWORD\",\"name\":\"E2E Invitee\",\"invitation_token\":\"$INVITEE_NEW_TOKEN\"}"
 
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  log "an organization that requires two-factor authentication (E2E_MFA_ORG*)"
+  # 66-first-sign-in: invitations into it for a first Google sign-in and for a
+  # new password account; the requirement is turned on after the owner has
+  # sent them (an owner without 2FA could not open it afterwards).
+  MFA_OWNER_EMAIL="e2e-2fa-owner-$RUN@openctem-test.local"
+  MFA_OWNER_PASSWORD="$(openssl rand -hex 10)M$(openssl rand -hex 3)"
+  out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+    --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+    -print-secrets \
+    -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+    -org-name="E2E 2FA $RUN" -org-slug="$SLUG-2fa" -org-owner-email="$MFA_OWNER_EMAIL" 2>&1) || {
+    log "bootstrap-admin (2fa) failed:"
+    echo "$out" >&2
+    exit 1
+  }
+  MFA_SET_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+  [[ -n "$MFA_SET_TOKEN" ]] || { log "no set-password link for $MFA_OWNER_EMAIL"; exit 1; }
+  docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG-2fa" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+  ACCESS_TOKEN=
+  JAR="$WORK/mfa-owner-cookies"
+  call POST /api/v1/auth/reset-password "{\"token\":\"$MFA_SET_TOKEN\",\"new_password\":\"$MFA_OWNER_PASSWORD\"}"
+  call POST /api/v1/auth/login "{\"email\":\"$MFA_OWNER_EMAIL\",\"password\":\"$MFA_OWNER_PASSWORD\"}"
+  MFA_TENANT_ID=$(jq -r --arg s "$SLUG-2fa" '(.tenants // [])[] | select(.slug==$s) | .id' <<<"$BODY")
+  call POST /api/v1/auth/token "{\"tenant_id\":\"$MFA_TENANT_ID\"}"
+  ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+  call GET /api/v1/roles
+  MFA_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "member")][0].id' <<<"$BODY")
+  SOCIAL_MFA_EMAIL="e2e-social-2fa-$RUN@openctem-test.local"
+  call POST "/api/v1/tenants/$SLUG-2fa/invitations" "{\"email\":\"$SOCIAL_MFA_EMAIL\",\"role_ids\":[\"$MFA_ROLE_ID\"]}"
+  PASSWORD_MFA_EMAIL="e2e-password-2fa-$RUN@openctem-test.local"
+  PASSWORD_MFA_PASSWORD="$(openssl rand -hex 10)P$(openssl rand -hex 3)"
+  call POST "/api/v1/tenants/$SLUG-2fa/invitations" "{\"email\":\"$PASSWORD_MFA_EMAIL\",\"role_ids\":[\"$MFA_ROLE_ID\"]}"
+  PASSWORD_MFA_TOKEN=$(jq -r .token <<<"$BODY")
+  call POST /api/v1/auth/logout '{}'
+  ACCESS_TOKEN=
+  JAR="$WORK/password-2fa-cookies"
+  call POST /api/v1/auth/register "{\"email\":\"$PASSWORD_MFA_EMAIL\",\"password\":\"$PASSWORD_MFA_PASSWORD\",\"name\":\"E2E Password 2FA\",\"invitation_token\":\"$PASSWORD_MFA_TOKEN\"}"
+  docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG-2fa" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required": true}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+fi
+
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
@@ -393,3 +488,13 @@ echo "E2E_INVITEE_HOME_ORG=E2E Invitee Home $RUN"
 echo "E2E_INVITEE_NEW_EMAIL=$INVITEE_NEW_EMAIL"
 echo "E2E_INVITEE_NEW_PASSWORD=$INVITEE_NEW_PASSWORD"
 echo "E2E_INVITEE_NEW_TOKEN=$INVITEE_NEW_TOKEN"
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  echo "E2E_FAKE_GOOGLE=1"
+  echo "E2E_SOCIAL_NEW_EMAIL=e2e-social-new-$RUN@openctem-test.local"
+  echo "E2E_SOCIAL_INVITED_EMAIL=$SOCIAL_INVITED_EMAIL"
+  echo "E2E_SOCIAL_MFA_EMAIL=$SOCIAL_MFA_EMAIL"
+  echo "E2E_PASSWORD_MFA_EMAIL=$PASSWORD_MFA_EMAIL"
+  echo "E2E_PASSWORD_MFA_PASSWORD=$PASSWORD_MFA_PASSWORD"
+  echo "E2E_MFA_ORG=E2E 2FA $RUN"
+  echo "E2E_MFA_ORG_SLUG=$SLUG-2fa"
+fi

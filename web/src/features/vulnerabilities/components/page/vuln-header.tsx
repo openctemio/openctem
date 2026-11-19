@@ -17,6 +17,7 @@ import type { Vulnerability } from '../../types'
 import type { CveExposure } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
 import { formatDateOnly } from '@/lib/date-only'
+import { formatNumber } from '@/lib/app-locale'
 
 export interface VulnHeaderProps {
   cve: string
@@ -141,7 +142,7 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: 
             <Link href={cveFindingsHref(cve, { state: 'all' })}>
               <ListChecks className="me-1.5 h-4 w-4" aria-hidden />
               {t('vulnPage.header.openFindings', 'Open {count} findings', {
-                count: findings.total.toLocaleString(),
+                count: formatNumber(findings.total),
               })}
             </Link>
           </Button>

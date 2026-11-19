@@ -78,6 +78,7 @@ import { useOneTimeKeyGuard } from './one-time-key-guard'
 import { PairingReview } from './sensor-pairing-steps'
 import { Snippet } from './sensor-install-snippets'
 import { ToggleChip } from './toggle-chip'
+import { formatDateTime } from '@/lib/app-locale'
 
 export function EnrollmentTokensPanel() {
   const { t } = useTranslation()
@@ -167,7 +168,7 @@ function TokenList({ canRevoke }: { canRevoke: boolean }) {
               </DetailField>
               <DetailField label={t('sensors.tokens.col.expires')}>
                 <span title={exactTime(tok.expires_at)}>
-                  {new Date(tok.expires_at).toLocaleString()}
+                  {formatDateTime(new Date(tok.expires_at))}
                 </span>
               </DetailField>
               <DetailField label={t('sensors.tokens.col.lastUsed')}>
@@ -225,7 +226,7 @@ function TokenList({ canRevoke }: { canRevoke: boolean }) {
                   })}
                 </TableCell>
                 <TableCell title={exactTime(tok.expires_at)}>
-                  {new Date(tok.expires_at).toLocaleString()}
+                  {formatDateTime(new Date(tok.expires_at))}
                 </TableCell>
                 <TableCell title={exactTime(tok.last_used_at)}>
                   {tok.last_used_at ? (

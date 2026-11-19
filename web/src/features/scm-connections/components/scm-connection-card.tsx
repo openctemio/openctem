@@ -35,6 +35,7 @@ import {
   invalidateSCMIntegrationsCache,
 } from '@/features/integrations'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 
 interface SCMConnectionCardProps {
   connection: Integration
@@ -244,11 +245,11 @@ export function SCMConnectionCard({
                   <TooltipTrigger asChild>
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {new Date(connection.last_sync_at).toLocaleDateString()}
+                      {formatDate(new Date(connection.last_sync_at))}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Last validated: {new Date(connection.last_sync_at).toLocaleString()}
+                    Last validated: {formatDateTime(new Date(connection.last_sync_at))}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

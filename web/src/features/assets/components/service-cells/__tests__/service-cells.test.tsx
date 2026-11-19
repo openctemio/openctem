@@ -9,8 +9,8 @@ import {
   sensorHttpServiceNoTech,
   sensorIpWithPorts,
 } from '../../../lib/__fixtures__/ingest-shaped-assets'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import {
-  EmptyCell,
   HttpStatusChip,
   OpenFindingsCell,
   OpenFindingsLink,
