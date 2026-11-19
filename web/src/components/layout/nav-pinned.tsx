@@ -24,6 +24,7 @@ import type { NavGroup, NavItem } from '../types'
 import { NAV_BUTTON_CLASS, NavClusterLabel } from './nav-group'
 import { NavCount } from './nav-count'
 import { SidebarLink } from './sidebar-link'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Every page the sidebar links to, by path, with its title and icon. */
 export function pagesOf(
@@ -125,7 +126,7 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
                       {r.label}
                     </span>
                     {typeof r.count === 'number' && r.count > 0 && (
-                      <NavCount>{r.count.toLocaleString()}</NavCount>
+                      <NavCount>{formatNumber(r.count)}</NavCount>
                     )}
                   </SidebarLink>
                 </SidebarMenuButton>

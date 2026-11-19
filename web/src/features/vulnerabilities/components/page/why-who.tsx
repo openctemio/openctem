@@ -14,6 +14,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import type { CveExposure, CveExposureUpgrade } from '../../types/exposure'
 import { share } from '../../lib/vuln-page'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * "Why": the installed package versions the active findings name, the fix
@@ -77,7 +78,7 @@ export function WhyCard({
                       )}
                     </TableCell>
                     <TableCell className="pe-6 text-end tabular-nums">
-                      {c.assets.toLocaleString()}
+                      {formatNumber(c.assets)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -181,8 +182,8 @@ export function WhoCard({ exposure }: { exposure: CveExposure }) {
                   <span className="min-w-0 truncate">{s.name}</span>
                   <span className="ms-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                     {t('vulnPage.who.ofAssets', '{count} of {total} assets', {
-                      count: s.assets.toLocaleString(),
-                      total: assets.impacted.toLocaleString(),
+                      count: formatNumber(s.assets),
+                      total: formatNumber(assets.impacted),
                     })}
                   </span>
                 </li>

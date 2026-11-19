@@ -36,6 +36,7 @@ import {
   useEASMSettings,
   type EASMSettingsInput,
 } from '../hooks/use-easm-settings'
+import { formatDate } from '@/lib/app-locale'
 
 /** Interval choices in hours; 0 is the platform default. */
 export const EASM_INTERVALS = [0, 6, 12, 24, 48, 168]
@@ -451,10 +452,10 @@ function DigestSection({
   disabled: boolean
   onSave: (change: Partial<EASMSettingsInput>) => Promise<void>
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const dayName = (d: number) =>
     // 2024-01-01 was a Monday: day d of that week, named in the user's language.
-    new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale, { weekday: 'long', timeZone: 'UTC' })
+    formatDate(new Date(Date.UTC(2024, 0, d)), { weekday: 'long', timeZone: 'UTC' })
   const enabled = !!settings.weekly_digest_enabled
   return (
     <section

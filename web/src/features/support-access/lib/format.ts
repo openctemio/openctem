@@ -1,14 +1,15 @@
+import { formatDateTime } from '@/lib/app-locale'
 /** Display helpers shared by the organization and console support-access views. */
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
 /** A timestamp in the viewer's locale with the time ("16 Oct 2026, 14:05"). */
-export function formatSupportTime(value: string | undefined | null, locale: string): string {
+export function formatSupportTime(value: string | undefined | null, _locale: string): string {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
   try {
-    return d.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+    return formatDateTime(d, { dateStyle: 'medium', timeStyle: 'short' })
   } catch {
     return d.toISOString()
   }

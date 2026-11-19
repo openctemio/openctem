@@ -49,6 +49,7 @@ import {
   parseTime,
   type ChangeKind,
 } from '../lib/changes'
+import { formatDate } from '@/lib/app-locale'
 import { BreakText } from '@/features/shared/components/break-text'
 
 const KIND_ICON: Record<ChangeKind, LucideIcon> = {
@@ -170,7 +171,7 @@ function ChangeRow({ change }: { change: EASMChange }) {
 }
 
 export function EASMChanges() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const kindLabel = useKindLabel()
   const [kindParam, setKinds] = useUrlFilterList('kind')
   const [daysParam, setDays] = useUrlFilter('days', '7')
@@ -223,7 +224,7 @@ export function EASMChanges() {
 
   const fmt = (iso?: string) =>
     iso
-      ? new Date(iso).toLocaleDateString(locale, {
+      ? formatDate(new Date(iso), {
           year: 'numeric',
           month: 'short',
           day: 'numeric',

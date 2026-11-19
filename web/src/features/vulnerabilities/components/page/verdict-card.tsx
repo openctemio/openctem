@@ -8,6 +8,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import type { CveExposure, ExposureVerdict } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
+import { formatNumber } from '@/lib/app-locale'
 
 const ICON: Record<ExposureVerdict, typeof CircleAlert> = {
   confirmed: CircleAlert,
@@ -99,7 +100,7 @@ export function VerdictCard({ cve, exposure }: { cve: string; exposure: CveExpos
                     b.count === 0 && 'text-muted-foreground'
                   )}
                 >
-                  {b.count.toLocaleString()}
+                  {formatNumber(b.count)}
                 </span>
                 <span className="block text-xs text-muted-foreground">
                   {t('vulnPage.verdict.assets', '{count, plural, one {asset} other {assets}}', {

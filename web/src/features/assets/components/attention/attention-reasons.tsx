@@ -19,6 +19,7 @@ import { useVisibleSectionTabs } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { useAttentionCount } from './use-attention-count'
+import { formatNumber } from '@/lib/app-locale'
 
 const GROUPS: readonly { id: AttentionReasonDef['group']; key: string; fallback: string }[] = [
   { id: 'decide', key: 'assets.attention.group.decide', fallback: 'Scoping decisions' },
@@ -52,7 +53,7 @@ function ReasonRow({ reason }: { reason: AttentionReasonDef }) {
           data-testid={`attention-count-${reason.id}`}
         >
           <span className="text-lg font-semibold tabular-nums">
-            {count === undefined ? '' : count.toLocaleString()}
+            {count === undefined ? '' : formatNumber(count)}
           </span>
           {count !== undefined && ' '}
           {count !== undefined && (

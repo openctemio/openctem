@@ -8,6 +8,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import type { FindingsEmptyKind } from '../lib/empty-kind'
 import { PRACTICE_VIEW_TEXT, practiceLabelKey, type PracticeView } from '../lib/practice'
+import { formatNumber } from '@/lib/app-locale'
 
 interface FindingsEmptyStateProps {
   kind: FindingsEmptyKind
@@ -171,7 +172,7 @@ export function FindingsEmptyState({
       description={
         typeof hiddenCount === 'number' && hiddenCount > 0 && reasonText
           ? t('findings.empty.hidden', '{count} {state} findings are hidden by {reasons}.', {
-              count: hiddenCount.toLocaleString(),
+              count: formatNumber(hiddenCount),
               state: (stateLabel ?? '').toLowerCase(),
               reasons: reasonText,
             })

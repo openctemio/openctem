@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { formatDateTime } from '@/lib/app-locale'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { PropertyValue, recordColumns, isIsoTimestamp } from '../property-value'
 import { PropertiesSection } from '../asset-overview-sections'
@@ -68,7 +69,7 @@ describe('PropertyValue', () => {
     const iso = '2026-10-28T02:53:49.105Z'
     render(<PropertyValue value={iso} />)
     expect(screen.queryByText(iso)).not.toBeInTheDocument()
-    expect(screen.getByText(new Date(iso).toLocaleString())).toBeInTheDocument()
+    expect(screen.getByText(formatDateTime(new Date(iso)))).toBeInTheDocument()
   })
 
   it('renders scanner text as text, never as markup or a script link', () => {

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { INFORMATIONAL_PARAM } from '@/features/findings/lib/quick-views'
 import { STATUS_TONE_TEXT } from '@/lib/status-colors'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * The one way the console shows how many findings an asset has (research/271):
@@ -72,7 +73,7 @@ export function OpenFindingsLink({ assetId, count, compact, className }: OpenFin
       )}
     >
       <ShieldAlert aria-hidden="true" className="size-3.5 shrink-0" />
-      {compact ? count.toLocaleString() : label}
+      {compact ? formatNumber(count) : label}
     </Link>
   )
 }

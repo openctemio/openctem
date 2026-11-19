@@ -9,6 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Meter } from '@/features/shared/components/meter'
 
 import type { AIConfig } from '../types/ai-triage.types'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * This month's AI use against the organization's limit, and where the other
@@ -41,8 +42,8 @@ export function AIUsageCard({ config }: { config?: AIConfig }) {
           <div className="space-y-2">
             <p className="text-sm">
               {t('settings.ai.usage', 'This month: {used} of {limit} tokens used.', {
-                used: used.toLocaleString(),
-                limit: limit.toLocaleString(),
+                used: formatNumber(used),
+                limit: formatNumber(limit),
               })}
             </p>
             <Meter
@@ -50,8 +51,8 @@ export function AIUsageCard({ config }: { config?: AIConfig }) {
               max={limit}
               tone={spent ? 'warning' : 'default'}
               label={t('settings.ai.limits.meter', '{used} of {limit} tokens used this month', {
-                used: used.toLocaleString(),
-                limit: limit.toLocaleString(),
+                used: formatNumber(used),
+                limit: formatNumber(limit),
               })}
             />
             {spent && (
@@ -69,7 +70,7 @@ export function AIUsageCard({ config }: { config?: AIConfig }) {
               'settings.ai.limits.noLimit',
               'This month: {used} tokens used. No monthly limit is set.',
               {
-                used: used.toLocaleString(),
+                used: formatNumber(used),
               }
             )}
           </p>

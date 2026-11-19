@@ -180,6 +180,7 @@ tests that cover the console's most user-visible flows.
 | `75-layout-breaks.spec.ts`                  | Lists and overlays at 390/1024/1440 px, en and vi, long data: overlaps, broken words, cuts, English in vi  |
 | `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
 | `57-invitation-accept.spec.ts`              | Accept lands in the joined organization (own one, none, 390px); accepted link offers Open                  |
+| `66-first-sign-in.spec.ts`                  | First Google sign-in (fake provider): closed sign-up, invitation, member, 2FA organization, password 2FA   |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |

@@ -1,3 +1,4 @@
+import { formatDate } from '@/lib/app-locale'
 // A calendar date with no time of day ("2026-10-01") is the same day everywhere.
 // `new Date("2026-10-01")` reads it as UTC midnight, which renders as the day
 // before in timezones west of UTC. The API also returns DATE columns as
@@ -19,5 +20,5 @@ export function formatDateOnly(
 ): string {
   if (!value) return ''
   const d = parseDateOnly(value)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, options)
+  return Number.isNaN(d.getTime()) ? '' : formatDate(d, options)
 }

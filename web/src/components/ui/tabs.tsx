@@ -4,6 +4,7 @@ import * as React from 'react'
 import * as TabsPrimitive from '@radix-ui/react-tabs'
 
 import { cn } from '@/lib/utils'
+import { formatNumber } from '@/lib/app-locale'
 
 function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Root>) {
   return (
@@ -252,7 +253,7 @@ function TabsCount({
         className
       )}
     >
-      {typeof value === 'number' ? value.toLocaleString() : value}
+      {typeof value === 'number' ? formatNumber(value) : value}
     </span>
   )
 }

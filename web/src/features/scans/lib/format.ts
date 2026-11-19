@@ -1,9 +1,10 @@
 import { successRate } from './run-history'
+import { formatDate } from '@/lib/app-locale'
 
 /** "Oct 2, 03:41 PM"; "-" without a date. */
 export function formatScanDate(dateString?: string): string {
   if (!dateString) return '-'
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return formatDate(new Date(dateString), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
