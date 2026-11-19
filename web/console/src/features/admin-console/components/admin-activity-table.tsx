@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { History } from 'lucide-react'
 import { DataTable, EmptyState, RelativeTime, type FilterPanelToggleProps } from '@/features/shared'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { EmptyCell } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { auditActionLabel } from '../lib/audit-action-label'
 import type { AdminAuditEntry } from '../types'
 
