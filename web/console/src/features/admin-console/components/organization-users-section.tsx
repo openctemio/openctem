@@ -64,6 +64,8 @@ function useUserColumns(
   if (onSetupLink) {
     columns.push({
       id: 'actions',
+      // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+      meta: { kind: 'decisions' },
       header: () => <span className="sr-only">{t('common.table.actionsColumn', 'Actions')}</span>,
       cell: ({ row }) =>
         needsHandOverLink(row.original) ? (
