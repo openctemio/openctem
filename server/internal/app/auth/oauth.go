@@ -392,7 +392,7 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 	// A person who signed up with no other way in gets their own
 	// organization now, before the second-factor step (a provider that does
 	// not vouch for the address leaves it unverified: nothing is made). It
-	// never fails the sign-in. A new owner under a platform 2FA floor enrols
+	// never fails the sign-in. A new owner under a platform 2FA floor enrolls
 	// the second factor in place at this sign-in (SessionMFAChallenge), then
 	// opens the organization.
 	ci := clientInfoFrom(ctx)
