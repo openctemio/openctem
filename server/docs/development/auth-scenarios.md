@@ -80,8 +80,38 @@ social) and `mfa_evidence`, and the account gets the provider and no
 password. The suites therefore test everything after the provider said yes,
 which is where the decisions are. Decisions taken inside a callback before
 the session exists (for example a second step offered during a social
-sign-in) are covered only through their effect on the session; a test seam
-that lets the callback run against a fake provider is a follow-up.
+sign-in) are covered only through their effect on the session, unless the
+suite points the API at a stand-in provider (below).
+
+## Running a sign-in against a stand-in provider (test builds only)
+
+A binary built with the build tag `authtestseam` reaches the social
+providers' endpoints (authorization, token, signing keys, profile APIs of
+Google, Microsoft and GitHub) at a stand-in:
+`AUTHTESTSEAM_PROVIDER_URL=<base>` turns `https://<host><path>` into
+`<base>/<host><path>` for the API's own calls, and
+`AUTHTESTSEAM_PROVIDER_BROWSER_URL` (default: the same) for the browser's
+authorization redirect. The identity rules do not change: an id_token still
+carries the provider's real issuer and our client id, and is verified
+against the stand-in's keys. Even a test binary ignores the variables unless
+`APP_ENV` is `test` or `e2e` (unset, `production`, `staging` and every other
+value never apply them), and it logs a warning at start-up whenever they apply.
+
+A build without the tag (every release image) compiles
+`internal/app/auth/provider_endpoints_release.go` instead and reads no
+variable; `provider_endpoints_test.go` proves which file each build compiles,
+that the environment changes nothing in a release build, and that no
+Dockerfile, bake file, Makefile, script or workflow outside the test suites
+passes the tag.
+
+- Go suite: `ci/run.sh` builds the API with the tag; set
+  `AUTHSCEN_PROVIDER_URL` (and `AUTHSCEN_PROVIDER_BROWSER_URL`) to point it at
+  a stand-in. The workflow also runs the tagged end-to-end test
+  `TestProviderTestSeam_SignInAgainstAStandIn` (code exchange, id_token
+  verification, profile APIs, against an in-process stand-in).
+- Browser suite: `server/tests/testseam/Dockerfile` rebuilds the e2e API
+  image's server binary with the tag
+  (`--build-arg API_IMAGE=<the e2e API image>`).
 
 ## Known failures
 

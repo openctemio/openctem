@@ -15,6 +15,9 @@
 #                              older version. Default: this tree.
 #   AUTHSCEN_KEEP=1            keep the stack up (prints how to stop it)
 #   AUTHSCEN_REPORT=<file>     write the JSON report there
+#   AUTHSCEN_PROVIDER_URL=<u>  a stand-in social sign-in provider (test seam);
+#                              AUTHSCEN_PROVIDER_BROWSER_URL as the browser
+#                              reaches it (default: the same)
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -52,7 +55,11 @@ db_scheme=postgres
 export DATABASE_URL="${db_scheme}://openctem:${AUTHSCEN_DB_PASSWORD}@127.0.0.1:${AUTHSCEN_DB_PORT}/openctem?sslmode=disable"
 "${COMPOSE[@]}" up -d --wait postgres redis
 
-(cd "$SERVER_DIR" && GOWORK=off go build -o "$WORK/" ./cmd/server ./cmd/openctem-migrate ./cmd/bootstrap-admin)
+# The API is a test build (tag authtestseam): with AUTHSCEN_PROVIDER_URL set,
+# social sign-in reaches a stand-in provider at that URL
+# (internal/app/auth/provider_endpoints.go). A tree without the seam ignores
+# the tag.
+(cd "$SERVER_DIR" && GOWORK=off go build -tags authtestseam -o "$WORK/" ./cmd/server ./cmd/openctem-migrate ./cmd/bootstrap-admin)
 export AUTHSCEN_BOOTSTRAP="$WORK/bootstrap-admin"
 PGPASSWORD="$AUTHSCEN_DB_PASSWORD" "$WORK/openctem-migrate" -path "$SERVER_DIR/migrations" \
   -database "${db_scheme}://openctem@127.0.0.1:${AUTHSCEN_DB_PORT}/openctem?sslmode=disable" up >"$WORK/migrate.log" 2>&1 \
@@ -60,7 +67,7 @@ PGPASSWORD="$AUTHSCEN_DB_PASSWORD" "$WORK/openctem-migrate" -path "$SERVER_DIR/m
 
 JWT_SECRET=$(rnd)
 (
-  export APP_ENV=staging APP_URL=http://localhost:3999 CORS_ALLOWED_ORIGINS=http://localhost:3999 AUTH_COOKIE_SECURE=false
+  export APP_ENV=test APP_URL=http://localhost:3999 CORS_ALLOWED_ORIGINS=http://localhost:3999 AUTH_COOKIE_SECURE=false
   export SERVER_HOST=127.0.0.1 SERVER_PORT=$API_PORT
   export DB_HOST=127.0.0.1 DB_PORT=$AUTHSCEN_DB_PORT DB_USER=openctem DB_PASSWORD=$AUTHSCEN_DB_PASSWORD DB_NAME=openctem DB_SSLMODE=disable
   export REDIS_HOST=127.0.0.1 REDIS_PORT=$AUTHSCEN_REDIS_PORT REDIS_PASSWORD=$AUTHSCEN_REDIS_PASSWORD
@@ -79,6 +86,10 @@ JWT_SECRET=$(rnd)
   # Social sign-in is enabled (no provider round trip happens in the suite:
   # federated sessions are seeded as the callback leaves them).
   export RATE_LIMIT_ENABLED=false RATE_LIMIT_READ_PER_MIN=1000000 RATE_LIMIT_WRITE_PER_MIN=1000000 AUTH_MAX_LOGIN_ATTEMPTS=1000000
+  if [[ -n "${AUTHSCEN_PROVIDER_URL:-}" ]]; then
+    export AUTHTESTSEAM_PROVIDER_URL=$AUTHSCEN_PROVIDER_URL
+    export AUTHTESTSEAM_PROVIDER_BROWSER_URL=${AUTHSCEN_PROVIDER_BROWSER_URL:-$AUTHSCEN_PROVIDER_URL}
+  fi
   # The API reads its schema expectations (migrations/) from the working
   # directory: run it in the tree it was built from.
   cd "$SERVER_DIR"
