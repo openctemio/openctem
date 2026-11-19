@@ -405,3 +405,23 @@ tests:
               summary: The kev intelligence feed has not imported successfully for 14h 0m 0s
               description: Vulnerability, exploit and priority data goes stale. Threat intel, Sync status shows the last error; for the bundle feed check that the publisher's newest release is current.
               runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale
+
+  # An open freshness condition fires after the 10 minute hold; none, never.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_feed_freshness_alerts{code="data_stale"}'
+        values: '0x10 1x30'
+      - series: 'openctem_feed_freshness_alerts{code="volume_low"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: FeedFreshness
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: FeedFreshness
+        exp_alerts:
+          - exp_labels: {severity: critical, component: api, code: data_stale}
+            exp_annotations:
+              summary: 'Vulnerability data freshness problem: data_stale'
+              description: New vulnerabilities may not reach findings and alerts. System, Threat intelligence in the platform console names the feed and the cause.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedfreshness
