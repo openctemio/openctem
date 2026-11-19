@@ -297,14 +297,16 @@ organization's sensor) and the open alerts.
 
 **Alerts** (RFC-142 §2.5): in relay mode the controller tells the platform
 administrators (e-mail and the alert webhook, as the system checks) when no
-designated relay is seen for 1 hour (`relay_offline`), the vulnerability feed's
-applied release is 48 hours old (`feed_stale:vulnfeed`), or the newest failed
+designated relay is seen for 1 hour (`relay_offline`), or the newest failed
 round since the last import has `verify_failed`, `pin_mismatch`,
 `rollback_refused` (critical) or `signer_refused`
 (`round_failed:<feed>:<code>`). Open alerts are stored in the platform setting
 `feed_relay.alerts` (one per condition across restarts and lease moves); a
 cleared condition gets one "resolved" notice. Every alert also logs a WARN
-line with `alert=feed_relay_<condition>`.
+line with `alert=feed_relay_<condition>`. The age of the data itself is
+watched in every mode by the freshness watch
+([intelligence feeds](intelligence-feeds.md#freshness-alarms-in-every-mode-and-the-all-user-banner)),
+which replaced the relay's own 48-hour `feed_stale` alert.
 
 A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing job signer locks relay
 mode off.
