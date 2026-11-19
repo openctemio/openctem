@@ -15,7 +15,7 @@
  */
 
 import { useState } from 'react'
-import { Server } from 'lucide-react'
+import { Pause, Server } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
@@ -63,16 +63,28 @@ export function ScopeProviderAddressesCard() {
               'These scope entries are addresses a provider shares with its other customers. They are not yours to scan, so move them out of scope. The names that point at them stay in scope.'
             )}
           </p>
-          {data?.holding && (
-            <p className="text-muted-foreground" data-testid="scope-provider-holding">
-              {t(
-                'scope.providers.holding',
-                'On hold until you answer: scans skip these addresses.'
-              )}
-            </p>
-          )}
         </div>
       </div>
+      {data?.holding && groups.some((g) => g.entry_count > 0) && (
+        <div
+          role="status"
+          className="mt-3 flex gap-2 rounded-md border bg-muted/40 p-3"
+          data-testid="scope-provider-holding"
+        >
+          <Pause className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-0 space-y-0.5">
+            <p className="font-medium">
+              {t('scope.providers.holdingTitle', 'Scanning of these addresses is paused')}
+            </p>
+            <p className="text-muted-foreground">
+              {t(
+                'scope.providers.holding',
+                "These scope entries are a provider's shared addresses, so scans skip them until you answer. Move them out of scope, or choose Keep scanning to resume active scanning in one step. Nothing is deleted either way."
+              )}
+            </p>
+          </div>
+        </div>
+      )}
       <ul className="mt-3 divide-y border-t">
         {groups.map((g) => (
           <ProviderRow key={g.provider} group={g} onChanged={refresh} />
@@ -281,7 +293,7 @@ function ProviderRow({
         title={t('scope.providers.keepTitle', 'Keep scanning {provider} addresses?', { provider })}
         desc={t(
           'scope.providers.keepDesc',
-          "These addresses serve the provider's other customers too, and testing them follows the provider's rules. The entries stay in scope and leave this list. You will be asked to confirm your identity."
+          "Active scanning of these addresses resumes at once. They serve the provider's other customers too, and testing them follows the provider's rules. The entries stay in scope and leave this list. You will be asked to confirm your identity."
         )}
         confirmText={t('scope.providers.keep', 'Keep scanning')}
         handleConfirm={keep}

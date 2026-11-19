@@ -18,11 +18,12 @@ package scope
 //   - Keep scanning: the organization's recorded decision, per entry, with
 //     step-up; the entries leave the card and are never held.
 //
-// While the tenant's scope setting hold_provider_entries is on, an entry
-// nobody answered authorizes no active check (HeldProviderEntries, read by
-// scopeauth.Load): the gate answers provider_held. The setting is off by
-// default, so an install changes no scan behavior until an organization
-// turns it on.
+// While the tenant's scope setting hold_provider_entries is on (the
+// default, owner decision 2026-11-19), an entry nobody answered authorizes
+// no active check (HeldProviderEntries, read by scopeauth.Load): the gate
+// answers provider_held and the Scope page says why. Keep scanning restores
+// active checks of those entries in one step; an organization can also turn
+// the hold off in its scope settings.
 //
 // Person-confirmed provider addresses (an ip_address asset inside a shared
 // range whose attribution a person decided) are listed under the card for
@@ -157,20 +158,19 @@ func (s *Service) unansweredProviderEntries(ctx context.Context, tenantID shared
 }
 
 // HeldProviderEntries implements scopeauth.ProviderHolds: while the tenant's
-// hold_provider_entries setting is on, its unanswered entries on shared
-// provider addresses authorize nothing. With the setting off (the default)
-// nothing is held. Settings that cannot be read refuse (the caller's gate
-// then dispatches nothing).
+// hold_provider_entries setting is on (the default), its unanswered entries
+// on shared provider addresses authorize nothing. Without a settings reader
+// the default applies; settings that cannot be read refuse (the caller's
+// gate then dispatches nothing).
 func (s *Service) HeldProviderEntries(ctx context.Context, tenantID shared.ID, targets []*scopedom.Target) (map[shared.ID]bool, error) {
-	if s.settings == nil {
-		return nil, nil
-	}
-	ss, err := s.settings.GetScopeSettings(ctx, tenantID.String())
-	if err != nil {
-		return nil, fmt.Errorf("read scope settings: %w", err)
-	}
-	if ss == nil || !ss.HoldProviderEntries {
-		return nil, nil
+	if s.settings != nil {
+		ss, err := s.settings.GetScopeSettings(ctx, tenantID.String())
+		if err != nil {
+			return nil, fmt.Errorf("read scope settings: %w", err)
+		}
+		if ss != nil && !ss.HoldsProviderEntries() {
+			return nil, nil
+		}
 	}
 	entries, err := s.unansweredProviderEntries(ctx, tenantID, targets)
 	if err != nil {
@@ -183,14 +183,15 @@ func (s *Service) HeldProviderEntries(ctx context.Context, tenantID shared.ID, t
 	return out, nil
 }
 
-// holding reports the tenant's hold_provider_entries setting (false when it
-// cannot be read: the card still lists the entries).
+// holding reports the tenant's hold_provider_entries setting (the default,
+// on, without a reader or a stored value; on when it cannot be read, as the
+// gate then refuses anyway).
 func (s *Service) holding(ctx context.Context, tenantID shared.ID) bool {
 	if s.settings == nil {
-		return false
+		return true
 	}
 	ss, err := s.settings.GetScopeSettings(ctx, tenantID.String())
-	return err == nil && ss != nil && ss.HoldProviderEntries
+	return err != nil || ss == nil || ss.HoldsProviderEntries()
 }
 
 // ProviderAddresses is the card: per provider, the unanswered entries and

@@ -149,7 +149,7 @@ type ScopeSettingsResponse struct {
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
 	// HoldProviderEntries: scope entries on a provider's shared addresses
 	// authorize no active check until a person answers them on the Scope
-	// page (opt-in, default off).
+	// page (default on).
 	HoldProviderEntries bool `json:"hold_provider_entries"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
@@ -249,7 +249,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		InfoCoverage: ss.InfoCoverageOn(), InfoCoverageDays: ss.InfoCoverageEvery(),
 		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
-		HoldProviderEntries:  ss.HoldProviderEntries,
+		HoldProviderEntries:  ss.HoldsProviderEntries(),
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
@@ -348,7 +348,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		ss.CIScopeRequiresProof = *req.CIScopeRequiresProof
 	}
 	if req.HoldProviderEntries != nil {
-		ss.HoldProviderEntries = *req.HoldProviderEntries
+		ss.HoldProviderEntries = req.HoldProviderEntries
 	}
 	// A client that does not know confirm_adds_to_scope,
 	// review_before_inventory or unclassified_scans keeps the stored value

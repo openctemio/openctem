@@ -69,7 +69,7 @@ describe('ScopeSettingsForm', () => {
     expect(screen.getByText('Always on')).toBeInTheDocument()
     // The switches are auto-join, confirm-adds-to-scope, the review gate and
     // the opt-in proof for CI scopes and the opt-in hold on provider shared
-    // addresses (none of them widens what may be scanned); nothing else
+    // addresses, on by default (none of them widens what may be scanned); nothing else
     // toggles.
     const switches = screen.getAllByRole('switch')
     expect(switches).toHaveLength(5)
@@ -81,7 +81,7 @@ describe('ScopeSettingsForm', () => {
     expect(switches[3]).toHaveAccessibleName('Require proof for CI scopes')
     expect(switches[3]).not.toBeChecked()
     expect(switches[4]).toHaveAccessibleName('Hold shared provider addresses until answered')
-    expect(switches[4]).not.toBeChecked()
+    expect(switches[4]).toBeChecked()
     expect(screen.queryByText(/disable scope|turn scope off/i)).not.toBeInTheDocument()
   })
 
@@ -103,7 +103,7 @@ describe('ScopeSettingsForm', () => {
         widening_approvals: null,
         default_max_tier: 't1',
         ci_scope_requires_proof: false,
-        hold_provider_entries: false,
+        hold_provider_entries: true,
         max_range_prefix: 16,
       })
     )

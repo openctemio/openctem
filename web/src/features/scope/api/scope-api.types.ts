@@ -178,7 +178,7 @@ export interface UpdateScopeSettingsInput {
   ci_scope_requires_proof?: boolean
   /**
    * Scope entries on a provider's shared addresses authorize nothing until
-   * someone answers them on the Scope page (opt-in, default off); omitted
+   * someone answers them on the Scope page (default on); omitted
    * keeps the stored value.
    */
   hold_provider_entries?: boolean
