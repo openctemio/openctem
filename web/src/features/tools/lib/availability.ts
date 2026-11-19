@@ -64,6 +64,27 @@ export const TOOL_EXCLUSION_LABEL: Record<
   local_policy: 'refused by its local policy',
 }
 
+/** The web app's translator (useTranslation().t). */
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+/** A status as a short label in the viewer's language. */
+export function toolStatusLabel(status: ToolAvailabilityStatus, t: Translate): string {
+  return t(`scans.tools.status.${status}`, TOOL_STATUS_META[status].label)
+}
+
+/** What a status means, in the viewer's language. */
+export function toolStatusDescription(status: ToolAvailabilityStatus, t: Translate): string {
+  return t(`scans.tools.status.${status}.description`, TOOL_STATUS_META[status].description)
+}
+
+/** Why a sensor may not run the tool, in the viewer's language. */
+export function toolExclusionLabel(
+  reason: NonNullable<ToolAvailabilitySensor['excluded']>,
+  t: Translate
+): string {
+  return t(`scans.tools.excluded.${reason}`, TOOL_EXCLUSION_LABEL[reason])
+}
+
 /** Whether a scan job for the tool can be dispatched now (ready or outdated). */
 export function isRunnable(item: Pick<ToolAvailabilityItem, 'status'>): boolean {
   return item.status === 'ready' || item.status === 'outdated'
@@ -87,9 +108,6 @@ export function availabilityByName(
 export function toolDisplayName(item: Pick<ToolAvailabilityItem, 'name' | 'tool'>): string {
   return item.tool?.display_name || item.name
 }
-
-/** The web app's translator (useTranslation().t). */
-type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
 /**
  * Why a scan with this tool cannot run now, in one sentence in the viewer's
@@ -141,12 +159,21 @@ export function toolUnavailableReason(
   }
 }
 
-/** "2/3 online"; "none" when no sensor may run the tool. */
+/**
+ * "2/3 online"; "none" when no sensor may run the tool. Pass `t` to read it
+ * in the viewer's language.
+ */
 export function sensorsLabel(
-  item: Pick<ToolAvailabilityItem, 'sensors_online' | 'sensors_total'>
+  item: Pick<ToolAvailabilityItem, 'sensors_online' | 'sensors_total'>,
+  t?: Translate
 ): string {
-  if (item.sensors_total === 0) return 'none'
-  return `${item.sensors_online}/${item.sensors_total} online`
+  if (item.sensors_total === 0) return t ? t('scans.tools.sensors.none', 'none') : 'none'
+  return t
+    ? t('scans.tools.sensors.online', '{online}/{total} online', {
+        online: item.sensors_online,
+        total: item.sensors_total,
+      })
+    : `${item.sensors_online}/${item.sensors_total} online`
 }
 
 /** "v3.4.2", "v3.3.0 – v3.4.2", or "" when no sensor reports a version. */

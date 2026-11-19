@@ -266,7 +266,7 @@ export function ToolDetailSheet({
 
           <DetailSection title="On your sensors" icon={Server}>
             <DetailFieldGrid>
-              <DetailField label="Sensors">{sensorsLabel(item)}</DetailField>
+              <DetailField label="Sensors">{sensorsLabel(item, t)}</DetailField>
               <DetailField label="Version(s)">
                 {versions || '–'}
                 {item.update_available && item.latest_version && (

@@ -35,6 +35,7 @@ import {
 } from '@/lib/api/capability-hooks'
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { EmptyState, ErrorState, ListToolbar, PageHeader, PageStack } from '@/features/shared'
+import { ViewSwitcher } from '@/features/shared/components/view-switcher'
 import { useTranslation } from '@/context/i18n-provider'
 
 type ViewMode = 'grid' | 'table'
@@ -126,8 +127,8 @@ export function CapabilitiesSection() {
   const handleRefresh = useCallback(async () => {
     await invalidateCapabilitiesCache()
     await mutate()
-    toast.success('Capabilities refreshed')
-  }, [mutate])
+    toast.success(t('scans.capabilities.toast.refreshed', 'Capabilities refreshed'))
+  }, [mutate, t])
 
   const handleEditCapability = useCallback((capability: Capability) => {
     setSelectedCapability(capability)
@@ -202,11 +203,18 @@ export function CapabilitiesSection() {
     <>
       {categories.length > 0 && (
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[160px]" aria-label="Category">
-            <SelectValue placeholder="All categories" />
+          <SelectTrigger
+            className="w-[160px]"
+            aria-label={t('scans.capabilities.filter.categoryLabel', 'Category')}
+          >
+            <SelectValue
+              placeholder={t('scans.capabilities.filter.allCategories', 'All categories')}
+            />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
+            <SelectItem value="all">
+              {t('scans.capabilities.filter.allCategories', 'All categories')}
+            </SelectItem>
             {categories.map((cat) => (
               <SelectItem key={cat} value={cat} className="capitalize">
                 {cat}
@@ -219,28 +227,22 @@ export function CapabilitiesSection() {
   )
 
   const viewToggle = (
-    <div className="flex items-center rounded-md border p-0.5" role="group" aria-label="View">
-      <Button
-        variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-        size="icon"
-
-        onClick={() => setViewMode('table')}
-        aria-label="Table view"
-        aria-pressed={viewMode === 'table'}
-      >
-        <TableIcon className="h-4 w-4" />
-      </Button>
-      <Button
-        variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-        size="icon"
-
-        onClick={() => setViewMode('grid')}
-        aria-label="Card view"
-        aria-pressed={viewMode === 'grid'}
-      >
-        <LayoutGrid className="h-4 w-4" />
-      </Button>
-    </div>
+    <ViewSwitcher
+      value={viewMode}
+      onChange={setViewMode}
+      options={[
+        {
+          value: 'table',
+          label: t('scans.capabilities.view.table', 'Table view'),
+          icon: TableIcon,
+        },
+        {
+          value: 'grid',
+          label: t('scans.capabilities.view.card', 'Card view'),
+          icon: LayoutGrid,
+        },
+      ]}
+    />
   )
 
   const toolbarEnd = (
@@ -254,13 +256,23 @@ export function CapabilitiesSection() {
   const emptyState = (
     <EmptyState
       icon={Zap}
-      title={hasFilter ? 'No matching capabilities' : 'No capabilities'}
+      title={
+        hasFilter
+          ? t('scans.capabilities.empty.noMatchTitle', 'No matching capabilities')
+          : t('scans.capabilities.empty.noneTitle', 'No capabilities')
+      }
       description={
         hasFilter
-          ? 'No capabilities match your search or category.'
+          ? t(
+              'scans.capabilities.empty.noMatchDesc',
+              'No capabilities match your search or category.'
+            )
           : mainTab === 'platform'
-            ? 'No platform capabilities available yet.'
-            : 'Add a custom capability to extend your tool registry.'
+            ? t('scans.capabilities.empty.noPlatform', 'No platform capabilities available yet.')
+            : t(
+                'scans.capabilities.empty.addCustom',
+                'Add a custom capability to extend your tool registry.'
+              )
       }
       card={false}
       action={
@@ -268,7 +280,7 @@ export function CapabilitiesSection() {
           <Can route="POST /api/v1/capabilities">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
-              Add capability
+              {t('scans.capabilities.add', 'Add capability')}
             </Button>
           </Can>
         ) : undefined
@@ -278,7 +290,13 @@ export function CapabilitiesSection() {
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="capabilities" error={error} onRetry={handleRefresh} />
+    body = (
+      <ErrorState
+        title={t('scans.capabilities.error.what', 'capabilities')}
+        error={error}
+        onRetry={handleRefresh}
+      />
+    )
   } else if (isLoading) {
     body = <TableSkeleton rows={6} />
   } else if (viewMode === 'table') {
@@ -343,12 +361,17 @@ export function CapabilitiesSection() {
                   disabled={!isCustomMode}
                 >
                   <Plus className="h-4 w-4" />
-                  Add capability
+                  {t('scans.capabilities.add', 'Add capability')}
                 </Button>
               </span>
             </TooltipTrigger>
             {!isCustomMode && (
-              <TooltipContent>Switch to the Custom tab to add your own capabilities</TooltipContent>
+              <TooltipContent>
+                {t(
+                  'scans.capabilities.addHint',
+                  'Switch to the Custom tab to add your own capabilities'
+                )}
+              </TooltipContent>
             )}
           </Tooltip>
         </Can>
@@ -357,11 +380,11 @@ export function CapabilitiesSection() {
       <Tabs value={mainTab} onValueChange={handleMainTabChange}>
         <TabsList>
           <TabsTrigger value="platform">
-            Platform
+            {t('scans.capabilities.tab.platform', 'Platform')}
             <TabsCount value={platformCount} />
           </TabsTrigger>
           <TabsTrigger value="custom">
-            Custom
+            {t('scans.capabilities.tab.custom', 'Custom')}
             <TabsCount value={customCount} />
           </TabsTrigger>
         </TabsList>

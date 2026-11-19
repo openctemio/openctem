@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
 import {
-  TOOL_STATUS_META,
+  toolStatusLabel,
   availabilityByName,
   toolUnavailableReason,
 } from '@/features/tools/lib/availability'
@@ -401,7 +401,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                                   state="down"
                                   label={
                                     avail
-                                      ? TOOL_STATUS_META[avail.status].label
+                                      ? toolStatusLabel(avail.status, t)
                                       : t('workflowStages.palette.noSensor')
                                   }
                                 />

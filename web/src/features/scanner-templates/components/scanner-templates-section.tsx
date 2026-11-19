@@ -70,9 +70,10 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSearchQuery } from '@/hooks/use-search-query'
-import { formatDate, formatNumber } from '@/lib/app-locale'
+import { formatDate } from '@/lib/app-locale'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
+  const { t } = useTranslation()
   const IconMap: Record<TemplateStatus, React.ElementType> = {
     active: CheckCircle,
     pending_review: FileWarning,
@@ -85,7 +86,7 @@ function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   return (
     <Badge variant={status === 'revoked' ? 'destructive' : 'outline'} className="gap-1">
       <Icon className="h-3 w-3" />
-      {TEMPLATE_STATUS_DISPLAY_NAMES[status]}
+      {t(`scans.templates.status.${status}`, TEMPLATE_STATUS_DISPLAY_NAMES[status])}
     </Badge>
   )
 }
@@ -96,7 +97,7 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
   const syncSource = template.sync_source || (isManual ? 'manual' : undefined)
 
   const sourceConfig: Record<SyncSource, { icon: React.ElementType; label: string }> = {
-    manual: { icon: Upload, label: 'Uploaded' },
+    manual: { icon: Upload, label: t('scans.templates.source.uploaded', 'Uploaded') },
     git: { icon: GitBranch, label: 'Git' },
     s3: { icon: Cloud, label: 'S3' },
     http: { icon: Globe, label: 'HTTP' },
@@ -118,8 +119,14 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
           <p>{t('scans.templates.uploaded', 'Uploaded here')}</p>
         ) : (
           <p>
-            Synced from {config.label} source
-            {template.source_path ? `: ${template.source_path}` : ''}
+            {template.source_path
+              ? t('scans.templates.source.syncedFromPath', 'Synced from {source} source: {path}', {
+                  source: config.label,
+                  path: template.source_path,
+                })
+              : t('scans.templates.source.syncedFrom', 'Synced from {source} source', {
+                  source: config.label,
+                })}
           </p>
         )}
       </TooltipContent>
@@ -177,8 +184,8 @@ export function ScannerTemplatesSection() {
   const handleRefresh = useCallback(async () => {
     await invalidateScannerTemplatesCache()
     await mutate()
-    toast.success('Templates refreshed')
-  }, [mutate])
+    toast.success(t('scans.templates.refreshed', 'Templates refreshed'))
+  }, [mutate, t])
 
   const handleDeleteClick = useCallback((template: ScannerTemplate) => {
     setSelectedTemplate(template)
@@ -189,14 +196,18 @@ export function ScannerTemplatesSection() {
     if (!selectedTemplate) return
     try {
       await deleteTemplate()
-      toast.success(`Template "${selectedTemplate.name}" deleted`)
+      toast.success(
+        t('scans.templates.deleted', 'Template "{name}" deleted', { name: selectedTemplate.name })
+      )
       await invalidateScannerTemplatesCache()
       setDeleteDialogOpen(false)
       setSelectedTemplate(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete template'))
+      toast.error(
+        getErrorMessage(err, t('scans.templates.deleteFailed', 'Failed to delete template'))
+      )
     }
-  }, [selectedTemplate, deleteTemplate])
+  }, [selectedTemplate, deleteTemplate, t])
 
   const handleDeprecateClick = useCallback((template: ScannerTemplate) => {
     setSelectedTemplate(template)
@@ -207,14 +218,20 @@ export function ScannerTemplatesSection() {
     if (!selectedTemplate) return
     try {
       await deprecateTemplate()
-      toast.success(`Template "${selectedTemplate.name}" deprecated`)
+      toast.success(
+        t('scans.templates.deprecated', 'Template "{name}" deprecated', {
+          name: selectedTemplate.name,
+        })
+      )
       await invalidateScannerTemplatesCache()
       setDeprecateDialogOpen(false)
       setSelectedTemplate(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to deprecate template'))
+      toast.error(
+        getErrorMessage(err, t('scans.templates.deprecateFailed', 'Failed to deprecate template'))
+      )
     }
-  }, [selectedTemplate, deprecateTemplate])
+  }, [selectedTemplate, deprecateTemplate, t])
 
   // Approving a version for sensors: once the organization's approval count
   // is reached, the job signer records it and sensors may run it.
@@ -241,31 +258,43 @@ export function ScannerTemplatesSection() {
     }
   }, [approveTarget, t])
 
-  const handleDownload = useCallback(async (template: ScannerTemplate) => {
-    try {
-      const response = await fetch(`/api/v1/scanner-templates/${template.id}/download`)
-      if (!response.ok) throw new Error('Failed to download')
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = template.name
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      toast.success(`Downloaded "${template.name}"`)
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to download template'))
-    }
-  }, [])
+  const handleDownload = useCallback(
+    async (template: ScannerTemplate) => {
+      try {
+        const response = await fetch(`/api/v1/scanner-templates/${template.id}/download`)
+        if (!response.ok) throw new Error('Failed to download')
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = template.name
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        toast.success(
+          t('scans.templates.downloaded', 'Downloaded "{name}"', { name: template.name })
+        )
+      } catch (err) {
+        toast.error(
+          getErrorMessage(err, t('scans.templates.downloadFailed', 'Failed to download template'))
+        )
+      }
+    },
+    [t]
+  )
 
   const columns = useMemo<ColumnDef<ScannerTemplate>[]>(
     () => [
       {
         id: 'name',
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Template" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.templates.col.template', 'Template')}
+          />
+        ),
         cell: ({ row }) => {
           const template = row.original
           return (
@@ -286,30 +315,35 @@ export function ScannerTemplatesSection() {
       {
         id: 'type',
         accessorFn: (t) => TEMPLATE_TYPE_DISPLAY_NAMES[t.template_type],
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.templates.col.type', 'Type')} />
+        ),
         cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
       },
       {
         id: 'source',
         enableSorting: false,
-        header: 'Source',
+        header: t('scans.templates.col.source', 'Source'),
         cell: ({ row }) => <TemplateSourceBadge template={row.original} />,
       },
       {
         id: 'rules',
         accessorKey: 'rule_count',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Rules" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.templates.col.rules', 'Rules')} />
+        ),
         cell: ({ row }) => (
           <span className="text-sm tabular-nums text-muted-foreground">
-            {formatNumber(row.original.rule_count)}{' '}
-            {row.original.rule_count === 1 ? 'rule' : 'rules'}
+            {row.original.rule_count === 1
+              ? t('scans.templates.ruleOne', '{count} rule', { count: row.original.rule_count })
+              : t('scans.templates.ruleMany', '{count} rules', { count: row.original.rule_count })}
           </span>
         ),
       },
       {
         id: 'version',
         accessorKey: 'version',
-        header: 'Version',
+        header: t('scans.templates.col.version', 'Version'),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-xs tabular-nums text-muted-foreground">
@@ -320,7 +354,12 @@ export function ScannerTemplatesSection() {
       {
         id: 'status',
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.templates.col.status', 'Status')}
+          />
+        ),
         cell: ({ row }) => {
           const approval = row.original.sensor_approval
           const awaiting = row.original.status === 'active' && approval && !approval.approved
@@ -331,10 +370,15 @@ export function ScannerTemplatesSection() {
                 <Badge
                   variant="outline"
                   className="text-xs font-normal"
-                  title="Sensors refuse this version until it is approved for sensors"
+                  title={t(
+                    'scans.templates.awaitingHint',
+                    'Sensors refuse this version until it is approved for sensors'
+                  )}
                 >
-                  Awaiting approval {approval.approvals.length}/
-                  {Math.max(approval.approvals_required, 1)}
+                  {t('scans.templates.awaiting', 'Awaiting approval {done}/{needed}', {
+                    done: approval.approvals.length,
+                    needed: Math.max(approval.approvals_required, 1),
+                  })}
                 </Badge>
               )}
             </div>
@@ -344,7 +388,12 @@ export function ScannerTemplatesSection() {
       {
         id: 'updated',
         accessorKey: 'updated_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Updated" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.templates.col.updated', 'Updated')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatDate(new Date(row.original.updated_at))}
@@ -413,11 +462,14 @@ export function ScannerTemplatesSection() {
   const toolbarStart = (
     <>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger className="w-[140px]" aria-label="Template type">
-          <SelectValue placeholder="All types" />
+        <SelectTrigger
+          className="w-[140px]"
+          aria-label={t('scans.templates.filter.type', 'Template type')}
+        >
+          <SelectValue placeholder={t('scans.templates.filter.allTypes', 'All types')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All types</SelectItem>
+          <SelectItem value="all">{t('scans.templates.filter.allTypes', 'All types')}</SelectItem>
           {TEMPLATE_TYPES.map((type) => (
             <SelectItem key={type} value={type}>
               {TEMPLATE_TYPE_DISPLAY_NAMES[type]}
@@ -426,15 +478,21 @@ export function ScannerTemplatesSection() {
         </SelectContent>
       </Select>
       <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger className="w-[150px]" aria-label="Status">
-          <SelectValue placeholder="All statuses" />
+        <SelectTrigger className="w-[150px]" aria-label={t('scans.templates.col.status', 'Status')}>
+          <SelectValue placeholder={t('scans.templates.filter.allStatuses', 'All statuses')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
-          <SelectItem value="active">Active</SelectItem>
-          <SelectItem value="pending_review">Pending review</SelectItem>
-          <SelectItem value="deprecated">Deprecated</SelectItem>
-          <SelectItem value="revoked">Revoked</SelectItem>
+          <SelectItem value="all">
+            {t('scans.templates.filter.allStatuses', 'All statuses')}
+          </SelectItem>
+          <SelectItem value="active">{t('scans.templates.status.active', 'Active')}</SelectItem>
+          <SelectItem value="pending_review">
+            {t('scans.templates.status.pending_review', 'Pending review')}
+          </SelectItem>
+          <SelectItem value="deprecated">
+            {t('scans.templates.status.deprecated', 'Deprecated')}
+          </SelectItem>
+          <SelectItem value="revoked">{t('scans.templates.status.revoked', 'Revoked')}</SelectItem>
         </SelectContent>
       </Select>
     </>
@@ -442,20 +500,29 @@ export function ScannerTemplatesSection() {
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="scanner templates" error={error} onRetry={handleRefresh} />
+    body = (
+      <ErrorState
+        title={t('scans.templates.errorTitle', 'scanner templates')}
+        error={error}
+        onRetry={handleRefresh}
+      />
+    )
   } else if (isLoading && !anyFilter) {
     body = <TableSkeleton rows={4} />
   } else if (!isLoading && templates.length === 0 && !anyFilter) {
     body = (
       <EmptyState
         icon={FileCode2}
-        title="No scanner templates"
-        description="Upload custom templates for Nuclei, Semgrep, or Betterleaks scanners."
+        title={t('scans.templates.empty.title', 'No scanner templates')}
+        description={t(
+          'scans.templates.empty.description',
+          'Upload custom templates for Nuclei, Semgrep, or Betterleaks scanners.'
+        )}
         action={
           <Can permission={Permission.ScannerTemplatesWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
-              Upload template
+              {t('scans.templates.upload', 'Upload template')}
             </Button>
           </Can>
         }
@@ -478,7 +545,11 @@ export function ScannerTemplatesSection() {
         }}
         toolbarStart={toolbarStart}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
-        emptyMessage={isLoading ? 'Loading templates…' : 'No templates match these filters'}
+        emptyMessage={
+          isLoading
+            ? t('scans.templates.loading', 'Loading templates…')
+            : t('scans.templates.noMatch', 'No templates match these filters')
+        }
       />
     )
   }
@@ -495,7 +566,7 @@ export function ScannerTemplatesSection() {
         <Can permission={Permission.ScannerTemplatesWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            Upload template
+            {t('scans.templates.upload', 'Upload template')}
           </Button>
         </Can>
       </PageHeader>
