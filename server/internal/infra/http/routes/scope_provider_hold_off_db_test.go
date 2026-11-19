@@ -7,6 +7,7 @@ package routes
 // is audited at high severity (the administrators' notice is sent by the handler).
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -37,7 +38,7 @@ func TestScopeSettings_TurningHoldOffNeedsCriticalStepUp_DB(t *testing.T) {
 	stored := func() string {
 		t.Helper()
 		var v sql.NullString
-		if err := h.db.QueryRow(`SELECT settings->'scope'->>'hold_provider_entries' FROM tenants WHERE id = $1`, org).Scan(&v); err != nil {
+		if err := h.db.QueryRowContext(context.Background(), `SELECT settings->'scope'->>'hold_provider_entries' FROM tenants WHERE id = $1`, org).Scan(&v); err != nil {
 			t.Fatal(err)
 		}
 		return v.String
@@ -74,7 +75,7 @@ func TestScopeSettings_TurningHoldOffNeedsCriticalStepUp_DB(t *testing.T) {
 		t.Fatalf("audit after lifting the hold: %+v", rows)
 	}
 	var meta sql.NullString
-	if err := h.db.QueryRow(`SELECT metadata->>'provider_hold_lifted' FROM audit_logs WHERE tenant_id = $1 AND action LIKE 'scope.settings%' ORDER BY logged_at DESC, id DESC LIMIT 1`, org).Scan(&meta); err != nil || meta.String != "true" {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT metadata->>'provider_hold_lifted' FROM audit_logs WHERE tenant_id = $1 AND action LIKE 'scope.settings%' ORDER BY logged_at DESC, id DESC LIMIT 1`, org).Scan(&meta); err != nil || meta.String != "true" {
 		t.Fatalf("provider_hold_lifted metadata = %q, %v", meta.String, err)
 	}
 
