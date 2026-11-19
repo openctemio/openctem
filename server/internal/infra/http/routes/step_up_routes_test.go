@@ -179,6 +179,8 @@ var stepUpRoutes = []string{
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
+	// Keeping a provider's shared addresses in scope lifts their hold.
+	"POST /api/v1/scope/provider-addresses/keep",
 	"PUT /api/v1/scope/settings/intrusive",
 	// Scan approval governance (RFC-073): loosening it is the guarded direction.
 	"PUT /api/v1/organization/settings/scan-governance/mode",

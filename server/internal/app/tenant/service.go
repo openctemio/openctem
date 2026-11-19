@@ -3225,6 +3225,14 @@ func (s *TenantService) UpdateScopeSettings(
 	var before tenantdom.ScopeSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionScope, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Scope
+		// Turning the hold on provider shared addresses off lifts every hold
+		// of the organization at once: the same critical re-login as Keep
+		// scanning, whatever the sensitive tier says.
+		if tenantdom.ProviderHoldLifted(before, ss) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		// The owner-only fields are never changed here.
 		return t.UpdateScopeSettings(ss.WithIntrusive(before.Intrusive()))
 	})
@@ -3242,6 +3250,10 @@ func (s *TenantService) UpdateScopeSettings(
 	if tenantdom.RangeWidened(before, out) {
 		event = event.WithMessage(fmt.Sprintf("Scope settings updated: the widest scan target range was raised from /%d to /%d", before.RangePrefix(), out.RangePrefix())).
 			WithMetadata("range_widened", true)
+	}
+	if tenantdom.ProviderHoldLifted(before, out) {
+		event = event.WithMessage("Scope settings updated: the hold on shared provider addresses was turned off").
+			WithMetadata("provider_hold_lifted", true)
 	}
 	s.logAudit(ctx, actx, event)
 	return &out, nil
