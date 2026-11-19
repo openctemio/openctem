@@ -111,10 +111,10 @@ test.describe('Findings list states', { tag: ['@findings'] }, () => {
     await expect(page.locator('[data-slot=list-count]')).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Triage/ })).toBeVisible()
 
-    // The table header offers neither select-all nor sorting.
-    await expect(
-      page.getByRole('checkbox', { name: 'Select all rows on this page' })
-    ).toBeDisabled()
+    // An empty list draws no column headers: no select-all and no sorting.
+    await expect(page.getByRole('checkbox', { name: 'Select all rows on this page' })).toHaveCount(
+      0
+    )
     await expect(page.locator('thead button:not([role=checkbox])')).toHaveCount(0)
     // No pager on an empty list.
     await expect(page.locator('[data-slot=data-table-pager]')).toHaveCount(0)
