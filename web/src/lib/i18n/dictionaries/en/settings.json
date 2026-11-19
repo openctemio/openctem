@@ -914,6 +914,8 @@
   "settings.page.loadFailed": "Couldn't load {page}",
   "settings.page.loadFailedHint": "The server did not answer. Nothing was changed.",
   "settings.page.loading": "Loading {page}",
+  "settings.page.sourceCredentials.description": "Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more).",
+  "settings.page.tools.description": "The tools your sensors report, and whether a scan with each can run now. Add custom tools for your own scanners.",
   "settings.page.viewOnly": "View only. Only owners and administrators can change these settings.",
   "settings.pentest.addMethodology": "Add methodology",
   "settings.pentest.addType": "Add type",

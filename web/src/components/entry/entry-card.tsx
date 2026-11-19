@@ -65,7 +65,8 @@ export interface EntryBannerProps extends Omit<ComponentProps<'div'>, 'title'> {
   title?: ReactNode
   /**
    * `alert` interrupts (a failure the visitor must act on); `status` is read
-   * when the screen reader is idle (a notice, a success). Default by tone.
+   * when the screen reader is idle (a notice, a warning, a success). Default:
+   * `alert` for the danger tone only.
    */
   role?: 'alert' | 'status'
 }
@@ -84,7 +85,7 @@ export function EntryBanner({
     <div
       data-slot="entry-banner"
       data-tone={tone}
-      role={role ?? (tone === 'danger' || tone === 'warn' ? 'alert' : 'status')}
+      role={role ?? (tone === 'danger' ? 'alert' : 'status')}
       className={cn(
         'text-dense text-foreground flex items-start gap-2.5 rounded-lg border px-3 py-2.5',
         cls,

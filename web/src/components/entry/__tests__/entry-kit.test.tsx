@@ -75,12 +75,10 @@ describe('entry card parts', () => {
       </>
     )
     const alerts = screen.getAllByRole('alert')
-    expect(alerts.map((a) => a.textContent)).toEqual([
-      'Invalid email or password',
-      'Complete the security check',
-    ])
+    expect(alerts.map((a) => a.textContent)).toEqual(['Invalid email or password'])
     const statuses = screen.getAllByRole('status')
     expect(statuses.map((s) => s.textContent)).toEqual([
+      'Complete the security check',
       'Your session expired',
       'SentCheck your inbox',
     ])

@@ -392,7 +392,7 @@ export function useCreateAssetGroup(): MutationResult<CreateAssetGroupInput> {
         const apiInput = transformCreateAssetGroupInput(input)
         const created = await apiMutation.trigger(apiInput)
         await invalidateAssetGroupsCache()
-        toast.success('Asset group created', {
+        toast.success(t('assetGroups.toast.created', 'Asset group created'), {
           description: input.name,
         })
         // A pasted list is matched once the group exists.
@@ -423,14 +423,26 @@ export function useCreateAssetGroup(): MutationResult<CreateAssetGroupInput> {
           }
         }
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to create asset group'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.createFailed', 'Failed to create asset group')
+          )
+        )
         throw error
       }
     } else {
       // Mock: just show toast
       const totalAssets = (input.existingAssetIds?.length || 0) + (input.newAssets?.length || 0)
-      toast.success('Asset group created', {
-        description: `${input.name}${totalAssets > 0 ? ` with ${totalAssets} assets` : ''}`,
+      toast.success(t('assetGroups.toast.created', 'Asset group created'), {
+        description:
+          totalAssets > 0
+            ? t(
+                'assetGroups.toast.createdWithAssets',
+                '{name} with {count, plural, one {# asset} other {# assets}}',
+                { name: input.name, count: totalAssets }
+              )
+            : input.name,
       })
     }
   }
@@ -446,6 +458,7 @@ export function useCreateAssetGroup(): MutationResult<CreateAssetGroupInput> {
  */
 export function useUpdateAssetGroup(groupId: string): MutationResult<UpdateAssetGroupInput> {
   const apiMutation = useUpdateAssetGroupApi(groupId)
+  const { t } = useTranslation()
 
   const trigger = async (input?: UpdateAssetGroupInput) => {
     if (!input) return
@@ -456,14 +469,19 @@ export function useUpdateAssetGroup(groupId: string): MutationResult<UpdateAsset
         await apiMutation.trigger(apiInput)
         await invalidateAssetGroupCache(groupId)
         await invalidateAssetGroupsCache()
-        toast.success('Asset group updated')
+        toast.success(t('assetGroups.toast.updated', 'Asset group updated'))
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to update asset group'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.updateFailed', 'Failed to update asset group')
+          )
+        )
         throw error
       }
     } else {
       // Mock: just show toast
-      toast.success('Asset group updated')
+      toast.success(t('assetGroups.toast.updated', 'Asset group updated'))
     }
   }
 
@@ -478,20 +496,26 @@ export function useUpdateAssetGroup(groupId: string): MutationResult<UpdateAsset
  */
 export function useDeleteAssetGroup(groupId: string): MutationResult {
   const apiMutation = useDeleteAssetGroupApi(groupId)
+  const { t } = useTranslation()
 
   const trigger = async () => {
     if (USE_REAL_API) {
       try {
         await apiMutation.trigger()
         await invalidateAssetGroupsCache()
-        toast.success('Asset group deleted')
+        toast.success(t('assetGroups.toast.deleted', 'Asset group deleted'))
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to delete asset group'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.deleteFailed', 'Failed to delete asset group')
+          )
+        )
         throw error
       }
     } else {
       // Mock: just show toast
-      toast.success('Asset group deleted')
+      toast.success(t('assetGroups.toast.deleted', 'Asset group deleted'))
     }
   }
 
@@ -506,6 +530,7 @@ export function useDeleteAssetGroup(groupId: string): MutationResult {
  */
 export function useRemoveAssetsFromGroup(groupId: string): MutationResult<string[]> {
   const apiMutation = useRemoveAssetsFromGroupApi(groupId)
+  const { t } = useTranslation()
 
   const trigger = async (assetIds?: string[]) => {
     if (!assetIds || assetIds.length === 0) return
@@ -516,14 +541,31 @@ export function useRemoveAssetsFromGroup(groupId: string): MutationResult<string
         // Invalidate both group and groups list cache to refresh counts
         await invalidateAssetGroupCache(groupId)
         await invalidateAssetGroupsCache()
-        toast.success(`Removed ${assetIds.length} assets from group`)
+        toast.success(
+          t(
+            'assetGroups.toast.assetsRemoved',
+            '{count, plural, one {Removed # asset from the group} other {Removed # assets from the group}}',
+            { count: assetIds.length }
+          )
+        )
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to remove assets'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.assetsRemoveFailed', 'Failed to remove assets')
+          )
+        )
         throw error
       }
     } else {
       // Mock: just show toast
-      toast.success(`Removed ${assetIds.length} assets from group`)
+      toast.success(
+        t(
+          'assetGroups.toast.assetsRemoved',
+          '{count, plural, one {Removed # asset from the group} other {Removed # assets from the group}}',
+          { count: assetIds.length }
+        )
+      )
     }
   }
 
@@ -538,6 +580,7 @@ export function useRemoveAssetsFromGroup(groupId: string): MutationResult<string
  */
 export function useAddAssetsToGroup(groupId: string): MutationResult<string[]> {
   const apiMutation = useAddAssetsToGroupApi(groupId)
+  const { t } = useTranslation()
 
   const trigger = async (assetIds?: string[]) => {
     if (!assetIds || assetIds.length === 0) return
@@ -548,14 +591,28 @@ export function useAddAssetsToGroup(groupId: string): MutationResult<string[]> {
         // Invalidate cache to refresh counts
         await invalidateAssetGroupCache(groupId)
         await invalidateAssetGroupsCache()
-        toast.success(`Added ${assetIds.length} assets to group`)
+        toast.success(
+          t(
+            'assetGroups.toast.assetsAdded',
+            '{count, plural, one {Added # asset to the group} other {Added # assets to the group}}',
+            { count: assetIds.length }
+          )
+        )
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to add assets'))
+        toast.error(
+          getErrorMessage(error, t('assetGroups.toast.assetsAddFailed', 'Failed to add assets'))
+        )
         throw error
       }
     } else {
       // Mock: just show toast
-      toast.success(`Added ${assetIds.length} assets to group`)
+      toast.success(
+        t(
+          'assetGroups.toast.assetsAdded',
+          '{count, plural, one {Added # asset to the group} other {Added # assets to the group}}',
+          { count: assetIds.length }
+        )
+      )
     }
   }
 
@@ -571,6 +628,7 @@ export function useAddAssetsToGroup(groupId: string): MutationResult<string[]> {
 export function useBulkAssetGroupOperations() {
   const bulkUpdateMutation = useBulkUpdateAssetGroupsApi()
   const bulkDeleteMutation = useBulkDeleteAssetGroupsApi()
+  const { t } = useTranslation()
 
   const bulkUpdate = async (
     groupIds: string[],
@@ -587,14 +645,31 @@ export function useBulkAssetGroupOperations() {
           },
         })
         await invalidateAssetGroupsCache()
-        toast.success(`Updated ${groupIds.length} groups`)
+        toast.success(
+          t(
+            'assetGroups.toast.groupsUpdated',
+            '{count, plural, one {Updated # group} other {Updated # groups}}',
+            { count: groupIds.length }
+          )
+        )
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to update groups'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.groupsUpdateFailed', 'Failed to update groups')
+          )
+        )
         throw error
       }
     } else {
       // Mock
-      toast.success(`Updated ${groupIds.length} groups`)
+      toast.success(
+        t(
+          'assetGroups.toast.groupsUpdated',
+          '{count, plural, one {Updated # group} other {Updated # groups}}',
+          { count: groupIds.length }
+        )
+      )
     }
   }
 
@@ -603,14 +678,31 @@ export function useBulkAssetGroupOperations() {
       try {
         await bulkDeleteMutation.trigger({ group_ids: groupIds })
         await invalidateAssetGroupsCache()
-        toast.success(`Deleted ${groupIds.length} groups`)
+        toast.success(
+          t(
+            'assetGroups.toast.groupsDeleted',
+            '{count, plural, one {Deleted # group} other {Deleted # groups}}',
+            { count: groupIds.length }
+          )
+        )
       } catch (error) {
-        toast.error(getErrorMessage(error, 'Failed to delete groups'))
+        toast.error(
+          getErrorMessage(
+            error,
+            t('assetGroups.toast.groupsDeleteFailed', 'Failed to delete groups')
+          )
+        )
         throw error
       }
     } else {
       // Mock
-      toast.success(`Deleted ${groupIds.length} groups`)
+      toast.success(
+        t(
+          'assetGroups.toast.groupsDeleted',
+          '{count, plural, one {Deleted # group} other {Deleted # groups}}',
+          { count: groupIds.length }
+        )
+      )
     }
   }
 

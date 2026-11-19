@@ -1,6 +1,6 @@
 'use client'
 
-import { Keyboard, Undo2, X } from 'lucide-react'
+import { Keyboard, ListOrdered, Undo2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import type { TriageProgress } from '../../lib/triage-session'
@@ -17,13 +17,21 @@ import { Kbd } from './kbd'
 export function TriageHeaderActions({
   undoCount,
   busy,
+  queueOpen,
+  hasQueue,
   onUndo,
+  onQueue,
   onHelp,
   onExit,
 }: {
   undoCount: number
   busy: boolean
+  /** The queue sheet is open. */
+  queueOpen: boolean
+  /** There is a queue to show. */
+  hasQueue: boolean
   onUndo: () => void
+  onQueue: () => void
   onHelp: () => void
   onExit: () => void
 }) {
@@ -48,7 +56,27 @@ export function TriageHeaderActions({
           {t('findings.triageMode.action.undoShort', 'Undo ({count})', { count: undoCount })}
         </span>
       </Button>
-      <Button variant="outline" onClick={onHelp} aria-keyshortcuts="?" data-triage-action="help">
+      <Button
+        variant="outline"
+        onClick={onQueue}
+        disabled={!hasQueue}
+        aria-keyshortcuts="q"
+        aria-expanded={queueOpen}
+        aria-haspopup="dialog"
+        data-triage-action="queue"
+      >
+        <ListOrdered aria-hidden />
+        {t('findings.triageMode.action.queue', 'Queue')}
+        <Kbd className="max-sm:hidden">q</Kbd>
+      </Button>
+      {/* A phone has no keys to list. */}
+      <Button
+        variant="outline"
+        onClick={onHelp}
+        aria-keyshortcuts="?"
+        data-triage-action="help"
+        className="max-sm:hidden"
+      >
         <Keyboard aria-hidden />
         {t('findings.triageMode.action.help', 'All keys')}
         <Kbd className="max-sm:hidden">?</Kbd>
@@ -65,9 +93,7 @@ export function TriageHeaderActions({
 
 /**
  * Where the person is: the queue's name, the position in it, what this
- * session decided, and a progress bar. One line on a desktop; on a phone the
- * session's counts are in the bottom bar (`TriagePhoneBar`), hidden here by CSS
- * from the first paint, so nothing below moves.
+ * session decided, and a progress bar, at every width.
  */
 export function TriageStatusLine({
   queueLabel,
@@ -77,9 +103,7 @@ export function TriageStatusLine({
   progress: TriageProgress | null
 }) {
   const { t } = useTranslation()
-  const handled = progress
-    ? progress.decided + progress.sentForApproval + progress.skipped + progress.changed
-    : 0
+  const handled = progress ? progress.decided + progress.sentForApproval + progress.skipped : 0
   const pct =
     progress && progress.total > 0 ? Math.min(100, Math.round((handled / progress.total) * 100)) : 0
   const pending = '…'
@@ -105,8 +129,7 @@ export function TriageStatusLine({
                   })}
           </span>
         </p>
-        {/* A phone shows the counts once, in the bar at the bottom of the screen. */}
-        <p className="text-muted-foreground tabular-nums max-md:hidden" data-testid="triage-counts">
+        <p className="text-muted-foreground tabular-nums" data-testid="triage-counts">
           {progress
             ? t(
                 'findings.triageMode.counts',

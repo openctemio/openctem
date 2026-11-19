@@ -121,6 +121,22 @@ SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
  WHERE a.id = :'asset';
 SQL
 
+# 62-list-toolbar-stability (CVE catalog tab): the shared CVE catalog is filled
+# by intelligence feeds, which a CI stack does not sync, so the seed inserts a
+# few catalog entries (reserved 2099 block, none of the CVEs the findings above
+# name). Global rows: no tenant.
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA >/dev/null <<'SQL'
+INSERT INTO vulnerabilities (cve_id, external_id, namespace, origin, title, severity, cvss_score, epss_score,
+                             exploit_available, exploit_maturity, cisa_kev_date_added, cisa_kev_due_date, published_at)
+VALUES ('CVE-2099-0201', 'CVE-2099-0201', 'CVE', 'nvd', 'Remote code execution in the e2e request parser', 'critical', 9.8, 0.97, true, 'weaponized', '2099-01-02', '2099-01-23', '2099-01-01'),
+       ('CVE-2099-0202', 'CVE-2099-0202', 'CVE', 'nvd', 'Path traversal in the e2e archive extractor', 'high', 8.1, 0.12, true, 'poc', NULL, NULL, '2099-01-05'),
+       ('CVE-2099-0203', 'CVE-2099-0203', 'CVE', 'nvd', 'SQL injection in the e2e report filter', 'high', 7.5, 0.004, false, 'none', NULL, NULL, '2099-02-01'),
+       ('CVE-2099-0204', 'CVE-2099-0204', 'CVE', 'nvd', 'Cross-site scripting in the e2e search page', 'medium', 6.1, 0.0004, false, 'none', NULL, NULL, '2099-02-10'),
+       ('CVE-2099-0205', 'CVE-2099-0205', 'CVE', 'nvd', 'Information disclosure in the e2e status endpoint', 'low', 3.1, NULL, false, 'none', NULL, NULL, '2099-03-01')
+ON CONFLICT DO NOTHING;
+SQL
+
 log "risk trend"
 # Program health draws open findings over time from the daily risk snapshots
 # (a controller writes them once a day): 90 days of them, the page's default
@@ -239,6 +255,19 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/vnd.ctis+json; version=2.0' \
   -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+
+log "credential leaks"
+# /credentials (specs 36 and 62): a list with rows, so its toolbar, chips and
+# grouping are drawn. Every severity, four sources, one long identifier, one
+# leak dated today ("Recent"), one without a breach date. No secret values.
+TODAY=$(date -u +%F)
+call POST /api/v1/credentials/import "{\"credentials\":[
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"password\",\"severity\":\"critical\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e breach\"},\"dedup_key\":{\"breach_name\":\"e2e breach\",\"breach_date\":\"$TODAY\"},\"context\":{\"email\":\"e2e-alice@example.com\",\"username\":\"alice\"}},
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"access_token\",\"severity\":\"high\",\"source\":{\"type\":\"dark_web\"},\"dedup_key\":{\"breach_name\":\"e2e market\",\"breach_date\":\"2024-03-01\"},\"context\":{\"email\":\"e2e-alice@example.com\"}},
+  {\"identifier\":\"e2e-ci-deploy-key\",\"credential_type\":\"api_key\",\"severity\":\"medium\",\"source\":{\"type\":\"code_repository\"},\"dedup_key\":{\"repository\":\"example.com/e2e/app\",\"file_path\":\"deploy/ci.env\"}},
+  {\"identifier\":\"e2e-a-very-long-service-account-name-for-the-reporting-pipeline@example.com\",\"credential_type\":\"refresh_token\",\"severity\":\"low\",\"source\":{\"type\":\"paste_site\"},\"dedup_key\":{\"paste_id\":\"e2e-paste-1\"}},
+  {\"identifier\":\"e2e-bob\",\"credential_type\":\"password\",\"severity\":\"info\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e old breach\"},\"dedup_key\":{\"breach_name\":\"e2e old breach\",\"breach_date\":\"2019-07-15\"},\"context\":{\"username\":\"e2e-bob\"}}
+]}"
 
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'

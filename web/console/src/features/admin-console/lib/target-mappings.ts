@@ -8,6 +8,7 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { humanizeIdentifier } from '@/lib/humanize-identifier'
+import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 
 /** Priority of a primary mapping (`is_primary` is derived from it). */
 export const PRIMARY_PRIORITY = 10
@@ -30,6 +31,8 @@ export function useTargetTypeText() {
   return {
     label: (value: string) => t(`admin.targetType.${value}.label`, humanizeIdentifier(value)),
     hint: (value: string) => t(`admin.targetType.${value}.hint`, ''),
+    /** An asset type's name in the console language (the tenant app's own catalog). */
+    asset: (value: string) => t(`assets.typeLabel.${value}`, getAssetTypeLabel(value)),
   }
 }
 

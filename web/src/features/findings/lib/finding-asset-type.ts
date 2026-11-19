@@ -22,7 +22,10 @@ export function findingAssetType(api: Pick<ApiFinding, 'source' | 'asset'>): Ass
  * "Repository", or "Target" for pentest-style findings). The finding header
  * used to print "Repository" for every asset that was not a target.
  */
-export function findingAssetTypeLabel(type: string | undefined): string {
-  if (type === 'target') return 'Target'
-  return getAssetTypeLabel(type)
+export function findingAssetTypeLabel(
+  type: string | undefined,
+  t?: (key: string, fallback: string) => string
+): string {
+  if (type === 'target') return t ? t('assets.typeLabel.target', 'Target') : 'Target'
+  return getAssetTypeLabel(type, t)
 }

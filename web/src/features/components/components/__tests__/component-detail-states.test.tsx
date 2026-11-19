@@ -114,7 +114,7 @@ describe('component detail states', () => {
   it('shows an error with retry on the Versions tab, then an empty state', async () => {
     s.versions = { error: new Error('boom') }
     const { unmount } = render(<ComponentDetailView id="p1" />)
-    expect(screen.getByText(/failed to load the versions/i)).toBeInTheDocument()
+    expect(screen.getByText(/couldn't load the versions/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(mutate).toHaveBeenCalled()
     unmount()
@@ -128,7 +128,7 @@ describe('component detail states', () => {
     s.usages = { error: new Error('boom') }
     const { unmount } = render(<ComponentDetailView id="p1" />)
     expect(s.usageCalls.at(-1)).toMatchObject({ version_id: 'v9', page: 1 })
-    expect(screen.getByText(/failed to load where this package is used/i)).toBeInTheDocument()
+    expect(screen.getByText(/couldn't load where this package is used/i)).toBeInTheDocument()
     unmount()
     s.usages = { data: { data: [], total: 0 } }
     render(<ComponentDetailView id="p1" />)
@@ -141,7 +141,7 @@ describe('component detail states', () => {
     s.graph = { error: new Error('boom') }
     render(<ComponentDetailView id="p1" />)
     await userEvent.click(screen.getByRole('button', { name: /graph/i }))
-    expect(await screen.findByText(/failed to load the dependency graph/i)).toBeInTheDocument()
+    expect(await screen.findByText(/couldn't load the dependency graph/i)).toBeInTheDocument()
   })
 
   it('links a vulnerability by id, and uses plain text when there is nothing to link', () => {

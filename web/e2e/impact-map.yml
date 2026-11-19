@@ -24,6 +24,7 @@ tags:
   - '@attack-surface'
   - '@auth'
   - '@budget'
+  - '@credentials'
   - '@dashboard'
   - '@findings'
   - '@my-work'
@@ -240,6 +241,11 @@ areas:
     - web/src/lib/i18n/dictionaries/en/validation.json
     - server/internal/app/validation/**
     - server/internal/infra/http/handler/validation_*
+  '@credentials':
+    - web/src/features/credentials/**
+    - web/src/app/(dashboard)/(discovery)/credentials/**
+    - web/src/lib/i18n/dictionaries/en/credentials.json
+    - server/internal/infra/http/handler/credential_*
   '@vulnerabilities':
     - web/src/features/vulnerabilities/**
     - web/src/features/vuln-matching/**

@@ -7,7 +7,6 @@
   "console/src/features/admin-console/components/organization-users-section.tsx": 5,
   "console/src/features/verified-domains/components/verified-domains-list.tsx": 4,
   "src/app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx": 13,
-  "src/app/(dashboard)/(discovery)/credentials/page.tsx": 7,
   "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 6,
   "src/app/(dashboard)/(mobilization)/automations/page.tsx": 13,
   "src/app/(dashboard)/(mobilization)/exceptions/page.tsx": 6,
@@ -80,7 +79,6 @@
   "src/features/threat-intel/components/threat-actors-panel.tsx": 6,
   "src/features/threat-model/components/threat-model-table.tsx": 8,
   "src/features/tools/components/tool-table.tsx": 7,
-  "src/features/vulnerabilities/components/vulnerability-catalog-table.tsx": 8,
   "src/features/web-surface/components/origin-web-section.tsx": 6,
   "src/features/web-surface/components/web-surface-columns.tsx": 11,
   "src/features/web-surface/components/web-surface-view.tsx": 13

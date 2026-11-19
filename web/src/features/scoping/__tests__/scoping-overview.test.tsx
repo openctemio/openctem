@@ -136,7 +136,7 @@ describe('ScopingOverview', () => {
   it('shows an error with retry when the summary fails', async () => {
     api.get.mockRejectedValue(new Error('boom'))
     wrap(<ScopingOverview />)
-    expect(await screen.findByText(/Failed to load the scoping summary/)).toBeInTheDocument()
+    expect(await screen.findByText(/Couldn't load the scoping summary/)).toBeInTheDocument()
   })
 })
 
