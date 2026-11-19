@@ -269,7 +269,11 @@ func TestPersonalOrganization_DB(t *testing.T) {
 		oauth.SetIdentityRepo(postgres.NewUserIdentityRepository(db))
 		oauth.SetSignupPolicy(policy)
 		oauth.SetInvitationLookup(tenants)
-		oauth.SetPersonalOrganizations(newService())
+		// No platform 2FA floor: a social sign-up may make the organization
+		// (an unreadable or unwired floor counts as applying, see below).
+		po := newService()
+		po.SetOwnerMFAApplies(func(context.Context) (bool, error) { return false, nil })
+		oauth.SetPersonalOrganizations(po)
 		// A social sign-in takes the second-factor step; without the gate wired it is refused.
 		oauth.SetSecondFactorGate(noChallenge{})
 
