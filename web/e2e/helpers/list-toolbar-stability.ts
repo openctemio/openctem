@@ -148,6 +148,20 @@ const LISTS = {
     savedViews: { page: 'vulnerabilities', query: 'severity=critical' },
     bulkBar: true,
   },
+  // The CVE catalog tab: its own `cat_` params; search narrows the loaded
+  // page, no query language.
+  '/exposures/vulnerabilities?tab=catalog': {
+    filters: [
+      ['cat_kev', 'true'],
+      ['cat_exploit', 'true'],
+      ['cat_sev', 'critical,high'],
+      ['cat_cvss', '7'],
+      ['cat_epss', '0.1'],
+    ],
+    group: false,
+    query: false,
+    data: /\/api\/v1\/vulnerabilities$/,
+  },
   '/emerging-threats': {
     filters: [
       ['level', 'immediate'],
@@ -383,6 +397,11 @@ async function setUrl(page: Page, search: URLSearchParams) {
     window.history.replaceState(window.history.state, '', url)
   }, search.toString())
   await settle(page)
+}
+
+/** The route's own query (a tab such as `?tab=catalog`): a reset keeps it. */
+function routeParams(route: string) {
+  return new URLSearchParams(route.split('?')[1] ?? '')
 }
 
 /** Back to the top: a click on a row or on the pager may have scrolled the page. */
@@ -764,12 +783,12 @@ export function headerHoldsStill(route: Route) {
           await step('clear the filters', async () => {
             const clear = page.locator('main [data-slot="filter-chips-clear"]:visible')
             if (await clear.isVisible()) await clear.click()
-            else await setUrl(page, new URLSearchParams())
+            else await setUrl(page, routeParams(route))
           })
 
           // The list as it opens (no grouping, no view), for the row steps.
           await step('back to the list as it opens', async () => {
-            await setUrl(page, new URLSearchParams())
+            await setUrl(page, routeParams(route))
           })
           await sync()
 
@@ -1064,7 +1083,11 @@ export function saysItsCountOnce(route: Route) {
     test(`${route} says its count once at ${width}px`, async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
-      for (const qs of ['', `?${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`]) {
+      const join = route.includes('?') ? '&' : '?'
+      for (const qs of [
+        '',
+        `${join}${list.filters[0][0]}=${encodeURIComponent(list.filters[0][1])}`,
+      ]) {
         const shown = await openList(
           page,
           `${route}${qs}`,
