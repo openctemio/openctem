@@ -179,6 +179,7 @@ var tenantIsolationRegistry = map[string]isolationDecl{ //nolint:gochecknoglobal
 // TestName" (a cross-organization test that exists) or "scope: <why an id
 // alone is safe>".
 var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // registry
+	"POST /api/v1/ci/trust-configs/{id}/allow":                      "test: TestCIRefusal_WorkflowValueAndAllow",
 	"PUT /api/v1/ai/agents/{id}/executor":                           "test: TestAIWorker_ChangeExecutor_DB",
 	"GET /api/v1/ci/trust-configs/{id}/new-repositories":            "test: TestCIAllProjects_PendingApproveBlock",
 	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions": "test: TestCIAllProjects_PendingApproveBlock",

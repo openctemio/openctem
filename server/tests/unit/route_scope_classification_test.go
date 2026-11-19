@@ -126,6 +126,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/ci/scm-apps":                          {classConfig, "code-host app installations the organization bound for CI checks and comments: tenant configuration (RFC-077)"},
 	"/api/v1/ci/trust-refusals":                    {classConfig, "refused CI token exchanges from the audit log: CI trust administration (scans:ci:write), RFC-051"},
 	"/api/v1/ci/trust-configs":                     {classConfig, "CI trust configurations: tenant configuration (RFC-051)"},
+	"/api/v1/ci/trust-refusals/unverified":         {classConfig, "CI tokens refused before verification, per issuer: CI trust administration (scans:ci:write)"},
 	"/api/v1/ci/gate-policies":                     {classScoped, "CI gate policies: a repository policy is listed and managed only for a repository in the caller's data scope (404 otherwise); organization and business unit policies are changed only with an unrestricted scope (RFC-051)"},
 	"/api/v1/ci/gate-overrides":                    {classScoped, "break-glass overrides: listed and created only on repositories in the caller's data scope, 404 otherwise (RFC-051)"},
 	"/api/v1/ci/gate-settings":                     {classScoped, "a repository's effective CI gate settings: only for a repository in the caller's data scope, 404 otherwise (RFC-096)"},
