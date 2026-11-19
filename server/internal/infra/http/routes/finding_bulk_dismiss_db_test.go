@@ -122,7 +122,7 @@ func (h *bulkDismissHarness) call(u policyUser, path string, body map[string]any
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	raw := h.expect(u, http.MethodPost, "/api/v1/findings/bulk/dismiss"+path, string(b), want)
+	raw := h.expect(u, http.MethodPost, "/api/v1/findings/bulk-dismissals"+path, string(b), want)
 	var out bdResult
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		h.t.Fatalf("%s: %v", raw, err)
@@ -572,12 +572,12 @@ func TestBulkDismiss_Undo_DB(t *testing.T) {
 	h.exec(`UPDATE findings SET status = 'confirmed' WHERE id = $1`, low[0])
 	h.exec(`UPDATE findings SET status = 'in_progress' WHERE id = $1`, low[0])
 
-	undo := "/" + out.BulkID + "/undo"
+	undo := "/" + out.BulkID + "/reopen"
 	h.call(owner, undo, map[string]any{}, http.StatusNotFound)
 	h.call(foreignOwner, undo, map[string]any{}, http.StatusNotFound)
-	h.call(admin, "/"+uuid.NewString()+"/undo", map[string]any{}, http.StatusNotFound)
+	h.call(admin, "/"+uuid.NewString()+"/reopen", map[string]any{}, http.StatusNotFound)
 	var u finding.UndoBulkDismissResult
-	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/findings/bulk/dismiss"+undo, "{}", http.StatusOK)), &u); err != nil {
+	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/findings/bulk-dismissals"+undo, "{}", http.StatusOK)), &u); err != nil {
 		t.Fatal(err)
 	}
 	if len(u.Reopened) != 2 || len(u.Skipped) != 1 || u.Skipped[0].ID != low[0] || u.Skipped[0].Reason != finding.BulkSkipChanged || !u.GroupCanceled {
@@ -604,7 +604,7 @@ func TestBulkDismiss_Undo_DB(t *testing.T) {
 
 	old := h.call(admin, "", dismissBody(h.findings(org, "low", 1), nil), http.StatusOK)
 	h.exec(`UPDATE finding_bulk_dismissals SET created_at = now() - interval '25 hours' WHERE id = $1`, old.BulkID)
-	h.call(admin, "/"+old.BulkID+"/undo", map[string]any{}, http.StatusConflict)
+	h.call(admin, "/"+old.BulkID+"/reopen", map[string]any{}, http.StatusConflict)
 }
 
 // D4 on a single request: the note is optional when the requester decides

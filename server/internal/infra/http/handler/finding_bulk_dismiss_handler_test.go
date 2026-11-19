@@ -14,7 +14,7 @@ import (
 )
 
 func bulkDismissRequest(ctx context.Context, body string) *http.Request {
-	return httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/findings/bulk/dismiss", strings.NewReader(body))
+	return httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/findings/bulk-dismissals", strings.NewReader(body))
 }
 
 // Who may decide alone in a bulk dismiss comes from the request's
