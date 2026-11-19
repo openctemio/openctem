@@ -13,7 +13,10 @@ import { layoutDefects, seriousAxe } from '../helpers/layout'
  */
 
 const SECTIONS = ['Trusted pipelines', 'Gate policy', 'Pull request feedback', 'Break-glass']
-/** /me/bootstrap plus the settings, trust, refusals, gate policies, code-host apps and overrides. */
+/**
+ * /me/bootstrap plus the settings, trust, refusals, gate policies, code-host apps and overrides
+ * (the shell's one out-of-date-data read, request-budget.json shellRequests, is not the page's).
+ */
 const BUDGET = 7
 
 function isApi(req: Request): boolean {
@@ -27,7 +30,7 @@ test.describe('CI/CD settings', { tag: ['@sensors'] }, () => {
       await page.setViewportSize({ width, height: 900 })
       const seen: string[] = []
       page.on('request', (r) => {
-        if (isApi(r)) {
+        if (isApi(r) && new URL(r.url()).pathname !== '/api/v1/threat-intel/freshness') {
           const u = new URL(r.url())
           seen.push(`${r.method()} ${u.pathname}${u.search}`)
         }

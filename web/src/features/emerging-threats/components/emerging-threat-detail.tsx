@@ -15,6 +15,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageHeader } from '@/features/shared/components/page-header'
+import { FeedDataAsOf } from '@/features/threat-intel/components/feed-freshness-banner'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
@@ -63,6 +64,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
         description={
           <span className="flex flex-wrap items-center gap-2">
             {alert.title && <span>{alert.title}</span>}
+            <FeedDataAsOf className="text-muted-foreground" />
           </span>
         }
       >

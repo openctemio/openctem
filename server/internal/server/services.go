@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
 	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/server/internal/app/query"
@@ -1062,6 +1063,9 @@ type Services struct {
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
+	// FeedWatch alerts and raises the all-user banner when vulnerability
+	// data goes stale, in every feed mode; nil without platform settings.
+	FeedWatch *feedwatch.Service
 	// LookupJobs asks the platform's instance-scope sensors passive
 	// questions for an organization (lookup.ct@1).
 	LookupJobs    *lookupjobapp.Service
@@ -1578,6 +1582,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Feed relay (RFC-142): the signed releases (vulnerability data with
 	// KEV and EPSS, release notices) through a platform relay sensor.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
+	s.FeedWatch = newFeedWatch(repos, s, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,

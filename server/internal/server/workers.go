@@ -835,6 +835,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewFeedRelayController(svc.FeedRelay))
 	}
 
+	// Freshness watch, every mode: stale data, failing or refused imports,
+	// the newest record's age and the daily CVE count alert the
+	// administrators and raise the banner every user sees.
+	if svc.FeedWatch != nil {
+		svc.FeedWatch.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
+		w.ControllerManager.Register(svc.FeedWatch)
+	}
+
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
 	// each organization's findings.
 	if svc.VulnMatch != nil {
