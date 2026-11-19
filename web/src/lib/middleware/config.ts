@@ -57,6 +57,9 @@ export const ACCOUNT_ONLY_PAGES = [
   '/account',
   '/account/security',
   '/account/preferences',
+  // The second-factor step an organization asks for before it admits the
+  // session: a member without it holds only an account session.
+  '/two-factor-setup',
 ] as const
 
 /** Where an account-only session lands. */

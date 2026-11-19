@@ -10,8 +10,9 @@ import (
 
 // Account-only sessions (docs/architecture/tenantless-account-space.md).
 //
-// A signed-in person who belongs to no organization holds an access token
-// without a tenant claim. That token reaches only the routes below: the
+// Any signed-in person may hold an access token without a tenant claim: one
+// with no organization, and a member whose organization does not admit this
+// session yet (2FA not set up, its own sign-in required, suspended). That token reaches only the routes below: the
 // person's own account (profile, security, sessions, sign-in methods,
 // preferences), the organizations list (their own memberships, which is
 // empty) and creating one where the policy allows it, accepting an

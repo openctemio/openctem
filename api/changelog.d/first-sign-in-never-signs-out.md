@@ -1,0 +1,28 @@
+### Fixed: a first sign-in with Google, GitHub or Microsoft no longer ends back on the sign-in page
+
+- A person signing in with a social provider for the first time (no organization yet) could be
+  signed out at once: the first organization request answered `401 TENANT_REQUIRED`, the refresh
+  had no organization to renew, and the client took that as a dead session. The refresh now renews
+  the account-only token whenever no organization is selected.
+- The browser signs a person out only when the session itself is gone (the refresh is refused
+  with 401, or the session came from another organization's identity provider). A route that
+  needs an organization, an organization that requires two-factor authentication, a suspended
+  organization, or a server error never signs anybody out.
+- Docs: api/docs/architecture/tenantless-account-space.md
+
+### Behaviour change: social sign-in accounts can satisfy an organization's two-factor requirement
+
+- An account that signs in only with Google, GitHub or Microsoft and is invited into an
+  organization that requires two-factor authentication could never get in: the organization
+  refused the social session, the account token was refused because the person now had an
+  organization, and the in-place setup refused social sessions. Now the social sign-in counts as
+  the first factor: the session step (`POST /auth/mfa/enroll/session`, within 15 minutes of
+  signing in) enrolls or verifies our authenticator code in place, and every later social
+  sign-in of an account with a factor, or of a member of an organization that requires one, asks
+  for the code before any session is issued. A session issued by an organization's own identity
+  provider still cannot start that step (that provider owns the factor).
+- `POST /auth/account-token` now answers `200` for any signed-in account, member of an
+  organization or not (it answered `409` for members). The token reaches only the account routes,
+  so it skips none of an organization's rules; those apply when the session asks for that
+  organization's token. Both tokens are bound to the same session.
+- Docs: api/docs/architecture/user-two-factor-authentication.md, api/docs/rfcs/RFC-141-tenantless-account-space.md

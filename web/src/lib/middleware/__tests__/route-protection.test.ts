@@ -229,14 +229,18 @@ describe('handleAuth: page loads only', () => {
 describe('an account-only session (signed in, no organization)', () => {
   const accountOnly = { refresh_token: JWT, auth_token: JWT, app_account_only: '1' }
 
-  it.each(['/welcome', '/account', '/account/security', '/account/preferences'])(
-    '%s opens',
-    (pathname) => {
-      expect(decideAuth({ pathname, search: '', cookie: jar(accountOnly) })).toEqual({
-        type: 'allow',
-      })
-    }
-  )
+  it.each([
+    '/welcome',
+    '/account',
+    '/account/security',
+    '/account/preferences',
+    // An organization that requires 2FA holds the session back: its setup opens.
+    '/two-factor-setup',
+  ])('%s opens', (pathname) => {
+    expect(decideAuth({ pathname, search: '', cookie: jar(accountOnly) })).toEqual({
+      type: 'allow',
+    })
+  })
 
   it.each([
     '/',

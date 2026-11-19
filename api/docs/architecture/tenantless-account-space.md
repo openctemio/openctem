@@ -33,7 +33,7 @@ sequenceDiagram
     else several
         W->>W: /select-tenant, then POST /token
     else none open
-        W->>A: POST /account-token - 409 when an open membership exists
+        W->>A: POST /account-token
         A-->>W: access token without tenant claim, /welcome
     end
     A->>A: refreshForMint, membership (403 ORGANIZATION_ACCESS_DENIED), policy chain incl. organizationOpen (403 ORGANIZATION_SUSPENDED)
@@ -60,11 +60,18 @@ reset only by a complete sign-in. A locked account still answers
 `POST /api/v1/auth/account-token` with the refresh token (httpOnly cookie plus the CSRF pair, or
 `refresh_token` in the body). It answers:
 
-- `200 {access_token, token_type, expires_in}` and a rotated refresh cookie, when the account has
-  no organization it can open (none, or every one suspended or closed);
-- `409` when the account can open an organization: exchange with `POST /auth/token` instead;
+- `200 {access_token, token_type, expires_in}` and a rotated refresh cookie, for any signed-in
+  account: one with no organization, and a member as well (since 2026-11-18). A member whose
+  organization does not admit the session yet (two-factor authentication not set up, its own
+  identity provider required, suspended) keeps a usable token for their account and the step that
+  admits them, instead of being signed out. The token reaches only the allow-list, so it skips none
+  of an organization's rules: those apply when the session asks `POST /auth/token` for that
+  organization's token;
 - `401` for a refresh token that is unknown, spent (the family is revoked), expired, or for a
   blocked account.
+
+The access token carries the session id: signing out, or revoking the session, ends the account
+token and every organization token of that session together.
 
 Social and SSO sign-in return a token without a tenant at sign-in; the allow-list applies to it the
 same way.
@@ -116,10 +123,16 @@ account-only token under each self-hosted setting and expects 403.
   organization" when allowed, and links to profile, security, sessions, sign-in methods and
   preferences.
 - The proxy sends every page of an account-only session except `/welcome`, `/account`,
-  `/account/security` and `/account/preferences` to `/welcome`. Those pages render in a slim shell
-  with no tenant providers.
-- The browser's refresh renews the account-only token while no organization cookie exists.
-- The API client routes `401 TENANT_REQUIRED` to `/welcome` once.
+  `/account/security`, `/account/preferences` and `/two-factor-setup` to `/welcome`. The account
+  pages render in a slim shell with no tenant providers.
+- The browser's refresh renews the account-only token whenever no organization cookie exists.
+- When the browser ends a session (`web/src/lib/auth/refresh-failure.ts`): only when the refresh
+  is refused with 401 (unknown, spent, revoked or expired refresh token, ended session) or the
+  session came from another organization's identity provider. An organization that requires
+  two-factor authentication opens `/two-factor-setup`; a suspended organization or one that
+  requires its own sign-in opens `/welcome`; a server or network failure changes nothing. A route's
+  401 alone never signs anybody out: the client refreshes first, and `401 TENANT_REQUIRED` after
+  that sends the person to `/welcome` once.
 
 ## What does not change
 

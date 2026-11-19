@@ -6,7 +6,7 @@
  *
  * Flow:
  * 1. Read refresh token from cookie
- * 2. Read tenant info from tenant cookie
+ * 2. Read tenant info from tenant cookie (none: renew the account-only token)
  * 3. Refresh through refreshSessionOnce (one API call per refresh token)
  * 4. Update cookies with new tokens
  * 5. Return new access token to client
@@ -70,12 +70,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (!tenantId && cookieStore.get(env.cookies.accountOnly)?.value) {
-      // No organization: renew the account-only token (api RFC-141).
+    if (!tenantId) {
+      // No organization selected (none yet, or a social sign-in that has not
+      // opened one): renew with the account-only token (api RFC-141), which
+      // every signed-in person can have. It keeps the session alive on the
+      // account pages; a route that needs an organization answers
+      // TENANT_REQUIRED and the client goes to the account space. Never a
+      // sign-out: only a refused refresh token (401) ends the session.
       const account = await requestAccountToken(refreshToken)
       if (!account.ok) {
-        const status =
-          account.code === 'SESSION' ? 401 : account.code === 'HAS_ORGANIZATION' ? 409 : 502
+        const status = account.code === 'SESSION' ? 401 : 502
         const failed = NextResponse.json(
           {
             success: false,
@@ -116,14 +120,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           maxAge: 7 * 24 * 60 * 60,
         })
       }
+      // The routing hint for the proxy and the layout (not a credential).
+      ok.cookies.set(env.cookies.accountOnly, '1', { ...base, maxAge: 7 * 24 * 60 * 60 })
       return ok
-    }
-
-    if (!tenantId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NO_TENANT', message: 'No tenant context found' } },
-        { status: 400 }
-      )
     }
 
     // One refresh per refresh token across every route of this server:

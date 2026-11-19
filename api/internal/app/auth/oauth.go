@@ -384,16 +384,22 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 		return nil, ErrOAuthExchangeFailed
 	}
 
-	// A password account reached through a linked provider takes the same
-	// second step as its password sign-in (identity_link.go).
-	if isPasswordAccount(u) {
+	// The provider's sign-in is the first factor. Every account then takes the
+	// same second step as a password sign-in (identity_link.go): a verify
+	// challenge when it has a factor, an enrollment challenge when an
+	// organization it belongs to requires one. Without this a social session
+	// could never satisfy an organization that requires 2FA (its token
+	// request refuses a session that skipped our second step), and the person
+	// would be left with no way in. A password account without the gate wired
+	// is refused (fail closed); a social account keeps the session it had.
+	if isPasswordAccount(u) || s.secondFactor != nil {
 		challenge, cerr := s.linkedAccountChallenge(ctx, u)
 		if cerr != nil {
 			return nil, cerr
 		}
 		if challenge != nil {
-			s.logger.Info("OAuth sign-in to a linked password account waits for its second factor",
-				"user_id", u.ID().String(), "provider", provider)
+			s.logger.Info("OAuth sign-in waits for its second factor",
+				"user_id", u.ID().String(), "provider", provider, "purpose", string(challenge.Purpose))
 			return &CallbackResult{User: u, MFAChallenge: challenge}, nil
 		}
 	}

@@ -276,9 +276,29 @@ func TestSessionMFAChallenge(t *testing.T) {
 			t.Fatalf("purpose = %q", info.Purpose)
 		}
 	})
-	t.Run("a federated session is refused and no challenge is issued", func(t *testing.T) {
+	t.Run("a session from an organization's own IdP is refused and no challenge is issued", func(t *testing.T) {
 		s, mr, rt := challengeFixture(t, true, nil)
+		s.sessionRepo.(*mfaInvSessionRepo).sess.SetIDPTenant(shared.NewID())
 		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrMFAFederatedSession) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(mr.challenges) != 0 {
+			t.Fatal("no challenge may be issued")
+		}
+	})
+	// A social sign-in (federated, no issuing organization) is a first factor:
+	// the person enrolls our second step in place, so an invitation into an
+	// organization that requires 2FA never strands them.
+	t.Run("a fresh social session gets an enrollment challenge", func(t *testing.T) {
+		s, mr, rt := challengeFixture(t, true, nil)
+		info, err := s.SessionMFAChallenge(context.Background(), rt, "", "")
+		if err != nil || info.Purpose != mfa.PurposeEnroll || len(mr.challenges) != 1 {
+			t.Fatalf("info=%+v err=%v challenges=%d", info, err, len(mr.challenges))
+		}
+	})
+	t.Run("an old social session cannot start enrollment either", func(t *testing.T) {
+		s, mr, rt := challengeFixtureAged(t, true, nil, sessionEnrollFreshness+time.Minute)
+		if _, err := s.SessionMFAChallenge(context.Background(), rt, "", ""); !errors.Is(err, ErrReauthRequired) {
 			t.Fatalf("err = %v", err)
 		}
 		if len(mr.challenges) != 0 {
