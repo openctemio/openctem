@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { DataTable, EmptyState, RelativeTime, StackedCell } from '@/features/shared'
 import { useResolvedPorts, type ResolvedPort } from '../hooks/use-resolved-ports'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Asset types whose page shows the section. */
 export function hasResolvedPorts(type: string): boolean {
@@ -128,7 +129,7 @@ export function ResolvedPortsSection({ assetId }: { assetId: string }) {
         {data && data.truncated && (
           <p className="text-sm text-muted-foreground" role="status">
             {t('assetPorts.truncated', 'Showing the first {count} ports.', {
-              count: data.items.length.toLocaleString(),
+              count: formatNumber(data.items.length),
             })}
           </p>
         )}
@@ -137,7 +138,7 @@ export function ResolvedPortsSection({ assetId }: { assetId: string }) {
             {t(
               'assetPorts.hidden',
               '{count} more ports are on addresses or ports outside your data scope.',
-              { count: data.hidden_count.toLocaleString() }
+              { count: formatNumber(data.hidden_count) }
             )}
           </p>
         )}

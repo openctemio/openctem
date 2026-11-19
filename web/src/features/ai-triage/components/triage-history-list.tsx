@@ -10,6 +10,7 @@ import { TriageResultCard } from './triage-result-card'
 import { useTriageHistory } from '../api'
 import type { AITriageResult } from '../types'
 import { EmptyState } from '@/features/shared'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface TriageHistoryListProps {
   findingId: string
@@ -22,7 +23,7 @@ export function TriageHistoryList({ findingId, limit = 10, className }: TriageHi
   const { data, isLoading, error } = useTriageHistory(findingId, { limit })
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString()
+    return formatDateTime(new Date(dateStr))
   }
 
   if (isLoading) {

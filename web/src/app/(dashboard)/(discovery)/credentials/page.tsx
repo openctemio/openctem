@@ -113,6 +113,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { formatDate as localeFormatDate, formatNumber } from '@/lib/app-locale'
 
 const PAGE_SIZES = [...DEFAULT_PAGE_SIZES]
 const SORT_FIELDS = ['severity', 'first_seen_at'] as const
@@ -153,7 +154,7 @@ const CREDENTIAL_WIDTH = {
 } as const
 
 export default function CredentialsPage() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   // Page, size, sort, search and the filters are in the URL and go to the
   // API as they are. Status, source and severity take several values each.
   const list = useListParams<CredentialFilterName>({
@@ -332,7 +333,7 @@ export default function CredentialsPage() {
     },
   ]
 
-  const formatDate = (date: string) => new Date(date).toLocaleDateString(locale)
+  const formatDate = (date: string) => localeFormatDate(new Date(date))
 
   // One-line rows. No selection column: the page has no bulk actions, and a
   // checkbox that selects rows nothing can act on is a dead control. A row
@@ -531,7 +532,7 @@ export default function CredentialsPage() {
               t(
                 'credentials.export.truncated',
                 'Export limited to the first {count} leaks. Refine the filters to export the rest.',
-                { count: loaded.toLocaleString(locale) }
+                { count: formatNumber(loaded) }
               )
             ),
         }

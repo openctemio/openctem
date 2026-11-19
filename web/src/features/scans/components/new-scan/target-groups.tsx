@@ -15,6 +15,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { ApiScopeCheckResult } from '@/features/scope'
 import type { TargetGroup, TargetGroupKind } from '../../lib/target-groups'
 import { StateIcon, targetVerdict, verdictText, type RowState } from './target-list'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Rows shown per group before "Show all". */
 export const GROUP_ROWS = 5
@@ -84,7 +85,7 @@ function Group({
       <h3 id={headingId} className="flex items-baseline gap-2 text-sm font-medium">
         {t(`scans.targetGroups.${group.kind}`)}
         <span className="text-xs font-normal text-muted-foreground tabular-nums">
-          {group.rows.length.toLocaleString()}
+          {formatNumber(group.rows.length)}
         </span>
       </h3>
       {setting}

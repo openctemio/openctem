@@ -30,6 +30,7 @@ import { AdminActivityTable } from '@console/features/admin-console/components/a
 import { PlatformUserActions } from '@console/features/admin-console/components/platform-user-actions'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
 import { adminHas } from '@console/features/admin-console/types'
+import { formatTime } from '@/lib/app-locale'
 
 export default function AdminUserPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = use(params)
@@ -101,7 +102,7 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                       <span className="text-muted-foreground">
                         {' '}
                         ({t('admin.users.field.lockedUntil', 'locked until')}{' '}
-                        {new Date(user.locked_until).toLocaleTimeString()})
+                        {formatTime(new Date(user.locked_until))})
                       </span>
                     )}
                   </DetailField>

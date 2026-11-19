@@ -26,6 +26,7 @@ import type { CreateGroupFormData } from './types'
 import { useTranslation } from '@/context/i18n-provider'
 import { draftToDocument, isDraftEmpty, parseDomains } from '../../lib/group-rule'
 import { countPasteLines } from '../../lib/group-paste'
+import { formatNumber } from '@/lib/app-locale'
 
 interface ReviewStepProps {
   data: CreateGroupFormData
@@ -249,7 +250,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     'assetGroups.members.review.paste',
                     '{count} pasted lines are matched when the group is created',
                     {
-                      count: pasteLines.toLocaleString(),
+                      count: formatNumber(pasteLines),
                     }
                   )}
                 </p>

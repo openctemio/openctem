@@ -21,6 +21,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { runAssetLifecycleDryRun } from '../api'
 import type { LifecycleRunReport } from '../types'
+import { formatNumber } from '@/lib/app-locale'
 
 interface DryRunDialogProps {
   open: boolean
@@ -134,7 +135,7 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
               <div className="grid grid-cols-2 gap-3">
                 <StatBox
                   label={t('settings.assetLifecycle.dialog.wouldStale', 'Would be flagged stale')}
-                  value={report.transitioned_to_stale.toLocaleString()}
+                  value={formatNumber(report.transitioned_to_stale)}
                   emphasize={report.transitioned_to_stale > 0}
                 />
                 <StatBox
@@ -159,17 +160,17 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
                 <div className="grid grid-cols-2 gap-3" data-testid="dry-run-liveness">
                   <StatBox
                     label={t('settings.assetLifecycle.dialog.gone', 'Assets gone')}
-                    value={(report.liveness.states.gone ?? 0).toLocaleString()}
+                    value={formatNumber(report.liveness.states.gone ?? 0)}
                   />
                   <StatBox
                     label={t(
                       'settings.assetLifecycle.dialog.unreachable',
                       'Unreachable or unresolvable'
                     )}
-                    value={(
+                    value={formatNumber(
                       (report.liveness.states.unreachable ?? 0) +
-                      (report.liveness.states.unresolvable ?? 0)
-                    ).toLocaleString()}
+                        (report.liveness.states.unresolvable ?? 0)
+                    )}
                   />
                   <StatBox
                     label={
@@ -198,7 +199,7 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
                       'settings.assetLifecycle.dialog.wouldReopen',
                       'Findings that would reopen'
                     )}
-                    value={report.liveness.would_reopen_findings.toLocaleString()}
+                    value={formatNumber(report.liveness.would_reopen_findings)}
                   />
                 </div>
               )}

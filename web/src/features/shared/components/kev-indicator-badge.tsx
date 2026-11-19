@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { AlertOctagon, Calendar, Clock, Skull, ShieldAlert } from 'lucide-react'
 import { parseISO, isPast, differenceInDays } from 'date-fns'
 import { RelativeTime } from './relative-time'
+import { formatDate } from '@/lib/app-locale'
 
 interface KEVData {
   date_added?: string
@@ -170,7 +171,7 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
         {kevData?.date_added && (
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Added to KEV:</span>
-            <span>{new Date(kevData.date_added).toLocaleDateString()}</span>
+            <span>{formatDate(new Date(kevData.date_added))}</span>
           </div>
         )}
 
@@ -183,7 +184,7 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
           >
             <span className={isPastDue ? '' : 'text-muted-foreground'}>Remediation Due:</span>
             <span>
-              {new Date(kevData.due_date).toLocaleDateString()}
+              {formatDate(new Date(kevData.due_date))}
               {daysUntilDue !== null && (
                 <span className="ms-1">
                   (

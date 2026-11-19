@@ -65,6 +65,7 @@ import {
   type RiskClass,
   type SinglePersonFPChange,
 } from '../lib/approval-policy'
+import { formatDateTime } from '@/lib/app-locale'
 
 const NO_GROUP = '__none__'
 
@@ -264,7 +265,7 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
   const disabled = !canEdit
   const currentGroup = groups.find((g) => g.id === form.groupId)
   const pendingAt = settings.pending_policy_at
-    ? new Date(settings.pending_policy_at).toLocaleString()
+    ? formatDateTime(new Date(settings.pending_policy_at))
     : ''
   const capsInvalid = caps.standard === null || caps.high === null || caps.critical === null
 

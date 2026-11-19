@@ -16,6 +16,7 @@
  */
 
 import type { CtemState } from './ctem-colors'
+import { formatNumber } from '@/lib/app-locale'
 
 /** A metric with no wired data source yet (e.g. validation downgrade %). */
 export type MetricStatus = Exclude<CtemState, 'none'> | 'pending'
@@ -141,5 +142,5 @@ export function formatRatePct(pct: number | null | undefined): string | null {
 /** "n of m" style caption; pluralises the noun. */
 export function countCaption(n: number | null | undefined, noun: string): string {
   const count = n ?? 0
-  return `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`
+  return `${formatNumber(count)} ${noun}${count === 1 ? '' : 's'}`
 }

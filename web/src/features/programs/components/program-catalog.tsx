@@ -16,6 +16,7 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import { EmptyState, ListToolbar } from '@/features/shared'
 import type { ProgramChange } from '../api/programs-api.types'
 import { subscribeProgram, useProgramCatalog } from '../api/use-programs'
+import { formatDate } from '@/lib/app-locale'
 
 interface ProgramCatalogProps {
   onFollowed: (change: ProgramChange) => void
@@ -90,7 +91,7 @@ export function ProgramCatalog({ onFollowed, onError }: ProgramCatalogProps) {
                       suggested: p.suggested,
                       out: p.out_of_scope,
                       source: p.provenance?.dataset || p.source,
-                      date: new Date(p.as_of).toLocaleDateString(),
+                      date: formatDate(new Date(p.as_of)),
                     }
                   )}
                 </p>

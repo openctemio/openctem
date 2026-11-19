@@ -31,6 +31,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import { RoleRequiredNotice } from './role-required-notice'
+import { formatDateTime } from '@/lib/app-locale'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
 
@@ -170,7 +171,7 @@ export function SharedSensorEnroll({ canEdit, onIssue }: SharedSensorEnrollProps
               </div>
               <p className="text-body text-muted-foreground">
                 {t('admin.sharedSensorEnroll.expires', undefined, {
-                  time: new Date(issued.expires_at).toLocaleString(),
+                  time: formatDateTime(new Date(issued.expires_at)),
                 })}
               </p>
             </DialogBody>

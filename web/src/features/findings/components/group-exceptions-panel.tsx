@@ -59,6 +59,7 @@ import type { ApprovalStatus } from '../types/finding.types'
 import { approveErrorOutcome, approveResultOutcome, kindLabel } from '../lib/approval-policy'
 import { closureReasonLabel } from '../lib/closure'
 import { ApprovalTierCell } from './approval-tier-cell'
+import { formatDate, formatNumber } from '@/lib/app-locale'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -234,7 +235,7 @@ export function GroupExceptionsPanel({
         meta: meta({ kind: 'number', label: label.members }),
         header: label.members,
         cell: ({ row }) => (
-          <span className="text-sm tabular-nums">{row.original.member_count}</span>
+          <span className="text-sm tabular-nums">{formatNumber(row.original.member_count)}</span>
         ),
       },
       {
@@ -473,7 +474,7 @@ export function GroupExceptionSheet({
                       <dt className="text-muted-foreground">
                         {t('findings.approvalDialog.expires', 'Expires:')}
                       </dt>
-                      <dd>{new Date(batch.expires_at).toLocaleDateString()}</dd>
+                      <dd>{formatDate(new Date(batch.expires_at))}</dd>
                     </>
                   )}
                   {pending && (
@@ -524,7 +525,7 @@ export function GroupExceptionSheet({
                         {m.expires_at && (
                           <span className="text-xs whitespace-nowrap text-muted-foreground">
                             {t('findingApprovals.group.endsOn', 'ends {date}', {
-                              date: new Date(m.expires_at).toLocaleDateString(),
+                              date: formatDate(new Date(m.expires_at)),
                             })}
                           </span>
                         )}

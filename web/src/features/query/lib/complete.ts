@@ -9,6 +9,7 @@
  */
 
 import type { QuerySchemaField } from '../api/query-api'
+import { formatNumber } from '@/lib/app-locale'
 
 export const SHORT_KEYWORDS = ['AND', 'OR', 'NOT'] as const
 
@@ -264,6 +265,6 @@ export function localProblem(text: string): LocalProblem | null {
 /** Counts the way lists show them: exact up to 10,000, then "10,000+". */
 export const COUNT_CAP = 10000
 
-export function formatCount(n: number, locale?: string): string {
-  return n > COUNT_CAP ? `${COUNT_CAP.toLocaleString(locale)}+` : n.toLocaleString(locale)
+export function formatCount(n: number, _locale?: string): string {
+  return n > COUNT_CAP ? `${formatNumber(COUNT_CAP)}+` : formatNumber(n)
 }

@@ -55,6 +55,7 @@ import {
   type TechnologyRow,
   type VersionFilter,
 } from '../lib/technologies'
+import { formatNumber } from '@/lib/app-locale'
 
 const PAGE_SIZES = [20, 50, 100]
 const SORT_FIELDS = [
@@ -171,7 +172,7 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
               }
             )}
           >
-            {row.original.asset_count}
+            {formatNumber(row.original.asset_count)}
           </Link>
         ),
       },

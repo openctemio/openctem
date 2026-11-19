@@ -96,6 +96,7 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import { formatNumber } from '@/lib/app-locale'
 import {
   knownRowCount,
   loadingRowCount,
@@ -1589,17 +1590,17 @@ export function DataTable<TData, TValue>({
         ? t('common.table.selectModeOn', 'Selecting: check the rows to act on')
         : filterSelected
           ? t('common.table.allMatchingSelected', 'All {count} that match are selected', {
-              count: matchingTotal.toLocaleString(),
+              count: formatNumber(matchingTotal),
             })
           : selectedCount > 0
             ? t('common.table.selectedCount', '{count} selected', {
-                count: selectedCount.toLocaleString(),
+                count: formatNumber(selectedCount),
               })
             : t('common.table.selectionCleared', 'Selection cleared'),
     refreshing: isRefreshing,
     refreshedMessage: () =>
       t('common.table.resultsCount', '{count} {noun}', {
-        count: paginationTotal.toLocaleString(),
+        count: formatNumber(paginationTotal),
         noun: paginationNoun,
       }),
   })
@@ -2160,7 +2161,7 @@ export function DataTable<TData, TValue>({
                 {!allPageSelected && selectableOnPage > 0 && (
                   <DropdownMenuItem onSelect={() => table.toggleAllPageRowsSelected(true)}>
                     {t('common.table.selectPage', 'Select all on this page ({count})', {
-                      count: selectableOnPage.toLocaleString(),
+                      count: formatNumber(selectableOnPage),
                     })}
                   </DropdownMenuItem>
                 )}
@@ -2174,7 +2175,7 @@ export function DataTable<TData, TValue>({
                         'common.table.matchingTooMany',
                         'Up to {max} at once: narrow the filters',
                         {
-                          max: matchingMax.toLocaleString(),
+                          max: formatNumber(matchingMax),
                         }
                       )}
                     </DropdownMenuItem>
@@ -2186,7 +2187,7 @@ export function DataTable<TData, TValue>({
                       }}
                     >
                       {t('common.table.selectAllMatching', 'Select all {count} that match', {
-                        count: matchingTotal.toLocaleString(),
+                        count: formatNumber(matchingTotal),
                       })}
                     </DropdownMenuItem>
                   ))}
@@ -2213,20 +2214,20 @@ export function DataTable<TData, TValue>({
             filterSelected ? (
               <span className="text-cap text-muted-foreground whitespace-nowrap">
                 {t('common.table.allMatchingSelected', 'All {count} that match are selected', {
-                  count: matchingTotal.toLocaleString(),
+                  count: formatNumber(matchingTotal),
                 })}
               </span>
             ) : canOfferMatching && matchingMax != null && matchingTotal > matchingMax ? (
               // Above the server's limit for one change: say why there is no offer.
               <span className="text-cap text-muted-foreground whitespace-nowrap">
                 {t('common.table.matchingTooMany', 'Up to {max} at once: narrow the filters', {
-                  max: matchingMax.toLocaleString(),
+                  max: formatNumber(matchingMax),
                 })}
               </span>
             ) : canOfferMatching ? (
               <Button variant="ghost" size="sm" onClick={() => setMatchingSelected(true)}>
                 {t('common.table.selectAllMatching', 'Select all {count} that match', {
-                  count: matchingTotal.toLocaleString(),
+                  count: formatNumber(matchingTotal),
                 })}
               </Button>
             ) : undefined
@@ -2313,7 +2314,7 @@ export function DataTable<TData, TValue>({
                       end,
                       total: rowCountCapped
                         ? t('common.table.cappedCount', '{count}+', {
-                            count: total.toLocaleString(),
+                            count: formatNumber(total),
                           })
                         : total,
                       noun: paginationNoun,
