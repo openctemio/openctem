@@ -20,9 +20,11 @@ import type {
 import { cn } from '@/lib/utils'
 
 import {
-  TOOL_EXCLUSION_LABEL,
   TOOL_STATUS_META,
   sensorsLabel,
+  toolExclusionLabel,
+  toolStatusDescription,
+  toolStatusLabel,
   toolUnavailableReason,
 } from '../lib/availability'
 
@@ -37,11 +39,12 @@ export function ToolStatusBadge({
   const meta = TOOL_STATUS_META[item.status]
   const { t } = useTranslation()
   const reason = toolUnavailableReason(item, t)
+  const description = toolStatusDescription(item.status, t)
   return (
     <TonePill
       tone={meta.tone}
-      label={meta.label}
-      title={reason ? `${meta.description} ${reason}.` : meta.description}
+      label={toolStatusLabel(item.status, t)}
+      title={reason ? `${description} ${reason}.` : description}
       state={item.status}
       className={className}
     />
@@ -49,6 +52,14 @@ export function ToolStatusBadge({
 }
 
 const TIER_LABEL = { T0: 'passive', T1: 'active', T2: 'intrusive' } as const
+
+/** A tier word ("passive") in the viewer's language. */
+function tierWord(
+  tier: keyof typeof TIER_LABEL,
+  t: (key: string, fallback?: string) => string
+): string {
+  return t(`scans.tools.tier.${tier}`, TIER_LABEL[tier])
+}
 
 /**
  * The trust and the tier the platform assigns a tool (RFC-055 §5). An
@@ -62,14 +73,22 @@ export function ToolTrustBadge({
   item: Pick<ToolAvailabilityInfo, 'trust' | 'tier'>
   className?: string
 }) {
+  const { t } = useTranslation()
   if (!item.trust && !item.tier) return null
-  const tier = item.tier ? `${item.tier} ${TIER_LABEL[item.tier]}` : ''
+  const tier = item.tier ? `${item.tier} ${tierWord(item.tier, t)}` : ''
   if (item.trust === 'unverified') {
     return (
       <TonePill
         tone="warning"
-        label={item.tier ? `Unverified, ${item.tier}` : 'Unverified'}
-        title="Installed by a sensor's operator and not verified: it runs only as tier T2 (intrusive), under a grant that allows T2."
+        label={
+          item.tier
+            ? t('scans.tools.trust.unverifiedTier', 'Unverified, {tier}', { tier: item.tier })
+            : t('scans.tools.trust.unverified', 'Unverified')
+        }
+        title={t(
+          'scans.tools.trust.unverifiedTitle',
+          "Installed by a sensor's operator and not verified: it runs only as tier T2 (intrusive), under a grant that allows T2."
+        )}
         state="unverified"
         className={className}
       />
@@ -78,11 +97,17 @@ export function ToolTrustBadge({
   return (
     <TonePill
       tone="muted"
-      label={item.tier ?? 'Built in'}
+      label={item.tier ?? t('scans.tools.trust.builtIn', 'Built in')}
       title={
         item.trust === 'builtin'
-          ? `Built into the sensor. The platform runs it as tier ${tier}.`
-          : `The platform runs it as tier ${tier}.`
+          ? t(
+              'scans.tools.trust.builtInTitle',
+              'Built into the sensor. The platform runs it as tier {tier}.',
+              {
+                tier,
+              }
+            )
+          : t('scans.tools.trust.tierTitle', 'The platform runs it as tier {tier}.', { tier })
       }
       state={item.trust ?? 'tier'}
       className={className}
@@ -92,6 +117,7 @@ export function ToolTrustBadge({
 
 /** One sensor row: name, state, zones, version and why it may not run the tool. */
 function SensorRow({ sensor }: { sensor: ToolAvailabilitySensor }) {
+  const { t } = useTranslation()
   return (
     <li className="flex items-start justify-between gap-3 py-1.5">
       <div className="min-w-0">
@@ -99,15 +125,21 @@ function SensorRow({ sensor }: { sensor: ToolAvailabilitySensor }) {
           {sensor.name}
         </p>
         <p className="truncate text-xs text-muted-foreground">
-          {sensor.online ? 'Online' : sensor.state.replace(/_/g, ' ')}
+          {sensor.online
+            ? t('scans.tools.sensor.online', 'Online')
+            : t(`sensors.state.${sensor.state}.label`, sensor.state.replace(/_/g, ' '))}
           {sensor.zones.length > 0 && `, ${sensor.zones.map((z) => z.name).join(', ')}`}
         </p>
         {sensor.trust === 'unverified' && (
-          <p className="text-xs text-warning">Operator-installed copy (unverified, T2)</p>
+          <p className="text-xs text-warning">
+            {t('scans.tools.sensor.unverified', 'Operator-installed copy (unverified, T2)')}
+          </p>
         )}
         {sensor.excluded && (
           <p className="text-xs text-warning" title={sensor.excluded_detail}>
-            Has it, but {TOOL_EXCLUSION_LABEL[sensor.excluded]}
+            {t('scans.tools.sensor.excluded', 'Has it, but {reason}', {
+              reason: toolExclusionLabel(sensor.excluded, t),
+            })}
           </p>
         )}
       </div>
@@ -128,18 +160,26 @@ export function ToolSensorList({
   item: Pick<ToolAvailabilityItem, 'sensors' | 'sensors_total' | 'sensors_excluded'>
   className?: string
 }) {
+  const { t } = useTranslation()
   if (item.sensors.length === 0) {
     const n = item.sensors_total + item.sensors_excluded
     return (
       <p className={cn('text-sm text-muted-foreground', className)}>
         {n === 0
-          ? 'No sensor reports this tool.'
-          : `${n} sensor(s) report this tool. Listing them needs permission to read sensors.`}
+          ? t('scans.tools.sensors.noneReport', 'No sensor reports this tool.')
+          : t(
+              'scans.tools.sensors.reportNoAccess',
+              '{count} sensor(s) report this tool. Listing them needs permission to read sensors.',
+              { count: n }
+            )}
       </p>
     )
   }
   return (
-    <ul className={cn('divide-y', className)} aria-label="Sensors with this tool">
+    <ul
+      className={cn('divide-y', className)}
+      aria-label={t('scans.tools.sensors.withTool', 'Sensors with this tool')}
+    >
       {item.sensors.map((s) => (
         <SensorRow key={s.id} sensor={s} />
       ))}
@@ -149,10 +189,13 @@ export function ToolSensorList({
 
 /** "n/m online" with the sensor list in a popover. */
 export function ToolSensorsCell({ item }: { item: ToolAvailabilityItem }) {
-  const label = sensorsLabel(item)
+  const { t } = useTranslation()
+  const label = sensorsLabel(item, t)
   const reported = item.sensors_total + item.sensors_excluded
   if (reported === 0) {
-    return <span className="text-xs text-muted-foreground">none</span>
+    return (
+      <span className="text-xs text-muted-foreground">{t('scans.tools.sensors.none', 'none')}</span>
+    )
   }
   return (
     <Popover>
@@ -160,18 +203,27 @@ export function ToolSensorsCell({ item }: { item: ToolAvailabilityItem }) {
         <button
           type="button"
           className="inline-flex items-center gap-1.5 rounded px-1 text-sm tabular-nums hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Sensors with ${item.name}: ${label}`}
+          aria-label={t('scans.tools.sensors.withNameLabel', 'Sensors with {name}: {label}', {
+            name: item.name,
+            label,
+          })}
           onClick={(e) => e.stopPropagation()}
         >
           <Server className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
           <span className={cn(item.sensors_online === 0 && 'text-muted-foreground')}>{label}</span>
           {item.sensors_excluded > 0 && (
-            <span className="text-xs text-warning">+{item.sensors_excluded} not allowed</span>
+            <span className="text-xs text-warning">
+              {t('scans.tools.sensors.notAllowed', '+{count} not allowed', {
+                count: item.sensors_excluded,
+              })}
+            </span>
           )}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-3" onClick={(e) => e.stopPropagation()}>
-        <p className="mb-1 text-xs font-medium text-muted-foreground">Sensors with {item.name}</p>
+        <p className="mb-1 text-xs font-medium text-muted-foreground">
+          {t('scans.tools.sensors.withName', 'Sensors with {name}', { name: item.name })}
+        </p>
         <ToolSensorList item={item} />
       </PopoverContent>
     </Popover>
