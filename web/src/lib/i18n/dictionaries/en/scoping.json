@@ -48,6 +48,8 @@
   "scoping.charter.timelinePlaceholder": "e.g. 90-day cycle, weekly triage",
   "scoping.charter.title": "Cycle charter",
   "scoping.charter.untitled": "Untitled",
+  "scoping.compliance.action.updateStatus": "Update status",
+  "scoping.compliance.action.viewDetails": "View details",
   "scoping.compliance.description": "How far each compliance framework's controls are implemented.",
   "scoping.compliance.errorTitle": "controls",
   "scoping.compliance.frameworksErrorTitle": "frameworks",
