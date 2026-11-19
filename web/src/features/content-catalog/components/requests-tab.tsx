@@ -226,6 +226,8 @@ export function RequestsTab({
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: () => <span className="sr-only">{t('contentCatalog.col.actions', 'Actions')}</span>,
         cell: ({ row }) => {
           const req = row.original

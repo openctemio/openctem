@@ -18,6 +18,7 @@ import { CODE_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { FileCode } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 export default function CodeWeaknessesPage() {
   const { t } = useTranslation()
@@ -85,7 +86,7 @@ export default function CodeWeaknessesPage() {
                 description={t(
                   'exposures.code.severityDescription',
                   '{count} code findings by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityDonut bySeverity={typeStats.bySeverity} />

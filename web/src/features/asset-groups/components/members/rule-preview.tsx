@@ -16,6 +16,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { previewGroupRule } from '../../api/use-group-rule-api'
 import type { GroupRuleDocument } from '../../types'
 import { ImpactNotice } from './impact-notice'
+import { formatNumber } from '@/lib/app-locale'
 
 interface RulePreviewProps {
   rule: GroupRuleDocument | null
@@ -72,10 +73,10 @@ export function RulePreview({ rule, groupId, blockedReason }: RulePreviewProps) 
           <span className="text-sm font-medium" data-testid="rule-preview-count">
             {data.over_cap
               ? t('assetGroups.members.preview.overCap', 'More than {cap} assets match', {
-                  cap: data.cap.toLocaleString(),
+                  cap: formatNumber(data.cap),
                 })
               : t('assetGroups.members.preview.count', '{count} assets match', {
-                  count: data.count.toLocaleString(),
+                  count: formatNumber(data.count),
                 })}
           </span>
         ) : null}
@@ -99,7 +100,7 @@ export function RulePreview({ rule, groupId, blockedReason }: RulePreviewProps) 
           {t(
             'assetGroups.members.preview.overCapHelp',
             'A group holds at most {cap} assets. Narrow the rule before saving.',
-            { cap: data.cap.toLocaleString() }
+            { cap: formatNumber(data.cap) }
           )}
         </p>
       ) : null}

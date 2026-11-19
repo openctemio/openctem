@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
 import { ruleStatusNeedsAttention } from '../../lib/group-rule'
 import type { GroupRule } from '../../types'
+import { formatNumber } from '@/lib/app-locale'
 
 export function RuleStatusNote({ rule }: { rule: GroupRule }) {
   const { t } = useTranslation()
@@ -23,7 +24,7 @@ export function RuleStatusNote({ rule }: { rule: GroupRule }) {
             : t(
                 'assetGroups.members.status.overCap',
                 'The rule now matches more than {cap} assets, so the members stay as they were. Narrow the rule to resume it.',
-                { cap: rule.cap.toLocaleString() }
+                { cap: formatNumber(rule.cap) }
               )}
         </AlertDescription>
       </Alert>

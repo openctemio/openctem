@@ -28,6 +28,7 @@ import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { ZoneSensorsReadiness } from '@/features/sensors/components/sensor-readiness'
+import { formatNumber } from '@/lib/app-locale'
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -240,7 +241,7 @@ export function ReviewStep({
                 ? 'scans.summary.targetsOne'
                 : 'scans.summary.targetsMany',
               undefined,
-              { count: review.targets.length.toLocaleString() }
+              { count: formatNumber(review.targets.length) }
             )}
           </span>
           {parts.length > 0 && <span className="text-muted-foreground">, {parts.join(', ')}</span>}

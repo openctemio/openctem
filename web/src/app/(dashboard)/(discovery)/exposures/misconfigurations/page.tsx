@@ -23,6 +23,7 @@ import { MISCONFIG_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Settings2 } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 const AssetTypePie = dynamic(() => import('@/features/exposures/components/asset-type-pie'), {
   ssr: false,
@@ -112,7 +113,7 @@ export default function MisconfigurationsPage() {
                 description={t(
                   'exposures.misconfigurations.severityDescription',
                   '{count} misconfigurations by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityBars bySeverity={typeStats.bySeverity} />
@@ -122,7 +123,7 @@ export default function MisconfigurationsPage() {
                 description={t(
                   'exposures.misconfigurations.assetsDescription',
                   'Your asset mix across {count} assets',
-                  { count: stats.assets.total.toLocaleString() }
+                  { count: formatNumber(stats.assets.total) }
                 )}
               >
                 {assetTypeData.length > 0 ? (

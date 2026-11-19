@@ -12,6 +12,7 @@ import { SUB_BUTTON_CLASS, SUB_LABEL_CLASS } from './nav-classes'
 import { SidebarLink } from './sidebar-link'
 import type { NavPin } from '@/features/nav-pins/api/use-nav-pins'
 import { PinAction } from '@/features/nav-pins/components/pin-action'
+import { formatNumber } from '@/lib/app-locale'
 
 /** One built-in view of a list, as the sidebar lists it under the list's row. */
 export interface NavQuickView {
@@ -71,7 +72,7 @@ export function NavQuickViewList({
                       : undefined
                   }
                 >
-                  {v.count.toLocaleString()}
+                  {formatNumber(v.count)}
                 </NavCount>
               )}
             </SidebarLink>

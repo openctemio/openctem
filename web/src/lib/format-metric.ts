@@ -1,3 +1,4 @@
+import { appLocale } from '@/lib/app-locale'
 /**
  * Number, percentage, duration and time formatting for dashboard figures.
  * Everything is locale-aware (Intl), so "1,234" in English is "1.234" in
@@ -21,7 +22,10 @@ function nf(locale: string, opts: Intl.NumberFormatOptions): Intl.NumberFormat {
 }
 
 /** A count or plain number. Null and non-finite values are "—". */
-export function formatCount(value: number | null | undefined, locale = 'en'): string {
+export function formatCount(
+  value: number | null | undefined,
+  locale: string = appLocale()
+): string {
   if (value == null || !Number.isFinite(value)) return '—'
   if (Math.abs(value) >= COMPACT_FROM) {
     return nf(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value)
@@ -31,7 +35,10 @@ export function formatCount(value: number | null | undefined, locale = 'en'): st
 }
 
 /** A percentage given as 0-100. One decimal below 10 %, whole numbers above. */
-export function formatPercent(pct: number | null | undefined, locale = 'en'): string {
+export function formatPercent(
+  pct: number | null | undefined,
+  locale: string = appLocale()
+): string {
   if (pct == null || !Number.isFinite(pct)) return '—'
   const digits = Math.abs(pct) < 10 && pct !== 0 ? 1 : 0
   return nf(locale, {
@@ -52,7 +59,10 @@ export function durationUnit(hours: number): DurationUnit {
 }
 
 /** A duration given in hours, in its largest sensible unit. */
-export function formatDuration(hours: number | null | undefined, locale = 'en'): string {
+export function formatDuration(
+  hours: number | null | undefined,
+  locale: string = appLocale()
+): string {
   if (hours == null || !Number.isFinite(hours)) return '—'
   const unit = durationUnit(hours)
   const value = unit === 'minute' ? hours * 60 : unit === 'day' ? hours / 24 : hours
@@ -71,7 +81,7 @@ export type MetricUnit = 'count' | 'percent' | 'hours'
 export function formatMetric(
   value: number | null | undefined,
   unit: MetricUnit,
-  locale = 'en'
+  locale: string = appLocale()
 ): string {
   if (unit === 'percent') return formatPercent(value, locale)
   if (unit === 'hours') return formatDuration(value, locale)
@@ -82,7 +92,7 @@ export function formatMetric(
  * A change between two values, always signed and in the value's unit
  * ("+12", "−3 pts", "−1.2 d"). Percent deltas are in percentage points.
  */
-export function formatDelta(delta: number, unit: MetricUnit, locale = 'en'): string {
+export function formatDelta(delta: number, unit: MetricUnit, locale: string = appLocale()): string {
   if (!Number.isFinite(delta)) return '—'
   const abs = Math.abs(delta)
   let body: string
@@ -109,7 +119,7 @@ const RELATIVE_STEPS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 /** "5 minutes ago" / "in 2 hours", in the locale. Invalid dates are "—". */
 export function formatRelativeTime(
   date: string | Date | null | undefined,
-  locale = 'en',
+  locale: string = appLocale(),
   now: Date = new Date(),
   /** `short` or `narrow` ("5m ago") for one-line meta text on narrow screens. */
   style: Intl.RelativeTimeFormatStyle = 'long'
@@ -131,7 +141,10 @@ export function formatRelativeTime(
 }
 
 /** A calendar date ("23 Oct 2026" / "23 thg 10, 2026") in the locale. Invalid dates are "—". */
-export function formatCalendarDate(date: string | Date | null | undefined, locale = 'en'): string {
+export function formatCalendarDate(
+  date: string | Date | null | undefined,
+  locale: string = appLocale()
+): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
   if (!d || Number.isNaN(d.getTime())) return '—'
   try {
@@ -142,7 +155,10 @@ export function formatCalendarDate(date: string | Date | null | undefined, local
 }
 
 /** The absolute date and time, for hover text next to a relative time. */
-export function formatAbsoluteTime(date: string | Date | null | undefined, locale = 'en'): string {
+export function formatAbsoluteTime(
+  date: string | Date | null | undefined,
+  locale: string = appLocale()
+): string {
   const d = date == null ? null : typeof date === 'string' ? new Date(date) : date
   if (!d || Number.isNaN(d.getTime())) return ''
   try {
@@ -166,7 +182,7 @@ export function ageMs(
 export function formatBucket(
   value: string,
   bucket: 'day' | 'week' | 'month',
-  locale = 'en'
+  locale: string = appLocale()
 ): string {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return value
@@ -192,7 +208,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export function formatBucketRange(
   value: string,
   bucket: 'day' | 'week' | 'month',
-  locale = 'en'
+  locale: string = appLocale()
 ): { kind: 'day' | 'week' | 'month'; text: string } {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return { kind: bucket, text: value }

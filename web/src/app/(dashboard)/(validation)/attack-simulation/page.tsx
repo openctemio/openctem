@@ -218,6 +218,8 @@ export default function AttackSimulationPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (

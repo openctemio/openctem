@@ -246,6 +246,15 @@ describe('Scan page', () => {
     expect(screen.getByTestId('run-sheet')).toHaveTextContent('p1-a')
   })
 
+  it('says "Manual" once for a manual scan (state, not the schedule type again)', () => {
+    config = { ...config, schedule_type: 'manual' }
+    render(<ScanDetailPage />)
+    const header = screen
+      .getByRole('heading', { level: 1 })
+      .closest('[data-slot="page-header"]') as HTMLElement
+    expect(within(header).getAllByText('Manual')).toHaveLength(1)
+  })
+
   it('says n/a, not 0 %, before any run settled', () => {
     render(<ScanDetailPage />)
     expect(screen.getByText(/Success rate:\s*n\/a/)).toBeInTheDocument()

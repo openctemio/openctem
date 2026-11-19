@@ -8,6 +8,7 @@
  */
 
 import type { ActivityCommentItem, ActivityEventItem, ActivityFilter, ActivityItem } from '../types'
+import { formatDate } from '@/lib/app-locale'
 
 /** A run of this many consecutive events or more is folded into one row. */
 export const COLLAPSE_RUN_MIN = 3
@@ -164,13 +165,13 @@ export function collapsedLabel(count: number, actors: readonly string[]): string
 }
 
 /** "Today", "Yesterday", "May 10", or "May 10, 2025" for another year. */
-export function dayLabel(date: Date, now: Date = new Date(), locale = 'en-US'): string {
+export function dayLabel(date: Date, now: Date = new Date(), _locale = 'en-US'): string {
   if (Number.isNaN(date.getTime())) return 'Unknown date'
   const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const diff = Math.round((startOf(now) - startOf(date)) / 86_400_000)
   if (diff === 0) return 'Today'
   if (diff === 1) return 'Yesterday'
-  return date.toLocaleDateString(locale, {
+  return formatDate(date, {
     month: 'short',
     day: 'numeric',
     ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),

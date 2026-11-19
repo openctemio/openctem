@@ -66,6 +66,7 @@ import {
   saveNewScanDraft,
 } from '../../hooks/use-new-scan-draft'
 import { onlyAwaitingApproval } from '../../lib/scope-wait'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface NewScanDialogProps {
   open: boolean
@@ -419,7 +420,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           at
             ? t('scans.new.willRunOn', undefined, {
                 name: formData.name,
-                time: at.toLocaleString(),
+                time: formatDateTime(at),
               })
             : t('scans.new.scheduled', undefined, { name: formData.name })
         )

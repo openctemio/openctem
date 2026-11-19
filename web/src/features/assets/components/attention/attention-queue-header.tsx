@@ -29,6 +29,7 @@ import { ASSET_ATTENTION_REASONS, type AttentionReasonDef } from '@/config/secti
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
 import { useAttentionCount } from './use-attention-count'
+import { formatNumber } from '@/lib/app-locale'
 
 const ATTENTION_HREF = '/assets/attention'
 
@@ -36,7 +37,7 @@ function MenuCount({ id }: { id: AttentionReasonDef['id'] }) {
   const count = useAttentionCount(id)
   return (
     <span className="ms-auto ps-4 text-xs text-muted-foreground tabular-nums">
-      {count === undefined ? '' : count.toLocaleString()}
+      {count === undefined ? '' : formatNumber(count)}
     </span>
   )
 }
@@ -130,7 +131,7 @@ export function AttentionQueueHeader({
           label={
             count === undefined
               ? undefined
-              : `${count.toLocaleString()} ${t(current.unitKey, current.unit, { count })}`
+              : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
           }
         />
         {href && (

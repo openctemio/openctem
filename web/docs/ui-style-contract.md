@@ -172,6 +172,9 @@ Before a table scrolls sideways its columns give way: a column with a range (`mi
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
 name column with a floor is sized by the floor and the room left, never by its text (a long title ends in
 its ellipsis). Widths hold the cell padding, so the visible columns' widths add up to the table.
+A second label beside the name in the same cell (an asset's type) is shown only when the cell has
+room for both (the cell is a size container): at the floor the name gets the width, and the label moves
+into the name's tooltip.
 
 ### Radii
 
@@ -555,7 +558,11 @@ reference.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
-    A list whose card needs more than that passes its own `mobileRow`.
+    A list whose card needs more than that passes its own `mobileRow`. Such a
+    card keeps the same rule for its title: the name shares its line only
+    with the checkbox, a small mark and the row menu; a state with words
+    ("Waiting for a sensor") goes on the line under the name, so the name is
+    never squeezed into a narrow column beside it (`scan-mobile-card.tsx`).
 - **A list drawn as cards (below 768px) has no numbered pager.** `DataTable`
   draws the footer itself (`data-table/phone-more-footer.tsx`): a full-width
   outline "Show 25 more" button (36) and a muted line "50 of 418" ("50 shown"
@@ -613,6 +620,10 @@ reference.
 
   `decisions` is a queue's last column of decision buttons (Approve, Reject,
   More): end-aligned, as wide as the page's `width` says its buttons need.
+  Any last column of labelled buttons (Cancel, Block, Check) is a `decisions`
+  column, without `width` it is as wide as its buttons: the 48 px `actions`
+  column holds the row menu or one icon button only, and cuts a labelled
+  button at the frame's edge (`actions-column-buttons.test.ts`).
 
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.

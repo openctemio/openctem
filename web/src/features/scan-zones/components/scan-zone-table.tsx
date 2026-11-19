@@ -22,6 +22,7 @@ import { isPrivateRange } from '../lib/ranges'
 import { isSensorHealthy } from '../lib/sensor-health'
 import { RangeChips } from './range-chips'
 import { SensorHealthChip } from './sensor-health-dot'
+import { formatNumber } from '@/lib/app-locale'
 
 interface ScanZoneTableProps {
   zones: ScanZone[]
@@ -85,7 +86,7 @@ function CoverageCell({
   return (
     <div className="space-y-0.5 text-sm">
       <p className="tabular-nums">
-        {coverage ? coverage.addresses.toLocaleString() : '—'}{' '}
+        {coverage ? formatNumber(coverage.addresses) : '—'}{' '}
         <span className="text-xs text-muted-foreground">{t('scans.zones.addresses')}</span>
       </p>
       <p

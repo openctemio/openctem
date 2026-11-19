@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { nextPhonePageSize } from '@/lib/page-size-options'
+import { formatNumber } from '@/lib/app-locale'
 
 /** One card of a phone list (`data-phone-card`), so the footer can focus the first new one. */
 const PHONE_CARD_SELECTOR = '[data-phone-card]'
@@ -98,7 +99,7 @@ export function PhoneMoreFooter({
             onPageSizeChange(next)
           }}
         >
-          {t('common.table.showMore', 'Show {count} more', { count: step.toLocaleString() })}
+          {t('common.table.showMore', 'Show {count} more', { count: formatNumber(step) })}
         </Button>
       )}
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-cap text-muted-foreground tabular-nums">
@@ -106,17 +107,17 @@ export function PhoneMoreFooter({
         <span data-slot="phone-shown-count">
           {total !== undefined
             ? t('common.table.shownOfTotal', '{shown} of {total}', {
-                shown: shown.toLocaleString(),
-                total: total.toLocaleString(),
+                shown: formatNumber(shown),
+                total: formatNumber(total),
               })
-            : t('common.table.shownCount', '{shown} shown', { shown: shown.toLocaleString() })}
+            : t('common.table.shownCount', '{shown} shown', { shown: formatNumber(shown) })}
         </span>
         {hasMore && next === null && maxPageSize !== undefined && (
           <span data-slot="phone-more-cap" className="basis-full">
             {t(
               'common.table.showMoreCap',
               'These are the first {max}. Narrow the filters to see the rest.',
-              { max: maxPageSize.toLocaleString() }
+              { max: formatNumber(maxPageSize) }
             )}
           </span>
         )}

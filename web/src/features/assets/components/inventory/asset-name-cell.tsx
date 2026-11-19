@@ -74,7 +74,14 @@ export function AssetNameCell({
 
   return (
     // The column sets the name's floor (the table's `minWidth`), not the cell.
-    <div className="group/name flex min-w-0 items-center gap-2" data-testid="asset-name-cell">
+    // The cell is a size container: the type label beside the name shows only
+    // when the cell has room for both (18rem), so a narrow column (1024 px, the
+    // 200 px floor) gives its width to the name instead of cutting it to a few
+    // letters. The type is then in the tooltip, and its icon stays.
+    <div
+      className="group/name @container/name flex min-w-0 items-center gap-2"
+      data-testid="asset-name-cell"
+    >
       <AssetTypeIcon type={asset.type} className="h-4 w-4 shrink-0 text-muted-foreground" />
       <Tooltip>
         <TooltipTrigger asChild>
@@ -99,7 +106,7 @@ export function AssetNameCell({
             {typeLine && (
               <span
                 data-slot="asset-type-line"
-                className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
+                className="hidden shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xs/name:inline"
               >
                 {typeLine}
               </span>
@@ -140,6 +147,11 @@ export function AssetNameCell({
             </p>
           )}
           {subLine && <p className="font-mono text-xs break-all opacity-80">{subLine}</p>}
+          {typeLine && (
+            <p className="text-xs opacity-80" data-slot="asset-type-tooltip">
+              {typeLine}
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
       <button

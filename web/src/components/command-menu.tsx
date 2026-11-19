@@ -55,6 +55,7 @@ import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import { useCreateActions } from '@/hooks/use-create-actions'
 import { usePaletteSearch } from '@/features/command-palette/use-palette-search'
 import type { PaletteEntityKind } from '@/features/command-palette/palette-search'
+import { formatNumber } from '@/lib/app-locale'
 
 const KIND_ICON: Record<PaletteEntityKind, typeof Bug> = {
   finding: ShieldAlert,
@@ -176,7 +177,7 @@ export function CommandMenu() {
                     <span className="truncate">{label}</span>
                     {typeof v.count === 'number' && (
                       <span className="text-muted-foreground ms-auto text-xs tabular-nums">
-                        {v.count.toLocaleString()}
+                        {formatNumber(v.count)}
                       </span>
                     )}
                   </CommandItem>

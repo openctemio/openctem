@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDateTime } from '@/lib/app-locale'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { FindingApprovalsForm as ApprovalPolicyForm } from '../finding-approvals-form'
@@ -160,7 +161,7 @@ describe('FindingApprovalsForm, policy — relaxation', () => {
     )
     const banner = screen.getByTestId('approval-policy-pending')
     expect(banner).toHaveTextContent('A relaxed approval policy is waiting')
-    expect(banner).toHaveTextContent(new Date('2026-10-17T10:00:00Z').toLocaleString())
+    expect(banner).toHaveTextContent(formatDateTime(new Date('2026-10-17T10:00:00Z')))
     expect(banner).toHaveTextContent('the stricter rules')
     // The editor starts from the last chosen (pending) policy.
     expect(screen.getByRole('switch', { name: /exclude the assignee/i })).not.toBeChecked()

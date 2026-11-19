@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
+import { formatDate } from '@/lib/app-locale'
 
 interface DeletionStatus {
   scheduled: boolean
@@ -66,7 +67,7 @@ export function DeleteAccountCard({ email }: { email?: string }) {
         {data?.scheduled && data.erase_after && (
           <p className="text-sm text-destructive">
             {t('settings.accountDelete.pending', undefined, {
-              date: new Date(data.erase_after).toLocaleDateString(),
+              date: formatDate(new Date(data.erase_after)),
             })}
           </p>
         )}

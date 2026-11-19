@@ -7,6 +7,7 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { FINDING_STATUS_CONFIG } from '@/features/findings/types/finding.types'
 import type { FindingStatus } from '@/features/findings'
 import { humanize, type FieldContract, type FilterOp } from './model'
+import { formatDate } from '@/lib/app-locale'
 
 /** `-P7D` / `P30D` / `+P2W`: a duration from now, back (`-`) or ahead. */
 const RELATIVE = /^([+-]?)P(\d+)([DWMY])$/
@@ -96,7 +97,7 @@ export function useFilterLabels() {
         const rel = relative(value)
         if (rel) return rel
         const d = new Date(value)
-        return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString()
+        return Number.isNaN(d.getTime()) ? value : formatDate(d)
       }
       if (field.name === 'severity' && (SEVERITY_LEVELS as readonly string[]).includes(value)) {
         return severityLabel(value as SeverityLevel)

@@ -19,6 +19,7 @@ import {
   skipReasonKey,
   type SkipGroup,
 } from '@/features/scans/lib/skip-groups'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Lists longer than this get a search box. */
 const SEARCH_FROM = 8
@@ -65,7 +66,7 @@ export function TargetOutcomes({
           label={
             variant === 'run' ? t('scans.targetOutcome.scanned') : t('scans.targetOutcome.willScan')
           }
-          value={<span data-testid="outcome-will-scan">{willScan.toLocaleString()}</span>}
+          value={<span data-testid="outcome-will-scan">{formatNumber(willScan)}</span>}
         />
         <DetailStat
           label={t('scans.targetOutcome.skipped')}
@@ -76,7 +77,7 @@ export function TargetOutcomes({
               data-testid="outcome-skipped"
               data-attention={attention || undefined}
             >
-              {skipped.toLocaleString()}
+              {formatNumber(skipped)}
               {attention && <AlertTriangle className="h-4 w-4" aria-hidden />}
             </span>
           }
@@ -160,7 +161,7 @@ function SkipGroupRow({
               {t(`scans.targetOutcome.reason.${reason}`)}
             </span>
             <span className="shrink-0 text-sm font-semibold tabular-nums">
-              {group.count.toLocaleString()}
+              {formatNumber(group.count)}
             </span>
           </button>
         </CollapsibleTrigger>

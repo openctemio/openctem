@@ -22,6 +22,7 @@ import {
 } from '@/features/shared'
 import type { AssetType } from '../types/asset.types'
 import { ASSET_TYPE_LABELS } from '../types/asset.types'
+import { formatDateTime } from '@/lib/app-locale'
 
 // ============================================
 // Stat Card
@@ -135,7 +136,7 @@ export function TimelineSection({
   updatedAt,
 }: TimelineSectionProps) {
   const { t } = useTranslation()
-  const fmt = (iso: string) => new Date(iso).toLocaleString()
+  const fmt = (iso: string) => formatDateTime(new Date(iso))
   return (
     <DetailSection title={t('assets.sheetSections.timeline', 'Timeline')} icon={Clock}>
       <DetailFieldGrid>

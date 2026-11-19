@@ -1,11 +1,12 @@
 import { format, formatDistanceToNow, type Locale } from 'date-fns'
 import { enUS, vi } from 'date-fns/locale'
+import { appLocale } from '@/lib/app-locale'
 
 const DATE_FNS_LOCALES = { en: enUS, vi } as const
 
 /** date-fns locale for the console language ("5 phút trước"); English otherwise. */
 export function dateFnsLocaleFor(locale?: string): Locale {
-  const base = (locale ?? 'en').toLowerCase().split('-')[0] as keyof typeof DATE_FNS_LOCALES
+  const base = (locale ?? appLocale()).toLowerCase().split('-')[0] as keyof typeof DATE_FNS_LOCALES
   return DATE_FNS_LOCALES[base] ?? enUS
 }
 
@@ -74,7 +75,7 @@ export function formatDateSafe(
   const d = toDate(value)
   if (!d) return fallback
   try {
-    return format(d, fmt)
+    return format(d, fmt, { locale: dateFnsLocaleFor() })
   } catch {
     return fallback
   }

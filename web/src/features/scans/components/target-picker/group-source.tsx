@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useAssetGroups } from '@/features/asset-groups'
 import { PickerList } from './picker-list'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Asset groups listed at once (the API's largest page). */
 export const GROUP_PAGE_SIZE = 100
@@ -60,7 +61,7 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
               g.assetCount === 1 ? 'scans.groups.assetsOne' : 'scans.groups.assetsMany',
               undefined,
               {
-                count: (g.assetCount ?? 0).toLocaleString(),
+                count: formatNumber(g.assetCount ?? 0),
               }
             )}
           </Badge>

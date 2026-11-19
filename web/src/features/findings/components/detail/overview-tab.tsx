@@ -68,6 +68,7 @@ import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
 import { FindingIssueGroupSection } from './finding-issue-group-section'
 import { FindingIdentitySection } from './finding-identity-section'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -90,7 +91,7 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -299,7 +300,7 @@ export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps)
                 <FindingLastSeenIn findingId={finding.id} />
               </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
-                {new Date(finding.createdAt).toLocaleString(locale, {
+                {formatDateTime(new Date(finding.createdAt), {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
@@ -315,8 +316,8 @@ export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps)
   )
 }
 
-function formatDay(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, {
+function formatDay(iso: string, _locale: string): string {
+  return formatDate(new Date(iso), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -522,7 +523,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         <DetailField label="OWASP">{finding.owasp}</DetailField>
         <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
-            ? new Date(adv.publishedAt).toLocaleDateString(locale, {
+            ? formatDate(new Date(adv.publishedAt), {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -580,7 +581,7 @@ function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
 
 /** The latest completed AI triage. */
 function AITriageSummary({ data }: { data: AITriageSummaryData }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
@@ -588,7 +589,7 @@ function AITriageSummary({ data }: { data: AITriageSummaryData }) {
       actions={
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <AIBadge source="ai_builtin" />
-          {new Date(data.createdAt).toLocaleDateString(locale, {
+          {formatDate(new Date(data.createdAt), {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

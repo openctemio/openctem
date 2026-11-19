@@ -287,6 +287,7 @@ import { savedViewId, type SavedView } from '@/features/saved-views/api/use-save
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { formatNumber } from '@/lib/app-locale'
 
 // ============================================
 // Transform API Finding to UI Finding
@@ -1363,14 +1364,14 @@ function FindingsContent() {
       if (exportTruncated(listTotal, maxRows)) {
         toast.warning(
           t('findings.export.truncated', 'Exported the first {max} of {total} findings', {
-            max: (maxRows ?? 0).toLocaleString(),
-            total: (listTotal ?? 0).toLocaleString(),
+            max: formatNumber(maxRows ?? 0),
+            total: formatNumber(listTotal ?? 0),
           }),
           {
             description: t(
               'findings.export.truncatedHint',
               'One export holds at most {max} findings. Narrow the filters to export the rest.',
-              { max: (maxRows ?? 0).toLocaleString() }
+              { max: formatNumber(maxRows ?? 0) }
             ),
           }
         )
@@ -1449,7 +1450,7 @@ function FindingsContent() {
       return t(
         'findings.bulk.selectionChanged',
         'The list changed: {count} findings match now. Check the list and try again.',
-        { count: (e.details?.count ?? 0).toLocaleString() }
+        { count: formatNumber(e.details?.count ?? 0) }
       )
     }
     return getErrorMessage(error, fallback)
@@ -2860,7 +2861,7 @@ function FindingsContent() {
                 {t('findings.view.awaitingVerification', 'Awaiting verification')}
               </span>
               <span className="ms-2 tabular-nums text-muted-foreground">
-                {awaitingVerification.toLocaleString()}
+                {formatNumber(awaitingVerification)}
               </span>
             </Button>
           )}

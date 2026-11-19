@@ -55,6 +55,7 @@ import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { ExtensionSlot } from '@/lib/extension/slot'
+import { formatDate } from '@/lib/app-locale'
 
 function scimOwnerOnlyReason(tr: ReturnType<typeof useTranslation>['t']): string {
   return tr(
@@ -457,7 +458,7 @@ export default function ScimTokensPage() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
-            {new Date(row.original.created_at).toLocaleDateString()}
+            {formatDate(new Date(row.original.created_at))}
           </span>
         ),
       },
@@ -472,7 +473,7 @@ export default function ScimTokensPage() {
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
             {row.original.last_used_at
-              ? new Date(row.original.last_used_at).toLocaleDateString()
+              ? formatDate(new Date(row.original.last_used_at))
               : tr('settings.keys.never', 'Never')}
           </span>
         ),
@@ -487,7 +488,7 @@ export default function ScimTokensPage() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
-            {row.original.expires_at ? new Date(row.original.expires_at).toLocaleDateString() : ''}
+            {row.original.expires_at ? formatDate(new Date(row.original.expires_at)) : ''}
           </span>
         ),
       },

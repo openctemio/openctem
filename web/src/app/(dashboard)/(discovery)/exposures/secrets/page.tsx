@@ -17,6 +17,7 @@ import { SECRET_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Lock } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 export default function SecretsExposurePage() {
   const { t } = useTranslation()
@@ -81,7 +82,7 @@ export default function SecretsExposurePage() {
                 description={t(
                   'exposures.secrets.severityDescription',
                   '{count} secret findings by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityDonut bySeverity={typeStats.bySeverity} />
