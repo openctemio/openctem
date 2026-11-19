@@ -36,7 +36,7 @@ describe('landingFor', () => {
 })
 
 describe('landingHref', () => {
-  it('a new account with no organization lands on /welcome, not on the dashboard', () => {
+  it('a new account with no organization lands on /account/organizations, not on the dashboard', () => {
     expect(landingHref({ kind: 'account' }, '/')).toBe('/account/organizations')
     expect(landingHref({ kind: 'account' }, '/findings')).toBe('/account/organizations')
   })
@@ -58,8 +58,8 @@ describe('landingHref', () => {
   it('several organizations: the picker', () => {
     expect(landingHref({ kind: 'choose' }, '/')).toBe('/select-tenant')
   })
-  it('a session that could not start: /welcome says so instead of looping', () => {
-    expect(landingHref({ kind: 'unavailable' }, '/')).toBe('/welcome?start_failed=1')
+  it('a session that could not start: the account page says so instead of looping', () => {
+    expect(landingHref({ kind: 'unavailable' }, '/')).toBe('/account/organizations?start_failed=1')
   })
   it('a dead session: sign in', () => {
     expect(landingHref({ kind: 'signed_out' }, '/findings')).toBe('/login')

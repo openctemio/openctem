@@ -471,7 +471,7 @@ async function completeLoginTenants(
     )
 
     // No organization to open: an account-only access token puts the person in
-    // the account space (/welcome). If it cannot be had now, /welcome asks again.
+    // the account space (/account/organizations). If it cannot be had now, that page asks again.
     const account = await requestAccountToken(refreshToken)
     if (account.ok) await storeAccountSession(account)
 

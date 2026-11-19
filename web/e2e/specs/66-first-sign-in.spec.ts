@@ -58,8 +58,13 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
       if (r.url().includes('/auth/logout')) logouts.push(r.url())
     })
     await page.goto('/login')
+    // The page is interactive once its requests settle: a click before that is lost.
+    await page.waitForLoadState('networkidle')
     await page.getByRole('button', { name: 'Google' }).click()
-    await page.waitForURL((u) => !u.pathname.startsWith('/auth/'), { timeout: 30_000 })
+    // Off the sign-in page (still there = the click did nothing) and past the callback.
+    await page.waitForURL((u) => u.pathname !== '/login' && !u.pathname.startsWith('/auth/'), {
+      timeout: 30_000,
+    })
     return logouts
   }
 
@@ -121,7 +126,7 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
     // Account settings work without an organization.
     await page.goto('/account/security')
     await expect(page).toHaveURL(/\/account\/security/)
-    await page.goto("/account/organizations")
+    await page.goto('/account/organizations')
     await page.getByRole('button', { name: 'Join' }).first().click()
     await page.waitForURL((u) => u.pathname === '/', { timeout: 30_000 })
     expect(await sessionOrgSlug(page)).toBe(env.E2E_INVITE_ORG_SLUG)
