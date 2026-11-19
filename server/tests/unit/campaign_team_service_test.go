@@ -370,7 +370,15 @@ func (m *teamMockMemberRepo) CountByRoleInTx(_ context.Context, _ *sql.Tx, _, _ 
 	return 1, nil
 }
 
-func (m *teamMockMemberRepo) BatchListByCampaignIDs(_ context.Context, _ string, _ []string) (map[string][]*pentest.CampaignMember, error) {
+func (m *teamMockMemberRepo) ListByCampaignPage(_ context.Context, _, _ string, _, _ int) ([]*pentest.CampaignMember, int, error) {
+	return m.listByCampaign, len(m.listByCampaign), nil
+}
+
+func (m *teamMockMemberRepo) BatchSummarizeTeams(_ context.Context, _ string, _ []string, _ int) (map[string]pentest.CampaignTeamSummary, error) {
+	return nil, nil
+}
+
+func (m *teamMockMemberRepo) BatchUserRoles(_ context.Context, _, _ string, _ []string) (map[string]pentest.CampaignRole, error) {
 	return nil, nil
 }
 
