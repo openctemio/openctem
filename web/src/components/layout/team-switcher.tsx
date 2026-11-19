@@ -29,7 +29,11 @@ import { useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { DecorativeText } from '@/components/ui/decorative-text'
-import { SIDEBAR_CHIP_CLASS, SIDEBAR_CONTEXT_ROW_CLASS } from './sidebar-brand'
+import {
+  SIDEBAR_CHIP_CLASS,
+  SIDEBAR_CONTEXT_ROW_CLASS,
+  SIDEBAR_TRAILING_SLOT_CLASS,
+} from './sidebar-brand'
 import { toast } from 'sonner'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
@@ -255,11 +259,19 @@ export function TeamSwitcher() {
               </span>
               {/* The row always opens the organization card: the chevron says
                   so, with one organization too (hidden in the icon rail). */}
-              <ChevronsUpDown
-                className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
-                data-testid="team-switcher-chevron"
-                aria-hidden
-              />
+              <span
+                className={cn(
+                  SIDEBAR_TRAILING_SLOT_CLASS,
+                  '-me-1.5 group-data-[collapsible=icon]:hidden'
+                )}
+                data-testid="team-switcher-chevron-slot"
+              >
+                <ChevronsUpDown
+                  className="size-4 text-muted-foreground"
+                  data-testid="team-switcher-chevron"
+                  aria-hidden
+                />
+              </span>
             </SidebarMenuButton>
           </PopoverTrigger>
 
