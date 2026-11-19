@@ -25,6 +25,10 @@ var ErrAlreadyMember = fmt.Errorf("%w: user is already a member of this organiza
 // work (schedules, assigned findings, owned assets) without a new owner.
 var ErrReassignmentRequired = fmt.Errorf("%w: reassign the member's schedules, findings and assets first", shared.ErrConflict)
 
+// ErrNoOtherOwner is returned by an offboarding that must leave an owner
+// behind (OffboardPlan.RequireOtherOwner) when it would not.
+var ErrNoOtherOwner = fmt.Errorf("%w: the organization would be left without an owner", shared.ErrConflict)
+
 // ErrInvalidReassignTarget is returned when a reassignment target is not an
 // active member of the organization (or is the member being offboarded).
 var ErrInvalidReassignTarget = fmt.Errorf("%w: the new owner must be another active member of the organization", shared.ErrValidation)
@@ -101,6 +105,12 @@ type OffboardPlan struct {
 	UnassignFindings bool
 	// AssetsTo becomes the owner of the assets the member owns.
 	AssetsTo *shared.ID
+	// RequireOtherOwner makes the offboarding refuse (ErrNoOtherOwner) when
+	// no other active owner would remain. It is for a member leaving on their
+	// own; the repository decides under a lock on the owner rows, so two
+	// owners leaving at once cannot leave the organization without one. The
+	// administrator path keeps its own rules and leaves it false.
+	RequireOtherOwner bool
 }
 
 // Missing returns the categories the plan leaves without a new owner, for

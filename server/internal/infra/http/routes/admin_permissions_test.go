@@ -138,7 +138,6 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"POST /api/v1/admin/settings/scope-blocked-names/exceptions":             admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/settings/scope-blocked-names/exceptions/{id}/extend": admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/settings/scope-blocked-names/exceptions/{id}/revoke": admin.AdminRoleSuperAdmin,
-	"PUT /api/v1/admin/settings/threat-intel-source/":                        admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/feed-relay/":                                 admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/scan-identification/":                        admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/region/":                                     admin.AdminRoleSuperAdmin,
