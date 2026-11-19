@@ -18,7 +18,7 @@ describe('runTriggerTypeLabel', () => {
 
   it('reads English by default and shows an unknown type as sent', () => {
     expect(runTriggerTypeLabel('manual')).toBe('Manual')
-    expect(runTriggerTypeLabel('ci_pipeline')).toBe('ci_pipeline')
+    expect(runTriggerTypeLabel('chatops')).toBe('chatops')
     expect(runTriggerTypeLabel(undefined)).toBe('')
   })
 })
