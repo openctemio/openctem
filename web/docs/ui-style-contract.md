@@ -856,6 +856,12 @@ Every settings page is built from the same parts (`@/features/shared`):
   `<BreakText>` with `break-words`. `break-all` breaks every word at any
   letter ("Paym|ents") and is kept for mono machine values (hashes, keys,
   tokens); `src/lib/__tests__/name-break-guard.test.ts` enforces it.
+- A metadata line that must stay on one line (a phone card's "what it is"
+  line) is `<MetaLine oneLine>`: every item but the last keeps its width, the
+  last ends in an ellipsis with its text as a tooltip. Never `flex-nowrap` on a
+  MetaLine: its items then shrink and break inside words ("IP Addres|s").
+  System-written text (a description made by discovery) stays out of list
+  cards and rows; it belongs to the detail view.
 - Sizes come from the type roles in `src/styles/theme.css` (each sets size,
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with

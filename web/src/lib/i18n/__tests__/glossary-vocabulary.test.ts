@@ -31,6 +31,10 @@ const RULES: Rule[] = [
     use: 'organization',
     allowKeys: [
       {
+        key: 'scans.credentials.field.tenantId',
+        why: 'the Azure credential field is named Tenant ID by Microsoft',
+      },
+      {
         key: 'admin.identityProvidersPanel.directoryTenantId',
         why: 'the Azure/Entra field is named Directory (Tenant) ID',
       },

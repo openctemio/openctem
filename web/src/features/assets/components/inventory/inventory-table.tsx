@@ -841,13 +841,16 @@ export function InventoryTable({
         mobileRow={(a, selection) => {
           const typeKey = typeKeyOf(registry, a.type, a.subType)
           const typeLabel = t(`assets.typeLabel.${typeKey.type}`, typeKey.label)
-          const context = a.groupName || a.description
+          // The group says where the asset belongs. Its description stays in
+          // the drawer, as on the desktop row: the ones made by discovery
+          // ("auto-created from ...") repeat the type and only push the card.
+          const context = a.groupName
           const riskState = riskScoreState(a)
           const scored = (riskState === 'scored' || riskState === 'pending') && a.riskScore > 0
           const criticality = CARD_CRITICALITY[a.criticality as keyof typeof CARD_CRITICALITY]
           // The card has fixed slots, so every card reads the same way: the
           // name (two lines at most), one line saying what it is (the type,
-          // then its group or description, as separate items), one line of
+          // then its group, cut with an ellipsis), one line of
           // plain facts (criticality in words, open findings, and a standing
           // only when it is not the usual one), and the risk slot at the end,
           // always there: the score under the word "Risk", or a dash while
@@ -885,19 +888,7 @@ export function InventoryTable({
                     <p className="line-clamp-2 break-words text-sm font-medium">
                       <BreakText>{a.name}</BreakText>
                     </p>
-                    <MetaLine
-                      className="mt-0.5 flex-nowrap"
-                      items={[
-                        <span key="type" className="shrink-0">
-                          {typeLabel}
-                        </span>,
-                        context && (
-                          <span key="context" className="min-w-0 truncate">
-                            {context}
-                          </span>
-                        ),
-                      ]}
-                    />
+                    <MetaLine className="mt-0.5" oneLine items={[typeLabel, context]} />
                   </div>
                   <div
                     data-slot="asset-card-risk"
