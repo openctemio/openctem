@@ -545,10 +545,14 @@ function valueSays(el: Element | null | undefined, titleText: string): boolean {
  * line, cut with an ellipsis, inside a fixed line height. So every card of a
  * list has the same height, and a long text beside a chip can never make a
  * tall sliver (a run's message beside its state once made one field thousands
- * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17).
+ * of pixels tall: /scans/runs at 390 px, owner report 2026-11-17). A cell
+ * that stacks two lines (a trigger over who started it) keeps a gap between
+ * them on the one line, and its last line ends in the ellipsis: the outer
+ * ellipsis cannot reach text inside a flex row ("Manuale2e-owne" cut at the
+ * card's edge on a scan's runs).
  */
 const CARD_LINE_CLASS =
-  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row'
+  'min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row [&_.flex-col]:gap-x-1.5 [&_.flex-col>*:not(:last-child)]:shrink-0 [&_.flex-col>*:last-child]:min-w-0 [&_.flex-col>*:last-child]:truncate'
 
 /**
  * A column's readable label for the phone card: `meta.label`, a string
