@@ -43,6 +43,6 @@ func TestFoldNameAddresses(t *testing.T) {
 		t.Fatalf("CloudFront address %+v", c)
 	}
 	if items[0].Provider != "" || items[0].Class != "" {
-		t.Fatalf("dedicated address labelled %+v", items[0])
+		t.Fatalf("dedicated address got a provider %+v", items[0])
 	}
 }

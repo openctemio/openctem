@@ -196,12 +196,15 @@ func (r *AssetLivenessRepository) Observe(ctx context.Context, tenantID shared.I
 	return out, nil
 }
 
+// providerAddressIDsSQL selects the provider addresses among ids (static
+// text: ProviderAddressSQL is built from constants).
+var providerAddressIDsSQL = `SELECT pa.asset_id::text FROM asset_attributions pa
+		WHERE pa.tenant_id = $1 AND pa.asset_id = ANY($2::uuid[]) AND ` + attribution.ProviderAddressSQL("pa")
+
 // providerAddressIDs are the provider addresses (attribution.IsProviderAddress)
 // among the tenant's assets ids.
 func providerAddressIDs(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) (map[shared.ID]bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT pa.asset_id::text FROM asset_attributions pa
-		WHERE pa.tenant_id = $1 AND pa.asset_id = ANY($2::uuid[]) AND `+attribution.ProviderAddressSQL("pa"),
-		tenantID.String(), pq.Array(ids))
+	rows, err := tx.QueryContext(ctx, providerAddressIDsSQL, tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("provider addresses: %w", err)
 	}

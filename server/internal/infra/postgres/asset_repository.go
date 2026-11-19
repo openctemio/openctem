@@ -1375,13 +1375,17 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		// An address finds the names that resolve or resolved to it
 		// (research/531: shared provider addresses are recorded only on the
 		// names), from the tenant's own set elements.
-		if addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(*filter.Search), "[]")); err == nil && addr.Zone() == "" {
+		// The tenant is bound, not correlated, so the subquery runs once
+		// (a hashed subplan over idx_asset_set_elements_tenant_address)
+		// instead of once per asset row.
+		if addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(*filter.Search), "[]")); err == nil && addr.Zone() == "" &&
+			filter.TenantID != nil && *filter.TenantID != "" {
 			last := len(conditions) - 1
 			conditions[last] = strings.TrimSuffix(conditions[last], ")") + fmt.Sprintf(
-				" OR a.id IN (SELECT se.asset_id FROM asset_attribute_set_elements se WHERE se.tenant_id = a.tenant_id"+
-					" AND se.attribute = 'ip_addresses' AND se.element = $%d))", argIndex)
-			args = append(args, addr.Unmap().String())
-			argIndex++
+				" OR a.id IN (SELECT se.asset_id FROM asset_attribute_set_elements se WHERE se.tenant_id = $%d::uuid"+
+					" AND se.attribute = 'ip_addresses' AND se.element = $%d))", argIndex, argIndex+1)
+			args = append(args, *filter.TenantID, addr.Unmap().String())
+			argIndex += 2
 		}
 	}
 
@@ -2536,9 +2540,16 @@ func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) 
 		for i, st := range af.States {
 			states[i] = string(st)
 		}
+		// research/531 D6: the provider addresses leave the population. The
+		// test rides on the same per-row probe (an asset with no record is
+		// never one), so it adds no scan.
+		notProvider := ""
+		if af.NoProviderAddresses {
+			notProvider = " AND NOT " + attribution.ProviderAddressSQL("aat")
+		}
 		parts = append(parts, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
-			argIndex))
+			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d)%s)",
+			argIndex, notProvider))
 		args = append(args, pq.Array(states))
 	}
 	if af.Unrecorded {
@@ -2551,13 +2562,7 @@ func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) 
 	if len(parts) == 0 {
 		parts = append(parts, "FALSE")
 	}
-	cond := "(" + strings.Join(parts, " OR ") + ")"
-	if af.NoProviderAddresses {
-		// research/531 D6: the provider addresses leave the population.
-		cond = "(" + cond + " AND NOT EXISTS (SELECT 1 FROM asset_attributions apx WHERE apx.asset_id = a.id AND apx.tenant_id = a.tenant_id AND " +
-			attribution.ProviderAddressSQL("apx") + "))"
-	}
-	return cond, args
+	return "(" + strings.Join(parts, " OR ") + ")", args
 }
 
 // scopeAndAttributionSQL builds the extra WHERE terms of the overview
