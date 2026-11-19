@@ -8,32 +8,23 @@ This page describes what the platform admin console and the organization routes 
 
 Verified against `develop` (2026-11-05); unchanged since v0.19.1.
 
-### Which path supplies KEV and EPSS
+### Where KEV and EPSS come from
+
+The platform makes no outbound call for them: they arrive only in the signed vulnerability release, fetched from the
+feed origin or through a relay sensor. The controllers `kev-refresh` (hourly) and `threat-intel-refresh` (daily) fetch
+nothing; they run the findings sweep below when it is due.
 
 ```mermaid
 flowchart TD
-  subgraph direct["Direct fetch: controllers kev-refresh (hourly) and threat-intel-refresh (daily), exclusive"]
-    T["ThreatIntelRefreshController.Reconcile"] --> SD{"IntelService.ShouldFetchDirect<br/>(setting threat_intel.source)"}
-    SD -- "DirectAllowed false (also relay mode)" --> SK["skip, ReasonDirectOff"]
-    SD -- "PreferBundle false (default)" --> FX
-    SD -- "PreferBundle, bundle_fetched_at older than<br/>6 h (KEV) or 48 h (EPSS), or unset" --> FX["SyncKEV (If-None-Match, If-Modified-Since)<br/>or SyncEPSS, after TryStart"]
-    SD -- "PreferBundle, bundle copy fresh" --> SK2["skip, ReasonBundleFresh"]
-    FX --> G1{"guard: 200 with entries,<br/>at least 90 % of the stored count"}
-    G1 -- no --> RF1["failed or refused, data kept"]
-    G1 -- yes --> UP1["UpsertBatch, KEV prune guard 25 / 2 %,<br/>markDirect (delivered_via direct)"]
-  end
-  subgraph bundle["Bundle side manifest: vulnfeed.Importer.syncIntel, after each corpus run"]
-    IM["intel.manifest.dsse.json"] --> VI{"VerifyKeySet(pinned root, min version),<br/>VerifyIntelManifest(sequence = applied)"}
-    VI -- no --> RB["RecordBundleRefused, bundle_error"]
-    VI -- yes --> BW{"BundleWanted: newerData(as_of, intel_as_of)<br/>KEV by time, EPSS by day"}
-    BW -- no --> SEEN["RecordBundleSeen: bundle_fetched_at only"]
-    BW -- yes --> PE["fetch entries, SHA-256 and size,<br/>ParseIntelKEV or ParseIntelEPSS"]
-    PE --> AB{"ApplyBundleKEV or ApplyBundleEPSS:<br/>newer again, at least 90 % (bundleShrinkFloor)"}
-    AB -- no --> RB
-    AB -- yes --> UP2["UpsertBatch, delivered_via bundle,<br/>afterBundle callback"]
-  end
-  UP1 --> SW["controller.IntelSweeper.Run(feed, changed, synced)"]
-  UP2 --> SW
+  IM["intel.manifest.dsse.json (vulnfeed.Importer.syncIntel, after each corpus run)"] --> VI{"VerifyKeySet(pinned root, min version),<br/>VerifyIntelManifest(sequence = applied)"}
+  VI -- no --> RB["RecordBundleRefused: bundle_error, feed failed with the refusal code"]
+  VI -- yes --> BW{"BundleWanted: newerData(as_of, intel_as_of)<br/>KEV by time, EPSS by day"}
+  BW -- no --> SEEN["RecordBundleSeen: bundle_fetched_at;<br/>success if the collector read the source within the stale limit,<br/>else failed (source_stale)"]
+  BW -- yes --> PE["fetch entries, SHA-256 and size,<br/>ParseIntelKEV or ParseIntelEPSS"]
+  PE --> AB{"ApplyBundleKEV or ApplyBundleEPSS:<br/>newer again, at least 90 % (bundleShrinkFloor),<br/>KEV prune guard 25 / 2 %"}
+  AB -- no --> RB
+  AB -- yes --> UP2["UpsertBatch, delivered_via bundle,<br/>afterBundle callback"]
+  UP2 --> SW["controller.IntelSweeper.Run(feed, changed, synced)"]
 ```
 
 ### After a change: `IntelSweeper.Run`
@@ -167,9 +158,7 @@ queue the priority recompute, reconcile the KEV flags, emit events), not only th
 
 ## Fetch rules
 
-- A KEV 304 keeps the stored count (and fills a count an earlier run left at zero).
-- A 200 with no entries (an empty or renamed `vulnerabilities` array, an empty EPSS file) is a failure and
-  its cache validators are not stored.
 - KEV and EPSS refuse a snapshot under 90% of the stored catalog.
+- A release's copy the collector read longer ago than the feed's stale limit is a failed check (`source_stale`).
 
-Shipped: all of the above, including KEV and EPSS carried by the bundle with the direct fetch as a fallback (see the flow above and [feed-transfer.md](feed-transfer.md), "KEV and EPSS").
+Shipped: KEV and EPSS only from the signed release (see the flow above and [feed-transfer.md](feed-transfer.md), "KEV and EPSS"); the platform no longer fetches them itself.

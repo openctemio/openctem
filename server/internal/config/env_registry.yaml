@@ -912,6 +912,12 @@ vars:
     type: int
     default: "120"
     description: "Per-user budget (and burst) for authenticated `GET` requests. Values of 0 or less fall back to the default."
+  - name: RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN
+    component: api
+    group: "CORS and rate limiting"
+    type: int
+    default: "20"
+    description: "Per-address budget for token requests (`/auth/token`: an invitation's Open, a team switch). Only a test stack where every simulated browser shares one address raises it; production refuses a value above 20. Values of 0 or less keep the default."
   - name: RATE_LIMIT_RPS
     component: api
     group: "CORS and rate limiting"

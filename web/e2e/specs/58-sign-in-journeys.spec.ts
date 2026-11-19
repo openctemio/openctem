@@ -454,6 +454,19 @@ async function drive(
       return { kind: 'login', reason }
     }
     if (p.startsWith('/welcome') || p.startsWith('/onboarding') || p.startsWith('/not-set-up')) {
+      // The account space with a notice names why an organization did not
+      // open and offers its one next step: a page that says why.
+      const notice = page.getByTestId('welcome-notice')
+      if (await visible(page, notice)) {
+        const title =
+          (await notice
+            .first()
+            .locator('[data-slot="alert-title"]')
+            .first()
+            .textContent()
+            .catch(() => '')) ?? ''
+        return { kind: 'explained', title: `account space: ${title.trim()}` }
+      }
       return { kind: 'account-space' }
     }
     if (p.startsWith('/select-tenant')) {
