@@ -196,7 +196,7 @@ async function keep(testInfo: TestInfo, name: string, body: string | Buffer) {
   if (!OUT) await testInfo.attach(name, { path: file })
 }
 
-test.describe('Layout breaks', { tag: ['@phone', '@layout'] }, () => {
+test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
   test.describe.configure({ mode: 'parallel' })
   for (const route of ROUTES) {
     test(`${route}`, async ({ page, baseURL }, testInfo) => {
