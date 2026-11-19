@@ -139,12 +139,16 @@ test(
       })
       expect(badBreaks, `card ${i} name broken inside a word`).toEqual([])
 
-      // The state sits on its own line, under the name.
+      // The state sits on its own line, under the name. The state button is a
+      // touch-sized target that overhangs its text by design (negative margin),
+      // so measure what is seen: the badge inside it (or the "never" text).
       const title = await card.locator('[data-slot="scan-card-title"]').boundingBox()
       const status = card.locator('[data-slot="scan-card-status"]')
       expect(await status.count(), `card ${i} has a state`).toBeGreaterThan(0)
-      const s = await status.first().boundingBox()
-      expect(s && title && s.y >= title.y + title.height - 1, `card ${i} state under the name`).toBe(
+      const shown = await status
+        .first()
+        .evaluate((el) => (el.firstElementChild ?? el).getBoundingClientRect().toJSON())
+      expect(title && shown.y >= title.y + title.height - 1, `card ${i} state under the name`).toBe(
         true
       )
     }
