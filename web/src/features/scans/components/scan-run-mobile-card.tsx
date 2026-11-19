@@ -4,7 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetaLine, RelativeTime, type MobileRowSelection } from '@/features/shared'
 import type { ScanRun } from '@/lib/api/scan-workflow-types'
-import { runTriggeredByLabel } from '@/features/scans/lib/run-display'
+import { runTriggeredByLabel, runTriggerTypeLabel } from '@/features/scans/lib/run-display'
 import { IntensityBadge } from './intensity-badge'
 import { RunScanCell, RunStateLine, RunTasksText, runDurationText } from './scan-run-cells'
 
@@ -32,7 +32,7 @@ export function ScanRunMobileCard({
   onOpen: (run: ScanRun) => void
 }) {
   const { t } = useTranslation()
-  const who = runTriggeredByLabel(run, t) ?? run.trigger_type
+  const who = runTriggeredByLabel(run, t) ?? runTriggerTypeLabel(run.trigger_type, t)
   const duration = runDurationText(run, t)
   return (
     <div

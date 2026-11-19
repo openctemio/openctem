@@ -3182,6 +3182,7 @@
   "scans.trigger.failed": "Không kích hoạt được quét \"{name}\"",
   "scans.trigger.hasRun": "{name} có một lần chạy {state}{started}{progress}.",
   "scans.trigger.inProgressTitle": "Đang có một lần chạy",
+  "scans.trigger.manual": "Thủ công",
   "scans.trigger.notStarted": "\"{name}\" chưa được bắt đầu",
   "scans.trigger.policy.coverage": "Phủ quét tự động",
   "scans.trigger.policy.enrichment": "Làm giàu dữ liệu tự động",

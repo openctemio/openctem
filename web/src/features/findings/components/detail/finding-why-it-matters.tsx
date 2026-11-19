@@ -25,6 +25,7 @@ import { PriorityClassSla, usePrioritySlaBasis } from '@/features/sla/components
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { useTranslation } from '@/context/i18n-provider'
+import { priorityReasonText } from '../../lib/priority-reason'
 
 /**
  * The API caps a finding at P2 while its asset's attribution is not
@@ -63,11 +64,6 @@ const EFFECT_WORD: Record<RiskSignal['effect'], { key: string; fallback: string 
   raises: { key: 'findings.whyItMatters.raises', fallback: 'raises priority' },
   lowers: { key: 'findings.whyItMatters.lowers', fallback: 'lowers priority' },
   neutral: { key: 'findings.whyItMatters.context', fallback: 'context' },
-}
-
-function sentence(s: string): string {
-  const t = s.trim()
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t
 }
 
 export function SignalChip({ signal }: { signal: RiskSignal }) {
@@ -186,7 +182,9 @@ export function FindingWhyItMatters({
           )}
         </div>
       )}
-      {reason && <p className="mt-1.5 text-sm text-muted-foreground">{sentence(reason)}.</p>}
+      {reason && (
+        <p className="mt-1.5 text-sm text-muted-foreground">{priorityReasonText(reason, t)}</p>
+      )}
       {pc && <SlaBasis priorityClass={pc} assetId={slaAsset} severity={finding.severity} />}
       {isAttributionCapped(reason) && (
         <div

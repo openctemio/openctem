@@ -97,7 +97,13 @@ export function EASMDomainProofPanel() {
   )
 
   if (error) {
-    return <ErrorState title="domain proof" error={error} onRetry={() => void mutate()} />
+    return (
+      <ErrorState
+        title={t('attackSurface.domainProof.loadTitle', 'domain proof')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
   }
 
   const remove = async () => {

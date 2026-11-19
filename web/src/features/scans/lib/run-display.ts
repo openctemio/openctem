@@ -30,6 +30,19 @@ const TRIGGER_TYPES = new Set([
 ])
 
 /**
+ * The kind of trigger that started a run (the Trigger column's first line):
+ * "Manual", "Schedule", ... in the page's language. A type this build does not
+ * know is shown as sent.
+ */
+export function runTriggerTypeLabel(type: string | undefined, t: Translate = enTranslate): string {
+  if (!type) return ''
+  if (type === 'manual') return t('scans.trigger.manual', 'Manual')
+  // The workflow trigger and the run trigger name the same event two ways.
+  if (type === 'on_asset_discovery') return t('scans.trigger.asset_discovery')
+  return TRIGGER_TYPES.has(type) ? t(`scans.trigger.${type}`) : type
+}
+
+/**
  * What a platform policy that started a run is called ("Automatic
  * coverage"); a policy this build does not know reads "Automatic".
  */
