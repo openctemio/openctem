@@ -335,7 +335,7 @@ func (h *VulnerabilityHandler) SelfApproveApprovalBatch(w http.ResponseWriter, r
 }
 
 // LeaveOutApprovalBatchMember handles
-// POST /api/v1/approvals/batches/{id}/members/{finding_id}/reject.
+// POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject.
 // @Summary      Leave one finding out of a group exception
 // @Description  Rejects one pending member of a group exception with a reason; the other members stay pending and the group is decided later as usual. When no pending member is left the group closes as rejected. The requester cannot leave out from their own group (they cancel it instead). Requires findings:approve and every member in the caller's data scope.
 // @Tags         Findings
@@ -349,7 +349,7 @@ func (h *VulnerabilityHandler) SelfApproveApprovalBatch(w http.ResponseWriter, r
 // @Failure      400   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Failure      409   {object}  apierror.Error
-// @Router       /approvals/batches/{id}/members/{finding_id}/reject [post]
+// @Router       /approvals/batches/{id}/items/{finding_id}/reject [post]
 func (h *VulnerabilityHandler) LeaveOutApprovalBatchMember(w http.ResponseWriter, r *http.Request) {
 	tid, id, ok := pathBatchID(w, r)
 	if !ok {
