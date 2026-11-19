@@ -1,6 +1,6 @@
 'use client'
 
-import { EmptyCell } from '@/features/assets/components/service-cells'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { KeyRound, ShieldAlert, UserRound, X } from 'lucide-react'

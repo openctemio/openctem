@@ -670,6 +670,7 @@
   "attackSurface.technologies.noAccess.description": "You don't have permission to view assets. Ask your administrator for access.",
   "attackSurface.technologies.noAccess.title": "Access denied",
   "attackSurface.technologies.noCves": "None known",
+  "attackSurface.technologies.noExploit": "No known exploit",
   "attackSurface.technologies.openAssets": "Open the {count, plural, one {# asset} other {# assets}} running {name}",
   "attackSurface.technologies.pageDescription": "The technologies your external assets run, by version, with the CVEs known for each version and the assets that run it.",
   "attackSurface.technologies.search": "Search technology, version or vendor…",
