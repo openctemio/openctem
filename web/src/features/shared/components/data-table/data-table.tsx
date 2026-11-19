@@ -1888,37 +1888,43 @@ export function DataTable<TData, TValue>({
           aria-busy={isLoading && !hasBody ? true : undefined}
         >
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead
-                      key={header.id}
-                      {...cellProps(header.column.id, true)}
-                      aria-sort={
-                        header.column.getCanSort()
-                          ? ariaSort(header.column.getIsSorted())
-                          : undefined
-                      }
-                    >
-                      {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
-                        flexRender(header.column.columnDef.header, header.getContext())
-                      ) : (
-                        // A column with no visible header (row actions, the
-                        // selection box) still names itself to screen readers.
-                        <span className="sr-only">
-                          {header.column.id === 'select'
-                            ? t('common.table.selectColumn', 'Select')
-                            : t('common.table.actionsColumn', 'Actions')}
-                        </span>
-                      )}
-                    </TableHead>
-                  )
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
+          {/* No rows to head (an empty or failed list): no column headers and
+              no select-all box over nothing; the empty state or error block
+              stands alone in the frame. While loading the header stays, so
+              the skeleton rows sit under it. */}
+          {(hasBody || isLoading) && (
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead
+                        key={header.id}
+                        {...cellProps(header.column.id, true)}
+                        aria-sort={
+                          header.column.getCanSort()
+                            ? ariaSort(header.column.getIsSorted())
+                            : undefined
+                        }
+                      >
+                        {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        ) : (
+                          // A column with no visible header (row actions, the
+                          // selection box) still names itself to screen readers.
+                          <span className="sr-only">
+                            {header.column.id === 'select'
+                              ? t('common.table.selectColumn', 'Select')
+                              : t('common.table.actionsColumn', 'Actions')}
+                          </span>
+                        )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+          )}
           {hasBody ? (
             displayGroups.map((group, gi) => {
               const expanded = groupExpansion.isExpanded(group.key)
