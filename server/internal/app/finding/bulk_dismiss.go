@@ -854,6 +854,9 @@ func (s *VulnerabilityService) applyBulkDismiss(ctx context.Context, in BulkDism
 // bulk always gets at least one second look (when the share is above 0).
 const BulkSecondLookMin = 10
 
+// secondLookApprovalKey is the evidence key naming the decision that was sampled.
+const secondLookApprovalKey = "approval_id"
+
 // raiseBulkSecondLook raises a second look on one randomly chosen decided
 // finding (crypto/rand), after the per-finding sampling raised none.
 func (s *VulnerabilityService) raiseBulkSecondLook(ctx context.Context, approvals []*vulnerability.Approval, share int) {
@@ -867,7 +870,7 @@ func (s *VulnerabilityService) raiseBulkSecondLook(ctx context.Context, approval
 	}
 	a := approvals[int(n.Int64())]
 	if _, err := raiser.RaiseDecisionReview(ctx, a.TenantID, a.FindingID, DecisionReviewSecondLook,
-		map[string]any{"approval_id": a.ID.String(), "second_look_percent": share}); err != nil {
+		map[string]any{secondLookApprovalKey: a.ID.String(), "second_look_percent": share}); err != nil {
 		s.logger.Warn("bulk dismiss: raise the guaranteed second look", "error", logger.SanitizeError(err))
 	}
 }
