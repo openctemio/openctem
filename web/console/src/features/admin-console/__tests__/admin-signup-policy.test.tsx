@@ -115,11 +115,67 @@ describe('SignupPolicyForm', () => {
         mode: 'self_service',
         accounts: 'open',
         request_access: false,
+        personal_organization: false,
         version: 1,
         totp_code: '123456',
       })
     )
     await waitFor(() => expect(onSaved).toHaveBeenCalled())
+  })
+
+  it('the personal organization switch needs self-service and is saved', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveSignupPolicy).mockResolvedValue({ ...SEEDED, version: 2 })
+    const open: SignupPolicyResponse = {
+      ...SEEDED,
+      mode: 'self_service',
+      effective_mode: 'self_service',
+      accounts: 'open',
+      effective_accounts: 'open',
+    }
+    render(<SignupPolicyForm policy={open} canEdit onSaved={vi.fn()} />)
+    const toggle = screen.getByRole('switch', {
+      name: /create a personal organization on sign-up/i,
+    })
+    expect(toggle).toBeEnabled()
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(screen.getByText(/personal organization on sign-up: on/i)).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() =>
+      expect(saveSignupPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'self_service', personal_organization: true })
+      )
+    )
+  })
+
+  it('choosing only administrators turns the personal organization switch off', async () => {
+    const user = userEvent.setup()
+    render(
+      <SignupPolicyForm
+        policy={{
+          ...SEEDED,
+          mode: 'self_service',
+          effective_mode: 'self_service',
+          accounts: 'open',
+          effective_accounts: 'open',
+          personal_organization: true,
+          effective_personal_organization: true,
+        }}
+        canEdit
+        onSaved={vi.fn()}
+      />
+    )
+    const toggle = screen.getByRole('switch', {
+      name: /create a personal organization on sign-up/i,
+    })
+    expect(toggle).toBeChecked()
+    await user.click(screen.getByRole('radio', { name: /only platform administrators/i }))
+    expect(toggle).not.toBeChecked()
+    expect(toggle).toBeDisabled()
+    expect(screen.getByText(/needs "anyone who signs up" above/i)).toBeInTheDocument()
   })
 
   it('a wrong code keeps the dialog open with the reason', async () => {

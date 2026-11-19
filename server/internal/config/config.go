@@ -869,6 +869,12 @@ type AuthConfig struct {
 	// SignupCaptcha is SignupCaptchaOffAccepted or empty: see
 	// validateProductionAuth.
 	SignupCaptcha string
+	// SignupPersonalOrganization is the first-start value of the sign-up
+	// policy's "Create a personal organization on sign-up" switch
+	// (SIGNUP_PERSONAL_ORGANIZATION). It seeds the stored policy only when
+	// none is stored and SIGNUP_MODE is open; afterwards the console value
+	// wins.
+	SignupPersonalOrganization bool
 
 	// Provider determines which authentication methods are available.
 	// Values: "local", "oidc", "hybrid"
@@ -1797,9 +1803,10 @@ func LoadWithExtensionKeys(extensionKeys []string) (*Config, error) {
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
-			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
-			SignupMode:          strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
-			SignupCaptcha:       strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
+			AllowedRedirectURIs:        getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
+			SignupMode:                 strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
+			SignupCaptcha:              strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
+			SignupPersonalOrganization: getEnvBool("SIGNUP_PERSONAL_ORGANIZATION", false),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),

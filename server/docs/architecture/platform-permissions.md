@@ -339,6 +339,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/tenants/{tenantId}/unsuspend` | `platform.tenants.lifecycle` |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | `platform.tenants.read` |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | `platform.tenants.owner_bootstrap` |
+| `GET /api/v1/admin/threat-intel/freshness` | `platform.settings.read` |
 | `GET /api/v1/admin/threat-intel/sync` | `platform.settings.read` |
 | `POST /api/v1/admin/threat-intel/sync` | `platform.feeds.manage` |
 | `PATCH /api/v1/admin/threat-intel/sync/{source}` | `platform.feeds.manage` |
