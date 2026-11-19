@@ -54,6 +54,8 @@ type CIAdminHandler struct {
 	baseline     CIGateBaselineService
 	repoSettings CIRepositorySettingsService
 	refusals     CIRefusalService
+	// refusalActions: unverified refusals and the allow action.
+	refusalActions CIRefusalActions
 	// newRepos: new repositories of all-projects trust configurations.
 	newRepos  CINewRepositoryService
 	dataScope DataScopeEnforcer

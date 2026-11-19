@@ -391,3 +391,29 @@ func (r *VulnEventRepository) Prune(ctx context.Context, before time.Time) (int6
 	}
 	return res.RowsAffected()
 }
+
+// vulnEventLast is the newest event of a vulnerability since a time.
+type vulnEventLast struct {
+	kind     string
+	at       *time.Time
+	sourceAt *time.Time
+}
+
+// lastVulnEvent reads the newest event, since a time, of a vulnerability id
+// or of any of the ids grouped under it (a card and its CVEs). A missing
+// event is the zero value.
+func lastVulnEvent(ctx context.Context, db *DB, vulnID string, grouped []string, since time.Time) (vulnEventLast, error) {
+	var kind sql.NullString
+	var at, source sql.NullTime
+	err := db.QueryRowContext(ctx, `
+		SELECT kind, at, source_at FROM vuln_events
+		WHERE (vuln_id = $1 OR vuln_id = ANY($2::text[])) AND at >= $3 ORDER BY at DESC, id DESC LIMIT 1`,
+		vulnID, pq.Array(grouped), since).Scan(&kind, &at, &source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return vulnEventLast{}, nil
+	}
+	if err != nil {
+		return vulnEventLast{}, fmt.Errorf("last vulnerability event: %w", err)
+	}
+	return vulnEventLast{kind: kind.String, at: timePtr(at), sourceAt: timePtr(source)}, nil
+}

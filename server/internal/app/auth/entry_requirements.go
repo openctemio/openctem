@@ -86,21 +86,30 @@ func (s *AuthService) CheckEntry(ctx context.Context, sessionID, userID, tenantI
 		func() error { return s.enforceOutsidePrivilegePolicy(ctx, sess, uid, tenantID) },
 	} {
 		if err := check(); err != nil {
-			return entryRefusalFor(err)
+			return EntryRefusalFor(err)
 		}
 	}
 	return nil
 }
 
-// entryRefusalFor maps a requirement failure to its refusal; anything that is
-// not a known requirement is returned unchanged (a failure to decide).
-func entryRefusalFor(err error) error {
+// Codes of entry refusals that token issuance answers with the same code
+// (the handler's auth error table): the console turns each into its one next
+// step, so a refusal per request must say exactly what the token request said.
+const (
+	CodeSSORequired            apierror.Code = "SSO_REQUIRED"
+	CodeMFAIDPEvidenceRequired apierror.Code = "MFA_IDP_EVIDENCE_REQUIRED"
+)
+
+// EntryRefusalFor maps a requirement failure to its refusal; anything that is
+// not a known requirement is returned unchanged (a failure to decide). Each
+// code is the one token issuance answers for the same requirement.
+func EntryRefusalFor(err error) error {
 	switch {
 	case errors.Is(err, ErrSSORequired):
-		return &EntryRefusal{Status: http.StatusForbidden, Code: apierror.CodeForbidden,
+		return &EntryRefusal{Status: http.StatusForbidden, Code: CodeSSORequired,
 			Message: "This organization requires SSO sign-in. Please sign in through your identity provider.", cause: err}
 	case errors.Is(err, ErrSSOMFAEvidenceRequired):
-		return &EntryRefusal{Status: http.StatusForbidden, Code: apierror.CodeMFAEnrollmentRequired,
+		return &EntryRefusal{Status: http.StatusForbidden, Code: CodeMFAIDPEvidenceRequired,
 			Message: "This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.", cause: err}
 	case errors.Is(err, ErrMFAEnrollmentRequired):
 		return &EntryRefusal{Status: http.StatusForbidden, Code: apierror.CodeMFAEnrollmentRequired,

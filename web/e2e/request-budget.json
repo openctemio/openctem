@@ -1,6 +1,8 @@
 {
   "$comment": "API requests a hard load of each dashboard page may send (research/81). A page not listed gets defaultMax. Lower a number when a page gets cheaper; raising one needs a reviewer to agree the new request cannot come from the bootstrap, the cache or an event.",
   "defaultMax": 5,
+  "shellRequests": ["GET /api/v1/threat-intel/freshness"],
+  "$comment_shellRequests": "Reads the page shell sends on every page, which a page budget does not count (each is still sent at most once per load). The out-of-date-data banner reads GET /api/v1/threat-intel/freshness once: the answer is the server's own 10-minute check of the platform's data, the same for every user of the install, so it is not bootstrap data of the session, and one request on a hard load (then every 5 minutes) is its whole cost.",
   "routes": {
     "/": 2,
     "/compliance": 3,

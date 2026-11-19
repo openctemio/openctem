@@ -272,11 +272,17 @@ func (p *Planner) fanOut(ctx context.Context, st *Stats, deadline time.Time) err
 func (p *Planner) fanOutPage(ctx context.Context, events []vulnevent.Event) error {
 	var ids []string
 	for _, e := range events {
-		if e.Kind != vulnevent.KindRejected {
+		if e.Kind != vulnevent.KindRejected && e.Kind != vulnevent.KindCardWithdrawn {
 			ids = append(ids, e.VulnID)
 		}
 	}
 	affected, err := p.store.TenantsAffectedBy(ctx, ids)
+	if err != nil {
+		return err
+	}
+	// A vulnerability a reviewed advisory card groups is planned as the
+	// card: one alert per organization and card.
+	groups, err := p.store.CardsGrouping(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -304,8 +310,23 @@ func (p *Planner) fanOutPage(ctx context.Context, events []vulnevent.Event) erro
 			}
 			continue
 		}
+		if e.Kind == vulnevent.KindCardWithdrawn {
+			if err := p.cardWithdrawn(ctx, e.VulnID, flush); err != nil {
+				return err
+			}
+			continue
+		}
+		if e.Kind == vulnevent.KindCardUpdated {
+			if err := p.cardUpdated(ctx, e.VulnID, flush); err != nil {
+				return err
+			}
+		}
+		key := e.VulnID
+		if card := groups[key]; card != "" {
+			key = card
+		}
 		for _, t := range affected[e.VulnID] {
-			it := threatalert.QueueItem{TenantID: t, VulnID: e.VulnID}
+			it := threatalert.QueueItem{TenantID: t, VulnID: key}
 			if !queued[it] {
 				queued[it] = true
 				items = append(items, it)
@@ -315,12 +336,91 @@ func (p *Planner) fanOutPage(ctx context.Context, events []vulnevent.Event) erro
 	return flush()
 }
 
+// cardWithdrawn resolves a withdrawn card's alerts and queues the
+// vulnerabilities their organizations had grouped into it, so each is
+// planned on its own again (its earlier alert reopens if still affected).
+func (p *Planner) cardWithdrawn(ctx context.Context, cardID string, flush func() error) error {
+	if err := flush(); err != nil {
+		return err
+	}
+	n, err := p.store.ResolveVuln(ctx, cardID, threatalert.ReasonCardWithdrawn, p.now())
+	if err != nil {
+		return err
+	}
+	items, err := p.store.GroupedInto(ctx, cardID)
+	if err != nil {
+		return err
+	}
+	if n > 0 || len(items) > 0 {
+		p.logger.Info("emerging threats resolved: advisory card withdrawn", "card_id", cardID, "alerts", n, "requeued", len(items))
+	}
+	return p.store.Enqueue(ctx, items)
+}
+
+// cardUpdated queues the vulnerabilities whose alerts were grouped into the
+// card but which the new revision no longer groups (removed from the card,
+// or the card is no longer reviewed): each is planned on its own again, so
+// its alert reopens if it is still affected.
+func (p *Planner) cardUpdated(ctx context.Context, cardID string, flush func() error) error {
+	items, err := p.store.GroupedInto(ctx, cardID)
+	if err != nil || len(items) == 0 {
+		return err
+	}
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.VulnID)
+	}
+	groups, err := p.store.CardsGrouping(ctx, ids)
+	if err != nil {
+		return err
+	}
+	var out []threatalert.QueueItem
+	for _, it := range items {
+		if groups[it.VulnID] != cardID {
+			out = append(out, it)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	if err := flush(); err != nil {
+		return err
+	}
+	p.logger.Info("emerging threats requeued: left an advisory card", "card_id", cardID, "requeued", len(out))
+	return p.store.Enqueue(ctx, out)
+}
+
+// keysFor maps vulnerability ids to alert keys (a reviewed advisory card's
+// id for the vulnerabilities it groups), without repeats.
+func (p *Planner) keysFor(ctx context.Context, vulnIDs []string) ([]string, error) {
+	groups, err := p.store.CardsGrouping(ctx, vulnIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(vulnIDs))
+	seen := map[string]bool{}
+	for _, v := range vulnIDs {
+		if c := groups[v]; c != "" {
+			v = c
+		}
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
 // QueueVulns queues an organization's vulnerabilities (the matcher created
 // findings for them).
 func (p *Planner) QueueVulns(ctx context.Context, tenantID shared.ID, vulnIDs []string) error {
-	items := make([]threatalert.QueueItem, 0, len(vulnIDs))
+	keys, err := p.keysFor(ctx, vulnIDs)
+	if err != nil {
+		return err
+	}
+	items := make([]threatalert.QueueItem, 0, len(keys))
 	seen := map[string]bool{}
-	for _, v := range vulnIDs {
+	for _, v := range keys {
 		if v == "" || seen[v] {
 			continue
 		}
@@ -360,6 +460,9 @@ func (p *Planner) baselines(ctx context.Context, rs *runState, st *Stats, deadli
 		if err != nil {
 			return err
 		}
+		if vulns, err = p.keysFor(ctx, vulns); err != nil {
+			return err
+		}
 		for _, v := range vulns {
 			if err := p.plan(ctx, rs, id, v, true); err != nil {
 				p.logger.Warn("emerging threat baseline not planned", "tenant_id", id.String(), "vuln_id", v, "error", err)
@@ -393,6 +496,11 @@ func (p *Planner) plan(ctx context.Context, rs *runState, tenantID shared.ID, vu
 		if state.BaselineAt == nil {
 			return nil // the baseline will cover it
 		}
+	}
+	if keys, err := p.keysFor(ctx, []string{vulnID}); err != nil {
+		return err
+	} else if len(keys) == 1 {
+		vulnID = keys[0] // grouped into a card since it was queued
 	}
 	now := p.now()
 	v, err := p.store.Vuln(ctx, vulnID, now.Add(-EventWindow))
@@ -443,11 +551,26 @@ func (p *Planner) plan(ctx context.Context, rs *runState, tenantID shared.ID, vu
 		}
 	}
 	a.Title = threatalert.Title(vulnID, firstProduct(assets))
+	if v.Title != "" {
+		a.Title = threatalert.CardTitle(v.Title, v.CardReported)
+	}
 	a.Severity = normSeverity(v.Severity)
 	a.Level, a.Tier, a.ETS, a.Breakdown = level, tier, b.Total, b
 	a.InKEV, a.KEVRansomware, a.EPSS = v.InKEV, v.KEVRansomware, v.EPSS
 	a.LastEventKind, a.EventAt, a.SourceAt = v.LastEventKind, v.LastEventAt, v.SourceAt
 	a.Counts(assets)
+
+	if v.CardID != "" && !v.CardReported && a.State.IsOpen() {
+		// The card's alert carries on the triage of the alerts it groups:
+		// the strongest open state (acknowledged or remediating).
+		inherited, err := p.store.GroupedTriage(ctx, tenantID, v.Grouped)
+		if err != nil {
+			return err
+		}
+		if st := threatalert.StrongerTriage(a.State, inherited); st != a.State {
+			a.State, a.StateChangedAt = st, &now
+		}
+	}
 
 	switch a.State {
 	case threatalert.StateNotAffected:
@@ -479,6 +602,14 @@ func (p *Planner) plan(ctx context.Context, rs *runState, tenantID shared.ID, vu
 	}
 	if err := p.store.SaveAlert(ctx, a, assets); err != nil {
 		return err
+	}
+	if v.CardID != "" && !v.CardReported && len(v.Grouped) > 0 {
+		// The card's alert carries its vulnerabilities on: their own open
+		// alerts in this organization are resolved, with the card id. A
+		// reported card (not yet reviewed) groups nothing.
+		if _, err := p.store.ResolveGrouped(ctx, tenantID, v.CardID, v.Grouped, now); err != nil {
+			return err
+		}
 	}
 	if a.State.IsOpen() && level == threatalert.LevelImmediate && a.NotifiedLevel != string(threatalert.LevelImmediate) {
 		rs.touched[tenantID] = true

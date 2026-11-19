@@ -93,6 +93,7 @@
   "errors.auth.INVALID_VERIFICATION_TOKEN": "This verification link is invalid or has expired. Request a new one.",
   "errors.auth.INVITATIONS_RATE_LIMITED": "Too many invitations were sent. Try again later.",
   "errors.auth.INVITATION_ALREADY_MEMBER": "This person is already a member of this organization.",
+  "errors.auth.INVITATION_FOR_ANOTHER_ADDRESS": "This invitation was sent to another email address. Sign in with that account to accept it.",
   "errors.auth.INVITATION_MEMBERSHIP_SUSPENDED": "Your access to this organization is suspended. Contact an administrator to be reactivated.",
   "errors.auth.INVITATION_NO_LONGER_VALID": "This invitation is no longer valid. Ask the organization for a new one.",
   "errors.auth.INVITATION_RESEND_TOO_SOON": "This invitation was sent a moment ago. Try again shortly.",

@@ -181,6 +181,10 @@ type CoverageRepository interface {
 	// RecentTokenRefusals lists the tenant's latest refused CI token
 	// exchanges, newest first, at most limit.
 	RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]TokenRefusal, error)
+	// TokenRefusal reads one refused exchange of the tenant by its audit
+	// record id (ErrTokenRefusalNotFound for another tenant's or an unknown
+	// id).
+	TokenRefusal(ctx context.Context, tenantID, id shared.ID) (*TokenRefusal, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }
@@ -274,6 +278,8 @@ type PipelineRepository interface {
 // only (an unverified token is never recorded), with the rule codes that
 // refused it.
 type TokenRefusal struct {
+	// ID is the audit record's id (the one-click fix names it).
+	ID         string
 	At         time.Time
 	Repository string
 	Provider   string
@@ -281,6 +287,72 @@ type TokenRefusal struct {
 	Event      string
 	Reasons    []string
 	Message    string
+	// The token's own values the rules compared (empty in records written
+	// before they were kept).
+	Issuer             string
+	Owner              string
+	Environment        string
+	WorkflowDefinition string
+	// Configs say which trust configuration refused with which code.
+	Configs []RefusalConfig
+}
+
+// RefusalConfig is one trust configuration's refusal of a token.
+type RefusalConfig struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+// UnverifiedRefusal is the per-tenant, per-issuer, per-reason record of CI
+// token exchanges refused before the token verified (no trust configuration
+// for its issuer, the issuer's keys unavailable, a token that did not
+// verify). It holds no token contents: the issuer the token claimed (only a
+// plain https address), the reason, the cause class, times and a count.
+type UnverifiedRefusal struct {
+	TenantID  shared.ID
+	Issuer    string
+	Reason    string
+	Cause     string
+	FirstSeen time.Time
+	LastSeen  time.Time
+	Count     int
+}
+
+// MaxUnverifiedRefusals bounds the records kept per tenant. A full tenant
+// takes no new record (existing ones keep counting) until a record has not
+// been seen for UnverifiedRefusalRetention: an anonymous caller cannot push
+// a real record out.
+//
+// Only the no_configuration records (UnverifiedReasonNoConfiguration), whose
+// issuer a caller chooses, count toward the bound. The keys_unavailable and
+// not_verified records name an issuer a configuration already matched, so
+// they are bounded by the tenant's configurations and are never refused.
+const MaxUnverifiedRefusals = 20
+
+// UnverifiedReasonNoConfiguration is the reason of a refusal whose token
+// named an issuer no enabled trust configuration has.
+const UnverifiedReasonNoConfiguration = "no_configuration"
+
+// MaxUnverifiedListed bounds the records one list returns (the capped
+// no_configuration records plus the ones bounded by configurations).
+const MaxUnverifiedListed = 5 * MaxUnverifiedRefusals
+
+// UnverifiedRefusalRetention is how long a record not seen again is kept
+// once the tenant's records are full.
+const UnverifiedRefusalRetention = 7 * 24 * time.Hour
+
+// ErrTokenRefusalNotFound: no refused exchange of the tenant has the id.
+var ErrTokenRefusalNotFound = fmt.Errorf("%w: CI token refusal not found", shared.ErrNotFound)
+
+// UnverifiedRefusalStore keeps the unverified refusal records.
+type UnverifiedRefusalStore interface {
+	// RecordUnverifiedRefusal adds r.Count to the record of (tenant,
+	// issuer, reason), creating it, only when the tenant has a CI trust
+	// configuration; it keeps at most MaxUnverifiedRefusals per tenant.
+	RecordUnverifiedRefusal(ctx context.Context, r UnverifiedRefusal) error
+	// ListUnverifiedRefusals lists the tenant's records, newest first.
+	ListUnverifiedRefusals(ctx context.Context, tenantID shared.ID) ([]UnverifiedRefusal, error)
 }
 
 // MaxTokenRefusals bounds a refusal listing.

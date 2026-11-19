@@ -121,3 +121,23 @@ func TestIntegrationWritePermissionsArePrivileged(t *testing.T) {
 		}
 	}
 }
+
+// The built-in member role holds exactly one privileged permission, reading
+// the secret store. Giving the member role another one would silently stop
+// that permission from counting as administrator (IsAboveMember compares
+// against the member role), so it takes a deliberate edit of this test.
+func TestMemberRoleHoldsOnlySecretStoreReadFromThePrivilegedSet(t *testing.T) {
+	member := map[permission.Permission]bool{}
+	for _, p := range permission.RolePermissions[tenant.RoleMember] {
+		member[p] = true
+	}
+	var held []permission.Permission
+	for _, p := range permission.PrivilegedPermissions() {
+		if member[p] {
+			held = append(held, p)
+		}
+	}
+	if len(held) != 1 || held[0] != permission.SecretStoreRead {
+		t.Fatalf("member role holds %v of the privileged set, want exactly [%s]", held, permission.SecretStoreRead)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	threatalertapp "github.com/openctemio/openctem/server/internal/app/threatalert"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -153,6 +154,17 @@ type EmergingThreatDetail struct {
 	// likely, possible; a tier without an asset is left out).
 	AssetGroups []EmergingThreatAssetGroup `json:"asset_groups"`
 	Timeline    []EmergingThreatEvent      `json:"timeline"`
+	// Exploitation is the strongest status a reviewed advisory card states
+	// (none, poc_public, weaponised, exploited_itw,
+	// vendor_confirmed_exploited) and ExploitationSources the public sources
+	// it cites.
+	Exploitation        string   `json:"exploitation" enums:"none,poc_public,weaponised,exploited_itw,vendor_confirmed_exploited"`
+	ExploitationSources []string `json:"exploitation_sources"`
+	// Card is the advisory card when the alert is keyed by one (vuln_id is
+	// then the card id, OCA-YYYY-NNNN). Its text is plain text: render it
+	// as text, never as markup; its links are https and point to public
+	// write-ups (never to be opened by a tool).
+	Card *advisory.Card `json:"card,omitempty"`
 }
 
 // EmergingThreatStateRequest is a triage decision.
@@ -177,7 +189,12 @@ func toEmergingDetail(d *threatalert.Detail) EmergingThreatDetail {
 		Description:       threatalert.PlainText(d.Vuln.Description, 1000), CVSSScore: d.Vuln.CVSSScore,
 		PublishedAt: d.Vuln.Published, StateReason: d.Alert.StateReason, StateNote: d.Alert.StateNote,
 		StateChangedAt: d.Alert.StateChangedAt, SuppressedUntil: d.Alert.SuppressedUntil, CanSuppress: d.AllInScope,
-		Assets: make([]EmergingThreatAsset, 0, len(d.Assets)), Timeline: make([]EmergingThreatEvent, 0, len(d.Timeline))}
+		Assets: make([]EmergingThreatAsset, 0, len(d.Assets)), Timeline: make([]EmergingThreatEvent, 0, len(d.Timeline)),
+		Exploitation: string(advisory.Stronger(advisory.ExploitNone, d.Vuln.Exploitation)), ExploitationSources: d.Vuln.ExploitationSources,
+		Card: d.Card}
+	if out.ExploitationSources == nil {
+		out.ExploitationSources = []string{}
+	}
 	if d.Vuln.KEVDateAdded != nil {
 		out.KEVDateAdded = d.Vuln.KEVDateAdded.Format(time.DateOnly)
 	}

@@ -240,8 +240,16 @@ func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, sco
 	if vuln != nil {
 		d.Vuln = *vuln
 	}
+	// A card's timeline holds its own events and those of the
+	// vulnerabilities it groups.
+	keys := append([]string{a.VulnID}, d.Vuln.Grouped...)
+	if d.Vuln.CardID != "" {
+		if d.Card, err = loadCard(ctx, r.db, d.Vuln.CardID); err != nil {
+			return nil, err
+		}
+	}
 	trows, err := r.db.QueryContext(ctx, `
-		SELECT kind, at, source_at, detail FROM vuln_events WHERE vuln_id = $1 ORDER BY at DESC, id DESC LIMIT 50`, a.VulnID)
+		SELECT kind, at, source_at, detail FROM vuln_events WHERE vuln_id = ANY($1::text[]) ORDER BY at DESC, id DESC LIMIT 50`, pq.Array(keys))
 	if err != nil {
 		return nil, fmt.Errorf("alert timeline: %w", err)
 	}

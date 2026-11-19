@@ -94,6 +94,7 @@ ci_runs
 ci_trust_configs
 ci_trust_new_repositories
 ci_trust_owner_pins
+ci_unverified_refusals
 code_scan_settings
 collector_assets
 command_events
@@ -233,6 +234,7 @@ pentest_report_files
 pentest_report_templates
 pentest_reports
 pentest_retests
+personal_organizations
 priority_class_audit_log
 priority_override_rules
 provider_address_move_items

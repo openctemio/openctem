@@ -120,6 +120,10 @@ func registerCIRoutes(
 		// Refused pipelines name repositories that may not be assets yet:
 		// the people who set up CI trust (write) see them.
 		r.GET("/trust-refusals", admin.ListTokenRefusals, middleware.Require(permission.CIWrite))
+		r.GET("/trust-refusals/unverified", admin.ListUnverifiedRefusals, middleware.Require(permission.CIWrite))
+		// Adding a refused value widens who may send results: the same gate
+		// as changing the configuration.
+		r.POST("/trust-configs/{id}/allow", admin.AllowInTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
 
 		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
 		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIPolicy))

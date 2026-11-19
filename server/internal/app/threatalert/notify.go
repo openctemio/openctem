@@ -115,6 +115,16 @@ func ids(as []*threatalert.Alert) []shared.ID {
 }
 
 // whyNow is the alert's reason in one line (public facts).
+// exploitationWords says, in plain words, the reviewed advisory card
+// evidence behind the exploitation points (KEV and EPSS are named on their
+// own).
+var exploitationWords = map[string]string{
+	threatalert.BasisVendorConfirmed: "exploitation confirmed by the vendor",
+	threatalert.BasisInTheWild:       "exploited in the wild",
+	threatalert.BasisWeaponised:      "a weaponised exploit is public",
+	threatalert.BasisPoCPublic:       "a proof of concept is public",
+}
+
 func whyNow(a *threatalert.Alert) string {
 	var parts []string
 	if a.InKEV {
@@ -123,6 +133,9 @@ func whyNow(a *threatalert.Alert) string {
 			s += " (known ransomware use)"
 		}
 		parts = append(parts, s)
+	}
+	if w := exploitationWords[a.Breakdown.ExploitationBasis]; w != "" {
+		parts = append(parts, w)
 	}
 	if a.EPSS != nil && *a.EPSS >= 0.1 {
 		parts = append(parts, fmt.Sprintf("EPSS %.2f", *a.EPSS))

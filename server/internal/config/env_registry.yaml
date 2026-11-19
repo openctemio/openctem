@@ -59,6 +59,16 @@ vars:
     group: "Application"
     type: string
     description: "Data region of this deployment (1-32 lowercase letters, digits or hyphens, e.g. `eu-central`). Every organization created here gets it, it is shown in the console and never changes. Set: pins the region (the console cannot change it). Unset: a super admin may set it once in the console (Settings > Configuration) before the first organization exists."
+  - name: AUTHTESTSEAM_PROVIDER_URL
+    component: api
+    group: "Application"
+    type: url
+    description: "Test environments only. Base URL of a stand-in social sign-in provider as the API reaches it, so the sign-in test suites run a sign-in end to end without Google, Microsoft or GitHub. Read only by a test binary with the sign-in test seam compiled in, and only while `APP_ENV` is `test` or `e2e`; release builds never read it."
+  - name: AUTHTESTSEAM_PROVIDER_BROWSER_URL
+    component: api
+    group: "Application"
+    type: url
+    description: "Test environments only. The same stand-in provider as the browser reaches it (the authorization endpoint). Unset: `AUTHTESTSEAM_PROVIDER_URL`. Read only by a test binary with the sign-in test seam compiled in, and only while `APP_ENV` is `test` or `e2e`."
   - name: BRAND_FILE
     component: api
     group: "Brand"
@@ -181,7 +191,7 @@ vars:
     component: api
     group: "HTTP server"
     type: list
-    description: "Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console."
+    description: "Comma-separated CIDRs or IPs of proxies whose `X-Real-IP` / `X-Forwarded-For` the API believes (audit log, rate limits, IP allowlists). Empty: the API treats every peer as the client. The Compose stack lists the gateway and the web console. List the web console server only when a proxy that sets `X-Forwarded-For` sits in front of it; with no such proxy, its forwarded header is the caller's own and must not be believed."
   - name: SERVER_WRITE_TIMEOUT
     component: api
     group: "HTTP server"
@@ -653,6 +663,12 @@ vars:
     type: string
     default: "disabled"
     description: "The deployment's sign-up ceiling; no API can change it, and the console sign-up policy can only stay at or below it. `disabled`: no public account creation; people get accounts from a platform administrator, an invitation or their organization's SSO, and only a platform administrator creates organizations. `domain`: public sign-up only for addresses on an organization's verified domain, who join that organization (never create one). `open`: anyone may sign up and create an organization (the hosted service). `domain` and `open` need the platform e-mail (Console > Settings > E-mail) at start and verify every self-registered address; `open` in production also needs a CAPTCHA: until one is configured (Console > Settings > CAPTCHA, or the `CAPTCHA_TURNSTILE_*` keys), open sign-up stays closed at runtime. Any other value stops start-up. Replaces `TENANT_CREATION_MODE`."
+  - name: SIGNUP_PERSONAL_ORGANIZATION
+    component: api
+    group: "Organizations and scope guardrails"
+    type: bool
+    default: "false"
+    description: "First-start value of the sign-up policy switch \"Create a personal organization on sign-up\": a person who signs up with no other way in (no invitation, no organization that verified their e-mail domain) gets their own organization at their first sign-in after their address is verified. Used only when no sign-up policy is stored yet and `SIGNUP_MODE=open`; afterwards the switch is changed in the console (Console > System > Sign-up)."
   - name: SIGNUP_CAPTCHA
     component: api
     group: "Organizations and scope guardrails"

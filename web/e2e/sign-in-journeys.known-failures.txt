@@ -3,9 +3,3 @@
 # runs as an expected failure (test.fail): it is reported, and it fails once it
 # passes until its line is removed. Never list a BYPASS failure.
 
-first-time-invited / google / idp-required  # want: a page that sends the person to the organization's identity provider | got: the invitation offers Accept again after the refusal
-first-time-invited / password / idp-required  # want: a page that sends the person to the organization's identity provider | got: the invitation offers Accept again after the refusal
-first-time-invited / other-org-idp / open  # want: a page that asks for the account's own sign-in | got: the invitation page keeps offering Open after opening is refused (OWN_SIGN_IN_REQUIRED)
-first-time-invited / other-org-idp / 2fa-required  # want: a page that asks for the account's own sign-in | got: as open
-first-time-invited / other-org-idp / idp-required  # want: a page that asks for the account's own sign-in or the organization's provider | got: as open
-invitation / for-another-email-while-signed-in  # want: "this invitation is for another address, sign in with that account" | got: Accept offered, refused with "The invitation could not be accepted", Accept offered again

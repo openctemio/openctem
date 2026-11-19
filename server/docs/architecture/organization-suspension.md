@@ -86,6 +86,7 @@ knows the organization:
 | Session token, JWT-tenant routes, WebSocket upgrade | `middleware.RequireActiveOrganization`, right after authentication in `buildBaseMiddlewares` |
 | Session token on `/api/v1/tenants/{tenant}/...` | `middleware.RequireActiveOrganizationParam`, after the membership check |
 | Token mint (`/auth/token`) and refresh | `AuthService.organizationOpen`, before the refresh token is spent, so the member can still open another organization; a backstop in `generateTenantScopedAccessToken` covers every mint path |
+| Accepting an invitation | `TenantService.acceptInvitation` asks the gate before anything changes: a suspended organization takes no new member (403 `ORGANIZATION_SUSPENDED`, the invitation stays pending). `/invitations/accept-with-refresh` mints the access token before it spends the refresh token, so a refusal there keeps the session |
 | `oct_` API key | the middleware, and `apikey.NewMembershipChecker` |
 | MCP OAuth token | `apikey.NewMembershipChecker` on every MCP request |
 | Sensor key, multi-key store, signed requests, mTLS | `SensorService.organizationOpen`, after the sensor's own status |

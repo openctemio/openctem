@@ -8,3 +8,6 @@ export { SyncStatusManager, CompactSyncStatus } from './sync-status-manager'
 export { ThreatActorsPanel } from './threat-actors-panel'
 export { IOCsPanel } from './iocs-panel'
 export { DetectionsPanel } from './detections-panel'
+
+// Freshness of the platform's vulnerability data (banner, "data as of")
+export { FeedFreshnessBanner, FeedDataAsOf } from './feed-freshness-banner'

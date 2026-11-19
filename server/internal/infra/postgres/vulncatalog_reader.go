@@ -240,6 +240,39 @@ func (r *VulnCatalogReader) KEVSet(ctx context.Context) (map[string]vulncatalog.
 	return out, nil
 }
 
+// KEVs returns the known-exploited listings of the given ids. It reads the
+// listing table on its own, so a CVE listed before its record arrives is
+// still reported.
+func (r *VulnCatalogReader) KEVs(ctx context.Context, cveIDs []string) ([]vulncatalog.KEV, error) {
+	ids, err := vulncatalog.NormalizeIDs(cveIDs)
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT cve_id, COALESCE(vulnerability_name, ''), COALESCE(vendor_project, ''), COALESCE(product, ''),
+			date_added::timestamptz, due_date::timestamptz,
+			COALESCE(lower(known_ransomware_campaign_use) = 'known', false)
+		FROM kev_catalog WHERE cve_id = ANY($1) ORDER BY cve_id`, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("vulnerability catalog kev: %w", err)
+	}
+	defer rows.Close()
+	out := make([]vulncatalog.KEV, 0, len(ids))
+	for rows.Next() {
+		var k vulncatalog.KEV
+		var added, due sql.NullTime
+		if err := rows.Scan(&k.CVEID, &k.Name, &k.VendorProject, &k.Product, &added, &due, &k.Ransomware); err != nil {
+			return nil, fmt.Errorf("vulnerability catalog kev: %w", err)
+		}
+		k.DateAdded, k.DueDate = nullTimeValue(added), nullTimeValue(due)
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("vulnerability catalog kev: %w", err)
+	}
+	return out, nil
+}
+
 // EPSS returns the scores of the CVEs that have one.
 func (r *VulnCatalogReader) EPSS(ctx context.Context, cveIDs []string) ([]vulncatalog.EPSS, error) {
 	ids, err := vulncatalog.NormalizeIDs(cveIDs)

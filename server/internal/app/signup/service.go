@@ -73,6 +73,9 @@ type Service struct {
 	// captchaReady reports whether a CAPTCHA is configured (nil: not
 	// required by this deployment).
 	captchaReady func() bool
+	// personalOrgSeed is SIGNUP_PERSONAL_ORGANIZATION: the switch's value
+	// in the policy stored at the first start (self-service seeds only).
+	personalOrgSeed bool
 
 	mu       sync.Mutex
 	cached   *signupdom.State
@@ -108,6 +111,17 @@ func (s *Service) SetCeiling(c signupdom.Ceiling) { s.ceiling = c }
 // Ceiling returns the deployment ceiling.
 func (s *Service) Ceiling() signupdom.Ceiling { return signupdom.Ceiling(s.ceiling.String()) }
 
+// SetPersonalOrganizationSeed sets the first-start value of the personal
+// organization switch (SIGNUP_PERSONAL_ORGANIZATION).
+func (s *Service) SetPersonalOrganizationSeed(on bool) { s.personalOrgSeed = on }
+
+// seedPolicy is the policy stored at the first start.
+func (s *Service) seedPolicy() signupdom.Policy {
+	p := s.ceiling.SeedPolicy()
+	p.PersonalOrganization = s.personalOrgSeed && p.Mode == signupdom.ModeSelfService
+	return p
+}
+
 // SetMailReady wires the check that the platform can send e-mail.
 func (s *Service) SetMailReady(f func() bool) { s.mailReady = f }
 
@@ -125,7 +139,7 @@ func (s *Service) SetNotifier(n ChangeNotifier) { s.notifier = n }
 // start): open seeds self_service, anything else admin_only. A stored policy
 // always wins: the environment only seeds, and the ceiling clamps it on read.
 func (s *Service) Seed(ctx context.Context) error {
-	p := s.ceiling.SeedPolicy()
+	p := s.seedPolicy()
 	created, err := s.repo.CreateIfAbsent(ctx, signupdom.State{
 		Policy: p, Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: s.now().UTC(),
 	})
@@ -133,7 +147,8 @@ func (s *Service) Seed(ctx context.Context) error {
 		return err
 	}
 	if created {
-		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode), "accounts", string(p.Accounts))
+		s.log.Info("sign-up policy seeded from the environment", "mode", string(p.Mode), "accounts", string(p.Accounts),
+			"personal_organization", p.PersonalOrganization)
 	}
 	return nil
 }
@@ -224,12 +239,12 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, p signupdo
 	if signupdom.IsNotFound(err) {
 		// Nothing stored (no seed ran): store version 1 first so the
 		// optimistic check below has a row to compare against.
-		previous = signupdom.State{Policy: s.ceiling.SeedPolicy()}
+		previous = signupdom.State{Policy: s.seedPolicy()}
 		if expectedVersion != 0 {
 			return signupdom.State{}, signupdom.ErrVersionConflict
 		}
 		if _, cerr := s.repo.CreateIfAbsent(ctx, signupdom.State{
-			Policy: s.ceiling.SeedPolicy(), Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: now,
+			Policy: s.seedPolicy(), Version: 1, Source: signupdom.SourceEnvironment, UpdatedAt: now,
 		}); cerr != nil {
 			return signupdom.State{}, cerr
 		}
@@ -256,13 +271,15 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 			Resource("platform_setting", nil, signupdom.SettingKey).
 			Context(ip, userAgent).
 			Request("PUT", "/api/v1/admin/settings/signup", map[string]any{
-				"previous_mode":           string(prev.Mode),
-				"previous_accounts":       string(prev.AccountSignup()),
-				"previous_request_access": prev.RequestAccess,
-				"mode":                    string(next.Policy.Mode),
-				"accounts":                string(next.Policy.AccountSignup()),
-				"request_access":          next.Policy.RequestAccess,
-				"version":                 next.Version,
+				"previous_mode":                  string(prev.Mode),
+				"previous_accounts":              string(prev.AccountSignup()),
+				"previous_request_access":        prev.RequestAccess,
+				"mode":                           string(next.Policy.Mode),
+				"accounts":                       string(next.Policy.AccountSignup()),
+				"request_access":                 next.Policy.RequestAccess,
+				"previous_personal_organization": prev.PersonalOrganization,
+				"personal_organization":          next.Policy.PersonalOrganization,
+				"version":                        next.Version,
 			}).
 			Critical().
 			Build()
@@ -291,6 +308,7 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 		"from_mode", logger.SanitizeValue(string(prev.Mode)), "to_mode", logger.SanitizeValue(string(next.Policy.Mode)),
 		"from_accounts", string(prev.AccountSignup()), "to_accounts", string(next.Policy.AccountSignup()),
 		"request_access", strconv.FormatBool(next.Policy.RequestAccess),
+		"personal_organization", strconv.FormatBool(next.Policy.PersonalOrganization),
 		"notified", len(recipients),
 	)
 	if s.notifier == nil || len(recipients) == 0 {

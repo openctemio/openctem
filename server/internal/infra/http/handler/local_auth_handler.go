@@ -574,6 +574,7 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 	result, err := h.authService.ExchangeToken(r.Context(), auth.ExchangeTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
+		UserAgent:    r.UserAgent(),
 	})
 	if err != nil {
 		h.handleAuthError(w, err)

@@ -72,6 +72,9 @@ jobs:
           go-version-file: server/go.mod
           cache: true
           cache-dependency-path: server/go.sum
+      - name: Test build seam (social providers at a stand-in)
+        working-directory: server
+        run: GOWORK=off go test -tags authtestseam -count=1 -run 'TestProviderTestSeam' ./internal/app/auth/
       - name: Run the scenarios
         run: |
           mkdir -p "$(dirname "$AUTHSCEN_REPORT")"

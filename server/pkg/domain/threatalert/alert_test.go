@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
@@ -46,6 +47,23 @@ func TestScoreAndLevel(t *testing.T) {
 			[]Asset{edge}, false, 52, TierConfirmed, LevelDigest},
 		{"likely only scales by 0.8", Vuln{Severity: "critical", InKEV: true, LastEventAt: &fresh},
 			[]Asset{{Kind: MatchLikely, InternetFacing: true}}, false, 72, TierConfirmed, LevelImmediate},
+		// Advisory card exploitation (day 0: no KEV, no EPSS).
+		{"card public PoC, confirmed edge", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{edge}, false, 70, TierConfirmed, LevelImmediate},
+		{"card weaponised, confirmed edge", Vuln{Severity: "high", Exploitation: advisory.ExploitWeaponised, LastEventAt: &fresh},
+			[]Asset{edge}, false, 72, TierConfirmed, LevelImmediate},
+		{"card vendor-confirmed counts as KEV", Vuln{Severity: "critical", Exploitation: advisory.ExploitVendorConfirmed, LastEventAt: &fresh},
+			[]Asset{edge, edge}, false, 90, TierConfirmed, LevelImmediate},
+		{"card PoC, possible on a plain edge host: digest", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{banner}, false, 35, TierPossible, LevelDigest},
+		{"card PoC, possible on an internet-facing crown jewel: check needed", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 40, TierPossible, LevelImmediate},
+		{"no check needed for a high vulnerability", Vuln{Severity: "high", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 36, TierPossible, LevelDigest},
+		{"no check needed on an internal crown jewel", Vuln{Severity: "critical", Exploitation: advisory.ExploitPoCPublic, LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, Criticality: "critical"}}, false, 33, TierPossible, LevelListed},
+		{"no check needed on EPSS alone", Vuln{Severity: "critical", EPSS: f64(0.9), LastEventAt: &fresh},
+			[]Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}, false, 40, TierPossible, LevelDigest},
 		{"ransomware adds 5", Vuln{Severity: "critical", InKEV: true, KEVRansomware: true, LastEventAt: &fresh},
 			[]Asset{edge}, false, 95, TierConfirmed, LevelImmediate},
 	}
@@ -189,5 +207,120 @@ func TestSettings(t *testing.T) {
 	}
 	if (tenant.EmergingThreatSettings{}).InQuietHours(3) {
 		t.Error("quiet hours are off by default")
+	}
+}
+
+func TestExploitationBasis(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		v     Vuln
+		basis string
+		pts   int
+	}{
+		{Vuln{}, "", 0},
+		{Vuln{EPSS: f64(0.2)}, BasisEPSS, 10},
+		{Vuln{EPSS: f64(0.2), Exploitation: advisory.ExploitPoCPublic}, BasisPoCPublic, 20},
+		{Vuln{Exploitation: advisory.ExploitWeaponised, EPSS: f64(0.7)}, BasisWeaponised, 30},
+		{Vuln{Exploitation: advisory.ExploitInTheWild}, BasisInTheWild, 40},
+		{Vuln{InKEV: true, Exploitation: advisory.ExploitVendorConfirmed}, BasisKEV, 40},
+		{Vuln{InKEV: true, KEVRansomware: true}, BasisKEV, 45},
+		{Vuln{Exploitation: "bogus"}, "", 0},
+	}
+	for _, c := range cases {
+		b, _ := Score(c.v, []Asset{{Kind: MatchConfirmed}}, now)
+		if b.Exploitation != c.pts || b.ExploitationBasis != c.basis {
+			t.Errorf("%+v: got %d %q, want %d %q", c.v, b.Exploitation, b.ExploitationBasis, c.pts, c.basis)
+		}
+	}
+	if !(Vuln{InKEV: true}).PublicExploit() || (Vuln{EPSS: f64(0.99)}).PublicExploit() || !(Vuln{Exploitation: advisory.ExploitPoCPublic}).PublicExploit() {
+		t.Fatal("PublicExploit")
+	}
+}
+
+// A card's alert never rates lower than a vulnerability it groups: a card
+// that says medium over a critical CVE keeps the CVE's critical, and with it
+// the severity points and the "check needed" case.
+func TestStrongestSeverity(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"medium", "critical"}, "critical"},
+		{[]string{"HIGH", "low"}, "high"},
+		{[]string{"medium"}, "medium"},
+		{[]string{"", "bogus"}, ""},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := StrongestSeverity(c.in...); got != c.want {
+			t.Fatalf("StrongestSeverity(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	medium := Vuln{Severity: "medium", InKEV: true, CVSSVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}
+	grouped := medium
+	grouped.Severity = StrongestSeverity("medium", "critical")
+	if severityPoints(grouped) <= severityPoints(medium) {
+		t.Fatal("the grouped critical CVE did not keep its severity points")
+	}
+	assets := []Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}
+	if CheckNeeded(TierPossible, medium, assets) || !CheckNeeded(TierPossible, grouped, assets) {
+		t.Fatal("check needed must follow the strongest severity")
+	}
+}
+
+func TestStrongerTriage(t *testing.T) {
+	if StrongerTriage(StateNew, StateAcknowledged) != StateAcknowledged ||
+		StrongerTriage(StateAcknowledged, StateRemediating) != StateRemediating ||
+		StrongerTriage(StateRemediating, StateAcknowledged) != StateRemediating ||
+		StrongerTriage(StateRemediating, StateNew) != StateRemediating {
+		t.Fatal("triage order")
+	}
+}
+
+func TestCardTitleMarksReported(t *testing.T) {
+	if got := CardTitle("NGINX2Root", true); got != ReportedPrefix+"NGINX2Root" {
+		t.Fatalf("reported title %q", got)
+	}
+	if got := CardTitle("NGINX2Root", false); got != "NGINX2Root" {
+		t.Fatalf("reviewed title %q", got)
+	}
+}
+
+func TestCardSeverityReportedNeverRaises(t *testing.T) {
+	cases := []struct {
+		reported bool
+		own      string
+		records  []string
+		want     string
+	}{
+		{true, "critical", []string{"medium"}, "medium"},
+		{true, "critical", nil, "critical"},
+		{true, "critical", []string{""}, "critical"},
+		{false, "critical", []string{"medium"}, "critical"},
+		{false, "medium", []string{"critical"}, "critical"},
+	}
+	for _, c := range cases {
+		if got := CardSeverity(c.reported, c.own, c.records...); got != c.want {
+			t.Fatalf("CardSeverity(%v, %q, %v) = %q, want %q", c.reported, c.own, c.records, got, c.want)
+		}
+	}
+}
+
+// A reported card claiming critical over a medium KEV record must not page.
+func TestReportedCardClaimDoesNotPage(t *testing.T) {
+	v := Vuln{Severity: CardSeverity(true, "critical", "medium"), InKEV: true, CardReported: true}
+	assets := []Asset{{Kind: MatchPossible, InternetFacing: true, Criticality: "critical"}}
+	if CheckNeeded(TierPossible, v, assets) {
+		t.Fatal("a reported card opened check needed")
+	}
+	v.CardReported = false
+	v.Severity = "critical"
+	if !CheckNeeded(TierPossible, v, assets) {
+		t.Fatal("a reviewed critical card with a public exploit must still open check needed")
+	}
+	rep := v
+	rep.CardReported = true
+	if CheckNeeded(TierPossible, rep, assets) {
+		t.Fatal("check needed must be false for a reported card even at critical")
 	}
 }

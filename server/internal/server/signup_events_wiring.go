@@ -34,6 +34,9 @@ func wireSignupEvents(svc *Services, repos *Repositories, redisClient *redis.Cli
 	if svc.OAuth != nil {
 		svc.OAuth.SetSignupRecorder(s)
 	}
+	if svc.PersonalOrgs != nil {
+		svc.PersonalOrgs.SetSignupRecorder(s)
+	}
 	if svc.SSO != nil {
 		svc.SSO.SetSignupRecorder(s)
 	}

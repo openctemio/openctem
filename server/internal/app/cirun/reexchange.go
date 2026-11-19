@@ -45,6 +45,8 @@ type RefusedError struct {
 	// opened it. It is returned as a detail, never inside Message (public
 	// messages carry no ids).
 	RunID string
+	// Reasons are the rule codes that refused the token (details only).
+	Reasons []string
 }
 
 func (e *RefusedError) Error() string { return ErrExchangeRefused.Error() + ": " + e.Code }
