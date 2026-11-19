@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 func bulkDismissRequest(ctx context.Context, body string) *http.Request {
@@ -97,5 +98,30 @@ func TestParseBulkDismiss_Limits(t *testing.T) {
 	c := bulkDismissHash(BulkDismissRequest{FindingIDs: []string{"a", "b"}, ClosureReason: "detection_error", Note: "y"})
 	if a != b || a == c {
 		t.Fatal("the request hash depends on id order, or ignores the note")
+	}
+}
+
+// The requester of a bulk is recorded by the id every approve, reject and
+// leave-out path compares with (GetUserID), also when the synced local user
+// has another id (OIDC: the identity provider's subject).
+func TestParseBulkDismiss_RequesterIsTheComparedID(t *testing.T) {
+	h := &VulnerabilityHandler{}
+	tid, sub := shared.NewID().String(), shared.NewID().String()
+	local, err := user.NewLocalUserWithID(shared.NewID(), "local@example.com", "Local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.WithValue(context.WithValue(context.Background(),
+		middleware.TenantIDKey, tid), middleware.UserIDKey, sub), middleware.LocalUserKey, local)
+	body := `{"finding_ids":["` + shared.NewID().String() + `"],"closure_reason":"detection_error","idempotency_key":"k"}`
+	in, ok := h.parseBulkDismiss(httptest.NewRecorder(), bulkDismissRequest(ctx, body), "test")
+	if !ok {
+		t.Fatal("refused")
+	}
+	if in.UserID.String() != sub || in.UserID == local.ID() {
+		t.Fatalf("requester %s, want the authenticated subject %s (local %s)", in.UserID, sub, local.ID())
+	}
+	if got := bulkActorID(bulkDismissRequest(ctx, body)); got != sub {
+		t.Fatalf("bulkActorID %s, want %s", got, sub)
 	}
 }

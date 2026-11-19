@@ -194,11 +194,12 @@ func (r *FindingBulkDismissRepository) Finish(ctx context.Context, d *finding.Bu
 }
 
 // MarkUndone moves the creator's applied row created after since to
-// undone; false when no row moved (undone already, too old, or not theirs).
+// undone; false when no row moved (undone already, too old, not theirs, or the
+// apply has not recorded its outcome yet).
 func (r *FindingBulkDismissRepository) MarkUndone(ctx context.Context, tenantID, createdBy, id shared.ID, since time.Time) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `UPDATE finding_bulk_dismissals
 		SET status = 'undone', undone_at = now(), undone_by = $2
-		WHERE tenant_id = $1 AND created_by = $2 AND id = $3 AND status = 'applied' AND created_at > $4`,
+		WHERE tenant_id = $1 AND created_by = $2 AND id = $3 AND status = 'applied' AND result <> '{}'::jsonb AND created_at > $4`,
 		tenantID.String(), createdBy.String(), id.String(), since)
 	if err != nil {
 		return false, fmt.Errorf("undo bulk dismissal: %w", err)

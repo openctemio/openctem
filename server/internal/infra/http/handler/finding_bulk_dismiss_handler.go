@@ -8,6 +8,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -129,7 +130,8 @@ func (h *VulnerabilityHandler) BulkDismiss(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !out.Replay {
-		h.auditBulkDismiss(r, out)
+		// The apply outlives a client that leaves; so does its audit trail.
+		h.auditBulkDismiss(r.WithContext(context.WithoutCancel(r.Context())), out)
 	}
 	writeJSONOK(w, out)
 }
@@ -185,13 +187,11 @@ func writeJSONOK(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// bulkActorID is the acting person: the synced local user when there is one.
+// bulkActorID is the acting person, by the same id every approve, reject and
+// leave-out path compares with (middleware.GetUserID), so the requester of a
+// group is never a different identity from the one that decides on it.
 func bulkActorID(r *http.Request) string {
-	ctx := r.Context()
-	if local := middleware.GetLocalUserID(ctx); !local.IsZero() {
-		return local.String()
-	}
-	return middleware.GetUserID(ctx)
+	return middleware.GetUserID(r.Context())
 }
 
 // parseBulkDismiss reads and checks the request and builds the service
