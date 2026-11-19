@@ -69,10 +69,10 @@ describe('QueueDecideBy', () => {
     expect(el).toHaveAttribute('data-state', 'overdue')
     expect(el?.textContent).toMatch(/^Overdue, /)
   })
-  it('is a dash when nothing waits', () => {
+  it('is the empty cell when nothing waits', () => {
     const { container } = render(<QueueDecideBy value={undefined} />)
     expect(container.querySelector('[data-slot="queue-decide-by"]')).toBeNull()
-    expect(container).toHaveTextContent('-')
+    expect(container.querySelector('[data-slot="empty-cell"]')).toHaveTextContent('—')
   })
 })
 

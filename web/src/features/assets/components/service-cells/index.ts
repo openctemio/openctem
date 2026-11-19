@@ -9,7 +9,7 @@
  * - building blocks: `FactChip`, `ChipRow`, `ChipMono`;
  * - facts nothing collected (ui-style-contract §7, "Unknown facts"): every
  *   cell renders nothing for them (its `fallback` prop overrides that),
- *   `EmptyCell` is the muted `—` of a list cell left empty, and a drawer
+ *   the shared kit's `EmptyCell` is the muted `—` of a list cell left empty, and a drawer
  *   names them once with `NotCollectedNote` (`missingSurfaceFacts`,
  *   `tlsNotCollected`, `SurfaceFactsDetail`).
  *
@@ -17,7 +17,7 @@
  * `safeHref` (src/components/safe-external-link.tsx, src/lib/safe-href.ts).
  */
 export { FactChip, ChipRow, ChipMono, type FactChipTone } from './fact-chip'
-export { EmptyCell, NotCollectedNote, notCollectedText } from './not-collected'
+export { NotCollectedNote, notCollectedText } from './not-collected'
 export { HttpStatusChip, httpStatusTone, httpReason } from './http-status-chip'
 export { OpenFindingsCell, OpenFindingsLink, assetFindingsHref } from './open-findings-link'
 export { OverflowChips } from './overflow-chips'
