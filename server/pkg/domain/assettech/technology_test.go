@@ -56,7 +56,10 @@ func TestIsSoftwareCandidate(t *testing.T) {
 	}{
 		{"HSTS", "", "", nil, false},
 		{"Vercel", "", "", nil, false},
-		{"nginx", "", "", nil, false},             // no version, no CPE: nothing to match
+		{"nginx", "", "", nil, true},              // curated public product, version hidden
+		{"Nginx", " ", "", nil, true},             // same, any case, blank version
+		{"Acme Portal", "", "", nil, false},       // private name without a version: never
+		{"Ubuntu", "", "", nil, false},            // an operating system name alone: never
 		{"nginx", "1.18.0", "", nil, true},        // product + version
 		{"Next.js", "13.4.1", "", nil, true},      // framework + version
 		{"Cloudflare", "2", "", nil, false},       // CDN never, whatever the version
@@ -64,7 +67,7 @@ func TestIsSoftwareCandidate(t *testing.T) {
 		{"HSTS", "1", "", nil, false},             // header never
 		{"", "", "cpe:2.3:a:f5:nginx:1.2:*:*:*:*:*:*:*", nil, true},
 		{"Vercel", "", "cpe:2.3:a:vercel:vercel:-:*:*:*:*:*:*:*", nil, false},
-		{"nginx", "1.\x00", "", nil, false}, // control character drops the version
+		{"Acme Portal", "1.\x00", "", nil, false}, // control character drops the version
 		{strings.Repeat("a", MaxNameLen+1), "1.0", "", nil, false},
 	}
 	for _, c := range cases {
