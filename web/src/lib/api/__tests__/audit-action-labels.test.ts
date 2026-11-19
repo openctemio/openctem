@@ -7,29 +7,9 @@ import vi from '@/lib/i18n/dictionaries/vi/auditLog.json'
 
 import { getActionLabel } from '../audit-types'
 
-// Audit actions the console labels in the reader's language: a sensor, asset,
-// sign-in or organization event must not read in English on a Vietnamese page.
-const FAMILIES = new Set([
-  'sensor',
-  'sensor_result',
-  'asset',
-  'assets',
-  'auth',
-  'account',
-  'api_key',
-  'credential',
-  'member',
-  'role',
-  'permission',
-  'permission_set',
-  'group',
-  'user',
-  'tenant',
-  'sso',
-  'finding',
-  'scan_config',
-  'scan_run',
-])
+// Every audit action the server writes reads in the reader's language: a
+// sensor, campaign or workflow event must not read in English on a
+// Vietnamese page.
 
 const AUDIT_DIR = path.resolve(__dirname, '../../../../../server/pkg/domain/audit')
 
@@ -42,7 +22,7 @@ function serverActions(): string[] {
       out.add(m[1])
     }
   }
-  return [...out].filter((a) => FAMILIES.has(a.split('.')[0])).sort()
+  return [...out].sort()
 }
 
 const enCat = en as Record<string, string>
@@ -52,10 +32,10 @@ describe.skipIf(!existsSync(AUDIT_DIR))('audit action labels', () => {
   const actions = serverActions()
 
   it('finds the actions', () => {
-    expect(actions.length).toBeGreaterThan(100)
+    expect(actions.length).toBeGreaterThan(700)
   })
 
-  it('every covered action has an en and a vi label, and vi differs from en', () => {
+  it('every action has an en and a vi label, and vi differs from en', () => {
     const missing = actions.filter(
       (a) =>
         !enCat[`auditLog.action.${a}`] ||
