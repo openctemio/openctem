@@ -107,7 +107,13 @@ for (const vp of [
         'Tools and sensors',
         'Integrations',
       ]) {
-        await expect(nav.getByText(label, { exact: true }), label).toBeVisible()
+        // A group heading is the rail's group label span (text-cap-m); a row can
+        // carry the same words (the Approvals group has an Approvals row), so
+        // match the heading by its own span, not by text alone.
+        await expect(
+          nav.locator('span.text-cap-m').getByText(label, { exact: true }),
+          label
+        ).toBeVisible()
       }
       // The old "Security" group heading is gone. The My account row named
       // "Security" is a link, so only a "Security" that is not a link counts.
