@@ -60,7 +60,10 @@ func TestSavedViewPages_EveryListRouteHasAKeyOrAnExclusion(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(web, "src", "app")); err != nil {
 		t.Skipf("the web console is not in this checkout: %v", err)
 	}
+	// Route groups such as (dashboard) and (account) add no URL segment, so
+	// every group of the web app is walked.
 	routes := webPageRoutes(t, filepath.Join(web, "src", "app", "(dashboard)"), "")
+	routes = append(routes, webPageRoutes(t, filepath.Join(web, "src", "app", "(account)"), "")...)
 	routes = append(routes, webPageRoutes(t, filepath.Join(web, "console", "src", "app", "(console)"), "console:")...)
 	if len(routes) < 150 {
 		t.Fatalf("found %d page routes; the walker lost the route tree", len(routes))
