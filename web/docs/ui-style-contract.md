@@ -172,6 +172,9 @@ Before a table scrolls sideways its columns give way: a column with a range (`mi
 `width`, such as Location) narrows toward its floor, in proportion to its range (`fit-columns.ts`), and a
 name column with a floor is sized by the floor and the room left, never by its text (a long title ends in
 its ellipsis). Widths hold the cell padding, so the visible columns' widths add up to the table.
+A second label beside the name in the same cell (an asset's type) is shown only when the cell has
+room for both (the cell is a size container): at the floor the name gets the width, and the label moves
+into the name's tooltip.
 
 ### Radii
 

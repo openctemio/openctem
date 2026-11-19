@@ -84,4 +84,26 @@ describe('AssetNameCell', () => {
     expect(c.querySelector('img')).toBeNull()
     expect(c.textContent).toContain('<img')
   })
+
+  it('shows the type beside the name only when the cell has room for both', () => {
+    // At the 200 px floor (1024 px screens) the type label took the name's
+    // width and cut it to a few letters; the cell is now a size container.
+    render(
+      <TooltipProvider>
+        <AssetNameCell
+          asset={asset({ name: 'payments-gateway.example.com' })}
+          href="/assets/a1"
+          onOpen={vi.fn()}
+          subtitle="Domain"
+        />
+      </TooltipProvider>
+    )
+    const cellEl = screen.getByTestId('asset-name-cell')
+    expect(cellEl.className).toContain('@container/name')
+    const type = cellEl.querySelector('[data-slot="asset-type-line"]')!
+    expect(type.textContent).toBe('Domain')
+    expect(type.className.split(' ')).toEqual(
+      expect.arrayContaining(['hidden', '@2xs/name:inline'])
+    )
+  })
 })
