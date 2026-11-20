@@ -27,8 +27,40 @@ function SelectGroup({ ...props }: React.ComponentProps<typeof SelectPrimitive.G
   return <SelectPrimitive.Group data-slot="select-group" {...props} />
 }
 
-function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  return <SelectPrimitive.Value data-slot="select-value" {...props} />
+/**
+ * The plain text parts of an option label, each in its own box. In the field
+ * that box ends in an ellipsis when the value is longer than the field
+ * (`SELECT_TRIGGER_CLASS`); in the open list it wraps. Text that sits directly
+ * in the value's flex box cannot end in an ellipsis (the browser cut it with
+ * no mark), so every string part of a label, a placeholder or a custom value
+ * goes through here.
+ */
+function textParts(node: React.ReactNode): React.ReactNode {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return <span data-slot="select-text">{node}</span>
+  }
+  if (Array.isArray(node)) {
+    return React.Children.map(node, (child) =>
+      typeof child === 'string' || typeof child === 'number' ? (
+        <span data-slot="select-text">{child}</span>
+      ) : (
+        child
+      )
+    )
+  }
+  return node
+}
+
+function SelectValue({
+  children,
+  placeholder,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Value>) {
+  return (
+    <SelectPrimitive.Value data-slot="select-value" placeholder={textParts(placeholder)} {...props}>
+      {textParts(children)}
+    </SelectPrimitive.Value>
+  )
 }
 
 /**
@@ -54,7 +86,7 @@ const SELECT_ICON_ONLY_BELOW = {
  * select has 16px text below 768px, like `Input` (one field look per form).
  */
 export const SELECT_TRIGGER_CLASS =
-  "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-body whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-control-field data-[size=sm]:h-control-dense max-md:data-[size=default]:h-control-touch max-md:data-[size=default]:text-base max-md:data-[size=sm]:h-control-touch-dense *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" // design-ok: text-base (16px) on phone fields keeps phones from zooming, as Input
+  "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-body whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-control-field data-[size=sm]:h-control-dense max-md:data-[size=default]:h-control-touch max-md:data-[size=default]:text-base max-md:data-[size=sm]:h-control-touch-dense *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:overflow-hidden **:data-[slot=select-text]:min-w-0 **:data-[slot=select-text]:truncate *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" // design-ok: text-base (16px) on phone fields keeps phones from zooming, as Input
 
 function SelectTrigger({
   className,
@@ -192,7 +224,7 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText>{textParts(children)}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   )
 }
