@@ -1018,10 +1018,12 @@ export default function UsersPage() {
             ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
             className="shrink-0"
           />
-          {/* Once: not under a name that is the address itself. */}
+          {/* Once: not under a name that is the address itself. One line with an ellipsis that gives
+              way to the name first (shrinks four times faster); wrapping it beside a long name made
+              a column of single letters and rows 90 px tall. The full address is in the name's title. */}
           {distinctAddress(row.original.name, row.original.email) && (
-            <span className="min-w-0 flex-1 truncate text-cap text-muted-foreground">
-              <BreakText>{row.original.email}</BreakText>
+            <span className="min-w-0 shrink-[4] truncate text-cap text-muted-foreground">
+              {row.original.email}
             </span>
           )}
         </div>
