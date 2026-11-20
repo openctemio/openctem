@@ -174,6 +174,15 @@ func (k *APIKey) Revoke(revokedBy ID) error {
 	return nil
 }
 
+// EffectiveStatus is the status as of now: an active key past its expiry
+// reads as expired. The stored row is not rewritten.
+func (k *APIKey) EffectiveStatus(now time.Time) Status {
+	if k.status == StatusActive && k.expiresAt != nil && !k.expiresAt.After(now) {
+		return StatusExpired
+	}
+	return k.status
+}
+
 // IsActive returns true if the key is active and not expired.
 func (k *APIKey) IsActive() bool {
 	if k.status != StatusActive {
