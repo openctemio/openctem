@@ -575,7 +575,11 @@ export default function AssetDetailPage() {
                 <DetailSectionList>
                   {/* What it is and what runs on it; hidden when nothing was collected. */}
                   <KeyFactsSection asset={asset} />
-                  <RiskSummarySection asset={asset} onViewFindings={() => setTab('findings')} />
+                  <RiskSummarySection
+                    asset={asset}
+                    numbersShown
+                    onViewFindings={() => setTab('findings')}
+                  />
                   <AssetNextSteps assetId={asset.id} />
                   {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
                   <AssetScanWindowCard assetId={asset.id} />
