@@ -37,6 +37,7 @@ import { ErrorState } from '@/features/shared/components/error-state'
 import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
 import { endpoints } from '@/lib/api/endpoints'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { AssetTypeIcon, getAssetTypeLabel } from '../../lib/asset-type-icon'
 import {
@@ -647,18 +648,24 @@ function AssetName({
         <BreakText>{a.name}</BreakText>
       </span>
     )
+  // A link, not a button: it opens a page (new tab with Ctrl/middle click
+  // works) and reads as text beside the row's menu button.
   return (
-    <button
-      type="button"
+    <a
+      href={safeHref(`/assets/${encodeURIComponent(a.id)}`)}
       className={cn(
         'min-w-0 break-words rounded text-left underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         className
       )}
-      onClick={() => onNavigateToAsset(a.id, a.name)}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        e.preventDefault()
+        onNavigateToAsset(a.id, a.name)
+      }}
       aria-label={t('assets.related.open', 'Open {name}', { name: a.name })}
     >
       {a.name}
-    </button>
+    </a>
   )
 }
 
