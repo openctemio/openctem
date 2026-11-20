@@ -169,7 +169,7 @@ func TestSettingsLists_ShapeAndGates_DB(t *testing.T) {
 			called = true
 			hf(w, r)
 		}))
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant)
 		ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
 		rec := httptest.NewRecorder()
