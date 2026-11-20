@@ -28,6 +28,18 @@ vi.mock('../../api/use-tool-sources', () => ({
   removeToolSourceKey: (...a: unknown[]) => removeKey(...a),
 }))
 
+// A row with two actions has a "..." menu; a row with one shows that action as
+// its button (the shared action menu), so the lone action is clicked directly.
+async function pick(source: string, item: string) {
+  const menu = screen.queryByRole('button', { name: `Actions for ${source}` })
+  if (!menu) {
+    await userEvent.click(screen.getByRole('button', { name: item }))
+    return
+  }
+  await userEvent.click(menu)
+  await userEvent.click(await screen.findByRole('menuitem', { name: item }))
+}
+
 const ALL = ['scans:secret_store:read', 'scans:secret_store:write', 'scans:secret_store:delete']
 
 beforeEach(() => {
@@ -61,13 +73,21 @@ describe('Tool source keys', () => {
     render(<ToolSourcesSection />)
     expect(screen.getByText('•••• ab12')).toBeInTheDocument()
     expect(screen.getByText('Not set')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Rotate key' })).toBeInTheDocument()
+    expect(screen.getByText('Set')).toBeInTheDocument()
+  })
+
+  it('offers Rotate key for a set key and Set key otherwise, in the row menu', async () => {
+    render(<ToolSourcesSection />)
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for SecurityTrails' }))
+    expect(await screen.findByRole('menuitem', { name: 'Rotate key' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Remove key' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
     expect(screen.getByRole('button', { name: 'Set key' })).toBeInTheDocument()
   })
 
   it('sets a key, sends the value once and never renders it', async () => {
     render(<ToolSourcesSection />)
-    await userEvent.click(screen.getByRole('button', { name: 'Rotate key' }))
+    await pick('SecurityTrails', 'Rotate key')
     const input = screen.getByLabelText('Key')
     expect(input).toHaveAttribute('type', 'password')
     expect(input).toHaveAttribute('autocomplete', 'new-password')
@@ -81,7 +101,7 @@ describe('Tool source keys', () => {
 
   it('validates a pair and shows its format hint without calling the API', async () => {
     render(<ToolSourcesSection />)
-    await userEvent.click(screen.getByRole('button', { name: 'Set key' }))
+    await pick('Censys', 'Set key')
     expect(screen.getByText('Format: TOKEN:ORG_ID')).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('Key'), 'nocolon')
     await userEvent.click(screen.getByRole('button', { name: 'Save key' }))
@@ -92,7 +112,7 @@ describe('Tool source keys', () => {
   it('reports a failed save (for example a step-up refusal) and keeps the dialog', async () => {
     setKey.mockRejectedValueOnce(new Error('Sign in again'))
     render(<ToolSourcesSection />)
-    await userEvent.click(screen.getByRole('button', { name: 'Rotate key' }))
+    await pick('SecurityTrails', 'Rotate key')
     await userEvent.type(screen.getByLabelText('Key'), 'abcdefgh1')
     await userEvent.click(screen.getByRole('button', { name: 'Save key' }))
     await waitFor(() => expect(toastError).toHaveBeenCalled())
@@ -109,7 +129,7 @@ describe('Tool source keys', () => {
 
   it('removes a key after confirmation', async () => {
     render(<ToolSourcesSection />)
-    await userEvent.click(screen.getByRole('button', { name: 'Remove key' }))
+    await pick('SecurityTrails', 'Remove key')
     await userEvent.click(screen.getAllByRole('button', { name: 'Remove key' }).at(-1)!)
     await waitFor(() => expect(removeKey).toHaveBeenCalledWith('securitytrails'))
   })
@@ -117,9 +137,7 @@ describe('Tool source keys', () => {
   it('hides write actions without write and remove without delete', () => {
     perms = ['scans:secret_store:read']
     render(<ToolSourcesSection />)
-    expect(screen.queryByRole('button', { name: 'Rotate key' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Set key' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for/ })).not.toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Use the key for SecurityTrails' })).toBeDisabled()
   })
 
@@ -128,13 +146,13 @@ describe('Tool source keys', () => {
     render(<ToolSourcesSection />)
     expect(screen.getByRole('button', { name: 'Rotate key' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for/ })).not.toBeInTheDocument()
   })
 
   it('hides every change from a member who holds the permissions (the API needs an owner or administrator)', () => {
     admin = false
     render(<ToolSourcesSection />)
-    expect(screen.queryByRole('button', { name: 'Rotate key' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for/ })).not.toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Use the key for SecurityTrails' })).toBeDisabled()
   })
 })
