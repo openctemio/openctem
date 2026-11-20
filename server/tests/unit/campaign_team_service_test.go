@@ -378,6 +378,20 @@ func (m *teamMockMemberRepo) BatchSummarizeTeams(_ context.Context, _ string, _ 
 	return nil, nil
 }
 
+func (m *teamMockMemberRepo) ListByCampaignUsers(_ context.Context, _, _ string, ids []string) ([]*pentest.CampaignMember, error) {
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out []*pentest.CampaignMember
+	for _, mem := range m.listByCampaign {
+		if want[mem.UserID().String()] {
+			out = append(out, mem)
+		}
+	}
+	return out, nil
+}
+
 func (m *teamMockMemberRepo) BatchUserRoles(_ context.Context, _, _ string, _ []string) (map[string]pentest.CampaignRole, error) {
 	return nil, nil
 }
