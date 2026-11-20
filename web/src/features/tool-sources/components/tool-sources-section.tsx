@@ -1,25 +1,26 @@
 'use client'
 
-import { useState } from 'react'
-import { KeyRound } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { KeyRound, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
-import { Button } from '@/components/ui/button'
+import { HealthStatus } from '@/components/ui/health-status'
 import { Switch } from '@/components/ui/switch'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { EmptyState, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
+import {
+  DataTable,
+  DataTableColumnHeader,
+  EmptyState,
+  RelativeTime,
+  SettingsPage,
+} from '@/features/shared'
+import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { removeToolSourceKey, setToolSourceEnabled, useToolSources } from '../api/use-tool-sources'
 import type { ToolSource } from '../types'
 import { SetKeyDialog } from './set-key-dialog'
@@ -35,7 +36,7 @@ export function ToolSourcesSection() {
   const [editing, setEditing] = useState<ToolSource | null>(null)
   const [removing, setRemoving] = useState<ToolSource | null>(null)
   const [busy, setBusy] = useState(false)
-  const sources = data?.sources ?? []
+  const sources = useMemo(() => data?.sources ?? [], [data])
 
   const toggle = async (s: ToolSource, enabled: boolean) => {
     try {
@@ -61,127 +62,222 @@ export function ToolSourcesSection() {
     }
   }
 
-  let body: React.ReactNode
-  if (error) {
-    body = (
-      <ErrorState
-        title={t('toolSources.errorTitle', 'tool source keys')}
-        error={error}
-        onRetry={() => void mutate()}
-      />
+  const nameLabel = t('toolSources.col.source', 'Source')
+  const toolsLabel = t('toolSources.col.tools', 'Used by')
+  const keyLabel = t('toolSources.col.key', 'Key')
+  const updatedLabel = t('toolSources.col.updated', 'Updated')
+  const lastUsedLabel = t('toolSources.col.lastUsed', 'Last used')
+  const enabledLabel = t('toolSources.col.enabled', 'Enabled')
+
+  const keyStatus = (s: ToolSource) =>
+    s.key?.set ? (
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <HealthStatus state="ok" label={t('toolSources.keySet', 'Set')} />
+        <span className="font-mono text-cap text-muted-foreground">{`•••• ${s.key.last4 ?? ''}`}</span>
+      </span>
+    ) : (
+      <HealthStatus state="off" label={t('toolSources.notSet', 'Not set')} />
     )
-  } else if (isLoading) {
-    body = <TableSkeleton rows={4} />
-  } else if (sources.length === 0) {
-    body = (
-      <EmptyState
-        icon={KeyRound}
-        title={t('toolSources.empty.title', 'No sources')}
-        description={t('toolSources.empty.desc', 'No scan tool source accepts a key yet.')}
-      />
+
+  const lastUsed = (s: ToolSource) =>
+    s.key?.set && s.key.last_used_at ? (
+      <RelativeTime date={s.key.last_used_at} />
+    ) : (
+      <span className="text-muted-foreground">{t('toolSources.neverUsed', 'Never')}</span>
     )
-  } else {
-    body = (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('toolSources.col.source', 'Source')}</TableHead>
-            <TableHead>{t('toolSources.col.tools', 'Used by')}</TableHead>
-            <TableHead>{t('toolSources.col.key', 'Key')}</TableHead>
-            <TableHead>{t('toolSources.col.updated', 'Updated')}</TableHead>
-            <TableHead>{t('toolSources.col.lastUsed', 'Last used')}</TableHead>
-            <TableHead>{t('toolSources.col.enabled', 'Enabled')}</TableHead>
-            <TableHead className="text-right">
-              <span className="sr-only">{t('toolSources.col.actions', 'Actions')}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sources.map((s) => {
-            const key = s.key?.set ? s.key : null
-            return (
-              <TableRow key={s.id}>
-                <TableCell>
-                  <div className="font-medium">{s.name}</div>
-                </TableCell>
-                <TableCell className="text-sm">{s.tools.join(', ')}</TableCell>
-                <TableCell className="text-sm">
-                  {key ? (
-                    <span>{`•••• ${key.last4 ?? ''}`}</span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('toolSources.notSet', 'Not set')}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {key?.updated_at ? (
-                    <>
-                      <RelativeTime date={key.updated_at} />
-                      {key.updated_by_name && (
-                        <div>
-                          {t('toolSources.updatedBy', 'by {name}', { name: key.updated_by_name })}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    '—'
-                  )}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {key?.last_used_at ? (
-                    <RelativeTime date={key.last_used_at} />
-                  ) : (
-                    t('toolSources.neverUsed', 'Never')
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Switch
-                    checked={!!key?.enabled}
-                    disabled={!key || !canWrite}
-                    onCheckedChange={(v) => void toggle(s, v)}
-                    aria-label={t('toolSources.enableAria', 'Use the key for {name}', {
-                      name: s.name,
-                    })}
-                  />
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    {canWrite && (
-                      <Button size="sm" variant="outline" onClick={() => setEditing(s)}>
-                        {key
-                          ? t('toolSources.rotate', 'Rotate key')
-                          : t('toolSources.set', 'Set key')}
-                      </Button>
-                    )}
-                    {canDelete && key && (
-                      <Button size="sm" variant="outline" onClick={() => setRemoving(s)}>
-                        {t('toolSources.remove', 'Remove key')}
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+
+  const enableSwitch = (s: ToolSource) => (
+    <Switch
+      checked={!!s.key?.set && !!s.key.enabled}
+      disabled={!s.key?.set || !canWrite}
+      onCheckedChange={(v) => void toggle(s, v)}
+      aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
+    />
+  )
+
+  const rowMenu = (s: ToolSource) => {
+    const hasKey = !!s.key?.set
+    const actions = [
+      ...(canWrite
+        ? [
+            {
+              label: hasKey
+                ? t('toolSources.rotate', 'Rotate key')
+                : t('toolSources.set', 'Set key'),
+              icon: Pencil,
+              onClick: () => setEditing(s),
+            },
+          ]
+        : []),
+      ...(canDelete && hasKey
+        ? [
+            {
+              label: t('toolSources.remove', 'Remove key'),
+              icon: Trash2,
+              destructive: true,
+              separatorBefore: canWrite,
+              onClick: () => setRemoving(s),
+            },
+          ]
+        : []),
+    ]
+    if (actions.length === 0) return null
+    return (
+      <DataTableRowActions
+        title={s.name}
+        label={t('toolSources.actionsFor', 'Actions for {name}', { name: s.name })}
+        actions={actions}
+      />
     )
   }
 
-  return (
-    <PageStack>
-      <PageHeader
-        title={t('toolSources.title', 'Tool source keys')}
-        description={t(
-          'toolSources.desc',
-          'Keys are encrypted and never shown again. Only your organization’s scans use them, and a key reaches the sensor only for the task that needs it.'
-        )}
-      >
-        <RefreshButton onClick={() => void mutate()} loading={isLoading} />
-      </PageHeader>
+  const columns = useMemo<ColumnDef<ToolSource>[]>(
+    () => [
+      {
+        id: 'name',
+        accessorFn: (s) => s.name,
+        meta: { kind: 'name', pin: 'start', minWidth: 160, label: nameLabel },
+        enableHiding: false,
+        enableSorting: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title={nameLabel} />,
+        cell: ({ row }) => (
+          <span className="block truncate font-medium">
+            {toDisplayText(row.original.name, 200)}
+          </span>
+        ),
+      },
+      {
+        id: 'tools',
+        meta: { kind: 'tags', minWidth: 120, label: toolsLabel },
+        enableSorting: false,
+        header: toolsLabel,
+        cell: ({ row }) => (
+          <span className="block truncate text-sm" title={row.original.tools.join(', ')}>
+            {row.original.tools.join(', ')}
+          </span>
+        ),
+      },
+      {
+        id: 'key',
+        meta: { kind: 'masked', width: 160, label: keyLabel },
+        enableSorting: false,
+        header: keyLabel,
+        cell: ({ row }) => keyStatus(row.original),
+      },
+      {
+        id: 'updated',
+        // Dropped first when the frame is narrow: a column is never cut or scrolled.
+        meta: { kind: 'text', minWidth: 120, maxWidth: 200, hideBelow: 1000, label: updatedLabel },
+        enableSorting: false,
+        header: updatedLabel,
+        cell: ({ row }) => {
+          const key = row.original.key
+          if (!key?.set || !key.updated_at) return <span className="text-muted-foreground">—</span>
+          return (
+            <div className="min-w-0 text-sm text-muted-foreground">
+              <RelativeTime date={key.updated_at} />
+              {key.updated_by_name && (
+                <div className="truncate" title={key.updated_by_name}>
+                  {t('toolSources.updatedBy', 'by {name}', { name: key.updated_by_name })}
+                </div>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        id: 'lastUsed',
+        meta: { kind: 'datetime-recent', width: 120, hideBelow: 780, label: lastUsedLabel },
+        enableSorting: false,
+        header: lastUsedLabel,
+        cell: ({ row }) => lastUsed(row.original),
+      },
+      {
+        id: 'enabled',
+        meta: { kind: 'status', width: 80, label: enabledLabel },
+        enableSorting: false,
+        header: enabledLabel,
+        cell: ({ row }) => enableSwitch(row.original),
+      },
+      {
+        id: 'actions',
+        meta: { kind: 'actions' },
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => rowMenu(row.original),
+      },
+    ],
+    // The cell helpers close over t, the permissions and the page's handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      t,
+      canWrite,
+      canDelete,
+      nameLabel,
+      toolsLabel,
+      keyLabel,
+      updatedLabel,
+      lastUsedLabel,
+      enabledLabel,
+    ]
+  )
 
-      {body}
+  return (
+    <SettingsPage
+      wide
+      title={t('toolSources.title', 'Tool source keys')}
+      description={t(
+        'toolSources.desc',
+        'Keys are encrypted and never shown again. Only your organization’s scans use them, and a key reaches the sensor only for the task that needs it.'
+      )}
+    >
+      {/* The page re-reads on focus; a failed read shows Retry in the list. */}
+      <DataTable
+        columns={columns}
+        data={sources}
+        getRowId={(s) => s.id}
+        error={error}
+        onRetry={() => void mutate()}
+        errorTitle={t('toolSources.errorTitle', 'tool source keys')}
+        isLoading={isLoading && !data}
+        showToolbar={false}
+        showSearch={false}
+        showColumnToggle={false}
+        showPagination={false}
+        pageSize={500}
+        caption={t('toolSources.title', 'Tool source keys')}
+        mobileRow={(s) => {
+          const tools = s.tools.join(', ')
+          return (
+            <PersonPhoneCard
+              title={toDisplayText(s.name, 200)}
+              address={t('toolSources.usedBy', 'Used by {tools}', { tools })}
+              menu={
+                <div className="flex items-center gap-1">
+                  {enableSwitch(s)}
+                  {rowMenu(s)}
+                </div>
+              }
+              facts={
+                <>
+                  {keyStatus(s)}
+                  <span className="text-cap text-muted-foreground">
+                    {lastUsedLabel} {lastUsed(s)}
+                  </span>
+                </>
+              }
+            />
+          )
+        }}
+        emptyState={
+          <EmptyState
+            icon={KeyRound}
+            title={t('toolSources.empty.title', 'No sources')}
+            description={t('toolSources.empty.desc', 'No scan tool source accepts a key yet.')}
+            card={false}
+          />
+        }
+      />
 
       {editing && (
         <SetKeyDialog
@@ -207,6 +303,6 @@ export function ToolSourcesSection() {
         isLoading={busy}
         handleConfirm={confirmRemove}
       />
-    </PageStack>
+    </SettingsPage>
   )
 }
