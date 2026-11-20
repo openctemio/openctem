@@ -25,7 +25,6 @@
   "src/app/(dashboard)/(validation)/controls/page.tsx": 6,
   "src/app/(dashboard)/(validation)/pentest/campaigns/page.tsx": 8,
   "src/app/(dashboard)/insights/executive/page.tsx": 6,
-  "src/app/(dashboard)/settings/audit-log/page.tsx": 6,
   "src/app/(dashboard)/settings/integrations/notifications/history/page.tsx": 5,
   "src/app/(dashboard)/settings/integrations/notifications/outbox/page.tsx": 6,
   "src/app/(dashboard)/settings/integrations/notifications/page.tsx": 7,

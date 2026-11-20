@@ -32,7 +32,7 @@ const PAGES: readonly { route: string; filter: boolean | 'phone' }[] = [
   { route: '/sensors', filter: 'phone' },
   { route: '/scans', filter: 'phone' },
   { route: '/assets/groups', filter: 'phone' },
-  { route: '/settings/audit-log', filter: false },
+  { route: '/settings/audit-log', filter: 'phone' },
   { route: '/remediation/tasks', filter: false },
   { route: '/credentials', filter: 'phone' },
 ]
