@@ -548,7 +548,8 @@ reference.
   - the title line: the row's name (the column of kind `name`, else the first
     column; never guessed from the values), up to two lines whatever width the
     table cell set for itself, then the status chip (the first column of kind
-    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    `status` or `status-edit` the table keeps at every width, i.e. without
+    `hideBelow`; else the first one), the row's checkbox and its row menu. Nothing
     wraps under the title: a status cell too wide for its place gets a line of
     its own under the title, and an actions cell wider than one icon button
     gets one trailing line at the end of the card;
@@ -559,6 +560,10 @@ reference.
     say something. A value that draws nothing or only a dash, or repeats the
     title, is left out (never a label over an empty value), so a later column
     takes its place. "0" is a value and stays; a switch is a value too.
+    Key figures (columns of kind `number`, `risk`, `severity`, `priority`,
+    `due`) take the two places before the other columns, so a count such as
+    "Findings 0" is never pushed out by a descriptive column before it; the
+    fields are still shown in column order.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
