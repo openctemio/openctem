@@ -34,7 +34,6 @@
   "src/app/(dashboard)/settings/integrations/siem/page.tsx": 3,
   "src/app/(dashboard)/settings/integrations/ticketing/page.tsx": 6,
   "src/app/(dashboard)/settings/pentest/templates/page.tsx": 7,
-  "src/app/(dashboard)/settings/roles/page.tsx": 5,
   "src/app/(dashboard)/settings/scim/page.tsx": 6,
   "src/features/assets/components/resolved-ports-section.tsx": 4,
   "src/features/attack-surface/components/easm-certificates.tsx": 6,

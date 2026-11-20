@@ -99,7 +99,7 @@ describe('Access settings (vi)', () => {
     expect(screen.getByText('Quyền truy cập dữ liệu')).toBeInTheDocument()
     expect(screen.getByText('Theo nhóm')).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Tìm vai trò' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Loại vai trò' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Thêm bộ lọc/ })).toBeInTheDocument()
     expect(screen.queryByText('Create role')).toBeNull()
     expect(screen.queryByText('Team-based')).toBeNull()
   })
