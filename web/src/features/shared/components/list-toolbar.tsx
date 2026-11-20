@@ -1,10 +1,12 @@
 'use client'
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
-import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { ListSearch, type ListSearchProps, type ListSearchStatusSlot } from './list-search'
-import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
+import { FilterButton, FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
+import { FilterSheet, claimFilterSheetTokens, useFilterSheetTokensHost } from './filter-sheet'
 
 /**
  * The one toolbar above a list (research/244 §2.4, research/267). `DataTable`
@@ -46,19 +48,21 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  * row is a size container: controls switch their labels to icons by the
  * toolbar's own width (`@xl/toolbar:`); the view controls (Views, Group, Display) show their labels from a 64rem toolbar (`iconOnlyBelow="@5xl/toolbar"`).
  *
- * Below 28rem (a phone) the toolbar is two lines, never more, laid out on a
- * grid: the search with the `end` icon actions (Views, Group) at the end of
- * its line; the second starts with the `start` tokens, the chips row after
- * them (without a search the tokens start the first line instead). Every line
- * starts with its content: no line holds controls pushed to its end alone. A
- * second line with nothing to draw (no chip, no token shown on a phone) takes
- * no room, so a list never shows a line holding only Views. The first chip
- * opens the second line, or takes the room after the tokens when they already
- * hold it; it never moves a token or an action. Nothing
- * wraps: tokens that do not fit scroll sideways in their strip (with a fade on
- * an edge that hides more), and so do the chips (`FilterChipsRow`). The search
- * keeps at least 12rem beside the actions. The layout is the same with and
- * without a chips row (the toolbar always sits in its region).
+ * Below 28rem (a phone) the list comes first: the `start` tokens are not drawn
+ * in the toolbar, where they would sit in a sideways strip that hides what
+ * does not fit. One Filters button (with the count of tokens that filter)
+ * holds them: joined to the search, or alone at the start of the first line
+ * without a search. It opens the list's filter sheet (`filterToggle`: the
+ * tokens show at the top of the facet sheet) or, without a facet panel, a
+ * sheet of the tokens. The tokens that filter (a chosen value, a pressed
+ * toggle) stay drawn on the second line and wrap onto lines, never scroll, so
+ * every filter in force is seen and cleared in place. The first line holds the
+ * search (or the Filters button) and the `end` icon actions (Views, Group) at
+ * its end; the page's chips row (`below`) follows. Every line starts with its
+ * content: no line holds controls pushed to its end alone, and a line with
+ * nothing to draw takes no room. The search keeps at least 12rem beside the
+ * actions. The layout is the same with and without a chips row (the toolbar
+ * always sits in its region).
  *
  * Keyboard (the first toolbar on the page answers): `/` focuses the search;
  * `f` opens the filters (the filter trigger) on a list without "Add filter",
@@ -261,26 +265,51 @@ const PHONE = {
   layout:
     '@max-md/toolbar:grid @max-md/toolbar:grid-cols-[auto_minmax(0,1fr)_auto] @max-md/toolbar:gap-0',
   lead: '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-3 @max-md/toolbar:row-start-1 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:gap-2',
-  // The strip's 4px padding keeps focus rings inside its scroll box; its top
-  // margin makes the 8px over line 2 with it.
+  // Line 2: only the tokens that filter (a chosen value, a pressed toggle),
+  // wrapping onto lines, never a sideways strip; the others are in the
+  // Filters sheet. Pure CSS, so the server's first paint is the final one.
+  // The margin is the drawn tokens', so a line of hidden tokens takes no room.
   tokens:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-1 @max-md/toolbar:-mb-1 @max-md/toolbar:justify-self-start @max-md/toolbar:max-w-[60cqw]',
-  // No search or trigger: the tokens start the first line, the end group ends it.
-  tokensAlone:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-1 @max-md/toolbar:-my-1 @max-md/toolbar:justify-self-start @max-md/toolbar:max-w-[60cqw]',
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:flex-wrap @max-md/toolbar:items-center @max-md/toolbar:gap-x-2 @max-md/toolbar:*:mt-2 @max-md/toolbar:*:max-w-full @max-md/toolbar:[&>*:not([data-filtered=true],[aria-pressed=true]):not(:has([data-filtered=true],[aria-pressed=true]))]:hidden',
   end: '@max-md/toolbar:col-start-3 @max-md/toolbar:row-start-1 @max-md/toolbar:ms-2 @max-md/toolbar:max-w-[calc(100cqw-12rem)]',
-  belowBesideTokens:
-    '@max-md/toolbar:col-start-2 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-start-1 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-0',
-  belowAlone:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2',
+  // The page's chips row: line 2, or line 3 under the token chips.
+  below:
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens]:not([data-empty])]/toolbar:row-start-3',
   // Query mode: the field takes the whole first line; the end group steps
   // down to the second line's end (the tokens, inert in this mode, are out).
   leadQuery: '@max-md/toolbar:col-end-4',
   endQuery:
     '@max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-0 @max-md/toolbar:justify-self-end',
-  tokensQuery: '@max-md/toolbar:hidden',
   status:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-3 @max-md/toolbar:mt-2',
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-4 @max-md/toolbar:mt-2',
+}
+
+/** A token that filters: a select with a chosen value, a pressed on/off token. */
+const FILTERING = '[data-filtered="true"], [aria-pressed="true"]'
+
+/**
+ * How many tokens filter (the Filters button's count on a phone), read from
+ * the tokens group, so every token that carries the kit's marks counts, and
+ * kept in step by an observer (a value chosen in the sheet updates it).
+ */
+function useFilteringCount(group: React.RefObject<HTMLElement | null>, enabled: boolean) {
+  const [count, setCount] = React.useState(0)
+  React.useLayoutEffect(() => {
+    const root = group.current
+    if (!enabled || !root) return
+    const read = () => setCount(root.querySelectorAll(FILTERING).length)
+    read()
+    if (typeof MutationObserver === 'undefined') return
+    const mo = new MutationObserver(read)
+    mo.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['aria-pressed', 'data-filtered'],
+    })
+    return () => mo.disconnect()
+  }, [group, enabled])
+  return count
 }
 
 export function ListToolbar({
@@ -292,7 +321,40 @@ export function ListToolbar({
   below,
   className,
 }: ListToolbarProps) {
-  const filter = filterToggle ? <FilterPanelToggle {...filterToggle} /> : filterProp
+  const { t } = useTranslation()
+  const ownerId = React.useId()
+  // A phone holds the tokens in a sheet: the facet sheet when the list has a
+  // panel (the toolbar claims its token host when its button opens it), else
+  // a sheet of the tokens opened by the toolbar's own Filters button.
+  const phoneSheet = !!start && !filterToggle && !filterProp
+  const [sheetOpen, setSheetOpen] = React.useState(false)
+  const facetHost = useFilterSheetTokensHost(ownerId)
+  const onOpenFacetSheet = filterToggle?.onOpenSheet
+  const toggle = React.useMemo(
+    () =>
+      filterToggle && start
+        ? {
+            ...filterToggle,
+            onOpenSheet: () => {
+              claimFilterSheetTokens(ownerId)
+              onOpenFacetSheet?.()
+            },
+          }
+        : filterToggle,
+    [filterToggle, start, ownerId, onOpenFacetSheet]
+  )
+  const tokensRef = React.useRef<HTMLDivElement>(null)
+  const filtering = useFilteringCount(tokensRef, phoneSheet)
+  const phoneFilter = phoneSheet ? (
+    <FilterButton
+      className="@md/toolbar:hidden"
+      data-phone-filters=""
+      onClick={() => setSheetOpen(true)}
+      aria-haspopup="dialog"
+      activeCount={filtering}
+    />
+  ) : null
+  const filter = toggle ? <FilterPanelToggle {...toggle} /> : (filterProp ?? phoneFilter)
   const ref = React.useRef<HTMLDivElement>(null)
   useListShortcuts(ref)
 
@@ -313,8 +375,6 @@ export function ListToolbar({
   ) : (
     filter
   )
-  const tokensRef = React.useRef<HTMLDivElement>(null)
-  useTabStripScroll(tokensRef, !!start)
   const startRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
   const fold = useToolbarFold(ref, startRef, endRef)
@@ -365,11 +425,7 @@ export function ListToolbar({
             </div>
           ) : null}
           {start ? (
-            // A phone keeps the tokens on the second line in a strip that
-            // scrolls sideways instead of wrapping (edge fade when more is
-            // hidden), at the start of the line (Add filter stays with them),
-            // at most 60% of the line: the chips follow them, so a chip
-            // appearing moves no token.
+            // A phone draws no tokens here: they are in the Filters sheet.
             // In Query mode the text owns the filter: the tokens stay in their
             // place, dimmed and inert (no focus, no click, no `f`), so the
             // switch moves nothing (the end group never re-flows up a line).
@@ -380,12 +436,10 @@ export function ListToolbar({
               inert={top || undefined}
               className={cn(
                 top && '*:opacity-50',
-                'contents @max-md/toolbar:flex @max-md/toolbar:flex-nowrap @max-md/toolbar:items-center @max-md/toolbar:gap-2 @max-md/toolbar:*:max-w-none @max-md/toolbar:*:shrink-0',
-                // The padding keeps focus rings inside the scroll box.
-                'no-scrollbar @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
-                EDGE_FADE_X_CLASS,
-                lead ? PHONE.tokens : PHONE.tokensAlone,
-                top && PHONE.tokensQuery,
+                'contents',
+                PHONE.tokens,
+                // Query mode: the text owns the filter, the phone draws no token.
+                top && '@max-md/toolbar:hidden',
                 EMPTY_GROUP_CLASS
               )}
             >
@@ -467,7 +521,7 @@ export function ListToolbar({
               'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden',
               // A phone: the start of the second line; the whole line when no
               // token is drawn there.
-              lead && start ? PHONE.belowBesideTokens : PHONE.belowAlone,
+              PHONE.below,
               // With a problem shown the row is as wide as what it holds (the
               // leading chip, at most half the line as before) and the problem
               // takes the rest of the line: the list does not move.
@@ -480,6 +534,18 @@ export function ListToolbar({
         ) : null}
         {status}
       </div>
+      {phoneSheet ? (
+        <FilterSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          title={t('common.filters', 'Filters')}
+        >
+          <div data-slot="list-toolbar-sheet-tokens" className="flex flex-wrap items-center gap-2">
+            {start}
+          </div>
+        </FilterSheet>
+      ) : null}
+      {facetHost && start ? createPortal(start, facetHost) : null}
     </div>
   )
 }

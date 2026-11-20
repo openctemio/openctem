@@ -12,9 +12,12 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   2. the second line starts with the filter tokens, the chips after them
  *      (owner report 2026-11-20: tokens pushed to the end of an otherwise
  *      empty line), one height and one centre line, nothing on a third line;
- *   3. tokens and chips that do not fit scroll sideways in their strip, and
- *      a strip fades at its end exactly when more is hidden past it; no chip
- *      folds away into "+N more";
+ *   3. no filter token sits in a sideways strip (owner report 2026-11-20,
+ *      /assets Activity: "Last 7 d..." cut at the strip's edge read as hidden
+ *      buttons): the tokens are in the Filters sheet, and the ones that filter
+ *      stay drawn on the second line; chips that do not fit scroll sideways
+ *      in their strip, which fades at its end exactly when more is hidden
+ *      past it; no chip folds away into "+N more";
  *   4. nothing overlaps, nothing sticks out of the viewport, the page does
  *      not scroll sideways.
  * On /findings the seed has no informational findings, so the quick views and

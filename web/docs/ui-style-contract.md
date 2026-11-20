@@ -521,13 +521,28 @@ reference.
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
-  - on a phone (a toolbar under 28rem) the end actions (Views, Group, Export)
-    end the search's line and the search keeps at least 12rem; the second
-    line starts with the filter tokens and the chips follow them (a list
-    without a search starts its first line with the tokens, the end actions
-    at its end), and takes no room while it draws nothing. Every line starts
-    with its content, left to right: no list shows a line holding only Views,
-    or tokens pushed to the end of an empty line. A labelled end action (Export CSV) is `<ToolbarAction>` from
+  - on a phone (a toolbar under 28rem) the list comes first and no control
+    sits unseen behind a sideways scroll: the filter tokens are not drawn in
+    the toolbar. One Filters button (`FilterButton`, its count the tokens that
+    filter: a `FilterSelect` with a chosen value, a pressed on/off token) holds
+    them, joined to the search, or alone at the start of the first line on a
+    list without a search. On a list with a facet panel it is the panel's
+    sheet button and the tokens show at the top of that sheet
+    (`FilterSheet`'s token host); otherwise `ListToolbar` draws the button and
+    a sheet of the tokens itself. The tokens that filter stay drawn on the
+    second line and wrap onto lines (never a strip that scrolls), so every
+    filter in force is seen and cleared in place; the chips row follows them.
+    The end actions (Views, Group, Export, Refresh) end the first line and the
+    search keeps at least 12rem. A line that draws nothing takes no room.
+    Every line starts with its content, left to right: no list shows a line
+    holding only Views, or tokens pushed to the end of an empty line.
+    Wrapped tokens rather than a sheet were weighed and refused: a list with
+    three or four tokens then opens with three toolbar lines above its first
+    card (#4193 keeps a phone toolbar to two), and the design board's phone
+    lists show a Filters button with its count beside the search.
+  - Refresh is an end action of the toolbar (`toolbarEnd`), never the one
+    control of a list's title row: on a phone that row would hold an icon
+    alone at its end. A list that refreshes on its own needs no Refresh. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so it fits beside the search.
     In Query mode on a phone the field takes the whole first line (its text
