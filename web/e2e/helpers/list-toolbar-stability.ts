@@ -384,9 +384,11 @@ function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
   const tokensWrap = belowField(a).length > 0 || belowField(b).length > 0
   for (const [k, v] of Object.entries(a.controls)) {
     if (stepsDown(k)) continue
+    // Wrapped tokens flow: one that goes shifts the ones after it up a place.
+    if (tokensWrap && k.startsWith('token')) continue
     const w = b.controls[k]
     if (!w) {
-      if (!(tokensWrap && k.startsWith('token'))) problems.push(`${k} disappeared`)
+      problems.push(`${k} disappeared`)
       continue
     }
     if (v.x !== w.x || v.y !== w.y) problems.push(`${k} moved ${w.x - v.x},${w.y - v.y}`)
