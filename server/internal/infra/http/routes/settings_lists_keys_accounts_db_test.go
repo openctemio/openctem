@@ -78,7 +78,7 @@ func TestAPIKeysList_ExpiredOwnerAndFilter_DB(t *testing.T) {
 	hd := handler.NewAPIKeyHandler(svc, validator.New(), log)
 
 	list := func(tenant shared.ID, userID string, admin bool, q string) (int, []keyRow) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/api-keys?"+q, nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/api-keys?"+q, nil)
 		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
 		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
 		ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
@@ -190,7 +190,7 @@ func TestServiceAccountsList_RolesTeamsAIAgent_DB(t *testing.T) {
 	hd := handler.NewServiceAccountHandler(accesscontrol.NewServiceAccountService(repo, nil, log), nil, validator.New(), log)
 
 	list := func(tenant string) []map[string]any {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/service-accounts", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/service-accounts", nil)
 		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant)
 		rec := httptest.NewRecorder()
 		hd.List(rec, req.WithContext(ctx))
