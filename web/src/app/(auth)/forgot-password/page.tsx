@@ -7,7 +7,7 @@ import Link from '@/components/link'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -59,19 +59,20 @@ export default function ForgotPasswordPage() {
   if (emailUnavailable) {
     return (
       <EntryCard>
-        <EntryHeader
+        <EntryHeader title={t('auth.forgot.title', 'Forgot password')} />
+        <EntryBanner
+          tone="warn"
+          role="note"
           title={t('auth.forgot.noEmailTitle', 'Password reset by email is not available')}
-          description={t(
+        >
+          {t(
             'auth.forgot.noEmailBody',
             'This server cannot send email. Ask your administrator for a reset link.'
           )}
-        />
+        </EntryBanner>
         <EntryActions>
-          <Button variant="outline" asChild>
-            <Link href="/login">
-              <ArrowLeft aria-hidden className="size-4" />
-              {t('auth.common.backToSignIn', 'Back to sign in')}
-            </Link>
+          <Button variant="signal" asChild>
+            <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
           </Button>
         </EntryActions>
       </EntryCard>
@@ -99,11 +100,8 @@ export default function ForgotPasswordPage() {
           }
         />
         <EntryActions>
-          <Button variant="outline" asChild>
-            <Link href="/login">
-              <ArrowLeft aria-hidden className="size-4" />
-              {t('auth.common.backToSignIn', 'Back to sign in')}
-            </Link>
+          <Button variant="signal" asChild>
+            <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
           </Button>
         </EntryActions>
       </EntryCard>
