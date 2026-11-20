@@ -377,8 +377,21 @@ function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
     if (v.x !== w.x || v.y !== w.y) problems.push(`${k} moved ${w.x - v.x},${w.y - v.y}`)
     if (v.w !== w.w || v.h !== w.h) problems.push(`${k} resized ${w.w - v.w}x${w.h - v.h}`)
   }
+  // On a phone the tokens that filter are drawn on lines below the Query field
+  // and wrap: one more token may come, and the list moves down with the tokens'
+  // lowest edge, by exactly that.
+  const tokensBottom = (s: Snap) => {
+    const field = s.controls['search field']
+    const own = Object.entries(s.controls).filter(([k]) => k.startsWith('token'))
+    if (!field || own.length === 0 || own.some(([, v]) => v.y <= field.y)) return null
+    return Math.max(...own.map(([, v]) => v.y + v.h))
+  }
+  const bottomA = tokensBottom(a)
+  const bottomB = tokensBottom(b)
+  const tokensWrap = bottomA !== null && bottomB !== null
   for (const k of Object.keys(b.controls)) {
-    if (!a.controls[k] && !stepsDown(k)) problems.push(`${k} appeared`)
+    if (!a.controls[k] && !stepsDown(k) && !(tokensWrap && k.startsWith('token')))
+      problems.push(`${k} appeared`)
   }
   for (const [k, v] of Object.entries(a.titleEnd)) {
     const w = b.titleEnd[k]
@@ -402,8 +415,10 @@ function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
     // A phone wraps its chips onto more lines: a chips row that was already
     // there grows by whole lines and the list moves with it, by exactly that.
     const rowGrew = a.chipsRow !== null && b.chipsRow !== null && delta === b.chipsRow - a.chipsRow
+    const tokensGrew = tokensWrap && delta === bottomB - bottomA
     if (!(
       rowGrew ||
+      tokensGrew ||
       (phoneModeSwitch && Math.abs(delta) === ROW) ||
       (rowCame && delta === step) ||
       (rowWent && delta === -step) ||
