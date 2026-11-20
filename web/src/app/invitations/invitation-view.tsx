@@ -30,14 +30,20 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { OrgAvatar } from '@/components/layout/org-avatar'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
-import { selectTenantAction } from '@/features/auth/actions/local-auth-actions'
+import { localLogoutAction, selectTenantAction } from '@/features/auth/actions/local-auth-actions'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
+import { parseRetryAfter } from '@/lib/api/rate-limit-backoff'
 import { useTranslation } from '@/context/i18n-provider'
 import { KeyValueList } from '@/features/shared'
 import {
   InvitationGrantsNotice,
   type InvitationGrants,
 } from '@/features/organization/components/invitation-grants'
+import {
+  type InvitationNextStep,
+  invitationNextStep,
+  invitationNextStepHref,
+} from './invitation-next-step'
 
 interface InvitationData {
   invitation: InvitationGrants & {
@@ -118,6 +124,19 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // shows the accepted card with "Open <organization>".
   const [joined, setJoined] = useState(false)
   const [openError, setOpenError] = useState<string | null>(null)
+  // Refused for a reason only another sign-in fixes: the page shows that one
+  // step instead of Accept or Open (which would be refused again).
+  const [nextStep, setNextStep] = useState<InvitationNextStep | null>(null)
+  // Opening was refused for now (too many requests, a server failure, no
+  // answer): seconds left before "Open" is offered again, from the server's
+  // Retry-After.
+  const [openWait, setOpenWait] = useState(0)
+
+  useEffect(() => {
+    if (openWait <= 0) return
+    const timer = setTimeout(() => setOpenWait((s) => s - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [openWait])
 
   // The token never goes back into a URL: sign-in and sign-up return to the
   // bare invitation page, which finds the token kept for this tab.
@@ -188,23 +207,51 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       setJoinedNeedsMfa(true)
       return
     }
+    const step = invitationNextStep(selected.code)
+    if (step) {
+      setNextStep(step)
+      return
+    }
     if (selected.code === 'SESSION_EXPIRED') {
       // The membership exists: signing in again opens it.
       navigateAfterSessionChange('/login', { replace: true })
       return
     }
     setJoined(true)
+    if (selected.status === 0 || selected.status === 429 || (selected.status ?? 0) >= 500) {
+      // Nothing was decided about the membership: say why and when to retry.
+      const seconds = Math.max(1, Math.ceil(parseRetryAfter(selected.retryAfter) / 1000))
+      setOpenWait(seconds)
+      setOpenError(
+        t(
+          selected.status === 429
+            ? 'org.acceptInvite.openBusy'
+            : 'org.acceptInvite.openUnavailable',
+          undefined,
+          { org: data.tenant.name, seconds }
+        )
+      )
+      return
+    }
     setOpenError(t('org.acceptInvite.openFailed', undefined, { org: data.tenant.name }))
   }
 
   function handleOpenOrganization() {
     if (!invitation) return
     setOpenError(null)
+    setOpenWait(0)
     startTransition(async () => {
       try {
         await openInvitedOrganization(invitation)
       } catch {
-        setOpenError(t('org.acceptInvite.openFailed', undefined, { org: invitation.tenant.name }))
+        // The action itself did not answer: the same wait as no answer from the API.
+        setOpenWait(parseRetryAfter(null) / 1000)
+        setOpenError(
+          t('org.acceptInvite.openUnavailable', undefined, {
+            org: invitation.tenant.name,
+            seconds: parseRetryAfter(null) / 1000,
+          })
+        )
       }
     })
   }
@@ -215,7 +262,13 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
    * "Open <organization>" instead of an error.
    */
   async function acceptRefused(response: Response, tok: string) {
-    const message = await errorMessage(response, t('org.acceptInvite.acceptFailed'), t)
+    const data = (await response.json().catch(() => ({}))) as { code?: string }
+    const step = invitationNextStep(data.code)
+    if (step) {
+      setNextStep(step)
+      return
+    }
+    const message = authErrorText(data.code, t, t('org.acceptInvite.acceptFailed'))
     const fresh = await postToken(endpoints.invitations.lookup(), tok)
       .then((r) => (r.ok ? (r.json() as Promise<InvitationData>) : null))
       .catch(() => null)
@@ -385,6 +438,58 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
     )
   }
 
+  // Refused for a reason only another sign-in fixes: that one step.
+  if (nextStep && invitation) {
+    const org = invitation.tenant.name
+    const email = invitation.invitation.email
+    const vars = { org, email }
+    const text: Record<InvitationNextStep, { title: string; body: string; action: string }> = {
+      identity_provider: {
+        title: t('org.acceptInvite.nextIdpTitle', undefined, vars),
+        body: t('org.acceptInvite.nextIdpBody', undefined, vars),
+        action: t('org.acceptInvite.nextIdpAction', undefined, vars),
+      },
+      identity_provider_mfa: {
+        title: t('org.acceptInvite.nextIdpTitle', undefined, vars),
+        body: t('org.acceptInvite.nextIdpMfaBody', undefined, vars),
+        action: t('org.acceptInvite.nextIdpAction', undefined, vars),
+      },
+      own_sign_in: {
+        title: t('org.acceptInvite.nextOwnTitle', undefined, vars),
+        body: t('org.acceptInvite.nextOwnBody', undefined, vars),
+        action: t('org.acceptInvite.nextOwnAction', undefined, vars),
+      },
+      other_address: {
+        title: t('org.acceptInvite.nextOtherTitle', undefined, vars),
+        body: t('org.acceptInvite.nextOtherBody', undefined, vars),
+        action: t('org.acceptInvite.nextOtherAction', undefined, vars),
+      },
+    }
+    const href = invitationNextStepHref(nextStep, {
+      slug: invitation.tenant.slug,
+      email,
+      invitationPath,
+    })
+    // This session cannot do it: sign it out, then continue at the step.
+    const continueAtStep = () =>
+      startTransition(async () => {
+        await localLogoutAction(href).catch(() => {
+          window.location.href = href
+        })
+      })
+    return (
+      <EntryCard data-testid="invitation-next-step">
+        <EntryHeader title={text[nextStep].title} description={text[nextStep].body} />
+        <EntryActions>
+          <Button variant="signal" onClick={continueAtStep} disabled={isPending}>
+            {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
+            {text[nextStep].action}
+          </Button>
+        </EntryActions>
+      </EntryCard>
+    )
+  }
+
   // Invitation expired or already accepted (here, or earlier)
   if (invitation && (joined || !invitation.invitation.pending)) {
     const isExpired = !joined && new Date(invitation.invitation.expires_at) < new Date()
@@ -408,9 +513,15 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
 
         <EntryActions>
           {canOpen ? (
-            <Button variant="signal" onClick={handleOpenOrganization} disabled={isPending}>
+            <Button
+              variant="signal"
+              onClick={handleOpenOrganization}
+              disabled={isPending || openWait > 0}
+            >
               {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
-              {t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
+              {openWait > 0
+                ? t('org.acceptInvite.openRetryIn', undefined, { seconds: openWait })
+                : t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
             </Button>
           ) : (
             !hasSession && (

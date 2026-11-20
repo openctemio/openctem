@@ -70,6 +70,24 @@ export const ACCOUNT_ONLY_PAGES = [
 /** Where an account-only session lands: its organizations and invitations. */
 export const ACCOUNT_HOME_PATH = '/account/organizations'
 
+/**
+ * Pages a signed-in person opens before an organization is selected (besides
+ * ACCOUNT_ONLY_PAGES): the organization picker, organization creation, the
+ * ownership invitation and the sign-in consent pages. Every other page works
+ * inside an organization: a session that has none selected goes to
+ * CONTINUE_PATH first, which picks it from the memberships.
+ */
+export const NO_ORGANIZATION_PAGES = [
+  '/select-tenant',
+  '/onboarding',
+  '/ownership-invitations',
+  '/oauth',
+  '/mcp',
+] as const
+
+/** Decides the landing of a session that has no organization selected. */
+export const CONTINUE_PATH = '/auth/continue'
+
 /** The tenant app's sign-in page. */
 export const LOGIN_PATH = '/login'
 

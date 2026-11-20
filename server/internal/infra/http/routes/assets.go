@@ -76,6 +76,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// The addresses a domain or subdomain resolved to, with history
+		// (shared provider addresses are recorded only here).
+		r.GET("/{id}/addresses", h.GetNameAddresses, middleware.Require(permission.AssetsRead))
 		// How the asset was found: its ancestor chain, each ancestor data-scope
 		// checked (docs/architecture/easm.md, Discovery lineage).
 		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
@@ -276,6 +279,14 @@ func registerScopeRoutes(
 		// The owner-only part: how long an intrusive (t2) entry may last
 		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
 		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
+
+		// Scope entries on provider shared addresses (the Scope page card).
+		// Moving them out of scope only narrows (scope:write, no step-up;
+		// preview first); keeping them scanning lifts the hold, so it asks
+		// for a recent re-authentication.
+		r.GET("/provider-addresses", h.ListProviderAddresses, middleware.Require(permission.ScopeRead))
+		r.POST("/provider-addresses/move", h.MoveProviderAddresses, middleware.Require(permission.ScopeWrite))
+		r.POST("/provider-addresses/keep", h.KeepProviderAddresses, middleware.Require(permission.ScopeWrite), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes
@@ -620,6 +631,11 @@ func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, aut
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	// One level of the origin's path tree; the service asserts the asset's
+	// tenant and the caller's data scope (404 otherwise).
+	router.Group("/api/v1/assets/{id}/web-paths", func(r Router) {
+		r.GET("/", h.Paths, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/web-path-patterns", func(r Router) {
 		r.GET("/", h.Patterns, middleware.Require(permission.AssetsRead))

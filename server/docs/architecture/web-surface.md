@@ -108,10 +108,57 @@ origin with excluded paths is not read as "safe".
 | `GET /api/v1/web-endpoints/{id}/parameters` | `assets:read` | names, locations, risk hints; never a value |
 | `PATCH /api/v1/web-endpoints/{id}` | `assets:write` | `state` (active, ignored) and `labels`; audit-logged on the origin asset |
 | `GET /api/v1/assets/{id}/web-endpoints` | `assets:read` | one origin's endpoints; the `/assets/{id}` data-scope guard applies |
+| `GET /api/v1/assets/{id}/web-paths` | `assets:read` | one level of the origin's path tree (below); 404 for another tenant's asset and one outside the caller's data scope |
 
 The list compiles through `pkg/filterspec` with the caller as the actor, so
 the tenant predicate and the caller's data scope (on `origin_asset_id`) are
 always in the WHERE, for the list and the stats alike.
+
+## Path tree
+
+`GET /api/v1/assets/{id}/web-paths?path=` serves the console's Paths tab: the
+origin's endpoints folded by path segment, one level per request.
+
+- **Nodes.** `path` is a node: `/` or a path template without a trailing
+  slash. A node holds the endpoints of its own template and of every template
+  below it, so `/api/users` is both an endpoint and the parent of
+  `/api/users/{int}`. A variable segment (`{int}`, `{uuid}`, ...) is a node
+  marked `param`. A level lists at most 500 child nodes, sorted by name with
+  variable segments last (`folders_truncated` says when more exist).
+- **Counts per node:** endpoints, out-of-scope endpoints (under a path
+  exclusion: shown, never hidden), open findings and the worst severity among
+  them. `endpoints` is one page (`per_page` 0 to 100; 0 returns the nodes only)
+  of everything under `path`, or only the node's own template with `here`.
+  `totals.recorded` counts the origin's rows before any filter (0: never
+  crawled), `totals.hidden` what the filters hide, so nothing disappears
+  silently.
+- **Filters:** `hide_static` (style sheets, images, fonts, media and archives,
+  by content type or extension; scripts and source maps stay, they are attack
+  surface), `hide_4xx`, `with_findings`, `include_gone` (gone rows are hidden
+  by default), `scope=in|out`, `method` (comma list) and `q` (the template
+  contains it, any case). The query is strict: an unknown or repeated
+  parameter is 400.
+- **Findings per path.** The origin asset's open findings are grouped by
+  `location_key`. A key `url:<origin><path>` (ctis `LocationKey`: scheme, host,
+  port and escaped path, no query) is templated with the same `weburl`
+  templating the endpoints use, so `/api/users/42` lands on
+  `/api/users/{int}`: **exact on the path template**. Findings carry no HTTP
+  method, so every method of one template shows the template's count: **the
+  method is approximate**. A finding at a path no endpoint records keeps a
+  node of its own (`unrecorded_findings`; a scanner can hit a path a crawl
+  never listed). A finding with no URL, or with a URL of another origin, counts
+  as `origin_findings` at the root. A finding stored on another asset (a host)
+  is not part of this origin's tree.
+- **Cost.** One request reads the origin's rows (at most 20,000, the active
+  cap with room for gone and ignored rows; `totals.capped` says when more
+  exist) on `idx_web_endpoints_origin` and the open findings on
+  `idx_findings_tenant_asset_status`, and builds the level in memory: about
+  5 ms for 20,000 rows. The response carries one level and one page, not the
+  endpoint list.
+- **Access.** `assets:read`; the service checks that the asset is a live asset
+  of the caller's tenant and in the caller's data scope (`AssertAssetRef`)
+  before any read, and answers 404 otherwise. Every statement carries the
+  tenant. Parameter values are never stored, so none can be returned.
 
 ## Sensitive paths, patterns, origins and the change feed
 
