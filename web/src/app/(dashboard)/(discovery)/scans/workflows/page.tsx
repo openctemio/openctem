@@ -726,9 +726,7 @@ export default function ScanWorkflowsPage() {
                 )}
               />
             }
-          >
-            {refreshButton}
-          </ListTitleRow>
+          />
 
           {noAccess ? (
             <NoAccessState title={t('scans.workflows.subject', 'the workflows list')} />
@@ -764,7 +762,12 @@ export default function ScanWorkflowsPage() {
                 sheetOnly: true,
               }}
               toolbarStart={toolbarStart}
-              toolbarEnd={isPhone ? ownerSelect : undefined}
+              toolbarEnd={
+                <>
+                  {isPhone && ownerSelect}
+                  {refreshButton}
+                </>
+              }
               toolbarBelow={chipsRow}
               getRowId={getWorkflowId}
               onRowClick={handleOpenWorkflowDetail}

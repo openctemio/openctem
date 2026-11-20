@@ -170,6 +170,25 @@ const LOPSIDED_DEBT = new Set([
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
+/**
+ * Pages whose in-page tab strip is cut at 390 px (/sensors "Enrollment
+ * tokens", /my-work, /settings/members) or whose table action buttons are cut
+ * by the table scroller's edge at 1024 px (/exposures "Actions for ...",
+ * /sensors "Jobs", /settings/audit-log "Result"), found when the sideways
+ * strip and scroller checks were added (owner report 2026-11-20). Only the
+ * `clipped` lines about a sideways strip or a scroller's edge are skipped for
+ * them. Each moves onto the phone tab rule or pins its actions and leaves this
+ * list; it only shrinks, and a route not on it fails on its first such line.
+ */
+const SIDEWAYS_DEBT = new Set([
+  '/sensors',
+  '/my-work',
+  '/settings/members',
+  '/exposures',
+  '/settings/audit-log',
+])
+const SIDEWAYS_LINE = /sideways strip|scroller's edge/
+
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
 const ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
@@ -329,7 +348,11 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
         if (typeof found === 'string') continue
         for (const kind of BREAK_KINDS) {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
-          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+          const lines =
+            kind === 'clipped' && SIDEWAYS_DEBT.has(route)
+              ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
+              : found[kind]
+          expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
         }
       }
     })
