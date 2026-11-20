@@ -519,17 +519,21 @@ export function ApprovalRuleEditor({ open, rule, onOpenChange, onSave }: Approva
                   </SelectItem>
                 </SelectContent>
               </Select>
-              {(['owner', 'admin'] as const).map((r) => (
-                <label key={r} className="flex items-center gap-1.5 text-sm">
-                  <Checkbox
-                    checked={(q.approver_roles ?? []).includes(r)}
-                    onCheckedChange={(v) =>
-                      patchQ({ approver_roles: toggle(q.approver_roles, r, v === true) })
-                    }
-                  />
-                  {t(`scans.ruleEditor.approverRole.${r}`, r)}
-                </label>
-              ))}
+              {/* The roles wrap as one group (own line on a phone), never one
+                  role beside the select and the other under it. */}
+              <div className="flex basis-full flex-wrap items-center gap-3 sm:basis-auto">
+                {(['owner', 'admin'] as const).map((r) => (
+                  <label key={r} className="flex items-center gap-1.5 text-sm">
+                    <Checkbox
+                      checked={(q.approver_roles ?? []).includes(r)}
+                      onCheckedChange={(v) =>
+                        patchQ({ approver_roles: toggle(q.approver_roles, r, v === true) })
+                      }
+                    />
+                    {t(`scans.ruleEditor.approverRole.${r}`, r)}
+                  </label>
+                ))}
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               {t(

@@ -72,6 +72,7 @@ const CI_ROUTES = [
   '/scans/approvals',
   '/sensors',
   '/my-work',
+  '/settings/service-accounts',
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
