@@ -114,7 +114,7 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
         meta: {
           kind: 'number',
           label: t('attackSurface.paths.col.status', 'Last status'),
-          hideBelow: 540,
+          hideBelow: 600,
         },
         cell: ({ row }) => <span className="tabular-nums">{row.original.last_status || '-'}</span>,
       },
@@ -157,7 +157,7 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
           kind: 'datetime-recent',
           label: t('attackSurface.web.col.lastSeen', 'Last seen'),
           width: 128,
-          hideBelow: 640,
+          hideBelow: 760,
         },
         cell: ({ row }) => (
           <RelativeTime date={row.original.last_seen_at} className="block truncate" />
