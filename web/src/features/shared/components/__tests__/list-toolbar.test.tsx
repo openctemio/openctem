@@ -55,7 +55,7 @@ describe('ListToolbar slots', () => {
     render(<Search filter={<FilterButton activeCount={2} />} />)
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar).toHaveAttribute('data-slot', 'list-toolbar')
-    expect(names(bar)).toEqual(['Filters (2 active)', 'Search sensors', 'Status: Online', 'View'])
+    expect(names(bar)).toEqual(['Filters, 2 active', 'Search sensors', 'Status: Online', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
@@ -256,7 +256,7 @@ describe('ListToolbar slots', () => {
     // A phone only: from a 28rem toolbar the tokens are drawn in the row.
     expect(button.className).toContain('@md/toolbar:hidden')
     // Two tokens filter: the chosen status and the pressed toggle.
-    expect(button).toHaveAccessibleName('Filters (2 active)')
+    expect(button).toHaveAccessibleName('Filters, 2 active')
     await user.click(button)
     const sheet = await screen.findByRole('dialog')
     expect(sheet.textContent).toContain('Kind: Appeared')

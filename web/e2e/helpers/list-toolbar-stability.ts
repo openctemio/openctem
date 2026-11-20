@@ -399,7 +399,11 @@ function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
     const statusWent = a.statusRow !== null && b.statusRow === null
     const statusStep = (b.statusRow ?? a.statusRow ?? 0) + 8
     const delta = b.listTop - a.listTop
+    // A phone wraps its chips onto more lines: a chips row that was already
+    // there grows by whole lines and the list moves with it, by exactly that.
+    const rowGrew = a.chipsRow !== null && b.chipsRow !== null && delta === b.chipsRow - a.chipsRow
     if (!(
+      rowGrew ||
       (phoneModeSwitch && Math.abs(delta) === ROW) ||
       (rowCame && delta === step) ||
       (rowWent && delta === -step) ||

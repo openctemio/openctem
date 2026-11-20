@@ -58,7 +58,7 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
     const label = labelProp ?? t('common.filters', 'Filters')
     const active = activeCount > 0
     const accessibleName = active
-      ? t('common.filterButton.active', '{label} ({count} active)', { label, count: activeCount })
+      ? t('common.filterButton.active', '{label}, {count} active', { label, count: activeCount })
       : label
     const tooltip = panelOpen
       ? t('common.filterButton.hide', 'Hide {label}', { label: label.toLowerCase() })

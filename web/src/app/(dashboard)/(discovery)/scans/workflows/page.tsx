@@ -654,19 +654,19 @@ export default function ScanWorkflowsPage() {
     <FilterSelect<WorkflowOwner>
       label={t('scans.workflows.owner', 'Owner')}
       value={owner}
-      clearable={false}
+      // On a phone the owner is a token of the Filters sheet that shows on the
+      // second line only when it narrows the list (so it can be cleared there).
+      clearable={isPhone}
       foldLabel
       options={OWNERS.map((v) => ({ value: v, label: ownerLabel(v) }))}
       onChange={(v) => setOwner(v || 'all')}
     />
   )
-  // From 768 px the select follows Add filter. On a phone it is pinned at the
-  // end of the toolbar's second line, where the chip strip starts: a chip
-  // that comes or goes moves neither the select nor the list.
+  // The select follows Add filter; on a phone it is held by the Filters sheet.
   const toolbarStart = (
     <>
       <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
-      {!isPhone && ownerSelect}
+      {ownerSelect}
     </>
   )
 
@@ -762,12 +762,7 @@ export default function ScanWorkflowsPage() {
                 sheetOnly: true,
               }}
               toolbarStart={toolbarStart}
-              toolbarEnd={
-                <>
-                  {isPhone && ownerSelect}
-                  {refreshButton}
-                </>
-              }
+              toolbarEnd={refreshButton}
               toolbarBelow={chipsRow}
               getRowId={getWorkflowId}
               onRowClick={handleOpenWorkflowDetail}
