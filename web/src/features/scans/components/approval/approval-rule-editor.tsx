@@ -613,12 +613,17 @@ export function ApprovalRuleEditor({ open, rule, onOpenChange, onSave }: Approva
             </div>
           </section>
 
-          {testing && <ApprovalRuleTester rules={[{ ...draft, enabled: true, monitor: false }]} />}
+          {/* Trying the rule is part of the form, not a footer action: the
+              footer keeps Cancel and Save, so on a phone it stays two buttons. */}
+          {testing ? (
+            <ApprovalRuleTester rules={[{ ...draft, enabled: true, monitor: false }]} />
+          ) : (
+            <Button variant="outline" onClick={() => setTesting(true)} disabled={!valid}>
+              {t('scans.ruleEditor.tryIt', 'Try it on existing scans')}
+            </Button>
+          )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setTesting(true)} disabled={!valid}>
-            {t('scans.ruleEditor.tryIt', 'Try it on existing scans')}
-          </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>

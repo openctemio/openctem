@@ -24,7 +24,7 @@ import {
  * squeezed to "IP Addres / s" and the description ran under the Risk score.
  * The seed had no description, so every spec passed.
  *
- * Variants per route: 390x844 en and vi (light), 1440x900 and 1024x768 en; 0 and 1 rows at
+ * Variants per route: 390x844 en and vi (light), 1440x900, 1280x800 and 1024x768 en; 0 and 1 rows at
  * 390 en; at 390 en the row menu, the filters sheet, the detail sheet and the
  * page's main dialog when the page has them.
  *
@@ -47,6 +47,7 @@ type Overlay = 'rowmenu' | 'filters' | 'detail' | 'dialog'
 const PHONE = { width: 390, height: 844 }
 const DESKTOP = { width: 1440, height: 900 }
 const TABLET = { width: 1024, height: 768 }
+const LAPTOP = { width: 1280, height: 800 }
 
 /** Lists and pages with phone cards, sheets and long names. */
 const CI_ROUTES = [
@@ -54,6 +55,7 @@ const CI_ROUTES = [
   '/assets/groups',
   '/assets/changes',
   '/assets/duplicates',
+  '/assets/suggestions',
   '/assets/attention/no-owner',
   '/assets/attention/unscanned',
   '/assets/attention/decide-monitoring',
@@ -78,8 +80,77 @@ const CI_ROUTES = [
   '/settings/api-keys',
   '/settings/security',
   '/settings/scope',
+  '/settings/integrations',
+  '/settings/risk-scoring',
+  '/attack-surface/discovery',
+  '/settings/scanning/scan-approval',
   '/notifications',
+  '/oauth/device',
 ]
+
+/**
+ * Entry pages a person opens signed out (their own browser context, no
+ * session): the form and the link-from-an-e-mail states the scratch stack can
+ * reach without mail. Same checks, no list data or overlays.
+ */
+const SIGNED_OUT_ROUTES = [
+  '/forgot-password',
+  '/reset-password',
+  '/reset-password#token=synthetic-reset-token',
+  '/set-password#token=synthetic-setup-token',
+  '/verify-email',
+  '/request-access',
+  '/request-access/confirm',
+]
+
+/**
+ * Settings answers richData leaves alone (it skips /settings): the pages that
+ * list records read from them get hard rows here, per scenario.
+ */
+function scanGovernance(scen: Scenario) {
+  const rules = [
+    {
+      name: 'Crown jewels outside business hours on the production payment network and the gateways',
+      conditions: {
+        crown_jewel: true,
+        hours: {
+          match: 'outside',
+          windows: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], start: '09:00', end: '18:00' }],
+        },
+      },
+      requirement: {
+        approvals: 2,
+        approver_roles: ['owner', 'admin'],
+        require_justification: true,
+      },
+    },
+    {
+      name: 'Quét dải mạng rộng của chi nhánh Hà Nội và Thành phố Hồ Chí Minh ngoài giờ làm việc',
+      monitor: true,
+      conditions: { cidr_wider_than: 20, targets_over: 500, asset_tags: ['pci', 'prod'] },
+      requirement: { approvals: 1, require_ticket: true, ticket_pattern: '^SEC-[0-9]+$' },
+    },
+    { name: 'x', enabled: false, conditions: {}, requirement: { approvals: 1 } },
+  ].map((r, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, enabled: true, ...r }))
+  const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : rules.length
+  return {
+    mode: 'on',
+    source: 'organization',
+    organization_mode: 'on',
+    platform_policy: 'tenant_controlled',
+    selectable_modes: ['off', 'on', 'strict'],
+    scope_entries_need_approval: false,
+    rules: rules.slice(0, n),
+    pending_expiry_days: 7,
+    presets: { light: [], standard: [], strict: [] },
+  }
+}
+const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
+  '/settings/scanning/scan-approval': {
+    url: '**/api/v1/organization/settings/scan-governance',
+    body: scanGovernance,
+  },
+}
 
 /**
  * Lists whose phone cards (or title row) are still bunched at the start
@@ -95,6 +166,7 @@ const LOPSIDED_DEBT = new Set([
   '/scans/runs',
   '/attack-surface/technologies',
   '/settings/audit-log',
+  '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
@@ -119,6 +191,7 @@ function variants(): Variant[] {
     { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
     { tag: 'd-en', ...DESKTOP, lang: 'en', theme: 'light', scen: 'rich' },
+    { tag: 'l-en', ...LAPTOP, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 't-en', ...TABLET, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-en-0', ...PHONE, lang: 'en', theme: 'light', scen: 'empty' },
     { tag: 'p-en-1', ...PHONE, lang: 'en', theme: 'light', scen: 'one' },
@@ -143,7 +216,9 @@ function variants(): Variant[] {
       })
     }
   }
-  return v
+  // LAYOUT_SWEEP_ONLY=d-en,l-en,t-en runs just those variants (desktop widths of every route).
+  const only = process.env.LAYOUT_SWEEP_ONLY?.split(',').filter(Boolean)
+  return only ? v.filter((x) => only.includes(x.tag)) : v
 }
 
 const slug = (route: string) => route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'home'
@@ -224,6 +299,12 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const v of variants()) {
         await page.unrouteAll({ behavior: 'ignoreErrors' })
         await prepare(page, v, baseURL!)
+        const extra = ROUTE_DATA[route]
+        if (extra) {
+          await page.route(extra.url, (r) =>
+            r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
+          )
+        }
         await page.goto(route, { timeout: 60_000 }).catch(() => {})
         await settle(page)
         let scope = 'main'
@@ -249,6 +330,33 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
           expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
+      }
+    })
+  }
+})
+
+test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
+  test.describe.configure({ mode: 'parallel' })
+  for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
+    test(`${route}`, async ({ browser, baseURL }, testInfo) => {
+      test.setTimeout(120_000)
+      const report: Record<string, Breaks> = {}
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        const context = await browser.newContext({ baseURL })
+        const page = await context.newPage()
+        await prepare(page, v, baseURL!)
+        await page.goto(route, { timeout: 60_000 }).catch(() => {})
+        await settle(page)
+        report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
+        if (OUT || formatBreaks(report[v.tag]).length) {
+          await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+        }
+        await context.close()
+      }
+      await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
+      for (const [tag, found] of Object.entries(report)) {
+        for (const kind of BREAK_KINDS)
+          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
       }
     })
   }

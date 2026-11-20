@@ -107,4 +107,15 @@ describe('Relationship suggestions: actions follow assets:write', () => {
       )
     )
   })
+
+  it('shows the link and its reason in one column on a wide screen', () => {
+    render(<RelationshipSuggestionsPage />)
+    expect(screen.getByRole('columnheader', { name: 'Suggested link' })).toBeInTheDocument()
+    const cell = screen.getByText('DNS A record').closest('td') as HTMLElement
+    expect(cell).toHaveTextContent('api.example.com')
+    expect(cell).toHaveTextContent('Resolves to')
+    expect(cell).toHaveTextContent('192.0.2.10')
+    // The type of each asset is in its name's tooltip.
+    expect(screen.getByTitle('api.example.com (Domain)')).toBeInTheDocument()
+  })
 })

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { toast } from 'sonner'
 
 import { resetPasswordAction } from '../actions/local-auth-actions'
 import { PasswordTokenForm } from './password-token-form'
@@ -112,9 +113,15 @@ describe('PasswordTokenForm', () => {
     })
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
-    expect(await screen.findByText(/reset link is invalid or has expired/i)).toBeInTheDocument()
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('Invalid setup link')
+    expect(banner).toHaveTextContent(/ask your administrator for a new one/i)
+    // No self-service advice: a setup link only comes from an administrator.
+    expect(banner).not.toHaveTextContent(/request a new one/i)
     expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
-    expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
+    expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(
+      expect.stringMatching(/ask your administrator for a new one/i)
+    )
   })
 })
 
