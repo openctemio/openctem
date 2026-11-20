@@ -361,10 +361,6 @@ export async function findBreaks(
           !c.el.matches('[role=switch],[role=checkbox],[type=checkbox],[type=radio],textarea') &&
           c.r.height <= 48 &&
           !insideField(c) &&
-          // FilterSelect's own heights are being fixed in the list kit (K15:
-          // trigger and clear button span the whole token); drop this line
-          // when that change is on next.
-          !c.el.closest('[data-slot=filter-select]') &&
           !c.el.closest(
             '[role=tablist],[role=menu],[role=listbox],table,[data-slot=badge],nav,[data-slot=segment]'
           ) &&
