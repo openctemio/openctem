@@ -551,7 +551,8 @@ reference.
   - the title line: the row's name (the column of kind `name`, else the first
     column; never guessed from the values), up to two lines whatever width the
     table cell set for itself, then the status chip (the first column of kind
-    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    `status` or `status-edit` the table keeps at every width, i.e. without
+    `hideBelow`; else the first one), the row's checkbox and its row menu. Nothing
     wraps under the title: a status cell too wide for its place gets a line of
     its own under the title, and an actions cell wider than one icon button
     gets one trailing line at the end of the card;
@@ -562,6 +563,10 @@ reference.
     say something. A value that draws nothing or only a dash, or repeats the
     title, is left out (never a label over an empty value), so a later column
     takes its place. "0" is a value and stays; a switch is a value too.
+    Key figures (columns of kind `number`, `risk`, `severity`, `priority`,
+    `due`) take the two places before the other columns, so a count such as
+    "Findings 0" is never pushed out by a descriptive column before it; the
+    fields are still shown in column order.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
@@ -1344,3 +1349,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   page-level horizontal scroll (a wide table scrolls inside its own frame).
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
+- `e2e/specs/75-layout-breaks.spec.ts` checks the lists and their overlays at
+  390, 1024 and 1440 px with long English and Vietnamese data: no text over
+  text or a control, no word broken inside, nothing cut without an ellipsis,
+  one control height per row, no English left in vi, no label without a value.
+  Stored text shown as written (a dashboard's description) sits in an element
+  with `translate="no"`, which the English check skips.
