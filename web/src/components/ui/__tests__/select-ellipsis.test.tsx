@@ -63,6 +63,25 @@ describe('Select value ellipsis', () => {
     expect(box.querySelector('[data-slot="select-text"]')).toHaveTextContent(LONG)
   })
 
+  it('a label built from several text parts is one box (one accessible name)', () => {
+    const count = 10
+    const { container } = render(
+      <Select value="x">
+        <SelectTrigger aria-label="Reason">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="x">
+            {'Not verified'} ({count})
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    )
+    const parts = valueBox(container).querySelectorAll('[data-slot="select-text"]')
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toHaveTextContent('Not verified (10)')
+  })
+
   it('a placeholder and a custom value text are boxed the same way', () => {
     const empty = field({ placeholder: LONG })
     expect(valueBox(empty.container).querySelector('[data-slot="select-text"]')).toHaveTextContent(

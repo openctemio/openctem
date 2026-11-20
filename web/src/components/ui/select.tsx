@@ -40,13 +40,28 @@ function textParts(node: React.ReactNode): React.ReactNode {
     return <span data-slot="select-text">{node}</span>
   }
   if (Array.isArray(node)) {
-    return React.Children.map(node, (child) =>
-      typeof child === 'string' || typeof child === 'number' ? (
-        <span data-slot="select-text">{child}</span>
-      ) : (
-        child
-      )
-    )
+    // Adjacent text parts ("Name", " (", 3, ")") form one box, so the label
+    // reads and cuts as one line of text.
+    const out: React.ReactNode[] = []
+    let text = ''
+    const flush = () => {
+      if (text)
+        out.push(
+          <span key={`t${out.length}`} data-slot="select-text">
+            {text}
+          </span>
+        )
+      text = ''
+    }
+    React.Children.forEach(node, (child) => {
+      if (typeof child === 'string' || typeof child === 'number') text += String(child)
+      else {
+        flush()
+        out.push(child)
+      }
+    })
+    flush()
+    return out
   }
   return node
 }
