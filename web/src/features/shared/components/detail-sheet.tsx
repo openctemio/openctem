@@ -475,7 +475,7 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
           <li
             key={c.key}
             {...data}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
+            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
           >
             {Icon && (
               <Icon
@@ -483,7 +483,12 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
                 aria-label={c.iconLabel}
               />
             )}
-            <span className={cn(c.muted && 'text-muted-foreground')}>{c.label}</span>
+            <span
+              className={cn('min-w-0 truncate', c.muted && 'text-muted-foreground')}
+              title={typeof c.label === 'string' ? c.label : undefined}
+            >
+              {c.label}
+            </span>
             {c.meta}
             {c.tag}
           </li>
