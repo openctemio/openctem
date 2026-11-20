@@ -13,6 +13,7 @@
  * mode…" opens the two-step dialog (exclusion approvers only, step-up).
  */
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
@@ -238,8 +239,8 @@ export function ScopeExclusionsTable({
         if (isPathExclusion(x))
           return (
             <div className="min-w-0 space-y-0.5">
-              <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-                {pathRuleLabel(x)}
+              <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+                <BreakText>{pathRuleLabel(x)}</BreakText>
               </code>
               <p className="text-xs text-muted-foreground">
                 {t(
@@ -256,10 +257,12 @@ export function ScopeExclusionsTable({
           )
         return (
           <div className="min-w-0 space-y-0.5">
-            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">{x.pattern}</code>
+            <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+              <BreakText>{x.pattern}</BreakText>
+            </code>
             <p className="text-xs text-muted-foreground">
               {t('scope.col.covers', 'Covers {what}', {
-                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }),
+                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }, t),
               })}
             </p>
           </div>
@@ -279,7 +282,7 @@ export function ScopeExclusionsTable({
           <span className="text-sm text-foreground">
             {isPathExclusion(row.original)
               ? t('scope.exclusion.webPath', 'Web path')
-              : scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
+              : scopeTargetTypeLabel(row.original.exclusion_type ?? '', t)}
           </span>
         </div>
       ),
