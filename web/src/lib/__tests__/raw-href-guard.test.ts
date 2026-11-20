@@ -47,6 +47,11 @@ const SAFE_CALLS = new Set([
   'assetGroupHref',
   // app/(dashboard)/settings/roles/page.tsx: `/settings/roles?role=` with the id URI-encoded in the query.
   'roleHref',
+  // features/access-control/components/teams-section.tsx and assignment-rules-section.tsx:
+  // `/settings/teams?team=` and `/settings/teams?tab=assignment-rules&rule=` with the id
+  // URI-encoded in the query.
+  'teamHref',
+  'ruleHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
