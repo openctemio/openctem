@@ -197,12 +197,22 @@ test.describe('Findings phone cards', { tag: ['@findings'] }, () => {
           }
         }
       })
-    await scrollListToEnd()
-    await footer.scrollIntoViewIfNeeded()
-    await scrollListToEnd()
-    const f = (await footer.boundingBox())!
+    // Under load the cards can still be laying out when the first scroll
+    // runs, so scroll again until the footer settles above the bar.
+    await expect
+      .poll(
+        async () => {
+          await scrollListToEnd()
+          await footer.scrollIntoViewIfNeeded()
+          await scrollListToEnd()
+          const f = (await footer.boundingBox())!
+          const b = (await bar.boundingBox())!
+          return Math.round(f.y + f.height - b.y)
+        },
+        { timeout: 10_000 }
+      )
+      .toBeLessThanOrEqual(0)
     const b = (await bar.boundingBox())!
-    expect(f.y + f.height).toBeLessThanOrEqual(b.y)
     expect(Math.abs(b.width - (390 - 16))).toBeLessThanOrEqual(2)
   })
 })
