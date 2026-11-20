@@ -59,6 +59,7 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 import { toDisplayText } from '@/lib/untrusted-text'
 import {
   formatDate as localeFormatDate,
@@ -78,7 +79,7 @@ import {
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 const SORTABLE = ['logged_at', 'action', 'resource_type', 'result', 'severity']
 const RESULT_OPTIONS: AuditResult[] = ['success', 'failure', 'denied']
-const SEVERITY_OPTIONS: AuditSeverity[] = ['critical', 'high', 'medium', 'low', 'info']
+const SEVERITY_OPTIONS: readonly AuditSeverity[] = SEVERITY_LEVELS
 const FILTER_PARAMS = ['q', 'result', 'severity', 'period', 'hide_system']
 
 /** Periods the list can be narrowed to, newest events first. */

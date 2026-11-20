@@ -64,10 +64,6 @@ const NOT_A_SCALE = new Map<string, string>([
     'EASM exposure severity includes none (chk_exposures_severity); typed by ExposureSeverity',
   ],
   [
-    'app/(dashboard)/settings/audit-log/page.tsx|info,low,medium,high,critical',
-    'audit event severity (audit_logs.severity), a separate scale from finding severity',
-  ],
-  [
     'app/(dashboard)/(scoping)/compliance/page.tsx|critical,high,medium,low',
     'compliance control priority select (pkg/domain/compliance Priority)',
   ],
