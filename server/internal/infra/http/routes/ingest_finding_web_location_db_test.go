@@ -56,7 +56,7 @@ type fwlRow struct {
 
 func fwlRows(t *testing.T, h *v2Harness) map[string]fwlRow {
 	t.Helper()
-	rows, err := h.db.Query(`SELECT f.title, COALESCE(w.method, ''), COALESCE(w.param_location, ''), COALESCE(w.param_name, ''),
+	rows, err := h.db.QueryContext(context.Background(), `SELECT f.title, COALESCE(w.method, ''), COALESCE(w.param_location, ''), COALESCE(w.param_name, ''),
 		COALESCE(w.status_code, 0), COALESCE(e.method || ' ' || e.path_template, '')
 		FROM findings f JOIN finding_web_locations w ON w.tenant_id = f.tenant_id AND w.finding_id = f.id
 		LEFT JOIN web_endpoints e ON e.tenant_id = w.tenant_id AND e.id = w.endpoint_id
@@ -110,7 +110,7 @@ func TestIngest_FindingKeepsWebLocationAndEndpoint_DB(t *testing.T) {
 	// POST /login and nowhere else.
 	repo := postgres.NewWebEndpointRepository(&postgres.DB{DB: h.db})
 	var originID string
-	if err := h.db.QueryRow(`SELECT id FROM assets WHERE tenant_id = $1 AND sub_type = 'http'`, h.tenantID).Scan(&originID); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT id FROM assets WHERE tenant_id = $1 AND sub_type = 'http'`, h.tenantID).Scan(&originID); err != nil {
 		t.Fatal(err)
 	}
 	fs, err := repo.OriginOpenFindings(context.Background(), shared.MustIDFromString(h.tenantID), shared.MustIDFromString(originID))
@@ -148,12 +148,14 @@ func TestFindingWebLocation_NeverLinksAcrossTenants_DB(t *testing.T) {
 	}
 	// Tenant B owns an origin and an endpoint with the very same key.
 	tenantB := shared.NewID()
-	if _, err := h.db.Exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenantB.String(), "fwl-b-"+tenantB.String()); err != nil {
+	if _, err := h.db.ExecContext(context.Background(), `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, tenantB.String(), "fwl-b-"+tenantB.String()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, tenantB.String()) })
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantB.String())
+	})
 	originB := shared.NewID()
-	if _, err := h.db.Exec(`INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, exposure, criticality)
+	if _, err := h.db.ExecContext(context.Background(), `INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, exposure, criticality)
 		VALUES ($1, $2, 'https://shop.fwl.test', 'service', 'http', 'public', 'high')`, originB.String(), tenantB.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +170,7 @@ func TestFindingWebLocation_NeverLinksAcrossTenants_DB(t *testing.T) {
 
 	// Tenant A's finding, told to resolve onto tenant B's origin and key.
 	var fp string
-	if err := h.db.QueryRow(`SELECT fingerprint FROM findings WHERE tenant_id = $1 AND title = 'Debug page'`, h.tenantID).Scan(&fp); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT fingerprint FROM findings WHERE tenant_id = $1 AND title = 'Debug page'`, h.tenantID).Scan(&fp); err != nil {
 		t.Fatal(err)
 	}
 	fr := postgres.NewFindingRepository(&postgres.DB{DB: h.db})
