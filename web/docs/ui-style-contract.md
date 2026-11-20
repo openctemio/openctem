@@ -521,20 +521,27 @@ reference.
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
-  - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+  - on a phone (a toolbar under 28rem) the end actions (Views, Group, Export)
+    end the search's line and the search keeps at least 12rem; the second
+    line starts with the filter tokens and the chips follow them (a list
+    without a search starts its first line with the tokens, the end actions
+    at its end), and takes no room while it draws nothing. Every line starts
+    with its content, left to right: no list shows a line holding only Views,
+    or tokens pushed to the end of an empty line. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
-    tooltip below it, so the filter tokens neither shrink nor wrap to a third
-    line.
+    tooltip below it, so it fits beside the search.
+    In Query mode on a phone the field takes the whole first line (its text
+    keeps at least 55 % of the field at 375 px): the end actions step down to
+    the second line's end and the tokens, inert in that mode, are not drawn.
   - a toolbar group that draws none of its controls at this width (the
     Display menu on a phone, tokens moved into the Filters sheet) takes no
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
     the first chip opens its own line (the list moves 44 px: the row and its
     gap) instead of sitting on a line an empty group already opened.
     An icon counts as drawn by its own box (an icon-only Add filter is not
-    empty), and with the tokens out of the flow the end group keeps its own
-    auto margin: it stays at the end of the line before and after the first
-    chip and in Query mode.
+    empty), and with the tokens out of the flow the chips get the whole second
+    line; the end group stays at the end of the search's line before and
+    after the first chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
