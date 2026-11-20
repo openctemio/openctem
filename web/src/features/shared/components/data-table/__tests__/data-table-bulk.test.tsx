@@ -273,6 +273,25 @@ describe('phone select mode', () => {
     expect(cardBoxes()).toHaveLength(0)
   })
 
+  it('an action that ends the selection (the page bumps the reset key) ends select mode: no bar at 0 selected', async () => {
+    const table = (key: number) => (
+      <DataTable
+        columns={columns}
+        data={rows}
+        getRowId={(r) => r.id}
+        bulk={{ rowLabel: (r) => r.name, actions: <button type="button">Assign to</button> }}
+        resetSelectionKey={key}
+      />
+    )
+    const { rerender } = render(table(0))
+    await openSelect()
+    await userEvent.click(cardBox('a'))
+    expect(countMenu()).toHaveTextContent('1 selected')
+    rerender(table(1))
+    expect(bar()).not.toBeInTheDocument()
+    expect(cardBoxes()).toHaveLength(0)
+  })
+
   it('a page that holds the mode offers Select in its own More: the toolbar draws none', async () => {
     function Page() {
       const { selectMode, item } = usePhoneSelectMode(true)
