@@ -499,10 +499,10 @@ Planned pages that do not exist today start inside the budget.
 | Roles | (see screen description) | `GET /api/v1/roles/{roleId}/members` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/roles/{roleId}/members/bulk` | action |  |  | shipped |
 |  | (see screen description) | `GET /api/v1/roles/{roleId}/impact` | first view or on open |  |  | shipped |
-| Service accounts | Service accounts list | GET /api/v1/service-accounts | first view | working | members:read | shipped |
+| Service accounts | Service accounts list (per account: roles assigned directly, active teams, AI agent mark, active unexpired key count; two grouped queries for the whole list) | GET /api/v1/service-accounts | first view | working | members:read | shipped |
 |  | Keys of one account | GET /api/v1/service-accounts/{id}/api-keys | on open | working | members:read + api-keys:read | shipped |
 |  | Max key lifetime | GET /api/v1/organization/settings/api-keys | first view | reference | api-keys:read/write, settings:read | shipped |
-|  | Keys list (status, owner filters, export) | GET /api/v1/api-keys | first view | working | api-keys:read | shipped |
+|  | Keys list (status with derived expired, owner name and kind, `?owner=me\|service_accounts`, export) | GET /api/v1/api-keys | first view | working | api-keys:read | shipped |
 | AI assistants | (see screen description) | `PUT /api/v1/mcp-access/settings` | action |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/mcp-access/clients` | action |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/api-keys` | action |  |  | shipped |
