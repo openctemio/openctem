@@ -22,7 +22,7 @@ const ROW_LINK =
  * needs attention (the security overview in brief, for whoever may open it),
  * then every settings page the user can open, grouped as in the settings rail
  * and built from the same config (src/config/settings-nav.ts), so this page,
- * the rail and ⌘K never disagree. Everyone sees at least "My account", so the
+ * the rail and ⌘K never disagree. Everyone sees at least "Your membership", so the
  * user-menu "Settings" link never ends on Access Denied.
  */
 export default function SettingsIndexPage() {
@@ -44,10 +44,10 @@ export default function SettingsIndexPage() {
 
   return (
     <SettingsPage
-      title={t('nav.item.settings', 'Settings')}
+      title={t('nav.item.organizationSettings', 'Organization settings')}
       description={t(
-        'settings.overview.description',
-        'Your account, and how your organization is set up.'
+        'settings.overview.descriptionOrg',
+        'How your organization is set up, and you in it. Your profile, password and two-factor authentication are in your account settings.'
       )}
       banners={
         <ListToolbar

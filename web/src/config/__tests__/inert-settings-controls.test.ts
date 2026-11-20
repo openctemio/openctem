@@ -33,12 +33,12 @@ const HIDDEN: Array<{ file: string; text: string; why: string }> = [
     why: 'a second language picker that drove nothing (the user menu picks the language)',
   },
   {
-    file: 'app/(dashboard)/account/notifications/page.tsx',
+    file: 'app/(dashboard)/settings/me/notifications/page.tsx',
     text: 'Email digest',
     why: 'no digest sender exists',
   },
   {
-    file: 'app/(dashboard)/account/notifications/page.tsx',
+    file: 'app/(dashboard)/settings/me/notifications/page.tsx',
     text: 'Desktop notifications',
     why: 'no desktop notifications are sent',
   },
