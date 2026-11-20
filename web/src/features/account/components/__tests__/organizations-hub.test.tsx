@@ -83,7 +83,12 @@ async function renderHub(
 ) {
   mocks.options.mockResolvedValue({ success: true, options: opts })
   render(<OrganizationsHub needsSession={false} notice={notice} />)
-  await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+  // The loading state is a status; the refusal notice is one too.
+  await waitFor(() =>
+    expect(
+      screen.queryAllByRole('status').filter((el) => el.dataset.testid !== 'welcome-notice')
+    ).toHaveLength(0)
+  )
 }
 
 describe('OrganizationsHub', () => {
