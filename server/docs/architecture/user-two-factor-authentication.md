@@ -207,10 +207,10 @@ integration credentials are.
 
 | Event | Audit action | E-mail (system SMTP) |
 |---|---|---|
-| 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | |
+| 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | yes |
 | 2FA turned off | `auth.mfa_disabled` (metadata `other_sessions_ended`) | yes |
 | Turning 2FA off refused by policy | `auth.mfa_disabled`, result failure (metadata `required_by_organizations`, `required_by_platform`) | |
-| Authenticator replaced | `auth.mfa_replaced` (metadata `other_sessions_ended`) | |
+| Authenticator replaced | `auth.mfa_replaced` (metadata `other_sessions_ended`) | yes |
 | 2FA reset by an organization owner/admin | `auth.mfa_reset` (high; actor, target user, metadata `membership_id`, `target_role`; in the caller's organization) | yes (same "turned off" notice) |
 | Wrong second factor at login | `auth.mfa_failed` | |
 | Recovery code used to sign in | `auth.mfa_recovery_code_used` (metadata `recovery_codes_remaining`) | yes |

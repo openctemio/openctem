@@ -355,6 +355,7 @@ var PagesWithoutViews = map[string]string{
 	"console:/system/leaked-credentials":  noViewsAdmin,
 	"console:/system/legal":               noViewsAdmin,
 	"console:/system/limits":              noViewsAdmin,
+	"console:/system/private-networks":    noViewsAdmin,
 	"console:/system/scan-approval":       noViewsAdmin,
 	"console:/system/scan-identification": noViewsAdmin,
 	"console:/system/sign-up":             noViewsAdmin,

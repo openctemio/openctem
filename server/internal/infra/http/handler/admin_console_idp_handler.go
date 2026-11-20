@@ -348,10 +348,12 @@ func (h *AdminConsoleHandler) DeletePlatformIdP(w http.ResponseWriter, r *http.R
 
 // ConfirmBreakGlassTest handles POST /api/v1/admin/users/{id}/break-glass-test.
 // @Summary Confirm a break-glass sign-in was a test
-// @Description Super admin only, and not the break-glass account itself: records the account's last sign-in as its periodic test.
+// @Description Super admin only, and not the break-glass account itself: records the account's last sign-in as its periodic test. An optional reason is kept in the audit record.
 // @Tags Admin Users
+// @Accept json
 // @Produce json
 // @Param id path string true "Admin user ID"
+// @Param request body AdminActionReasonRequest false "Reason (optional)"
 // @Success 200 {object} AdminResponse
 // @Failure 400 {object} apierror.Error "Not break-glass, never signed in, or your own account"
 // @Failure 404 {object} apierror.Error "Not Found"
@@ -363,7 +365,11 @@ func (h *AdminConsoleHandler) ConfirmBreakGlassTest(w http.ResponseWriter, r *ht
 		apierror.BadRequest("invalid admin id").WriteJSON(w)
 		return
 	}
-	a, err := h.svc.ConfirmBreakGlassTest(r.Context(), middleware.MustGetAdminUser(r.Context()), id, clientInfo(r))
+	reason, ok := readAdminActionReason(w, r)
+	if !ok {
+		return
+	}
+	a, err := h.svc.ConfirmBreakGlassTest(r.Context(), middleware.MustGetAdminUser(r.Context()), id, reason, clientInfo(r))
 	if err != nil {
 		switch {
 		case admin.IsAdminNotFound(err):
@@ -381,9 +387,11 @@ func (h *AdminConsoleHandler) ConfirmBreakGlassTest(w http.ResponseWriter, r *ht
 
 // UnbindIdP handles DELETE /api/v1/admin/users/{id}/idp-binding.
 // @Summary Remove an administrator's identity-provider binding
-// @Description Super admin only. The administrator is bound again, by verified email, on their next IdP sign-in. Ends their console sessions. Audited.
+// @Description Super admin only. The administrator is bound again, by verified email, on their next IdP sign-in. Ends their console sessions. Audited; an optional reason is kept in the audit record.
 // @Tags Admin Users
+// @Accept json
 // @Param id path string true "Admin user ID"
+// @Param request body AdminActionReasonRequest false "Reason (optional)"
 // @Success 204 "No Content"
 // @Failure 404 {object} apierror.Error "Not Found"
 // @Security BearerAuth
@@ -394,7 +402,11 @@ func (h *AdminConsoleHandler) UnbindIdP(w http.ResponseWriter, r *http.Request) 
 		apierror.BadRequest("invalid admin id").WriteJSON(w)
 		return
 	}
-	if err := h.svc.UnbindIdP(r.Context(), middleware.MustGetAdminUser(r.Context()), id, clientInfo(r)); err != nil {
+	reason, ok := readAdminActionReason(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.UnbindIdP(r.Context(), middleware.MustGetAdminUser(r.Context()), id, reason, clientInfo(r)); err != nil {
 		if admin.IsAdminNotFound(err) {
 			apierror.NotFound("Admin").WriteJSON(w)
 			return

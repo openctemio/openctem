@@ -1,0 +1,9 @@
+### Added: one-time move of provider shared addresses into their names' history
+
+- An address inside a range a provider publishes for infrastructure many organizations share is recorded on the name that resolves to it (with first and last seen), not as an address asset of the organization. Addresses a scan reports results on are still recorded.
+- New operator command `provider-addresses` (a link to the server binary, like `refingerprint`) cleans up what the old behaviour left: it folds existing name-to-address links into the names' address history, moves services named by a host name (and certificates that cover the name) from the address to that name, and archives the provider addresses that carry nothing else. Addresses with their own services, a scope entry, a person's decision, a tag or any other reference are kept as they are. Findings are never changed, and scope entries and exclusions are never written.
+- It is a dry run by default (counts only, nothing changed). `-tenant <id> -apply` runs it for one organization in short batches: resumable, idempotent, one audit entry, one dashboard refresh and a one-time notice per organization. `-tenant <id> -restore` puts back what it changed, except addresses changed since.
+- An address the command archived comes back (active, still a dependency) when a scan reports a result on the address itself.
+- Migration `20261119023455_provider_address_moves` adds the journal tables `provider_address_moves` and `provider_address_move_items` (new, empty; no existing table is locked).
+- **Upgrade note:** nothing runs by itself. After the upgrade, run `provider-addresses` (dry run) in the API container, read the report, then `provider-addresses -tenant <id> -apply` one organization at a time. Runbook: `server/docs/operations/provider-address-move.md`.
+- Docs: server/docs/operations/provider-address-move.md, server/docs/architecture/provider-address-move.md

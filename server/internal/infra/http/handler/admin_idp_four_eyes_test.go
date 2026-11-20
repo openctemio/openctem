@@ -141,12 +141,12 @@ func TestPutPlatformIdPTwoApprovalsReleaseOnRefusal(t *testing.T) {
 // secondRefusingGate grants the first approval and refuses the second.
 type secondRefusingGate struct{ fakeGate }
 
-func (g *secondRefusingGate) Require(ctx context.Context, a *admin.AdminUser, action admin.ApprovalAction, target string, c adminconsole.ClientInfo) (*adminapproval.Grant, error) {
+func (g *secondRefusingGate) Require(ctx context.Context, a *admin.AdminUser, action admin.ApprovalAction, target, reason string, c adminconsole.ClientInfo) (*adminapproval.Grant, error) {
 	if len(g.calls) == 1 {
 		g.calls = append(g.calls, string(action)+" "+target)
 		return nil, &admin.ApprovalRequiredError{Action: action, Target: target}
 	}
-	return g.fakeGate.Require(ctx, a, action, target, c)
+	return g.fakeGate.Require(ctx, a, action, target, reason, c)
 }
 
 // Resetting another administrator's console second factor needs a second

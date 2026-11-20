@@ -88,6 +88,39 @@ To add a route: it must hold no tenant data and act only on the caller's own acc
 list in the same pull request; `routes/tenantless_allowlist_test.go` fails until the list and the
 router agree.
 
+## Memberships
+
+`GET /users/me/tenants` (account and organization tokens) lists the caller's organizations. Each
+row carries `admission`: what that organization answers the caller's current session, worked out
+by the same rules as the token request (`AuthService.admitSession`: SSO required, identity
+provider binding, two-factor authentication, verified e-mail, personal-account policy, outside
+privilege, organization open), without minting or spending anything:
+
+| `admission` | Next step the account space shows |
+|---|---|
+| `open` | Open the organization |
+| `MFA_ENROLLMENT_REQUIRED` | Set up two-step verification (`/two-factor-setup?org=`) |
+| `MFA_IDP_EVIDENCE_REQUIRED`, `SSO_REQUIRED` | Sign in through the organization's identity provider |
+| `OWN_SIGN_IN_REQUIRED` | Sign in with the account's own sign-in |
+| `EMAIL_NOT_VERIFIED` | Verify the e-mail address |
+| `ORGANIZATION_SUSPENDED` | Nothing to do; the organization is suspended |
+
+Each row also carries `requires`, what the organization asks of every sign-in of this member
+whatever the session, from its settings and the member's role: `two_factor` (two-factor
+authentication required) and `identity_provider` (its own SSO enforced; the owner keeps a
+password break-glass). The account space shows it before the person opens the organization.
+
+The organizations evaluated are the active memberships of the token's user; the session is the
+token's own session (another person's or an unknown session gets no `admission`). Pending
+invitations are listed by `POST /auth/onboarding/options`.
+
+`POST /api/v1/me/memberships/{id}/leave` (account route, step-up) leaves one of the
+caller's organizations by id: the way out of one that does not admit the session, where
+`POST /organization/leave` (which needs that organization's token) is out of reach. It runs the
+same offboarding and audit (`member.left`, in that organization), refuses the only owner and a
+member who still owns work (409), and answers 404 for any organization the caller is not a member
+of.
+
 ## Invitations
 
 | Route | Auth | Notes |

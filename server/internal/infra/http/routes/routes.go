@@ -329,6 +329,9 @@ type Handlers struct {
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
 	AdminEmailTestLimiter *middleware.AdminMappingRateLimiter
+	// AdminDestinationTestLimiter caps the private destination test (a DNS
+	// lookup) per administrator.
+	AdminDestinationTestLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
 	// directory per administrator (bulk harvesting of accounts).
 	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
@@ -510,6 +513,7 @@ func Register(
 	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
 	// router's setting can't leak into this one.
 	authRateLimitBackend = h.AuthRateLimitBackend
+	authTokenExchangePerMin = cfg.RateLimit.TokenExchangePerMin
 	// Step-up re-authentication for sensitive routes. Reset on every Register
 	// so a previous router's checker cannot leak into this one.
 	stepUpChecker = h.StepUp
@@ -1394,7 +1398,22 @@ var authRateLimitBackend middleware.AuthRateLimitBackend //nolint:gochecknogloba
 // keeps its budgets apart from other groups' in the shared store; the same
 // scope on another replica shares them.
 func newAuthRateLimiter(scope string) *middleware.AuthRateLimiter {
-	return middleware.NewDistributedAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil, authRateLimitBackend, scope)
+	return middleware.NewDistributedAuthRateLimiter(authRateLimitConfig(), nil, authRateLimitBackend, scope)
+}
+
+// authTokenExchangePerMin is RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN, set on every
+// Register; 0 keeps the default.
+var authTokenExchangePerMin int //nolint:gochecknoglobals // set once during init
+
+// authRateLimitConfig is the auth limiter config with the configured
+// per-address token budget; the sign-in, registration and reset budgets stay
+// at their defaults.
+func authRateLimitConfig() middleware.AuthRateLimitConfig {
+	cfg := middleware.DefaultAuthRateLimitConfig()
+	if authTokenExchangePerMin > 0 {
+		cfg.TokenExchangeRatePerMin = authTokenExchangePerMin
+	}
+	return cfg
 }
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,

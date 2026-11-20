@@ -45,6 +45,8 @@ type RefusedError struct {
 	// opened it. It is returned as a detail, never inside Message (public
 	// messages carry no ids).
 	RunID string
+	// Reasons are the rule codes that refused the token (details only).
+	Reasons []string
 }
 
 func (e *RefusedError) Error() string { return ErrExchangeRefused.Error() + ": " + e.Code }
@@ -61,6 +63,9 @@ func publicRefusal(r *cirun.Refusal) error {
 		"aggregate_no_run_id":   "The token names no pipeline run, so it cannot join an aggregate run.",
 		"pipeline_rate":         fmt.Sprintf("This pipeline started %d or more runs in the last hour; wait and rerun.", cirun.MaxPipelineRunsPerHour),
 		"pipeline_cap":          "The organization or the trust configuration has the most CI pipelines it may have; an administrator must retire one.",
+		cirun.RefuseRepositoryPending: "This project is new to the trust configuration, which admits every project on this GitLab only after an administrator approves it. " +
+			"An administrator approves the project or its whole group under CI/CD, Trusted pipelines, New repositories; then run the job again.",
+		cirun.RefuseRepositoryBlocked: "An administrator blocked this project or its group for CI results.",
 	}[r.Code]
 	if msg == "" {
 		msg = r.Detail

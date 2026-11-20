@@ -121,12 +121,14 @@ func ipAddressesOf(a *ctis.Asset) ([]string, bool) {
 
 // recordSets records the IP addresses, technologies and open ports the
 // report states about the assets it may change, and applies the sets they
-// decide. Best-effort: a failure is logged and never fails the report.
+// decide. Best-effort: a failure is logged and never fails the report. It
+// returns the assets whose ip_addresses observation was written (none when
+// the write failed), so an answer kept only there is never lost.
 func (s *Service) recordSets(ctx context.Context, tenantID shared.ID, scope *alterScope,
 	src attributeSource, observedAt time.Time, report *ctis.Report, b Binding, assetMap map[string]shared.ID,
-) {
+) map[shared.ID]bool {
 	if s.sets == nil || report == nil || len(assetMap) == 0 {
-		return
+		return nil
 	}
 	tool := src.name
 	if report.Tool != nil && report.Tool.Name != "" {
@@ -172,10 +174,44 @@ func (s *Service) recordSets(ctx context.Context, tenantID shared.ID, scope *alt
 		}
 	}
 	if len(obs) == 0 {
-		return
+		return nil
 	}
 	if _, err := s.sets.ReconcileSets(ctx, tenantID, obs); err != nil {
 		s.logger.Warn("asset set attributes not reconciled", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return nil
+	}
+	written := map[shared.ID]bool{}
+	for _, o := range obs {
+		if o.Attribute == asset.SetAttrIPAddresses {
+			written[o.AssetID] = true
+		}
+	}
+	return written
+}
+
+// settleProviderAnswers finishes the DNS answers inside shared provider
+// ranges (research/531): an answer whose name's address set was written is
+// counted as recorded on the name; any other takes the normal path after
+// all, an address asset and its edge, recorded as created by this ingest so
+// attribution labels it the provider's. Never dropped.
+func (s *Service) settleProviderAnswers(ctx context.Context, tenantID shared.ID, scope *alterScope, written map[shared.ID]bool, output *Output) {
+	answers := output.providerAnswers
+	output.providerAnswers = nil
+	var fallback []providerAnswer
+	for _, a := range answers {
+		if written[a.name.ID()] {
+			output.AddressesOnName++
+			continue
+		}
+		fallback = append(fallback, a)
+	}
+	if len(fallback) == 0 {
+		return
+	}
+	s.logger.Info("provider addresses not recorded on their names; recorded as address assets",
+		"tenant_id", tenantID.String(), "answers", len(fallback))
+	for _, a := range s.assetProcessor.materializeProviderAnswers(ctx, tenantID, fallback, output) {
+		scope.note(a, a.ID(), true)
 	}
 }
 

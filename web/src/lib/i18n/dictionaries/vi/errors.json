@@ -93,6 +93,7 @@
   "errors.auth.INVALID_VERIFICATION_TOKEN": "Liên kết xác minh không hợp lệ hoặc đã hết hạn. Hãy yêu cầu liên kết mới.",
   "errors.auth.INVITATIONS_RATE_LIMITED": "Đã gửi quá nhiều lời mời. Hãy thử lại sau.",
   "errors.auth.INVITATION_ALREADY_MEMBER": "Người này đã là thành viên của tổ chức.",
+  "errors.auth.INVITATION_FOR_ANOTHER_ADDRESS": "Lời mời này được gửi tới một địa chỉ email khác. Hãy đăng nhập bằng tài khoản đó để chấp nhận.",
   "errors.auth.INVITATION_MEMBERSHIP_SUSPENDED": "Quyền truy cập của bạn vào tổ chức này đang bị tạm ngưng. Hãy liên hệ quản trị viên để được kích hoạt lại.",
   "errors.auth.INVITATION_NO_LONGER_VALID": "Lời mời này không còn hiệu lực. Hãy nhờ tổ chức gửi lời mời mới.",
   "errors.auth.INVITATION_RESEND_TOO_SOON": "Lời mời này vừa được gửi. Hãy thử lại sau ít phút.",

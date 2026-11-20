@@ -52,6 +52,7 @@ import { configNames, refusalsOf, type RefusalFix } from '../lib/connect'
 import type { CITokenRefusal, CITrustConfig } from '../types'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CITrustScopeEntries, manageScopeSupported } from './ci-trust-scope'
+import { CITrustSigningKeysSummary } from './ci-trust-signing-keys'
 import { CITrustRefusals, RefusalDetail, recentRefusals } from './ci-refusals'
 import { SnippetPanel, TrustConfigForm } from './ci-trust-form'
 
@@ -529,6 +530,7 @@ function HealthPanel({
           t('scans.ci.health.noneAccepted', 'No job accepted yet')
         )}
       </p>
+      <CITrustSigningKeysSummary config={config} />
       {config.legacy_audience && config.legacy_audience_until && (
         <p className="break-words text-sm text-warning" data-testid="ci-legacy-audience">
           {t(

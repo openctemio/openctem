@@ -15,6 +15,8 @@ type DomainPolicySource interface {
 // DomainFacts are the parts of an Identity that come from the address's
 // domain claim.
 type DomainFacts struct {
+	// Claimed: an organization verified the address's domain.
+	Claimed           bool
 	Joinable          bool
 	SSORequired       bool
 	WorkspacesBlocked bool
@@ -32,6 +34,7 @@ func FactsForEmail(ctx context.Context, src DomainPolicySource, email string) (D
 		return DomainFacts{}, err
 	}
 	return DomainFacts{
+		Claimed:           true,
 		Joinable:          ep.Joinable(),
 		SSORequired:       ep.Policy.SSORequired,
 		WorkspacesBlocked: ep.Policy.BlockNewWorkspaces,
@@ -40,6 +43,6 @@ func FactsForEmail(ctx context.Context, src DomainPolicySource, email string) (D
 
 // Apply copies the facts into id.
 func (f DomainFacts) Apply(id Identity) Identity {
-	id.DomainJoinable, id.SSORequired, id.WorkspacesBlocked = f.Joinable, f.SSORequired, f.WorkspacesBlocked
+	id.DomainClaimed, id.DomainJoinable, id.SSORequired, id.WorkspacesBlocked = f.Claimed, f.Joinable, f.SSORequired, f.WorkspacesBlocked
 	return id
 }
