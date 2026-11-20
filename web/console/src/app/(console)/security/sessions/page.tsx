@@ -2,11 +2,13 @@
 
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MonitorSmartphone, Siren } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   DataTable,
   DataTableRowActions,
@@ -23,6 +25,7 @@ import {
 } from '@console/features/admin-console/api/use-admin-sessions'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
+import { adminActivityHref } from '@console/features/admin-console/lib/console-links'
 import { roleName } from '@console/features/admin-console/lib/role-name'
 import { type AdminConsoleSession, adminHas } from '@console/features/admin-console/types'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
@@ -34,6 +37,9 @@ export default function AdminSessionsPage() {
   const { data, error, isLoading, mutate } = useAdminSessions(isSuper)
   const [ending, setEnding] = useState<AdminConsoleSession | null>(null)
   const sessions = useMemo(() => data?.data ?? [], [data])
+  // An open break-glass session is the one thing to look at here: the page's
+  // main action reviews what it did, in Admin activity.
+  const breakGlass = sessions.find((s) => s.break_glass && !s.current)
 
   const columns = useMemo<ColumnDef<AdminConsoleSession>[]>(
     () => [
@@ -181,7 +187,18 @@ export default function AdminSessionsPage() {
             'admin.sessions.description',
             'Every open console session. End one that should not be there: that administrator is signed out at once.'
           )}
-        />
+        >
+          {isSuper && breakGlass && (
+            <Button asChild>
+              <Link
+                href={adminActivityHref(breakGlass.admin_email)}
+                title={t('admin.sessions.reviewTitle', 'Review the break-glass session')}
+              >
+                {t('admin.sessions.review', 'Review')}
+              </Link>
+            </Button>
+          )}
+        </PageHeader>
         {!isSuper ? (
           <RoleRequiredNotice needed="super_admin" variant="page" />
         ) : (

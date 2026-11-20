@@ -2122,6 +2122,8 @@
   "admin.sessions.noIp": "No address recorded",
   "admin.sessions.noun": "sessions",
   "admin.sessions.reasonEnd": "Laptop reported lost, ticket 2231",
+  "admin.sessions.review": "Review",
+  "admin.sessions.reviewTitle": "Review the break-glass session",
   "admin.sessions.rowActions": "Actions for the session of {admin}",
   "admin.sessions.superOnly": "Only a super admin can see console sessions.",
   "admin.sessions.total": "{count, plural, one {# session} other {# sessions}}",

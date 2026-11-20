@@ -2122,6 +2122,8 @@
   "admin.sessions.noIp": "Không ghi nhận địa chỉ",
   "admin.sessions.noun": "phiên",
   "admin.sessions.reasonEnd": "Máy tính xách tay báo mất, phiếu 2231",
+  "admin.sessions.review": "Xem lại",
+  "admin.sessions.reviewTitle": "Xem lại phiên khẩn cấp",
   "admin.sessions.rowActions": "Thao tác với phiên của {admin}",
   "admin.sessions.superOnly": "Chỉ quản trị cấp cao mới xem được các phiên quản trị.",
   "admin.sessions.total": "{count, plural, other {# phiên}}",

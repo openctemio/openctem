@@ -1,7 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 import { checkAt, open } from '../../../e2e/helpers/page-anatomy'
 import { wcagViolations } from '../../../e2e/helpers/axe'
+import { findBreaks, formatBreaks, type Scenario } from '../../../e2e/helpers/text-breaks'
 import { ensureElevated } from '../helpers/session'
+import { CONSOLE_LIST_DATA, consoleListData } from '../helpers/rich-data'
 import {
   DETAIL_ROUTES,
   dynamicPatterns,
@@ -29,6 +31,29 @@ import {
 const VIEWPORTS = [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
+]
+
+type BreakVariant = {
+  tag: string
+  width: number
+  height: number
+  lang: 'en' | 'vi'
+  theme: 'light' | 'dark'
+  scen: Scenario
+  rowMenu?: boolean
+}
+const PHONE = { width: 390, height: 844 }
+const BREAK_VARIANTS: BreakVariant[] = [
+  { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'p-en-dark', ...PHONE, lang: 'en', theme: 'dark', scen: 'rich' },
+  { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 't-en', width: 1024, height: 768, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'd-en', width: 1440, height: 900, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'd-vi', width: 1440, height: 900, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'p-en-1', ...PHONE, lang: 'en', theme: 'light', scen: 'one' },
+  { tag: 'd-en-1', width: 1440, height: 900, lang: 'en', theme: 'light', scen: 'one' },
+  { tag: 'p-en-0', ...PHONE, lang: 'en', theme: 'light', scen: 'empty' },
+  { tag: 'p-ov-rowmenu', ...PHONE, lang: 'en', theme: 'light', scen: 'rich', rowMenu: true },
 ]
 
 /** Pages that are not a page of blocks, with the reason. */
@@ -133,6 +158,57 @@ test.describe('console pages', () => {
       const errors = watchConsole(page)
       expect(await open(page, route), `${route} does not redirect`).toBe(true)
       await checkPage(page, route, errors)
+    })
+  }
+
+  /**
+   * The layout-break detectors of the tenant app's layout suite
+   * (web/e2e/helpers/text-breaks.ts, spec 75) on the console lists whose
+   * answers CONSOLE_LIST_DATA makes hard on the layout: 200, 1 and 0 rows,
+   * long and Vietnamese names, at 390, 1024 and 1440, light and dark, en and
+   * vi, and the row menu on a phone. A list is added here once it passes.
+   */
+  for (const route of Object.keys(CONSOLE_LIST_DATA)) {
+    test(`${route} layout breaks`, async ({ page, baseURL }) => {
+      test.setTimeout(240_000)
+      const found: string[] = []
+      for (const v of BREAK_VARIANTS) {
+        await page.unrouteAll({ behavior: 'ignoreErrors' })
+        await page.setViewportSize({ width: v.width, height: v.height })
+        await page.context().addCookies([
+          { name: 'locale', value: v.lang, url: baseURL! },
+          { name: 'theme', value: v.theme, url: baseURL! },
+        ])
+        await page.emulateMedia({ colorScheme: v.theme, reducedMotion: 'reduce' })
+        await consoleListData(page, route, v.scen)
+        await open(page, route)
+        await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
+        await page
+          .locator('main [data-slot*="skeleton"], main [aria-busy="true"]')
+          .first()
+          .waitFor({ state: 'detached', timeout: 10_000 })
+          .catch(() => undefined)
+        await page.waitForTimeout(300)
+        let scope = 'main'
+        if (v.rowMenu) {
+          const trigger = page
+            .locator(
+              'main [data-phone-card] button[aria-haspopup]:visible, main tbody tr button[aria-haspopup]:visible'
+            )
+            .first()
+          if (!(await trigger.count())) continue
+          await trigger.click()
+          await page
+            .locator('[role=menu]:visible, [data-slot="drawer-content"]:visible')
+            .first()
+            .waitFor()
+          scope = '[role=menu], [data-slot="drawer-content"]'
+        }
+        const b = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+        found.push(...formatBreaks(b).map((x) => `${v.tag}: ${x}`))
+        if (v.rowMenu) await page.keyboard.press('Escape')
+      }
+      expect(found, `${route}: layout breaks`).toEqual([])
     })
   }
 
