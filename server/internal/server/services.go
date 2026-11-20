@@ -1277,6 +1277,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// A suspended organization takes no new member: accepting its invitation
+	// is refused before anything changes.
+	s.Tenant.SetOrganizationGate(s.OrganizationGate)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1361,6 +1364,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
 	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
 	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
+	// The Scope page's provider addresses card (research/531): decisions,
+	// the move out of scope, the person-confirmed addresses.
+	s.Scope.SetProviderAddresses(postgres.NewScopeProviderRepository(&postgres.DB{DB: deps.DB}))
 	// Out of scope for good closes the findings, back in scope reopens
 	// them (research/320); every exclusion change kicks a pass.
 	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
@@ -2827,6 +2833,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
 	// the same review queue.
 	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
+	// An address the provider-address move archived comes back on a direct result.
+	s.Ingest.SetProviderAddressReviver(postgres.NewProviderAddressMoveRepository(&postgres.DB{DB: deps.DB}))
 	// Result binding (RFC-040 §5.3): reports name the command they belong
 	// to; reports without one are applied with limits, or quarantined per the
 	// tenant's policy.
@@ -3895,12 +3903,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
 	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
 	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
-	if floorSource != nil {
-		s.PersonalOrgs.SetOwnerMFAApplies(func(ctx context.Context) (bool, error) {
-			p, err := floorSource.Policy(ctx)
-			return p.Floor != tenant.MFAFloorNone, err
-		})
-	}
 	s.PersonalOrgs.SetAuditService(s.Audit)
 	if s.Entitlement != nil {
 		s.PersonalOrgs.SetLimits(s.Entitlement)
@@ -3941,6 +3943,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		)
 		if s.PlatformSocialLogin != nil {
 			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
+		}
+		if auth.TestSeamActive() {
+			log.Warn("TEST BUILD: social sign-in providers are reached at a stand-in (build tag authtestseam); never run this binary in production")
 		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without

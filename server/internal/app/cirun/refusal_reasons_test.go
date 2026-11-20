@@ -296,3 +296,28 @@ func TestRecordUnverified_FloodDoesNotStarveRealIssuerRecords(t *testing.T) {
 		t.Fatalf("no_configuration writes %d (want %d), keys_unavailable %d, not_verified %d (want 1, 1)", noCfg, unverifiedNewPerHour, keys, notVerified)
 	}
 }
+
+// Review finding N1: tokens whose issuer is the configured one plus any
+// number of trailing slashes all match the configuration, so they are one
+// record, not one per variant.
+func TestRecordUnverified_SlashVariantsOfMatchedIssuerAreOneRecord(t *testing.T) {
+	now := time.Date(2026, 11, 18, 8, 0, 0, 0, time.UTC)
+	s, st := newUnverifiedService(&now, "https://gitlab.example.com")
+	ctx := context.Background()
+	tenant := shared.NewID()
+	for _, reason := range []string{UnverifiedNotVerified, UnverifiedKeysUnavailable} {
+		for i := 0; i < 50; i++ {
+			s.recordUnverified(ctx, tenant, "https://gitlab.example.com"+strings.Repeat("/", i), reason, "")
+		}
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.rows) != 2 {
+		t.Fatalf("slash variants wrote %d records, want 2 (one per reason): %v", len(st.rows), st.rows)
+	}
+	for _, r := range st.rows {
+		if r.Issuer != "https://gitlab.example.com" {
+			t.Errorf("record issuer %q, want the matched configuration's issuer", r.Issuer)
+		}
+	}
+}

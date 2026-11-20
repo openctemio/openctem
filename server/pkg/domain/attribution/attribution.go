@@ -111,6 +111,14 @@ const StateWildcardOnly State = "wildcard_only"
 // none of the organization's domains.
 const StateGuardrailed State = "guardrailed"
 
+// StateProviderHeld is not stored either: the active-scan gate's answer for
+// an address only scope entries on a provider's shared front end cover,
+// while the organization holds such entries until a person answers them on
+// the Scope page (tenant scope setting hold_provider_entries, research/531
+// D3). The address is the provider's, shared with its other customers; it
+// is watched passively until the entry is moved out of scope or kept.
+const StateProviderHeld State = "provider_held"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan

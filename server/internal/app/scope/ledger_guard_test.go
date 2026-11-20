@@ -116,6 +116,10 @@ func TestLedgerGuard_SQLWritersAreKnown(t *testing.T) {
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Delete":       true,
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.ExpireOld":    true,
 		"internal/infra/postgres/scope_exclusion_repository.go:ScopeExclusionRepository.Create": true,
+		// Shared INSERT of Create and the provider addresses move (saved only
+		// through commitLedger, provider_addresses.go);
+		// TestLedgerGuard_InsertHelperCallers pins its callers.
+		"internal/infra/postgres/scope_exclusion_repository.go:insertScopeExclusion":            true,
 		"internal/infra/postgres/scope_exclusion_repository.go:ScopeExclusionRepository.Update": true,
 		"internal/infra/postgres/scope_exclusion_repository.go:ScopeExclusionRepository.Delete": true,
 		// Time-based: the ledger holds the same expiry and drops it itself.
@@ -377,6 +381,18 @@ func TestLedgerGuard_InsertHelperCallers(t *testing.T) {
 		// A pattern replacement (replace.go), saved only inside commitEntry.
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.SaveReplacement": true,
 	}
+	// insertScopeExclusion and updateInTx: the repositories' own writers, and
+	// the provider addresses move (provider_addresses.go), saved only through
+	// commitLedger as one narrowing change.
+	knownExcl := map[string]bool{
+		"internal/infra/postgres/scope_exclusion_repository.go:ScopeExclusionRepository.Create": true,
+		"internal/infra/postgres/scope_provider_repository.go:ScopeProviderRepository.SaveMove": true,
+	}
+	knownUpdate := map[string]bool{
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Update":          true,
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.SaveReplacement": true,
+		"internal/infra/postgres/scope_provider_repository.go:ScopeProviderRepository.SaveMove":    true,
+	}
 	root := moduleRoot(t)
 	var bad []string
 	for _, gf := range parseTree(t, root, "internal", "pkg", "cmd") {
@@ -394,12 +410,19 @@ func TestLedgerGuard_InsertHelperCallers(t *testing.T) {
 				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "insertScopeTarget" && !known[key] {
 					bad = append(bad, key+" ("+gf.fset.Position(call.Pos()).String()+")")
 				}
+				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "insertScopeExclusion" && !knownExcl[key] {
+					bad = append(bad, key+" ("+gf.fset.Position(call.Pos()).String()+")")
+				}
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "updateInTx" && !knownUpdate[key] &&
+					strings.HasPrefix(gf.rel, "internal/infra/postgres/scope_") {
+					bad = append(bad, key+" ("+gf.fset.Position(call.Pos()).String()+")")
+				}
 				return true
 			})
 		}
 	}
 	if len(bad) > 0 {
 		sort.Strings(bad)
-		t.Fatalf("insertScopeTarget called outside the known repository writers:\n  %s", strings.Join(bad, "\n  "))
+		t.Fatalf("a scope write helper (insertScopeTarget, insertScopeExclusion, updateInTx) called outside the known repository writers:\n  %s", strings.Join(bad, "\n  "))
 	}
 }

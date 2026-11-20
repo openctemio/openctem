@@ -15,6 +15,7 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { markSwitchTeamCompleted } from '@/lib/api/switch-cooldown'
 import { devLog } from '@/lib/logger'
 import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // The browser's User-Agent: the API's rotation grace accepts a repeat
+        // of a just-rotated token only from the same client.
+        ...(await browserContextHeaders()),
       },
       body: JSON.stringify({
         refresh_token: refreshToken,
