@@ -546,7 +546,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
         {canEdit && !ownersError && (
           <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
             <UserPlus className="me-1.5 h-3.5 w-3.5" />
-            {t('assets.ownersTab.addOwner', 'Add Owner')}
+            {t('assets.ownersTab.addOwner', 'Add owner')}
           </Button>
         )}
       </div>
@@ -569,23 +569,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onRetry={() => mutate()}
         />
       ) : owners.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8">
-          <Users className="h-8 w-8 text-muted-foreground/50" />
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t('assets.ownersTab.none', 'No owners assigned')}
-          </p>
-          {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => setShowAddDialog(true)}
-            >
-              <UserPlus className="me-1.5 h-3.5 w-3.5" />
-              {t('assets.ownersTab.addFirst', 'Add First Owner')}
-            </Button>
-          )}
-        </div>
+        // One sentence, as the Direct access section below: the heading's
+        // "Add owner" is the one way to add (no second button here).
+        <p className="text-sm text-muted-foreground">
+          {t('assets.ownersTab.none', 'No owners assigned')}
+        </p>
       ) : (
         <div className="space-y-2">
           {/*
@@ -672,7 +660,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>{t('assets.ownersTab.addOwner', 'Add Owner')}</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.addOwner', 'Add owner')}</DialogTitle>
             <DialogDescription>
               {t(
                 'assets.ownersTab.addDesc',
@@ -867,7 +855,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 render it inside the trigger AS WELL, creating a 2-line
                 trigger and a duplicate of the helper text. */}
               <div className="space-y-2">
-                <Label>{t('assets.ownersTab.role', 'Ownership Role')}</Label>
+                <Label>{t('assets.ownersTab.role', 'Ownership role')}</Label>
                 <Select
                   value={addOwnershipType}
                   onValueChange={(v) => setAddOwnershipType(v as OwnershipType)}
@@ -914,7 +902,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
             <Button onClick={handleAdd} disabled={isSubmitting || !selectedOption}>
               {isSubmitting
                 ? t('assets.ownersTab.adding', 'Adding...')
-                : t('assets.ownersTab.addOwner', 'Add Owner')}
+                : t('assets.ownersTab.addOwner', 'Add owner')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -927,7 +915,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>{t('assets.ownersTab.editTitle', 'Edit Ownership Type')}</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.editTitle', 'Edit ownership type')}</DialogTitle>
             <DialogDescription>
               {t('assets.ownersTab.editDesc', 'Change the ownership type for {name}.', {
                 name:
@@ -939,7 +927,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label>{t('assets.ownersTab.type', 'Ownership Type')}</Label>
+              <Label>{t('assets.ownersTab.type', 'Ownership type')}</Label>
               <Select
                 value={editOwnershipType}
                 onValueChange={(v) => setEditOwnershipType(v as OwnershipType)}
