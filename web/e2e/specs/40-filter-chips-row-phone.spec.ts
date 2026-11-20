@@ -9,9 +9,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   1. the first line holds the search field and the icon actions (Views,
  *      Group) at its end, one centre line (owner report 2026-11-19: Views
  *      alone on a second line);
- *   2. the second line holds the chips at the start and the filter tokens
- *      anchored to the end, one height and one centre line, nothing on a
- *      third line;
+ *   2. the second line starts with the filter tokens, the chips after them
+ *      (owner report 2026-11-20: tokens pushed to the end of an otherwise
+ *      empty line), one height and one centre line, nothing on a third line;
  *   3. tokens and chips that do not fit scroll sideways in their strip, and
  *      a strip fades at its end exactly when more is hidden past it; no chip
  *      folds away into "+N more";
@@ -273,8 +273,8 @@ for (const locale of ['en', 'vi'] as const) {
         await page.goto('/vulnerabilities')
         // Ready when the end actions are drawn. On a phone both selects of
         // this list live in the Filters sheet, so its token strip may hold
-        // nothing and has no width (it is anchored to the end, before the
-        // actions); toolbarDefects checks whatever the line holds.
+        // nothing and has no width (it starts the second line); toolbarDefects
+        // checks whatever the line holds.
         const end = page.locator('main [data-slot="list-toolbar-end"]').first()
         await expect(end).toBeVisible({ timeout: 45_000 })
         await page.waitForLoadState('networkidle')
