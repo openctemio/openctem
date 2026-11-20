@@ -234,7 +234,8 @@ export function ScanApprovalSettings() {
         {canRules && (
           <SettingsBlock>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setEditing({ index: -1, rule: newRule() })}>
+              {/* Outline: the save bar is the page's one filled action. */}
+              <Button variant="outline" onClick={() => setEditing({ index: -1, rule: newRule() })}>
                 {t('scans.approvalSettings.addRule', 'Add rule')}
               </Button>
               {data.rules.length > 0 && (
