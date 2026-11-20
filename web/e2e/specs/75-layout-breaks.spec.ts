@@ -85,6 +85,7 @@ const CI_ROUTES = [
   '/settings/risk-scoring',
   '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
+  '/settings/sla-policies',
   '/settings/scanning/tool-sources',
   '/settings/teams',
   '/notifications',
