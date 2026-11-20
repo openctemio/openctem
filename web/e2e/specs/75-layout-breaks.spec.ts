@@ -76,6 +76,8 @@ const CI_ROUTES = [
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
+  '/scope',
+  '/settings/general',
   '/settings/members',
   '/settings/roles',
   '/settings/audit-log',
@@ -86,6 +88,7 @@ const CI_ROUTES = [
   '/settings/risk-scoring',
   '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
+  '/settings/sla-policies',
   '/settings/scanning/tool-sources',
   '/settings/teams',
   '/notifications',
@@ -149,6 +152,47 @@ function scanGovernance(scen: Scenario) {
     presets: { light: [], standard: [], strict: [] },
   }
 }
+/** Presets of the risk scoring page: the known names and one long custom name that must wrap. */
+function riskPresets(scen: Scenario) {
+  const names = [
+    'default',
+    'banking',
+    'healthcare',
+    'ecommerce',
+    'government',
+    'legacy',
+    'regional-payment-processors-and-card-schemes-extended-review',
+  ]
+  const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : names.length
+  return names.slice(0, n).map((name) => ({ name, config: {} }))
+}
+/** A weighted model with every control on screen: the seed's default model hides most of them. */
+function riskSettings() {
+  return {
+    preset: 'custom',
+    score_composition_mode: 'multiply',
+    floor_unowned_at_p2: true,
+    weights: { exposure: 30, criticality: 25, findings: 30, ctem: 15 },
+    exposure_scores: { public: 100, restricted: 70, private: 40, isolated: 10, unknown: 50 },
+    exposure_multipliers: { public: 1.5, restricted: 1.2, private: 1, isolated: 0.5, unknown: 1 },
+    criticality_scores: { critical: 100, high: 75, medium: 50, low: 25, none: 0 },
+    finding_impact: {
+      mode: 'severity_weighted',
+      per_finding_points: 5,
+      finding_cap: 20,
+      severity_weights: { critical: 10, high: 7, medium: 4, low: 2, info: 0 },
+    },
+    ctem_points: {
+      enabled: true,
+      internet_accessible: 15,
+      pii_exposed: 10,
+      phi_exposed: 15,
+      high_risk_compliance: 10,
+      restricted_data: 10,
+    },
+    risk_levels: { critical_min: 80, high_min: 60, medium_min: 40, low_min: 20 },
+  }
+}
 /**
  * Tool source keys: long source names and tool lists, a set key that was never
  * used, one rotated by a person with a long name, and a source with no key.
@@ -188,15 +232,18 @@ function toolSources(scen: Scenario) {
   ]
   return { sources: sources.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : sources.length) }
 }
-const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
-  '/settings/scanning/scan-approval': {
-    url: '**/api/v1/organization/settings/scan-governance',
-    body: scanGovernance,
-  },
-  '/settings/scanning/tool-sources': {
-    url: '**/api/v1/tool-sources',
-    body: toolSources,
-  },
+const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
+  '/settings/risk-scoring': [
+    { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
+    { url: '**/api/v1/tenants/*/settings/risk-scoring', body: riskSettings },
+  ],
+  '/settings/scanning/scan-approval': [
+    {
+      url: '**/api/v1/organization/settings/scan-governance',
+      body: scanGovernance,
+    },
+  ],
+  '/settings/scanning/tool-sources': [{ url: '**/api/v1/tool-sources', body: toolSources }],
 }
 
 /**
@@ -364,8 +411,7 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const v of variants()) {
         await page.unrouteAll({ behavior: 'ignoreErrors' })
         await prepare(page, v, baseURL!)
-        const extra = ROUTE_DATA[route]
-        if (extra) {
+        for (const extra of ROUTE_DATA[route] ?? []) {
           await page.route(extra.url, (r) =>
             r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
           )
