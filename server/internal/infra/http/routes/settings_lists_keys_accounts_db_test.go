@@ -115,7 +115,7 @@ func TestAPIKeysList_ExpiredOwnerAndFilter_DB(t *testing.T) {
 		t.Errorf("a key past its expiry reads %q, want expired", st)
 	}
 	var stored string
-	_ = h.db.QueryRow(`SELECT status FROM api_keys WHERE name = 'lapsed'`).Scan(&stored)
+	_ = h.db.QueryRowContext(context.Background(), `SELECT status FROM api_keys WHERE name = 'lapsed'`).Scan(&stored)
 	if stored != "active" {
 		t.Errorf("the row was rewritten to %q; the state must be derived at read time", stored)
 	}
