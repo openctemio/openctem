@@ -98,8 +98,12 @@ function RuleRow({
       data-testid={`approval-rule-${index}`}
     >
       {canEdit && (
-        <button
+        // The kit's icon button, so the handle has the height of the row's
+        // other controls.
+        <Button
           type="button"
+          size="icon"
+          variant="ghost"
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
@@ -108,19 +112,24 @@ function RuleRow({
             listeners?.onKeyDown?.(e)
           }}
           aria-label={t('scans.ruleList.reorder', 'Reorder {name}', { name: rule.name })}
-          className="mt-0.5 cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="cursor-grab touch-none"
         >
           <GripVertical className="size-4" />
-        </button>
+        </Button>
       )}
       <div className="min-w-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">{index + 1}.</span>
-          <span className="font-medium">{rule.name}</span>
+          {/* The number stays on the first line of a long name. */}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="text-xs text-muted-foreground">{index + 1}.</span>
+            <span className="min-w-0 font-medium">{rule.name}</span>
+          </span>
           {rule.monitor && (
             <Badge variant="outline">{t('scans.approvalSettings.monitor', 'Monitor')}</Badge>
           )}
-          {!rule.enabled && (
+          {/* Who can edit sees the state on the switch; the badge is for the
+              read-only view, so the state is said once. */}
+          {!rule.enabled && !canEdit && (
             <Badge variant="secondary">{t('scans.approvalSettings.disabled', 'Off')}</Badge>
           )}
         </div>
@@ -136,13 +145,20 @@ function RuleRow({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {approversText(t, {
-            mode,
-            required: true,
-            approvals: rule.requirement.approvals,
-            approver_roles: rule.requirement.approver_roles,
-            approver_user_ids: rule.requirement.approver_user_ids,
-          })}
+          {[
+            approversText(t, {
+              mode,
+              required: true,
+              approvals: rule.requirement.approvals,
+              approver_roles: rule.requirement.approver_roles,
+              approver_user_ids: rule.requirement.approver_user_ids,
+            }),
+            rule.requirement.require_justification &&
+              t('scans.ruleList.needsJustification', 'a justification'),
+            rule.requirement.require_ticket && t('scans.ruleList.needsTicket', 'a change ticket'),
+          ]
+            .filter(Boolean)
+            .join(', ')}
         </p>
       </div>
       {canEdit && (

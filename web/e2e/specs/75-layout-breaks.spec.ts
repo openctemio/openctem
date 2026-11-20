@@ -76,8 +76,58 @@ const CI_ROUTES = [
   '/settings/members',
   '/settings/audit-log',
   '/settings/api-keys',
+  '/settings/scanning/scan-approval',
   '/notifications',
 ]
+
+/**
+ * Settings answers richData leaves alone (it skips /settings): the pages that
+ * list records read from them get hard rows here, per scenario.
+ */
+function scanGovernance(scen: Scenario) {
+  const rules = [
+    {
+      name: 'Crown jewels outside business hours on the production payment network and the gateways',
+      conditions: {
+        crown_jewel: true,
+        hours: {
+          match: 'outside',
+          windows: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], start: '09:00', end: '18:00' }],
+        },
+      },
+      requirement: {
+        approvals: 2,
+        approver_roles: ['owner', 'admin'],
+        require_justification: true,
+      },
+    },
+    {
+      name: 'Quét dải mạng rộng của chi nhánh Hà Nội và Thành phố Hồ Chí Minh ngoài giờ làm việc',
+      monitor: true,
+      conditions: { cidr_wider_than: 20, targets_over: 500, asset_tags: ['pci', 'prod'] },
+      requirement: { approvals: 1, require_ticket: true, ticket_pattern: '^SEC-[0-9]+$' },
+    },
+    { name: 'x', enabled: false, conditions: {}, requirement: { approvals: 1 } },
+  ].map((r, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, enabled: true, ...r }))
+  const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : rules.length
+  return {
+    mode: 'on',
+    source: 'organization',
+    organization_mode: 'on',
+    platform_policy: 'tenant_controlled',
+    selectable_modes: ['off', 'on', 'strict'],
+    scope_entries_need_approval: false,
+    rules: rules.slice(0, n),
+    pending_expiry_days: 7,
+    presets: { light: [], standard: [], strict: [] },
+  }
+}
+const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
+  '/settings/scanning/scan-approval': {
+    url: '**/api/v1/organization/settings/scan-governance',
+    body: scanGovernance,
+  },
+}
 
 /**
  * Lists whose phone cards (or title row) are still bunched at the start
@@ -222,6 +272,12 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const v of variants()) {
         await page.unrouteAll({ behavior: 'ignoreErrors' })
         await prepare(page, v, baseURL!)
+        const extra = ROUTE_DATA[route]
+        if (extra) {
+          await page.route(extra.url, (r) =>
+            r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
+          )
+        }
         await page.goto(route, { timeout: 60_000 }).catch(() => {})
         await settle(page)
         let scope = 'main'
