@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { X } from 'lucide-react'
@@ -28,6 +28,9 @@ export function TagInput({
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // A pending blur timer must not fire a state update after unmount.
+  useEffect(() => () => clearTimeout(blurTimeoutRef.current), [])
 
   const handleAdd = useCallback(
     (tag: string) => {
@@ -71,6 +74,7 @@ export function TagInput({
 
   const handleBlur = useCallback(() => {
     // Delay blur so clicking a suggestion doesn't close the list
+    clearTimeout(blurTimeoutRef.current)
     blurTimeoutRef.current = setTimeout(() => setFocused(false), 150)
   }, [])
 
