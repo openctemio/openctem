@@ -1835,6 +1835,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetCampaignGroupGrantRepository(repos.PentestCampaignGroups)
 	s.Pentest.SetCampaignSignoffRepository(repos.PentestSignoff)
 	s.Pentest.SetAttachmentLookup(repos.Attachment) // authorization letter must be a file of the campaign
 	s.Pentest.SetCampaignSecrets(repos.PentestSecret, s.Encryptor)

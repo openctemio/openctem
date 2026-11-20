@@ -9,6 +9,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -256,9 +257,7 @@ func (r *DataScopeRepository) FindingPentestAccess(ctx context.Context, tenantID
 	}
 	err := r.db.QueryRowContext(ctx,
 		`SELECT f.source, f.status, f.pentest_campaign_id::text,
-		        (SELECT m.role FROM pentest_campaign_members m
-		          WHERE m.tenant_id = f.tenant_id AND m.campaign_id = f.pentest_campaign_id
-		            AND m.user_id = $3::uuid)
+		        `+campaignaccess.RoleSQL("f.tenant_id", "f.pentest_campaign_id", "$3::uuid")+`
 		 FROM findings f WHERE f.id = $1 AND f.tenant_id = $2`,
 		findingID.String(), tenantID.String(), uid).Scan(&source, &status, &campaign, &role)
 	if errors.Is(err, sql.ErrNoRows) {
