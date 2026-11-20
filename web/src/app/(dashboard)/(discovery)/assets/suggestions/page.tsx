@@ -108,7 +108,14 @@ function LinkName({ t, type, name, id }: { t: T; type: string; name: string; id:
   const shown = name || id.slice(0, 8)
   const kind = t(`assets.typeLabel.${type}`, getAssetTypeLabel(type))
   return (
-    <span className="min-w-0 truncate font-medium" title={`${shown} (${kind})`} dir="auto">
+    // At most 45 % of the line each: a long name is cut at its own share and
+    // never squeezes a short one on the other side down to one letter
+    // ("j..." for jump-01 at 1024 px).
+    <span
+      className="min-w-0 max-w-[45%] truncate font-medium"
+      title={`${shown} (${kind})`}
+      dir="auto"
+    >
       {shown}
     </span>
   )

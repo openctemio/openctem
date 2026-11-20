@@ -862,7 +862,6 @@
   "assets.ownersTab.actionsFor": "Thao tác cho {name}",
   "assets.ownersTab.addDesc": "Gán một người dùng hoặc nhóm chịu trách nhiệm về tài sản này. Người dùng là chủ sở hữu chính hoặc phụ, và thành viên của nhóm chủ sở hữu, xem được tài sản; chỉ định họ cần quyền quản lý nhóm.",
   "assets.ownersTab.addFailed": "Không thêm được chủ sở hữu",
-  "assets.ownersTab.addFirst": "Thêm chủ sở hữu đầu tiên",
   "assets.ownersTab.addOwner": "Thêm chủ sở hữu",
   "assets.ownersTab.added": "Đã thêm {name} làm chủ sở hữu {role}",
   "assets.ownersTab.adding": "Đang thêm...",
