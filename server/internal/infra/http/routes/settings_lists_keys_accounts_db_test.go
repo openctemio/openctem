@@ -174,7 +174,7 @@ func TestServiceAccountsList_RolesTeamsAIAgent_DB(t *testing.T) {
 
 	plain := h.newServiceAccount(h.tenant, "Plain")
 	bridge := h.newServiceAccount(h.tenant, "Bridge")
-	agent := h.newServiceAccount(h.tenant, "Triage agent")
+	aiAcct := h.newServiceAccount(h.tenant, "Triage agent")
 	foreign := h.newServiceAccount(h.other, "Foreign")
 
 	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, bridge.String(), tid, h.analyst.String())
@@ -182,7 +182,7 @@ func TestServiceAccountsList_RolesTeamsAIAgent_DB(t *testing.T) {
 	// An ended membership does not count.
 	second := h.newTeam(h.tenant)
 	h.exec(`INSERT INTO group_members (group_id, user_id, role, expires_at) VALUES ($1, $2, 'member', now() - interval '1 day')`, second.String(), bridge.String())
-	h.exec(`INSERT INTO ai_agents (user_id, tenant_id, attest_due_at) VALUES ($1, $2, now() + interval '30 days')`, agent.String(), tid)
+	h.exec(`INSERT INTO ai_agents (user_id, tenant_id, attest_due_at) VALUES ($1, $2, now() + interval '30 days')`, aiAcct.String(), tid)
 	h.apiKey(h.tenant, bridge, "live", "active", 24*time.Hour)
 	h.apiKey(h.tenant, bridge, "lapsed", "active", -time.Hour)
 
@@ -236,8 +236,8 @@ func TestServiceAccountsList_RolesTeamsAIAgent_DB(t *testing.T) {
 	if b["api_keys"].(float64) != 1 {
 		t.Errorf("bridge api_keys = %v, want 1 (the lapsed key is not active)", b["api_keys"])
 	}
-	if b["ai_agent"] != false || find(rows, agent)["ai_agent"] != true {
-		t.Errorf("ai_agent marks wrong: bridge=%v agent=%v", b["ai_agent"], find(rows, agent)["ai_agent"])
+	if b["ai_agent"] != false || find(rows, aiAcct)["ai_agent"] != true {
+		t.Errorf("ai_agent marks wrong: bridge=%v acct=%v", b["ai_agent"], find(rows, aiAcct)["ai_agent"])
 	}
 	p := find(rows, plain)
 	if p["roles"] == nil || p["teams"] == nil {
