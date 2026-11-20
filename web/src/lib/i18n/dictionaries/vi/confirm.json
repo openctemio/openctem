@@ -426,6 +426,7 @@
   "confirm.riskScore.recalcTitle": "Tính lại điểm rủi ro của mọi tài sản?",
   "confirm.role.delete": "Xóa vai trò",
   "confirm.role.deleteDesc": "Thành viên có vai trò này mất các quyền của nó ngay lập tức, trừ khi một vai trò khác cấp các quyền đó. Không thể hoàn tác.",
+  "confirm.role.deleteImpact": "{members, plural, =0 {Hiện không ai có vai trò này.} other {# thành viên đang có vai trò này và mất các quyền của nó ngay lập tức, trừ khi một vai trò khác cấp các quyền đó.}} Không thể hoàn tác.",
   "confirm.role.deleteTitle": "Xóa vai trò \"{name}\"?",
   "confirm.role.demoteDesc": "Việc này đổi vai trò của họ trong tổ chức. Họ mất ngay các quyền mà vai trò {role} cấp. Bạn có thể nâng quyền lại trên trang Thành viên.",
   "confirm.role.demoteTitle": "Đổi {name} từ {role} sang {to}?",

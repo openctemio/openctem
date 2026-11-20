@@ -34,7 +34,6 @@
   "src/app/(dashboard)/settings/integrations/siem/page.tsx": 3,
   "src/app/(dashboard)/settings/integrations/ticketing/page.tsx": 6,
   "src/app/(dashboard)/settings/pentest/templates/page.tsx": 7,
-  "src/app/(dashboard)/settings/roles/page.tsx": 5,
   "src/app/(dashboard)/settings/scim/page.tsx": 6,
   "src/app/(dashboard)/settings/sla-policies/page.tsx": 5,
   "src/features/access-control/components/assignment-rules-section.tsx": 5,
