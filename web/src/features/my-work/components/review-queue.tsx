@@ -95,6 +95,29 @@ export function ReviewQueue({
     }
   }
 
+  // The row's decision; the phone card takes the compact form (one main
+  // action, Reject first in More).
+  const decide = (a: ApiApproval, own: boolean, busy: boolean, layout: 'row' | 'compact') => (
+    <QueueDecisionActions
+      name={toDisplayText(a.finding_title, 300) || t('myWork.untitled', 'Untitled finding')}
+      itemId={a.id}
+      layout={layout}
+      canDecide
+      own={own}
+      ownLabel={t('myWork.review.own', 'Your request: another person decides')}
+      ownReason={t(
+        'findings.approvals.ownRequestHint',
+        'Another approver must decide your own request.'
+      )}
+      busy={busy}
+      onApprove={() => decision.openApprove(a)}
+      onReject={() => decision.openReject(a)}
+      approveLabel={t('myWork.review.approve', 'Approve')}
+      rejectLabel={t('myWork.review.reject', 'Reject')}
+      stepUpHint={stepUpHint}
+    />
+  )
+
   return (
     <>
       <QueueFrame
@@ -149,28 +172,8 @@ export function ReviewQueue({
                   rowRef={(el) => {
                     refs.current[i] = el
                   }}
-                  actions={
-                    <QueueDecisionActions
-                      name={
-                        toDisplayText(a.finding_title, 300) ||
-                        t('myWork.untitled', 'Untitled finding')
-                      }
-                      itemId={a.id}
-                      canDecide
-                      own={own}
-                      ownLabel={t('myWork.review.own', 'Your request: another person decides')}
-                      ownReason={t(
-                        'findings.approvals.ownRequestHint',
-                        'Another approver must decide your own request.'
-                      )}
-                      busy={busy}
-                      onApprove={() => decision.openApprove(a)}
-                      onReject={() => decision.openReject(a)}
-                      approveLabel={t('myWork.review.approve', 'Approve')}
-                      rejectLabel={t('myWork.review.reject', 'Reject')}
-                      stepUpHint={stepUpHint}
-                    />
-                  }
+                  actions={decide(a, own, busy, 'row')}
+                  phoneActions={decide(a, own, busy, 'compact')}
                 />
               )
             })}

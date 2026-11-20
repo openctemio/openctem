@@ -317,7 +317,7 @@ export function ScanApprovalsInbox() {
 
   // The row's controls; the table cell and the phone card share them.
   const actionsCell = useCallback(
-    (req: ScanApprovalRequest, layout: 'row' | 'card' = 'row') => {
+    (req: ScanApprovalRequest, layout: 'row' | 'compact' = 'row') => {
       const pending = req.status === 'pending'
       const mine = req.requested_by?.id === me
       const menu: ActionMenuEntry[] = [
@@ -634,6 +634,7 @@ export function ScanApprovalsInbox() {
             mobileRow={(req) => (
               <QueueCard
                 data-testid="scan-approval-card"
+                href={`/scans/${encodeURIComponent(req.scan_id)}`}
                 title={
                   <Link
                     href={`/scans/${encodeURIComponent(req.scan_id)}`}
@@ -642,32 +643,14 @@ export function ScanApprovalsInbox() {
                     {scanName(req)}
                   </Link>
                 }
-                marks={
-                  <>
-                    {showStatus && <StatusBadge status={req.status} />}
+                // The state; under Pending (every card is pending) the run's
+                // marks take its place.
+                state={
+                  showStatus ? (
+                    <StatusBadge status={req.status} />
+                  ) : req.emergency || knownIntensity(req) ? (
                     <RunMarks req={req} />
-                  </>
-                }
-                meta={
-                  <>
-                    <span>
-                      {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
-                        name:
-                          req.requested_by?.id === me
-                            ? t('scans.approval.you', 'You')
-                            : (req.requested_by?.name ?? '—'),
-                        when: formatRelativeTime(req.requested_at, locale),
-                      })}
-                    </span>
-                    {req.status === 'pending' && (
-                      <span>
-                        {decideByState(req.expires_at) !== 'overdue' && (
-                          <>{t('scans.approval.col.decideBy', 'Decide by')} </>
-                        )}
-                        <QueueDecideBy value={req.expires_at} className="text-xs" />
-                      </span>
-                    )}
-                  </>
+                  ) : undefined
                 }
                 reason={
                   <span className="text-xs text-muted-foreground">
@@ -683,7 +666,32 @@ export function ScanApprovalsInbox() {
                     )}
                   </span>
                 }
-                actions={actionsCell(req, 'card')}
+                // The run's marks, by when, then who asked (cut first).
+                meta={[
+                  showStatus && (req.emergency || knownIntensity(req)) ? (
+                    <span key="marks" className="flex items-center gap-1.5">
+                      <RunMarks req={req} />
+                    </span>
+                  ) : null,
+                  req.status === 'pending' ? (
+                    <span key="due">
+                      {decideByState(req.expires_at) !== 'overdue' && (
+                        <>{t('scans.approval.col.decideBy', 'Decide by')} </>
+                      )}
+                      <QueueDecideBy value={req.expires_at} className="text-xs" />
+                    </span>
+                  ) : null,
+                  <span key="by">
+                    {t('scans.approval.requestedBy', 'Requested by {name} {when}', {
+                      name:
+                        req.requested_by?.id === me
+                          ? t('scans.approval.you', 'You')
+                          : (req.requested_by?.name ?? '—'),
+                      when: formatRelativeTime(req.requested_at, locale),
+                    })}
+                  </span>,
+                ]}
+                actions={actionsCell(req, 'compact')}
               />
             )}
           />

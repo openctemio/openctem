@@ -307,7 +307,7 @@ export function IOCsPanel() {
             'Add an indicator of compromise to start correlating runtime telemetry.'
           )}
           onRowClick={(row) => setSelectedId(row.id)}
-          toolbarEnd={filterSelects}
+          toolbarStart={filterSelects}
         />
       )}
 

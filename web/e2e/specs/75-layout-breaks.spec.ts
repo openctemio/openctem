@@ -13,9 +13,10 @@ import {
 
 /**
  * No text overlaps, no word broken inside, nothing cut without an ellipsis,
- * one control height per row, no English left in vi and no label without a
- * value, on every list and its main overlays, with data that is hard on the
- * layout (helpers/text-breaks.ts).
+ * one control height per row, no English left in vi, no label without a
+ * value and no row bunched at one side (a phone card with nothing at its end,
+ * a title row line with an empty start), on every list and its main overlays,
+ * with data that is hard on the layout (helpers/text-breaks.ts).
  *
  * Regression guarded (owner report 2026-11-19, /assets at 390 px, dark): a
  * system description ("IP address auto-created from DNS resolution") sat in
@@ -54,6 +55,7 @@ const CI_ROUTES = [
   '/assets/groups',
   '/assets/changes',
   '/assets/duplicates',
+  '/assets/suggestions',
   '/assets/attention/no-owner',
   '/assets/attention/unscanned',
   '/assets/attention/decide-monitoring',
@@ -79,8 +81,75 @@ const CI_ROUTES = [
   '/settings/integrations',
   '/settings/risk-scoring',
   '/attack-surface/discovery',
+  '/settings/scanning/scan-approval',
   '/notifications',
 ]
+
+/**
+ * Settings answers richData leaves alone (it skips /settings): the pages that
+ * list records read from them get hard rows here, per scenario.
+ */
+function scanGovernance(scen: Scenario) {
+  const rules = [
+    {
+      name: 'Crown jewels outside business hours on the production payment network and the gateways',
+      conditions: {
+        crown_jewel: true,
+        hours: {
+          match: 'outside',
+          windows: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'], start: '09:00', end: '18:00' }],
+        },
+      },
+      requirement: {
+        approvals: 2,
+        approver_roles: ['owner', 'admin'],
+        require_justification: true,
+      },
+    },
+    {
+      name: 'Quét dải mạng rộng của chi nhánh Hà Nội và Thành phố Hồ Chí Minh ngoài giờ làm việc',
+      monitor: true,
+      conditions: { cidr_wider_than: 20, targets_over: 500, asset_tags: ['pci', 'prod'] },
+      requirement: { approvals: 1, require_ticket: true, ticket_pattern: '^SEC-[0-9]+$' },
+    },
+    { name: 'x', enabled: false, conditions: {}, requirement: { approvals: 1 } },
+  ].map((r, i) => ({ id: `00000000-0000-4000-8000-00000000000${i}`, enabled: true, ...r }))
+  const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : rules.length
+  return {
+    mode: 'on',
+    source: 'organization',
+    organization_mode: 'on',
+    platform_policy: 'tenant_controlled',
+    selectable_modes: ['off', 'on', 'strict'],
+    scope_entries_need_approval: false,
+    rules: rules.slice(0, n),
+    pending_expiry_days: 7,
+    presets: { light: [], standard: [], strict: [] },
+  }
+}
+const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
+  '/settings/scanning/scan-approval': {
+    url: '**/api/v1/organization/settings/scan-governance',
+    body: scanGovernance,
+  },
+}
+
+/**
+ * Lists whose phone cards (or title row) are still bunched at the start
+ * (`lopsided`, owner report 2026-11-20), found when the check was added. Each
+ * moves onto the phone card rule (state at the end of the title line, the
+ * main action or a chevron at the end of the facts line) and leaves this
+ * list; it only shrinks, and a route not on it fails on its first lopsided
+ * row.
+ */
+const LOPSIDED_DEBT = new Set([
+  '/findings', // one row: a title row line holds only its end controls
+  '/findings/imports',
+  '/scans/runs',
+  '/attack-surface/technologies',
+  '/settings/audit-log',
+  '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
+])
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
@@ -212,6 +281,12 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const v of variants()) {
         await page.unrouteAll({ behavior: 'ignoreErrors' })
         await prepare(page, v, baseURL!)
+        const extra = ROUTE_DATA[route]
+        if (extra) {
+          await page.route(extra.url, (r) =>
+            r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
+          )
+        }
         await page.goto(route, { timeout: 60_000 }).catch(() => {})
         await settle(page)
         let scope = 'main'
@@ -234,6 +309,7 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const [tag, found] of Object.entries(report)) {
         if (typeof found === 'string') continue
         for (const kind of BREAK_KINDS) {
+          if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
           expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
       }

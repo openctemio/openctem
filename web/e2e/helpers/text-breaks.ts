@@ -17,6 +17,10 @@ import type { Page, Route } from '@playwright/test'
  *   mixedRows   controls of different heights side by side in one row
  *   untranslated English catalog strings left on a Vietnamese page
  *   emptyLabels a label shown with no value beside it
+ *   lopsided    a row bunched at one side: a phone card whose content all
+ *               stops short of its end (nothing on the right: no state, no
+ *               chevron, no action), or a list title row line that holds
+ *               only end controls with nothing at its start
  *
  * `richData` makes the API answers of a page hard on the layout: long English
  * and Vietnamese names, 80+ characters without a break opportunity in the
@@ -31,6 +35,7 @@ export type Breaks = {
   mixedRows: string[]
   untranslated: string[]
   emptyLabels: string[]
+  lopsided: string[]
 }
 
 export const BREAK_KINDS: (keyof Breaks)[] = [
@@ -40,6 +45,7 @@ export const BREAK_KINDS: (keyof Breaks)[] = [
   'mixedRows',
   'untranslated',
   'emptyLabels',
+  'lopsided',
 ]
 
 // ---------- English strings that must not appear on a Vietnamese page ----------
@@ -94,6 +100,7 @@ export async function findBreaks(
         mixedRows: [] as string[],
         untranslated: [] as string[],
         emptyLabels: [] as string[],
+        lopsided: [] as string[],
       }
       const roots = Array.from(document.querySelectorAll(scope))
       if (!roots.length) return out
@@ -399,10 +406,6 @@ export async function findBreaks(
           !c.el.matches('[role=switch],[role=checkbox],[type=checkbox],[type=radio],textarea') &&
           c.r.height <= 48 &&
           !insideField(c) &&
-          // FilterSelect's own heights are being fixed in the list kit (K15:
-          // trigger and clear button span the whole token); drop this line
-          // when that change is on next.
-          !c.el.closest('[data-slot=filter-select]') &&
           !c.el.closest(
             '[role=tablist],[role=menu],[role=listbox],table,[data-slot=badge],nav,[data-slot=segment]'
           ) &&
@@ -463,6 +466,70 @@ export async function findBreaks(
           }
         }
       }
+
+      // (g) lopsided rows. The drawn boxes of an element: its text (line by
+      // line) and its controls, icons and images.
+      const drawn = (root: Element): DOMRect[] => {
+        const boxes: DOMRect[] = []
+        const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          const parent = n.parentElement
+          if (!n.textContent?.trim() || !parent || !shown(parent) || hiddenByAncestor(parent))
+            continue
+          const range = document.createRange()
+          range.selectNodeContents(n)
+          for (const r of Array.from(range.getClientRects())) if (r.width > 0.5) boxes.push(r)
+        }
+        for (const el of Array.from(
+          root.querySelectorAll('button,input,select,textarea,a[href],img,[role=checkbox]')
+        )) {
+          if (shown(el) && !el.closest('.sr-only')) boxes.push(el.getBoundingClientRect())
+        }
+        return boxes
+      }
+      for (const root of roots) {
+        // A phone card (300 px and wider) whose content stops more than 40 px
+        // short of its end: all of it bunched at the start, nothing (a state,
+        // a chevron, an action, text that runs on) balancing the end. Only the
+        // first screens are measured, as a person sees them.
+        for (const card of Array.from(root.querySelectorAll('[data-phone-card]'))) {
+          if (!shown(card)) continue
+          const c = card.getBoundingClientRect()
+          if (c.width < 300 || c.top > innerHeight * 2) continue
+          const boxes = drawn(card)
+          if (!boxes.length) continue
+          const end = Math.max(...boxes.map((b) => b.right))
+          if (end < c.right - 40) {
+            out.lopsided.push(
+              `card "${short(card.textContent, 30)}" ends at ${Math.round((100 * (end - c.left)) / c.width)}% of its width`
+            )
+          }
+        }
+        // A list title row (300 px and wider) with a line whose start is empty
+        // (more than a quarter of the width and 80 px): controls pushed to the
+        // end of a line of their own. A line always starts with its content.
+        for (const row of Array.from(root.querySelectorAll('[data-slot="list-title-row"]'))) {
+          if (!shown(row) || hiddenByAncestor(row)) continue
+          const r = row.getBoundingClientRect()
+          if (r.width < 300) continue
+          const lines: { top: number; bottom: number; left: number }[] = []
+          for (const b of drawn(row).sort((x, y) => x.top - y.top)) {
+            const line = lines.find((l) => b.top < l.bottom - 2 && b.bottom > l.top + 2)
+            if (line) {
+              line.left = Math.min(line.left, b.left)
+              line.bottom = Math.max(line.bottom, b.bottom)
+            } else lines.push({ top: b.top, bottom: b.bottom, left: b.left })
+          }
+          for (const l of lines) {
+            if (l.left - r.left > Math.max(80, r.width / 4)) {
+              out.lopsided.push(
+                `title row line at y ${Math.round(l.top)} holds only end controls (starts at ${Math.round((100 * (l.left - r.left)) / r.width)}%)`
+              )
+            }
+          }
+        }
+      }
+      out.lopsided = [...new Set(out.lopsided)]
       return out
     },
     { scope, enOnly: vi ? englishOnlyStrings() : [] }

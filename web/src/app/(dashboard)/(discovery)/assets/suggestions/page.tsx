@@ -72,11 +72,8 @@ const SUGGESTION_TYPES = [
 ] as const
 
 const WIDTH = {
-  sourceMin: 200,
-  // "Alias (CNAME) of" / "Phân giải tới" whole, with the arrow.
-  relationship: 184,
-  reasonMin: 160,
-  reasonMax: 320,
+  // The suggested link (source, verb, target and the reason under them).
+  linkMin: 320,
   // "Confidence" / "Độ tin cậy" whole.
   confidence: 104,
   // Approve + Dismiss + More in en and vi, and the cell padding.
@@ -102,6 +99,52 @@ function AssetCell({ t, type, name, id }: { t: T; type: string; name: string; id
       <span className="shrink-0 text-xs text-muted-foreground">
         {t(`assets.typeLabel.${type}`, getAssetTypeLabel(type))}
       </span>
+    </span>
+  )
+}
+
+/** One asset name in the link line: cut inside its share of the line, its type in the tooltip. */
+function LinkName({ t, type, name, id }: { t: T; type: string; name: string; id: string }) {
+  const shown = name || id.slice(0, 8)
+  const kind = t(`assets.typeLabel.${type}`, getAssetTypeLabel(type))
+  return (
+    <span className="min-w-0 truncate font-medium" title={`${shown} (${kind})`} dir="auto">
+      {shown}
+    </span>
+  )
+}
+
+/**
+ * The suggested link of a desktop row, as the board draws it: "source -> verb
+ * -> target" on one line (each name cut inside its share), the reason under it.
+ */
+function LinkCell({ t, s }: { t: T; s: RelationshipSuggestion }) {
+  return (
+    // No width of its own (w-0): a long name never widens the table.
+    <span className="flex w-0 min-w-full flex-col gap-0.5">
+      <span className="flex min-w-0 items-baseline gap-1.5 text-sm">
+        <LinkName
+          t={t}
+          type={s.source_asset_type}
+          name={s.source_asset_name}
+          id={s.source_asset_id}
+        />
+        <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+          <ArrowRight className="size-3.5 shrink-0 self-center rtl:rotate-180" aria-hidden />
+          {verbOf(t, s.relationship_type)}
+        </span>
+        <LinkName
+          t={t}
+          type={s.target_asset_type}
+          name={s.target_asset_name}
+          id={s.target_asset_id}
+        />
+      </span>
+      {s.reason && (
+        <span className="truncate text-xs text-muted-foreground" title={s.reason}>
+          {s.reason}
+        </span>
+      )}
     </span>
   )
 }
@@ -274,7 +317,7 @@ export default function RelationshipSuggestionsPage() {
 
   /** Approve and Dismiss in the row; the type change is in its More. */
   const decisions = useCallback(
-    (s: RelationshipSuggestion, layout: 'row' | 'card' = 'row') => {
+    (s: RelationshipSuggestion, layout: 'row' | 'compact' = 'row') => {
       const current = t('assets.suggestions.currentType', 'The current type')
       const menu: ActionMenuEntry[] = [
         {
@@ -308,86 +351,27 @@ export default function RelationshipSuggestionsPage() {
 
   const columns = useMemo<ColumnDef<RelationshipSuggestion>[]>(() => {
     const label = {
-      source: t('assets.suggestions.col.source', 'Source'),
-      relationship: t('assets.suggestions.col.relationship', 'Relationship'),
-      target: t('assets.suggestions.col.target', 'Target'),
-      reason: t('assets.suggestions.col.reason', 'Reason'),
+      link: t('assets.suggestions.col.link', 'Suggested link'),
       confidence: t('assets.suggestions.col.confidence', 'Confidence'),
       actions: t('components.col.actions', 'Actions'),
     }
     const all: ColumnDef<RelationshipSuggestion>[] = [
       {
-        id: 'source',
-        meta: { kind: 'name', pin: 'start', minWidth: WIDTH.sourceMin, label: label.source },
-        header: label.source,
+        // One column for the link and its reason (board P1-AssetsNeedsAttention):
+        // four columns cut the target under the pinned actions at 1024 and
+        // dropped the reason below 1200.
+        id: 'link',
+        meta: { kind: 'text', pin: 'start', minWidth: WIDTH.linkMin, label: label.link },
+        header: label.link,
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => (
-          <AssetCell
-            t={t}
-            type={row.original.source_asset_type}
-            name={row.original.source_asset_name}
-            id={row.original.source_asset_id}
-          />
-        ),
-      },
-      {
-        id: 'relationship',
-        meta: { kind: 'text', width: WIDTH.relationship, label: label.relationship },
-        header: label.relationship,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="flex min-w-0 items-center gap-1.5 text-sm">
-            <ArrowRight
-              className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180"
-              aria-hidden
-            />
-            <span className="truncate">{verbOf(t, row.original.relationship_type)}</span>
-          </span>
-        ),
-      },
-      {
-        id: 'target',
-        meta: { kind: 'asset', label: label.target },
-        header: label.target,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <AssetCell
-            t={t}
-            type={row.original.target_asset_type}
-            name={row.original.target_asset_name}
-            id={row.original.target_asset_id}
-          />
-        ),
-      },
-      {
-        accessorKey: 'reason',
-        meta: {
-          kind: 'text',
-          minWidth: WIDTH.reasonMin,
-          maxWidth: WIDTH.reasonMax,
-          // Dropped first: a 1440 screen (frame 1116) holds the rest whole.
-          hideBelow: 1200,
-          label: label.reason,
-        },
-        header: label.reason,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span
-            className="block w-0 min-w-full truncate text-sm text-muted-foreground"
-            title={row.original.reason}
-          >
-            {row.original.reason}
-          </span>
-        ),
+        cell: ({ row }) => <LinkCell t={t} s={row.original} />,
       },
       {
         accessorKey: 'confidence',
         meta: {
           kind: 'number',
           width: WIDTH.confidence,
-          // Then this one: a 1280 screen (frame 956).
-          hideBelow: 1000,
           label: label.confidence,
         },
         header: label.confidence,
@@ -582,19 +566,19 @@ export default function RelationshipSuggestionsPage() {
                     />
                   </span>
                 }
-                meta={
-                  <span className="tabular-nums">
-                    {t('assets.suggestions.confidenceValue', 'Confidence {value}%', {
-                      value: Math.round(s.confidence * 100),
-                    })}
-                  </span>
-                }
                 reason={
                   s.reason ? (
                     <span className="line-clamp-2 text-xs text-muted-foreground">{s.reason}</span>
                   ) : undefined
                 }
-                actions={decisions(s, 'card')}
+                meta={[
+                  <span key="confidence" className="tabular-nums">
+                    {t('assets.suggestions.confidenceValue', 'Confidence {value}%', {
+                      value: Math.round(s.confidence * 100),
+                    })}
+                  </span>,
+                ]}
+                actions={decisions(s, 'compact')}
               />
             )}
           />

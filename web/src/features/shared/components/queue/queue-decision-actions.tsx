@@ -25,7 +25,11 @@ import { cn } from '@/lib/utils'
  *   focus, and as its description for assistive technology).
  *
  * In a table row the two decisions are text buttons (the column stays
- * narrow); on a card they carry their icon.
+ * narrow); on a card they carry their icon. A list's phone card
+ * (`layout="compact"`, `QueueCard`) has one main action: the first decision
+ * with its icon, then More, whose first item is the second decision; "Your
+ * request" reads as in a row, so the controls fit the end of the card's facts
+ * line.
  *
  * The buttons are named by their visible label and the item ("Approve {name}",
  * "Merge {name}"), so a list of
@@ -78,7 +82,7 @@ export function QueueDecisionActions({
   /** Said on the first decision when it asks for a sign-in confirmation. */
   stepUpHint?: string
   menu?: ActionMenuEntry[]
-  layout?: 'row' | 'card'
+  layout?: 'row' | 'card' | 'compact'
   className?: string
 }) {
   const { t } = useTranslation()
@@ -95,7 +99,24 @@ export function QueueDecisionActions({
   const yours = ownLabel ?? t('queue.decision.own', 'Your request')
   const why = ownReason ?? t('queue.decision.ownReason', 'Someone else decides a request you made.')
   const menuLabel = t('common.actionMenu.label', 'Actions for {name}', { name })
-  const items = menu ?? []
+  const compact = layout === 'compact'
+  // On a list's phone card the second decision is the first item of More.
+  const items: ActionMenuEntry[] =
+    compact && canDecide && !own
+      ? [
+          // A refusal: red in the menu, and never drawn as a bare icon
+          // button when it is the menu's only item.
+          {
+            id: 'queue-reject',
+            label: reject,
+            icon: X,
+            onSelect: onReject,
+            group: 'decision',
+            destructive: true,
+          },
+          ...(menu ?? []),
+        ]
+      : (menu ?? [])
   const hintBase = useId()
   if (!canDecide && items.length === 0) return null
   const hintId = `${hintBase}-stepup`
@@ -109,7 +130,7 @@ export function QueueDecisionActions({
       aria-label={approveName}
       aria-describedby={stepUpHint ? hintId : undefined}
     >
-      {layout === 'card' && <Check className="me-1 h-4 w-4" aria-hidden />}
+      {layout !== 'row' && <Check className="me-1 h-4 w-4" aria-hidden />}
       {approve}
       {stepUpHint && <Lock className="ms-1 size-3.5" aria-hidden />}
     </Button>
@@ -121,7 +142,7 @@ export function QueueDecisionActions({
       data-queue-item={itemId}
       className={cn(
         'flex items-center gap-2',
-        layout === 'row' ? 'justify-end' : 'justify-start',
+        layout === 'card' ? 'justify-start' : 'justify-end',
         className
       )}
     >
@@ -164,17 +185,19 @@ export function QueueDecisionActions({
             ) : (
               approveButton
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={onReject}
-              data-slot="queue-reject"
-              aria-label={rejectName}
-            >
-              {layout === 'card' && <X className="me-1 h-4 w-4" aria-hidden />}
-              {reject}
-            </Button>
+            {!compact && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={onReject}
+                data-slot="queue-reject"
+                aria-label={rejectName}
+              >
+                {layout === 'card' && <X className="me-1 h-4 w-4" aria-hidden />}
+                {reject}
+              </Button>
+            )}
           </>
         ))}
       {items.length > 0 && (

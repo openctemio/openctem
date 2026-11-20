@@ -359,9 +359,16 @@ async function snap(page: Page): Promise<Snap> {
   })
 }
 
-function compare(step: string, a: Snap, b: Snap) {
+function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
   const problems: string[] = []
+  // On a phone the Query field takes the whole first line: the field grows and
+  // the end actions step down one row (44 px, the list with them) and the
+  // inert tokens are not drawn. Nothing else moves.
+  const ROW = 44
+  const stepsDown = (k: string) =>
+    phoneModeSwitch && (k === 'search field' || k.startsWith('end') || k.startsWith('token'))
   for (const [k, v] of Object.entries(a.controls)) {
+    if (stepsDown(k)) continue
     const w = b.controls[k]
     if (!w) {
       problems.push(`${k} disappeared`)
@@ -371,7 +378,7 @@ function compare(step: string, a: Snap, b: Snap) {
     if (v.w !== w.w || v.h !== w.h) problems.push(`${k} resized ${w.w - v.w}x${w.h - v.h}`)
   }
   for (const k of Object.keys(b.controls)) {
-    if (!a.controls[k]) problems.push(`${k} appeared`)
+    if (!a.controls[k] && !stepsDown(k)) problems.push(`${k} appeared`)
   }
   for (const [k, v] of Object.entries(a.titleEnd)) {
     const w = b.titleEnd[k]
@@ -393,6 +400,7 @@ function compare(step: string, a: Snap, b: Snap) {
     const statusStep = (b.statusRow ?? a.statusRow ?? 0) + 8
     const delta = b.listTop - a.listTop
     if (!(
+      (phoneModeSwitch && Math.abs(delta) === ROW) ||
       (rowCame && delta === step) ||
       (rowWent && delta === -step) ||
       (statusCame && delta === statusStep) ||
@@ -648,7 +656,12 @@ export function headerHoldsStill(route: Route) {
             await act()
             await settle(page)
             const now = await snap(page)
-            compare(`${route} ${width} ${locale}: ${name}`, last, now)
+            compare(
+              `${route} ${width} ${locale}: ${name}`,
+              last,
+              now,
+              width < 448 && /^switch (to Query|back to Basic)/.test(name)
+            )
             last = now
           }
 
