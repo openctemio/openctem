@@ -120,7 +120,7 @@ export function ScoringImpactDialog({
                       <span>{level(b.from)}</span>
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                       <span className="font-medium">{level(b.to)}</span>
-                      <span className="ml-auto tabular-nums text-muted-foreground">
+                      <span className="ms-auto tabular-nums text-muted-foreground">
                         {t('riskScore.impact.assetCount', '{count} assets', { count: b.count })}
                       </span>
                     </li>
@@ -143,7 +143,7 @@ export function ScoringImpactDialog({
                         </span>
                         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                         <span className="tabular-nums font-medium">{a.new_score}</span>
-                        <span className="hidden w-24 text-right text-xs text-muted-foreground sm:inline">
+                        <span className="hidden w-24 text-end text-xs text-muted-foreground sm:inline">
                           {level(a.new_level)}
                         </span>
                       </li>
@@ -186,7 +186,7 @@ export function ScoringImpactDialog({
                       <span>{c.from || t('riskScore.impact.unclassified', 'Unclassified')}</span>
                       <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                       <span className="font-medium">{c.to}</span>
-                      <span className="ml-auto tabular-nums text-muted-foreground">
+                      <span className="ms-auto tabular-nums text-muted-foreground">
                         {t('riskScore.impact.findingCount', '{count} findings', { count: c.count })}
                       </span>
                     </li>
