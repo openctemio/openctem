@@ -115,12 +115,12 @@ func TestSLADefaultPreview_DB(t *testing.T) {
 
 	// Read-only: nothing was rewritten.
 	var isDef bool
-	_ = h.db.QueryRow(`SELECT is_default FROM sla_policies WHERE id = $1`, cand).Scan(&isDef)
+	_ = h.db.QueryRowContext(context.Background(), `SELECT is_default FROM sla_policies WHERE id = $1`, cand).Scan(&isDef)
 	if isDef {
 		t.Error("the preview made the policy the default")
 	}
 	var moved int
-	_ = h.db.QueryRow(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND sla_deadline IS NOT NULL AND sla_deadline < now() + interval '2 days' AND source = 'sast' AND severity = 'critical'`, h.tenant.String()).Scan(&moved)
+	_ = h.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND sla_deadline IS NOT NULL AND sla_deadline < now() + interval '2 days' AND source = 'sast' AND severity = 'critical'`, h.tenant.String()).Scan(&moved)
 	if moved != 0 {
 		t.Errorf("a stored deadline moved (%d)", moved)
 	}
