@@ -46,6 +46,15 @@ describe('AppToaster', () => {
     expect(await toasterPosition()).toEqual(['top', 'center'])
   })
 
+  it('keeps phone toasts below the 48 px top bar, not over its badges', async () => {
+    viewport(true)
+    const list = await toaster()
+    const style = list?.getAttribute('style') ?? ''
+    for (const name of ['--offset-top', '--mobile-offset-top']) {
+      expect(style).toContain(`${name}: calc(3.5rem + env(safe-area-inset-top))`)
+    }
+  })
+
   it('keeps toasts bottom right on larger screens', async () => {
     viewport(false)
     expect(await toasterPosition()).toEqual(['bottom', 'right'])
