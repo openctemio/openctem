@@ -459,8 +459,9 @@ reference.
     dialog, with a modifier key, under a modal and in Query mode).
   - Active filters show in `FilterChipsRow`; pass `onClearAll` while two or more
     can be removed and the row draws "Clear filters" after its chips, the same
-    on every list. On a phone the chips strip starts at its first chip (only
-    its end fades) and a leading chip wider than the strip shortens its text.
+    on every list. On a phone the chips wrap onto as many lines as they need (no
+    sideways scroll, no "+N more": no chip is hidden) and a leading chip wider
+    than the row shortens its text.
   - A list whose search takes query text has a status row, owned by
     `ListToolbar` (`data-slot="list-toolbar-status"`, handed to the field as
     `ListSearchStatusSlot`): the field says what is wrong with a refused text
@@ -540,9 +541,12 @@ reference.
     three or four tokens then opens with three toolbar lines above its first
     card (#4193 keeps a phone toolbar to two), and the design board's phone
     lists show a Filters button with its count beside the search.
-  - Refresh is an end action of the toolbar (`toolbarEnd`), never the one
-    control of a list's title row: on a phone that row would hold an icon
-    alone at its end. A list that refreshes on its own needs no Refresh. A labelled end action (Export CSV) is `<ToolbarAction>` from
+  - Owner decision 2026-11-20: on a phone no control stands alone on a list's
+    title row, the list's "..." menu included. Refresh and the "..." menu are
+    end actions of the toolbar (`toolbarEnd`); when a list has both, Refresh
+    goes into the "..." menu. Desktop keeps the title-row placement. The layout
+    check (spec 75) flags a lone control on the phone title row, a "..." menu
+    included, with no exemption. A list that refreshes on its own needs no Refresh. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so it fits beside the search.
     In Query mode on a phone the field takes the whole first line (its text

@@ -895,7 +895,7 @@ export default function AssetGroupsPage() {
               />
             }
           >
-            {listActions}
+            {!isPhone && listActions}
           </ListTitleRow>
 
           {noAccess ? (
@@ -933,6 +933,8 @@ export default function AssetGroupsPage() {
                 sheetOnly: true,
               }}
               toolbarStart={<GroupAddFilter>{facetPanel}</GroupAddFilter>}
+              // On a phone the "..." menu (Refresh inside it) ends the toolbar.
+              toolbarEnd={isPhone ? listActions : undefined}
               toolbarBelow={chipsRow}
               paginationNoun={t('assetGroups.noun', 'groups')}
               onRowClick={(group) => setViewGroup(group)}

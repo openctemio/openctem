@@ -576,7 +576,7 @@ export async function findBreaks(
             }
           }
           // A phone title row whose one control is an icon (Refresh) standing
-          // alone at its end: it belongs in the toolbar's end or its More.
+          // alone at its end: it belongs in the toolbar's end (a list's "..." menu included).
           if (innerWidth < 768) {
             const ctrls = Array.from(row.querySelectorAll('button,a[href],[role=button]')).filter(
               (c) =>
@@ -592,13 +592,7 @@ export async function findBreaks(
                   return true
               return false
             }
-            // A More menu there is the list's title-row tools (its Select,
-            // Export and Display), not a lone action.
-            if (
-              ctrls.length === 1 &&
-              !visibleText(icon) &&
-              icon.getAttribute('aria-haspopup') !== 'menu'
-            ) {
+            if (ctrls.length === 1 && !visibleText(icon)) {
               out.lopsided.push(
                 `title row holds one icon control alone: "${short(icon.getAttribute('aria-label') || icon.getAttribute('title'), 30)}"`
               )

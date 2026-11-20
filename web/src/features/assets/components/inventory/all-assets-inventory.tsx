@@ -885,6 +885,26 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       />
     ) : undefined
 
+  // The list's "..." menu: the title row's end from 768 px; on a phone the end
+  // of the toolbar (a control never stands alone on the phone title row), with
+  // Refresh and Export inside it.
+  const listMenu = (
+    <ActionMenu
+      title={viewTitle}
+      label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
+      items={listMoreItems}
+      trigger={
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      }
+    />
+  )
+
   return (
     <Main>
       <PageStack>
@@ -973,20 +993,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 : t('assets.inventoryPage.export', 'Export')}
             </Button>
           )}
-          <ActionMenu
-            title={viewTitle}
-            label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
-            items={listMoreItems}
-            trigger={
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
-              >
-                <MoreHorizontal className="h-4 w-4" aria-hidden />
-              </Button>
-            }
-          />
+          {!isPhone && listMenu}
         </ListTitleRow>
 
         <div className="flex items-start">
@@ -1106,6 +1113,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                         </span>
                       </Button>
                     )}
+                    {isPhone && listMenu}
                   </>
                 }
                 toolbarBelow={

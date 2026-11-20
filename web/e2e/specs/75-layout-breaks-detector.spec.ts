@@ -91,6 +91,18 @@ test.describe('layout-break detector: phone title row', { tag: ['@phone', '@shel
     expect((await findBreaks(p)).lopsided.join('\n')).toMatch(/one icon control alone: "Refresh"/)
   })
 
+  test('flags a "..." menu alone at its end (no exemption)', async ({ page: p }) => {
+    await p.setViewportSize({ width: 390, height: 844 })
+    await p.setContent(
+      row(
+        '<button aria-label="More actions" aria-haspopup="menu" style="width:36px;height:36px"></button>'
+      )
+    )
+    expect((await findBreaks(p)).lopsided.join('\n')).toMatch(
+      /one icon control alone: "More actions"/
+    )
+  })
+
   test('is quiet for a labelled main action', async ({ page: p }) => {
     await p.setViewportSize({ width: 390, height: 844 })
     await p.setContent(row('<button style="height:36px">Add asset</button>'))
