@@ -380,6 +380,7 @@ Planned pages that do not exist today start inside the budget.
 | Remediation campaign (/remediation/campaigns/[id]) | (see screen description) | `GET /api/v1/remediation/campaigns/{id}` | first view or on open |  |  | shipped |
 | SLA (/sla) | (see screen description) | `GET /api/v1/sla/summary` | first view or on open |  |  | shipped |
 |  | (see screen description) | `GET /api/v1/sla-policies` | first view or on open |  |  | shipped |
+|  | Make default preview (counts of open findings with an earlier or overdue deadline) | `GET /api/v1/sla-policies/{id}/default-preview` | on open of the confirmation | working | settings:sla:write | shipped |
 |  | (see screen description) | `GET /api/v1/sla/escalations` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/sla/escalations/remind` | action |  |  | planned (new) |
 | Exceptions (/exceptions) | (see screen description) | `GET /api/v1/suppressions` | first view or on open |  |  | shipped |
