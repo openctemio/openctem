@@ -216,6 +216,8 @@ mcp_oauth_requests
 name_resolutions
 nav_pins
 notification_events
+notification_group_items
+notification_groups
 notification_outbox
 notification_preferences
 notification_state

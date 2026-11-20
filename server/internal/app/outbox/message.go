@@ -37,6 +37,13 @@ func (s *Service) SetFactsSource(f FactsSource) { s.facts = f }
 // programs the channel is not attached to are scrubbed from every text value,
 // the template's output included.
 func (s *Service) buildMessage(ctx context.Context, intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) notificationclient.Message {
+	if entry.AggregateType() == outboxdom.AggregateNotificationGroup {
+		if msg, ok := s.buildGroupMessage(ctx, intg, entry, delivery); ok {
+			return msg
+		}
+		// The group is gone (its channel was deleted): the stored title
+		// says what it was.
+	}
 	ext := intg.Notification
 	level := notifymsg.LevelMinimal
 	if ext != nil {

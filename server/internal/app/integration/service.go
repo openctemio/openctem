@@ -2126,6 +2126,11 @@ type CreateNotificationIntegrationInput struct {
 	// (standard).
 	DetailLevel        string
 	MinIntervalMinutes int
+	// Grouping of similar alerts; nil fields keep the default (grouped,
+	// two minutes, urgent alerts at once).
+	GroupSimilar       *bool
+	GroupWindowMinutes *int
+	UrgentAtOnce       *bool
 
 	// Metadata holds non-sensitive provider config (e.g. Splunk HEC
 	// hec_url/index/sourcetype). Merged onto any provider-set metadata.
@@ -2148,6 +2153,9 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	level := string(notifymsg.DefaultLevel)
 	if input.DetailLevel != "" {
 		level = input.DetailLevel
+	}
+	if err := validateGroupWindow(input.GroupWindowMinutes); err != nil {
+		return nil, err
 	}
 	if err := validateMessageSettings(&input.MessageTemplate, &level); err != nil {
 		return nil, err
@@ -2279,6 +2287,7 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 		if input.MinIntervalMinutes > 0 {
 			notifExt.SetMinIntervalMinutes(input.MinIntervalMinutes)
 		}
+		notifExt.SetGrouping(applyGrouping(notifExt.Grouping(), input.GroupSimilar, input.GroupWindowMinutes, input.UrgentAtOnce))
 	}
 
 	if err := s.createIntegrationWithNotification(ctx, intg, notifExt); err != nil {
@@ -2316,6 +2325,10 @@ type UpdateNotificationIntegrationInput struct {
 	MessageTemplate    *string
 	DetailLevel        *string
 	MinIntervalMinutes *int
+	// Grouping of similar alerts; nil means "not changed".
+	GroupSimilar       *bool
+	GroupWindowMinutes *int
+	UrgentAtOnce       *bool
 
 	// Metadata, when non-nil, is merged onto the integration's non-sensitive
 	// provider config (e.g. Splunk HEC hec_url/index/sourcetype).
@@ -2371,6 +2384,30 @@ func applyNotificationExtensionUpdates(ext *integrationdom.NotificationExtension
 	if input.MinIntervalMinutes != nil {
 		ext.SetMinIntervalMinutes(*input.MinIntervalMinutes)
 	}
+	ext.SetGrouping(applyGrouping(ext.Grouping(), input.GroupSimilar, input.GroupWindowMinutes, input.UrgentAtOnce))
+}
+
+// validateGroupWindow refuses a group window outside its bounds before
+// anything is written. Nil means "not changed".
+func validateGroupWindow(minutes *int) error {
+	if minutes == nil {
+		return nil
+	}
+	return integrationdom.ValidateGroupWindow(*minutes)
+}
+
+// applyGrouping sets the given grouping fields onto g (nil: unchanged).
+func applyGrouping(g integrationdom.Grouping, enabled *bool, windowMinutes *int, urgentAtOnce *bool) integrationdom.Grouping {
+	if enabled != nil {
+		g.Enabled = *enabled
+	}
+	if windowMinutes != nil {
+		g.WindowMinutes = *windowMinutes
+	}
+	if urgentAtOnce != nil {
+		g.UrgentAtOnce = *urgentAtOnce
+	}
+	return g
 }
 
 // UpdateNotificationIntegration updates an existing notification integration.
@@ -2382,6 +2419,9 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
+	if err := validateGroupWindow(input.GroupWindowMinutes); err != nil {
+		return nil, err
+	}
 	if err := validateMessageSettings(input.MessageTemplate, input.DetailLevel); err != nil {
 		return nil, err
 	}
