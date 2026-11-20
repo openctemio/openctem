@@ -271,7 +271,8 @@ export default function APIKeysPage() {
       },
       {
         accessorKey: 'last_used_at',
-        meta: { kind: 'datetime-recent', width: 120, label: lastUsedLabel },
+        // Wide enough for the longest relative time in vi ("khoảng 11 tháng trước"): at 120 it ran into Expires.
+        meta: { kind: 'datetime-recent', width: 168, label: lastUsedLabel },
         header: ({ column }) => <DataTableColumnHeader column={column} title={lastUsedLabel} />,
         cell: ({ row }) =>
           row.original.last_used_at ? (
