@@ -629,6 +629,11 @@ func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, aut
 	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
+	// One level of the origin's path tree; the service asserts the asset's
+	// tenant and the caller's data scope (404 otherwise).
+	router.Group("/api/v1/assets/{id}/web-paths", func(r Router) {
+		r.GET("/", h.Paths, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
 	router.Group("/api/v1/web-path-patterns", func(r Router) {
 		r.GET("/", h.Patterns, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
