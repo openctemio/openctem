@@ -114,7 +114,7 @@ describe('SurfaceFactsLine (measured fold)', () => {
     fireEvent.click(screen.getByRole('button', { name: '5 more facts' }))
     const dialog = screen.getByRole('dialog', { name: 'Service facts' })
     expect(within(dialog).getByText('Moved Permanently')).toBeInTheDocument()
-    expect(within(dialog).getByText('Behind Cloudflare')).toBeInTheDocument()
+    expect(within(dialog).getByText('Served by Cloudflare')).toBeInTheDocument()
     expect(within(dialog).getByText('162.159.140.229')).toBeInTheDocument()
     expect(within(dialog).getByText('172.66.0.227')).toBeInTheDocument()
     expect(within(dialog).getByText(/nginx/i)).toBeInTheDocument()
