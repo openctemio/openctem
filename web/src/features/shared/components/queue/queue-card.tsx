@@ -5,6 +5,7 @@ import Link from '@/components/link'
 import { ChevronRight } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import type { MobileRowSelection } from '../data-table/data-table'
 import { MetaLine } from '../text-layout'
 
@@ -39,7 +40,7 @@ export function QueueCard({
   meta,
   reason,
   actions,
-  href,
+  href: rawHref,
   className,
   selection,
   selectLabel,
@@ -63,6 +64,8 @@ export function QueueCard({
   selectLabel?: string
   'data-testid'?: string
 }) {
+  // The href comes from row data: a `javascript:` or other unsafe value draws no link.
+  const href = safeHref(rawHref)
   const selectable = !!selection?.selectable
   const facts = (meta ?? []).filter((m) => m !== null && m !== undefined && m !== false && m !== '')
   const end = !!actions || !!href

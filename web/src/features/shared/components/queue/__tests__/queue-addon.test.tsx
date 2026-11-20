@@ -416,8 +416,14 @@ describe('QueueCard and QueueEmpty', () => {
     expect(slots(container)).toEqual(['queue-card-head', 'queue-card-title'])
   })
 
+  it('draws no link for a javascript: href', () => {
+    const { container } = render(<QueueCard title="T" meta={['M']} href="javascript:alert(1)" />)
+    expect(container.querySelector('[data-slot="queue-card-open"]')).toBeNull()
+  })
+
   it('ends with a chevron to the item when there is no decision to draw', () => {
     const { container } = render(<QueueCard title="T" meta={['M']} href="/findings/1" />)
+    expect(container.querySelector('a[href="/findings/1"]')).not.toBeNull()
     const open = container.querySelector('a[data-slot="queue-card-open"]')
     expect(open).toHaveAttribute('href', '/findings/1')
     // A pointer target only: the title is the link for the keyboard.
