@@ -126,20 +126,42 @@ export function daysUntil(iso: string, now: number = Date.now()): number {
   return Math.ceil((t - now) / 86_400_000)
 }
 
-/** "Expires in 3 days", "Expires today", "Expired 2 days ago", "Permanent". */
-export function expiryText(expiresAt: string | undefined | null, now: number = Date.now()): string {
-  if (!expiresAt) return 'Permanent'
-  const t = Date.parse(expiresAt)
-  if (Number.isNaN(t)) return 'Permanent'
-  const ms = t - now
+/**
+ * "Expires in 3 days", "Expires today", "Expired 2 days ago", "Permanent".
+ * `verb: 'blocked'` words a path exclusion's testing window ("Blocked again in 3 days").
+ * Through the catalog when the caller passes t (a vi page read "Expires in 7 days"); English otherwise.
+ */
+export function expiryText(
+  expiresAt: string | undefined | null,
+  now: number = Date.now(),
+  t?: CoversT,
+  verb: 'expires' | 'blocked' = 'expires'
+): string {
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
+  const permanent = () => tr('scope.expiry.permanent', 'Permanent')
+  if (!expiresAt) return permanent()
+  const t0 = Date.parse(expiresAt)
+  if (Number.isNaN(t0)) return permanent()
+  const ms = t0 - now
   if (ms <= 0) {
     const ago = Math.floor(-ms / 86_400_000)
-    return ago === 0 ? 'Expired today' : `Expired ${ago} ${ago === 1 ? 'day' : 'days'} ago`
+    if (ago === 0) return tr('scope.expiry.expiredToday', 'Expired today')
+    return ago === 1
+      ? tr('scope.expiry.expiredDay', 'Expired 1 day ago')
+      : tr('scope.expiry.expiredDays', 'Expired {n} days ago', { n: String(ago) })
   }
+  const lead = verb === 'blocked' ? 'Blocked again in' : 'Expires in'
+  const k = verb === 'blocked' ? 'scope.expiry.blockedIn' : 'scope.expiry.in'
   const hours = Math.ceil(ms / 3_600_000)
-  if (hours < 24) return `Expires in ${hours} ${hours === 1 ? 'hour' : 'hours'}`
+  if (hours < 24) {
+    return hours === 1
+      ? tr(`${k}Hour`, `${lead} 1 hour`)
+      : tr(`${k}Hours`, `${lead} {n} hours`, { n: String(hours) })
+  }
   const days = Math.ceil(ms / 86_400_000)
-  return `Expires in ${days} ${days === 1 ? 'day' : 'days'}`
+  return days === 1
+    ? tr(`${k}Day`, `${lead} 1 day`)
+    : tr(`${k}Days`, `${lead} {n} days`, { n: String(days) })
 }
 
 export const TIER_LABEL: Record<string, string> = {
