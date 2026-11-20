@@ -653,7 +653,7 @@ export default function ScoringConfigurationPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2">
                 <NumberInput
                   label={t('assets.exposure.public', 'Public')}
                   tooltip={t(
@@ -737,7 +737,7 @@ export default function ScoringConfigurationPage() {
                       )}
                     />
                   </CardDescription>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2">
                     <NumberInput
                       label={t('assets.exposure.public', 'Public')}
                       value={config.exposure_multipliers.public}
@@ -891,7 +891,7 @@ export default function ScoringConfigurationPage() {
                     )}
                   />
                 </Label>
-                <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2">
                   <NumberInput
                     label={t('riskScore.level.critical', 'Critical')}
                     value={config.criticality_scores.critical}
@@ -1137,7 +1137,7 @@ export default function ScoringConfigurationPage() {
                             )}
                           />
                         </Label>
-                        <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                        <div className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2">
                           <NumberInput
                             label={t('riskScore.level.critical', 'Critical')}
                             value={config.finding_impact.severity_weights.critical}

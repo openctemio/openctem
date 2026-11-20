@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { verifyEmailAction } from '../actions/local-auth-actions'
 import { ResendVerification } from './resend-verification'
+import { useEmailUnavailable } from '../api/use-auth-providers'
 
 type State = 'verifying' | 'verified' | 'failed'
 
@@ -19,6 +20,7 @@ type State = 'verifying' | 'verified' | 'failed'
 export function VerifyEmail() {
   const { t } = useTranslation()
   const [state, setState] = useState<State>('verifying')
+  const emailUnavailable = useEmailUnavailable()
   const ran = useRef(false)
 
   useEffect(() => {
@@ -50,7 +52,13 @@ export function VerifyEmail() {
       )}
       {state === 'failed' && <ResendVerification primary />}
       <EntryActions>
-        <Button asChild variant={state === 'verified' ? 'signal' : 'outline'}>
+        {/* Sign in is the main action unless a new link can be sent from here. */}
+        <Button
+          asChild
+          variant={
+            state === 'verified' || (state === 'failed' && emailUnavailable) ? 'signal' : 'outline'
+          }
+        >
           <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
         </Button>
       </EntryActions>
