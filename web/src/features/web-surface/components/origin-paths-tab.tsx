@@ -209,7 +209,7 @@ function PathsToolbar({
       search={{
         value: input,
         onChange: onInput,
-        placeholder: t('attackSurface.paths.search', 'Search paths'),
+        placeholder: t('attackSurface.paths.search', 'Search paths…'),
       }}
       start={
         <>
@@ -564,6 +564,7 @@ export function OriginPathsTab({ assetId, assetName, canCrawl }: OriginPathsTabP
             getRowId={(e) => e.id ?? `${e.method} ${e.path_template}`}
             onRowClick={(e) => setSelected(e.id ?? null)}
             showToolbar={false}
+            showSearch={false}
             showColumnToggle={false}
             caption={t('attackSurface.paths.tableCaption', 'Endpoints under {path}', { path })}
             isLoading={level.isLoading && !data}

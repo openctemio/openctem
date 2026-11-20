@@ -538,7 +538,7 @@
   "attackSurface.paths.originFindings": "{count} phát hiện thuộc cả trang",
   "attackSurface.paths.outOfScopeCount": "{count} ngoài phạm vi",
   "attackSurface.paths.paramNode": "Đoạn biến",
-  "attackSurface.paths.search": "Tìm đường dẫn",
+  "attackSurface.paths.search": "Tìm đường dẫn…",
   "attackSurface.paths.severityUnder.critical": "Có phát hiện nghiêm trọng bên dưới",
   "attackSurface.paths.severityUnder.high": "Có phát hiện mức cao bên dưới",
   "attackSurface.paths.showAll": "Hiện tất cả",

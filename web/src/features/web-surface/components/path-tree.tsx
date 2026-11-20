@@ -18,13 +18,14 @@ import { useCallback, useRef, useState, type KeyboardEvent } from 'react'
 import { Braces, ChevronRight, CircleSlash, Folder, Globe } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 import { useWebPaths, type WebPathFolder } from '../api/use-web-paths'
 import { pathTrail, type PathFilters } from '../lib/web-paths-url'
 
 const SEVERITY_DOT: Record<string, string> = {
-  critical: 'bg-sev-critical',
-  high: 'bg-sev-high',
+  critical: SEVERITY_DOT_COLORS.critical,
+  high: SEVERITY_DOT_COLORS.high,
 }
 
 /** The severity mark of a node: a dot for a critical or high finding under it. */

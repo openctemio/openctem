@@ -538,7 +538,7 @@
   "attackSurface.paths.originFindings": "{count, plural, one {# finding on the site as a whole} other {# findings on the site as a whole}}",
   "attackSurface.paths.outOfScopeCount": "{count} out of scope",
   "attackSurface.paths.paramNode": "Variable segment",
-  "attackSurface.paths.search": "Search paths",
+  "attackSurface.paths.search": "Search paths…",
   "attackSurface.paths.severityUnder.critical": "A critical finding lies under it",
   "attackSurface.paths.severityUnder.high": "A high finding lies under it",
   "attackSurface.paths.showAll": "Show all",
