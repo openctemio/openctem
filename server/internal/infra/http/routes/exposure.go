@@ -508,6 +508,17 @@ func registerVulnerabilityRoutes(
 		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
 		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
 		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
+		// The sole member's own group: findings:approve; the service checks
+		// owner, sole active person, fresh authenticator code, reason and
+		// every member in scope.
+		r.POST("/batches/{id}/self-approve", h.SelfApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
+		// Leave one member out (reject it with a reason); the rest stays
+		// pending. The service refuses the group's requester.
+		r.POST("/batches/{id}/items/{finding_id}/reject", h.LeaveOutApprovalBatchMember, middleware.Require(permission.FindingsApprove))
+		// Decide many at once: each id goes through its single path; one
+		// step-up for the whole approve call.
+		r.POST("/bulk/approve", h.BulkApproveApprovals, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
+		r.POST("/bulk/reject", h.BulkRejectApprovals, middleware.Require(permission.FindingsApprove))
 	}, tenantMiddlewares...)
 
 	// The organization's finding approval settings: read with findings:read;
