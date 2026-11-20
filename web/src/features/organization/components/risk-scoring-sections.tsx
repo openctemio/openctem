@@ -327,6 +327,7 @@ export function CompositionSection({
         </Select>
       </SettingsRow>
       <SettingsSwitchRow
+        id="floor-unowned-toggle"
         label={t('riskScore.floor.title', 'Floor unowned findings at P2')}
         hint={t(
           'riskScore.floor.desc',
@@ -337,6 +338,7 @@ export function CompositionSection({
       />
       {weighted && (
         <SettingsSwitchRow
+          id="ctem-toggle"
           label={t('riskScore.settings.ctem.title', 'CTEM bonus points')}
           hint={t(
             'riskScore.settings.ctem.switchHint',
