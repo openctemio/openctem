@@ -81,7 +81,6 @@
   "src/features/assets/components/asset-identity-sections.tsx": 1,
   "src/features/assets/components/asset-lineage-section.tsx": 2,
   "src/features/assets/components/asset-overview-sections.tsx": 4,
-  "src/features/assets/components/asset-relationships-tab.tsx": 1,
   "src/features/assets/components/asset-scanning-section.tsx": 1,
   "src/features/assets/components/asset-sources-settings.tsx": 1,
   "src/features/assets/components/asset-timeline.tsx": 2,
