@@ -48,11 +48,13 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  *
  * Below 28rem (a phone) the toolbar is two lines, never more, laid out on a
  * grid: the search with the `end` icon actions (Views, Group) at the end of
- * its line; on the second the chips row owns the start, the `start` tokens are
- * anchored to the end. A second line with nothing to draw (no chip, no token
- * shown on a phone) takes no room, so a list never shows a line holding only
- * Views. The first chip opens the second line, or fills the room at its start
- * when tokens already hold it; it never moves a token or an action. Nothing
+ * its line; the second starts with the `start` tokens, the chips row after
+ * them (without a search the tokens start the first line instead). Every line
+ * starts with its content: no line holds controls pushed to its end alone. A
+ * second line with nothing to draw (no chip, no token shown on a phone) takes
+ * no room, so a list never shows a line holding only Views. The first chip
+ * opens the second line, or takes the room after the tokens when they already
+ * hold it; it never moves a token or an action. Nothing
  * wraps: tokens that do not fit scroll sideways in their strip (with a fade on
  * an edge that hides more), and so do the chips (`FilterChipsRow`). The search
  * keeps at least 12rem beside the actions. The layout is the same with and
@@ -246,26 +248,29 @@ function useEmptyGroups(
 
 /**
  * The phone layout (below a 28rem toolbar), a grid of three columns: the
- * second line's start, the room the tokens need beyond the end group, the end
- * group. Line 1: lead (columns 1-2), end group (3). Line 2: chips (1), tokens
- * (2-3, at the end). Line 3: the query field's problem. The gaps are margins
- * of the drawn controls, never grid gaps, so a line or a column that draws
- * nothing (an empty group is out of the flow) takes no room at all.
+ * tokens, the rest of the line, the end group. Every line starts with its
+ * content, left to right; no line holds controls pushed to its end alone.
+ * Line 1: lead (columns 1-2) or, with no search, the tokens (1), then the end
+ * group (3). Line 2: the tokens (1), then the chips (2-3; the whole line when
+ * no token is drawn). Line 3: the query field's problem. The first chip opens
+ * line 2 after the tokens or fills it alone, so it never moves a token. The
+ * gaps are margins of the drawn controls, never grid gaps, so a line or a
+ * column that draws nothing (an empty group is out of the flow) takes no room.
  */
 const PHONE = {
   layout:
-    '@max-md/toolbar:grid @max-md/toolbar:grid-cols-[minmax(0,1fr)_auto_auto] @max-md/toolbar:gap-0',
+    '@max-md/toolbar:grid @max-md/toolbar:grid-cols-[auto_minmax(0,1fr)_auto] @max-md/toolbar:gap-0',
   lead: '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-3 @max-md/toolbar:row-start-1 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:gap-2',
   // The strip's 4px padding keeps focus rings inside its scroll box; its top
   // margin makes the 8px over line 2 with it.
   tokens:
-    '@max-md/toolbar:col-start-2 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-1 @max-md/toolbar:-mb-1 @max-md/toolbar:ms-2 @max-md/toolbar:justify-self-end @max-md/toolbar:max-w-[60cqw]',
-  // No search or trigger: the tokens start the first line, before the end group.
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-1 @max-md/toolbar:-mb-1 @max-md/toolbar:justify-self-start @max-md/toolbar:max-w-[60cqw]',
+  // No search or trigger: the tokens start the first line, the end group ends it.
   tokensAlone:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-3 @max-md/toolbar:row-start-1 @max-md/toolbar:-my-1 @max-md/toolbar:justify-self-end @max-md/toolbar:max-w-[60cqw]',
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-1 @max-md/toolbar:-my-1 @max-md/toolbar:justify-self-start @max-md/toolbar:max-w-[60cqw]',
   end: '@max-md/toolbar:col-start-3 @max-md/toolbar:row-start-1 @max-md/toolbar:ms-2 @max-md/toolbar:max-w-[calc(100cqw-12rem)]',
   belowBesideTokens:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4',
+    '@max-md/toolbar:col-start-2 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-start-1 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:ms-0',
   belowAlone:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2',
   // Query mode: the field takes the whole first line; the end group steps
@@ -362,8 +367,8 @@ export function ListToolbar({
           {start ? (
             // A phone keeps the tokens on the second line in a strip that
             // scrolls sideways instead of wrapping (edge fade when more is
-            // hidden), anchored to the end (Add filter stays with them), at
-            // most 60% of the line: the chips own the start, so a chip
+            // hidden), at the start of the line (Add filter stays with them),
+            // at most 60% of the line: the chips follow them, so a chip
             // appearing moves no token.
             // In Query mode the text owns the filter: the tokens stay in their
             // place, dimmed and inert (no focus, no click, no `f`), so the

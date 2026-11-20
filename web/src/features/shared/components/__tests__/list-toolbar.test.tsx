@@ -128,7 +128,7 @@ describe('ListToolbar slots', () => {
     expect(region.className).not.toContain('@max-md/toolbar:grid')
     const layout = document.querySelector('[data-slot="list-toolbar-layout"]') as HTMLElement
     expect(layout.className).toContain('@max-md/toolbar:grid')
-    expect(layout.className).toContain('@max-md/toolbar:grid-cols-[minmax(0,1fr)_auto_auto]')
+    expect(layout.className).toContain('@max-md/toolbar:grid-cols-[auto_minmax(0,1fr)_auto]')
     // No grid gaps: a line that draws nothing takes no room.
     expect(layout.className).toContain('@max-md/toolbar:gap-0')
     const bar = screen.getByTestId('data-table-toolbar')
@@ -190,7 +190,7 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).not.toContain('@max-md/toolbar:flex ')
   })
 
-  it('on a phone anchors the tokens to the end of line 2 in one scrolling strip, the chips own its start', () => {
+  it('on a phone starts line 2 with the tokens in one scrolling strip, the chips after them', () => {
     render(
       <ListToolbar
         search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
@@ -201,9 +201,10 @@ describe('ListToolbar slots', () => {
     )
     const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
     expect(tokens.className).toContain('@max-md/toolbar:row-start-2')
-    expect(tokens.className).toContain('@max-md/toolbar:col-start-2')
-    expect(tokens.className).toContain('@max-md/toolbar:col-end-4')
-    expect(tokens.className).toContain('@max-md/toolbar:justify-self-end')
+    expect(tokens.className).toContain('@max-md/toolbar:col-start-1')
+    // At the start of the line: never pushed to its end with the start empty.
+    expect(tokens.className).toContain('@max-md/toolbar:justify-self-start')
+    expect(tokens.className).not.toContain('justify-self-end')
     // Capped, so the chips keep room; it scrolls past that, never wraps.
     expect(tokens.className).toContain('@max-md/toolbar:max-w-[60cqw]')
     expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
@@ -211,15 +212,17 @@ describe('ListToolbar slots', () => {
     expect(tokens.className).toContain('data-[fade-end=true]')
     expect(tokens.className).toMatch(/(^|\s)contents(\s|$)/)
     const below = screen.getByTestId('data-table-toolbar-below')
-    expect(below.className).toContain('@max-md/toolbar:col-start-1')
+    // After the tokens, to the line's end.
+    expect(below.className).toContain('@max-md/toolbar:col-start-2')
+    expect(below.className).toContain('@max-md/toolbar:col-end-4')
     expect(below.className).toContain('@max-md/toolbar:row-start-2')
     // The whole line once the tokens draw nothing at this width.
     expect(below.className).toContain(
-      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4'
+      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-start-1'
     )
   })
 
-  it('on a phone without a search starts the first line with the tokens, before the actions', () => {
+  it('on a phone without a search starts the first line with the tokens, the actions at its end', () => {
     render(
       <ListToolbar
         start={<button type="button">Status: Open</button>}
@@ -228,8 +231,11 @@ describe('ListToolbar slots', () => {
     )
     const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
     expect(tokens.className).toContain('@max-md/toolbar:row-start-1')
-    expect(tokens.className).toContain('@max-md/toolbar:justify-self-end')
+    expect(tokens.className).toContain('@max-md/toolbar:col-start-1')
+    expect(tokens.className).toContain('@max-md/toolbar:justify-self-start')
     expect(tokens.className).not.toContain('@max-md/toolbar:row-start-2')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:col-start-3')
   })
 
   it('has the same boxes with and without a chips row, so the first chip moves nothing', () => {

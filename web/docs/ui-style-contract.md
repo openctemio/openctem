@@ -519,9 +519,11 @@ reference.
     same rows (table, board, analytics) at the end of the toolbar.
   - on a phone (a toolbar under 28rem) the end actions (Views, Group, Export)
     end the search's line and the search keeps at least 12rem; the second
-    line holds the chips at its start and the filter tokens at its end, and
-    takes no room while it draws nothing, so no list shows a line holding
-    only Views. A labelled end action (Export CSV) is `<ToolbarAction>` from
+    line starts with the filter tokens and the chips follow them (a list
+    without a search starts its first line with the tokens, the end actions
+    at its end), and takes no room while it draws nothing. Every line starts
+    with its content, left to right: no list shows a line holding only Views,
+    or tokens pushed to the end of an empty line. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so it fits beside the search.
     In Query mode on a phone the field takes the whole first line (its text

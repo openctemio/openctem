@@ -100,8 +100,11 @@ describe('list toolbar: a group that draws nothing takes no line', () => {
     // The end group keeps its own column on the search line, whatever the tokens do.
     expect(group(container, 'end').className).toContain('@max-md/toolbar:col-start-3')
     expect(group(container, 'end').className).toContain('@max-md/toolbar:row-start-1')
-    expect(container.querySelector('[data-slot="list-toolbar-below"]')!.className).toContain(
-      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-end-4'
+    // Normally after the tokens (columns 2-3); from the line's start once they draw nothing.
+    const below = container.querySelector('[data-slot="list-toolbar-below"]')!.className
+    expect(below).toContain('@max-md/toolbar:col-end-4')
+    expect(below).toContain(
+      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens][data-empty]]/toolbar:col-start-1'
     )
   })
 })
