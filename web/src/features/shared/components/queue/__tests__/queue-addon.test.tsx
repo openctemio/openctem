@@ -155,6 +155,63 @@ describe('QueueDecisionActions', () => {
     expect(own).toHaveTextContent('Your request Someone else decides a request you made.')
   })
 
+  it('compact (a phone card): one main action, the second decision first in More', () => {
+    const onReject = vi.fn()
+    render(
+      <QueueDecisionActions
+        {...base}
+        onReject={onReject}
+        canDecide
+        layout="compact"
+        menu={[{ id: 'remind', label: 'Remind' }]}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Approve Request A' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reject Request A' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Actions for Request A' })).toHaveAttribute(
+      'data-items',
+      'queue-reject,remind'
+    )
+  })
+
+  it('compact: your own request reads as in a row, with no decision in More', () => {
+    const { container } = render(
+      <QueueDecisionActions
+        {...base}
+        canDecide
+        own
+        layout="compact"
+        menu={[{ id: 'remind', label: 'Remind' }]}
+      />
+    )
+    const own = container.querySelector('span[data-slot="queue-own-request"]')
+    expect(own).toHaveTextContent('Your request')
+    expect(own).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('group', { name: 'Actions for Request A' })).toHaveAttribute(
+      'data-items',
+      'remind'
+    )
+  })
+
+  it('compact without the permission keeps only the menu the user may use', () => {
+    const { container, rerender } = render(
+      <QueueDecisionActions {...base} canDecide={false} layout="compact" />
+    )
+    expect(container).toBeEmptyDOMElement()
+    rerender(
+      <QueueDecisionActions
+        {...base}
+        canDecide={false}
+        layout="compact"
+        menu={[{ id: 'remind', label: 'Remind' }]}
+      />
+    )
+    expect(screen.getByRole('group', { name: 'Actions for Request A' })).toHaveAttribute(
+      'data-items',
+      'remind'
+    )
+  })
+
   it('puts everything else under one More, named after the item', () => {
     render(
       <QueueDecisionActions
@@ -321,21 +378,85 @@ describe('useQueueAnnouncer', () => {
 })
 
 describe('QueueCard and QueueEmpty', () => {
-  it('draws its slots in one order and leaves out the empty ones', () => {
-    const { container } = render(<QueueCard title="T" marks="M" meta="W" reason="R" actions="A" />)
-    const slots = [...container.querySelectorAll('[data-slot^="queue-card-"]')].map((n) =>
-      n.getAttribute('data-slot')
+  const slots = (root: HTMLElement) =>
+    [...root.querySelectorAll('[data-slot^="queue-card-"]')].map((n) => n.getAttribute('data-slot'))
+
+  it('draws the title line, the reason, then the facts line with the decision at its end', () => {
+    const { container } = render(
+      <QueueCard title="T" state="S" meta={['M1', null, 'M2']} reason="R" actions="A" />
     )
-    expect(slots).toEqual([
+    expect(slots(container)).toEqual([
+      'queue-card-head',
       'queue-card-title',
-      'queue-card-marks',
-      'queue-card-meta',
+      'queue-card-state',
       'queue-card-reason',
+      'queue-card-more',
+      'queue-card-line',
+      'queue-card-meta',
       'queue-card-actions',
     ])
-    const bare = render(<QueueCard title="T" />).container
-    expect(bare.querySelectorAll('[data-slot^="queue-card-"]')).toHaveLength(1)
+    // Next to the decision only the first fact; the others wrap above it as
+    // whole words (never a one-line, ellipsis-cut line); an empty item is left out.
+    const meta = container.querySelector('[data-slot="queue-card-meta"]')
+    expect(meta).toHaveTextContent('M1')
+    expect(meta).not.toHaveTextContent('M2')
+    expect(container.querySelector('[data-slot="queue-card-more"]')).toHaveTextContent('M2')
+    expect(container.querySelector('[data-one-line]')).toBeNull()
   })
+
+  it('keeps every fact on the one wrapping line when nothing sits at the end', () => {
+    const { container } = render(<QueueCard title="T" meta={['M1', 'M2']} />)
+    expect(container.querySelector('[data-slot="queue-card-more"]')).toBeNull()
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveTextContent('M1')
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveTextContent('M2')
+  })
+
+  it('leaves out the empty slots: a bare card is its title line only', () => {
+    const { container } = render(<QueueCard title="T" />)
+    expect(slots(container)).toEqual(['queue-card-head', 'queue-card-title'])
+  })
+
+  it('draws no link for a javascript: href', () => {
+    const { container } = render(<QueueCard title="T" meta={['M']} href="javascript:alert(1)" />)
+    expect(container.querySelector('[data-slot="queue-card-open"]')).toBeNull()
+  })
+
+  it('ends with a chevron to the item when there is no decision to draw', () => {
+    const { container } = render(<QueueCard title="T" meta={['M']} href="/findings/1" />)
+    expect(container.querySelector('a[href="/findings/1"]')).not.toBeNull()
+    const open = container.querySelector('a[data-slot="queue-card-open"]')
+    expect(open).toHaveAttribute('href', '/findings/1')
+    // A pointer target only: the title is the link for the keyboard.
+    expect(open).toHaveAttribute('tabindex', '-1')
+    expect(open).toHaveAttribute('aria-hidden', 'true')
+    expect(open).toHaveClass('inline-flex')
+  })
+
+  it('keeps the chevron for the case where the decision draws nothing', () => {
+    const { container } = render(
+      <QueueCard title="T" meta={['M']} href="/findings/1" actions={<span>Approve</span>} />
+    )
+    // Hidden while the actions slot holds something (CSS `peer-empty`).
+    expect(container.querySelector('[data-slot="queue-card-actions"]')).toHaveClass('peer')
+    expect(container.querySelector('[data-slot="queue-card-open"]')).toHaveClass(
+      'hidden',
+      'peer-empty:inline-flex'
+    )
+  })
+
+  it("offers the row's checkbox in select mode", () => {
+    const onSelectedChange = vi.fn()
+    render(
+      <QueueCard
+        title="T"
+        selectLabel="Select T"
+        selection={{ selectable: true, selected: false, onSelectedChange }}
+      />
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select T' }))
+    expect(onSelectedChange).toHaveBeenCalledWith(true)
+  })
+
   it('names the kind of empty queue', () => {
     const { container } = render(<QueueEmpty kind="nothing-waiting" title="Nothing waits" />)
     expect(container.querySelector('[data-kind="nothing-waiting"]')).toHaveTextContent(

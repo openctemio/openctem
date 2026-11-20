@@ -274,7 +274,7 @@ export default function RelationshipSuggestionsPage() {
 
   /** Approve and Dismiss in the row; the type change is in its More. */
   const decisions = useCallback(
-    (s: RelationshipSuggestion, layout: 'row' | 'card' = 'row') => {
+    (s: RelationshipSuggestion, layout: 'row' | 'compact' = 'row') => {
       const current = t('assets.suggestions.currentType', 'The current type')
       const menu: ActionMenuEntry[] = [
         {
@@ -582,19 +582,19 @@ export default function RelationshipSuggestionsPage() {
                     />
                   </span>
                 }
-                meta={
-                  <span className="tabular-nums">
-                    {t('assets.suggestions.confidenceValue', 'Confidence {value}%', {
-                      value: Math.round(s.confidence * 100),
-                    })}
-                  </span>
-                }
                 reason={
                   s.reason ? (
                     <span className="line-clamp-2 text-xs text-muted-foreground">{s.reason}</span>
                   ) : undefined
                 }
-                actions={decisions(s, 'card')}
+                meta={[
+                  <span key="confidence" className="tabular-nums">
+                    {t('assets.suggestions.confidenceValue', 'Confidence {value}%', {
+                      value: Math.round(s.confidence * 100),
+                    })}
+                  </span>,
+                ]}
+                actions={decisions(s, 'compact')}
               />
             )}
           />
