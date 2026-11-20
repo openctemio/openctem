@@ -78,7 +78,13 @@ export function wildcardApex(pattern: string): string {
  * reading (name, domain_and_subdomains, addresses, pattern); the pattern is
  * used when the server sent none.
  */
-export function coversText(e: { pattern?: string; covers?: string; target_type?: string }): string {
+export function coversText(
+  e: { pattern?: string; covers?: string; target_type?: string },
+  t?: CoversT
+): string {
+  // Through the catalog when the caller passes t (a vi page read
+  // "Covers every address in ..." in English); English otherwise.
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
   const pattern = (e.pattern ?? '').trim()
   const apex = wildcardApex(pattern)
   const kind = e.target_type ?? ''
@@ -93,16 +99,24 @@ export function coversText(e: { pattern?: string; covers?: string; target_type?:
           : '')
   switch (covers) {
     case 'domain_and_subdomains':
-      return apex ? `${apex} and every name below it` : 'The domain and every name below it'
+      return apex
+        ? tr('scope.coversText.subtree', '{apex} and every name below it', { apex })
+        : tr('scope.coversText.domainSubtree', 'The domain and every name below it')
     case 'name':
-      return `${pattern} only`
+      return tr('scope.coversText.only', '{pattern} only', { pattern })
     case 'addresses':
       return pattern.includes('/') || pattern.includes('-')
-        ? `every address in ${pattern}`
-        : `${pattern} only`
+        ? tr('scope.coversText.range', 'every address in {pattern}', { pattern })
+        : tr('scope.coversText.only', '{pattern} only', { pattern })
     default:
-      return pattern ? `Names matching ${pattern}` : ''
+      return pattern ? tr('scope.coversText.matching', 'names matching {pattern}', { pattern }) : ''
   }
+}
+
+type CoversT = (key: string, fallback: string, vars?: Record<string, string>) => string
+
+function fill(s: string, v?: Record<string, string>): string {
+  return v ? s.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m) : s
 }
 
 /** Whole days until `iso` from `now` (ceil; negative once past). */

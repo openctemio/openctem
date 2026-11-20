@@ -162,7 +162,9 @@ function RuleRow({
         </p>
       </div>
       {canEdit && (
-        <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3">
+        // On a phone the controls fit one line under the text (tighter gaps,
+        // Remove pushed to the end) instead of Remove wrapping alone.
+        <div className="col-start-2 flex flex-wrap items-center gap-1 sm:col-start-3 sm:gap-2">
           <label className="flex items-center gap-2 text-sm">
             <Switch
               checked={rule.enabled}
@@ -200,7 +202,7 @@ function RuleRow({
           <Button
             size="icon"
             variant="ghost"
-            className="ms-3 text-destructive hover:text-destructive"
+            className="ms-auto text-destructive hover:text-destructive sm:ms-3"
             aria-label={t('scans.approvalSettings.removeRule', 'Remove rule "{name}"', {
               name: rule.name,
             })}

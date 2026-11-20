@@ -1,31 +1,31 @@
 'use client'
 
 /**
- * Service accounts: an organization-owned identity for an integration (a SIEM
- * export, a ticketing bridge) instead of a person's key. A new account holds
- * no permission; it gets a role in Roles and assets through a team, and acts
- * only through API keys minted here. The API is the authority on every rule
- * (never an owner or administrator, never full data access, never signs in).
+ * Service accounts (board P4-Settings-ServiceAccounts): an organization-owned
+ * identity for an integration (a SIEM export, a ticketing bridge) instead of a
+ * person's key. A new account holds no permission; it gets a role in Roles and
+ * assets through a team, and acts only through API keys minted here. The API
+ * is the authority on every rule (never an owner or administrator, never full
+ * data access, never signs in); deleting an account or a key, and minting a
+ * key, ask for a recent sign-in when the server says so.
  */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { KeyRound, Plus, ServerCog, Trash2 } from 'lucide-react'
-import { Main } from '@/components/layout'
 import {
-  PageHeader,
   EmptyState,
   DataTable,
   DataTableColumnHeader,
   RelativeTime,
-  StackedCell,
   ErrorState,
-  PageStack,
+  SettingsPage,
 } from '@/features/shared'
-import { Badge } from '@/components/ui/badge'
+import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -49,8 +49,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Can, Permission, useCanMutate } from '@/lib/permissions'
+import { Permission, useCanMutate, usePermissions } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import {
   GenerateKeyDialog,
   RevealKeyDialog,
@@ -65,9 +67,12 @@ import {
   type ServiceAccount,
 } from '@/features/service-accounts/api/use-service-accounts'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 
 const MAX_NAME = 100
 const MAX_DESCRIPTION = 500
+
+const accountHref = (id: string) => `/settings/service-accounts?account=${encodeURIComponent(id)}`
 
 function CreateAccountDialog({
   open,
@@ -79,11 +84,15 @@ function CreateAccountDialog({
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [nameError, setNameError] = useState('')
   const { trigger, isMutating } = useCreateServiceAccount()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return toast.error(t('settings.keys.nameRequired', 'Name is required'))
+    if (!name.trim()) {
+      setNameError(t('settings.keys.nameRequired', 'Name is required'))
+      return
+    }
     try {
       await trigger({ name: name.trim(), description: description.trim() || undefined })
       toast.success(t('settings.serviceAccounts.created', 'Service account created'))
@@ -91,6 +100,7 @@ function CreateAccountDialog({
       setName('')
       setDescription('')
     } catch (error) {
+      // The dialog stays open with what was typed.
       toast.error(
         getErrorMessage(
           error,
@@ -112,7 +122,7 @@ function CreateAccountDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        <DialogForm onSubmit={handleSubmit}>
+        <DialogForm onSubmit={handleSubmit} noValidate>
           <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="sa-name">{t('settings.keys.name', 'Name')}</Label>
@@ -120,10 +130,19 @@ function CreateAccountDialog({
                 id="sa-name"
                 value={name}
                 maxLength={MAX_NAME}
-                onChange={(e) => setName(e.target.value)}
+                aria-invalid={nameError ? true : undefined}
+                aria-describedby={nameError ? 'sa-name-error' : undefined}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (nameError) setNameError('')
+                }}
                 placeholder={t('settings.serviceAccounts.namePlaceholder', 'SIEM export')}
-                required
               />
+              {nameError && (
+                <p id="sa-name-error" role="alert" className="text-cap text-destructive">
+                  {nameError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="sa-desc">
@@ -173,6 +192,7 @@ function AccountKeysSheet({
   const [newKey, setNewKey] = useState('')
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
   const keys = data?.data ?? []
+  const accountName = toDisplayText(account.name, 120)
 
   async function handleDelete() {
     if (!pendingDelete) return
@@ -194,7 +214,7 @@ function AccountKeysSheet({
           <SheetHeader>
             <SheetTitle>
               {t('settings.serviceAccounts.keysTitle', 'API keys of {name}', {
-                name: account.name,
+                name: accountName,
               })}
             </SheetTitle>
             <SheetDescription>
@@ -206,8 +226,8 @@ function AccountKeysSheet({
           </SheetHeader>
           <SheetBody className="space-y-3">
             {canMint && (
-              <Button size="sm" onClick={() => setGenOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
+              <Button onClick={() => setGenOpen(true)}>
+                <Plus aria-hidden />
                 {t('settings.serviceAccounts.generateKey', 'Generate key')}
               </Button>
             )}
@@ -220,57 +240,49 @@ function AccountKeysSheet({
                 onRetry={() => void mutate()}
               />
             ) : keys.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
+              <p className="text-body text-muted-foreground">
                 {t('settings.serviceAccounts.noKeys', 'No keys yet.')}
               </p>
             ) : (
               <ul className="divide-y rounded-md border">
-                {keys.map((k) => (
-                  <li key={k.id} className="flex items-start justify-between gap-3 p-3">
-                    <div className="min-w-0 space-y-1">
-                      <p className="truncate text-sm font-medium">{k.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        <code>{k.key_prefix}…</code>
-                        {k.expires_at && (
-                          <>
-                            {' '}
-                            , {t('settings.serviceAccounts.expires', 'expires')}{' '}
-                            <RelativeTime date={k.expires_at} />
-                          </>
-                        )}
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {k.scopes.map((s) => (
-                          <Badge // label-ok: a scope id
-                            key={s}
-                            variant="secondary"
-                            className="font-mono text-xs"
-                          >
-                            {s}
-                          </Badge>
-                        ))}
+                {keys.map((k) => {
+                  const keyName = toDisplayText(k.name, 120)
+                  return (
+                    <li key={k.id} className="flex items-start justify-between gap-3 p-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="truncate text-body font-medium">{keyName}</p>
+                        <p className="text-cap text-muted-foreground">
+                          <code className="font-mono">{`${k.key_prefix}…`}</code>
+                          {k.expires_at && (
+                            <>
+                              {', '}
+                              {t('settings.serviceAccounts.expires', 'expires')}{' '}
+                              <RelativeTime date={k.expires_at} />
+                            </>
+                          )}
+                        </p>
+                        <p className="text-cap font-mono text-muted-foreground [overflow-wrap:anywhere]">
+                          {k.scopes.join(' ')}
+                        </p>
                       </div>
-                    </div>
-                    <Can route="DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={t('confirm.delete', 'Delete')}
-                        aria-label={t(
-                          'confirm.serviceAccount.deleteKeyLabel',
-                          'Delete key {name}',
+                      <DataTableRowActions
+                        title={keyName}
+                        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', {
+                          name: keyName,
+                        })}
+                        actions={[
                           {
-                            name: k.name,
-                          }
-                        )}
-                        className="text-destructive hover:text-destructive shrink-0"
-                        onClick={() => setPendingDelete({ id: k.id, name: k.name })}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </Can>
-                  </li>
-                ))}
+                            label: t('confirm.apiKey.deleteButton', 'Delete key'),
+                            icon: Trash2,
+                            destructive: true,
+                            route: 'DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}',
+                            onClick: () => setPendingDelete({ id: k.id, name: k.name }),
+                          },
+                        ]}
+                      />
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </SheetBody>
@@ -283,7 +295,7 @@ function AccountKeysSheet({
         isMutating={creating}
         onCreated={setNewKey}
         title={t('settings.serviceAccounts.generateFor', 'Generate a key for {name}', {
-          name: account.name,
+          name: accountName,
         })}
         description={t(
           'settings.serviceAccounts.generateDescription',
@@ -296,7 +308,7 @@ function AccountKeysSheet({
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
         title={t('confirm.serviceAccount.deleteKeyTitle', 'Delete the key {name}?', {
-          name: pendingDelete?.name ?? '',
+          name: pendingDelete ? toDisplayText(pendingDelete.name, 120) : '',
         })}
         desc={t(
           'confirm.serviceAccount.deleteKeyDesc',
@@ -312,222 +324,282 @@ function AccountKeysSheet({
   )
 }
 
-function AccountRowActions({
-  account,
-  onKeys,
-}: {
-  account: ServiceAccount
-  onKeys: (a: ServiceAccount) => void
-}) {
+export default function ServiceAccountsPage() {
   const { t } = useTranslation()
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const { data, error, isLoading, mutate } = useServiceAccounts()
+  const canCreate = useCanMutate('POST /api/v1/service-accounts')
+  // Listing an account's keys is for owners and administrators who can read
+  // members and API keys (the API's gate on GET .../api-keys).
+  const { isAdmin, can } = usePermissions()
+  const canSeeKeys = isAdmin() && can(Permission.MembersRead) && can(Permission.ApiKeysRead)
+  const canDeleteAccount = useCanMutate('DELETE /api/v1/service-accounts/{id}')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [toDelete, setToDelete] = useState<ServiceAccount | null>(null)
   const { trigger: del, isMutating: deleting } = useDeleteServiceAccount()
+  const [accountParam, setAccountParam] = useUrlFilter('account', '')
+  const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  const accounts = useMemo(() => data?.data ?? [], [data])
+  const keysFor = canSeeKeys ? (accounts.find((a) => a.id === accountParam) ?? null) : null
+  const openKeys = useCallback(
+    (a: ServiceAccount | null) => setAccountParam(a?.id ?? ''),
+    [setAccountParam]
+  )
+
+  const shown = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return accounts
+    return accounts.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        !!a.description?.toLowerCase().includes(q) ||
+        !!a.owner_name?.toLowerCase().includes(q)
+    )
+  }, [accounts, searchQuery])
 
   async function handleDelete() {
+    if (!toDelete) return
     try {
-      await del(account.id)
+      await del(toDelete.id)
       toast.success(t('settings.serviceAccounts.deleted', 'Service account deleted'))
-      setDeleteOpen(false)
-    } catch (error) {
+      setToDelete(null)
+    } catch (err) {
       toast.error(
         getErrorMessage(
-          error,
+          err,
           t('settings.serviceAccounts.deleteFailed', 'Failed to delete the service account')
         )
       )
     }
   }
 
-  return (
-    <div className="flex justify-end gap-1">
-      <Can permission={[Permission.MembersRead, Permission.ApiKeysRead]} requireAll minRole="admin">
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={t('settings.serviceAccounts.keysTitle', 'API keys of {name}', {
-            name: account.name,
-          })}
-          onClick={() => onKeys(account)}
-        >
-          <KeyRound className="me-1 h-4 w-4" />
-          {t('settings.serviceAccounts.keys', 'Keys')}
-        </Button>
-      </Can>
-      <Can route="DELETE /api/v1/service-accounts/{id}">
-        <Button
-          variant="ghost"
-          size="icon"
-          title={t('confirm.delete', 'Delete')}
-          aria-label={t('confirm.serviceAccount.deleteLabel', 'Delete {name}', {
-            name: account.name,
-          })}
-          className="text-destructive hover:text-destructive"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </Can>
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={t('confirm.serviceAccount.deleteTitle', 'Delete the service account {name}?', {
-          name: account.name,
-        })}
-        desc={t(
-          'confirm.serviceAccount.deleteDesc',
-          'Its roles, team memberships and API keys are removed at once, and every integration using its keys stops working. This cannot be undone.'
-        )}
-        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
-        destructive
-        isLoading={deleting}
-        typeToConfirm={account.name}
-        handleConfirm={() => void handleDelete()}
-      />
-    </div>
+  const accountMenu = useCallback(
+    (a: ServiceAccount) => {
+      if (!canDeleteAccount) return null
+      const name = toDisplayText(a.name, 120)
+      return (
+        <DataTableRowActions
+          title={name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+          actions={[
+            ...(canSeeKeys
+              ? [
+                  {
+                    label: t('settings.serviceAccounts.keysTitle', 'API keys of {name}', { name }),
+                    icon: KeyRound,
+                    onClick: () => openKeys(a),
+                  },
+                ]
+              : []),
+            {
+              label: t('settings.serviceAccounts.deleteAccount', 'Delete service account'),
+              icon: Trash2,
+              destructive: true,
+              separatorBefore: true,
+              route: 'DELETE /api/v1/service-accounts/{id}',
+              onClick: () => setToDelete(a),
+            },
+          ]}
+        />
+      )
+    },
+    [t, openKeys, canSeeKeys, canDeleteAccount]
   )
-}
 
-export default function ServiceAccountsPage() {
-  const { t } = useTranslation()
-  const PAGE_TITLE = t('settings.serviceAccounts.title', 'Service accounts')
-  const PAGE_DESCRIPTION = t(
-    'settings.serviceAccounts.description',
-    'Identities for integrations, so no integration borrows a person’s key.'
-  )
-  const { data, error, isLoading, mutate } = useServiceAccounts()
-  const canCreate = useCanMutate('POST /api/v1/service-accounts')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [keysFor, setKeysFor] = useState<ServiceAccount | null>(null)
-  const accounts = useMemo(() => data?.data ?? [], [data])
+  const nameLabel = t('settings.keys.name', 'Name')
+  const accountableLabel = t('settings.serviceAccounts.accountable', 'Accountable person')
+  const keysLabel = t('settings.apiKeys.title', 'API keys')
 
   const columns = useMemo<ColumnDef<ServiceAccount>[]>(
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.keys.name', 'Name')} />
-        ),
-        cell: ({ row }) => (
-          <StackedCell primary={row.original.name} secondary={row.original.description} />
-        ),
+        meta: { kind: 'name', pin: 'start', minWidth: 220, label: nameLabel },
+        enableHiding: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title={nameLabel} />,
+        cell: ({ row }) => {
+          const a = row.original
+          const name = toDisplayText(a.name, 200)
+          return (
+            <div className="min-w-0">
+              {canSeeKeys ? (
+                <RowNameLink
+                  href={safeHref(accountHref(a.id)) ?? '/settings/service-accounts'}
+                  onOpen={() => openKeys(a)}
+                  title={name}
+                  className="block"
+                >
+                  {name}
+                </RowNameLink>
+              ) : (
+                <p className="truncate font-medium">{name}</p>
+              )}
+              {a.description && (
+                <p className="text-cap text-muted-foreground truncate">
+                  {toDisplayText(a.description, 300)}
+                </p>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'owner_name',
-        header: t('settings.serviceAccounts.accountable', 'Accountable person'),
-        enableSorting: false,
+        meta: { kind: 'owner', width: 200, label: accountableLabel },
+        header: ({ column }) => <DataTableColumnHeader column={column} title={accountableLabel} />,
         cell: ({ row }) =>
-          row.original.owner_name || (
-            <span className="text-muted-foreground text-xs">
-              {t('settings.serviceAccounts.none', 'None')}
+          row.original.owner_name ? (
+            <span className="block truncate">{toDisplayText(row.original.owner_name, 120)}</span>
+          ) : (
+            <span className="text-muted-foreground">
+              {t('settings.serviceAccounts.unassigned', 'Unassigned')}
             </span>
           ),
       },
       {
         accessorKey: 'api_keys',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.apiKeys.title', 'API keys')} />
-        ),
-      },
-      {
-        accessorKey: 'created_at',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.keys.created', 'Created')} />
-        ),
-        cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
+        meta: { kind: 'number', label: keysLabel },
+        header: ({ column }) => <DataTableColumnHeader column={column} title={keysLabel} />,
+        cell: ({ row }) => <span className="tabular-nums">{row.original.api_keys}</span>,
       },
       {
         id: 'actions',
-        header: () => <div className="text-end">{t('settings.keys.actions', 'Actions')}</div>,
+        meta: { kind: 'actions' },
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => <AccountRowActions account={row.original} onKeys={setKeysFor} />,
+        cell: ({ row }) => accountMenu(row.original),
       },
     ],
-    [t]
+    [t, nameLabel, accountableLabel, keysLabel, canSeeKeys, openKeys, accountMenu]
   )
 
-  const createButton = canCreate ? (
-    <Button size="sm" onClick={() => setCreateOpen(true)}>
-      <Plus className="me-2 h-4 w-4" />
+  const createButton = (
+    <Button onClick={() => setCreateOpen(true)}>
+      <Plus aria-hidden />
       {t('settings.serviceAccounts.new', 'New service account')}
     </Button>
-  ) : undefined
-
-  if (isLoading)
-    return (
-      <Main>
-        <PageStack>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-64 rounded-lg" />
-        </PageStack>
-      </Main>
-    )
-  if (error)
-    return (
-      <Main>
-        <PageStack>
-          <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
-          <ErrorState title={PAGE_TITLE} error={error} onRetry={() => void mutate()} />
-        </PageStack>
-      </Main>
-    )
+  )
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION}>
-          {createButton}
-        </PageHeader>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ServerCog className="h-5 w-5" />
-              {PAGE_TITLE}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'settings.serviceAccounts.cardDescription',
-                'A service account never signs in and can never be an owner, an administrator or see every asset. It holds what its roles and teams give it, and its keys carry no more.'
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {accounts.length === 0 ? (
-              <EmptyState
-                icon={ServerCog}
-                title={t('settings.serviceAccounts.emptyTitle', 'No service accounts yet')}
-                description={
-                  canCreate
-                    ? t(
-                        'settings.serviceAccounts.emptyDescCreate',
-                        'Create one for each integration, then generate its keys.'
-                      )
-                    : t(
-                        'settings.serviceAccounts.emptyDescAsk',
-                        'Ask an owner or administrator to create one for your integration.'
-                      )
-                }
-                card={false}
-                action={createButton}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={accounts}
-                getRowId={(a) => a.id}
-                paginationNoun={t('settings.serviceAccounts.noun', 'service accounts')}
-                emptyMessage={t('settings.serviceAccounts.noAccounts', 'No service accounts')}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} />
-        {keysFor && (
-          <AccountKeysSheet account={keysFor} onOpenChange={(o) => !o && setKeysFor(null)} />
+    <SettingsPage
+      wide
+      title={t('settings.serviceAccounts.title', 'Service accounts')}
+      description={t(
+        'settings.serviceAccounts.description',
+        'Identities for integrations, so no integration borrows a person’s key.'
+      )}
+      readOnly={
+        !canCreate
+          ? t(
+              'settings.serviceAccounts.readOnly',
+              'View only. Only owners and administrators can change service accounts.'
+            )
+          : undefined
+      }
+      actions={canCreate ? createButton : undefined}
+    >
+      <p className="max-w-[72ch] text-body text-muted-foreground text-pretty">
+        {t(
+          'settings.serviceAccounts.cardDescription',
+          'A service account never signs in and can never be an owner, an administrator or see every asset. It holds what its roles and teams give it, and its keys carry no more.'
         )}
-      </PageStack>
-    </Main>
+      </p>
+
+      <DataTable
+        columns={columns}
+        data={shown}
+        getRowId={(a) => a.id}
+        error={error}
+        onRetry={() => void mutate()}
+        errorTitle={t('settings.serviceAccounts.subject', 'service accounts')}
+        isLoading={isLoading && !data}
+        showSearch={false}
+        search={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: t('settings.serviceAccounts.searchPlaceholder', 'Search service accounts…'),
+          label: t('settings.serviceAccounts.searchLabel', 'Search service accounts'),
+        }}
+        showToolbar={accounts.length > 0 || !!error}
+        onRowClick={canSeeKeys ? (a) => openKeys(a) : undefined}
+        showPagination={shown.length > 25}
+        paginationNoun={t('settings.serviceAccounts.noun', 'service accounts')}
+        mobileRow={(a) => (
+          <PersonPhoneCard
+            title={toDisplayText(a.name, 200)}
+            address={a.description ? toDisplayText(a.description, 300) : undefined}
+            onOpen={canSeeKeys ? () => openKeys(a) : undefined}
+            menu={accountMenu(a)}
+            facts={
+              <span className="text-cap text-muted-foreground">
+                {t(
+                  'settings.serviceAccounts.card.line',
+                  '{keys, plural, one {# key} other {# keys}}, accountable: {person}',
+                  {
+                    keys: a.api_keys,
+                    person: a.owner_name
+                      ? toDisplayText(a.owner_name, 120)
+                      : t('settings.serviceAccounts.unassigned', 'Unassigned'),
+                  }
+                )}
+              </span>
+            }
+          />
+        )}
+        isFiltered={searchQuery.trim() !== ''}
+        onClearFilters={() => setSearchQuery('')}
+        emptyState={{
+          nothingYet: (
+            <EmptyState
+              icon={ServerCog}
+              title={t('settings.serviceAccounts.emptyTitle', 'No service accounts yet')}
+              description={
+                canCreate
+                  ? t(
+                      'settings.serviceAccounts.emptyDescCreate',
+                      'Create one for each integration, then generate its keys.'
+                    )
+                  : t(
+                      'settings.serviceAccounts.emptyDescAsk',
+                      'Ask an owner or administrator to create one for your integration.'
+                    )
+              }
+              card={false}
+              action={canCreate ? createButton : undefined}
+            />
+          ),
+          noMatch: {
+            title: t('settings.serviceAccounts.noMatch', 'No service accounts match your search'),
+            hint: t(
+              'settings.serviceAccounts.noMatchHint',
+              'Try another name, or clear the search.'
+            ),
+          },
+        }}
+      />
+
+      <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {keysFor && <AccountKeysSheet account={keysFor} onOpenChange={(o) => !o && openKeys(null)} />}
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title={t('confirm.serviceAccount.deleteTitle', 'Delete the service account {name}?', {
+          name: toDelete ? toDisplayText(toDelete.name, 120) : '',
+        })}
+        desc={
+          toDelete
+            ? t(
+                'confirm.serviceAccount.deleteImpact',
+                'Its roles, team memberships and {keys, plural, =0 {API keys} one {# API key} other {# API keys}} are removed at once, and every integration using its keys stops working. This cannot be undone.',
+                { keys: toDelete.api_keys }
+              )
+            : ''
+        }
+        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        destructive
+        isLoading={deleting}
+        typeToConfirm={toDelete?.name}
+        handleConfirm={() => void handleDelete()}
+      />
+    </SettingsPage>
   )
 }

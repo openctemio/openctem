@@ -50,6 +50,7 @@ vi.mock('@/lib/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({
     isAdmin: () => true,
+    can: () => true,
     isOwner: () => true,
     isAtLeast: () => true,
     isLoading: false,

@@ -11,6 +11,7 @@ import { ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { useNow } from '@/hooks/use-now'
 import { DetailSection, ErrorState, RelativeTime } from '@/features/shared'
 import { useAssetCoverage } from '../hooks/use-asset-coverage'
 import { EdgeGapFixes } from '@/features/scans/components/edge-gap-fixes'
@@ -20,6 +21,7 @@ import { coverageBadge, coverageReasonText } from '../lib/asset-coverage'
 export function AssetCoverageSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useAssetCoverage(assetId)
+  const now = useNow(60_000)
   useSettleSignal(isLoading)
 
   const title = t('assetCoverage.title', 'Coverage')
@@ -88,13 +90,17 @@ export function AssetCoverageSection({ assetId }: { assetId: string }) {
                     {e.platform_side &&
                       `, ${t('assetCoverage.platformSide', 'the scan could not run on the scanner side, so this says nothing about the asset; tried again later')}`}
                     {e.reason && `, ${coverageReasonText(e, t)}`}
-                    {e.next_due_at && e.state !== 'not_applicable' && (
-                      <>
-                        {', '}
-                        {t('assetCoverage.nextDue', 'next')}{' '}
-                        <RelativeTime date={e.next_due_at} className="text-xs" />
-                      </>
-                    )}
+                    {/* "next" only for a time still ahead: a paused item whose due
+                        time passed would read "next about 4 hours ago". */}
+                    {e.next_due_at &&
+                      e.state !== 'not_applicable' &&
+                      new Date(e.next_due_at).getTime() > now && (
+                        <>
+                          {', '}
+                          {t('assetCoverage.nextDue', 'next')}{' '}
+                          <RelativeTime date={e.next_due_at} className="text-xs" />
+                        </>
+                      )}
                   </div>
                   {edgeKind && (
                     <div className="mt-1 space-y-1">

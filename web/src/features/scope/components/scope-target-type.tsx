@@ -89,9 +89,12 @@ export const SCOPE_TARGET_TYPE_ICON: Record<string, React.ReactNode> = {
 }
 
 /** Label of a stored type: one of the six kinds, else the words of the type. */
-export function scopeTargetTypeLabel(type: string): string {
+export function scopeTargetTypeLabel(
+  type: string,
+  t?: (key: string, fallback: string) => string
+): string {
   const kind = scopeKindOf(type)
-  if (kind) return SCOPE_KIND_LABEL[kind]
+  if (kind) return t ? t(`scope.kind.${kind}`, SCOPE_KIND_LABEL[kind]) : SCOPE_KIND_LABEL[kind]
   const s = type.replace(/_/g, ' ')
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
