@@ -113,6 +113,8 @@ var stepUpRoutes = []string{
 	"PUT /api/v1/ci/settings",
 	"POST /api/v1/ci/trust-configs",
 	"PUT /api/v1/ci/trust-configs/{id}",
+	"POST /api/v1/ci/trust-configs/{id}/allow",
+	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions",
 	// Binding a code-host app installation or a GitLab group token decides
 	// which organization posts the gate for the account's repositories.
 	"POST /api/v1/ci/scm-apps/github/installations",
@@ -143,6 +145,7 @@ var stepUpRoutes = []string{
 	// Accepting an ownership invitation makes the caller an owner.
 	"POST /api/v1/me/ownership-invitations/{id}/accept",
 	"POST /api/v1/organization/leave",
+	"POST /api/v1/me/memberships/{id}/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",
 	"POST /api/v1/organization/members/{id}/erase",
@@ -176,6 +179,8 @@ var stepUpRoutes = []string{
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
+	// Keeping a provider's shared addresses in scope lifts their hold.
+	"POST /api/v1/scope/provider-addresses/keep",
 	"PUT /api/v1/scope/settings/intrusive",
 	// Scan approval governance (RFC-073): loosening it is the guarded direction.
 	"PUT /api/v1/organization/settings/scan-governance/mode",

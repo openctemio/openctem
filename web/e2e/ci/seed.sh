@@ -36,6 +36,9 @@ call() {
     -H 'Content-Type: application/json')
   [[ -n "${ACCESS_TOKEN:-}" ]] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
   [[ -n "$csrf" ]] && args+=(-H "X-CSRF-Token: $csrf")
+  # A distinct client address (the stack trusts its own networks as
+  # proxies), so a step does not share the per-address limits of the others.
+  [[ -n "${XFF:-}" ]] && args+=(-H "X-Forwarded-For: $XFF")
   [[ -n "$data" ]] && args+=(-d "$data")
   code=$(curl "${args[@]}")
   # Sign-in routes allow a few calls a minute per address: wait and retry.
@@ -468,6 +471,35 @@ UPDATE tenants
  WHERE slug = :'slug';
 SQL
 fi
+log "sign-in journeys organization (E2E_JOURNEY_*)"
+# 58-sign-in-journeys: one organization whose rules the spec switches per
+# journey (open, two-factor required, identity provider required). Its owner
+# signs in with a password; the spec seeds people and their sessions itself.
+JOURNEY_SLUG="$SLUG-journeys"
+JOURNEY_OWNER_EMAIL="e2e-journeys-owner-$RUN@openctem-test.local"
+out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+  --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+  -print-secrets \
+  -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+  -org-name="E2E Journeys $RUN" -org-slug="$JOURNEY_SLUG" -org-owner-email="$JOURNEY_OWNER_EMAIL" 2>&1) || {
+  log "bootstrap-admin (journeys) failed:"
+  echo "$out" >&2
+  exit 1
+}
+JOURNEY_SET_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+[[ -n "$JOURNEY_SET_TOKEN" ]] || { log "no set-password link for $JOURNEY_OWNER_EMAIL:"; echo "$out" >&2; exit 1; }
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$JOURNEY_SLUG" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+ACCESS_TOKEN=
+JAR="$WORK/journeys-cookies"
+XFF=198.18.250.1
+call POST /api/v1/auth/reset-password "{\"token\":\"$JOURNEY_SET_TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
+XFF=
 
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
@@ -498,3 +530,7 @@ if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
   echo "E2E_MFA_ORG=E2E 2FA $RUN"
   echo "E2E_MFA_ORG_SLUG=$SLUG-2fa"
 fi
+echo "E2E_JOURNEY_SLUG=$JOURNEY_SLUG"
+echo "E2E_JOURNEY_OWNER_EMAIL=$JOURNEY_OWNER_EMAIL"
+echo "E2E_JOURNEY_OWNER_PASSWORD=$OWNER_PASSWORD"
+echo "E2E_JOURNEY_NETWORK=$NETWORK"

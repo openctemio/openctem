@@ -58,6 +58,7 @@ export function AwaitingApprovalRequest({
   title,
   requestedBy,
   reason,
+  note,
   details,
   actions,
   onCancel,
@@ -71,8 +72,10 @@ export function AwaitingApprovalRequest({
   title: ReactNode
   /** Who asked and when, one translated line. */
   requestedBy: ReactNode
-  /** The justification the requester gave. */
+  /** The closure reason the requester chose, already as its label. */
   reason?: string
+  /** The free-text note the requester wrote. Plain text, shown only when present. */
+  note?: string
   /** Extra lines under the request (badges, what changed since). */
   details?: ReactNode
   /** The approver's buttons. */
@@ -97,6 +100,11 @@ export function AwaitingApprovalRequest({
       {reason && (
         <p className="text-xs break-words whitespace-pre-wrap text-muted-foreground">
           {t('common.awaitingApproval.reason', 'Reason:')} {reason}
+        </p>
+      )}
+      {note && (
+        <p className="text-xs break-words whitespace-pre-wrap text-muted-foreground">
+          {t('common.awaitingApproval.note', 'Note:')} {note}
         </p>
       )}
       {onCancel && (

@@ -139,6 +139,7 @@ func skipGroups(limit int, rejected []rejectedTarget, r *resolvedTargets, notRes
 		c.count(SkipOutOfScope, r.OutOfScope, r.SkippedNames[SkipOutOfScope])
 		c.count(SkipNotConfirmed, r.Unconfirmed, r.SkippedNames[SkipNotConfirmed])
 		c.count(SkipWildcardOnly, r.WildcardOnly, r.SkippedNames[SkipWildcardOnly])
+		c.count(SkipProviderAddress, r.ProviderHeld, r.SkippedNames[SkipProviderAddress])
 		c.count(SkipTierExceeded, r.TierExceeded, r.SkippedNames[SkipTierExceeded])
 		c.count(SkipInternalNoZone, r.InternalOutsideZones, r.SkippedNames[SkipInternalNoZone])
 		c.count(SkipArchived, r.Archived, nil)

@@ -4,14 +4,14 @@
  * same-origin path before it is used (no open redirect).
  */
 
-import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
-import { ACCOUNT_ONLY_PAGES, ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
+import { twoFactorSetupHref, welcomeNoticeHref } from '@/lib/auth/refresh-failure'
+import { ACCOUNT_ONLY_PAGES, CONTINUE_PATH, ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
 import { validateRedirectUrl } from '@/lib/redirect'
 
 import type { Landing } from './sign-in-landing'
 
 /** The route that decides the landing for the session in the cookies. */
-export const CONTINUE_PATH = '/auth/continue'
+export { CONTINUE_PATH }
 
 /** On /account/organizations: the landing could not start an account session (no loop). */
 export const CONTINUE_FAILED_PARAM = 'start_failed'
@@ -43,7 +43,12 @@ export function landingHref(landing: Landing, rawNext: string | null | undefined
     case 'two_factor':
       return twoFactorSetupHref(next, landing.tenantId)
     case 'account':
-      return next !== '/' && accountSessionMayOpen(next) ? next : ACCOUNT_HOME_PATH
+      if (next !== '/' && accountSessionMayOpen(next)) return next
+      // Refused by the one organization: the account space says why
+      // (welcomeNoticeHref keeps only known codes and a slug).
+      return landing.refusal
+        ? welcomeNoticeHref(landing.refusal.code, landing.refusal.slug)
+        : ACCOUNT_HOME_PATH
     case 'unavailable':
       return `${ACCOUNT_HOME_PATH}?${CONTINUE_FAILED_PARAM}=1`
     case 'signed_out':

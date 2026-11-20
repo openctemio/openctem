@@ -840,6 +840,9 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 			}
 			if _, ok := auth.Covers(t); !ok {
 				out[t] = attribution.StateUnattributed
+				if auth.Held(t) {
+					out[t] = attribution.StateProviderHeld
+				}
 			}
 		}
 	}
@@ -964,6 +967,12 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 				}
 			}
 			if _, ok := auth.Covers(a.Name()); !ok {
+				if auth.Held(a.Name()) {
+					// Passive only, never the unclassified low-impact
+					// checks: the address is a provider's.
+					out[id] = attribution.StateProviderHeld
+					continue
+				}
 				unclassified[id] = rec.State
 				unclassifiedIDs = append(unclassifiedIDs, id)
 			}
@@ -978,6 +987,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 		}
 		if _, ok := auth.Covers(a.Name()); ok {
+			continue
+		}
+		if auth.Held(a.Name()) {
+			out[id] = attribution.StateProviderHeld
 			continue
 		}
 		if recorded {

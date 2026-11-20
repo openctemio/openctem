@@ -147,6 +147,10 @@ type ScopeSettingsResponse struct {
 	// CIScopeRequiresProof: a CI trust's new repository entries wait
 	// inactive for a verified pipeline run under them (opt-in, default off).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
+	// HoldProviderEntries: scope entries on a provider's shared addresses
+	// authorize no active check until a person answers them on the Scope
+	// page (default on).
+	HoldProviderEntries bool `json:"hold_provider_entries"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -218,11 +222,13 @@ type ScopeSettingsRequest struct {
 	// PathDiscovery: true or false; omitted keeps the stored choice.
 	PathDiscovery *bool `json:"path_discovery"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
-	CIScopeRequiresProof *bool  `json:"ci_scope_requires_proof"`
-	OneOffTargets        string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
-	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
-	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
-	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	CIScopeRequiresProof *bool `json:"ci_scope_requires_proof"`
+	// HoldProviderEntries: true or false; omitted keeps the stored value.
+	HoldProviderEntries *bool  `json:"hold_provider_entries"`
+	OneOffTargets       string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
+	OneOffMaxDays       int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
+	WideningApprovals   *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
+	DefaultMaxTier      string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
 	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value. A value
 	// below 16 (wider than a /16) is an opt-in widening: step-up (route),
 	// a high-severity audit and a notice to every administrator.
@@ -243,6 +249,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		InfoCoverage: ss.InfoCoverageOn(), InfoCoverageDays: ss.InfoCoverageEvery(),
 		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
+		HoldProviderEntries:  ss.HoldsProviderEntries(),
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
@@ -299,7 +306,7 @@ func (h *ScopeHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSettings handles PUT /api/v1/scope/settings
 // @Summary      Change scope settings
-// @Description  Replace the organization's scope knobs. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). Lowering the widening approvals needs an owner (403 for an administrator). An organization with two or more administrators cannot go below one approval, and intrusive entries always need one. Audited; every administrator is notified.
+// @Description  Replace the organization's scope knobs. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). Lowering the widening approvals needs an owner (403 for an administrator). An organization with two or more administrators cannot go below one approval, and intrusive entries always need one. Turning hold_provider_entries from on to off needs the critical re-authentication (403 STEP_UP_REQUIRED), the same as keeping a provider's entries scanning. Audited; every administrator is notified.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -340,11 +347,14 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if req.CIScopeRequiresProof != nil {
 		ss.CIScopeRequiresProof = *req.CIScopeRequiresProof
 	}
+	if req.HoldProviderEntries != nil {
+		ss.HoldProviderEntries = req.HoldProviderEntries
+	}
 	// A client that does not know confirm_adds_to_scope,
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil || req.InfoCoverage == nil || req.InfoCoverageDays == 0 {
+		req.CIScopeRequiresProof == nil || req.HoldProviderEntries == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil || req.InfoCoverage == nil || req.InfoCoverageDays == 0 {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -371,6 +381,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CIScopeRequiresProof == nil {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
+		}
+		if req.HoldProviderEntries == nil {
+			ss.HoldProviderEntries = before.HoldProviderEntries
 		}
 		if req.AddressAutoAdd == "" {
 			ss.AddressAutoAdd = before.AddressAutoAdd
@@ -419,6 +432,10 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			// Opting in to wider ranges widens what one scan may sweep.
 			h.service.NotifyAdmins(ctx, id, "Widest scan range raised",
 				fmt.Sprintf("The widest range one scan target may name was raised from /%d to /%d. Scans of a range wider than a /16 find live hosts first and need a confirmation; review it in Scoping settings.", prior.RangePrefix(), out.RangePrefix()))
+		} else if tenant.ProviderHoldLifted(*prior, *out) {
+			// Every scope entry on a shared provider address may be scanned again.
+			h.service.NotifyAdmins(ctx, id, "Hold on shared provider addresses turned off",
+				"The hold on scope entries that sit on a provider's shared addresses was turned off. Those entries can be scanned again without a per-provider decision; review it in Scoping settings.")
 		} else {
 			h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
 		}

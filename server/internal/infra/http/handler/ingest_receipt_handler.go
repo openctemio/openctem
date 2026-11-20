@@ -165,6 +165,9 @@ type ReceiptResponse struct {
 type ReceiptAssets struct {
 	Created int `json:"created"`
 	Updated int `json:"updated"`
+	// RecordedOnName: addresses inside a shared provider range that names
+	// resolved to, recorded on those names instead of as address assets.
+	RecordedOnName int `json:"recorded_on_name"`
 }
 
 // ReceiptActionResponse is one finding a receipt acted on.
@@ -219,7 +222,7 @@ func toReceiptResponse(rec *ingestreceipt.Receipt) ReceiptResponse {
 		Counts: ReceiptCounts{Created: rec.Counts.Created, Updated: rec.Counts.StillDetected, Reactivated: rec.Counts.Reopened,
 			Closed: rec.Counts.Closed, Untouched: rec.Counts.Untouched, Skipped: rec.Counts.Skipped, Failed: rec.Counts.Failed,
 			Suppressed: rec.Counts.Suppressed},
-		Reports: rec.Reports, Received: rec.Received, ReleasedFromQuarantine: rec.ReleasedFromQuarantine, Assets: ReceiptAssets{Created: rec.AssetsCreated, Updated: rec.AssetsUpdated},
+		Reports: rec.Reports, Received: rec.Received, ReleasedFromQuarantine: rec.ReleasedFromQuarantine, Assets: ReceiptAssets{Created: rec.AssetsCreated, Updated: rec.AssetsUpdated, RecordedOnName: rec.AddressesOnName},
 		Errors: make([]ReceiptError, 0, len(rec.Errors)), Truncated: rec.ActionsTruncated, StartedAt: rec.CreatedAt,
 		UpdatedAt: rec.UpdatedAt, FinishedAt: rec.FinishedAt, Components: rec.Components, Statements: rec.Statements,
 		VEXStored: rec.VEXStored, VEXRequests: rec.VEXRequested, Outcomes: rec.Outcomes,

@@ -130,6 +130,9 @@ ARG BUILD_TIME=""
 #                          records one record each (a dry run by default)
 #     compliance-checks    moves compliance findings stored before check state
 #                          to it (a dry run by default, aggregates only)
+#     provider-addresses   one-time move of provider shared addresses into
+#                          their names' address history (a dry run by default;
+#                          -apply and -restore take one -tenant)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
@@ -179,7 +182,7 @@ RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && chmod 0770 /out/signer-run \
  && chmod 0755 /out/signer-pub \
  && mkdir -p /out/tool-links \
- && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute finding-practice finding-source-backfill compliance-checks; do ln -s server /out/tool-links/$t; done
+ && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute finding-practice finding-source-backfill compliance-checks provider-addresses; do ln -s server /out/tool-links/$t; done
 
 # -----------------------------------------------------------------------------
 # Production stage

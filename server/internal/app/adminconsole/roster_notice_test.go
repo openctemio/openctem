@@ -64,7 +64,7 @@ func TestResetCredentialsNotifies(t *testing.T) {
 	n := &fakeRosterNotifier{}
 	b.svc.SetRosterChangeNotifier(n)
 
-	if err := b.svc.ResetCredentials(context.Background(), b.admin, other.ID(), client); err != nil {
+	if err := b.svc.ResetCredentials(context.Background(), b.admin, other.ID(), "", client); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	if len(n.changes) != 1 || n.changes[0].Kind != RosterCredentialsReset || !strings.Contains(n.changes[0].Summary, other.Email()) {

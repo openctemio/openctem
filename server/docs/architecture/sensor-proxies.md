@@ -287,7 +287,7 @@ which it always receives:
   or a failed job has the class `infra.egress.pool_exhausted`; `ok` for any
   other completed job. A gap whose detail says `(target_refused)` (the proxy
   answered but its rules refused the destination) is not a fault: the proxy is
-  up. Target-side reasons (`blocked`, `breaker_open`, `rate_floor`, timeouts,
+  up. Target-side reasons (`blocked`, `breaker_open`, `rate_floor`, timeouts, `slots_full` (the sensor's own limit),
   unreachable, edge answers) never count, and a job that failed for another
   reason is not counted at all.
 - **Attribution.** A verdict charges exactly the endpoints the platform

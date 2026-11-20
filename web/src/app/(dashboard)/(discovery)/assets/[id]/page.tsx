@@ -78,6 +78,7 @@ import {
   ResolvedPortsSection,
   hasResolvedPorts,
 } from '@/features/assets/components/resolved-ports-section'
+import { NameAddressesSection } from '@/features/assets/components/name-addresses-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetLivenessBadge } from '@/features/asset-lifecycle/components/asset-liveness-badge'
@@ -586,7 +587,11 @@ export default function AssetDetailPage() {
               </TabsContent>
               {/* Open ports of the addresses a domain or subdomain resolves to. */}
               <TabsContent value="ports">
-                <ResolvedPortsSection assetId={asset.id} />
+                <div className="flex min-w-0 flex-col gap-page">
+                  {/* The addresses it resolves to, by provider, with history (research/531). */}
+                  <NameAddressesSection assetId={asset.id} />
+                  <ResolvedPortsSection assetId={asset.id} />
+                </div>
               </TabsContent>
               {technologyCount > 0 && (
                 <TabsContent value="technologies">

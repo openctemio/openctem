@@ -93,7 +93,7 @@ API a two-way channel to every allowlisted host, which zero egress is meant to r
 
 The feed egress category has the modes `direct` and `relay`. In `relay` the platform makes no
 outbound feed request: the vulnerability feed and its KEV/EPSS side manifest come from the relay,
-the direct KEV/EPSS fetchers are off, the release feed comes through the relay, and program feed
+the direct KEV/EPSS fetchers are off (removed altogether on 2026-11-18: KEV and EPSS now come only from the release in every mode), the release feed comes through the relay, and program feed
 URL origins are not fetched (listed as not relayed). A configured bundle directory or a missing job
 signer locks relay mode off.
 
@@ -120,7 +120,7 @@ webhook, the same as the system checks) when, in relay mode:
 | Alert key | Condition | Level |
 |---|---|---|
 | `relay_offline` | no designated relay sensor seen for 1 hour (also: none designated, or the bundled sensor of a relay-mode install never enrolled), after a 1-hour grace from the last change of the setting | critical |
-| `feed_stale:<feed>` | the applied release is older than the feed's alert age: 48 hours for the vulnerability feed (it carries EPSS, stale after 48 hours); the release feed is issued per release, so it has no age alert | warning |
+| `feed_stale:<feed>` | the applied release is older than the feed's alert age: 48 hours for the vulnerability feed (it carries EPSS, stale after 48 hours); the release feed is issued per release, so it has no age alert (replaced 2026-11-18 by the freshness watch, which covers every mode: docs/architecture/intelligence-feeds.md) | warning |
 | `round_failed:<feed>:<code>` | the newest failed round since the last import has `verify_failed`, `pin_mismatch` or `rollback_refused` (critical: possible tampering) or `signer_refused` (warning, with the signer's sanitized reason) | as stated |
 
 One alert per condition: the open alerts are stored in the platform setting `feed_relay.alerts`
