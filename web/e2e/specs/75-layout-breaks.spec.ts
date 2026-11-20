@@ -86,6 +86,7 @@ const CI_ROUTES = [
   '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
   '/settings/sla-policies',
+  '/settings/scanning/tool-sources',
   '/settings/teams',
   '/notifications',
   '/oauth/device',
@@ -148,10 +149,53 @@ function scanGovernance(scen: Scenario) {
     presets: { light: [], standard: [], strict: [] },
   }
 }
+/**
+ * Tool source keys: long source names and tool lists, a set key that was never
+ * used, one rotated by a person with a long name, and a source with no key.
+ */
+function toolSources(scen: Scenario) {
+  const sources = [
+    {
+      id: 'alienvault',
+      name: 'AlienVault OTX',
+      tools: ['subfinder', 'amass', 'httpx', 'nuclei', 'katana'],
+      format: 'key',
+      key: {
+        set: true,
+        last4: 'ab12',
+        enabled: true,
+        updated_at: '2026-11-10T08:00:00Z',
+        updated_by_name: 'Nguyễn Thị Minh Khuê Hoàng Phương Thảo',
+        last_used_at: '2026-11-19T21:30:00Z',
+      },
+    },
+    {
+      id: 'securitytrails-enterprise-passive-dns',
+      name: 'SecurityTrails passive DNS and historical records',
+      tools: ['subfinder'],
+      format: 'key',
+      key: { set: true, last4: '9f0e', enabled: false, updated_at: '2026-10-01T08:00:00Z' },
+    },
+    {
+      id: 'censys',
+      name: 'Censys',
+      tools: ['subfinder', 'amass'],
+      format: 'pair',
+      format_hint: 'TOKEN:ORG_ID',
+      key: null,
+    },
+    { id: 'bevigil', name: 'BeVigil', tools: ['subfinder'], format: 'key', key: null },
+  ]
+  return { sources: sources.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : sources.length) }
+}
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
   '/settings/scanning/scan-approval': {
     url: '**/api/v1/organization/settings/scan-governance',
     body: scanGovernance,
+  },
+  '/settings/scanning/tool-sources': {
+    url: '**/api/v1/tool-sources',
+    body: toolSources,
   },
 }
 
@@ -171,6 +215,24 @@ const LOPSIDED_DEBT = new Set([
   '/settings/audit-log',
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
+
+/**
+ * Pages whose table must fit its frame at every width: a column is dropped,
+ * never cut off or scrolled sideways (owner report 2026-11-20, tool source keys).
+ */
+const NO_SIDE_SCROLL = new Set(['/settings/scanning/tool-sources'])
+
+/** Scrolling frames inside main that hold more than they show. */
+async function sideScrolling(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('main *')]
+      .filter((el) => {
+        const o = getComputedStyle(el).overflowX
+        return (o === 'auto' || o === 'scroll') && el.scrollWidth > el.clientWidth + 1
+      })
+      .map((el) => `${el.tagName.toLowerCase()} ${el.scrollWidth}>${el.clientWidth}`)
+  )
+}
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
@@ -320,6 +382,9 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
           scope = layer
         }
         const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+        if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
+          expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+        }
         report[v.tag] = found
         if (OUT || formatBreaks(found).length) {
           await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
