@@ -698,8 +698,9 @@ const PHONE_CARD_FOCUS_CLASS =
  *   other columns that say something (no empty or dash-only value, no repeat
  *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS, `cardFigure`)
  *   before the rest, shown in column order, chosen before paint. A chip
- *   value is never cut: a field whose chip does not fit half the line takes
- *   the whole line and the other field goes on the line under it.
+ *   or a key figure is never cut: a field whose chip or figure does not fit
+ *   half the line takes the whole line and the other field goes on the line
+ *   under it.
  * Every line but the title is one line high whatever its cell draws.
  */
 function AutoMobileCard<TData>({
@@ -771,10 +772,12 @@ function AutoMobileCard<TData>({
       const id = field.getAttribute('data-column') ?? ''
       if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
         fields.push(id)
-        // A chip is never cut (it has no ellipsis): one that overflows its half
-        // of the line gets the whole line, and the other field moves under it.
+        // A chip is never cut (it has no ellipsis), nor a key figure (a cut
+        // "about 1…" says nothing): one that overflows its half of the line
+        // gets the whole line, and the other field moves under it.
         const dd = field.querySelector('dd')
-        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+        const keep = !!dd?.querySelector(CARD_CHIP_SELECTOR) || field.hasAttribute('data-figure')
+        if (dd && keep && dd.scrollWidth > dd.clientWidth + 1) {
           wide.push(id)
         }
       }

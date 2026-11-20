@@ -194,8 +194,14 @@ describe('PlatformUserBadges', () => {
         user={account({ locked: true, blocked: true, email_verified: false, mfa_enabled: true })}
       />
     )
-    const group = document.querySelector('[data-slot="platform-user-badges"]')!
-    const shown = [...group.children].map((c) => c.textContent)
+    const [phone, desktop] = [...document.querySelectorAll('[data-slot="platform-user-badges"]')]
+    // A phone card's chip: the state and how many more.
+    expect([...phone.children].map((c) => c.textContent)).toEqual([
+      'Blocked',
+      '+3Locked, Email not verified, MFA',
+    ])
+    // A desktop row: the marks that fit, then "+n" naming the others.
+    const shown = [...desktop.children].map((c) => c.textContent)
     expect(shown[0]).toBe('Blocked')
     const more = shown[shown.length - 1]!
     expect(more).toMatch(/^\+\d/)

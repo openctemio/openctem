@@ -2875,7 +2875,7 @@
   "admin.users.state.blocked": "Bị chặn",
   "admin.users.state.locked": "Bị khóa tạm",
   "admin.users.state.mfa_off": "Chưa bật MFA",
-  "admin.users.state.platform_admins": "Quản trị viên nền tảng",
+  "admin.users.state.platform_admins": "Quản trị viên trang quản trị",
   "admin.users.state.unverified": "Chưa xác minh",
   "admin.users.stateFilter": "Trạng thái",
   "admin.users.tooShort": "Nhập ít nhất 3 ký tự để tìm kiếm.",

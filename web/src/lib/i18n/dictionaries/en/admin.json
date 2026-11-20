@@ -2875,7 +2875,7 @@
   "admin.users.state.blocked": "Blocked",
   "admin.users.state.locked": "Locked",
   "admin.users.state.mfa_off": "No MFA",
-  "admin.users.state.platform_admins": "Platform admins",
+  "admin.users.state.platform_admins": "Console administrators",
   "admin.users.state.unverified": "Not verified",
   "admin.users.stateFilter": "State",
   "admin.users.tooShort": "Type at least 3 characters to search.",

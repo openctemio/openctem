@@ -62,8 +62,14 @@ export default function AdminSessionsPage() {
             <div className="flex min-w-0 items-center gap-2">
               {/* One line, as the board draws it: the name, the session's
                   marks (plain text, never cut: a badge in a name cell
-                  collapses it) and the address, which gives way first. */}
-              <span className="min-w-0 truncate font-medium" title={name}>
+                  collapses it) and the address, which gives way first: the
+                  name keeps its width up to 60 % of the cell. On a phone card
+                  the name takes up to two lines and the address is left out
+                  (the card's title has no room for both). */}
+              <span
+                className="min-w-0 truncate font-medium max-md:line-clamp-2 md:max-w-[60%] md:shrink-0"
+                title={name}
+              >
                 <BreakText>{name}</BreakText>
               </span>
               {s.current && (
@@ -72,14 +78,14 @@ export default function AdminSessionsPage() {
                 </span>
               )}
               {s.break_glass && (
-                <span className="inline-flex shrink-0 items-center gap-1 text-cap-m text-destructive">
+                <span className="inline-flex shrink-0 items-center gap-1 text-cap-m text-destructive max-md:hidden">
                   <Siren className="size-3" aria-hidden="true" />
                   {t('admin.sessions.breakGlass', 'Break-glass')}
                 </span>
               )}
               {s.admin_name && s.admin_name !== s.admin_email && (
                 <span
-                  className="min-w-0 shrink-[4] truncate text-muted-foreground"
+                  className="min-w-0 shrink-[4] truncate text-muted-foreground max-md:hidden"
                   title={s.admin_email}
                 >
                   <BreakText>{s.admin_email}</BreakText>
@@ -92,8 +98,25 @@ export default function AdminSessionsPage() {
       {
         accessorKey: 'admin_role',
         header: t('admin.sessions.col.role', 'Role'),
-        meta: { kind: 'tags', width: 160, label: t('admin.sessions.col.role', 'Role') },
-        cell: ({ row }) => <Badge variant="outline">{roleName(t, row.original.admin_role)}</Badge>,
+        // The role is the phone card's chip, at the end of its title line.
+        meta: { kind: 'status', width: 160, label: t('admin.sessions.col.role', 'Role') },
+        // On a phone a break-glass session's chip says so (the title line has
+        // no room for the name, the mark and the role).
+        cell: ({ row }) => (
+          <>
+            {row.original.break_glass && (
+              <span className="md:hidden">
+                <Badge variant="destructive">
+                  <Siren aria-hidden="true" />
+                  {t('admin.sessions.breakGlass', 'Break-glass')}
+                </Badge>
+              </span>
+            )}
+            <span className={row.original.break_glass ? 'max-md:hidden' : undefined}>
+              <Badge variant="outline">{roleName(t, row.original.admin_role)}</Badge>
+            </span>
+          </>
+        ),
       },
       {
         accessorKey: 'auth_method',

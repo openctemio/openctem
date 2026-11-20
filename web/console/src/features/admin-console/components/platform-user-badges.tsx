@@ -18,12 +18,12 @@ interface Mark {
 /**
  * The room a list row gives the marks (the Users list's State column, 208
  * px less its padding) and what a mark takes in it: the badge's padding and
- * border plus about 7 px a character of its 12 px text. An estimate, on the
- * safe side, so the marks that are drawn are never cut.
+ * border plus 6.2 px a character of its 12 px text (measured 5.3 to 5.9 in
+ * en and vi). An estimate on the safe side, so the marks drawn are never cut.
  */
 const ROW_ROOM = 184
 const BADGE_CHROME = 18
-const CHAR_PX = 6.8
+const CHAR_PX = 6.2
 const GAP = 4
 const MORE_PX = 30
 const markWidth = (label: string) => BADGE_CHROME + label.length * CHAR_PX
@@ -118,39 +118,53 @@ export function PlatformUserBadges({
       tone: 'success',
     })
 
-  const shown = oneLine ? marksThatFit(marks.map((m) => m.label)) : marks.length
-  const hidden = marks.slice(shown)
+  if (!oneLine) {
+    return (
+      <div data-slot="platform-user-badges" className="flex flex-wrap gap-1">
+        {marks.map(markBadge)}
+      </div>
+    )
+  }
+  // A list row: on a phone the card's chip (the state and "+n"), from 768 px
+  // the marks that fit the column (marksThatFit). A first mark wider than its
+  // room (a long translation) ends in an ellipsis.
+  const group = (shown: number, className: string) => {
+    const hidden = marks.slice(shown)
+    return (
+      <div
+        data-slot="platform-user-badges"
+        className={cn('min-w-0 gap-1 flex-nowrap *:shrink-0 [&>*:first-child]:shrink', className)}
+      >
+        {marks.slice(0, shown).map(markBadge)}
+        {hidden.length > 0 && (
+          <Badge variant="outline" title={hidden.map((m) => m.label).join(', ')}>
+            +{hidden.length}
+            <span className="sr-only">{hidden.map((m) => m.label).join(', ')}</span>
+          </Badge>
+        )}
+      </div>
+    )
+  }
   return (
-    <div
-      data-slot="platform-user-badges"
-      className={cn(
-        'flex gap-1',
-        // A first mark wider than the row (a long translation) ends in an
-        // ellipsis; the others are drawn only when they fit (marksThatFit).
-        oneLine ? 'min-w-0 flex-nowrap *:shrink-0 [&>*:first-child]:shrink' : 'flex-wrap'
-      )}
-    >
-      {marks.slice(0, shown).map((m) =>
-        m.tone === 'warning' ? (
-          <Badge key={m.key} variant="outline" className="border-warning/50 text-warning">
-            <span className="truncate">{m.label}</span>
-          </Badge>
-        ) : m.tone === 'success' ? (
-          <Badge key={m.key} variant="outline" className="border-success/50 text-success">
-            <span className="truncate">{m.label}</span>
-          </Badge>
-        ) : (
-          <Badge key={m.key} variant={m.variant}>
-            <span className="truncate">{m.label}</span>
-          </Badge>
-        )
-      )}
-      {hidden.length > 0 && (
-        <Badge variant="outline" title={hidden.map((m) => m.label).join(', ')}>
-          <span aria-hidden="true">+{hidden.length}</span>
-          <span className="sr-only">{hidden.map((m) => m.label).join(', ')}</span>
-        </Badge>
-      )}
-    </div>
+    <>
+      {group(Math.min(1, marks.length), 'flex md:hidden')}
+      {group(marksThatFit(marks.map((m) => m.label)), 'hidden md:flex')}
+    </>
+  )
+}
+
+function markBadge(m: Mark) {
+  return m.tone === 'warning' ? (
+    <Badge key={m.key} variant="outline" className="border-warning/50 text-warning">
+      <span className="truncate">{m.label}</span>
+    </Badge>
+  ) : m.tone === 'success' ? (
+    <Badge key={m.key} variant="outline" className="border-success/50 text-success">
+      <span className="truncate">{m.label}</span>
+    </Badge>
+  ) : (
+    <Badge key={m.key} variant={m.variant}>
+      <span className="truncate">{m.label}</span>
+    </Badge>
   )
 }

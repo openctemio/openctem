@@ -37,7 +37,7 @@ const STATE_LABELS: Record<PlatformUserState, string> = {
   locked: 'Locked',
   blocked: 'Blocked',
   mfa_off: 'No MFA',
-  platform_admins: 'Platform admins',
+  platform_admins: 'Console administrators',
 }
 
 function isState(v: string): v is PlatformUserState {
