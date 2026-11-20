@@ -24,7 +24,7 @@ import {
  * squeezed to "IP Addres / s" and the description ran under the Risk score.
  * The seed had no description, so every spec passed.
  *
- * Variants per route: 390x844 en and vi (light), 1440x900 and 1024x768 en; 0 and 1 rows at
+ * Variants per route: 390x844 en and vi (light), 1440x900, 1280x800 and 1024x768 en; 0 and 1 rows at
  * 390 en; at 390 en the row menu, the filters sheet, the detail sheet and the
  * page's main dialog when the page has them.
  *
@@ -47,6 +47,7 @@ type Overlay = 'rowmenu' | 'filters' | 'detail' | 'dialog'
 const PHONE = { width: 390, height: 844 }
 const DESKTOP = { width: 1440, height: 900 }
 const TABLET = { width: 1024, height: 768 }
+const LAPTOP = { width: 1280, height: 800 }
 
 /** Lists and pages with phone cards, sheets and long names. */
 const CI_ROUTES = [
@@ -77,8 +78,27 @@ const CI_ROUTES = [
   '/settings/members',
   '/settings/audit-log',
   '/settings/api-keys',
+  '/settings/integrations',
+  '/settings/risk-scoring',
+  '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
   '/notifications',
+  '/oauth/device',
+]
+
+/**
+ * Entry pages a person opens signed out (their own browser context, no
+ * session): the form and the link-from-an-e-mail states the scratch stack can
+ * reach without mail. Same checks, no list data or overlays.
+ */
+const SIGNED_OUT_ROUTES = [
+  '/forgot-password',
+  '/reset-password',
+  '/reset-password#token=synthetic-reset-token',
+  '/set-password#token=synthetic-setup-token',
+  '/verify-email',
+  '/request-access',
+  '/request-access/confirm',
 ]
 
 /**
@@ -168,15 +188,8 @@ const CUT_CELL_DEBT = new Set([
   '/settings/members',
   '/vulnerabilities',
 ])
-/**
- * A select trigger whose text is cut in a one-line clamp with no ellipsis
- * ("All severities" 90/95 at 390 px). The detector stopped excusing a line
- * clamp when the Paths tab showed a path cut with no ellipsis in one.
- */
-const CLAMP_CUT_DEBT = new Set(['/settings/audit-log'])
 const inDebt = (route: string, m: string) =>
-  (CUT_CELL_DEBT.has(route) && m.startsWith('table cell cut')) ||
-  (CLAMP_CUT_DEBT.has(route) && m.startsWith('cut, no ellipsis'))
+  CUT_CELL_DEBT.has(route) && m.startsWith('table cell cut')
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
@@ -200,6 +213,7 @@ function variants(): Variant[] {
     { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
     { tag: 'd-en', ...DESKTOP, lang: 'en', theme: 'light', scen: 'rich' },
+    { tag: 'l-en', ...LAPTOP, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 't-en', ...TABLET, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-en-0', ...PHONE, lang: 'en', theme: 'light', scen: 'empty' },
     { tag: 'p-en-1', ...PHONE, lang: 'en', theme: 'light', scen: 'one' },
@@ -224,7 +238,9 @@ function variants(): Variant[] {
       })
     }
   }
-  return v
+  // LAYOUT_SWEEP_ONLY=d-en,l-en,t-en runs just those variants (desktop widths of every route).
+  const only = process.env.LAYOUT_SWEEP_ONLY?.split(',').filter(Boolean)
+  return only ? v.filter((x) => only.includes(x.tag)) : v
 }
 
 const slug = (route: string) => route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'home'
@@ -538,4 +554,31 @@ test.describe('Layout breaks: detectors', { tag: ['@assets'] }, () => {
     await page.setContent(table(250))
     expect((await findBreaks(page)).clipped).toEqual([])
   })
+})
+
+test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
+  test.describe.configure({ mode: 'parallel' })
+  for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
+    test(`${route}`, async ({ browser, baseURL }, testInfo) => {
+      test.setTimeout(120_000)
+      const report: Record<string, Breaks> = {}
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        const context = await browser.newContext({ baseURL })
+        const page = await context.newPage()
+        await prepare(page, v, baseURL!)
+        await page.goto(route, { timeout: 60_000 }).catch(() => {})
+        await settle(page)
+        report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
+        if (OUT || formatBreaks(report[v.tag]).length) {
+          await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+        }
+        await context.close()
+      }
+      await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
+      for (const [tag, found] of Object.entries(report)) {
+        for (const kind of BREAK_KINDS)
+          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+      }
+    })
+  }
 })

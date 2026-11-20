@@ -143,8 +143,8 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
   return (
     <Card data-testid={`discovery-stage-${row.stage}`} data-status={row.status}>
       <CardHeader className="gap-2 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+          <CardTitle className="flex min-w-0 items-center gap-2 text-base">
             <span
               aria-hidden
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold"

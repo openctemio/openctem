@@ -1,30 +1,25 @@
 'use client'
 
 import { HealthStatus } from '@/components/ui/health-status'
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Main } from '@/components/layout'
 import {
-  PageHeader,
   EmptyState,
   DataTable,
   DataTableColumnHeader,
   RelativeTime,
-  StackedCell,
-  ErrorState,
-  PageStack,
+  SettingsPage,
 } from '@/features/shared'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { SettingsSection } from '@/features/shared/components/settings-section'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { usePermissions, useCanMutate } from '@/lib/permissions'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
-import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { useSearchQuery } from '@/hooks/use-search-query'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
   useApiKeys,
@@ -37,9 +32,17 @@ import {
   RevealKeyDialog,
 } from '@/features/api-keys/components/generate-key-dialog'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
-import { APIKeyPolicyCard } from '@/features/api-keys/components/api-key-policy-card'
+import { APIKeyPolicySection } from '@/features/api-keys/components/api-key-policy-card'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+
+/**
+ * API keys (board P4-Settings-ApiKeys): the organization's maximum key
+ * lifetime (owners and administrators) and the keys list, server paged,
+ * searched and sorted. Generate is the page's one main action; the secret is
+ * shown once. Anyone who is not an owner or administrator gets only their own
+ * keys from the API.
+ */
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
@@ -60,8 +63,31 @@ function StatusBadge({ k }: { k: APIKey }) {
   return <HealthStatus state="ok" label={t('settings.keys.status.active', 'Active')} />
 }
 
+function ExpiryCell({ k }: { k: APIKey }) {
+  const { t } = useTranslation()
+  if (!k.expires_at) {
+    return <span className="text-muted-foreground">{t('settings.keys.never', 'Never')}</span>
+  }
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <RelativeTime date={k.expires_at} />
+      {k.exceeds_org_max && (
+        <Badge
+          variant="outline"
+          title={t(
+            'settings.keys.exceedsMaxHint',
+            'Created before the organization lowered its maximum lifetime. Replace it sooner.'
+          )}
+        >
+          {t('settings.keys.exceedsMax', 'Over the maximum')}
+        </Badge>
+      )}
+    </span>
+  )
+}
+
 // ─────────────────────────────────────────────────────────
-// Row actions (revoke / delete) — inline prominent buttons
+// Row actions (revoke / delete), each behind a confirmation
 // ─────────────────────────────────────────────────────────
 
 function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
@@ -70,6 +96,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   const [revokeOpen, setRevokeOpen] = useState(false)
   const { trigger: revoke, isMutating: revoking } = useRevokeApiKey()
   const { trigger: del, isMutating: deleting } = useDeleteApiKey()
+  const name = toDisplayText(k.name, 120)
 
   async function handleRevoke() {
     try {
@@ -97,10 +124,10 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
   }
 
   return (
-    <div className="flex justify-end gap-1">
+    <>
       <DataTableRowActions
-        title={k.name}
-        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name: k.name })}
+        title={name}
+        label={t('settings.apiKeys.actionsFor', 'Actions for {name}', { name })}
         actions={[
           ...(isActive(k)
             ? [
@@ -113,7 +140,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
               ]
             : []),
           {
-            label: t('confirm.delete', 'Delete'),
+            label: t('confirm.apiKey.deleteButton', 'Delete key'),
             icon: Trash2,
             destructive: true,
             separatorBefore: isActive(k),
@@ -125,7 +152,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title={t('confirm.apiKey.revokeTitle', 'Revoke the API key {name}?', { name: k.name })}
+        title={t('confirm.apiKey.revokeTitle', 'Revoke the API key {name}?', { name })}
         desc={t(
           'confirm.apiKey.revokeDesc',
           'Every client using this key stops working at once. A revoked key cannot be re-enabled.'
@@ -139,7 +166,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={t('confirm.apiKey.deleteTitle', 'Delete the API key {name}?', { name: k.name })}
+        title={t('confirm.apiKey.deleteTitle', 'Delete the API key {name}?', { name })}
         desc={t(
           'confirm.apiKey.deleteDesc',
           'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
@@ -154,7 +181,7 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
         typeToConfirm={k.name}
         handleConfirm={() => void handleDelete()}
       />
-    </div>
+    </>
   )
 }
 
@@ -162,35 +189,20 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 // Page
 // ─────────────────────────────────────────────────────────
 
-function LoadingSkeleton() {
-  return (
-    <Main>
-      <PageStack>
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-lg" />
-          ))}
-        </div>
-        <Skeleton className="h-64 rounded-lg" />
-      </PageStack>
-    </Main>
-  )
-}
-
-const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
+const API_KEY_PAGE_SIZES = [25, 50, 100]
+const API_KEY_SORT_FIELDS = ['name', 'last_used_at', 'expires_at', 'created_at'] as const
 
 export default function APIKeysPage() {
   const { t } = useTranslation()
-  const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES })
-  const { pagination, setPagination, setPage } = list
-  const resetPage = useCallback(() => setPage(1), [setPage])
-  const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const search = useSearchQuery(searchParam).term
-  const { data, error, isLoading, mutate } = useApiKeys({
-    page: pagination.pageIndex + 1,
-    perPage: pagination.pageSize,
-    search: search || undefined,
+  const list = useListParams({
+    pageSizes: API_KEY_PAGE_SIZES,
+    sortFields: API_KEY_SORT_FIELDS,
+  })
+  const { data, error, isLoading, isValidating, mutate } = useApiKeys({
+    page: list.page,
+    perPage: list.perPage,
+    search: list.searchTerm || undefined,
+    sort: list.sort || undefined,
   })
   // Owners and administrators see every key of the organization; anyone else
   // gets only their own keys from the API, and cannot mint or revoke keys.
@@ -203,154 +215,168 @@ export default function APIKeysPage() {
   const { trigger: createKey, isMutating: creating } = useCreateApiKey()
 
   const keys = useMemo(() => data?.data ?? [], [data])
+  const total = data?.total ?? 0
+
+  const nameLabel = t('settings.keys.name', 'Name')
+  const keyLabel = t('settings.keys.key', 'Key')
+  const scopesLabel = t('settings.keys.scopes', 'Scopes')
+  const statusLabel = t('settings.keys.status', 'Status')
+  const lastUsedLabel = t('settings.keys.lastUsed', 'Last used')
+  const expiresLabel = t('settings.keys.expires', 'Expires')
 
   const columns = useMemo<ColumnDef<APIKey>[]>(
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.keys.name', 'Name')} />
-        ),
+        meta: { kind: 'name', pin: 'start', minWidth: 200, label: nameLabel },
+        enableHiding: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title={nameLabel} />,
         cell: ({ row }) => (
-          <StackedCell
-            primary={row.original.name}
-            secondary={<code>{row.original.key_prefix}…</code>}
-          />
-        ),
-      },
-      {
-        id: 'scopes',
-        header: t('settings.keys.scopes', 'Scopes'),
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            {row.original.scopes.slice(0, 3).map((s) => (
-              <Badge // label-ok: a scope id
-                key={s}
-                variant="secondary"
-                className="font-mono text-xs"
-              >
-                {s}
-              </Badge>
-            ))}
-            {row.original.scopes.length > 3 && (
-              <Badge variant="outline" className="text-xs">
-                +{row.original.scopes.length - 3}
-              </Badge>
+          <div className="min-w-0">
+            <p className="truncate font-medium">{toDisplayText(row.original.name, 200)}</p>
+            {row.original.description && (
+              <p className="text-cap text-muted-foreground truncate">
+                {toDisplayText(row.original.description, 300)}
+              </p>
             )}
           </div>
         ),
       },
       {
-        id: 'status',
-        header: t('settings.keys.status', 'Status'),
+        id: 'key',
+        meta: { kind: 'id', width: 140, label: keyLabel },
         enableSorting: false,
+        header: keyLabel,
+        cell: ({ row }) => (
+          <code className="font-mono text-cap">{`${row.original.key_prefix}…`}</code>
+        ),
+      },
+      {
+        id: 'scopes',
+        meta: { kind: 'tags', label: scopesLabel },
+        enableSorting: false,
+        header: scopesLabel,
+        cell: ({ row }) => (
+          <span className="block truncate font-mono text-cap" title={row.original.scopes.join(' ')}>
+            {row.original.scopes.join(' ')}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        meta: { kind: 'status', label: statusLabel },
+        enableSorting: false,
+        header: statusLabel,
         cell: ({ row }) => <StatusBadge k={row.original} />,
       },
       {
         accessorKey: 'last_used_at',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.keys.lastUsed', 'Last used')} />
-        ),
+        meta: { kind: 'datetime-recent', width: 120, label: lastUsedLabel },
+        header: ({ column }) => <DataTableColumnHeader column={column} title={lastUsedLabel} />,
         cell: ({ row }) =>
           row.original.last_used_at ? (
             <RelativeTime date={row.original.last_used_at} />
           ) : (
-            <span className="text-muted-foreground text-xs">
-              {t('settings.keys.never', 'Never')}
-            </span>
+            <span className="text-muted-foreground">{t('settings.keys.never', 'Never')}</span>
           ),
       },
       {
         accessorKey: 'expires_at',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('settings.keys.expires', 'Expires')} />
-        ),
-        cell: ({ row }) =>
-          row.original.expires_at ? (
-            <span className="inline-flex items-center gap-2">
-              <RelativeTime date={row.original.expires_at} />
-              {row.original.exceeds_org_max && (
-                <Badge
-                  variant="outline"
-                  title={t(
-                    'settings.keys.exceedsMaxHint',
-                    'Created before the organization lowered its maximum lifetime. Replace it sooner.'
-                  )}
-                >
-                  {t('settings.keys.exceedsMax', 'Over the maximum')}
-                </Badge>
-              )}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">
-              {t('settings.keys.never', 'Never')}
-            </span>
-          ),
+        meta: { kind: 'text', minWidth: 120, maxWidth: 220, label: expiresLabel },
+        header: ({ column }) => <DataTableColumnHeader column={column} title={expiresLabel} />,
+        cell: ({ row }) => <ExpiryCell k={row.original} />,
       },
       {
         id: 'actions',
-        header: () => <div className="text-end">{t('settings.keys.actions', 'Actions')}</div>,
+        meta: { kind: 'actions' },
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => <KeyRowActions k={row.original} onChanged={() => mutate()} />,
+        cell: ({ row }) => <KeyRowActions k={row.original} onChanged={() => void mutate()} />,
       },
     ],
-    [mutate, t]
+    [mutate, t, nameLabel, keyLabel, scopesLabel, statusLabel, lastUsedLabel, expiresLabel]
   )
 
-  const total = data?.total ?? 0
-  const pageTitle = t('settings.apiKeys.title', 'API keys')
-  const pageDesc = t(
-    'settings.apiKeys.description',
-    'Keys for scripts and tools that call the API.'
+  const generateButton = (
+    <Button onClick={() => setGenOpen(true)}>
+      <Plus aria-hidden />
+      {t('settings.apiKeys.generate', 'Generate API key')}
+    </Button>
   )
-
-  if (isLoading) return <LoadingSkeleton />
-  // A failed read must not render as "No API keys yet" with all-zero stats —
-  // an admin could conclude none exist and mint a duplicate key.
-  if (error)
-    return (
-      <Main>
-        <PageStack>
-          <PageHeader title={pageTitle} description={pageDesc} />
-          <ErrorState title={pageTitle} error={error} onRetry={() => void mutate()} />
-        </PageStack>
-      </Main>
-    )
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader title={pageTitle} description={pageDesc}>
-          {canGenerate && (
-            <Button size="sm" onClick={() => setGenOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('settings.apiKeys.generate', 'Generate API key')}
-            </Button>
-          )}
-        </PageHeader>
+    <SettingsPage
+      wide
+      title={t('settings.apiKeys.title', 'API keys')}
+      description={t(
+        'settings.apiKeys.description',
+        'Keys for scripts and tools that call the API.'
+      )}
+      actions={canGenerate ? generateButton : undefined}
+    >
+      {!ownKeysOnly && <APIKeyPolicySection canEdit={canSetPolicy} />}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5" />
-              {t('settings.apiKeys.cardTitle', 'API key management')}
-            </CardTitle>
-            <CardDescription>
-              {ownKeysOnly
-                ? t(
-                    'settings.apiKeys.cardDescOwn',
-                    'Your own keys. Owners and administrators see and manage every key in the organization.'
-                  )
-                : t(
-                    'settings.apiKeys.cardDescAll',
-                    'Each key is scoped to specific permissions and can be set to expire automatically.'
-                  )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {total === 0 && !search ? (
+      <SettingsSection
+        framed
+        id="api-keys-list"
+        title={t('settings.apiKeys.keysTitle', 'Keys')}
+        description={
+          ownKeysOnly
+            ? t(
+                'settings.apiKeys.cardDescOwn',
+                'Your own keys. Owners and administrators see and manage every key in the organization.'
+              )
+            : t(
+                'settings.apiKeys.cardDescAll',
+                'Each key is scoped to specific permissions and can be set to expire automatically.'
+              )
+        }
+      >
+        <DataTable
+          columns={columns}
+          data={keys}
+          getRowId={(k) => k.id}
+          // A failed read must not render as "No API keys yet": an
+          // administrator could conclude none exist and mint a duplicate key.
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('settings.apiKeys.subject', 'API keys')}
+          isLoading={isLoading && !data}
+          isRefreshing={isValidating && !!data}
+          manualPagination
+          rowCount={total}
+          pagination={list.pagination}
+          onPaginationChange={list.setPagination}
+          pageSizeOptions={API_KEY_PAGE_SIZES}
+          paginationNoun={t('settings.apiKeys.noun', 'keys')}
+          sorting={list.sorting}
+          onSortingChange={list.setSorting}
+          showSearch={false}
+          search={{
+            value: list.q,
+            onChange: list.setSearch,
+            placeholder: t('settings.apiKeys.searchPlaceholder', 'Search API keys…'),
+            label: t('settings.apiKeys.searchLabel', 'Search API keys'),
+          }}
+          mobileRow={(k) => (
+            <PersonPhoneCard
+              title={toDisplayText(k.name, 200)}
+              address={<code className="font-mono">{`${k.key_prefix}…`}</code>}
+              menu={<KeyRowActions k={k} onChanged={() => void mutate()} />}
+              facts={
+                <>
+                  <StatusBadge k={k} />
+                  <span className="text-cap text-muted-foreground">
+                    {t('settings.keys.expires', 'Expires')} <ExpiryCell k={k} />
+                  </span>
+                </>
+              }
+            />
+          )}
+          isFiltered={list.q.trim() !== ''}
+          onClearFilters={() => list.setSearch('')}
+          emptyState={{
+            nothingYet: (
               <EmptyState
                 icon={KeyRound}
                 title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
@@ -366,57 +392,28 @@ export default function APIKeysPage() {
                       )
                 }
                 card={false}
-                action={
-                  canGenerate ? (
-                    <Button size="sm" onClick={() => setGenOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" />
-                      {t('settings.apiKeys.generate', 'Generate API key')}
-                    </Button>
-                  ) : undefined
-                }
+                action={canGenerate ? generateButton : undefined}
               />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={keys}
-                getRowId={(k) => k.id}
-                manualPagination
-                rowCount={total}
-                pagination={pagination}
-                onPaginationChange={setPagination}
-                pageSizeOptions={API_KEY_PAGE_SIZES}
-                paginationNoun={t('settings.apiKeys.noun', 'keys')}
-                showSearch={false}
-                search={{
-                  value: searchParam,
-                  onChange: (v) => {
-                    setSearchParam(v)
-                    resetPage()
-                  },
-                  placeholder: t('settings.apiKeys.searchPlaceholder', 'Search API keys…'),
-                  label: t('settings.apiKeys.searchLabel', 'Search API keys'),
-                }}
-                emptyMessage={t('settings.apiKeys.noKeys', 'No API keys')}
-                emptyDescription={t('settings.apiKeys.noMatch', 'No API keys match your search.')}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        {!ownKeysOnly && <APIKeyPolicyCard canEdit={canSetPolicy} />}
-
-        <GenerateKeyDialog
-          open={genOpen}
-          onOpenChange={setGenOpen}
-          onSubmit={(req) => createKey(req)}
-          isMutating={creating}
-          onCreated={(plaintext) => {
-            setNewKey(plaintext)
-            mutate()
+            ),
+            noMatch: {
+              title: t('settings.apiKeys.noMatch', 'No API keys match your search.'),
+              hint: t('settings.apiKeys.noMatchHint', 'Try another name, or clear the search.'),
+            },
           }}
         />
-        <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
-      </PageStack>
-    </Main>
+      </SettingsSection>
+
+      <GenerateKeyDialog
+        open={genOpen}
+        onOpenChange={setGenOpen}
+        onSubmit={(req) => createKey(req)}
+        isMutating={creating}
+        onCreated={(plaintext) => {
+          setNewKey(plaintext)
+          void mutate()
+        }}
+      />
+      <RevealKeyDialog value={newKey} onClose={() => setNewKey('')} />
+    </SettingsPage>
   )
 }

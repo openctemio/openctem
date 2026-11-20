@@ -12,7 +12,8 @@ import type { Page, Route } from '@playwright/test'
  *   brokenWords a word of letters split over two lines (only tokens such as
  *               hashes, URLs and keys may break anywhere)
  *   clipped     text cut by an overflow clip with no ellipsis or line clamp,
- *               text past either edge of the screen, and sideways page scroll
+ *               a button or link whose label a frame cuts ("Manage" shown as
+ *               "Mana"), text past either edge of the screen, and sideways page scroll
  *   mixedRows   controls of different heights side by side in one row
  *   untranslated English catalog strings left on a Vietnamese page
  *   emptyLabels a label shown with no value beside it
@@ -300,10 +301,13 @@ export async function findBreaks(
           if (!/hidden|clip/.test(cs.overflowX)) continue
           if (/auto|scroll/.test(cs.overflowX)) continue
           if (e.scrollWidth <= e.clientWidth + 2 || e.clientWidth === 0) continue
-          // A line clamp ends a wrapped line in an ellipsis, but a word with no break
-          // in it (a path) is only cut at the box edge: that is a cut, so a clamp
-          // excuses nothing here (this branch only runs when the content is wider).
-          if (cs.textOverflow === 'ellipsis') continue
+          // An ellipsis is drawn only by a block box (text sitting directly in a
+          // flex or grid box is cut with no mark), and a line clamp only on a
+          // -webkit-box: a select value with `line-clamp-1` and `flex` showed
+          // "Các mục một lần đư" with nothing to say it was cut.
+          const flexOrGrid = /flex|grid/.test(cs.display)
+          if (cs.textOverflow === 'ellipsis' && !flexOrGrid) continue
+          if (/\d/.test(cs.webkitLineClamp) && /-webkit-(inline-)?box/.test(cs.display)) continue
           // Only text cut: a child box (an icon, a chip row) wider than its frame
           // whose text still fits is the frame's own decision.
           const r = e.getBoundingClientRect()
@@ -351,6 +355,43 @@ export async function findBreaks(
               )
             }
           }
+        }
+      }
+      // (c2) a button or link whose label is cut by the frame around it (a
+      // table frame, a cell, a card) at its start or end edge: "Manage" shown
+      // as "Mana" at the table's right edge. A label that ends in an ellipsis
+      // by design (truncate) is not cut; a scroller's content is reachable.
+      for (const root of roots) {
+        const controls = root.querySelectorAll(
+          'button, a[href], [role="button"], [role="link"], [role="menuitem"]'
+        )
+        for (const el of Array.from(controls)) {
+          if (!shown(el) || hiddenByAncestor(el) || !short(el.textContent)) continue
+          const clip = clipOf(el)
+          if (!clip) continue
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          let cutBy = 0
+          for (let n = w.nextNode(); n && !cutBy; n = w.nextNode()) {
+            const host = n.parentElement
+            if (!(n.textContent ?? '').trim() || !host || hiddenByAncestor(host)) continue
+            let ellipsis = false
+            for (let a: Element | null = host; a; a = a.parentElement) {
+              const cs = getComputedStyle(a)
+              if (cs.textOverflow === 'ellipsis' || /\d/.test(cs.webkitLineClamp)) ellipsis = true
+              if (a === el) break
+            }
+            if (ellipsis) continue
+            const rg = document.createRange()
+            rg.selectNodeContents(n)
+            for (const b of Array.from(rg.getClientRects())) {
+              if (b.width <= 1) continue
+              if (b.right > clip.right + 1) cutBy = Math.round(b.right - clip.right)
+              else if (b.left < clip.left - 1) cutBy = Math.round(clip.left - b.left)
+              if (cutBy) break
+            }
+          }
+          if (cutBy)
+            out.clipped.push(`control cut by its frame by ${cutBy}px: "${short(el.textContent)}"`)
         }
       }
       const vw = document.documentElement.clientWidth
