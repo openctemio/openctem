@@ -568,6 +568,18 @@ Planned pages that do not exist today start inside the budget.
 |  | Queue (outbox) + stats | GET /api/v1/notification-outbox, `/stats` | tab open | working | notifications:read + integrations:manage | shipped |
 |  | Signing secret (webhook) | GET /api/v1/integrations/{id}/signing-secret | on open | working | integrations:manage | shipped |
 
+### Settings lists: usage and access fields
+
+The roles and teams lists carry the numbers their pages show, so a page makes no call per row. Every count is
+computed for the caller's tenant only, in a constant number of grouped queries, whatever the number of rows.
+
+| List | Field | Meaning |
+|---|---|---|
+| `GET /api/v1/roles` (roles:read) | `members_count` | Distinct users, people and service accounts, who hold the role in this tenant, directly (`user_roles`) or through a team (`v_user_role_grants`). A person holding it both ways counts once. One `GROUP BY role_id` for all roles. Present on the list only, absent on `GET /roles/{roleId}`. |
+| | `pending_approvals` | Finding approval requests of this tenant that are pending and not past their expiry, for a role whose holders may decide them (the role holds `findings:approve`); `0` for any other role. It is the tenant's waiting count, not a share of it: two approver roles both show the same number. Present on the list only. |
+| `GET /api/v1/groups` (team:groups:read) | `access` | The team's access summary, the same shape as `GET /groups/{groupId}/access`: `scope_mode` (`specific` or `all_assets`), `presets` (template id, name, version state), `privileged` and `other_roles` (roles bound by hand). Loaded for the page of teams with one query on `group_role_bindings` and one batch of roles with their permissions. Present on the list only. |
+| | `asset_count` (existing) | Assets the team owns (asset owners), not deleted, limited to the assets the caller may see. A team whose `access.scope_mode` is `all_assets` sees every asset of the tenant whatever this number says; the console reads the two together. |
+
 ## Platform admin console
 
 | Screen | Block | Endpoint | Loaded | Freshness | Permission and scope | State |

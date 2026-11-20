@@ -682,6 +682,43 @@ func (s *RoleService) ListRolesForTenant(ctx context.Context, tenantID string) (
 	return s.roleRepo.ListForTenant(ctx, tid)
 }
 
+// RoleUsage is what a role is used for in one tenant, for the roles list.
+type RoleUsage struct {
+	// Members is the number of distinct users (people and service accounts)
+	// holding the role, directly or through a team.
+	Members int
+	// PendingApprovals is the number of pending finding approval requests the
+	// role's holders may decide: the tenant's pending count when the role
+	// holds findings:approve, otherwise 0.
+	PendingApprovals int
+}
+
+// RoleUsageForTenant returns the usage of each of the given roles in the
+// tenant with two tenant-scoped queries, whatever the number of roles.
+func (s *RoleService) RoleUsageForTenant(ctx context.Context, tenantID string, roles []*roledom.Role) (map[roledom.ID]RoleUsage, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	holders, err := s.roleRepo.CountHoldersByRole(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	pending, err := s.roleRepo.CountPendingApprovals(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[roledom.ID]RoleUsage, len(roles))
+	for _, r := range roles {
+		u := RoleUsage{Members: holders[r.ID()]}
+		if r.HasPermission(string(permission.FindingsApprove)) {
+			u.PendingApprovals = pending
+		}
+		out[r.ID()] = u
+	}
+	return out, nil
+}
+
 // ListSystemRoles returns only system roles.
 func (s *RoleService) ListSystemRoles(ctx context.Context) ([]*roledom.Role, error) {
 	return s.roleRepo.ListSystemRoles(ctx)
