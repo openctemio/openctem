@@ -125,7 +125,7 @@ func (s *Service) Events(ctx context.Context, c Caller, spec *filterspec.Spec) (
 // answers shared.ErrNotFound alike (fail closed, also without an enforcer).
 func (s *Service) Paths(ctx context.Context, tenantID, assetID shared.ID, q webendpoint.PathQuery) (*webendpoint.PathLevel, error) {
 	if err := q.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, shared.ErrValidation
 	}
 	if err := s.dataScope.AssertAssetRef(ctx, tenantID, assetID); err != nil {
 		return nil, shared.ErrNotFound

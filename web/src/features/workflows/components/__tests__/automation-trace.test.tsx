@@ -162,7 +162,10 @@ describe('AutomationRunDetail', () => {
     await waitFor(() => expect(api.resumeWorkflowRun).toHaveBeenCalledWith('r58'))
     fireEvent.click(screen.getByRole('button', { name: /Cancel run/ }))
     expect(api.cancelWorkflowRun).not.toHaveBeenCalled()
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel this run' }))
+    // the confirm dialog opens a tick later; a loaded runner needs more than the 1s default
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Cancel this run' }, { timeout: 5000 })
+    )
     await waitFor(() => expect(api.cancelWorkflowRun).toHaveBeenCalledWith('r58'))
   })
 
