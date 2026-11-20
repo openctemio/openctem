@@ -58,9 +58,15 @@ type RoleResponse struct {
 	Template *RoleTemplateStatusResponse `json:"template,omitempty"`
 	// ManagedGroupID is set for a role a team's access settings own: it is
 	// changed on the team, never by hand.
-	ManagedGroupID *string   `json:"managed_group_id,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ManagedGroupID *string `json:"managed_group_id,omitempty"`
+	// MembersCount and PendingApprovals are set by the list only (GET
+	// /roles): users holding the role directly or through a team, and the
+	// pending finding approval requests the role's holders may decide
+	// (the role holds findings:approve).
+	MembersCount     *int      `json:"members_count,omitempty"`
+	PendingApprovals *int      `json:"pending_approvals,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // RoleTemplateStatusResponse relates a custom role to the template it was
@@ -454,9 +460,19 @@ func (h *RoleHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	usage, err := h.service.RoleUsageForTenant(ctx, tenantID, roles)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
 	resp := make([]RoleResponse, len(roles))
 	for i, ro := range roles {
 		resp[i] = toRoleResponse(ro)
+		u := usage[ro.ID()]
+		members, pending := u.Members, u.PendingApprovals
+		resp[i].MembersCount = &members
+		resp[i].PendingApprovals = &pending
 	}
 
 	w.Header().Set("Content-Type", "application/json")
