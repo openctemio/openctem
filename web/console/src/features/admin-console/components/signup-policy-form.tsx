@@ -227,7 +227,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
           <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <Label htmlFor={`${codeId}-po`} className="grid gap-1 font-normal">
               <span className="font-medium">{t('admin.signup.personalOrg')}</span>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-body text-muted-foreground">
                 {mode === 'self_service'
                   ? t('admin.signup.personalOrgHint')
                   : t('admin.signup.personalOrgNeedsSelfService')}

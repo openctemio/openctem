@@ -213,7 +213,6 @@ function ProviderRow({
         <Button
           variant="link"
           size="sm"
-          className="h-auto px-0"
           aria-expanded={showEntries}
           onClick={() => setShowEntries((v) => !v)}
         >

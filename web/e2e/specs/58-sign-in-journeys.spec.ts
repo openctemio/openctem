@@ -394,7 +394,10 @@ async function drive(
     if (p.startsWith('/invitations')) {
       const accept = page.getByRole('button', { name: 'Accept invitation' })
       const open = page.getByRole('button', { name: /^Open / })
-      const signIn = page.getByRole('link', { name: /sign in/i })
+      // The page's own action, which keeps the invitation to return to. The
+      // brand link in the entry header is also named "Go to sign in" and
+      // opens /login with nothing to return to.
+      const signIn = page.getByRole('main').getByRole('link', { name: /sign in/i })
       // The page loads its invitation after it opens: wait for one of its
       // answers before reading it, or a slow load reads as a dead end.
       await accept
