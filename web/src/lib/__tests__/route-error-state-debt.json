@@ -10,7 +10,6 @@
     "(dashboard)/settings/pentest/page.tsx",
     "(dashboard)/settings/pentest/report-templates/page.tsx",
     "(dashboard)/settings/pentest/templates/new/page.tsx",
-    "(dashboard)/settings/scope/page.tsx",
     "(dashboard)/settings/support-access/page.tsx",
     "(dashboard)/settings/tenant/create/page.tsx"
   ]
