@@ -688,6 +688,7 @@
   "findings.filter.field.network_port": "Port",
   "findings.filter.field.network_service": "Service",
   "findings.filter.field.network_transport": "Transport",
+  "findings.filter.field.notification_group_id": "In notification",
   "findings.filter.field.observation": "Observation",
   "findings.filter.field.pending_approval": "Pending approval",
   "findings.filter.field.priority_class": "Priority",
