@@ -147,50 +147,46 @@ export function FindingQueue({
     return cols
   }, [t, tab])
 
-  // A phone card on the queue card's slots: the title on the full width (two
-  // lines at most), priority and severity on one line, where the finding is,
-  // then the deadline (or the acceptance end) and the status on one line.
-  // Marks never wrap inside themselves.
+  // A phone card on the queue card's slots: the title (two lines at most)
+  // with the status at its end, then one line of facts (priority, severity,
+  // the deadline or the acceptance end, where the finding is) and the
+  // chevron to the finding.
   const mobileRow = (f: ApiFinding) => {
     const location = findingLocation(f).full
+    const href = `/findings/${encodeURIComponent(f.id)}`
     return (
       <QueueCard
         data-testid="my-work-finding-card"
+        href={href}
         title={
-          <Link
-            href={`/findings/${encodeURIComponent(f.id)}`}
-            className="block min-w-0 text-sm font-medium hover:underline"
-          >
+          <Link href={href} className="block min-w-0 text-sm font-medium hover:underline">
             <span className="line-clamp-2 break-words">
               {findingName(f) || t('myWork.untitled')}
             </span>
           </Link>
         }
-        marks={
-          <span className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
+        state={
+          tab === 'expiring' ? undefined : <FindingStatusBadge status={f.status as FindingStatus} />
+        }
+        meta={[
+          <span key="marks" className="flex items-center gap-1.5">
             <PriorityClassBadge priorityClass={f.priority_class} assetId={f.asset?.id} showWord />
             <SeverityBadge severity={f.severity} />
-          </span>
-        }
-        meta={location ? <span className="min-w-0 truncate">{location}</span> : undefined}
-        reason={
-          <span className="flex min-w-0 flex-nowrap items-center gap-1.5 whitespace-nowrap">
-            {tab === 'expiring' ? (
-              <span className="text-xs text-muted-foreground">
-                {t('myWork.columns.acceptanceEnds')} <RelativeTime date={f.acceptance_expires_at} />
-              </span>
-            ) : (
-              <>
-                <SlaDueChip
-                  status={f.sla_status}
-                  deadline={f.sla_deadline}
-                  kevCapped={f.sla_kev_capped}
-                />
-                <FindingStatusBadge status={f.status as FindingStatus} />
-              </>
-            )}
-          </span>
-        }
+          </span>,
+          tab === 'expiring' ? (
+            <span key="due">
+              {t('myWork.columns.acceptanceEnds')} <RelativeTime date={f.acceptance_expires_at} />
+            </span>
+          ) : (
+            <SlaDueChip
+              key="due"
+              status={f.sla_status}
+              deadline={f.sla_deadline}
+              kevCapped={f.sla_kev_capped}
+            />
+          ),
+          location ? <span key="where">{location}</span> : null,
+        ]}
       />
     )
   }
