@@ -141,6 +141,12 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
     const email = newEmail(j.m.replace(/-/g, ''))
     const invitation = await invite(env, owner, email)
     const person = await register(env, email, invitation)
+    // The browser signs in from the person's own address, like the API calls
+    // that seeded them. Otherwise every journey signs in from the one address
+    // of the runner's browser, and the API's limit of five sign-ins a minute
+    // per address ("Too many attempts") refuses a journey that runs close
+    // after a few others. Test only; production limits are unchanged.
+    await context.setExtraHTTPHeaders({ 'X-Forwarded-For': person.p.ip })
     if (j.m === 'password-totp') await enrollFactor(env, person)
 
     const federated = j.m !== 'password' && j.m !== 'password-totp'
@@ -389,6 +395,14 @@ async function drive(
       const accept = page.getByRole('button', { name: 'Accept invitation' })
       const open = page.getByRole('button', { name: /^Open / })
       const signIn = page.getByRole('link', { name: /sign in/i })
+      // The page loads its invitation after it opens: wait for one of its
+      // answers before reading it, or a slow load reads as a dead end.
+      await accept
+        .or(open)
+        .or(signIn)
+        .first()
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .catch(() => {})
       if (await visible(page, accept)) {
         if (accepted > 0) {
           const said = await page
@@ -444,6 +458,11 @@ async function drive(
         await page.getByLabel('Password', { exact: true }).fill(person.password)
         await page.getByRole('button', { name: 'Sign in' }).click()
         signedIn = true
+        // The sign-in is a request that has not started when the page looks
+        // idle: wait for the console to move on (a refusal stays here).
+        await page
+          .waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 5_000 })
+          .catch(() => {})
         continue
       }
       const reason =
