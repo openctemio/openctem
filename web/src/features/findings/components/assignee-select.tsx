@@ -13,6 +13,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ChevronDown, User, Loader2, Check, UserPlus } from 'lucide-react'
 import { useTenant } from '@/context/tenant-provider'
@@ -43,7 +44,7 @@ interface AssigneeSelectProps {
   size?: 'sm' | 'default'
   /** Button variant */
   variant?: 'outline' | 'ghost'
-  /** Show full name or truncated */
+  /** The full name (or the placeholder) at every width; otherwise the first name, and a phone shows only the icon. */
   showFullName?: boolean
   /** Custom placeholder when no assignee */
   placeholder?: string
@@ -227,7 +228,7 @@ export function AssigneeSelect({
               // Assigned but name not loaded yet - show placeholder
               <>
                 <User className="h-3 w-3" />
-                <span className="text-muted-foreground hidden sm:inline">
+                <span className={cn('text-muted-foreground', !showFullName && 'hidden sm:inline')}>
                   {t('findings.assigneeSelect.assigned', 'Assigned')}
                 </span>
               </>
@@ -239,7 +240,9 @@ export function AssigneeSelect({
                 className={
                   field
                     ? 'min-w-0 flex-1 truncate text-start text-muted-foreground'
-                    : 'sr-only sm:not-sr-only'
+                    : showFullName
+                      ? undefined
+                      : 'sr-only sm:not-sr-only'
                 }
               >
                 {placeholder ?? t('findings.assigneeSelect.assign', 'Assign')}

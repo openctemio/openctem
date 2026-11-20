@@ -105,6 +105,23 @@ describe('RiskSummarySection', () => {
     expect(screen.getByText('6')).toBeInTheDocument() // medium
   })
 
+  it('says the score and the count once when the page properties show them', () => {
+    render(<RiskSummarySection asset={makeAsset()} numbersShown />)
+    expect(screen.queryByLabelText('Risk 73 of 100, High')).not.toBeInTheDocument()
+    expect(screen.queryByText('22')).not.toBeInTheDocument()
+    expect(screen.getByText('16')).toBeInTheDocument() // the breakdown stays
+  })
+
+  it('says nothing more about no open findings when the properties show the count', () => {
+    render(
+      <RiskSummarySection
+        asset={makeAsset({ findingCount: 0, findingSeverityCounts: {} })}
+        numbersShown
+      />
+    )
+    expect(screen.queryByText('No open findings on this asset.')).not.toBeInTheDocument()
+  })
+
   it('says so when there are no open findings', () => {
     render(<RiskSummarySection asset={makeAsset({ findingCount: 0, findingSeverityCounts: {} })} />)
     expect(screen.getByText('No open findings on this asset.')).toBeInTheDocument()
