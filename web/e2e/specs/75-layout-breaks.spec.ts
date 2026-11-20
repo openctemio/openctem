@@ -75,6 +75,8 @@ const CI_ROUTES = [
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
+  '/scope',
+  '/settings/general',
   '/settings/members',
   '/settings/audit-log',
   '/settings/api-keys',

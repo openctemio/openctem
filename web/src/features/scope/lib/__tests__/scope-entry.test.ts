@@ -54,6 +54,25 @@ describe('expiry', () => {
     expect(expiryText('2026-10-05T12:00:00Z', NOW)).toBe('Expired 2 days ago')
     expect(daysUntil('2026-10-10T12:00:00Z', NOW)).toBe(3)
   })
+
+  it('goes through the catalog when given t (a vi page said "Expires in 7 days")', () => {
+    const seen: string[] = []
+    const t = (key: string, _fallback: string, vars?: Record<string, string>) => {
+      seen.push(key)
+      return `${key}${vars?.n ? `:${vars.n}` : ''}`
+    }
+    expect(expiryText('2026-10-14T12:00:00Z', NOW, t)).toBe('scope.expiry.inDays:7')
+    expect(expiryText('2026-10-08T12:00:00Z', NOW, t)).toBe('scope.expiry.inDay')
+    expect(expiryText('2026-10-07T15:00:00Z', NOW, t)).toBe('scope.expiry.inHours:3')
+    expect(expiryText('2026-10-05T12:00:00Z', NOW, t)).toBe('scope.expiry.expiredDays:2')
+    expect(expiryText(undefined, NOW, t)).toBe('scope.expiry.permanent')
+    expect(expiryText('2026-10-14T12:00:00Z', NOW, t, 'blocked')).toBe('scope.expiry.blockedInDays:7')
+    expect(seen).toHaveLength(6)
+  })
+
+  it('words a testing window as "Blocked again in" in English', () => {
+    expect(expiryText('2026-10-14T12:00:00Z', NOW, undefined, 'blocked')).toBe('Blocked again in 7 days')
+  })
 })
 
 describe('approving', () => {

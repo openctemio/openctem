@@ -279,7 +279,7 @@ export function ScopeExclusionsTable({
           ) : (
             (scopeKindIcon(row.original.exclusion_type) ?? <Ban className="h-4 w-4" />)
           )}
-          <span className="text-sm text-foreground">
+          <span className="whitespace-nowrap text-sm text-foreground">
             {isPathExclusion(row.original)
               ? t('scope.exclusion.webPath', 'Web path')
               : scopeTargetTypeLabel(row.original.exclusion_type ?? '', t)}
@@ -291,7 +291,7 @@ export function ScopeExclusionsTable({
       id: 'why',
       header: t('scope.col.why', 'Why'),
       cell: ({ row }) => (
-        <span className="text-sm" data-testid="exclusion-why">
+        <span className="whitespace-nowrap text-sm" data-testid="exclusion-why">
           {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
         </span>
       ),
@@ -309,7 +309,7 @@ export function ScopeExclusionsTable({
               tone={s.tone}
               label={statusLabel(x.status ?? 'inactive')}
               title={t(`scope.exclusion.status.${x.status ?? 'inactive'}.hint`, s.hint)}
-              detail={x.expires_at ? expiryText(x.expires_at) : undefined}
+              detail={x.expires_at ? expiryText(x.expires_at, Date.now(), t) : undefined}
               state={x.status}
             />
             {isPathExclusion(x) && x.status === 'active' && (
@@ -321,7 +321,7 @@ export function ScopeExclusionsTable({
                 title={t(`scope.testing.hint.${mode}`, TESTING_HINT[mode])}
                 detail={
                   mode !== 'blocked' && x.testing_until
-                    ? expiryText(x.testing_until).replace('Expires in', 'Blocked again in')
+                    ? expiryText(x.testing_until, Date.now(), t, 'blocked')
                     : undefined
                 }
                 state={`testing-${mode}`}
