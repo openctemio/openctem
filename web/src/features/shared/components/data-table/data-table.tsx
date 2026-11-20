@@ -641,9 +641,12 @@ const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 const CARD_WIDE_VALUE_CLASS =
   '[&>span>*]:max-w-full [&_[data-slot=badge]]:min-w-0 [&_[data-slot=badge]]:shrink [&_[data-slot=badge]:not(:has(svg))]:inline-block [&_[data-slot=badge]:not(:has(svg))]:truncate'
 
-/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+/**
+ * A chip in a value cell: the kit Badge, the named badges, chips and tags, and
+ * the status pills (HealthStatus, TonePill, StatusLozenge).
+ */
 const CARD_CHIP_SELECTOR =
-  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag],[data-slot=health-status],[data-slot=status-lozenge]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch
