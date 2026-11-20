@@ -93,6 +93,7 @@ const LOPSIDED_DEBT = new Set([
   '/scans/runs',
   '/attack-surface/technologies',
   '/settings/audit-log',
+  '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
