@@ -1,4 +1,5 @@
 import { sidebarData } from '@/config/sidebar-data'
+import { ACCOUNT_NAV } from '@/config/account-nav'
 import { settingsNavItems } from '@/config/settings-nav'
 import * as sectionTabs from '@/config/section-tabs'
 
@@ -45,6 +46,10 @@ const SIDEBAR_LABELS: Map<string, string> = (() => {
   // Settings pages live in the settings rail, not the main sidebar.
   collect(settingsNavItems as NavNode[], map, SIDEBAR_KEYS, (n) =>
     n.id ? `settings.item.${n.id}` : undefined
+  )
+  // The account area has its own navigation, named the way its tabs are.
+  collect(ACCOUNT_NAV as unknown as NavNode[], map, SIDEBAR_KEYS, (n) =>
+    n.id ? `account.area.nav.${n.id}` : undefined
   )
   return map
 })()

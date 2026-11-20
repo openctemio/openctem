@@ -228,7 +228,12 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                 )}
               </span>
             }
-            secondary={row.original.description || undefined}
+            secondary={
+              row.original.description ? (
+                // Stored text, in the language it was written in: not catalog copy.
+                <span translate="no">{row.original.description}</span>
+              ) : undefined
+            }
           />
         ),
       },

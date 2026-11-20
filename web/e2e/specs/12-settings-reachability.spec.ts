@@ -126,7 +126,7 @@ for (const vp of [
       await expect(nav).toBeVisible({ timeout: 30_000 })
       await expect(nav.getByRole('link', { name: 'All settings', exact: true })).toBeVisible()
       for (const label of [
-        'My account',
+        'Your membership',
         'Organization',
         'People and access',
         'Sign-in and oversight',
@@ -144,7 +144,7 @@ for (const vp of [
           label
         ).toBeVisible()
       }
-      // The old "Security" group heading is gone. The My account row named
+      // The old "Security" group heading is gone. A row named
       // "Security" is a link, so only a "Security" that is not a link counts.
       const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
       await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
@@ -189,7 +189,7 @@ test(
     ).toBe(true)
 
     // Settings: back to the settings rail, still open.
-    await drawer.getByRole('button', { name: 'Settings', exact: true }).click()
+    await drawer.getByRole('button', { name: 'Organization settings', exact: true }).click()
     await expect(drawer.locator('[data-nav-view="settings"]')).toBeVisible()
     await expect(drawer.getByRole('button', { name: 'Back to app' })).toBeFocused()
 
@@ -246,7 +246,7 @@ test('Cmd+K finds settings pages', { tag: ['@settings', '@smoke'] }, async ({ pa
 // The user menu ignores a click on its button for a moment after it closes
 // (under 100ms: after Escape, or after a menu item navigates), so the open
 // is retried instead of clicked once.
-async function openUserMenuItem(page: Page, name: string) {
+async function openUserMenuItem(page: Page, name: string | RegExp) {
   await expect(async () => {
     await page.getByRole('button', { name: 'Open user menu' }).click()
     await page.getByRole('menuitem', { name }).click({ timeout: 2_000 })
@@ -265,12 +265,13 @@ base(
 
     await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
 
-    await openUserMenuItem(page, 'Notifications')
-    await expect(page).toHaveURL(/\/account\/notifications/)
+    // The person's pages in this organization are "Your membership" in its settings.
+    await page.goto('/settings/me/notifications')
+    await expect(page).toHaveURL(/\/settings\/me\/notifications/)
     await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
     await expect(page.locator('[data-route-denied]')).toHaveCount(0)
 
-    await openUserMenuItem(page, 'All settings')
+    await openUserMenuItem(page, /^(Settings of .+|Organization settings)$/)
     await expect(page).toHaveURL(/\/settings$/)
     await expect(page.locator('[data-route-denied]')).toHaveCount(0)
     // Owner/admin-only entries are hidden, not shown and refused.
