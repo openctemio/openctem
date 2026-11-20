@@ -72,7 +72,8 @@ describe('ListToolbar', () => {
     const order = [...bar.querySelectorAll('button, input')].map(
       (el) => el.textContent || el.getAttribute('aria-label')
     )
-    expect(order).toEqual(['Search', 'Status', 'View'])
+    // The phone's Filters button (hidden from a 28rem toolbar) leads the field.
+    expect(order).toEqual(['Filters', 'Search', 'Status', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 

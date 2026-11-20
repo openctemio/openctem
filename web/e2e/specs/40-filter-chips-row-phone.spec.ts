@@ -12,9 +12,12 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   2. the second line starts with the filter tokens, the chips after them
  *      (owner report 2026-11-20: tokens pushed to the end of an otherwise
  *      empty line), one height and one centre line, nothing on a third line;
- *   3. tokens and chips that do not fit scroll sideways in their strip, and
- *      a strip fades at its end exactly when more is hidden past it; no chip
- *      folds away into "+N more";
+ *   3. no filter token sits in a sideways strip (owner report 2026-11-20,
+ *      /assets Activity: "Last 7 d..." cut at the strip's edge read as hidden
+ *      buttons): the tokens are in the Filters sheet, and the ones that filter
+ *      stay drawn on the second line; the chips wrap onto more lines when they
+ *      do not fit (owner decision 2026-11-20: no chip hidden past an edge, no
+ *      sideways scroll, no chip folds away into "+N more");
  *   4. nothing overlaps, nothing sticks out of the viewport, the page does
  *      not scroll sideways.
  * On /findings the seed has no informational findings, so the quick views and
@@ -86,9 +89,7 @@ async function toolbarDefects(page: Page): Promise<string[]> {
     const s = search.getBoundingClientRect()
     // Strips count as one item each: what scrolls inside them is checked apart.
     const strips = Array.from(
-      region.querySelectorAll<HTMLElement>(
-        '[data-slot="list-toolbar-tokens"], [data-slot="filter-chips-strip"][data-scroll]'
-      )
+      region.querySelectorAll<HTMLElement>('[data-slot="list-toolbar-tokens"]')
     ).filter((el) => visible(el) && getComputedStyle(el).display !== 'contents')
     const inStrip = (el: Element) => strips.some((st) => st !== el && st.contains(el))
     const box = (el: HTMLElement) => ({
@@ -213,8 +214,7 @@ for (const locale of ['en', 'vi'] as const) {
             contentType: 'image/png',
           })
           expect(defects).toEqual([])
-          // The row clips instead of scrolling: focus or scrollIntoView on a
-          // chip past the edge cannot shift the row and cut its start.
+          // The row clips: focus or scrollIntoView cannot shift it sideways.
           const shifted = await page.evaluate(() => {
             const r = document.querySelector<HTMLElement>(
               'main [data-testid="findings-filter-bar"]'

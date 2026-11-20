@@ -288,12 +288,13 @@ describe('the list search field Query mode', () => {
     await settle()
     // The problem: one line of the chips row's height under the toolbar.
     expect(status).toHaveAttribute('data-drawn', '')
-    // A row of its own under the toolbar (after line 2 on a phone).
+    // A row of its own under the toolbar (the last line on a phone: after the
+    // token chips and the page's chips row).
     expect(status).toHaveClass(
       'h-control',
       'max-md:h-control-touch',
       'basis-full',
-      '@max-md/toolbar:row-start-3',
+      '@max-md/toolbar:row-start-4',
       '@max-md/toolbar:col-end-4'
     )
     expect(box()).toHaveAttribute('aria-invalid', 'true')
@@ -335,7 +336,7 @@ describe('the list search field Query mode', () => {
     expect(status).toHaveClass(
       'h-control',
       'flex-[1_1_0%]',
-      '@max-md/toolbar:row-start-3',
+      '@max-md/toolbar:row-start-4',
       '@max-md/toolbar:col-start-1',
       '@max-md/toolbar:col-end-4'
     )

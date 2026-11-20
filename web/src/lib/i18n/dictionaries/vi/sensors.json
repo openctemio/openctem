@@ -817,7 +817,7 @@
   "sensors.list.onlineCount": "{count} trực tuyến",
   "sensors.list.refresh": "Làm mới",
   "sensors.list.search.label": "Tìm sensor",
-  "sensors.list.search.placeholder": "Tên, máy chủ, IP hoặc công cụ…",
+  "sensors.list.search.placeholder": "Tên, máy chủ hoặc IP…",
   "sensors.list.seconds": "{count} giây",
   "sensors.list.selected": "sensor đã chọn",
   "sensors.list.show.one": "Hiển thị {count} sensor",
