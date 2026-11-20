@@ -84,7 +84,7 @@ func TestSLADefaultPreview_DB(t *testing.T) {
 			called = true
 			hd.PreviewDefault(w, r)
 		}))
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/sla-policies/"+policy+"/default-preview", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/sla-policies/"+policy+"/default-preview", nil)
 		req.SetPathValue("id", policy)
 		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
 		ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
