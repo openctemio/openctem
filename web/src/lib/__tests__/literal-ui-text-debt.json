@@ -13,7 +13,6 @@
   "app/(dashboard)/(validation)/pentest/campaigns/page.tsx": 2,
   "app/(dashboard)/error.tsx": 5,
   "app/(dashboard)/findings/page.tsx": 9,
-  "app/(dashboard)/settings/audit-log/page.tsx": 2,
   "app/(dashboard)/settings/integrations/siem/page.tsx": 1,
   "app/(dashboard)/settings/integrations/ticketing/page.tsx": 1,
   "app/(dashboard)/settings/members/page.tsx": 3,

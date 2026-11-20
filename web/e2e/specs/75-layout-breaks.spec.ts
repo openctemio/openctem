@@ -259,7 +259,6 @@ const LOPSIDED_DEBT = new Set([
   '/findings/imports',
   '/scans/runs',
   '/attack-surface/technologies',
-  '/settings/audit-log',
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
