@@ -86,6 +86,7 @@ const CI_ROUTES = [
   '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
   '/settings/scanning/tool-sources',
+  '/settings/teams',
   '/notifications',
   '/oauth/device',
 ]

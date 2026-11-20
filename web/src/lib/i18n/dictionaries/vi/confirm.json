@@ -674,6 +674,7 @@
   "confirm.team.bindRoleTitle": "Thêm vai trò {name} vào nhóm?",
   "confirm.team.delete": "Xóa nhóm",
   "confirm.team.deleteDesc": "Thành viên mất quyền truy cập mà nhóm này cấp, bao gồm cả các tài sản nhóm sở hữu. Không thể hoàn tác.",
+  "confirm.team.deleteImpact": "{members, plural, other {# thành viên mất}} quyền truy cập mà nhóm này cấp, bao gồm {assets, plural, other {# tài sản}} của nhóm, trừ khi một nhóm hoặc quyền khác bao phủ chúng. Không thể hoàn tác.",
   "confirm.team.deleteTitle": "Xóa nhóm \"{name}\"?",
   "confirm.team.removeAssetDesc": "Nhóm và các thành viên mất quyền truy cập tài sản này trừ khi có quyền khác bao phủ nó. Bản thân tài sản được giữ lại.",
   "confirm.team.removeAssetTitle": "Gỡ tài sản {name} khỏi nhóm này?",
