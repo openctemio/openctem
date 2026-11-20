@@ -39,8 +39,10 @@ test.describe('layout-break detector: controls cut by their frame', { tag: ['@sh
     expect((await findBreaks(p)).clipped).toEqual([])
   })
 
-  test('is quiet in a scroller', async ({ page: p }) => {
-    await p.setContent(page('overflow-x:auto;width:540px', 'width:80px'))
+  test('is quiet for a column wholly past a scroller edge (reached by scrolling)', async ({
+    page: p,
+  }) => {
+    await p.setContent(page('overflow-x:auto;width:400px', 'width:80px'))
     expect((await findBreaks(p)).clipped).toEqual([])
   })
 })

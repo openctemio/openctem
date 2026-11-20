@@ -349,7 +349,12 @@ export async function findBreaks(
           for (const c of Array.from(table.querySelectorAll('th, td'))) {
             if (!shown(c) || hiddenByAncestor(c) || !short(c.textContent)) continue
             const cr = c.getBoundingClientRect()
-            if (cr.left < fr.right - 1 && cr.right > fr.right + 2) {
+            // What the cell shows (its text and boxes), not its own padded
+            // box: a cell whose padding passes the edge hides nothing.
+            const shownRange = document.createRange()
+            shownRange.selectNodeContents(c)
+            const contentRight = shownRange.getBoundingClientRect().right
+            if (cr.left < fr.right - 1 && contentRight > fr.right + 2) {
               out.clipped.push(
                 `table cell cut at the table's edge: "${short(c.textContent, 30)}" ${Math.round(fr.right - cr.left)}/${Math.round(cr.width)}`
               )
