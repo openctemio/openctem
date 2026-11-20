@@ -13,9 +13,10 @@ import {
 
 /**
  * No text overlaps, no word broken inside, nothing cut without an ellipsis,
- * one control height per row, no English left in vi and no label without a
- * value, on every list and its main overlays, with data that is hard on the
- * layout (helpers/text-breaks.ts).
+ * one control height per row, no English left in vi, no label without a
+ * value and no row bunched at one side (a phone card with nothing at its end,
+ * a title row line with an empty start), on every list and its main overlays,
+ * with data that is hard on the layout (helpers/text-breaks.ts).
  *
  * Regression guarded (owner report 2026-11-19, /assets at 390 px, dark): a
  * system description ("IP address auto-created from DNS resolution") sat in
@@ -77,6 +78,22 @@ const CI_ROUTES = [
   '/settings/api-keys',
   '/notifications',
 ]
+
+/**
+ * Lists whose phone cards (or title row) are still bunched at the start
+ * (`lopsided`, owner report 2026-11-20), found when the check was added. Each
+ * moves onto the phone card rule (state at the end of the title line, the
+ * main action or a chevron at the end of the facts line) and leaves this
+ * list; it only shrinks, and a route not on it fails on its first lopsided
+ * row.
+ */
+const LOPSIDED_DEBT = new Set([
+  '/findings', // one row: a title row line holds only its end controls
+  '/findings/imports',
+  '/scans/runs',
+  '/attack-surface/technologies',
+  '/settings/audit-log',
+])
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
@@ -227,6 +244,7 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const [tag, found] of Object.entries(report)) {
         if (typeof found === 'string') continue
         for (const kind of BREAK_KINDS) {
+          if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
           expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
       }
