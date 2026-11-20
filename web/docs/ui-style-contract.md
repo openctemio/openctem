@@ -1343,8 +1343,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75-layout-breaks.spec.ts` checks the lists and their overlays at
-  390, 1024 and 1440 px with long English and Vietnamese data: no text over
+  390, 1024, 1280 and 1440 px with long English and Vietnamese data: no text over
   text or a control, no word broken inside, nothing cut without an ellipsis,
+  no button or link whose label a frame cuts ("Manage" shown as "Mana"),
   one control height per row, no English left in vi, no label without a value.
   Stored text shown as written (a dashboard's description) sits in an element
   with `translate="no"`, which the English check skips.

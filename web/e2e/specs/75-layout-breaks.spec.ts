@@ -23,7 +23,7 @@ import {
  * squeezed to "IP Addres / s" and the description ran under the Risk score.
  * The seed had no description, so every spec passed.
  *
- * Variants per route: 390x844 en and vi (light), 1440x900 and 1024x768 en; 0 and 1 rows at
+ * Variants per route: 390x844 en and vi (light), 1440x900, 1280x800 and 1024x768 en; 0 and 1 rows at
  * 390 en; at 390 en the row menu, the filters sheet, the detail sheet and the
  * page's main dialog when the page has them.
  *
@@ -46,6 +46,7 @@ type Overlay = 'rowmenu' | 'filters' | 'detail' | 'dialog'
 const PHONE = { width: 390, height: 844 }
 const DESKTOP = { width: 1440, height: 900 }
 const TABLET = { width: 1024, height: 768 }
+const LAPTOP = { width: 1280, height: 800 }
 
 /** Lists and pages with phone cards, sheets and long names. */
 const CI_ROUTES = [
@@ -75,6 +76,9 @@ const CI_ROUTES = [
   '/settings/members',
   '/settings/audit-log',
   '/settings/api-keys',
+  '/settings/integrations',
+  '/settings/risk-scoring',
+  '/attack-surface/discovery',
   '/notifications',
 ]
 
@@ -100,6 +104,7 @@ function variants(): Variant[] {
     { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
     { tag: 'd-en', ...DESKTOP, lang: 'en', theme: 'light', scen: 'rich' },
+    { tag: 'l-en', ...LAPTOP, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 't-en', ...TABLET, lang: 'en', theme: 'light', scen: 'rich' },
     { tag: 'p-en-0', ...PHONE, lang: 'en', theme: 'light', scen: 'empty' },
     { tag: 'p-en-1', ...PHONE, lang: 'en', theme: 'light', scen: 'one' },
@@ -124,7 +129,9 @@ function variants(): Variant[] {
       })
     }
   }
-  return v
+  // LAYOUT_SWEEP_ONLY=d-en,l-en,t-en runs just those variants (desktop widths of every route).
+  const only = process.env.LAYOUT_SWEEP_ONLY?.split(',').filter(Boolean)
+  return only ? v.filter((x) => only.includes(x.tag)) : v
 }
 
 const slug = (route: string) => route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'home'
