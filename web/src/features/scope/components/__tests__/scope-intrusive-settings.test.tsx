@@ -3,7 +3,7 @@
  * a reason; the add and edit dialogs bound a T2 entry by it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 
@@ -58,19 +58,24 @@ describe('Intrusive (T2) entries setting', () => {
     role.owner = false
     render(<ScopeIntrusiveSettings settings={settings} />)
     expect(screen.getByText('Set by an owner of your organization.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Save/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox')).toBeDisabled()
+    expect(screen.getByTestId('t2-max-duration')).toHaveTextContent('30 days (default)')
+    expect(screen.getByTestId('t2-attestation-days')).toHaveTextContent('90 days')
+    expect(screen.queryByRole('button', { name: 'Change' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('an owner saves a new limit with a reason', async () => {
+  it('an owner saves a new limit with a reason in the dialog', async () => {
     api.put.mockResolvedValue({ ...settings, t2_max_duration: 'permanent' })
+    const onSaved = vi.fn()
     const user = userEvent.setup()
-    render(<ScopeIntrusiveSettings settings={settings} />)
-    await user.click(screen.getByRole('combobox'))
+    render(<ScopeIntrusiveSettings settings={settings} onSaved={onSaved} />)
+    await user.click(screen.getByRole('button', { name: 'Change' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'Longest intrusive entry' }))
     await user.click(await screen.findByRole('option', { name: 'Permanent' }))
-    const save = screen.getByRole('button', { name: /Save/ })
+    const save = within(dialog).getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled() // a reason first
-    await user.type(screen.getByLabelText('Reason'), 'standing contract')
+    await user.type(within(dialog).getByLabelText('Reason'), 'standing contract')
     await user.click(save)
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/settings/intrusive', {
@@ -79,5 +84,21 @@ describe('Intrusive (T2) entries setting', () => {
         reason: 'standing contract',
       })
     )
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open with the reason when the save fails', async () => {
+    api.put.mockRejectedValue(new Error('step-up refused'))
+    const user = userEvent.setup()
+    render(<ScopeIntrusiveSettings settings={settings} />)
+    await user.click(screen.getByRole('button', { name: 'Change' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.clear(within(dialog).getByRole('spinbutton'))
+    await user.type(within(dialog).getByRole('spinbutton'), '120')
+    await user.type(within(dialog).getByLabelText('Reason'), 'audit cycle')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Reason')).toHaveValue('audit cycle')
   })
 })
