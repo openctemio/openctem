@@ -21,7 +21,7 @@ const page = (frame: string, cell: string) => `<!doctype html><html><body>
 
 const CLIP = 'overflow-x:clip;width:600px'
 
-test.describe('layout-break detector: controls cut by their frame', () => {
+test.describe('layout-break detector: controls cut by their frame', { tag: ['@shell'] }, () => {
   test('flags a labelled link cut at the table frame edge', async ({ page: p }) => {
     await p.setContent(page(CLIP, 'width:30px;overflow:hidden'))
     const found = await findBreaks(p)

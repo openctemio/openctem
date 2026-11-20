@@ -48,7 +48,9 @@ export function labelledControls(col: string): string[] {
   }
   for (const l of col.matchAll(/<(Link|a)\b((?:=>|[^>])*)>([\s\S]*?)<\/\1>/g)) {
     // Text in the link: a translated label or plain words, not only an icon.
-    if (/\{t\(|^\s*[A-Za-z][^<{]*$/m.test(l[3].replace(/<[^>]*\/>/g, ''))) found.push(l[1])
+    // Split on tags instead of stripping them, so no half-removed tag can remain.
+    const pieces = l[3].split(/<[^>]*>/)
+    if (pieces.some((p) => /\{t\(/.test(p) || /^\s*[A-Za-z][^{]*$/m.test(p))) found.push(l[1])
   }
   return found
 }
