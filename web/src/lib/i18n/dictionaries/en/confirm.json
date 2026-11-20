@@ -426,6 +426,7 @@
   "confirm.riskScore.recalcTitle": "Recalculate the risk score of every asset?",
   "confirm.role.delete": "Delete role",
   "confirm.role.deleteDesc": "Members who have it lose its permissions at once, unless another role grants them. This cannot be undone.",
+  "confirm.role.deleteImpact": "{members, plural, =0 {Nobody has this role now.} one {# member has this role now and loses its permissions at once, unless another role grants them.} other {# members have this role now and lose its permissions at once, unless another role grants them.}} This cannot be undone.",
   "confirm.role.deleteTitle": "Delete the role \"{name}\"?",
   "confirm.role.demoteDesc": "This changes their role in the organization. They lose what the {role} role grants at once. You can promote them again on the Members page.",
   "confirm.role.demoteTitle": "Change {name} from {role} to {to}?",

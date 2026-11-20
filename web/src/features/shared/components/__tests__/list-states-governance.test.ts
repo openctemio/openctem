@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest'
  */
 const ALLOW_LIST = [
   'src/app/(dashboard)/settings/members/page.tsx',
-  'src/app/(dashboard)/settings/roles/page.tsx',
   'src/features/assets/components/resolved-ports-section.tsx',
   'src/features/capabilities/components/capability-table.tsx',
   'src/features/findings/components/detail/related-tab.tsx',

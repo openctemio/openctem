@@ -36,6 +36,10 @@ const SOURCES = new Set(['lib/severity.ts', 'lib/criticality.ts'])
  */
 const NOT_A_SCALE = new Map<string, string>([
   [
+    'app/(dashboard)/settings/roles/page.tsx|critical,high,medium,low',
+    'role risk level (the access a role grants), not finding severity',
+  ],
+  [
     'features/compliance/schemas/compliance.schema.ts|critical,high,medium,low',
     'compliance control priority (pkg/domain/compliance Priority), no info level',
   ],

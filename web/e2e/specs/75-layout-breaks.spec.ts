@@ -79,6 +79,7 @@ const CI_ROUTES = [
   '/scope',
   '/settings/general',
   '/settings/members',
+  '/settings/roles',
   '/settings/audit-log',
   '/settings/api-keys',
   '/settings/security',
