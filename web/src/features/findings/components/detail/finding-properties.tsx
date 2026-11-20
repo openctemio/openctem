@@ -124,6 +124,16 @@ export function ClosedStateRow({ finding, status }: { finding: FindingDetail; st
       {t('findings.properties.closedOn', 'On {date}', { date: closedOn })}
     </span>
   ) : null
+  // What the person who closed it wrote: the reason a reader looks for first.
+  const note = finding.closeNote ? (
+    <span
+      className="mt-0.5 line-clamp-3 block text-xs break-words text-muted-foreground"
+      title={finding.closeNote}
+      data-slot="finding-close-note"
+    >
+      {finding.closeNote}
+    </span>
+  ) : null
 
   if (status === 'accepted') {
     const until = formatDate(finding.acceptanceExpiresAt, locale)
@@ -140,6 +150,7 @@ export function ClosedStateRow({ finding, status }: { finding: FindingDetail; st
             </span>
           )}
           {on}
+          {note}
         </span>
       </PropertyRow>
     )
@@ -174,8 +185,11 @@ export function ClosedStateRow({ finding, status }: { finding: FindingDetail; st
         : t('findings.properties.closed', 'Closed')
   return (
     <PropertyRow label={label}>
-      <span data-slot="finding-closed-state" className="tabular-nums">
-        {closedOn || <span className="text-muted-foreground">-</span>}
+      <span data-slot="finding-closed-state">
+        <span className="tabular-nums">
+          {closedOn || <span className="text-muted-foreground">-</span>}
+        </span>
+        {note}
       </span>
     </PropertyRow>
   )
@@ -284,6 +298,18 @@ export function FindingProperties({
                 loading={triage.statusBusy}
                 disabled={locked}
               />
+              {/* A locked control says why, once (status, severity and assignee). */}
+              {locked && (
+                <span
+                  className="mt-0.5 block text-xs text-muted-foreground"
+                  data-slot="finding-triage-locked"
+                >
+                  {t(
+                    'findings.properties.lockedHint',
+                    'Set in its campaign or by the person who reported it'
+                  )}
+                </span>
+              )}
             </PropertyRow>
             <PropertyRow label={t('findings.properties.severity', 'Severity')}>
               <SeveritySelect

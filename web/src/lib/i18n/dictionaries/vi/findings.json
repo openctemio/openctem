@@ -1500,6 +1500,7 @@
   "findings.properties.lastSeen": "Thấy gần nhất",
   "findings.properties.leftMany": "còn {count} ngày",
   "findings.properties.leftOne": "còn {count} ngày",
+  "findings.properties.lockedHint": "Được đặt trong chiến dịch của nó hoặc bởi người đã báo cáo",
   "findings.properties.markedFalsePositive": "Đã đánh dấu dương tính giả",
   "findings.properties.moreAssets": "+{count} nữa",
   "findings.properties.moreDetails": "Tài sản, ngày tháng và hơn nữa",

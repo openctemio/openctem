@@ -80,6 +80,11 @@ interface RiskSummarySectionProps {
    * not offered. Default true.
    */
   assetBacked?: boolean
+  /**
+   * The page's properties already show the risk score and the open-finding
+   * count: the section keeps the breakdown and says each number only once.
+   */
+  numbersShown?: boolean
 }
 
 /** Risk score plus the open-finding breakdown by severity. */
@@ -87,6 +92,7 @@ export function RiskSummarySection({
   asset,
   onViewFindings,
   assetBacked = true,
+  numbersShown = false,
 }: RiskSummarySectionProps) {
   const { t } = useTranslation()
   const counts = asset.findingSeverityCounts ?? {}
@@ -110,26 +116,35 @@ export function RiskSummarySection({
         ) : undefined
       }
     >
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            {t('assets.overview2.riskScore', 'Risk score')}
+      {numbersShown ? (
+        asset.riskScoredAt && (
+          <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
+            {t('riskScore.updated', 'Score last changed')}
+            <RelativeTime date={asset.riskScoredAt} className="text-xs" />
           </p>
-          <RiskScoreBadge score={asset.riskScore} state={state} size="md" />
-          {asset.riskScoredAt && (
-            <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
-              {t('riskScore.updated', 'Score last changed')}
-              <RelativeTime date={asset.riskScoredAt} className="text-xs" />
+        )
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {t('assets.overview2.riskScore', 'Risk score')}
             </p>
-          )}
+            <RiskScoreBadge score={asset.riskScore} state={state} size="md" />
+            {asset.riskScoredAt && (
+              <p className="flex items-baseline gap-1 text-xs text-muted-foreground">
+                {t('riskScore.updated', 'Score last changed')}
+                <RelativeTime date={asset.riskScoredAt} className="text-xs" />
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {t('assets.overview2.openFindings', 'Open findings')}
+            </p>
+            <p className="text-lg leading-none font-semibold tabular-nums">{asset.findingCount}</p>
+          </div>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            {t('assets.overview2.openFindings', 'Open findings')}
-          </p>
-          <p className="text-lg leading-none font-semibold tabular-nums">{asset.findingCount}</p>
-        </div>
-      </div>
+      )}
       {hasFindings ? (
         <>
           <SeverityStrip counts={counts} className="mt-4" />
@@ -143,7 +158,7 @@ export function RiskSummarySection({
             </p>
           )}
         </>
-      ) : (
+      ) : numbersShown ? null : (
         <p className="mt-3 text-sm text-muted-foreground">
           {t('assets.overview2.noOpen', 'No open findings on this asset.')}
         </p>
