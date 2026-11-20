@@ -851,6 +851,7 @@ export function SensorsSection({
     <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
       <SelectTrigger
         className="w-auto gap-2 sm:min-w-36"
+        iconOnlyBelow="@2xl/toolbar"
         aria-label={t('sensors.list.groupBy.label')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
