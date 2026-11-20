@@ -185,7 +185,9 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         )
         setError(errorMessage)
         setErrorCode(code)
-        toast.error(errorMessage)
+        // A setup link only comes from an administrator: the toast says what the
+        // banner says, never "request a new one".
+        toast.error(isStaleLinkError(code) && !copy.newLink ? copy.newLinkHint : errorMessage)
       }
     })
   }
