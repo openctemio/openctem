@@ -389,17 +389,6 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 		return nil, ErrOAuthExchangeFailed
 	}
 
-	// A person who signed up with no other way in gets their own
-	// organization now, before the second-factor step (a provider that does
-	// not vouch for the address leaves it unverified: nothing is made). It
-	// never fails the sign-in. While the platform 2FA floor would cover the
-	// new owner and the account has no password, nothing is made and the mark
-	// stays pending (SocialSignInMayCreate says why and when to remove this).
-	if s.personalOrgs.SocialSignInMayCreate(ctx, u) {
-		ci := clientInfoFrom(ctx)
-		s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
-	}
-
 	// The provider's sign-in is the first factor. Every account then takes the
 	// same second step as a password sign-in (identity_link.go): a verify
 	// challenge when it has a factor, an enrollment challenge when an
@@ -414,6 +403,16 @@ func (s *OAuthService) signIn(ctx context.Context, userInfo *OAuthUserInfo, prov
 			"user_id", u.ID().String(), "provider", provider)
 		return nil, ErrOAuthExchangeFailed
 	}
+	// Only now, with the sign-in not refused above, the organization is made.
+	// A person who signed up with no other way in gets their own
+	// organization now, before the second-factor step (a provider that does
+	// not vouch for the address leaves it unverified: nothing is made). It
+	// never fails the sign-in. A new owner under a platform 2FA floor enrolls
+	// the second factor in place at this sign-in (SessionMFAChallenge), then
+	// opens the organization.
+	ci := clientInfoFrom(ctx)
+	s.personalOrgs.Ensure(ctx, u, ci.IP, ci.UserAgent)
+
 	challenge, cerr := s.linkedAccountChallenge(ctx, u)
 	if cerr != nil {
 		return nil, cerr
@@ -805,7 +804,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, tokens *oauthToken
 		return nil, ErrInvalidProvider
 	}
 	claims, err := s.oidcVerifier.VerifyIDToken(ctx, tokens.IDToken, oidc.Expectations{
-		JWKSURI:    googleJWKSURL,
+		JWKSURI:    providerEndpoint(googleJWKSURL),
 		ClientID:   cfg.ClientID,
 		IssuerRule: oidc.GoogleIssuer,
 		SkipNonce:  true, // code flow: id_token delivered server-to-server
@@ -853,7 +852,7 @@ func googleUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 
 // getGoogleProfile fetches the display name and picture from Google.
 func (s *OAuthService) getGoogleProfile(ctx context.Context, accessToken string) (*OAuthUserInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", providerEndpoint("https://www.googleapis.com/oauth2/v2/userinfo"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -886,7 +885,7 @@ func (s *OAuthService) getGoogleProfile(ctx context.Context, accessToken string)
 // getGitHubUserInfo fetches user info from GitHub.
 func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string) (*OAuthUserInfo, error) {
 	// Get user profile
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", providerEndpoint("https://api.github.com/user"), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -947,7 +946,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 
 // getGitHubPrimaryEmail fetches the primary email from GitHub.
 func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user/emails", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", providerEndpoint("https://api.github.com/user/emails"), nil)
 	if err != nil {
 		return "", err
 	}
@@ -1011,7 +1010,7 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 	}
 
 	claims, err := s.oidcVerifier.VerifyIDToken(ctx, idToken, oidc.Expectations{
-		JWKSURI:    "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+		JWKSURI:    providerEndpoint("https://login.microsoftonline.com/common/discovery/v2.0/keys"),
 		ClientID:   cfg.ClientID,
 		IssuerRule: oidc.EntraIssuer("common"),
 		SkipNonce:  true, // code flow: id_token delivered server-to-server
@@ -1341,11 +1340,11 @@ func (s *OAuthService) buildAuthorizationURL(provider OAuthProvider, cfg *config
 func (s *OAuthService) getAuthURL(provider OAuthProvider) string {
 	switch provider {
 	case OAuthProviderGoogle:
-		return "https://accounts.google.com/o/oauth2/v2/auth"
+		return providerBrowserEndpoint("https://accounts.google.com/o/oauth2/v2/auth")
 	case OAuthProviderGitHub:
-		return "https://github.com/login/oauth/authorize"
+		return providerBrowserEndpoint("https://github.com/login/oauth/authorize")
 	case OAuthProviderMicrosoft:
-		return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+		return providerBrowserEndpoint("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
 	}
 	return ""
 }
@@ -1354,15 +1353,16 @@ func (s *OAuthService) getAuthURL(provider OAuthProvider) string {
 func (s *OAuthService) getTokenURL(provider OAuthProvider) string { return TokenEndpoint(provider) }
 
 // TokenEndpoint is the fixed token endpoint of a social provider ("" for an
-// unknown one). Nothing a request or a setting says changes it.
+// unknown one). Nothing a request or a setting says changes it (only a test
+// build can point it elsewhere: provider_endpoints.go).
 func TokenEndpoint(provider OAuthProvider) string {
 	switch provider {
 	case OAuthProviderGoogle:
-		return "https://oauth2.googleapis.com/token"
+		return providerEndpoint("https://oauth2.googleapis.com/token")
 	case OAuthProviderGitHub:
-		return "https://github.com/login/oauth/access_token"
+		return providerEndpoint("https://github.com/login/oauth/access_token")
 	case OAuthProviderMicrosoft:
-		return "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+		return providerEndpoint("https://login.microsoftonline.com/common/oauth2/v2.0/token")
 	}
 	return ""
 }

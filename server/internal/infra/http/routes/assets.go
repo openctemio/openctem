@@ -279,6 +279,14 @@ func registerScopeRoutes(
 		// The owner-only part: how long an intrusive (t2) entry may last
 		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
 		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
+
+		// Scope entries on provider shared addresses (the Scope page card).
+		// Moving them out of scope only narrows (scope:write, no step-up;
+		// preview first); keeping them scanning lifts the hold, so it asks
+		// for a recent re-authentication.
+		r.GET("/provider-addresses", h.ListProviderAddresses, middleware.Require(permission.ScopeRead))
+		r.POST("/provider-addresses/move", h.MoveProviderAddresses, middleware.Require(permission.ScopeWrite))
+		r.POST("/provider-addresses/keep", h.KeepProviderAddresses, middleware.Require(permission.ScopeWrite), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes

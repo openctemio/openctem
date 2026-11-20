@@ -27,6 +27,7 @@ type Repositories struct {
 	WebEndpoint             *postgres.WebEndpointRepository             // Web surface: endpoints under origin assets (RFC-056)
 	Software                *postgres.SoftwareRepository                // Software catalog and asset links (RFC-066)
 	CVECorpus               *postgres.CVECorpusRepository               // CVE corpus for inventory matching (RFC-066)
+	AdvisoryCards           *postgres.AdvisoryCardRepository            // advisory cards from the signed bundle (RFC-117)
 	VulnEvent               *postgres.VulnEventRepository               // material vulnerability changes (RFC-117)
 	ThreatAlert             *postgres.ThreatAlertRepository             // emerging-threat alerts (RFC-117)
 	SoftwareMatch           *postgres.SoftwareMatchRepository           // Inventory vulnerability matcher (RFC-066)
@@ -432,6 +433,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WebEndpoint:             postgres.NewWebEndpointRepository(db),
 		Software:                postgres.NewSoftwareRepository(db),
 		CVECorpus:               postgres.NewCVECorpusRepository(db),
+		AdvisoryCards:           postgres.NewAdvisoryCardRepository(db),
 		VulnEvent:               postgres.NewVulnEventRepository(db),
 		ThreatAlert:             postgres.NewThreatAlertRepository(db),
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),

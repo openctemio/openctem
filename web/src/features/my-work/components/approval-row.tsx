@@ -10,6 +10,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
+import { closureReasonLabel } from '@/features/findings/lib/closure'
 import { approvalRequester } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
 import { acceptanceDays } from '../lib/queues'
@@ -67,6 +68,7 @@ export function ApprovalRow({
   const title =
     toDisplayText(approval.finding_title, 300) || t('myWork.untitled', 'Untitled finding')
   const reason = toDisplayText(approval.justification, 240)
+  const closure = approval.closure_reason ? closureReasonLabel(t, approval.closure_reason) : ''
   const facts = approval.finding
   const changed = approval.changed_since_request ?? []
   const required = approval.approvals_required ?? 0
@@ -111,10 +113,18 @@ export function ApprovalRow({
               {t('myWork.requestedBy', 'Requested by {name}', { name: requesterName })}
             </span>,
             <RelativeTime key="at" date={approval.created_at} />,
+            closure ? (
+              <span key="closure">
+                {t('common.awaitingApproval.reason', 'Reason:')} {closure}
+              </span>
+            ) : null,
             reason ? (
-              <q key="why" dir="auto" className="text-foreground [unicode-bidi:isolate]">
-                {reason}
-              </q>
+              <span key="why">
+                {t('common.awaitingApproval.note', 'Note:')}{' '}
+                <q dir="auto" className="text-foreground [unicode-bidi:isolate]">
+                  {reason}
+                </q>
+              </span>
             ) : null,
           ]}
         />
