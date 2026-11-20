@@ -77,6 +77,22 @@ const CI_ROUTES = [
   '/settings/audit-log',
   '/settings/api-keys',
   '/notifications',
+  '/oauth/device',
+]
+
+/**
+ * Entry pages a person opens signed out (their own browser context, no
+ * session): the form and the link-from-an-e-mail states the scratch stack can
+ * reach without mail. Same checks, no list data or overlays.
+ */
+const SIGNED_OUT_ROUTES = [
+  '/forgot-password',
+  '/reset-password',
+  '/reset-password#token=synthetic-reset-token',
+  '/set-password#token=synthetic-setup-token',
+  '/verify-email',
+  '/request-access',
+  '/request-access/confirm',
 ]
 
 /**
@@ -247,6 +263,33 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
           expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
+      }
+    })
+  }
+})
+
+test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
+  test.describe.configure({ mode: 'parallel' })
+  for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
+    test(`${route}`, async ({ browser, baseURL }, testInfo) => {
+      test.setTimeout(120_000)
+      const report: Record<string, Breaks> = {}
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        const context = await browser.newContext({ baseURL })
+        const page = await context.newPage()
+        await prepare(page, v, baseURL!)
+        await page.goto(route, { timeout: 60_000 }).catch(() => {})
+        await settle(page)
+        report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
+        if (OUT || formatBreaks(report[v.tag]).length) {
+          await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+        }
+        await context.close()
+      }
+      await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
+      for (const [tag, found] of Object.entries(report)) {
+        for (const kind of BREAK_KINDS)
+          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
       }
     })
   }

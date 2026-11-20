@@ -112,9 +112,12 @@ describe('PasswordTokenForm', () => {
     })
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
-    expect(await screen.findByText(/reset link is invalid or has expired/i)).toBeInTheDocument()
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('Invalid setup link')
+    expect(banner).toHaveTextContent(/ask your administrator for a new one/i)
+    // No self-service advice: a setup link only comes from an administrator.
+    expect(banner).not.toHaveTextContent(/request a new one/i)
     expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
-    expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
   })
 })
 
