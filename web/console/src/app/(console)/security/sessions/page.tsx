@@ -3,7 +3,7 @@
 import { BreakText } from '@/features/shared/components/break-text'
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MonitorSmartphone, Siren } from 'lucide-react'
 import { toast } from 'sonner'
