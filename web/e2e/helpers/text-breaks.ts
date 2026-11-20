@@ -529,7 +529,9 @@ export async function findBreaks(
           for (const r of Array.from(range.getClientRects())) if (r.width > 0.5) boxes.push(r)
         }
         for (const el of Array.from(
-          root.querySelectorAll('button,input,select,textarea,a[href],img,[role=checkbox]')
+          root.querySelectorAll(
+            'button,input,select,textarea,a[href],img,[role=checkbox],[data-slot=person-card-chevron]'
+          )
         )) {
           if (shown(el) && !el.closest('.sr-only')) boxes.push(el.getBoundingClientRect())
         }
@@ -656,10 +658,14 @@ function vary(row: unknown, i: number, depth = 0): unknown {
   return o
 }
 
+/** The array keys of a list answer; a list that names its rows is added here. */
+const LIST_KEYS = ['data', 'items', 'roles', 'groups', 'rules']
+
 /**
  * Rewrites the JSON list answers of the page's API calls: 200 rows (or 0, or 1)
  * built from the seed rows, with long and Vietnamese names and optional fields
- * present and absent. Only GET answers of the shape `{data|items: [...]}`.
+ * present and absent. Only GET answers of the shape `{data|items: [...]}`, and
+ * the lists that name their rows (`LIST_KEYS`).
  */
 export async function richData(page: Page, scen: Scenario = 'rich') {
   await page.route('**/api/v1/**', async (route: Route) => {
@@ -678,7 +684,7 @@ export async function richData(page: Page, scen: Scenario = 'rich') {
     } catch {
       return route.fulfill({ response: res })
     }
-    const key = Array.isArray(body?.data) ? 'data' : Array.isArray(body?.items) ? 'items' : null
+    const key = LIST_KEYS.find((k) => Array.isArray(body?.[k])) ?? null
     const rows = key ? (body[key] as unknown[]) : []
     if (!key || !rows.length || typeof rows[0] !== 'object')
       return route.fulfill({ response: res, json: body })
