@@ -298,11 +298,11 @@ export function PrivateDestinationsPanel({
           )}
 
           <section className="space-y-2" aria-labelledby={`${id}-server`}>
-            <h3 id={`${id}-server`} className="text-sm font-medium">
+            <h3 id={`${id}-server`} className="text-body font-medium">
               {t('admin.privateNetworks.serverTitle', 'Set on the server')}
             </h3>
             {settings.server_ranges.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {t('admin.privateNetworks.serverNone', 'None.')}
               </p>
             ) : (
@@ -316,7 +316,7 @@ export function PrivateDestinationsPanel({
                 ))}
               </ul>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-cap text-muted-foreground">
               {t(
                 'admin.privateNetworks.serverHint',
                 'Changed only in the server’s environment (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) and a restart.'
@@ -325,11 +325,11 @@ export function PrivateDestinationsPanel({
           </section>
 
           <section className="space-y-2" aria-labelledby={`${id}-console`}>
-            <h3 id={`${id}-console`} className="text-sm font-medium">
+            <h3 id={`${id}-console`} className="text-body font-medium">
               {t('admin.privateNetworks.consoleTitle', 'Opened here')}
             </h3>
             {rows.length === 0 && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {t('admin.privateNetworks.consoleNone', 'No range is opened here.')}
               </p>
             )}
@@ -375,10 +375,10 @@ export function PrivateDestinationsPanel({
                       )}
                     </div>
                     {error ? (
-                      <p className="text-sm text-destructive">{error}</p>
+                      <p className="text-body text-destructive">{error}</p>
                     ) : (
                       isWideDraft(r.cidr) && (
-                        <p className="flex items-center gap-1.5 text-xs text-warning">
+                        <p className="flex items-center gap-1.5 text-cap text-warning">
                           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
                           {t(
                             'admin.privateNetworks.wide',
@@ -398,7 +398,7 @@ export function PrivateDestinationsPanel({
               </Button>
             )}
             {pending && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-cap text-muted-foreground">
                 {t(
                   'admin.privateNetworks.pending',
                   'Saved. Every server applies the list within {seconds} seconds.',
@@ -532,11 +532,11 @@ function DestinationTestCard({
             </Button>
           </form>
         )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-body text-destructive">{error}</p>}
         {result && (
           <div className="space-y-2" data-testid="destination-result">
             {result.name_blocked ? (
-              <p className="text-sm">
+              <p className="text-body">
                 {t(
                   'admin.privateNetworks.test.nameBlocked',
                   '{host} is a name the platform never connects to (the host itself or a cloud metadata service).',
@@ -552,10 +552,10 @@ function DestinationTestCard({
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="break-all font-mono text-sm">{a.address}</span>
+                        <span className="break-all font-mono text-body">{a.address}</span>
                         {verdictBadge(a, t)}
                       </div>
-                      <p className="text-sm text-muted-foreground">{verdictText(a, t)}</p>
+                      <p className="text-body text-muted-foreground">{verdictText(a, t)}</p>
                     </div>
                     {a.verdict === 'blocked_private' && a.suggested && onAddRange && (
                       <Button
