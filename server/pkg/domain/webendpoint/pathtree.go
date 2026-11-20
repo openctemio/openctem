@@ -114,6 +114,11 @@ type PathFinding struct {
 	LocationKey string
 	Severity    string
 	Count       int
+	// Template and Method are the path template and method of the endpoint
+	// the finding is linked to (finding_web_locations.endpoint_id); both ""
+	// for a finding with no link, which the location key maps instead.
+	Template string
+	Method   string
 }
 
 // MaxNodeFindings bounds the findings listed for one node.
@@ -128,12 +133,16 @@ type NodeFinding struct {
 	Severity string `json:"severity"`
 	Status   string `json:"status"`
 	Path     string `json:"path"`
+	// Method is the HTTP method of the endpoint the finding is linked to.
+	Method string `json:"method,omitempty"`
 }
 
 // FindingRow is an open finding of the origin with a URL location, read to
 // list a node's findings.
 type FindingRow struct {
 	ID, Title, Severity, Status, LocationKey string
+	// Template and Method: the linked endpoint, "" when the finding has none.
+	Template, Method string
 }
 
 // NodeFindings keeps the rows whose URL templates to node on originURL's
@@ -145,6 +154,13 @@ func NodeFindings(rows []FindingRow, originURL, node string) ([]NodeFinding, int
 	}
 	out := make([]NodeFinding, 0, 8)
 	for _, r := range rows {
+		if r.Template != "" { // the exact link: the endpoint's own template
+			if r.Template == node {
+				out = append(out, NodeFinding{ID: r.ID, Title: r.Title, Severity: r.Severity, Status: r.Status,
+					Path: linkedPath(r), Method: r.Method})
+			}
+			continue
+		}
 		raw, ok := strings.CutPrefix(r.LocationKey, "url:")
 		if !ok {
 			continue
@@ -161,6 +177,17 @@ func NodeFindings(rows []FindingRow, originURL, node string) ([]NodeFinding, int
 		out = out[:MaxNodeFindings]
 	}
 	return out, total
+}
+
+// linkedPath is the path shown for a linked finding: its URL's path when the
+// location key holds one, else the endpoint's template.
+func linkedPath(r FindingRow) string {
+	if raw, ok := strings.CutPrefix(r.LocationKey, "url:"); ok {
+		if u, err := weburl.Parse(raw); err == nil {
+			return MaskPath(u.Path)
+		}
+	}
+	return r.Template
 }
 
 // PathFolder is one sub-folder of the requested level, with what lies under
@@ -180,7 +207,7 @@ type PathFolder struct {
 }
 
 // PathEndpoint is an endpoint of the level with the open findings at its
-// path template (of every method: findings carry no method).
+// path template (a finding linked to an endpoint counts at that method only; one with no link counts at every method of the template).
 type PathEndpoint struct {
 	Endpoint    *Endpoint
 	Findings    int
@@ -291,9 +318,25 @@ func matchesSearch(template, search string) bool {
 
 // pathFindings are the findings mapped onto path templates.
 type pathFindings struct {
-	byTemplate map[string]int
+	byTemplate map[string]int // every finding at a template: linked and mapped
 	topByTmpl  map[string]string
-	origin     int
+	// The two kinds apart. A finding linked to an endpoint counts at that
+	// endpoint (template and method) only; one with no link is mapped by its
+	// URL and is method-blind, so it counts at every method of the template.
+	linked      map[epKey]int
+	linkedTop   map[epKey]string
+	unlinked    map[string]int
+	unlinkedTop map[string]string
+	origin      int
+}
+
+type epKey struct{ template, method string }
+
+// at is what an endpoint shows: the findings linked to it plus those mapped
+// onto its template by URL.
+func (pf pathFindings) at(e *Endpoint) (int, string) {
+	k := epKey{e.PathTemplate, e.Method}
+	return pf.linked[k] + pf.unlinked[e.PathTemplate], worse(pf.linkedTop[k], pf.unlinkedTop[e.PathTemplate])
 }
 
 // mapFindings maps each finding's URL onto a path template with the same
@@ -302,12 +345,21 @@ type pathFindings struct {
 // originURL is the origin asset's name; when it is not a web origin the
 // finding's own origin is not compared.
 func mapFindings(fs []PathFinding, originURL string) pathFindings {
-	out := pathFindings{byTemplate: map[string]int{}, topByTmpl: map[string]string{}}
+	out := pathFindings{byTemplate: map[string]int{}, topByTmpl: map[string]string{}, linked: map[epKey]int{},
+		linkedTop: map[epKey]string{}, unlinked: map[string]int{}, unlinkedTop: map[string]string{}}
 	want := ""
 	if o, err := weburl.Parse(originURL); err == nil {
 		want = o.Origin()
 	}
 	for _, f := range fs {
+		if f.Template != "" { // linked to an endpoint of the origin: exact
+			k := epKey{f.Template, f.Method}
+			out.linked[k] += f.Count
+			out.linkedTop[k] = worse(out.linkedTop[k], f.Severity)
+			out.byTemplate[f.Template] += f.Count
+			out.topByTmpl[f.Template] = worse(out.topByTmpl[f.Template], f.Severity)
+			continue
+		}
 		raw, ok := strings.CutPrefix(f.LocationKey, "url:")
 		if !ok {
 			out.origin += f.Count
@@ -320,6 +372,8 @@ func mapFindings(fs []PathFinding, originURL string) pathFindings {
 		}
 		out.byTemplate[tmpl] += f.Count
 		out.topByTmpl[tmpl] = worse(out.topByTmpl[tmpl], f.Severity)
+		out.unlinked[tmpl] += f.Count
+		out.unlinkedTop[tmpl] = worse(out.unlinkedTop[tmpl], f.Severity)
 	}
 	return out
 }
@@ -400,7 +454,7 @@ func BuildPathLevel(eps []*Endpoint, fs []PathFinding, originURL string, capped 
 		if !under || !matchesSearch(e.PathTemplate, q.Search) {
 			continue
 		}
-		n := pf.byTemplate[e.PathTemplate]
+		n, top := pf.at(e)
 		if !q.keeps(e, n) {
 			lvl.Totals.Hidden++
 			continue
@@ -420,7 +474,7 @@ func BuildPathLevel(eps []*Endpoint, fs []PathFinding, originURL string, capped 
 		}
 		addFindings(e.PathTemplate, acc)
 		if seg == "" || !q.Here {
-			shown = append(shown, PathEndpoint{Endpoint: e, Findings: n, TopSeverity: pf.topByTmpl[e.PathTemplate]})
+			shown = append(shown, PathEndpoint{Endpoint: e, Findings: n, TopSeverity: top})
 		}
 	}
 	// Findings at paths no endpoint records still sit in their folders: a
