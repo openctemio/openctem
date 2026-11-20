@@ -329,7 +329,7 @@ export function ScopeEntriesTable({
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
           {scopeKindIcon(row.original.target_type)}
-          <span className="text-sm text-foreground">
+          <span className="whitespace-nowrap text-sm text-foreground">
             {scopeTargetTypeLabel(row.original.target_type ?? '', t)}
           </span>
         </div>
@@ -353,7 +353,9 @@ export function ScopeEntriesTable({
               value={st}
             />
             {e.expires_at && (
-              <span className="text-xs text-muted-foreground">{expiryText(e.expires_at)}</span>
+              <span className="text-xs text-muted-foreground">
+                {expiryText(e.expires_at, undefined, t)}
+              </span>
             )}
           </span>
         )

@@ -247,7 +247,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             )}
             {typeToConfirm && (
               <div className="space-y-2">
-                <Label htmlFor={inputId} className="block font-normal">
+                <Label htmlFor={inputId} className="block font-normal leading-snug">
                   {typeBefore}
                   <span className="font-semibold break-words">{typeToConfirm}</span>
                   {typeAfter}
