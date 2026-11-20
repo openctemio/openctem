@@ -11,7 +11,7 @@ vi.mock('@/features/organization', async (orig) => ({
         id: 'l1',
         action: 'user.login',
         actor_email: 'x@y.co',
-        resource_type: 'user',
+        resource_type: 'sla_policy',
         resource_id: 'r1',
         result: 'failure',
         severity: 'high',
@@ -23,14 +23,10 @@ vi.mock('@/features/organization', async (orig) => ({
     isError: false,
     mutate: vi.fn(),
   }),
-  useAuditStats: () => ({ stats: undefined, isLoading: false }),
 }))
 vi.mock('@/lib/permissions', () => ({
   Permission: { AuditRead: 'audit:read' },
   useHasPermission: () => true,
-}))
-vi.mock('@/hooks/use-url-param', () => ({
-  useUrlFilter: (_k: string, d: string) => [d, vi.fn()],
 }))
 vi.mock('@/hooks/use-list-params', () => ({
   useListParams: () => ({
@@ -41,7 +37,8 @@ vi.mock('@/hooks/use-list-params', () => ({
 }))
 
 describe('audit log page in Vietnamese', () => {
-  it('renders labels, filters and badges in Vietnamese', () => {
+  it('renders the title, search, count, filter entry and badges in Vietnamese', () => {
+    window.history.replaceState(null, '', '/settings/audit-log?period=7d&hide_system=true')
     render(
       <I18nProvider locale="vi">
         <AuditLogPage />
@@ -49,15 +46,13 @@ describe('audit log page in Vietnamese', () => {
     )
     expect(screen.getByRole('heading', { name: 'Nhật ký kiểm toán' })).toBeInTheDocument()
     expect(screen.getByLabelText('Tìm trong nhật ký kiểm toán')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Kết quả' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Mức độ nghiêm trọng' })).toBeInTheDocument()
-    expect(screen.getAllByText('7 ngày qua')).toHaveLength(2)
-    expect(
-      screen.getByText('Thất bại', {
-        selector: '[class*=badge], div, span:not([data-slot="metric-label"])',
-      })
-    ).toBeInTheDocument()
-    expect(screen.queryByText('Events (7 days)')).toBeNull()
+    expect(screen.getByText('Thời gian: 7 ngày qua')).toBeInTheDocument()
+    expect(screen.getByText('Đã ẩn sự kiện của hệ thống')).toBeInTheDocument()
+    expect(screen.getAllByText('Thất bại').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Xuất' })).toBeInTheDocument()
+    expect(screen.getAllByText('Chính sách SLA').length).toBeGreaterThan(0)
+    expect(screen.queryByText('SLA policy')).toBeNull()
     expect(screen.queryByText('Hide system')).toBeNull()
+    expect(screen.queryByText(/events?\b/)).toBeNull()
   })
 })

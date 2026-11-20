@@ -488,7 +488,7 @@ export async function findBreaks(
         }
         for (const el of Array.from(
           root.querySelectorAll(
-            'button,input,select,textarea,a[href],img,[role=checkbox],[data-slot=person-card-chevron]'
+            'button,input,select,textarea,a[href],img,svg,[role=checkbox],[data-slot=person-card-chevron]'
           )
         )) {
           if (shown(el) && !el.closest('.sr-only')) boxes.push(el.getBoundingClientRect())
