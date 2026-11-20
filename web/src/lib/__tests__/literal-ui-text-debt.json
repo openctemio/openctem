@@ -170,7 +170,7 @@
   "features/shared/components/stats-card.tsx": 1,
   "features/shared/components/status-badge.tsx": 7,
   "features/shared/components/truncated-text.tsx": 1,
-  "features/sla/components/sla-windows.tsx": 8,
+  "features/sla/components/sla-windows.tsx": 6,
   "features/tenant/components/create-team-form.tsx": 9,
   "features/tenant/components/onboarding-bundle-picker.tsx": 4,
   "features/ticket-mapping/components/create-mapping-dialog.tsx": 1,
