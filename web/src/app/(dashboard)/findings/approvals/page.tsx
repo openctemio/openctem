@@ -401,7 +401,7 @@ export default function ApprovalsPage() {
 
   // The row's decision controls; the table cell and the phone card share them.
   const actionsCell = useCallback(
-    (approval: ApiApproval, layout: 'row' | 'card' = 'row') => {
+    (approval: ApiApproval, layout: 'row' | 'compact' = 'row') => {
       if (approval.status !== 'pending') return null
       // A member of a group exception is decided only with its group.
       if (approval.batch_id) {
@@ -760,7 +760,9 @@ export default function ApprovalsPage() {
   const titleRow = (
     // Count once: under Pending the selected tab already shows the number of
     // the view, so the row names the view for assistive technology only and
-    // shows no count; another lens holds a number no tab shows, so it stays.
+    // shows no count (the row then takes no room); another lens holds a
+    // number no tab shows, so it stays. Refresh sits at the end of the
+    // toolbar, so no line ever holds it alone.
     <ListTitleRow
       title={viewTitle}
       titleHidden
@@ -785,9 +787,7 @@ export default function ApprovalsPage() {
           />
         )
       }
-    >
-      {refreshButton}
-    </ListTitleRow>
+    />
   )
 
   // ============================================
@@ -829,6 +829,7 @@ export default function ApprovalsPage() {
                     onOpenChange={changeOpenBatch}
                     onDecided={mutate}
                     toolbarStart={statusLens}
+                    toolbarEnd={refreshButton}
                   />
                 ) : noAccess ? (
                   <NoAccessState
@@ -859,45 +860,45 @@ export default function ApprovalsPage() {
                     pinActions
                     showSearch={false}
                     toolbarStart={statusLens}
+                    toolbarEnd={refreshButton}
                     emptyState={emptyState}
                     mobileRow={(approval) => (
                       <QueueCard
                         data-testid="approval-phone-card"
+                        href={`/findings/${encodeURIComponent(approval.finding_id)}`}
                         title={
                           <ApprovalFindingLink
                             findingId={approval.finding_id}
                             findingTitle={approval.finding_title}
                           />
                         }
-                        marks={
-                          <>
-                            {statusCell(approval)}
-                            {requestedCell(approval)}
-                            <ApprovalTierCell approval={approval} inline />
-                          </>
-                        }
-                        meta={
-                          <>
-                            <RequesterCell approval={approval} currentUserId={currentUserId} />
-                            {approval.decide_by && approval.status === 'pending' && (
-                              <span>
-                                {/* "Overdue, 12 Nov" says it alone. */}
-                                {decideByState(approval.decide_by) !== 'overdue' && (
-                                  <>{t('findings.approvals.col.decideBy', 'Decide by')} </>
-                                )}
-                                <QueueDecideBy value={approval.decide_by} className="text-xs" />
-                              </span>
-                            )}
-                            {approval.expires_at && (
-                              <span>
-                                {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
-                                {formatCalendarDate(approval.expires_at, locale)}
-                              </span>
-                            )}
-                          </>
-                        }
+                        state={statusCell(approval)}
                         reason={<JustificationCell approval={approval} lines={2} />}
-                        actions={actionsCell(approval, 'card')}
+                        // What is asked, by when, then who asked (cut first).
+                        meta={[
+                          <span key="asked">{requestedCell(approval)}</span>,
+                          approval.decide_by && approval.status === 'pending' ? (
+                            <span key="due">
+                              {/* "Overdue, 12 Nov" says it alone. */}
+                              {decideByState(approval.decide_by) !== 'overdue' && (
+                                <>{t('findings.approvals.col.decideBy', 'Decide by')} </>
+                              )}
+                              <QueueDecideBy value={approval.decide_by} className="text-xs" />
+                            </span>
+                          ) : null,
+                          approval.expires_at ? (
+                            <span key="ends">
+                              {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
+                              {formatCalendarDate(approval.expires_at, locale)}
+                            </span>
+                          ) : null,
+                          <RequesterCell
+                            key="by"
+                            approval={approval}
+                            currentUserId={currentUserId}
+                          />,
+                        ]}
+                        actions={actionsCell(approval, 'compact')}
                       />
                     )}
                   />

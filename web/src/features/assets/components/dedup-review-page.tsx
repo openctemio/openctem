@@ -18,6 +18,7 @@ import {
 } from '@/features/shared/components/queue'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { accessStateOf } from '@/lib/api/access-state'
@@ -126,7 +127,7 @@ export function DedupReviewPage() {
 
   /** The two decisions of a review: Merge (asks first) and Keep separate. */
   const decisions = useCallback(
-    (review: DedupReview, layout: 'row' | 'card' = 'row') => (
+    (review: DedupReview, layout: 'row' | 'compact' = 'row') => (
       <QueueDecisionActions
         name={review.normalized_name}
         layout={layout}
@@ -339,16 +340,16 @@ export function DedupReviewPage() {
                     </span>
                   </span>
                 }
-                marks={<span className="text-xs font-medium">{reasonText(review.reason)}</span>}
-                meta={
-                  <>
-                    <span className="min-w-0 truncate">
+                state={<Badge variant="outline">{reasonText(review.reason)}</Badge>}
+                reason={
+                  <span className="grid gap-0.5 text-xs text-muted-foreground">
+                    <span className="truncate">
                       {t('assets.dedup.card.keep', 'Keep {name} ({findings})', {
                         name: review.keep_asset_name,
                         findings: words.findings(review.keep_finding_count),
                       })}
                     </span>
-                    <span className="min-w-0 truncate">
+                    <span className="truncate">
                       {t(
                         'assets.dedup.card.merge',
                         'Merge {names} into it ({assets}, {findings})',
@@ -359,17 +360,13 @@ export function DedupReviewPage() {
                         }
                       )}
                     </span>
-                    <RelativeTime date={review.created_at} />
-                  </>
+                  </span>
                 }
-                reason={
-                  describeEvidence(review.evidence) ? (
-                    <span className="line-clamp-2 text-xs text-muted-foreground">
-                      {describeEvidence(review.evidence)}
-                    </span>
-                  ) : undefined
-                }
-                actions={decisions(review, 'card')}
+                meta={[
+                  <RelativeTime key="at" date={review.created_at} />,
+                  describeEvidence(review.evidence) || null,
+                ]}
+                actions={decisions(review, 'compact')}
               />
             )}
           />

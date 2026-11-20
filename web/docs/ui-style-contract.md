@@ -770,8 +770,21 @@ and no page rebuilds:
   one polite status region, beside the toast.
 - **Empty** (`QueueEmpty`): first run (the queue never held a request), nothing waiting (decided requests
   exist; offers the way to them), no match (the lens left no row).
-- **Phone** (`QueueCard`): fixed slots in one order: title, state marks, who asked and by when, the reason
-  (two lines), the decision controls on their own row.
+- **Phone** (`QueueCard`): a phone card of the list kit, balanced on both sides, with no line that holds
+  one control alone:
+  - the title line: the item's name (two lines at most) with its state chip at the end (`state`: Pending,
+    the severity of a finding that waits to close);
+  - the reason or evidence, two lines at most;
+  - one line of key facts (`meta`: what is asked, by when, who asked; the last item gives way with an
+    ellipsis) with the decision at its end: `QueueDecisionActions layout="compact"`, one main action (Approve,
+    with its icon) and More, whose first item is the second decision (Reject). "Your request" reads as in a
+    row. Where nothing can be decided (no permission, a decided request) a chevron to the item (`href`) holds
+    the end instead, a pointer target only (the title is the link for the keyboard).
+  - The title row of a queue whose tab already shows its name and count passes `titleHidden` and no count;
+    with nothing else to draw it takes no room (the heading stays for assistive technology), and Refresh goes
+    to the toolbar's end (`toolbarEnd`), never a line of its own.
+  - `e2e/specs/75-layout-breaks.spec.ts` (`lopsided`) fails a phone card whose content stops short of its end
+    and a title row line whose start is empty.
 - A column whose value is the same on every row of the current lens (Status under Pending) is left out on
   that lens. Anything an AI proposed keeps its AI mark in the row, on the card and in the dialogs.
 
