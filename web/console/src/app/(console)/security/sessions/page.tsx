@@ -1,5 +1,6 @@
 'use client'
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -63,7 +64,7 @@ export default function AdminSessionsPage() {
                   marks (plain text, never cut: a badge in a name cell
                   collapses it) and the address, which gives way first. */}
               <span className="min-w-0 truncate font-medium" title={name}>
-                {name}
+                <BreakText>{name}</BreakText>
               </span>
               {s.current && (
                 <span className="shrink-0 text-cap-m text-muted-foreground">
@@ -81,7 +82,7 @@ export default function AdminSessionsPage() {
                   className="min-w-0 shrink-[4] truncate text-muted-foreground"
                   title={s.admin_email}
                 >
-                  {s.admin_email}
+                  <BreakText>{s.admin_email}</BreakText>
                 </span>
               )}
             </div>

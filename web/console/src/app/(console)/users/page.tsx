@@ -13,6 +13,7 @@ import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { BreakText } from '@/features/shared/components/break-text'
 import {
   PLATFORM_USER_SEARCH_MIN,
   usePlatformUsers,
@@ -94,7 +95,9 @@ export default function AdminUsersPage() {
                 onOpen={() => router.push(href)}
                 title={toDisplayText(row.original.email)}
               >
-                {toDisplayText(row.original.email)}
+                {/* On a phone card the address wraps at its dots and before
+                    the @, never inside a word. */}
+                <BreakText>{toDisplayText(row.original.email)}</BreakText>
               </RowNameLink>
             </div>
           )

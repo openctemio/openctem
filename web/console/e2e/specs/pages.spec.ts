@@ -43,6 +43,7 @@ type BreakVariant = {
   rowMenu?: boolean
 }
 const PHONE = { width: 390, height: 844 }
+const LAYOUT_OUT = process.env.CONSOLE_LAYOUT_OUT
 const BREAK_VARIANTS: BreakVariant[] = [
   { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
   { tag: 'p-en-dark', ...PHONE, lang: 'en', theme: 'dark', scen: 'rich' },
@@ -169,7 +170,7 @@ test.describe('console pages', () => {
    * vi, and the row menu on a phone. A list is added here once it passes.
    */
   for (const route of Object.keys(CONSOLE_LIST_DATA)) {
-    test(`${route} layout breaks`, async ({ page, baseURL }) => {
+    test(`${route} layout breaks`, async ({ page, baseURL }, testInfo) => {
       test.setTimeout(240_000)
       const found: string[] = []
       for (const v of BREAK_VARIANTS) {
@@ -204,8 +205,17 @@ test.describe('console pages', () => {
             .waitFor()
           scope = '[role=menu], [data-slot="drawer-content"]'
         }
-        const b = await findBreaks(page, { scope, vi: v.lang === 'vi' })
-        found.push(...formatBreaks(b).map((x) => `${v.tag}: ${x}`))
+        const lines = formatBreaks(await findBreaks(page, { scope, vi: v.lang === 'vi' }))
+        found.push(...lines.map((x) => `${v.tag}: ${x}`))
+        // The picture of a variant that broke (every variant with
+        // CONSOLE_LAYOUT_OUT, a folder for a review's screenshots).
+        if (lines.length || LAYOUT_OUT) {
+          const name = `${route.replace(/\W+/g, '-').replace(/^-|-$/g, '')}__${v.tag}.png`
+          await page.screenshot({
+            path: LAYOUT_OUT ? `${LAYOUT_OUT}/${name}` : testInfo.outputPath(name),
+            fullPage: !v.rowMenu,
+          })
+        }
         if (v.rowMenu) await page.keyboard.press('Escape')
       }
       expect(found, `${route}: layout breaks`).toEqual([])
