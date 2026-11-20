@@ -300,7 +300,10 @@ export async function findBreaks(
           if (!/hidden|clip/.test(cs.overflowX)) continue
           if (/auto|scroll/.test(cs.overflowX)) continue
           if (e.scrollWidth <= e.clientWidth + 2 || e.clientWidth === 0) continue
-          if (cs.textOverflow === 'ellipsis' || /\d/.test(cs.webkitLineClamp)) continue
+          // A line clamp ends a wrapped line in an ellipsis, but a word with no break
+          // in it (a path) is only cut at the box edge: that is a cut, so a clamp
+          // excuses nothing here (this branch only runs when the content is wider).
+          if (cs.textOverflow === 'ellipsis') continue
           // Only text cut: a child box (an icon, a chip row) wider than its frame
           // whose text still fits is the frame's own decision.
           const r = e.getBoundingClientRect()
@@ -323,6 +326,31 @@ export async function findBreaks(
             out.clipped.push(
               `cut, no ellipsis: "${short(e.textContent)}" ${e.clientWidth}/${e.scrollWidth}`
             )
+        }
+      }
+      // A table cell cut at the table's right edge: the table sits in a frame
+      // that scrolls or clips sideways, and a cell with text starts inside the
+      // frame but ends past its edge (half an "Auth" pill, "No a"). The frame
+      // was never wrong to scroll; a column that does not fit must be hidden
+      // by width (`meta.hideBelow`), so a cut cell is a break. A column wholly
+      // past the edge (reached by scrolling) is not flagged.
+      for (const root of roots) {
+        for (const table of Array.from(root.querySelectorAll('table'))) {
+          if (!shown(table)) continue
+          let frame: Element | null = table.parentElement
+          while (frame && !/auto|scroll|hidden|clip/.test(getComputedStyle(frame).overflowX))
+            frame = frame.parentElement
+          if (!frame) continue
+          const fr = frame.getBoundingClientRect()
+          for (const c of Array.from(table.querySelectorAll('th, td'))) {
+            if (!shown(c) || hiddenByAncestor(c) || !short(c.textContent)) continue
+            const cr = c.getBoundingClientRect()
+            if (cr.left < fr.right - 1 && cr.right > fr.right + 2) {
+              out.clipped.push(
+                `table cell cut at the table's edge: "${short(c.textContent, 30)}" ${Math.round(fr.right - cr.left)}/${Math.round(cr.width)}`
+              )
+            }
+          }
         }
       }
       const vw = document.documentElement.clientWidth

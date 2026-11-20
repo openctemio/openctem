@@ -200,6 +200,22 @@ const GRID = 'grid min-w-0 gap-page xl:grid-cols-[minmax(0,1fr)_19rem]'
 const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
 const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
 const PANEL = 'min-w-0 max-xl:order-4 xl:col-start-1 xl:row-start-2'
+/**
+ * Tabs that hold a wide table or a tree beside a table. From 1280 px their
+ * panel takes the page's full width and the properties rail steps aside (one
+ * screen, one job); below 1280 px the properties already sit above the strip
+ * on every tab, so nothing moves when the tab changes.
+ */
+const WIDE_TABS: ReadonlySet<TabKey> = new Set<TabKey>([
+  'findings',
+  'relationships',
+  'ports',
+  'technologies',
+  'web',
+  'paths',
+])
+const RAIL_ASIDE = 'xl:hidden'
+const PANEL_FULL = 'xl:col-span-2'
 
 /**
  * Same blocks and order as the page (header, tab strip, properties, panel),
@@ -470,7 +486,10 @@ export default function AssetDetailPage() {
         />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className={GRID}>
-          <aside aria-label={t('assetDetail.propertiesAria', 'Asset properties')} className={RAIL}>
+          <aside
+            aria-label={t('assetDetail.propertiesAria', 'Asset properties')}
+            className={cn(RAIL, WIDE_TABS.has(tab) && RAIL_ASIDE)}
+          >
             <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
               <PropertyList label={t('assetDetail.properties', 'Properties')}>
                 <PropertyGroup>
@@ -551,7 +570,7 @@ export default function AssetDetailPage() {
               </TabsList>
             </div>
 
-            <div data-slot="asset-panel" className={PANEL}>
+            <div data-slot="asset-panel" className={cn(PANEL, WIDE_TABS.has(tab) && PANEL_FULL)}>
               <TabsContent value="overview">
                 <DetailSectionList>
                   {/* What it is and what runs on it; hidden when nothing was collected. */}

@@ -9,6 +9,10 @@
 - The endpoint sheet lists the open findings at the endpoint's path (matched by path: findings record no method).
 - A site never crawled says so, with Crawl this site for people who may scan it. The Web tab keeps the headers,
   parameters and changes; its endpoint list moved to Paths (search, the sheet and Export CSV included).
+- On the Paths tab, and on the other tabs that hold a wide table (Findings, Relationships, Ports, Technologies, Web),
+  the panel takes the page's full width from 1280 px and the properties list steps aside; below 1280 px it stays above
+  the tab strip as before. The endpoints table hides its least important columns by its own width (parameters,
+  content type, last seen, last status) so no column is cut at its edge.
 - Docs: server/docs/architecture/web-surface.md
 
 ### Fixed: the Web tab of an origin stored as a service

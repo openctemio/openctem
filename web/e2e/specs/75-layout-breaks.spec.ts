@@ -147,6 +147,37 @@ const LOPSIDED_DEBT = new Set([
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
+/**
+ * Lists whose table still has a cell cut at its right edge (found when the
+ * check was added, 2026-11-20): at 1024 px the frame scrolls sideways and a
+ * cell sits half in view. Each hides its lower-priority columns by width
+ * (`meta.hideBelow`) and leaves this list; it only shrinks, and a route not
+ * on it fails on its first cut cell.
+ */
+const CUT_CELL_DEBT = new Set([
+  '/assets',
+  '/assets/attention/decide-monitoring',
+  '/assets/attention/no-owner',
+  '/assets/attention/unscanned',
+  '/exposures',
+  '/findings/imports',
+  '/scans',
+  '/scans/runs',
+  '/sensors',
+  '/settings/audit-log',
+  '/settings/members',
+  '/vulnerabilities',
+])
+/**
+ * A select trigger whose text is cut in a one-line clamp with no ellipsis
+ * ("All severities" 90/95 at 390 px). The detector stopped excusing a line
+ * clamp when the Paths tab showed a path cut with no ellipsis in one.
+ */
+const CLAMP_CUT_DEBT = new Set(['/settings/audit-log'])
+const inDebt = (route: string, m: string) =>
+  (CUT_CELL_DEBT.has(route) && m.startsWith('table cell cut')) ||
+  (CLAMP_CUT_DEBT.has(route) && m.startsWith('cut, no ellipsis'))
+
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
 const ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
@@ -303,7 +334,9 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
         if (typeof found === 'string') continue
         for (const kind of BREAK_KINDS) {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
-          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+          const got =
+            kind === 'clipped' ? found.clipped.filter((m) => !inDebt(route, m)) : found[kind]
+          expect.soft(got, `${route} ${tag}: ${kind}`).toEqual([])
         }
       }
     })
@@ -483,3 +516,26 @@ test.describe(
     })
   }
 )
+
+/**
+ * The detector itself: a table in a frame that scrolls sideways passed the
+ * text-cut check (a scroller's content is reachable), so a cell cut at the
+ * frame's edge ("No a" for "No auth" on the Paths tab) was never reported.
+ */
+test.describe('Layout breaks: detectors', { tag: ['@assets'] }, () => {
+  test('a table cell cut at the table edge is reported', async ({ page }) => {
+    const table = (frame: number) => `<main><div style="width:${frame}px;overflow-x:auto">
+      <style>td{padding:0}</style><table style="border-collapse:collapse;table-layout:fixed;width:370px"><tr>
+        <td style="width:150px">/account</td><td style="width:100px">200</td><td style="width:120px">No auth</td>
+      </tr></table></div></main>`
+    // 300 px frame: the third cell starts at 250 and ends at 370, cut at 300.
+    await page.setContent(table(300))
+    const cut = await findBreaks(page)
+    expect(cut.clipped.join('\n')).toContain('table cell cut')
+    // A frame that holds every cell, or one that ends between two cells, is fine.
+    await page.setContent(table(400))
+    expect((await findBreaks(page)).clipped).toEqual([])
+    await page.setContent(table(250))
+    expect((await findBreaks(page)).clipped).toEqual([])
+  })
+})

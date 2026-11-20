@@ -82,10 +82,16 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
         cell: ({ row }) => (
           <div className="flex min-w-0 items-start gap-2">
             <MethodBadge method={row.original.method} />
+            {/* The path shows whole where the column has room; where it has not, it ends
+                in an ellipsis (a one-line clamp cuts a path without a break in it with
+                none) and the full path is the hover title. */}
             <StackedCell
-              truncate
+              className="flex-1"
               primary={
-                <span className="font-mono text-sm" title={row.original.path_template}>
+                <span
+                  className="block truncate font-mono text-sm"
+                  title={row.original.path_template}
+                >
                   {pathUnder(row.original.path_template ?? '/', node)}
                 </span>
               }
@@ -102,7 +108,14 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
         id: 'status',
         header: t('attackSurface.paths.col.status', 'Last status'),
         enableSorting: false,
-        meta: { kind: 'number', label: t('attackSurface.paths.col.status', 'Last status') },
+        // Columns drop by the table's width, least important first, so none is
+        // ever cut at the table's edge: params, content type, last seen, last
+        // status; the endpoint, its findings and the auth state stay.
+        meta: {
+          kind: 'number',
+          label: t('attackSurface.paths.col.status', 'Last status'),
+          hideBelow: 540,
+        },
         cell: ({ row }) => <span className="tabular-nums">{row.original.last_status || '-'}</span>,
       },
       {
@@ -144,6 +157,7 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
           kind: 'datetime-recent',
           label: t('attackSurface.web.col.lastSeen', 'Last seen'),
           width: 128,
+          hideBelow: 640,
         },
         cell: ({ row }) => (
           <RelativeTime date={row.original.last_seen_at} className="block truncate" />
@@ -153,7 +167,7 @@ function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
         id: 'auth',
         header: t('attackSurface.web.col.auth', 'Auth'),
         enableSorting: false,
-        meta: { kind: 'status', label: t('attackSurface.web.col.auth', 'Auth') },
+        meta: { kind: 'status', label: t('attackSurface.web.col.auth', 'Auth'), hideBelow: 420 },
         cell: ({ row }) => <AuthPill state={row.original.auth_state} />,
       },
       {
