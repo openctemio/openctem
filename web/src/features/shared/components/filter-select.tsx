@@ -77,7 +77,9 @@ const FOLD_HIDDEN = '@max-4xl/toolbar:hidden group-data-[fold=true]/toolbar:hidd
 /**
  * The trigger and the clear button span the whole token, its 1 px border
  * included: the box is the control height (36 px on a phone), so their hit
- * area is too, instead of the 34 px left inside the border.
+ * area is too, instead of the 34 px left inside the border. The clear button
+ * is icon-only, so it is a square of that height (`aspect-square`); its room
+ * is the same square.
  */
 const FULL_BOX_HEIGHT = '-my-px h-[calc(100%+2px)]'
 
@@ -181,7 +183,7 @@ export function FilterSelect<V extends string>({
           aria-label={t('common.filter.clearNamed', 'Clear {name}', { name: label })}
           className={cn(
             FULL_BOX_HEIGHT,
-            'group/clear me-1 inline-flex w-7 shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none'
+            'group/clear me-1 inline-flex aspect-square shrink-0 cursor-pointer items-center justify-center focus-visible:outline-none'
           )}
         >
           {/* The look stays a 28 px square; the button is the full height. */}
@@ -190,7 +192,11 @@ export function FilterSelect<V extends string>({
           </span>
         </button>
       ) : clearable ? (
-        <span aria-hidden data-slot="filter-select-clear-room" className="me-1 size-7 shrink-0" />
+        <span
+          aria-hidden
+          data-slot="filter-select-clear-room"
+          className={cn(FULL_BOX_HEIGHT, 'me-1 aspect-square shrink-0')}
+        />
       ) : null}
     </div>
   )

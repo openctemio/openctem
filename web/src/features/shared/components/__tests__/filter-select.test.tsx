@@ -36,13 +36,13 @@ describe('FilterSelect', () => {
       <FilterSelect label="Status" value="" options={options} onChange={() => {}} />
     )
     const room = document.querySelector('[data-slot=filter-select-clear-room]')
-    expect(room).toHaveClass('size-7', 'me-1', 'shrink-0')
+    expect(room).toHaveClass('aspect-square', 'me-1', 'shrink-0')
     expect(room).toHaveAttribute('aria-hidden')
     rerender(<FilterSelect label="Status" value="pending" options={options} onChange={() => {}} />)
     expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
-    // Same width as the room (7 = size-7); the height is the token's own.
+    // Same square as the room: the token's own height, as wide as tall.
     expect(document.querySelector('[data-slot=filter-select-clear]')).toHaveClass(
-      'w-7',
+      'aspect-square',
       'me-1',
       'shrink-0'
     )
@@ -182,5 +182,8 @@ describe('FilterSelect', () => {
       expect(el).not.toHaveClass('h-full')
       expect(el).not.toHaveClass('size-7')
     }
+    // Icon-only, so a square: as wide as the token is tall.
+    expect(clear).toHaveClass('aspect-square')
+    expect(clear).not.toHaveClass('w-7')
   })
 })
