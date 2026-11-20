@@ -1500,6 +1500,7 @@
   "findings.properties.lastSeen": "Last seen",
   "findings.properties.leftMany": "{count, plural, one {# day} other {# days}} left",
   "findings.properties.leftOne": "{count} day left",
+  "findings.properties.lockedHint": "Set in its campaign or by the person who reported it",
   "findings.properties.markedFalsePositive": "Marked false positive",
   "findings.properties.moreAssets": "+{count} more",
   "findings.properties.moreDetails": "Asset, dates and more",
