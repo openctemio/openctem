@@ -1140,9 +1140,7 @@ function ConfigurationsTab() {
             )}
           />
         }
-      >
-        {refreshButton}
-      </ListTitleRow>
+      />
 
       {noAccess ? (
         <NoAccessState title={t('scans.configs.subject', 'the scans list')} />
@@ -1177,6 +1175,8 @@ function ConfigurationsTab() {
             sheetOnly: true,
           }}
           toolbarStart={toolbarStart}
+          // Refresh ends the toolbar: never an icon alone on the title row.
+          toolbarEnd={refreshButton}
           toolbarBelow={chipsRow}
           manualPagination
           rowCount={configsResponse?.total ?? 0}

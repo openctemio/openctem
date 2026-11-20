@@ -6,7 +6,7 @@
  * field moves to the line under it and stays shown.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '../data-table'
@@ -88,6 +88,58 @@ describe('automatic phone card: a chip value is never cut', () => {
     const dl = container.querySelector('[data-slot="mobile-card"] dl')!
     expect(dl.className).not.toContain('h-5')
     expect(dl.className).toContain('auto-rows-[1.25rem]')
+  })
+
+  it('measures again once the web font arrives (owner report 2026-11-20: a chip cut at its border)', async () => {
+    // First measured with the fallback font: the chip fits its half line.
+    let long = false
+    Object.defineProperty(proto, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return long && hasLongChip(this) ? 96 : 60
+      },
+    })
+    let loaded: () => void = () => {}
+    const ready = new Promise<void>((r) => (loaded = r))
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { status: 'loading', ready },
+    })
+    try {
+      const { container } = render(
+        <DataTable
+          columns={columns}
+          data={[{ id: '1', name: 'web-01', criticality: 'Internet-facing', owner: 'Ana' }]}
+          getRowId={(r) => r.id}
+        />
+      )
+      expect(field(container, 'criticality')?.className).not.toContain('col-span-2')
+      // The web font is wider: the chip no longer fits its half line.
+      long = true
+      await act(async () => {
+        loaded()
+        await ready
+      })
+      expect(field(container, 'criticality')?.className).toContain('col-span-2')
+    } finally {
+      Reflect.deleteProperty(document, 'fonts')
+    }
+  })
+
+  it('lets a text chip that still does not fit end in an ellipsis, its border whole', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'Trung bình', owner: 'Ana' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    const dd = field(container, 'criticality')!.querySelector('dd')!
+    expect(dd.className).toContain('[&>span>*]:max-w-full')
+    expect(dd.className).toContain('[&_[data-slot=badge]:not(:has(svg))]:truncate')
+    // Not on a half line: there the chip overflows, which moves it to the whole line.
+    const owner = field(container, 'owner')!.querySelector('dd')!
+    expect(owner.className).not.toContain('[&>span>*]:max-w-full')
   })
 
   it('does the same for a named chip that is not the kit Badge', () => {
