@@ -676,6 +676,7 @@
   "confirm.team.bindRoleTitle": "Add the role {name} to the team?",
   "confirm.team.delete": "Delete team",
   "confirm.team.deleteDesc": "Members lose the access this team gives them, including to assets the team owns. This cannot be undone.",
+  "confirm.team.deleteImpact": "{members, plural, one {# member loses} other {# members lose}} the access this team gives them, including to its {assets, plural, one {# asset} other {# assets}}, unless another team or grant covers them. This cannot be undone.",
   "confirm.team.deleteTitle": "Delete the team \"{name}\"?",
   "confirm.team.removeAssetDesc": "The team and its members lose access to this asset unless another grant covers it. The asset itself stays.",
   "confirm.team.removeAssetTitle": "Remove the asset {name} from this team?",

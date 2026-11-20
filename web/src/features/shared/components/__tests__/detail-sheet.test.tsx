@@ -304,3 +304,15 @@ describe('in a phone DetailSheet', () => {
     expect(body.firstElementChild).toHaveAttribute('data-slot', 'detail-callout')
   })
 })
+
+describe('DetailChipList', () => {
+  it('keeps a long name on one line inside the chip and names it in a title', async () => {
+    const { DetailChipList } = await import('../detail-sheet')
+    const long = 'Payments platform external perimeter: every production hostname'
+    render(<DetailChipList label="Roles" chips={[{ key: 'a', label: long }]} />)
+    const name = screen.getByText(long)
+    expect(name).toHaveClass('truncate', 'min-w-0')
+    expect(name).toHaveAttribute('title', long)
+    expect(name.closest('li')).toHaveClass('max-w-full')
+  })
+})
