@@ -353,7 +353,9 @@ export function ScopeEntriesTable({
               value={st}
             />
             {e.expires_at && (
-              <span className="text-xs text-muted-foreground">{expiryText(e.expires_at, Date.now(), t)}</span>
+              <span className="text-xs text-muted-foreground">
+                {expiryText(e.expires_at, undefined, t)}
+              </span>
             )}
           </span>
         )

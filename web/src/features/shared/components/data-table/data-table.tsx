@@ -630,9 +630,12 @@ const CARD_HEAD_CONTROL_CLASS =
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
-/** A chip in a value cell: the kit Badge, the named badges, chips and tags, and status pills (HealthStatus, TonePill). */
+/**
+ * A chip in a value cell: the kit Badge, the named badges, chips and tags, and
+ * the status pills (HealthStatus, TonePill, StatusLozenge).
+ */
 const CARD_CHIP_SELECTOR =
-  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag],[data-slot=health-status]'
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag],[data-slot=health-status],[data-slot=status-lozenge]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch

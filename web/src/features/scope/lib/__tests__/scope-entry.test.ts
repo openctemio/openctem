@@ -66,12 +66,16 @@ describe('expiry', () => {
     expect(expiryText('2026-10-07T15:00:00Z', NOW, t)).toBe('scope.expiry.inHours:3')
     expect(expiryText('2026-10-05T12:00:00Z', NOW, t)).toBe('scope.expiry.expiredDays:2')
     expect(expiryText(undefined, NOW, t)).toBe('scope.expiry.permanent')
-    expect(expiryText('2026-10-14T12:00:00Z', NOW, t, 'blocked')).toBe('scope.expiry.blockedInDays:7')
+    expect(expiryText('2026-10-14T12:00:00Z', NOW, t, 'blocked')).toBe(
+      'scope.expiry.blockedInDays:7'
+    )
     expect(seen).toHaveLength(6)
   })
 
   it('words a testing window as "Blocked again in" in English', () => {
-    expect(expiryText('2026-10-14T12:00:00Z', NOW, undefined, 'blocked')).toBe('Blocked again in 7 days')
+    expect(expiryText('2026-10-14T12:00:00Z', NOW, undefined, 'blocked')).toBe(
+      'Blocked again in 7 days'
+    )
   })
 })
 

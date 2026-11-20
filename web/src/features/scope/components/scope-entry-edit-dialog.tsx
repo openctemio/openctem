@@ -219,7 +219,7 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
             <ScopeDurationField
               policy={durPolicy}
               value={duration}
-              keepHint={keepAllowed ? expiryText(entry.expires_at, Date.now(), t) : undefined}
+              keepHint={keepAllowed ? expiryText(entry.expires_at, undefined, t) : undefined}
               onChange={(c) => {
                 setExpiry(c)
                 setError(null)

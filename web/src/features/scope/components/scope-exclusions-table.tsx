@@ -309,7 +309,7 @@ export function ScopeExclusionsTable({
               tone={s.tone}
               label={statusLabel(x.status ?? 'inactive')}
               title={t(`scope.exclusion.status.${x.status ?? 'inactive'}.hint`, s.hint)}
-              detail={x.expires_at ? expiryText(x.expires_at, Date.now(), t) : undefined}
+              detail={x.expires_at ? expiryText(x.expires_at, undefined, t) : undefined}
               state={x.status}
             />
             {isPathExclusion(x) && x.status === 'active' && (
@@ -321,7 +321,7 @@ export function ScopeExclusionsTable({
                 title={t(`scope.testing.hint.${mode}`, TESTING_HINT[mode])}
                 detail={
                   mode !== 'blocked' && x.testing_until
-                    ? expiryText(x.testing_until, Date.now(), t, 'blocked')
+                    ? expiryText(x.testing_until, undefined, t, 'blocked')
                     : undefined
                 }
                 state={`testing-${mode}`}
