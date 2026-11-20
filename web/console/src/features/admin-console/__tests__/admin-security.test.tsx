@@ -80,7 +80,9 @@ describe('Sessions page', () => {
 
   it('offers Review only for a break-glass session that is not this one', async () => {
     vi.mocked(useAdminSessions).mockReturnValue({
-      data: { data: [session({ id: 'mine', current: true, break_glass: true }), session({ id: 'b' })] },
+      data: {
+        data: [session({ id: 'mine', current: true, break_glass: true }), session({ id: 'b' })],
+      },
       error: undefined,
       isLoading: false,
       mutate: vi.fn(),
@@ -119,9 +121,13 @@ describe('Sessions page', () => {
     const mark = screen.getAllByText('This session')[0]
     expect(mark.closest('[data-slot="badge"]')).toBeNull()
     const nameCell = mark.parentElement!
-    expect(nameCell.firstElementChild).toHaveClass('shrink-0', 'max-w-[60%]')
-    expect(nameCell.lastElementChild).toHaveClass('min-w-0', 'truncate')
-    expect(screen.getAllByText('Break-glass').length).toBeGreaterThan(0)
+    expect(nameCell.firstElementChild).toHaveClass('min-w-0', 'truncate')
+    // Break-glass is a mark of the name, plain text, not a badge in the Role column.
+    const breakGlass = screen.getAllByText('Break-glass')[0]
+    expect(breakGlass.closest('[data-slot="badge"]')).toBeNull()
+    expect(breakGlass.parentElement!.textContent).toContain('Ops')
+    const address = within(breakGlass.parentElement!).getByText('ops@op.test')
+    expect(address).toHaveClass('min-w-0', 'shrink-[4]', 'truncate')
     // An open break-glass session is the page's main action: review what it did.
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
       'href',

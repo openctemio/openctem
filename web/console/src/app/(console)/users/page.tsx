@@ -103,8 +103,10 @@ export default function AdminUsersPage() {
       {
         id: 'state',
         header: t('admin.users.col.state', 'State'),
+        // The account's state: on a phone it is the card's chip, at the end
+        // of the title line.
         meta: {
-          kind: 'tags',
+          kind: 'status',
           width: 208,
           label: t('admin.users.col.state', 'State'),
         },

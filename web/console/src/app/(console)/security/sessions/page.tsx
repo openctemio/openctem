@@ -56,24 +56,31 @@ export default function AdminSessionsPage() {
         },
         cell: ({ row }) => {
           const s = row.original
+          const name = s.admin_name || s.admin_email
           return (
             <div className="flex min-w-0 items-center gap-2">
-              {/* The name keeps its room (up to 60 % of the cell); the mark of
-                  the own session is plain text beside it (a badge in a name
-                  cell collapses it) and the address gives way first. */}
-              <span
-                className="max-w-[60%] shrink-0 truncate font-medium"
-                title={s.admin_name || s.admin_email}
-              >
-                {s.admin_name || s.admin_email}
+              {/* One line, as the board draws it: the name, the session's
+                  marks (plain text, never cut: a badge in a name cell
+                  collapses it) and the address, which gives way first. */}
+              <span className="min-w-0 truncate font-medium" title={name}>
+                {name}
               </span>
               {s.current && (
                 <span className="shrink-0 text-cap-m text-muted-foreground">
                   {t('admin.sessions.current', 'This session')}
                 </span>
               )}
+              {s.break_glass && (
+                <span className="inline-flex shrink-0 items-center gap-1 text-cap-m text-destructive">
+                  <Siren className="size-3" aria-hidden="true" />
+                  {t('admin.sessions.breakGlass', 'Break-glass')}
+                </span>
+              )}
               {s.admin_name && s.admin_name !== s.admin_email && (
-                <span className="min-w-0 truncate text-muted-foreground" title={s.admin_email}>
+                <span
+                  className="min-w-0 shrink-[4] truncate text-muted-foreground"
+                  title={s.admin_email}
+                >
                   {s.admin_email}
                 </span>
               )}
@@ -85,17 +92,7 @@ export default function AdminSessionsPage() {
         accessorKey: 'admin_role',
         header: t('admin.sessions.col.role', 'Role'),
         meta: { kind: 'tags', width: 160, label: t('admin.sessions.col.role', 'Role') },
-        cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
-            <Badge variant="outline">{roleName(t, row.original.admin_role)}</Badge>
-            {row.original.break_glass && (
-              <Badge variant="destructive">
-                <Siren className="me-1 size-3" />
-                {t('admin.sessions.breakGlass', 'Break-glass')}
-              </Badge>
-            )}
-          </div>
-        ),
+        cell: ({ row }) => <Badge variant="outline">{roleName(t, row.original.admin_role)}</Badge>,
       },
       {
         accessorKey: 'auth_method',
@@ -149,6 +146,8 @@ export default function AdminSessionsPage() {
           kind: 'datetime-recent',
           // "less than a minute ago" whole, with a gap before the cell on its left.
           width: 176,
+          // A stale session is told by it: the phone card shows it first.
+          cardFigure: true,
           label: t('admin.sessions.col.lastSeen', 'Last seen'),
         },
         cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,

@@ -55,6 +55,11 @@ export interface DataTableColumnMeta {
   headerHint?: ReactNode
   /** The row's name when it is not the first column (gets the name floor). */
   primary?: boolean
+  /**
+   * A key figure of the list although its kind is not one (e.g. a last-seen
+   * time on a list of sessions): the automatic phone card shows it first.
+   */
+  cardFigure?: boolean
 }
 
 interface KindLayout {

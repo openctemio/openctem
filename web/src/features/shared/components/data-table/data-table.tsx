@@ -696,7 +696,7 @@ const PHONE_CARD_FOCUS_CLASS =
  *   says nothing or repeats the title;
  * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
  *   other columns that say something (no empty or dash-only value, no repeat
- *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS)
+ *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS, `cardFigure`)
  *   before the rest, shown in column order, chosen before paint. A chip
  *   value is never cut: a field whose chip does not fit half the line takes
  *   the whole line and the other field goes on the line under it.
@@ -891,7 +891,12 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
-              data-figure={CARD_FIGURE_KINDS.has(kindOf(cell)) ? '' : undefined}
+              data-figure={
+                CARD_FIGURE_KINDS.has(kindOf(cell)) ||
+                (cell.column.columnDef.meta as DataTableColumnMeta | undefined)?.cardFigure
+                  ? ''
+                  : undefined
+              }
               className={cn(
                 'flex min-w-0 items-baseline gap-1.5',
                 pick?.wide.includes(cell.column.id) && 'col-span-2'
