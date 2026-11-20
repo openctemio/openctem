@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { Loader2, Mail } from 'lucide-react'
 
+import { EntryBanner } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,23 +39,23 @@ export function ResendVerification({
 
   if (emailUnavailable) {
     return (
-      <p className="text-dense text-muted-foreground" role="note">
+      <EntryBanner tone="warn" role="note">
         {t(
           'auth.verifyEmail.noEmail',
           'This server cannot send email. Ask your administrator to verify your address.'
         )}
-      </p>
+      </EntryBanner>
     )
   }
 
   if (done) {
     return (
-      <p className="text-dense" role="status">
+      <EntryBanner tone="ok" role="status">
         {t(
           'auth.verifyEmail.resendDone',
           'If this address has an account that is not verified yet, a new link is on its way.'
         )}
-      </p>
+      </EntryBanner>
     )
   }
 
@@ -75,6 +76,12 @@ export function ResendVerification({
 
   return (
     <form onSubmit={submit} className="flex w-full flex-col gap-2 text-start">
+      {/* A refusal is one banner in the card, above the fields (entry rule). */}
+      {error && (
+        <EntryBanner tone="danger" role="alert">
+          {t('auth.verifyEmail.resendFailed', 'Could not send the link. Try again in a minute.')}
+        </EntryBanner>
+      )}
       {knownEmail === undefined && (
         <>
           <Label htmlFor="resend-verification-email">
@@ -98,11 +105,6 @@ export function ResendVerification({
         )}
         {t('auth.verifyEmail.resendSubmit', 'Send a new verification link')}
       </Button>
-      {error && (
-        <p className="text-dense text-destructive" role="alert">
-          {t('auth.verifyEmail.resendFailed', 'Could not send the link. Try again in a minute.')}
-        </p>
-      )}
     </form>
   )
 }
