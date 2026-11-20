@@ -115,6 +115,7 @@ vi.mock('@/features/assets/components/asset-page-actions', () => ({
     menu: state.primary ? [{ id: 'edit', label: 'Edit', onSelect: () => {} }] : [],
     dialogs: null,
   }),
+  useAssetScanGate: () => ({ canScan: state.primary, canExclude: false, refresh: () => {} }),
 }))
 vi.mock('@/features/assets/hooks/use-related-assets', () => ({
   useRelatedAssets: (id: string | null) => ({
@@ -129,8 +130,14 @@ vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: (id: string) => id === 'relationships' && state.relationshipsOn,
 }))
 vi.mock('@/features/web-surface/components/origin-web-section', () => ({
-  isWebOriginType: (type?: string) => type === 'http_service' || type === 'website',
+  isWebOriginType: (type?: string, subType?: string | null) =>
+    type === 'http_service' || type === 'website' || (type === 'service' && subType === 'http'),
   OriginWebSection: () => <section>origin-web</section>,
+}))
+vi.mock('@/features/web-surface/components/origin-paths-tab', () => ({
+  OriginPathsTab: ({ canCrawl }: { canCrawl: boolean }) => (
+    <section>{canCrawl ? 'origin-paths-crawl' : 'origin-paths'}</section>
+  ),
 }))
 vi.mock('@/features/shared/components/settle-group', () => ({
   SettleGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -321,6 +328,19 @@ describe('/assets/[id]', () => {
     render(<AssetDetailPage />)
     expect(screen.getByRole('tab', { name: /Web/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByText('origin-web')).toBeNull()
+  })
+
+  it('has a Paths tab for a web origin only, with Crawl following the scan gate', async () => {
+    state.asset = { ...BASE, type: 'service', subType: 'http' }
+    state.tab = 'paths'
+    state.primary = true
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: /Paths/ })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('origin-paths-crawl')).toBeInTheDocument()
+    unmount()
+    state.asset = { ...BASE, name: '203.0.113.10', type: 'ip_address' }
+    render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /Paths/ })).toBeNull()
   })
 
   it('has a Technologies tab with its count only when probes found any', async () => {
