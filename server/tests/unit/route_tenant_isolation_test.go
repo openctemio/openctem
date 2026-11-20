@@ -181,6 +181,7 @@ var tenantIsolationRegistry = map[string]isolationDecl{ //nolint:gochecknoglobal
 var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // registry
 	"GET /api/v1/assets/{id}/addresses":                             "test: TestNameAddresses_DataScopeAndTenant",
 	"POST /api/v1/ci/trust-configs/{id}/allow":                      "test: TestCIRefusal_WorkflowValueAndAllow",
+	"GET /api/v1/sla-policies/{id}/default-preview":                 "test: TestSLADefaultPreview_DB",
 	"PUT /api/v1/ai/agents/{id}/executor":                           "test: TestAIWorker_ChangeExecutor_DB",
 	"GET /api/v1/ci/trust-configs/{id}/new-repositories":            "test: TestCIAllProjects_PendingApproveBlock",
 	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions": "test: TestCIAllProjects_PendingApproveBlock",
