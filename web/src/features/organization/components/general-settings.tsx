@@ -434,9 +434,11 @@ export function GeneralSettings() {
                 <div className="flex min-w-0">
                   <span
                     data-testid="slug-host-prefix"
-                    className="inline-flex max-w-[50%] min-w-0 items-center truncate rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
+                    className="inline-flex max-w-[50%] min-w-0 items-center rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
+                    title={`${appHost}/`}
                   >
-                    {appHost}/
+                    {/* The ellipsis needs a block box: text directly in a flex box is cut without one. */}
+                    <span className="truncate">{appHost}/</span>
                   </span>
                   <Input
                     {...control}
