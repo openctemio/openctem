@@ -300,7 +300,13 @@ export async function findBreaks(
           if (!/hidden|clip/.test(cs.overflowX)) continue
           if (/auto|scroll/.test(cs.overflowX)) continue
           if (e.scrollWidth <= e.clientWidth + 2 || e.clientWidth === 0) continue
-          if (cs.textOverflow === 'ellipsis' || /\d/.test(cs.webkitLineClamp)) continue
+          // An ellipsis is drawn only by a block box (text sitting directly in a
+          // flex or grid box is cut with no mark), and a line clamp only on a
+          // -webkit-box: a select value with `line-clamp-1` and `flex` showed
+          // "Các mục một lần đư" with nothing to say it was cut.
+          const flexOrGrid = /flex|grid/.test(cs.display)
+          if (cs.textOverflow === 'ellipsis' && !flexOrGrid) continue
+          if (/\d/.test(cs.webkitLineClamp) && /-webkit-(inline-)?box/.test(cs.display)) continue
           // Only text cut: a child box (an icon, a chip row) wider than its frame
           // whose text still fits is the frame's own decision.
           const r = e.getBoundingClientRect()
