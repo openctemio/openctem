@@ -1380,12 +1380,22 @@ export function DataTable<TData, TValue>({
   // "Select all N that match": the selection is the list's filter, not ids.
   const [matchingSelected, setMatchingSelected] = React.useState(false)
   const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
+  const lastParentKey = React.useRef(resetSelectionKey)
+  // Set below, where the phone select mode is known.
+  const endSelectModeRef = React.useRef<() => void>(() => {})
   React.useEffect(() => {
     const next = `${resetSelectionKey}|${pageScope}`
     if (lastResetKey.current === next) return
     lastResetKey.current = next
     setRowSelection({})
     setMatchingSelected(false)
+    // The parent ended the selection (an action finished): a phone list leaves
+    // select mode with it, so the bar does not stay at "0 selected". Paging or
+    // sorting a server table clears the rows only, the mode stays.
+    if (lastParentKey.current !== resetSelectionKey) {
+      lastParentKey.current = resetSelectionKey
+      endSelectModeRef.current()
+    }
   }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
@@ -1470,6 +1480,7 @@ export function DataTable<TData, TValue>({
     [onSelectModeChange]
   )
   const selecting = phoneSelect && (selectMode || selectedCount > 0)
+  endSelectModeRef.current = () => setSelectMode(false)
   React.useEffect(() => {
     if (!phoneSelect && selectMode) setSelectMode(false)
   }, [phoneSelect, selectMode, setSelectMode])
