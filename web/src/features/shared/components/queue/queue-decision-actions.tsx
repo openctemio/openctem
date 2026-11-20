@@ -104,7 +104,16 @@ export function QueueDecisionActions({
   const items: ActionMenuEntry[] =
     compact && canDecide && !own
       ? [
-          { id: 'queue-reject', label: reject, icon: X, onSelect: onReject, group: 'decision' },
+          // A refusal: red in the menu, and never drawn as a bare icon
+          // button when it is the menu's only item.
+          {
+            id: 'queue-reject',
+            label: reject,
+            icon: X,
+            onSelect: onReject,
+            group: 'decision',
+            destructive: true,
+          },
           ...(menu ?? []),
         ]
       : (menu ?? [])

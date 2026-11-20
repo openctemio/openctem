@@ -872,11 +872,25 @@ export default function ApprovalsPage() {
                             findingTitle={approval.finding_title}
                           />
                         }
-                        state={statusCell(approval)}
-                        reason={<JustificationCell approval={approval} lines={2} />}
+                        // The state; under Pending (every card is pending) what
+                        // is asked for takes its place.
+                        state={showStatusColumn ? statusCell(approval) : requestedCell(approval)}
+                        reason={
+                          <div className="grid gap-1">
+                            <JustificationCell approval={approval} lines={2} />
+                            {approval.expires_at && (
+                              <span className="text-meta text-muted-foreground">
+                                {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
+                                {formatCalendarDate(approval.expires_at, locale)}
+                              </span>
+                            )}
+                          </div>
+                        }
                         // What is asked, by when, then who asked (cut first).
                         meta={[
-                          <span key="asked">{requestedCell(approval)}</span>,
+                          showStatusColumn ? (
+                            <span key="asked">{requestedCell(approval)}</span>
+                          ) : null,
                           approval.decide_by && approval.status === 'pending' ? (
                             <span key="due">
                               {/* "Overdue, 12 Nov" says it alone. */}
@@ -886,12 +900,7 @@ export default function ApprovalsPage() {
                               <QueueDecideBy value={approval.decide_by} className="text-xs" />
                             </span>
                           ) : null,
-                          approval.expires_at ? (
-                            <span key="ends">
-                              {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
-                              {formatCalendarDate(approval.expires_at, locale)}
-                            </span>
-                          ) : null,
+
                           <RequesterCell
                             key="by"
                             approval={approval}

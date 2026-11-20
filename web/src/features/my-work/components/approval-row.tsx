@@ -123,7 +123,7 @@ export function ApprovalRow({
             ) : undefined
           }
           reason={
-            reason || changed.length > 0 ? (
+            reason || changed.length > 0 || approval.decide_by ? (
               <div className="grid gap-1">
                 {reason && (
                   <q dir="auto" className="line-clamp-2 text-sm [unicode-bidi:isolate]">
@@ -135,6 +135,12 @@ export function ApprovalRow({
                     <ChangedSinceRequest changes={changed} />
                   </div>
                 )}
+                {approval.decide_by && (
+                  <span className="text-meta text-muted-foreground">
+                    {t('myWork.decideBy', 'Expires undecided')}{' '}
+                    <RelativeTime date={approval.decide_by} />
+                  </span>
+                )}
               </div>
             ) : undefined
           }
@@ -144,12 +150,7 @@ export function ApprovalRow({
               {days !== null && <> {t('myWork.kind.days', '{count} days', { count: days })}</>}
             </span>,
             status ? <span key="status">{status}</span> : null,
-            approval.decide_by ? (
-              <span key="due">
-                {t('myWork.decideBy', 'Expires undecided')}{' '}
-                <RelativeTime date={approval.decide_by} />
-              </span>
-            ) : null,
+
             <span key="by">
               {t('myWork.requestedBy', 'Requested by {name}', { name: requesterName })}
             </span>,

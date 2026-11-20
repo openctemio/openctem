@@ -643,7 +643,15 @@ export function ScanApprovalsInbox() {
                     {scanName(req)}
                   </Link>
                 }
-                state={<StatusBadge status={req.status} />}
+                // The state; under Pending (every card is pending) the run's
+                // marks take its place.
+                state={
+                  showStatus ? (
+                    <StatusBadge status={req.status} />
+                  ) : req.emergency || knownIntensity(req) ? (
+                    <RunMarks req={req} />
+                  ) : undefined
+                }
                 reason={
                   <span className="text-xs text-muted-foreground">
                     {ruleNames(req)}
@@ -660,7 +668,7 @@ export function ScanApprovalsInbox() {
                 }
                 // The run's marks, by when, then who asked (cut first).
                 meta={[
-                  req.emergency || knownIntensity(req) ? (
+                  showStatus && (req.emergency || knownIntensity(req)) ? (
                     <span key="marks" className="flex items-center gap-1.5">
                       <RunMarks req={req} />
                     </span>
