@@ -597,13 +597,7 @@ export function ScanApprovalsInbox() {
               )}
             />
           }
-        >
-          <RefreshButton
-            onClick={() => void mutate()}
-            loading={isValidating}
-            label={t('scans.approval.refresh', 'Refresh')}
-          />
-        </ListTitleRow>
+        />
         {noAccess ? (
           <NoAccessState
             title={t('scans.approval.errorTitle', 'scan approvals')}
@@ -629,6 +623,14 @@ export function ScanApprovalsInbox() {
             paginationNoun={t('scans.approval.paginationNoun', 'requests')}
             getRowId={(r) => r.id}
             pinActions
+            // Refresh ends the toolbar: never an icon alone on the title row.
+            toolbarEnd={
+              <RefreshButton
+                onClick={() => void mutate()}
+                loading={isValidating}
+                label={t('scans.approval.refresh', 'Refresh')}
+              />
+            }
             toolbarStart={statusLens}
             emptyState={emptyState}
             mobileRow={(req) => (

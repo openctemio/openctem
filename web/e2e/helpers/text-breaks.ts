@@ -13,14 +13,19 @@ import type { Page, Route } from '@playwright/test'
  *               hashes, URLs and keys may break anywhere)
  *   clipped     text cut by an overflow clip with no ellipsis or line clamp,
  *               a button or link whose label a frame cuts ("Manage" shown as
- *               "Mana"), text past either edge of the screen, and sideways page scroll
+ *               "Mana"), text past either edge of the screen, sideways page scroll,
+ *               a control a sideways scroller cuts at its edge on load, and a
+ *               one-line strip (a toolbar's tokens, chips) that scrolls
+ *               sideways with controls out of view (owner report 2026-11-20:
+ *               "Last 7 d..." faded at the edge read as hidden buttons)
  *   mixedRows   controls of different heights side by side in one row
  *   untranslated English catalog strings left on a Vietnamese page
  *   emptyLabels a label shown with no value beside it
  *   lopsided    a row bunched at one side: a phone card whose content all
  *               stops short of its end (nothing on the right: no state, no
  *               chevron, no action), or a list title row line that holds
- *               only end controls with nothing at its start
+ *               only end controls with nothing at its start, or (phone) a title
+ *               row whose one control is an icon alone at its end
  *
  * `richData` makes the API answers of a page hard on the layout: long English
  * and Vietnamese names, 80+ characters without a break opportunity in the
@@ -369,6 +374,43 @@ export async function findBreaks(
             out.clipped.push(`control cut by its frame by ${cutBy}px: "${short(el.textContent)}"`)
         }
       }
+      // (c3) sideways scrollers, as the page opens. Reachable by a swipe is not
+      // seen: nothing tells a person a strip scrolls. A one-line strip (56 px
+      // high at most, no table) may hide no control at all; a taller scroller
+      // (a wide table) may hold columns past its edge, but never cuts one.
+      const CONTROL =
+        'button,a[href],[role=button],[role=tab],[role=combobox],[role=link],input:not([type=hidden]),select'
+      for (const root of roots) {
+        for (const sc of Array.from(root.querySelectorAll('*'))) {
+          const cs = getComputedStyle(sc)
+          if (!/auto|scroll/.test(cs.overflowX)) continue
+          if (sc.scrollWidth <= sc.clientWidth + 2 || sc.clientWidth === 0) continue
+          if (!shown(sc) || hiddenByAncestor(sc)) continue
+          const sr = sc.getBoundingClientRect()
+          const strip = sr.height <= 56 && !sc.querySelector('table')
+          for (const c of Array.from(sc.querySelectorAll(CONTROL))) {
+            // The outermost control only (a clear button inside a token).
+            const outer = c.parentElement?.closest(CONTROL)
+            if (outer && sc.contains(outer)) continue
+            if (hiddenByAncestor(c)) continue
+            const r = c.getBoundingClientRect()
+            if (r.width < 1 || r.height < 1) continue
+            const pastEnd = r.right > sr.right + 1
+            const pastStart = r.left < sr.left - 1
+            if (!pastEnd && !pastStart) continue
+            const cut = (pastEnd && r.left < sr.right - 1) || (pastStart && r.right > sr.left + 1)
+            const name = short(
+              c.getAttribute('aria-label') || c.textContent || c.getAttribute('title'),
+              30
+            )
+            if (strip)
+              out.clipped.push(
+                `${cut ? 'control cut at the edge of' : 'control hidden in'} a sideways strip: "${name}"`
+              )
+            else if (cut) out.clipped.push(`control cut by a scroller's edge: "${name}"`)
+          }
+        }
+      }
       const vw = document.documentElement.clientWidth
       for (const t of texts) {
         if (t.r.right > vw + 1 && t.layer === document.documentElement) {
@@ -532,6 +574,29 @@ export async function findBreaks(
             if (l.left - r.left > Math.max(80, r.width / 4)) {
               out.lopsided.push(
                 `title row line at y ${Math.round(l.top)} holds only end controls (starts at ${Math.round((100 * (l.left - r.left)) / r.width)}%)`
+              )
+            }
+          }
+          // A phone title row whose one control is an icon (Refresh) standing
+          // alone at its end: it belongs in the toolbar's end (a list's "..." menu included).
+          if (innerWidth < 768) {
+            const ctrls = Array.from(row.querySelectorAll('button,a[href],[role=button]')).filter(
+              (c) =>
+                shown(c) &&
+                !hiddenByAncestor(c) &&
+                !(c.parentElement?.closest('button,a[href],[role=button]') ?? null)
+            )
+            const icon = ctrls[0]
+            const visibleText = (el: Element) => {
+              const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+              for (let n = w.nextNode(); n; n = w.nextNode())
+                if (n.textContent?.trim() && n.parentElement && !hiddenByAncestor(n.parentElement))
+                  return true
+              return false
+            }
+            if (ctrls.length === 1 && !visibleText(icon)) {
+              out.lopsided.push(
+                `title row holds one icon control alone: "${short(icon.getAttribute('aria-label') || icon.getAttribute('title'), 30)}"`
               )
             }
           }

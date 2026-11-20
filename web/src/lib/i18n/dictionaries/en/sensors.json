@@ -817,7 +817,7 @@
   "sensors.list.onlineCount": "{count} online",
   "sensors.list.refresh": "Refresh",
   "sensors.list.search.label": "Search sensors",
-  "sensors.list.search.placeholder": "Name, host, IP or tool…",
+  "sensors.list.search.placeholder": "Name, host or IP…",
   "sensors.list.seconds": "{count}s",
   "sensors.list.selected": "{count, plural, one {sensor selected} other {sensors selected}}",
   "sensors.list.show.one": "Show {count} sensor",
