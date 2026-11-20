@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { isWebOriginType } from '../components/origin-web-section'
 import {
   DEFAULT_PATH_FILTERS,
   isParamSegment,
@@ -6,6 +7,7 @@ import {
   parentPath,
   pathFiltersChanged,
   pathTrail,
+  pathUnder,
   webPathsUrl,
 } from '../lib/web-paths-url'
 
@@ -56,6 +58,12 @@ describe('web paths url', () => {
     expect(isParamSegment('users')).toBe(false)
   })
 
+  it('shows a template relative to the selected node', () => {
+    expect(pathUnder('/api/v1/orders/{int}/history', '/')).toBe('/api/v1/orders/{int}/history')
+    expect(pathUnder('/api/v1/orders/{int}/history', '/api/v1/orders')).toBe('\u2026/{int}/history')
+    expect(pathUnder('/api/v1/orders', '/api/v1/orders')).toBe('\u2026/orders')
+  })
+
   it('tells when filters differ from the defaults', () => {
     expect(pathFiltersChanged(DEFAULT_PATH_FILTERS)).toBe(false)
     expect(pathFiltersChanged({ ...DEFAULT_PATH_FILTERS, hideStatic: false })).toBe(true)
@@ -64,8 +72,7 @@ describe('web paths url', () => {
 })
 
 describe('isWebOriginType', () => {
-  it('knows an origin stored as a service with the http sub-type, and the legacy names', async () => {
-    const { isWebOriginType } = await import('../components/origin-web-section')
+  it('knows an origin stored as a service with the http sub-type, and the legacy names', () => {
     expect(isWebOriginType('service', 'http')).toBe(true)
     expect(isWebOriginType('http_service')).toBe(true)
     expect(isWebOriginType('website')).toBe(true)

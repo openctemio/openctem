@@ -48,6 +48,7 @@ import {
   PATH_METHODS,
   normalizeNodePath,
   pathTrail,
+  pathUnder,
   type PathFilters,
   type PathScope,
 } from '../lib/web-paths-url'
@@ -65,7 +66,7 @@ export interface OriginPathsTabProps {
   canCrawl: boolean
 }
 
-function usePathColumns(): ColumnDef<WebPathEndpoint>[] {
+function usePathColumns(node: string): ColumnDef<WebPathEndpoint>[] {
   const { t } = useTranslation()
   return useMemo<ColumnDef<WebPathEndpoint>[]>(
     () => [
@@ -83,7 +84,11 @@ function usePathColumns(): ColumnDef<WebPathEndpoint>[] {
             <MethodBadge method={row.original.method} />
             <StackedCell
               truncate
-              primary={<PathText path={row.original.path_template} />}
+              primary={
+                <span className="font-mono text-sm" title={row.original.path_template}>
+                  {pathUnder(row.original.path_template ?? '/', node)}
+                </span>
+              }
               secondary={
                 !row.original.in_scope ? (
                   <ExcludedBadge exclusionId={row.original.exclusion_id} />
@@ -163,7 +168,7 @@ function usePathColumns(): ColumnDef<WebPathEndpoint>[] {
         cell: ({ row }) => <span className="tabular-nums">{row.original.param_count ?? 0}</span>,
       },
     ],
-    [t]
+    [t, node]
   )
 }
 
@@ -388,7 +393,7 @@ export function OriginPathsTab({ assetId, assetName, canCrawl }: OriginPathsTabP
   })
   // The origin as a whole: the root row, the empty state and the status line.
   const root = useWebPaths(assetId, '/', filters, { perPage: 0 })
-  const columns = usePathColumns()
+  const columns = usePathColumns(path)
   const data = level.data
   const totals = root.data?.totals
 

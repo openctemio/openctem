@@ -107,3 +107,14 @@ export function pathTrail(path: string): { name: string; path: string }[] {
 export function isParamSegment(name: string): boolean {
   return name.startsWith('{') && name.endsWith('}')
 }
+
+/**
+ * A template as shown under the selected node: the part below the node after
+ * an ellipsis ("…/{int}/history" under /api/v1/orders), the last segment of
+ * the node itself ("…/orders"), the whole template at the root.
+ */
+export function pathUnder(template: string, node: string): string {
+  if (node === '/' || !template.startsWith(node)) return template
+  if (template === node) return `\u2026${template.slice(template.lastIndexOf('/'))}`
+  return `\u2026${template.slice(node.length)}`
+}
