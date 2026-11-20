@@ -16,11 +16,15 @@ const mockCreateKey = vi.fn()
 const mockDeleteKey = vi.fn()
 let accounts: unknown[] = []
 let mayMutate = true
+let listError: unknown = undefined
 
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', slug: 'acme', role: 'owner' } }),
+}))
 vi.mock('@/features/service-accounts/api/use-service-accounts', () => ({
   useServiceAccounts: () => ({
-    data: { data: accounts },
-    error: undefined,
+    data: listError ? undefined : { data: accounts },
+    error: listError,
     isLoading: false,
     mutate: vi.fn(),
   }),
@@ -51,13 +55,29 @@ vi.mock('@/features/service-accounts/api/use-service-accounts', () => ({
   useDeleteServiceAccountKey: () => ({ trigger: mockDeleteKey, isMutating: false }),
 }))
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/settings/service-accounts',
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
-vi.mock('@/lib/permissions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/permissions')>()),
-  Can: ({ children }: { children: React.ReactNode }) => (mayMutate ? children : null),
-  useCanMutate: () => mayMutate,
-}))
+vi.mock('@/lib/permissions', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/lib/permissions')>()
+  const all = Object.values(mod.Permission) as string[]
+  return {
+    ...mod,
+    Can: ({ children }: { children: React.ReactNode }) => (mayMutate ? children : null),
+    useCanMutate: () => mayMutate,
+    usePermissions: () => ({
+      permissions: mayMutate ? all : [],
+      can: () => mayMutate,
+      isAdmin: () => mayMutate,
+      isLoading: false,
+      tenantRole: mayMutate ? 'owner' : 'viewer',
+    }),
+  }
+})
 
 const account = {
   id: 'sa1',
@@ -74,6 +94,8 @@ describe('ServiceAccountsPage', () => {
     vi.clearAllMocks()
     accounts = []
     mayMutate = true
+    listError = undefined
+    window.history.replaceState(null, '', '/settings/service-accounts')
   })
 
   it('creates a service account from the empty state', async () => {
@@ -95,8 +117,9 @@ describe('ServiceAccountsPage', () => {
     expect(screen.getByText('SIEM export')).toBeInTheDocument()
     expect(screen.getByText('Alice')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'API keys of SIEM export' }))
-    expect(screen.getByText('prod connector')).toBeInTheDocument()
+    // The name opens the account's keys (a link to ?account=<id>).
+    await userEvent.click(screen.getByRole('link', { name: 'SIEM export' }))
+    expect(await screen.findByText('prod connector')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }))
     await userEvent.type(screen.getByLabelText('Name'), 'connector')
@@ -113,7 +136,8 @@ describe('ServiceAccountsPage', () => {
     mockDeleteAccount.mockResolvedValueOnce(undefined)
     render(<ServiceAccountsPage />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Delete SIEM export' }))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Actions for SIEM export' })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete service account/ }))
     expect(mockDeleteAccount).not.toHaveBeenCalled()
     // Deleting a service account cuts off its integrations: type its name first.
     const confirm = screen.getByRole('button', { name: /^delete$/i })
@@ -129,6 +153,15 @@ describe('ServiceAccountsPage', () => {
     render(<ServiceAccountsPage />)
     expect(screen.getByText('SIEM export')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /new service account/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete SIEM export' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'SIEM export' })).not.toBeInTheDocument()
+    expect(screen.getByText(/View only/)).toBeInTheDocument()
+  })
+
+  it('a failed read keeps the page and offers Retry', () => {
+    listError = new Error('boom')
+    render(<ServiceAccountsPage />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Service accounts' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument()
+    expect(screen.queryByText('No service accounts yet')).not.toBeInTheDocument()
   })
 })
