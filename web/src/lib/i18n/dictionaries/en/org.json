@@ -617,7 +617,7 @@
   "org.roleArea.content": "Detection content",
   "org.roleArea.ctem": "CTEM program",
   "org.roleArea.dashboard": "Dashboards",
-  "org.roleArea.dashboards": "Dashboards",
+  "org.roleArea.dashboards": "Shared dashboards",
   "org.roleArea.findings": "Findings",
   "org.roleArea.integrations": "Integrations",
   "org.roleArea.pentest": "Pentest",
