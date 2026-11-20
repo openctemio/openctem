@@ -301,11 +301,7 @@ export function ToolsSection() {
           <SelectItem value="custom">{t('scans.tools.badge.custom', 'Custom')}</SelectItem>
         </SelectContent>
       </Select>
-    </>
-  )
-
-  const toolbarEnd = (
-    <>
+      {/* A filter, so it sits with the other filters (a strip that scrolls on a phone). */}
       <div className="flex items-center gap-2">
         <Switch
           id="tools-full-catalog"
@@ -317,6 +313,11 @@ export function ToolsSection() {
           {t('scans.tools.fullCatalog', 'Show full catalog')}
         </Label>
       </div>
+    </>
+  )
+
+  const toolbarEnd = (
+    <>
       <RefreshButton onClick={handleRefresh} loading={isLoading} />
     </>
   )

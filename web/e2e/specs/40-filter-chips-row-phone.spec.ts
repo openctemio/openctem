@@ -6,10 +6,12 @@ import { test, expect } from '../fixtures/authenticated-page'
  * 2026-10-25, /findings at 390px; owner report 2026-11-15, /vulnerabilities:
  * the save-view and refresh buttons wrapped to a third line under the chips).
  * At 375px and 390px, in English and Vietnamese:
- *   1. the search field has the first line to itself;
- *   2. the second line holds the chips at the start (none: empty room), the
- *      filter tokens anchored to the end and the icon actions after them, one
- *      height and one centre line, nothing on a third line;
+ *   1. the first line holds the search field and the icon actions (Views,
+ *      Group) at its end, one centre line (owner report 2026-11-19: Views
+ *      alone on a second line);
+ *   2. the second line starts with the filter tokens, the chips after them
+ *      (owner report 2026-11-20: tokens pushed to the end of an otherwise
+ *      empty line), one height and one centre line, nothing on a third line;
  *   3. tokens and chips that do not fit scroll sideways in their strip, and
  *      a strip fades at its end exactly when more is hidden past it; no chip
  *      folds away into "+N more";
@@ -24,7 +26,7 @@ const FILTERS = ['epss_score_gte=0.5', 'cvss_score_gte=4', 'last_seen_at_gte=-P3
 /** A drill-down link from a rule: a context chip before the filter chips. */
 const DEEP_LINK = 'rule_id=example-rule'
 
-/** The pinned icon actions at the end of the phone toolbar's second line. */
+/** The pinned icon actions at the end of the phone toolbar's first line, and Add filter. */
 async function endBoxes(page: Page) {
   return page.evaluate(() =>
     Array.from(
@@ -89,24 +91,39 @@ async function toolbarDefects(page: Page): Promise<string[]> {
       )
     ).filter((el) => visible(el) && getComputedStyle(el).display !== 'contents')
     const inStrip = (el: Element) => strips.some((st) => st !== el && st.contains(el))
-    const items = [
-      ...strips,
-      ...Array.from(
-        region.querySelectorAll<HTMLElement>(
-          '[data-slot="list-toolbar-tokens"] > *, [data-slot="filter-chips-trailing"] > *, [data-slot="list-toolbar-end"] > *'
-        )
-      ).filter((el) => visible(el) && !inStrip(el) && !strips.includes(el)),
-    ]
-    const boxes = items.map((el) => ({
+    const box = (el: HTMLElement) => ({
       name: (el.getAttribute('aria-label') || el.textContent || el.dataset.slot || '')
         .trim()
         .slice(0, 30),
       r: el.getBoundingClientRect(),
-    }))
-    for (const b of boxes) {
-      if (b.r.top < s.bottom - 0.5) out.push(`"${b.name}" shares the search line`)
+    })
+    const items = [
+      ...strips,
+      ...Array.from(
+        region.querySelectorAll<HTMLElement>(
+          '[data-slot="list-toolbar-tokens"] > *, [data-slot="filter-chips-trailing"] > *'
+        )
+      ).filter((el) => visible(el) && !inStrip(el) && !strips.includes(el)),
+    ]
+    const boxes = items.map(box)
+    // The first line: the icon actions end the search's line, on its centre.
+    const actions = Array.from(
+      region.querySelectorAll<HTMLElement>('[data-slot="list-toolbar-end"] > *')
+    )
+      .filter(visible)
+      .map(box)
+    const searchCentre = s.top + s.height / 2
+    for (const a of actions) {
+      if (Math.abs(a.r.top + a.r.height / 2 - searchCentre) > 2)
+        out.push(`"${a.name}" is not on the search line`)
+      if (a.r.left < s.right - 0.5) out.push(`"${a.name}" overlaps the search field`)
+    }
+    for (const b of [...boxes, ...actions]) {
       if (b.r.left < -0.5 || b.r.right > vw + 0.5)
         out.push(`"${b.name}" sticks out of the viewport`)
+    }
+    for (const b of boxes) {
+      if (b.r.top < s.bottom - 0.5) out.push(`"${b.name}" shares the search line`)
     }
     // The second line: every item on one centre line.
     const line = boxes
@@ -176,7 +193,7 @@ for (const locale of ['en', 'vi'] as const) {
           const before = await endBoxes(page)
           expect(before.length).toBeGreaterThan(0)
           // One filter entry on a phone (the Filters button joined to the
-          // field): no Add filter and no list "..." on the second line, whose
+          // field): no Add filter and no list "..." in the toolbar, whose
           // pinned group is Views and Group (Select is in the list's More).
           await expect(
             page.locator('main [data-slot="add-filter"]').filter({ visible: true })
@@ -222,8 +239,8 @@ for (const locale of ['en', 'vi'] as const) {
             expect(Math.abs(b.top - before[i].top), `${b.name} moved down`).toBeLessThanOrEqual(1)
             expect(b.height, `${b.name} height`).toBe(before[i].height)
           })
-          // The search field fills the first line (after the Basic | Query
-          // toggle, on a list with Query mode).
+          // The search field fills the first line up to the icon actions
+          // (after the Basic | Query toggle, on a list with Query mode).
           const box = (await page
             .locator('main [data-slot="list-toolbar-region"], main [data-slot="list-toolbar"]')
             .first()
@@ -237,13 +254,18 @@ for (const locale of ['en', 'vi'] as const) {
             .boundingBox()
           const start = mode ? mode.x + mode.width + 8 : box.x
           expect(Math.abs(search.x - start)).toBeLessThanOrEqual(1)
-          expect(search.x + search.width).toBeGreaterThanOrEqual(box.x + box.width - 1)
+          const actions = (await page
+            .locator('main [data-slot="list-toolbar-end"]')
+            .first()
+            .boundingBox())!
+          expect(Math.abs(search.x + search.width + 8 - actions.x)).toBeLessThanOrEqual(1)
+          expect(actions.x + actions.width).toBeGreaterThanOrEqual(box.x + box.width - 1)
         }
       )
     }
 
     test(
-      `/vulnerabilities toolbar at ${width}px ${locale}: tokens and actions on one line`,
+      `/vulnerabilities toolbar at ${width}px ${locale}: actions on the search line, tokens on one line`,
       { tag: ['@vulnerabilities'] },
       async ({ page, baseURL }, testInfo) => {
         await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
@@ -251,8 +273,8 @@ for (const locale of ['en', 'vi'] as const) {
         await page.goto('/vulnerabilities')
         // Ready when the end actions are drawn. On a phone both selects of
         // this list live in the Filters sheet, so its token strip may hold
-        // nothing and has no width (it is anchored to the end, before the
-        // actions); toolbarDefects checks whatever the line holds.
+        // nothing and has no width (it starts the second line); toolbarDefects
+        // checks whatever the line holds.
         const end = page.locator('main [data-slot="list-toolbar-end"]').first()
         await expect(end).toBeVisible({ timeout: 45_000 })
         await page.waitForLoadState('networkidle')
