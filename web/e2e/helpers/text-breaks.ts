@@ -487,7 +487,7 @@ export async function findBreaks(
           for (const r of Array.from(range.getClientRects())) if (r.width > 0.5) boxes.push(r)
         }
         for (const el of Array.from(
-          root.querySelectorAll('button,input,select,textarea,a[href],img,[role=checkbox]')
+          root.querySelectorAll('button,input,select,textarea,a[href],img,svg,[role=checkbox]')
         )) {
           if (shown(el) && !el.closest('.sr-only')) boxes.push(el.getBoundingClientRect())
         }
