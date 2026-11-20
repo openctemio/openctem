@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { APIKeyPolicyCard } from '../api-key-policy-card'
+import { APIKeyPolicySection } from '../api-key-policy-card'
 
 const policy = { max_lifetime_days: 90, default_max_lifetime_days: 90, ceiling_days: 365 }
 const update = vi.fn()
@@ -20,12 +20,12 @@ async function setDays(v: string) {
   await userEvent.type(input, v)
 }
 
-describe('APIKeyPolicyCard', () => {
+describe('APIKeyPolicySection', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('saves a shorter maximum at once', async () => {
     update.mockResolvedValue({ ...policy, max_lifetime_days: 30 })
-    render(<APIKeyPolicyCard canEdit />)
+    render(<APIKeyPolicySection canEdit />)
     await setDays('30')
     await userEvent.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(update).toHaveBeenCalledWith(30))
@@ -34,7 +34,7 @@ describe('APIKeyPolicyCard', () => {
 
   it('asks before a longer maximum', async () => {
     update.mockResolvedValue({ ...policy, max_lifetime_days: 180 })
-    render(<APIKeyPolicyCard canEdit />)
+    render(<APIKeyPolicySection canEdit />)
     await setDays('180')
     await userEvent.click(screen.getByRole('button', { name: /^Save/ }))
     expect(update).not.toHaveBeenCalled()
@@ -44,12 +44,12 @@ describe('APIKeyPolicyCard', () => {
   })
 
   it('refuses a value above the platform ceiling and is read only without the permission', async () => {
-    const { unmount } = render(<APIKeyPolicyCard canEdit />)
+    const { unmount } = render(<APIKeyPolicySection canEdit />)
     await setDays('400')
     await userEvent.click(screen.getByRole('button', { name: /^Save/ }))
     expect(update).not.toHaveBeenCalled()
     unmount()
-    render(<APIKeyPolicyCard canEdit={false} />)
+    render(<APIKeyPolicySection canEdit={false} />)
     expect(screen.getByLabelText(/Days \(1 to 365\)/)).toBeDisabled()
   })
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -25,6 +26,8 @@ export function distinctAddress(name: string | undefined, email: string): string
  * width minus the menu's own column, so the menu never covers text; the
  * address is shown once; a long address breaks inside the card. Facts
  * (role, status, badges) share one line and wrap only when they do not fit.
+ * A card that opens on a tap but has no menu (nothing the reader may change)
+ * ends in a chevron, so the row never stops short of its end.
  */
 export function PersonPhoneCard({
   title,
@@ -79,7 +82,15 @@ export function PersonPhoneCard({
           </div>
         )}
       </div>
-      {menu && <div className="shrink-0">{menu}</div>}
+      {menu ? (
+        <div className="shrink-0">{menu}</div>
+      ) : onOpen ? (
+        <ChevronRight
+          data-slot="person-card-chevron"
+          aria-hidden
+          className="size-4 shrink-0 self-center text-muted-foreground rtl:rotate-180"
+        />
+      ) : null}
     </div>
   )
 }

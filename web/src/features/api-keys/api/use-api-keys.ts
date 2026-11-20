@@ -27,6 +27,8 @@ export interface APIKeyListParams {
   page?: number
   perPage?: number
   search?: string
+  /** A list sort, `field` or `-field` (descending): sent as the API's `sort` and `order`. */
+  sort?: string
 }
 
 /** The list key: every page of the list starts with BASE_URL. */
@@ -35,6 +37,11 @@ export function apiKeysListKey(params: APIKeyListParams = {}): string {
   q.set('page', String(Math.max(1, params.page ?? 1)))
   q.set('per_page', String(params.perPage ?? 20))
   if (params.search) q.set('search', params.search)
+  if (params.sort) {
+    const desc = params.sort.startsWith('-')
+    q.set('sort', desc ? params.sort.slice(1) : params.sort)
+    q.set('order', desc ? 'desc' : 'asc')
+  }
   return `${BASE_URL}?${q.toString()}`
 }
 
