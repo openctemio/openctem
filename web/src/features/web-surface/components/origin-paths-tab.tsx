@@ -138,8 +138,11 @@ function usePathColumns(): ColumnDef<WebPathEndpoint>[] {
         meta: {
           kind: 'datetime-recent',
           label: t('attackSurface.web.col.lastSeen', 'Last seen'),
+          width: 128,
         },
-        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
+        cell: ({ row }) => (
+          <RelativeTime date={row.original.last_seen_at} className="block truncate" />
+        ),
       },
       {
         id: 'auth',

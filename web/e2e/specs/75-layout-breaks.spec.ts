@@ -403,7 +403,9 @@ test.describe(
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
           body: JSON.stringify({
             name: `https://layout-${Date.now()}.example.com`,
-            type: 'http_service',
+            type: 'service',
+            sub_type: 'http',
+            criticality: 'medium',
           }),
         })
         return { status: res.status, body: await res.json().catch(() => null) }
