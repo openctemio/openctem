@@ -53,7 +53,14 @@ export function RequestAccessConfirm() {
         </EntryBanner>
       )}
       <EntryActions>
-        <Button asChild variant="outline">
+        {state === 'failed' && (
+          <Button asChild variant="signal">
+            <Link href="/request-access">
+              {t('auth.requestAccess.newRequest', 'Send a new request')}
+            </Link>
+          </Button>
+        )}
+        <Button asChild variant={state === 'confirmed' ? 'signal' : 'outline'}>
           <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
         </Button>
       </EntryActions>
