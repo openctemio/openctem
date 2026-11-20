@@ -822,12 +822,114 @@ metadata): the headline says "N new addresses on a shared provider edge",
 not "internet-facing assets", and the message says the names that resolve
 to them are the organization's assets, not the addresses.
 
+### Grouped alerts
+
+A channel does not get one message per finding event. Events of the same
+kind about findings (`new_finding`, `finding_priority_escalated`,
+`finding_fixed`, `finding_reopened`, `finding_assigned`, `sla_breach`,
+`sla_warning`) that reach the same channel within a short window are sent as
+one message. Every event keeps its own outbox entry and archive record; only
+the delivery is grouped.
+
+Why: a priority re-score after an EPSS, KEV or reachability update raises
+many findings at once, each published as its own `finding_priority_escalated`
+event (`OutboxPriorityChangePublisher`), and the worker sent each as its own
+card. The stored `min_interval_minutes` never limited anything.
+
+**Settings per channel** (`integration_notification_extensions`, console:
+the channel's advanced settings, API fields of the same names):
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `group_similar` | on | Group similar alerts. Existing channels are on too. |
+| `group_window_minutes` | 2 (1 to 60) | How long a group waits before it is sent. |
+| `urgent_at_once` | on | A critical item, or a finding in KEV, is sent on its own at once; at most 5 per group (`GroupUrgentPerWindow`), later ones join the group. |
+
+**How** (`internal/app/outbox/group.go`, `postgres.NotificationGroupRepository`,
+migration `notification_grouping`):
+
+1. The worker resolves an event's channels as before. For a channel that
+   groups this kind of event, the delivery is written to the channel's open
+   group (`notification_groups`, one open group per channel and event type;
+   the item in `notification_group_items`) and marked `grouped` with the
+   group id. The whole worker batch is written in one transaction per group.
+   A redelivery and the message of a group are never grouped. If the group
+   cannot be written, the event is sent on its own (never lost).
+2. The same finding again within the window (a flap, or a second raise)
+   updates its item to the latest event and counts the events folded into
+   it (`update_count`).
+3. A group is due when its window ends, or at once when it holds 25 items
+   (`GroupEarlyFlushItems`). A group opened within the window after the
+   previous one of the channel was sent is a **burst** group: it is not sent
+   at the item limit, but when no item arrived for one window, and at the
+   latest 15 minutes after it opened (`GroupMaxHold`). A re-score of
+   thousands of findings is therefore at most two messages: the first full
+   group and one summary.
+4. The scheduler claims due groups (`FOR UPDATE SKIP LOCKED`, every tick,
+   before and after its batches) and enqueues the group's message as one
+   outbox entry for that channel only. Items sent alone, and raises undone
+   before the send (the finding's priority is lower again, or it is gone),
+   are left out. Nothing left: no message. One item: that event's own full
+   card. More: an entry with aggregate type `notification_group`, retried,
+   archived and redeliverable like any other.
+5. While its window lasts, the worker takes up to 20 full batches per tick, so
+   a burst reaches its group in seconds (measured: 5,000 raises absorbed in
+   about 20 s on a test database and sent as 2 messages).
+
+**The grouped message** (`notifymsg.BuildGroup`):
+
+```
+🟠 6 findings raised to High
+Severity: High
+Organization: Example Corp
+http://203.0.113.10 (service)
+- CVE-2024-4577: PHP 8.1.2 argument injection, High, Known exploited (CISA KEV)
+- CVE-2024-2756: PHP 8.1.2 cookie bypass, High, EPSS 34%: likely to be exploited soon
+app.example.com (domain)
+- CVE-2023-3824: PHP 8.1.2 buffer overflow, High, EPSS 12%: likely to be exploited soon
++3 more
+[ Open the list ]
+```
+
+- The headline gives the count and, when every item has the same severity,
+  that severity ("raised to High"); mixed severities say "raised in
+  priority" and list the counts ("2 Critical, 4 High").
+- Items are listed by asset, most severe first, one line each (what,
+  severity, one reason), at most 10 lines (`MaxGroupLines`), then "+N more".
+- The one button opens `/findings?notification_group_id=<group>`: the
+  findings list filtered to exactly the group's findings (filter field
+  `notification_group_id`, read through `notification_group_items` inside the
+  caller's tenant; the caller's data scope applies as on every list).
+- The detail level applies: a minimal channel gets the count, severity and
+  link, no names. Each listed item is checked against the private-program
+  routing and scrubbed like a single message; an item the channel may no
+  longer receive is not listed. No secrets, evidence or internal IDs.
+- Length: every line part is capped; the Telegram text stays under 4,096
+  characters (whole lines are dropped, never cut inside markup); Slack
+  sections stay under 3,000; Teams and e-mail carry the same lines; the
+  webhook payload adds `sections`.
+
+**History:** each event's archive record has a send result with status
+`grouped` and the `group_id`; the group's own message has its own record. A
+closed group and its items are deleted with the archive's retention
+(`CleanupOldEvents`).
+
+**Security:** groups are per tenant and per channel (unique open group on
+`tenant_id, integration_id, group_key`); every query filters on the tenant;
+the findings lookups join on the tenant; the link filter binds the caller's
+tenant. Tests: `internal/app/outbox/group_test.go`,
+`internal/infra/postgres/notification_group_db_test.go` (window, item limit,
+burst, urgent budget, folding, KEV, tenant isolation, the link, a 5,000-event
+burst), `internal/infra/notifier/group_render_test.go` (provider limits).
+
 ### Rate Limiting
 
 Test notifications (`POST /integrations/{id}/test-notification`) are limited
 to 5 a minute per user and integration (`testNotificationRateLimiter` in
 `internal/infra/http/handler/integration_handler.go`, in memory per process).
 Redelivery is limited to 30 a minute per organization (burst 10).
+Channel messages are not rate limited one by one: similar alerts are grouped
+(above). `min_interval_minutes` is stored and returned but not enforced.
 
 ## Private program events
 
