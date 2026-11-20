@@ -514,6 +514,11 @@ const MOBILE_CARD_FIELDS = 2
 const CARD_STATUS_KINDS = new Set<ColumnKind>(['status', 'status-edit'])
 /** Column kinds that may make the card's muted subtitle line. */
 const CARD_SUBTITLE_KINDS = new Set<ColumnKind>(['asset', 'owner', 'id', 'text'])
+/**
+ * Column kinds that hold the list's key figures (a count, a score, a
+ * deadline): they take the card's field places before descriptive columns.
+ */
+const CARD_FIGURE_KINDS = new Set<ColumnKind>(['number', 'risk', 'severity', 'priority', 'due'])
 
 /**
  * Widest actions cell kept on a phone card's title line: one icon button (the
@@ -691,7 +696,8 @@ const PHONE_CARD_FOCUS_CLASS =
  *   says nothing or repeats the title;
  * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
  *   other columns that say something (no empty or dash-only value, no repeat
- *   of the title; a switch counts as a value), chosen before paint. A chip
+ *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS)
+ *   before the rest, shown in column order, chosen before paint. A chip
  *   value is never cut: a field whose chip does not fit half the line takes
  *   the whole line and the other field goes on the line under it.
  * Every line but the title is one line high whatever its cell draws.
@@ -716,7 +722,15 @@ function AutoMobileCard<TData>({
   const data = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
   const title = data.find((c) => kindOf(c) === 'name') ?? data[0]
   const rest = data.filter((c) => c !== title)
-  const status = rest.find((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  // The title line's chip is the row's own state: a status column the table
+  // keeps at every width wins over one the page lets a narrow table drop
+  // (`hideBelow`, e.g. an environment beside the criticality); the dropped
+  // one is then a field candidate like any other column.
+  const statusCells = rest.filter((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  const status =
+    statusCells.find(
+      (c) => !(c.column.columnDef.meta as DataTableColumnMeta | undefined)?.hideBelow
+    ) ?? statusCells[0]
   // Only a column the page marked as a naming kind; an unmarked column stays a
   // labelled field (its meaning would be lost on an unlabelled line).
   const subtitle = rest.find((c) => {
@@ -748,7 +762,12 @@ function AutoMobileCard<TData>({
     const titleText = normalText(titleRef.current?.textContent)
     const fields: string[] = []
     const wide: string[] = []
-    for (const field of Array.from(fieldsRef.current?.children ?? [])) {
+    // Key figures (`data-figure`) are tried first, then the other columns;
+    // each group keeps its column order (Array.sort is stable). Shown fields
+    // keep column order.
+    const rank = (el: Element) => (el.hasAttribute('data-figure') ? 0 : 1)
+    const ordered = Array.from(fieldsRef.current?.children ?? []).sort((a, b) => rank(a) - rank(b))
+    for (const field of ordered) {
       const id = field.getAttribute('data-column') ?? ''
       if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
         fields.push(id)
@@ -872,6 +891,7 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
+              data-figure={CARD_FIGURE_KINDS.has(kindOf(cell)) ? '' : undefined}
               className={cn(
                 'flex min-w-0 items-baseline gap-1.5',
                 pick?.wide.includes(cell.column.id) && 'col-span-2'
@@ -1380,12 +1400,22 @@ export function DataTable<TData, TValue>({
   // "Select all N that match": the selection is the list's filter, not ids.
   const [matchingSelected, setMatchingSelected] = React.useState(false)
   const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
+  const lastParentKey = React.useRef(resetSelectionKey)
+  // Set below, where the phone select mode is known.
+  const endSelectModeRef = React.useRef<() => void>(() => {})
   React.useEffect(() => {
     const next = `${resetSelectionKey}|${pageScope}`
     if (lastResetKey.current === next) return
     lastResetKey.current = next
     setRowSelection({})
     setMatchingSelected(false)
+    // The parent ended the selection (an action finished): a phone list leaves
+    // select mode with it, so the bar does not stay at "0 selected". Paging or
+    // sorting a server table clears the rows only, the mode stays.
+    if (lastParentKey.current !== resetSelectionKey) {
+      lastParentKey.current = resetSelectionKey
+      endSelectModeRef.current()
+    }
   }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
@@ -1470,6 +1500,7 @@ export function DataTable<TData, TValue>({
     [onSelectModeChange]
   )
   const selecting = phoneSelect && (selectMode || selectedCount > 0)
+  endSelectModeRef.current = () => setSelectMode(false)
   React.useEffect(() => {
     if (!phoneSelect && selectMode) setSelectMode(false)
   }, [phoneSelect, selectMode, setSelectMode])

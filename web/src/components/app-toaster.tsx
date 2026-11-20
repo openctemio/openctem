@@ -20,6 +20,9 @@ const isPhoneNow = () =>
   typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches
 const isPhoneOnServer = () => false
 
+/** The phone top bar is 48 px (h-12): a toast starts 8 px below it, never over its badges. */
+const PHONE_TOP_OFFSET = 'calc(3.5rem + env(safe-area-inset-top))'
+
 const resolved = statusToneVars('resolved')
 const progress = statusToneVars('progress')
 const accepted = statusToneVars('accepted')
@@ -54,7 +57,7 @@ export const TOAST_TOKENS = {
  * The app's toaster. Bottom right on larger screens; at the top on phones,
  * where a dialog is a bottom sheet whose footer (Create, Save) is pinned at
  * the bottom of the screen: a toast there would cover the very button the
- * user needs after an error. The top inset clears the notch.
+ * user needs after an error. It sits below the top bar (and the notch inset).
  */
 export function AppToaster() {
   const phone = React.useSyncExternalStore(subscribe, isPhoneNow, isPhoneOnServer)
@@ -90,7 +93,8 @@ function ToasterFrame({ phone, dark }: { phone: boolean; dark: boolean }) {
       style={TOAST_TOKENS}
       richColors
       position={phone ? 'top-center' : 'bottom-right'}
-      mobileOffset={{ top: 'max(12px, env(safe-area-inset-top))' }}
+      offset={phone ? { top: PHONE_TOP_OFFSET } : undefined}
+      mobileOffset={{ top: PHONE_TOP_OFFSET }}
       expand={true}
       visibleToasts={3}
       closeButton
