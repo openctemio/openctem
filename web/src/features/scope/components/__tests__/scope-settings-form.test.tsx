@@ -63,18 +63,25 @@ beforeEach(() => {
 })
 
 describe('ScopeSettingsForm', () => {
-  it('shows what is in effect, read-only, and offers no way to turn scope off', () => {
+  it('shows what is in effect, read-only, and offers no way to turn scope off', async () => {
+    const user = userEvent.setup()
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.getByText('Shared sensors need proof')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
-    // The switches are auto-join, confirm-adds-to-scope, the review gate and
-    // the opt-in proof for CI scopes (none of them changes what may be
-    // scanned); nothing else toggles.
-    const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(4)
+    // The switches are auto-join, confirm-adds-to-scope, and under Advanced
+    // the review gate and the opt-in proof for CI scopes (none of them
+    // changes what may be scanned); nothing else toggles.
+    let switches = screen.getAllByRole('switch')
+    expect(switches).toHaveLength(2)
     expect(switches[0]).toHaveAccessibleName('Add discovered names automatically')
     expect(switches[1]).toHaveAccessibleName('Confirming an asset adds it to scope')
     expect(switches[1]).toBeChecked()
+    const advanced = screen.getByRole('button', { name: 'Advanced, 2 options' })
+    expect(advanced).toHaveAttribute('aria-expanded', 'false')
+    await user.click(advanced)
+    expect(advanced).toHaveAttribute('aria-expanded', 'true')
+    switches = screen.getAllByRole('switch')
+    expect(switches).toHaveLength(4)
     expect(switches[2]).toHaveAccessibleName('Review discovered assets first')
     expect(switches[2]).not.toBeChecked()
     expect(switches[3]).toHaveAccessibleName('Require proof for CI scopes')
@@ -86,10 +93,11 @@ describe('ScopeSettingsForm', () => {
     api.put.mockResolvedValue({ ...settings, auto_join_discovered: false })
     const user = userEvent.setup()
     wrap(<ScopeSettingsForm settings={settings} />)
-    const save = screen.getByRole('button', { name: /Save changes/ })
-    expect(save).toBeDisabled()
+    // Nothing changed: no save bar.
+    expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole('switch', { name: 'Add discovered names automatically' }))
-    await user.click(save)
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/settings', {
         auto_join_discovered: false,
@@ -142,6 +150,7 @@ describe('ScopeSettingsForm', () => {
     api.put.mockResolvedValue({ ...settings, review_before_inventory: true })
     const user = userEvent.setup()
     wrap(<ScopeSettingsForm settings={settings} />)
+    await user.click(screen.getByRole('button', { name: /^Advanced/ }))
     await user.click(screen.getByRole('switch', { name: 'Review discovered assets first' }))
     await user.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() =>
@@ -167,6 +176,7 @@ describe('ScopeSettingsForm', () => {
         }
       />
     )
+    await user.click(screen.getByRole('button', { name: /^Advanced/ }))
     const select = screen.getByRole('combobox', { name: 'Scan unclassified assets' })
     expect(select).toHaveTextContent('Low-impact (default)')
     expect(
@@ -252,6 +262,7 @@ describe('ScopeSettingsForm', () => {
         settings={{ ...settings, auto_coverage_effective: true } as typeof settings}
       />
     )
+    await user.click(screen.getByRole('button', { name: /^Advanced/ }))
     const sw = screen.getByRole('switch', { name: 'Automatic coverage' })
     expect(sw).toBeChecked()
     await user.click(sw)
@@ -276,7 +287,9 @@ describe('ScopeSettingsForm', () => {
         }
       />
     )
-    expect(screen.getByRole('switch', { name: 'Automatic coverage' })).not.toBeChecked()
+    expect(
+      screen.getByRole('switch', { name: 'Automatic coverage', hidden: true })
+    ).not.toBeChecked()
     expect(screen.getByText(/so it is off until you turn it on/)).toBeInTheDocument()
   })
 
@@ -285,6 +298,7 @@ describe('ScopeSettingsForm', () => {
     const user = userEvent.setup()
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.queryByRole('switch', { name: 'Automatic coverage' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Advanced/ }))
     await user.click(screen.getByRole('switch', { name: 'Review discovered assets first' }))
     await user.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() => expect(api.put).toHaveBeenCalled())
@@ -303,7 +317,6 @@ describe('ScopeSettingsForm', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument()
     for (const sw of screen.getAllByRole('switch')) expect(sw).toBeDisabled()
-    expect(screen.getByText('Only scope approvers can change these.')).toBeInTheDocument()
   })
 
   it('computes the approvals hint the way the server does', () => {

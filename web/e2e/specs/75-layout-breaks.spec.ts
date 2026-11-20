@@ -78,6 +78,8 @@ const CI_ROUTES = [
   '/settings/members',
   '/settings/audit-log',
   '/settings/api-keys',
+  '/settings/security',
+  '/settings/scope',
   '/settings/integrations',
   '/settings/risk-scoring',
   '/attack-surface/discovery',
