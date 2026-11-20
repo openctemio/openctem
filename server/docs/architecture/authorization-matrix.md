@@ -1496,7 +1496,14 @@ Inside the pentest module, campaign membership decides who sees a campaign
 `/pentest/campaigns/{id}/*` route first finds the campaign in the caller's
 organization: another organization's campaign, an unknown id or a malformed
 id answers 404 for everyone, organization owners and admins included, never
-an empty list or zero counts. Each member has one role:
+an empty list or zero counts. Each member has one role. The team is the
+people added by name plus the current members of user groups added to the
+campaign (a group holds any role but lead); a person on the team more than
+once gets the highest role, and every reader resolves the team through the
+`pentest_campaign_access` view
+([pentest-campaign-team.md](pentest-campaign-team.md)). Adding, changing or
+removing a group needs what adding a person needs (`pentest:campaigns:write`
+and the lead role):
 
 | Role | Reads | Writes |
 |---|---|---|

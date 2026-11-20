@@ -19,6 +19,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
@@ -90,7 +91,7 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			ORDER BY u.name, k.name`},
 		{&rep.Campaigns, `
 			SELECT c.id::text, c.name, c.status, pcm.role
-			FROM pentest_campaign_members pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
+			FROM ` + campaignaccess.View + ` pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
 			WHERE pcm.tenant_id = $1 AND c.tenant_id = $1 AND pcm.user_id = $2
 			ORDER BY c.name`},
 		{&rep.OwnedScans, `
