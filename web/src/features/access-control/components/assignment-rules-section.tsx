@@ -1,7 +1,5 @@
 'use client'
 
-import type { ReactNode } from 'react'
-
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
@@ -9,14 +7,22 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
+  FacetOption,
+  FacetPanel,
+  FacetSection,
+  FilterSheet,
 } from '@/features/shared'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Toggle } from '@/components/ui/toggle'
 import {
   Dialog,
   DialogContent,
@@ -34,41 +40,34 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import {
-  GitBranch,
-  Plus,
-  Trash2,
-  Eye,
-  Pencil,
-  Loader2,
-  AlertCircle,
-  Play,
-  RefreshCw,
-} from 'lucide-react'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import { GitBranch, Plus, Trash2, Eye, Pencil, Loader2, Play } from 'lucide-react'
+import { replaceUrlSearch, useUrlFilter } from '@/hooks/use-url-param'
+import { toDisplayText } from '@/lib/untrusted-text'
 import {
   useAssignmentRules,
   useCreateAssignmentRule,
   useDeleteAssignmentRule,
   useGroups,
   type AssignmentRule,
-  formatDate,
 } from '@/features/access-control'
+import type { SectionProps } from './teams-section'
 import { AssignmentRuleDetailSheet } from '@/features/access-control/components/assignment-rule-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { fetcherWithOptions } from '@/lib/api/client'
-import { Can } from '@/lib/permissions'
+import { Can, useCanMutate } from '@/lib/permissions'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
-const typeFilters: { value: FilterType; key: string; en: string }[] = [
-  { value: 'all', key: 'org.assignmentRules.status.all', en: 'All statuses' },
+const typeFilters: { value: Exclude<FilterType, 'all'>; key: string; en: string }[] = [
   { value: 'active', key: 'org.assignmentRules.status.active', en: 'Active' },
   { value: 'inactive', key: 'org.assignmentRules.status.inactive', en: 'Inactive' },
 ]
+
+const ruleHref = (id: string) =>
+  `/settings/teams?tab=assignment-rules&rule=${encodeURIComponent(id)}`
 
 const CONDITION_LABELS: Record<string, string> = {
   asset_type: 'Asset type',
@@ -99,32 +98,36 @@ const CONDITION_OPTIONS: Record<string, string[]> = {
   // matched. Removed until the backend supports them.
 }
 
-interface SectionProps {
-  /**
-   * Renders the page header with this section's actions (its Create button),
-   * so the page keeps one header and one set of tabs while each section keeps
-   * its own dialogs and state.
-   */
-  header: (actions: ReactNode) => ReactNode
-}
-
-/** The Assignment rules tab of /settings/teams (moved from its own page; content unchanged). */
-export function AssignmentRulesSection({ header }: SectionProps) {
+/**
+ * The Assignment rules tab of /settings/teams (board P4-Settings-Teams): rules
+ * route new findings to teams, evaluated in priority order. Search, Add filter
+ * (status) and Display; columns Priority, Rule, Target team, Conditions,
+ * Status; the rule name is a link that opens its detail (`?rule=<id>`).
+ */
+export function AssignmentRulesSection({ frame }: SectionProps) {
   const { t } = useTranslation()
   const conditionLabel = (key: string) =>
     CONDITION_LABELS[key] ? t(`org.assignmentRules.cond.${key}`, CONDITION_LABELS[key]) : key
-  // API Hooks
-  const { assignmentRules, isLoading, isError, mutate: mutateRules } = useAssignmentRules()
+  const { assignmentRules, isLoading, isError, error, mutate: mutateRules } = useAssignmentRules()
   const { createAssignmentRule, isCreating } = useCreateAssignmentRule()
   const { groups } = useGroups()
+  const canCreate = useCanMutate('POST /api/v1/assignment-rules')
+  const canEditRule = useCanMutate('PUT /api/v1/assignment-rules/{id}')
+  const canTestRule = useCanMutate('POST /api/v1/assignment-rules/{id}/test')
+  const canDeleteRule = useCanMutate('DELETE /api/v1/assignment-rules/{id}')
 
-  // UI State
-  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null)
+  const [ruleParam, setRuleParam] = useUrlFilter('rule', '')
+  const selectedRuleId = ruleParam || null
+  const setSelectedRuleId = useCallback(
+    (id: string | null) => setRuleParam(id ?? ''),
+    [setRuleParam]
+  )
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [ruleToDelete, setRuleToDelete] = useState<AssignmentRule | null>(null)
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const [typeFilterParam, setTypeFilter] = useUrlFilter('status', 'all')
+  const [typeFilterParam, setTypeFilter] = useUrlFilter('status', '')
   const typeFilter: FilterType =
     typeFilterParam === 'active' || typeFilterParam === 'inactive' ? typeFilterParam : 'all'
   const [createForm, setCreateForm] = useState({
@@ -147,10 +150,28 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     return map
   }, [groups])
 
-  // Refresh data
   const refreshData = useCallback(() => {
-    mutateRules()
+    void mutateRules()
   }, [mutateRules])
+  const teamName = (r: AssignmentRule) => {
+    const name = groupMap[r.target_group_id] ?? r.target_group_name
+    return name ? toDisplayText(name, 120) : t('org.assignmentRules.unknownTeam', 'Unknown team')
+  }
+  const statusBadge = (active: boolean) => (
+    <Badge variant={active ? 'default' : 'secondary'}>
+      {active
+        ? t('org.assignmentRules.status.active', 'Active')
+        : t('org.assignmentRules.status.inactive', 'Inactive')}
+    </Badge>
+  )
+  const conditionsText = (r: AssignmentRule) =>
+    Object.entries(r.conditions || {})
+      .filter(([, v]) => v !== undefined && v !== '' && (!Array.isArray(v) || v.length > 0))
+      .map(
+        ([key, value]) =>
+          `${conditionLabel(key)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`
+      )
+      .join('; ')
 
   // Filter data
   const filteredData = useMemo(() => {
@@ -175,28 +196,40 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     return data
   }, [assignmentRules, typeFilter, searchQuery, groupMap])
 
-  // Table columns
+  const priorityLabel = t('org.assignmentRules.col.priority', 'Priority')
+  const ruleLabel = t('org.assignmentRules.col.rule', 'Rule')
+  const targetLabel = t('org.assignmentRules.col.targetTeam', 'Target team')
+  const conditionsLabel = t('org.assignmentRules.col.conditions', 'Conditions')
+  const statusLabel = t('org.assignmentRules.col.status', 'Status')
+
   const columns: ColumnDef<AssignmentRule>[] = [
     {
+      accessorKey: 'priority',
+      meta: { kind: 'number', width: 88, label: priorityLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={priorityLabel} />,
+      cell: ({ row }) => <span className="tabular-nums">{row.original.priority}</span>,
+    },
+    {
       accessorKey: 'name',
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('org.assignmentRules.col.rule', 'Rule')} />
-      ),
+      meta: { kind: 'name', minWidth: 220, label: ruleLabel, primary: true },
+      enableHiding: false,
+      header: ({ column }) => <DataTableColumnHeader column={column} title={ruleLabel} />,
       cell: ({ row }) => {
-        const isActive = row.original.is_active
+        const r = row.original
+        const name = toDisplayText(r.name, 200)
         return (
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{row.original.name}</p>
-              <Badge variant={isActive ? 'default' : 'secondary'} className="text-xs">
-                {isActive
-                  ? t('org.assignmentRules.status.active', 'Active')
-                  : t('org.assignmentRules.status.inactive', 'Inactive')}
-              </Badge>
-            </div>
-            {row.original.description && (
-              <p className="text-muted-foreground text-xs line-clamp-1">
-                {row.original.description}
+            <RowNameLink
+              href={ruleHref(r.id)}
+              onOpen={() => setSelectedRuleId(r.id)}
+              title={name}
+              className="block"
+            >
+              {name}
+            </RowNameLink>
+            {r.description && (
+              <p className="text-cap text-muted-foreground truncate">
+                {toDisplayText(r.description, 300)}
               </p>
             )}
           </div>
@@ -204,130 +237,106 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       },
     },
     {
-      accessorKey: 'target_group_id',
-      header: t('org.assignmentRules.col.targetTeam', 'Target team'),
+      id: 'target',
+      accessorFn: (r) => groupMap[r.target_group_id] ?? r.target_group_name ?? '',
+      meta: { kind: 'owner', label: targetLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={targetLabel} />,
+      cell: ({ row }) => <span className="block truncate">{teamName(row.original)}</span>,
+    },
+    {
+      id: 'conditions',
+      meta: { kind: 'text', minWidth: 200, maxWidth: 360, label: conditionsLabel },
+      header: conditionsLabel,
       enableSorting: false,
       cell: ({ row }) => {
-        const name = groupMap[row.original.target_group_id]
-        return (
-          <span className="text-sm">
-            {name || t('org.assignmentRules.unknownTeam', 'Unknown team')}
+        const text = conditionsText(row.original)
+        return text ? (
+          <span className="block truncate" title={text}>
+            {text}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">
+            {t('org.assignmentRules.noConditions', 'No conditions')}
           </span>
         )
       },
     },
     {
-      accessorKey: 'priority',
-      header: ({ column }) => (
-        <DataTableColumnHeader
-          column={column}
-          title={t('org.assignmentRules.col.priority', 'Priority')}
-        />
-      ),
-      cell: ({ row }) => <span className="text-sm tabular-nums">{row.original.priority}</span>,
-    },
-    {
-      id: 'conditions',
-      header: t('org.assignmentRules.col.conditions', 'Conditions'),
-      enableSorting: false,
-      cell: ({ row }) => {
-        const conditions = row.original.conditions || {}
-        const entries = Object.entries(conditions).filter(
-          ([, v]) => v !== undefined && v !== '' && (!Array.isArray(v) || v.length > 0)
-        )
-        if (entries.length === 0) {
-          return (
-            <span className="text-xs text-muted-foreground">
-              {t('org.assignmentRules.noConditions', 'No conditions')}
-            </span>
-          )
-        }
-        return (
-          <div className="flex flex-wrap gap-1">
-            {entries.map(([key, value]) => (
-              <Badge key={key} variant="outline" className="text-xs">
-                {conditionLabel(key)}: {Array.isArray(value) ? value.join(', ') : String(value)}
-              </Badge>
-            ))}
-          </div>
-        )
-      },
-    },
-    {
-      accessorKey: 'created_at',
-      header: t('org.assignmentRules.col.created', 'Created'),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm">{formatDate(row.original.created_at)}</span>
-      ),
+      accessorKey: 'is_active',
+      meta: { kind: 'status', label: statusLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={statusLabel} />,
+      cell: ({ row }) => statusBadge(row.original.is_active),
     },
     {
       id: 'actions',
-      cell: ({ row }) => {
-        const rule = row.original
-
-        return (
-          <DataTableRowActions
-            title={rule.name}
-            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: rule.name })}
-            actions={[
-              {
-                label: t('org.assignmentRules.viewDetails', 'View details'),
-                icon: Eye,
-                onClick: () => setSelectedRuleId(rule.id),
-              },
-              {
-                label: t('org.assignmentRules.edit', 'Edit'),
-                icon: Pencil,
-                route: 'PUT /api/v1/assignment-rules/{id}',
-                onClick: () => setSelectedRuleId(rule.id),
-              },
-              {
-                label: t('org.assignmentRules.testRule', 'Test rule'),
-                icon: Play,
-                route: 'POST /api/v1/assignment-rules/{id}/test',
-                onClick: async () => {
-                  try {
-                    const result = await fetcherWithOptions<{ matching_findings: number }>(
-                      `/api/v1/assignment-rules/${rule.id}/test`,
-                      { method: 'POST' }
-                    )
-                    if (result) {
-                      toast.success(
-                        t('org.assignmentRules.testMatched', 'Rule matched {count} finding(s)', {
-                          count: result.matching_findings,
-                        })
-                      )
-                    }
-                  } catch (error) {
-                    toast.error(
-                      getErrorMessage(
-                        error,
-                        t('org.assignmentRules.testFailed', 'Failed to test rule')
-                      )
-                    )
-                  }
-                },
-              },
-              {
-                label: t('org.assignmentRules.delete', 'Delete'),
-                icon: Trash2,
-                destructive: true,
-                separatorBefore: true,
-                // Owner only on the API (RequireOwner), so admins do not see it.
-                route: 'DELETE /api/v1/assignment-rules/{id}',
-                onClick: () => {
-                  setRuleToDelete(rule)
-                  setDeleteDialogOpen(true)
-                },
-              },
-            ]}
-          />
-        )
-      },
+      meta: { kind: 'actions' },
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => ruleMenu(row.original),
     },
   ]
 
-  // Actions
+  function ruleMenu(rule: AssignmentRule) {
+    // A reader opens the rule by its name or the row: no one-item menu.
+    if (!(canEditRule || canTestRule || canDeleteRule)) return null
+    const name = toDisplayText(rule.name, 120)
+    return (
+      <DataTableRowActions
+        title={name}
+        label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+        actions={[
+          {
+            label: t('org.assignmentRules.viewDetails', 'View details'),
+            icon: Eye,
+            onClick: () => setSelectedRuleId(rule.id),
+          },
+          {
+            label: t('org.assignmentRules.edit', 'Edit'),
+            icon: Pencil,
+            route: 'PUT /api/v1/assignment-rules/{id}',
+            onClick: () => setSelectedRuleId(rule.id),
+          },
+          {
+            label: t('org.assignmentRules.testRule', 'Test rule'),
+            icon: Play,
+            route: 'POST /api/v1/assignment-rules/{id}/test',
+            onClick: async () => {
+              try {
+                const result = await fetcherWithOptions<{ matching_findings: number }>(
+                  `/api/v1/assignment-rules/${rule.id}/test`,
+                  { method: 'POST' }
+                )
+                if (result) {
+                  toast.success(
+                    t('org.assignmentRules.testMatched', 'Rule matched {count} finding(s)', {
+                      count: result.matching_findings,
+                    })
+                  )
+                }
+              } catch (error) {
+                toast.error(
+                  getErrorMessage(error, t('org.assignmentRules.testFailed', 'Failed to test rule'))
+                )
+              }
+            },
+          },
+          {
+            label: t('org.assignmentRules.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            separatorBefore: true,
+            // Owner only on the API (RequireOwner), so admins do not see it.
+            route: 'DELETE /api/v1/assignment-rules/{id}',
+            onClick: () => {
+              setRuleToDelete(rule)
+              setDeleteDialogOpen(true)
+            },
+          },
+        ]}
+      />
+    )
+  }
+
   const handleCreateRule = async () => {
     if (!createForm.name) {
       toast.error(t('org.assignmentRules.nameRequired', 'Enter a rule name'))
@@ -393,108 +402,140 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     }
   }
 
+  const clearFilters = () => {
+    const next = new URLSearchParams(window.location.search)
+    for (const name of ['status', 'q']) next.delete(name)
+    replaceUrlSearch(next)
+  }
+  const statusChip =
+    typeFilter !== 'all'
+      ? t('org.assignmentRules.chip.status', 'Status: {value}', {
+          value: t(
+            typeFilters.find((f) => f.value === typeFilter)!.key,
+            typeFilter === 'active' ? 'Active' : 'Inactive'
+          ),
+        })
+      : ''
+  const chipsRow = statusChip ? (
+    <FilterChipsRow
+      data-testid="rules-filter-chips"
+      label={t('common.filterChips.label', 'Active filters')}
+      chips={[
+        <RemovableFilterChip
+          key="status"
+          text={statusChip}
+          onRemove={() => setTypeFilter('')}
+          removeLabel={t('org.assignmentRules.chip.remove', 'Remove filter {filter}', {
+            filter: statusChip,
+          })}
+        />,
+      ]}
+    />
+  ) : undefined
+  const facets = (
+    <FacetPanel activeCount={statusChip ? 1 : 0} onClearAll={() => setTypeFilter('')}>
+      <FacetSection title={statusLabel} selectedCount={statusChip ? 1 : 0}>
+        {typeFilters.map((f) => (
+          <FacetOption
+            key={f.value}
+            label={t(f.key, f.en)}
+            checked={typeFilter === f.value}
+            onCheckedChange={(on) => setTypeFilter(on ? f.value : '')}
+          />
+        ))}
+      </FacetSection>
+    </FacetPanel>
+  )
+  const filtersLabel = t('org.assignmentRules.filtersLabel', 'Assignment rule filters')
+  const createButton = (
+    <Button onClick={() => setCreateDialogOpen(true)}>
+      <Plus aria-hidden />
+      {t('org.assignmentRules.createRule', 'Create rule')}
+    </Button>
+  )
+
+  const content = (
+    <DataTable
+      columns={columns}
+      data={filteredData}
+      getRowId={(r) => r.id}
+      isLoading={isLoading && assignmentRules.length === 0}
+      error={isError ? (error ?? true) : undefined}
+      onRetry={refreshData}
+      errorTitle={t('org.assignmentRules.subject', 'assignment rules')}
+      showSearch={false}
+      search={{
+        value: searchQuery,
+        onChange: setSearchQuery,
+        placeholder: t('org.assignmentRules.searchPlaceholder', 'Search assignment rules…'),
+        label: t('org.assignmentRules.searchLabel', 'Search assignment rules'),
+      }}
+      filterToggle={{
+        open: false,
+        onToggle: () => setFilterSheetOpen(true),
+        onOpenSheet: () => setFilterSheetOpen(true),
+        activeCount: statusChip ? 1 : 0,
+        controlsId: 'rule-filters',
+        label: filtersLabel,
+        sheetOnly: true,
+      }}
+      toolbarStart={<AddFilterPanel>{facets}</AddFilterPanel>}
+      toolbarBelow={chipsRow}
+      showToolbar={assignmentRules.length > 0 || isError}
+      onRowClick={(r) => setSelectedRuleId(r.id)}
+      showPagination={filteredData.length > 25}
+      paginationNoun={t('org.assignmentRules.noun', 'rules')}
+      mobileRow={(r) => (
+        <PersonPhoneCard
+          title={toDisplayText(r.name, 200)}
+          address={conditionsText(r) || undefined}
+          onOpen={() => setSelectedRuleId(r.id)}
+          menu={ruleMenu(r)}
+          facts={
+            <>
+              {statusBadge(r.is_active)}
+              <span className="text-cap text-muted-foreground">
+                {t('org.assignmentRules.card.line', 'Priority {priority}, to {team}', {
+                  priority: r.priority,
+                  team: teamName(r),
+                })}
+              </span>
+            </>
+          }
+        />
+      )}
+      isFiltered={typeFilter !== 'all' || searchQuery.trim() !== ''}
+      onClearFilters={clearFilters}
+      emptyState={{
+        nothingYet: (
+          <EmptyState
+            icon={GitBranch}
+            title={t('org.assignmentRules.emptyTitle', 'No assignment rules yet')}
+            description={t(
+              'org.assignmentRules.emptyBody',
+              'Rules route new findings to teams automatically, in priority order.'
+            )}
+            action={canCreate ? createButton : undefined}
+          />
+        ),
+        noMatch: {
+          title: t('org.assignmentRules.noMatch', 'No assignment rules match these filters'),
+          hint: t(
+            'org.assignmentRules.noMatchHint',
+            'Try removing a filter or clearing the search.'
+          ),
+        },
+      }}
+    />
+  )
+
   return (
     <>
-      {header(
-        <>
-          <Can route="POST /api/v1/assignment-rules" mode="disable">
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('org.assignmentRules.createRule', 'Create rule')}
-            </Button>
-          </Can>
-        </>
-      )}
+      {frame(<Can route="POST /api/v1/assignment-rules">{createButton}</Can>, content, !canCreate)}
 
-      {isError && !isLoading ? (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            {t('org.assignmentRules.loadFailedTitle', 'Failed to load assignment rules')}
-          </AlertTitle>
-          <AlertDescription>
-            <p>{t('org.assignmentRules.loadFailedBody', 'The rule list could not be loaded.')}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('common.retry', 'Retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <>
-          <div>
-            {isLoading ? (
-              <div className="space-y-2">
-                <Skeleton className="h-9 w-full max-w-sm" />
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : assignmentRules.length === 0 ? (
-              <EmptyState
-                icon={GitBranch}
-                title={t('org.assignmentRules.emptyTitle', 'No assignment rules yet')}
-                description={t(
-                  'org.assignmentRules.emptyBody',
-                  'Rules route new findings to teams automatically, in priority order.'
-                )}
-                action={
-                  <Can route="POST /api/v1/assignment-rules">
-                    <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" />
-                      {t('org.assignmentRules.createRule', 'Create rule')}
-                    </Button>
-                  </Can>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={filteredData}
-                getRowId={(r) => r.id}
-                showSearch={false}
-                search={{
-                  value: searchQuery,
-                  onChange: setSearchQuery,
-                  placeholder: t(
-                    'org.assignmentRules.searchPlaceholder',
-                    'Search assignment rules…'
-                  ),
-                  label: t('org.assignmentRules.searchLabel', 'Search assignment rules'),
-                }}
-                showColumnToggle={false}
-                onRowClick={(r) => setSelectedRuleId(r.id)}
-                toolbarStart={
-                  <>
-                    <Select
-                      value={typeFilter}
-                      onValueChange={(v) => setTypeFilter(v as FilterType)}
-                    >
-                      <SelectTrigger
-                        className="w-[140px]"
-                        aria-label={t('org.assignmentRules.statusLabel', 'Filter by status')}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {typeFilters.map((f) => (
-                          <SelectItem key={f.value} value={f.value}>
-                            {t(f.key, f.en)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </>
-                }
-                emptyMessage={t(
-                  'org.assignmentRules.noMatch',
-                  'No assignment rules match these filters'
-                )}
-              />
-            )}
-          </div>
-        </>
-      )}
+      <FilterSheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen} title={filtersLabel}>
+        {facets}
+      </FilterSheet>
 
       {/* Detail Sheet */}
       <AssignmentRuleDetailSheet
@@ -521,7 +562,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
           </DialogHeader>
 
           <DialogBody className="grid gap-4">
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="rule-name">{t('org.assignmentRules.name', 'Name')}</Label>
                 <Input
@@ -605,20 +646,28 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                 {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
                   const selected = createForm.conditions[condKey] || []
                   return (
-                    <div key={condKey} className="space-y-1.5">
-                      <Label className="text-xs font-medium">{conditionLabel(condKey)}</Label>
+                    <div
+                      key={condKey}
+                      role="group"
+                      aria-labelledby={`rule-cond-${condKey}`}
+                      className="space-y-1.5"
+                    >
+                      <p id={`rule-cond-${condKey}`} className="text-cap font-medium">
+                        {conditionLabel(condKey)}
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {options.map((opt) => {
                           const isSelected = selected.includes(opt)
                           return (
-                            <Badge
+                            <Toggle
                               key={opt}
-                              variant={isSelected ? 'default' : 'outline'}
-                              className="cursor-pointer text-xs"
-                              onClick={() => {
-                                const newValues = isSelected
-                                  ? selected.filter((v) => v !== opt)
-                                  : [...selected, opt]
+                              variant="outline"
+                              size="sm"
+                              pressed={isSelected}
+                              onPressedChange={(on) => {
+                                const newValues = on
+                                  ? [...selected, opt]
+                                  : selected.filter((v) => v !== opt)
                                 setCreateForm({
                                   ...createForm,
                                   conditions: {
@@ -629,7 +678,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                               }}
                             >
                               {opt.replace(/_/g, ' ')}
-                            </Badge>
+                            </Toggle>
                           )
                         })}
                       </div>
@@ -648,11 +697,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               onClick={handleCreateRule}
               disabled={isCreating || !createForm.name || !createForm.target_group_id}
             >
-              {isCreating ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="me-2 h-4 w-4" />
-              )}
+              {isCreating ? <Loader2 className="animate-spin" aria-hidden /> : <Plus aria-hidden />}
               {t('org.assignmentRules.createRule', 'Create rule')}
             </Button>
           </DialogFooter>
