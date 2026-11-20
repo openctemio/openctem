@@ -137,7 +137,7 @@ describe('New Scan approval notice', () => {
       />
     )
     expect(
-      screen.getByText(/Needs approval by 2 distinct approvers: an administrator/)
+      screen.getByText(/Needs approval by 2 distinct approvers: administrators/)
     ).toBeInTheDocument()
     expect(screen.getByText('Production')).toBeInTheDocument()
     expect(screen.getByLabelText('Justification')).toBeInTheDocument()
