@@ -149,28 +149,33 @@ func (r *ServiceAccountRepository) loadMemberships(ctx context.Context, tenantID
 		     AND (gm.expires_at IS NULL OR gm.expires_at > now())
 		   ORDER BY g.name`, func(a *serviceaccount.ServiceAccount, ref serviceaccount.Ref) { a.Teams = append(a.Teams, ref) }},
 	} {
-		rows, err := r.db.QueryContext(ctx, q.sql, tenantID.String(), pq.Array(ids))
-		if err != nil {
-			return fmt.Errorf("load service account memberships: %w", err)
-		}
-		for rows.Next() {
-			var uid, rid, name string
-			if err := rows.Scan(&uid, &rid, &name); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("scan service account membership: %w", err)
-			}
-			if a := byID[uid]; a != nil {
-				id, _ := shared.IDFromString(rid)
-				q.into(a, serviceaccount.Ref{ID: id, Name: name})
-			}
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
+		if err := r.scanMemberships(ctx, q.sql, tenantID.String(), ids, byID, q.into); err != nil {
 			return err
 		}
-		_ = rows.Close()
 	}
 	return nil
+}
+
+// scanMemberships runs one (user_id, id, name) query and hands each row to
+// into for the account it belongs to.
+func (r *ServiceAccountRepository) scanMemberships(ctx context.Context, query, tenantID string, ids []string,
+	byID map[string]*serviceaccount.ServiceAccount, into func(*serviceaccount.ServiceAccount, serviceaccount.Ref)) error {
+	rows, err := r.db.QueryContext(ctx, query, tenantID, pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("load service account memberships: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var uid, rid, name string
+		if err := rows.Scan(&uid, &rid, &name); err != nil {
+			return fmt.Errorf("scan service account membership: %w", err)
+		}
+		if a := byID[uid]; a != nil {
+			id, _ := shared.IDFromString(rid)
+			into(a, serviceaccount.Ref{ID: id, Name: name})
+		}
+	}
+	return rows.Err()
 }
 
 // Get returns one service account of the tenant.
