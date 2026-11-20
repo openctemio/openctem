@@ -30,7 +30,6 @@ import {
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ConfirmDialog } from '@/components/confirm-dialog'
