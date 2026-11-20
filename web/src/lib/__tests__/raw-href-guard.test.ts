@@ -45,6 +45,8 @@ const SAFE_CALLS = new Set([
   // features/asset-groups/lib/group-link.ts: /assets/groups/ with the id
   // URI-encoded as one path segment.
   'assetGroupHref',
+  // app/(dashboard)/settings/sla-policies/page.tsx: `/settings/sla-policies?policy=` with the id URI-encoded in the query.
+  'policyHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
