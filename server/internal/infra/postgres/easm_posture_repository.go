@@ -17,6 +17,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/posture"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -107,7 +108,7 @@ func postureFactsQuery() string {
 		  AND a.status IN ('active', 'stale')
 		  AND (a.asset_type = ANY($2) OR a.is_internet_accessible)
 		  AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.tenant_id = $1 AND iv.asset_id = a.id
-		                  AND iv.state IN ('discovered', 'needs_review', 'candidate', 'rejected'))
+		                  AND (iv.state IN ('discovered', 'needs_review', 'candidate', 'rejected') OR ` + attribution.ProviderAddressSQL("iv") + `))
 	),
 	vul AS (
 		SELECT s.asset_id,

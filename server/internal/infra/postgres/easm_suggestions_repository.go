@@ -15,6 +15,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -291,6 +292,13 @@ func (r *AttributionRepository) NamesResolvingTo(ctx context.Context, tenantID s
 // subdomain asset of that name resolves to (resolves_to). Tenant-scoped on
 // every table; a name with no such asset or relation is absent. For the
 // web-port cap of a name's port scan (RFC-054 §16).
+//
+// An address inside a shared provider range has no asset and no edge
+// (research/531: it is recorded on the name), so the name's current
+// ip_addresses are read too and the shared ones among them are added: a
+// name served by a provider stays capped to the web ports even when it also
+// resolves to a dedicated address. Other addresses come from the edges
+// only, as before.
 func (r *AttributionRepository) AddressesOf(ctx context.Context, tenantID shared.ID, names []string) (map[string][]string, error) {
 	out := map[string][]string{}
 	if len(names) == 0 {
@@ -300,29 +308,44 @@ func (r *AttributionRepository) AddressesOf(ctx context.Context, tenantID shared
 	for _, n := range names {
 		lower = append(lower, strings.ToLower(strings.TrimSpace(n)))
 	}
+	// Names are stored normalized (lower case, asset.NormalizeName): an exact
+	// match uses idx_assets_name_tenant_unique instead of scanning every asset.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT lower(src.name), array_agg(DISTINCT ip.name)
+		SELECT src.name,
+		       COALESCE((SELECT array_agg(DISTINCT ip.name)
+		                   FROM asset_relationships rel
+		                   JOIN assets ip ON ip.id = rel.target_asset_id AND ip.tenant_id = src.tenant_id
+		                        AND ip.deleted_at IS NULL AND ip.asset_type = 'ip_address'
+		                  WHERE rel.tenant_id = src.tenant_id AND rel.source_asset_id = src.id
+		                    AND rel.relationship_type = 'resolves_to'), '{}'),
+		       COALESCE((SELECT array_agg(DISTINCT e)
+		                   FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(src.properties->'ip_addresses') = 'array'
+		                        THEN src.properties->'ip_addresses' ELSE '[]'::jsonb END) e), '{}')
 		FROM assets src
-		JOIN asset_relationships rel ON rel.tenant_id = src.tenant_id AND rel.source_asset_id = src.id
-			AND rel.relationship_type = 'resolves_to'
-		JOIN assets ip ON ip.id = rel.target_asset_id AND ip.tenant_id = src.tenant_id AND ip.deleted_at IS NULL
-			AND ip.asset_type = 'ip_address'
 		WHERE src.tenant_id = $1 AND src.deleted_at IS NULL AND src.asset_type IN ('domain', 'subdomain')
-		  AND lower(src.name) = ANY($2)
-		GROUP BY lower(src.name)`, tenantID.String(), pq.Array(lower))
+		  AND src.name = ANY($2)`, tenantID.String(), pq.Array(lower))
 	if err != nil {
 		return nil, fmt.Errorf("addresses of names: %w", err)
 	}
 	defer rows.Close()
+	c := edgeaddr.Default()
 	for rows.Next() {
 		var (
-			name  string
-			addrs []string
+			name         string
+			linked, prop []string
 		)
-		if err := rows.Scan(&name, pq.Array(&addrs)); err != nil {
+		if err := rows.Scan(&name, pq.Array(&linked), pq.Array(&prop)); err != nil {
 			return nil, err
 		}
-		out[name] = addrs
+		addrs := linked
+		for _, a := range prop {
+			if _, ok := c.SharedFrontEnd(a); ok && !slices.Contains(addrs, a) {
+				addrs = append(addrs, a)
+			}
+		}
+		if len(addrs) > 0 {
+			out[name] = append(out[name], addrs...)
+		}
 	}
 	return out, rows.Err()
 }

@@ -76,6 +76,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// The addresses a domain or subdomain resolved to, with history
+		// (shared provider addresses are recorded only here).
+		r.GET("/{id}/addresses", h.GetNameAddresses, middleware.Require(permission.AssetsRead))
 		// How the asset was found: its ancestor chain, each ancestor data-scope
 		// checked (docs/architecture/easm.md, Discovery lineage).
 		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
@@ -628,6 +631,11 @@ func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, aut
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	// One level of the origin's path tree; the service asserts the asset's
+	// tenant and the caller's data scope (404 otherwise).
+	router.Group("/api/v1/assets/{id}/web-paths", func(r Router) {
+		r.GET("/", h.Paths, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/web-path-patterns", func(r Router) {
 		r.GET("/", h.Patterns, middleware.Require(permission.AssetsRead))
