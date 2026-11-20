@@ -52,6 +52,7 @@ import {
   isOwnApproval,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
 import { Tag } from '@/components/ui/tag'
 import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
 import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
@@ -187,16 +188,19 @@ function RelativeTime({ value, locale }: { value: string; locale: string }) {
 function RequesterCell({
   approval,
   currentUserId,
+  inline = false,
 }: {
   approval: ApiApproval
   currentUserId: string | undefined
+  /** In a facts line: the line's own size. */
+  inline?: boolean
 }) {
   const { t } = useTranslation()
   const who = approvalRequester(approval, currentUserId)
   switch (who.kind) {
     case 'actor':
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className={cn(!inline && 'text-sm', 'text-muted-foreground')}>
           {t(
             `findings.approvals.actor.${who.actor}`,
             APPROVAL_ACTOR_LABELS[who.actor] ?? who.actor
@@ -205,13 +209,15 @@ function RequesterCell({
       )
     case 'you':
       return (
-        <span className="text-sm font-medium">{t('findings.approvals.requesterYou', 'You')}</span>
+        <span className={cn(!inline && 'text-sm', 'font-medium')}>
+          {t('findings.approvals.requesterYou', 'You')}
+        </span>
       )
     case 'member':
-      return <span className="text-sm">{who.name}</span>
+      return <span className={cn(!inline && 'text-sm')}>{who.name}</span>
     default:
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className={cn(!inline && 'text-sm', 'text-muted-foreground')}>
           {t('findings.approvals.requesterFormer', 'Former member')}
         </span>
       )
@@ -903,6 +909,7 @@ export default function ApprovalsPage() {
 
                           <RequesterCell
                             key="by"
+                            inline
                             approval={approval}
                             currentUserId={currentUserId}
                           />,

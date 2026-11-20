@@ -19,9 +19,10 @@ import { MetaLine } from '../text-layout'
  *
  * - `state`: the state chip at the end of the title line (Pending, the
  *   severity of a finding waiting to close).
- * - `meta`: the key facts (what is asked, who asked, decide by) on ONE line;
- *   the last item gives way with an ellipsis, so put the one that may be cut
- *   last.
+ * - `meta`: the key facts, most important first. The first shares the line
+ *   with `actions`; the rest wrap on a line of their own under the reason
+ *   (words wrap, nothing is cut with an ellipsis). A card with no controls
+ *   keeps all of them on one wrapping line.
  * - `actions`: the decision controls (`QueueDecisionActions layout="card"`:
  *   the main action and More) at the end of the facts line.
  * - `href`: where the item opens. When `actions` draws nothing (no
@@ -65,6 +66,11 @@ export function QueueCard({
   const selectable = !!selection?.selectable
   const facts = (meta ?? []).filter((m) => m !== null && m !== undefined && m !== false && m !== '')
   const end = !!actions || !!href
+  // With controls at the end, only the first fact shares their line (the
+  // controls take about half the width of a phone); the others wrap under the
+  // reason, whole words, never cut. Without controls all facts share one line.
+  const key = end ? facts.slice(0, 1) : facts
+  const more = end ? facts.slice(1) : []
   return (
     <div
       data-slot="queue-card"
@@ -96,10 +102,15 @@ export function QueueCard({
             {reason}
           </div>
         ) : null}
-        {facts.length > 0 || end ? (
+        {more.length > 0 ? (
+          <div data-slot="queue-card-more" className="min-w-0">
+            <MetaLine className="items-center gap-y-0.5" items={more} />
+          </div>
+        ) : null}
+        {key.length > 0 || end ? (
           <div data-slot="queue-card-line" className="flex min-w-0 items-center gap-2">
             <div data-slot="queue-card-meta" className="min-w-0 flex-1">
-              {facts.length > 0 && <MetaLine oneLine className="items-center" items={facts} />}
+              {key.length > 0 && <MetaLine className="items-center" items={key} />}
             </div>
             {actions ? (
               // `peer`: the chevron shows only while this draws nothing.

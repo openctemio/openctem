@@ -390,14 +390,25 @@ describe('QueueCard and QueueEmpty', () => {
       'queue-card-title',
       'queue-card-state',
       'queue-card-reason',
+      'queue-card-more',
       'queue-card-line',
       'queue-card-meta',
       'queue-card-actions',
     ])
-    // The facts are one line; an empty item is left out.
-    const meta = container.querySelector('[data-slot="queue-card-meta"] [data-slot="meta-line"]')
-    expect(meta).toHaveAttribute('data-one-line', 'true')
-    expect(meta?.querySelectorAll('[data-slot="meta-line-item"]')).toHaveLength(2)
+    // Next to the decision only the first fact; the others wrap above it as
+    // whole words (never a one-line, ellipsis-cut line); an empty item is left out.
+    const meta = container.querySelector('[data-slot="queue-card-meta"]')
+    expect(meta).toHaveTextContent('M1')
+    expect(meta).not.toHaveTextContent('M2')
+    expect(container.querySelector('[data-slot="queue-card-more"]')).toHaveTextContent('M2')
+    expect(container.querySelector('[data-one-line]')).toBeNull()
+  })
+
+  it('keeps every fact on the one wrapping line when nothing sits at the end', () => {
+    const { container } = render(<QueueCard title="T" meta={['M1', 'M2']} />)
+    expect(container.querySelector('[data-slot="queue-card-more"]')).toBeNull()
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveTextContent('M1')
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveTextContent('M2')
   })
 
   it('leaves out the empty slots: a bare card is its title line only', () => {
