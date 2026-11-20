@@ -54,6 +54,7 @@ const CI_ROUTES = [
   '/assets/groups',
   '/assets/changes',
   '/assets/duplicates',
+  '/assets/suggestions',
   '/assets/attention/no-owner',
   '/assets/attention/unscanned',
   '/assets/attention/decide-monitoring',
