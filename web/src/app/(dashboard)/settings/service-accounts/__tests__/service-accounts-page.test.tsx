@@ -110,6 +110,14 @@ describe('ServiceAccountsPage', () => {
     expect(mockCreateAccount).toHaveBeenCalledWith({ name: 'SIEM export', description: undefined })
   })
 
+  it('keeps the name link on this page when an id looks like a script address', () => {
+    accounts = [{ ...account, id: 'javascript:alert(1)' }]
+    render(<ServiceAccountsPage />)
+    const href = screen.getByRole('link', { name: 'SIEM export' }).getAttribute('href') ?? ''
+    expect(href.toLowerCase()).not.toMatch(/^(javascript|data|vbscript):/)
+    expect(href.startsWith('/settings/service-accounts')).toBe(true)
+  })
+
   it('lists accounts and mints a key for one, shown once', async () => {
     accounts = [account]
     mockCreateKey.mockResolvedValueOnce({ key: 'oct_secret_for_sa' })

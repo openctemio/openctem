@@ -67,6 +67,7 @@ import {
   type ServiceAccount,
 } from '@/features/service-accounts/api/use-service-accounts'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 
 const MAX_NAME = 100
 const MAX_DESCRIPTION = 500
@@ -422,7 +423,7 @@ export default function ServiceAccountsPage() {
             <div className="min-w-0">
               {canSeeKeys ? (
                 <RowNameLink
-                  href={accountHref(a.id)}
+                  href={safeHref(accountHref(a.id)) ?? '/settings/service-accounts'}
                   onOpen={() => openKeys(a)}
                   title={name}
                   className="block"
