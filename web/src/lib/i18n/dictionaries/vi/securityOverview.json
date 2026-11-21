@@ -55,6 +55,7 @@
   "securityOverview.passed.title": "Mục kiểm tra đã đạt",
   "securityOverview.recheck": "Kiểm tra lại",
   "securityOverview.review": "Xem lại",
+  "securityOverview.reviewCount": "Xem lại {count}",
   "securityOverview.reviewNamed": "Xem lại: {name}",
   "securityOverview.score.aria": "Điểm bảo mật: {score} trên 100",
   "securityOverview.score.outOf": "/ 100",
