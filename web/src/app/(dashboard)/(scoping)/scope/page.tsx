@@ -133,14 +133,20 @@ export default function ScopePage() {
 
   // Counts for the tabs, the strip and the approvals: two requests (entries,
   // exclusions), each counting every status; the lists load their own rows.
-  const counts = useScopeStatusCounts()
-  const inEntries = counts.targets
-    ? sumStatusCounts(counts.targets, ['active', 'pending', 'expired', 'inactive'])
+  // While the entries list is shown it carries the entry counts itself.
+  const [listCounts, setListCounts] = useState<Record<string, number> | undefined>(undefined)
+  // The exclusion counts only show in the Show menu (and the approvals
+  // badge): read them when the menu opens or another list is shown.
+  const [menuOpened, setMenuOpened] = useState(false)
+  const counts = useScopeStatusCounts(tabParam === 'in', tabParam !== 'in' || menuOpened)
+  const entryCounts = counts.targets ?? listCounts
+  const inEntries = entryCounts
+    ? sumStatusCounts(entryCounts, ['active', 'pending', 'expired', 'inactive'])
     : undefined
   const outRows = counts.exclusions
     ? sumStatusCounts(counts.exclusions, ['active', 'pending', 'inactive', 'expired', 'rejected'])
     : undefined
-  const pending = (counts.targets?.pending ?? 0) + (counts.exclusions?.pending ?? 0)
+  const pending = (entryCounts?.pending ?? 0) + (counts.exclusions?.pending ?? 0)
   // Without approvals in force and nothing waiting there is nothing to decide.
   const showApprovals = entriesNeedApproval || pending > 0
   const tab: ScopeTab = tabVisible(tabParam) ? (tabParam as ScopeTab) : 'in'
@@ -253,6 +259,7 @@ export default function ScopePage() {
       label={t('scope.show.label', 'Show')}
       value={tab}
       clearable={false}
+      onOpenChange={(open) => open && setMenuOpened(true)}
       options={[
         { value: 'in', label: t('scope.tabs.entries', 'Entries'), count: inEntries },
         { value: 'out', label: t('scope.tabs.exclusions', 'Exclusions'), count: outRows },
@@ -304,12 +311,13 @@ export default function ScopePage() {
 
         {/* Scope entries on provider shared addresses: only while there is
             something to decide. */}
-        {tab === 'in' && <ScopeProviderAddressesCard />}
+        {tab === 'in' && <ScopeProviderAddressesCard enabled={(inEntries ?? 0) > 0} />}
 
         {tab === 'in' ? (
           <ScopeEntriesTable
             leading={listSelect}
             onNoLongerOurs={noLongerOurs}
+            onStatusCounts={setListCounts}
             query={query}
             searchInput={searchInput}
             onSearchInput={setSearchInput}

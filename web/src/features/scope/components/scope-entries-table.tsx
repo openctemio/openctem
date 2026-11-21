@@ -14,7 +14,7 @@
 
 import { BreakText } from '@/features/shared/components/break-text'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import {
@@ -118,6 +118,8 @@ interface ScopeEntriesTableProps {
    * exclusion dialog prefilled for it.
    */
   onNoLongerOurs?: (entry: ApiScopeTarget) => void
+  /** Every entry counted per status, as the list's own answer carries them. */
+  onStatusCounts?: (counts: Record<string, number> | undefined) => void
 }
 
 export function ScopeEntriesTable({
@@ -130,6 +132,7 @@ export function ScopeEntriesTable({
   emptyAction,
   leading,
   onNoLongerOurs,
+  onStatusCounts,
 }: ScopeEntriesTableProps) {
   const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.ScopeApprove)
@@ -149,8 +152,13 @@ export function ScopeEntriesTable({
     status: query.status !== 'all' ? query.status : IN_SCOPE_DEFAULT.join(','),
     page: query.page,
     per_page: query.perPage,
+    include: 'status_counts',
   })
   const entries = data?.data ?? []
+  const statusCounts = data?.status_counts
+  useEffect(() => {
+    onStatusCounts?.(statusCounts)
+  }, [statusCounts, onStatusCounts])
 
   const [editEntry, setEditEntry] = useState<ApiScopeTarget | null>(null)
   const [deleteEntry, setDeleteEntry] = useState<ApiScopeTarget | null>(null)
