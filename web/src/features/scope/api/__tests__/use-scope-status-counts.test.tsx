@@ -39,15 +39,17 @@ describe('useScopeStatusCounts', () => {
   })
 
   it('reads the exclusion counts only when the page needs them', async () => {
-    const { result, rerender } = renderHook(
-      ({ needed }) => useScopeStatusCounts(true, needed),
-      { wrapper, initialProps: { needed: false } }
-    )
+    const { result, rerender } = renderHook(({ needed }) => useScopeStatusCounts(true, needed), {
+      wrapper,
+      initialProps: { needed: false },
+    })
     await Promise.resolve()
     expect(api.get).not.toHaveBeenCalled()
     expect(result.current.isLoading).toBe(false)
     rerender({ needed: true })
     await waitFor(() => expect(result.current.exclusions).toEqual({ active: 2 }))
-    expect(api.get).toHaveBeenCalledWith('/api/v1/scope/exclusions?per_page=1&include=status_counts')
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/scope/exclusions?per_page=1&include=status_counts'
+    )
   })
 })
