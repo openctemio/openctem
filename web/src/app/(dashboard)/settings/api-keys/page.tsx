@@ -65,6 +65,14 @@ function StatusBadge({ k }: { k: APIKey }) {
 
 function ExpiryCell({ k }: { k: APIKey }) {
   const { t } = useTranslation()
+  // A revoked key never expires: it stopped working when it was revoked.
+  if (k.status === 'revoked' || k.revoked_at) {
+    return (
+      <span className="text-muted-foreground" data-testid="key-expiry-revoked">
+        {t('settings.keys.status.revoked', 'Revoked')}
+      </span>
+    )
+  }
   if (!k.expires_at) {
     return <span className="text-muted-foreground">{t('settings.keys.never', 'Never')}</span>
   }
@@ -271,8 +279,7 @@ export default function APIKeysPage() {
       },
       {
         accessorKey: 'last_used_at',
-        // Wide enough for the longest relative time in vi ("khoảng 11 tháng trước"): at 120 it ran into Expires.
-        meta: { kind: 'datetime-recent', width: 168, label: lastUsedLabel },
+        meta: { kind: 'datetime-recent', label: lastUsedLabel },
         header: ({ column }) => <DataTableColumnHeader column={column} title={lastUsedLabel} />,
         cell: ({ row }) =>
           row.original.last_used_at ? (

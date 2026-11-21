@@ -298,7 +298,7 @@ describe('In scope list', () => {
     )
     expect(await screen.findByText('onboarding')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith(
-      '/api/v1/scope/targets?statuses=active%2Cpending%2Cexpired%2Cinactive&page=1&per_page=20'
+      '/api/v1/scope/targets?statuses=active%2Cpending%2Cexpired%2Cinactive&page=1&per_page=20&include=status_counts'
     )
   })
 
