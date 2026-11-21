@@ -96,6 +96,7 @@
   "queryFields.findings.network_port": "Cổng mạng, vd. port=443",
   "queryFields.findings.network_service": "Dịch vụ mạng, vd. service=ssh",
   "queryFields.findings.network_transport": "Giao thức truyền: tcp, udp hoặc sctp",
+  "queryFields.findings.notification_group_id": "Mã định danh của nhóm thông báo đã báo về nó",
   "queryFields.findings.observation": "Lần quét gần nhất còn thấy (present) hay không (stale)",
   "queryFields.findings.open_on_branch_id": "Mã định danh của nhánh mà phát hiện còn mở",
   "queryFields.findings.pending_approval": "Thay đổi trạng thái đang chờ duyệt",

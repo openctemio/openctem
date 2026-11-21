@@ -7,9 +7,12 @@ import (
 
 // Filter represents filtering options for listing API keys.
 type Filter struct {
-	TenantID  *ID
-	UserID    *ID
-	Status    *Status
+	TenantID *ID
+	UserID   *ID
+	Status   *Status
+	// OwnerKind limits the list to keys owned by that kind of identity:
+	// OwnerService (service accounts) or OwnerPerson (people). Empty: any.
+	OwnerKind string
 	Search    string
 	Page      int
 	PerPage   int
@@ -17,8 +20,25 @@ type Filter struct {
 	SortOrder string
 }
 
+// Owner kinds of Filter.OwnerKind and Owner.Kind.
+const (
+	OwnerPerson  = "person"
+	OwnerService = "service"
+)
+
+// Owner is the display data of the identity a key belongs to.
+type Owner struct {
+	// Name is the owner's name, or the e-mail when the owner has none.
+	Name string
+	// Kind is OwnerPerson or OwnerService.
+	Kind string
+}
+
 // ListResult represents a paginated list of API keys.
 type ListResult struct {
+	// Owners maps a key id to its owner, loaded by the same query as the
+	// page. A key without an owner has no entry.
+	Owners     map[ID]Owner
 	Data       []*APIKey
 	Total      int64
 	Page       int

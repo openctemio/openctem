@@ -60,6 +60,17 @@ key reads as 404. Minting, revoking and deleting
 need `integrations:api_keys:write` / `:delete`, which only owners and
 administrators hold by default.
 
+List fields and filters (`GET /api/v1/api-keys`):
+
+- `status` is derived at read time: an `active` key whose `expires_at` has passed reads `expired`. The
+  stored row is not rewritten. `?status=active` leaves such keys out and `?status=expired` includes
+  them together with keys stored as expired.
+- `owner_name` (the owner's name, or the e-mail when it has none) and `owner_kind` (`person` or
+  `service`) come from the same query as the page (one join on the primary key, no call per key).
+- `?owner=me` lists the caller's own keys; `?owner=service_accounts` lists keys owned by service
+  accounts of the organization. Filters only narrow: a caller who sees only their own keys gets none
+  for `service_accounts`. Any other value answers 400.
+
 Storage: HMAC-SHA256 of the key with `APP_ENCRYPTION_KEY` as pepper (legacy
 plain-SHA256 rows still match). Lookup is by hash, so the plaintext is never
 compared.
