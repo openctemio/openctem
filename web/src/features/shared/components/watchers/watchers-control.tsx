@@ -34,6 +34,12 @@ export interface WatchersControlProps {
   canRemoveOthers: boolean
   /** Where the add search gets its candidates; without it nobody can be added. */
   picker?: WatcherPickerSource
+  /**
+   * Read the watchers only when the person opens the control, not with the
+   * page: the row is one "Manage watchers" button until then (same height),
+   * and the count and the Watch toggle appear once the list has loaded.
+   */
+  deferred?: boolean
 }
 
 export function WatchersControl({
@@ -42,15 +48,41 @@ export function WatchersControl({
   canAdd,
   canRemoveOthers,
   picker,
+  deferred = false,
 }: WatchersControlProps) {
   const { t } = useTranslation()
+  const [requested, setRequested] = useState(!deferred)
   const { participants, isLoading, busy, setWatching, remove, add } = useWatcherActions(
     kind,
-    itemId
+    itemId,
+    requested
   )
   useSettleSignal(isLoading)
   const [open, setOpen] = useState(false)
   const summaryRef = useRef<HTMLButtonElement>(null)
+
+  if (deferred && !participants && !(requested && !isLoading)) {
+    return (
+      <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="-ms-2 min-w-0 font-normal"
+          disabled={requested}
+          onClick={() => {
+            setRequested(true)
+            setOpen(true)
+          }}
+          aria-haspopup="dialog"
+          data-testid="watchers-summary"
+        >
+          {requested && <Loader2 className="size-4 animate-spin" aria-hidden />}
+          <span className="truncate">{t('findings.people.manage', 'Manage watchers')}</span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Button>
+      </PropertyRow>
+    )
+  }
 
   if (isLoading) {
     return (
