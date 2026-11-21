@@ -15,7 +15,7 @@ func TestCompletedVerdict(t *testing.T) {
 		"malformed":       {`{"metadata":`, TaskVerdict{Verdict: VerdictOK}},
 		"no gaps":         {`{"findings":2}`, TaskVerdict{Verdict: VerdictOK}},
 		"proxy gaps":      {`{"metadata":{"coverage_gaps":[{"host":"a","reason":"proxy_unavailable","detail":"the proxy pool could not carry a connection to port 443 (proxy_down)"},{"host":"b","reason":"proxy_unavailable"}]}}`, TaskVerdict{Verdict: VerdictProxyFault, Faults: 2}},
-		"target gaps":     {`{"metadata":{"coverage_gaps":[{"host":"a","reason":"blocked"},{"host":"b","reason":"breaker_open"},{"host":"c","reason":"rate_floor"}]}}`, TaskVerdict{Verdict: VerdictOK}},
+		"target gaps":     {`{"metadata":{"coverage_gaps":[{"host":"a","reason":"blocked"},{"host":"b","reason":"breaker_open"},{"host":"c","reason":"rate_floor"},{"host":"d","reason":"slots_full"}]}}`, TaskVerdict{Verdict: VerdictOK}},
 		"proxy refused":   {`{"metadata":{"coverage_gaps":[{"host":"a","reason":"proxy_unavailable","detail":"the proxy pool could not carry a connection to port 22 (target_refused)"}]}}`, TaskVerdict{Verdict: VerdictOK}},
 		"outcomes only":   {`{"target_outcomes":[{"target":"a","state":"failed","class":"sensor_network_fault","cause":"sensor","reason":"proxy_unavailable"},{"target":"b","state":"failed","class":"timeout"},{"target":"c","state":"failed","class":"edge_blocked"}]}`, TaskVerdict{Verdict: VerdictProxyFault, Faults: 1}},
 		"target outcomes": {`{"target_outcomes":[{"target":"b","state":"failed","class":"timeout"},{"target":"c","state":"failed","class":"edge_blocked","reason":"waf"},{"target":"d","state":"failed","class":"sensor_network_fault","cause":"sensor","reason":"control_probe"}]}`, TaskVerdict{Verdict: VerdictOK}},

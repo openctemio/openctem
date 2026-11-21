@@ -27,6 +27,7 @@ type Caller = datascope.ListCaller
 type Store interface {
 	webendpoint.Reader
 	webendpoint.ViewReader
+	webendpoint.PathReader
 }
 
 // Service reads and curates the sub-inventory.
@@ -117,6 +118,39 @@ func (s *Service) Events(ctx context.Context, c Caller, spec *filterspec.Spec) (
 		return empty, err
 	}
 	return s.repo.EventsWhere(ctx, w, pagination.New(spec.Page, spec.PerPage))
+}
+
+// Paths returns one level of an origin's path tree, as the caller: an asset
+// of another tenant, a deleted one or one outside the caller's data scope
+// answers shared.ErrNotFound alike (fail closed, also without an enforcer).
+func (s *Service) Paths(ctx context.Context, tenantID, assetID shared.ID, q webendpoint.PathQuery) (*webendpoint.PathLevel, error) {
+	if err := q.Validate(); err != nil {
+		return nil, shared.ErrValidation
+	}
+	if err := s.dataScope.AssertAssetRef(ctx, tenantID, assetID); err != nil {
+		return nil, shared.ErrNotFound
+	}
+	name, err := s.repo.OriginName(ctx, tenantID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	eps, capped, err := s.repo.OriginEndpoints(ctx, tenantID, assetID, webendpoint.PathLoadLimit)
+	if err != nil {
+		return nil, err
+	}
+	fs, err := s.repo.OriginOpenFindings(ctx, tenantID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	lvl := webendpoint.BuildPathLevel(eps, fs, name, capped, q)
+	if q.Findings {
+		rows, err := s.repo.OriginURLFindings(ctx, tenantID, assetID)
+		if err != nil {
+			return nil, err
+		}
+		lvl.NodeFindings, lvl.NodeFindingTotal = webendpoint.NodeFindings(rows, name, q.Path)
+	}
+	return &lvl, nil
 }
 
 // Get returns one endpoint the caller may see, or shared.ErrNotFound (for

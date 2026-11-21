@@ -22,6 +22,7 @@ package attribution
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 )
 
@@ -109,6 +110,14 @@ const StateWildcardOnly State = "wildcard_only"
 // own, a network nothing is known about, shared hosting, or a name under
 // none of the organization's domains.
 const StateGuardrailed State = "guardrailed"
+
+// StateProviderHeld is not stored either: the active-scan gate's answer for
+// an address only scope entries on a provider's shared front end cover,
+// while the organization holds such entries until a person answers them on
+// the Scope page (tenant scope setting hold_provider_entries, research/531
+// D3). The address is the provider's, shared with its other customers; it
+// is watched passively until the entry is moved out of scope or kept.
+const StateProviderHeld State = "provider_held"
 
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
@@ -348,13 +357,53 @@ const (
 	// FilterAll asks for every asset whatever its attribution (no filter;
 	// research/22 P0-12: the web "Show all" sends it).
 	FilterAll = "all"
+	// FilterProviderAddress is the provider addresses (IsProviderAddress):
+	// left out of Approved and Attributed, listed on their own.
+	FilterProviderAddress = "provider_address"
 )
 
+// IsProviderAddress reports whether a stored record is a provider's shared
+// address (research/531 D6): an address inside a range a provider publishes
+// for infrastructure many organizations share, recorded as the provider's
+// by automation (dependency, RuleProviderSharedFrontEnd). It is third-party
+// infrastructure: out of the default inventory and of its totals, listed
+// under its own filter. A person's decision on it (another reason) makes it
+// an ordinary record again.
+func IsProviderAddress(r Record) bool {
+	return r.State == StateDependency && r.Reason == RuleProviderSharedFrontEnd
+}
+
+// ProviderAddressSQL is the SQL test of IsProviderAddress on an
+// asset_attributions alias.
+func ProviderAddressSQL(alias string) string {
+	return "(" + alias + ".state = 'dependency' AND " + alias + ".reason = '" + string(RuleProviderSharedFrontEnd) + "')"
+}
+
 // StateFilter is a parsed attribution filter: the stored states to match,
-// and whether an asset with no record matches too.
+// and whether an asset with no record matches too. ProviderAddresses also
+// matches the provider addresses; NoProviderAddresses leaves them out of
+// whatever the states match (Approved and Attributed set it).
 type StateFilter struct {
-	States     []State
-	Unrecorded bool
+	States              []State
+	Unrecorded          bool
+	ProviderAddresses   bool
+	NoProviderAddresses bool
+}
+
+// Matches reports whether a stored record ("" state = no record) is in the
+// filter's population.
+func (f StateFilter) Matches(r Record) bool {
+	provider := IsProviderAddress(r)
+	if provider && f.ProviderAddresses {
+		return true
+	}
+	if provider && f.NoProviderAddresses {
+		return false
+	}
+	if r.State == "" {
+		return f.Unrecorded
+	}
+	return slices.Contains(f.States, r.State)
 }
 
 // ParseFilter expands ?attribution= values into a StateFilter. confirmed
@@ -371,7 +420,7 @@ func ParseFilter(values []string) (StateFilter, bool, error) {
 			}
 		}
 	}
-	given := false
+	given, excludeProviders := false, false
 	for _, v := range values {
 		switch v {
 		case "":
@@ -385,9 +434,13 @@ func ParseFilter(values []string) (StateFilter, bool, error) {
 		case FilterApproved:
 			add(StateConfirmed, StateDiscovered, StateDependency, StateMonitorOnly)
 			f.Unrecorded = true
+			excludeProviders = true
 		case FilterAttributed:
 			add(StateConfirmed, StateDependency, StateMonitorOnly)
 			f.Unrecorded = true
+			excludeProviders = true
+		case FilterProviderAddress:
+			f.ProviderAddresses = true
 		default:
 			s := State(v)
 			if !s.Valid() {
@@ -401,5 +454,7 @@ func ParseFilter(values []string) (StateFilter, bool, error) {
 		given = true
 	}
 	sort.Slice(f.States, func(i, j int) bool { return f.States[i] < f.States[j] })
+	// Asking for the provider addresses by name lists them beside the rest.
+	f.NoProviderAddresses = excludeProviders && !f.ProviderAddresses
 	return f, given, nil
 }

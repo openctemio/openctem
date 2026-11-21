@@ -242,6 +242,14 @@ grant, a scanning profile, a poll without a sensor identity or a claim that read
 nothing (fail closed). Shared sensors never see one (it is not a shared job). Signing at claim is the
 same as for every command type.
 
+The job's payload carries the finding's text and its result the worker's answer, so the commands a
+member reads (`GET /api/v1/commands`, `commands:read`) follow the same rule as the run routes: a
+command about a finding (an `analyze` job, found through its run's `command_id`; a retest's check or
+reach command; a `validate` job) is listed **without its payload and result** unless the caller holds
+`findings:read` and the finding is in their data scope, and its logs (`GET /api/v1/commands/{id}/logs`)
+answer 404. An `analyze` job whose run cannot be found, or whose subject is not a finding, is shown to
+nobody (fail closed). Commands about no finding are unchanged.
+
 **Every worker run ends.** `Service.EndStaleWorkerRuns`, run every minute by the `ai-worker-run-sweep`
 controller (index `idx_ai_runs_worker_live`; a job of the core `findings` module, so it runs whether `ai_triage` is on or off), ends live worker runs that can no longer get a result:
 

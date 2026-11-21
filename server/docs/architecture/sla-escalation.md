@@ -44,6 +44,18 @@ policy choice (`internal/infra/http/handler/finding_sla_basis.go`). Policies: `G
 `GET/PUT /api/v1/sla-policies/{id}`, `GET /api/v1/sla-policies/default` (`settings:sla:read`, `settings:sla:write`,
 `DELETE` `settings:sla:delete`), `GET /api/v1/assets/{assetId}/sla-policy` (`assets:read`); no module gate.
 
+Preview of "Make default": `GET /api/v1/sla-policies/{id}/default-preview` (`settings:sla:write`, the permission of the
+change it previews; read-only). It counts the tenant's open findings the default of the policy's practice governs (no active
+policy of their own asset; compliance policies govern compliance findings only), with the candidate's windows applied from each
+finding's clock start (`sla_started_at`, else first detection; priority class window first, else severity; the known exploited cap
+for a vulnerability policy): `governed`, `earlier` (new deadline before the stored one), `become_overdue` (not overdue today,
+past the new deadline now, including findings with no deadline yet) and `later` (new deadline after the stored one; deadlines
+only tighten, so these keep theirs). `already_default` is true, with zero counts, for the current default; an inactive or
+asset-specific policy answers 400, another tenant's policy 404. One aggregate query over the tenant's open findings; the
+windows are computed by the policy entity and passed in as a small class-by-severity table. Making a policy the default
+rewrites no stored deadline: new findings take it at once and an existing finding is re-dated, earlier only, when it is next
+recomputed.
+
 Platform defaults (no policy): P0 2, P1 5, P2 15, P3 30 days; by severity critical 2, high 15, medium 30, low 60,
 info none; KEV cap 14 days; warning threshold 80 %. A policy window is 1 to 365 days.
 

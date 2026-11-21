@@ -29,10 +29,20 @@ import (
 // anchor. Before this, the retention DELETE hit the chain's ON DELETE
 // RESTRICT foreign key and failed on every run.
 
-func cleanupAnchors(t *testing.T, db *postgres.DB, tenantID shared.ID) {
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM audit_chain_anchors WHERE tenant_id = $1`, tenantID.String())
-	})
+// logOldTenantEvents writes n audit rows logged daysAgo days ago (the chain
+// trigger chains them like any other). Retention only ever removes rows older
+// than 365 days, a floor the database function enforces against its own
+// clock, so the rows a test prunes are written old.
+func logOldTenantEvents(ctx context.Context, t *testing.T, db *postgres.DB, tenantID shared.ID, n, daysAgo int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO audit_logs (tenant_id, action, resource_type, resource_id, result, severity, logged_at)
+			VALUES ($1, 'settings.updated', 'settings', $2, 'success', 'low', now() - make_interval(days => $3))`,
+			tenantID.String(), shared.NewID().String(), daysAgo); err != nil {
+			t.Fatalf("log old event %d: %v", i, err)
+		}
+	}
 }
 
 func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
@@ -43,14 +53,11 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 
 	tenantA, _ := seedRebaselineTenant(ctx, t, db)
 	tenantB, _ := seedRebaselineTenant(ctx, t, db)
-	cleanupAnchors(t, db, tenantA)
-	cleanupAnchors(t, db, tenantB)
+	tenantC, _ := seedRebaselineTenant(ctx, t, db)
 
-	logTenantEvents(ctx, t, svc, tenantA, 3)
-	logTenantEvents(ctx, t, svc, tenantB, 2)
-	time.Sleep(20 * time.Millisecond)
-	cut := time.Now()
-	time.Sleep(20 * time.Millisecond)
+	logOldTenantEvents(ctx, t, db, tenantA, 3, 500)
+	logOldTenantEvents(ctx, t, db, tenantB, 2, 500)
+	logOldTenantEvents(ctx, t, db, tenantC, 2, 400)
 	logTenantEvents(ctx, t, svc, tenantA, 2)
 
 	before := readChain(ctx, t, db, tenantA)
@@ -62,11 +69,10 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 	cfg := auditapp.RetentionConfig{
 		RetentionDays: 30, // raised to the 365-day minimum
 		Store:         storage.NewLocalStorage(dir),
-		Now:           func() time.Time { return cut.AddDate(0, 0, auditdom.MinAuditRetentionDays) },
 	}
 
 	// No archive location: nothing is deleted.
-	if _, _, err := svc.PruneChain(ctx, tenantA, auditapp.RetentionConfig{Now: cfg.Now}); !errors.Is(err, auditapp.ErrNoAuditArchiveStore) {
+	if _, _, err := svc.PruneChain(ctx, tenantA, auditapp.RetentionConfig{}); !errors.Is(err, auditapp.ErrNoAuditArchiveStore) {
 		t.Fatalf("prune without archive dir: err = %v", err)
 	}
 	if n := len(readChain(ctx, t, db, tenantA)); n != 5 {
@@ -111,40 +117,48 @@ func TestPruneChain_ArchivesAnchorsAndChainStillVerifies(t *testing.T) {
 		t.Fatalf("tenant B chain touched: %d entries", n)
 	}
 
-	assertChainOK := func(stage string) {
+	assertChainOK := func(stage string, tenant shared.ID) {
 		t.Helper()
-		res, err := svc.VerifyChain(ctx, tenantA, 0)
+		res, err := svc.VerifyChain(ctx, tenant, 0)
 		if err != nil || !res.OK {
 			t.Fatalf("%s: verify = %+v, err %v", stage, res, err)
 		}
-		rep, err := svc.ClassifyChain(ctx, tenantA)
+		rep, err := svc.ClassifyChain(ctx, tenant)
 		if err != nil || rep.Counts.Blocking() != 0 {
 			t.Fatalf("%s: classify = %+v, err %v", stage, rep, err)
 		}
 	}
-	assertChainOK("after prune")
+	assertChainOK("after prune", tenantA)
 
 	// New events keep linking.
 	logTenantEvents(ctx, t, svc, tenantA, 1)
-	assertChainOK("after append")
+	assertChainOK("after append", tenantA)
 
-	// Prune everything: the next event links to the anchor, not to "".
-	all := cfg
-	all.Now = func() time.Time { return time.Now().AddDate(0, 0, auditdom.MinAuditRetentionDays+1) }
-	if _, _, err := svc.PruneChain(ctx, tenantA, all); err != nil {
+	// Recent rows stay, whatever the caller's clock says.
+	early := cfg
+	early.Now = func() time.Time { return time.Now().AddDate(0, 0, auditdom.MinAuditRetentionDays+1) }
+	if _, _, err := svc.PruneChain(ctx, tenantA, early); err == nil {
+		t.Fatal("prune of rows newer than 365 days: no error")
+	}
+	if n := len(readChain(ctx, t, db, tenantA)); n != 3 {
+		t.Fatalf("prune of recent rows deleted entries: %d left, want 3", n)
+	}
+
+	// Prune a whole chain: the next event links to the anchor, not to "".
+	if _, _, err := svc.PruneChain(ctx, tenantC, cfg); err != nil {
 		t.Fatalf("prune all: %v", err)
 	}
-	if n := len(readChain(ctx, t, db, tenantA)); n != 0 {
+	if n := len(readChain(ctx, t, db, tenantC)); n != 0 {
 		t.Fatalf("chain not empty after full prune: %d", n)
 	}
-	logTenantEvents(ctx, t, svc, tenantA, 1)
-	assertChainOK("append after full prune")
+	logTenantEvents(ctx, t, svc, tenantC, 1)
+	assertChainOK("append after full prune", tenantC)
 
 	// A rebaseline of a pruned chain re-signs from the anchor and still verifies.
-	if _, err := svc.RebaselineChain(ctx, tenantA, auditapp.AuditContext{TenantID: tenantA.String()}); err != nil {
+	if _, err := svc.RebaselineChain(ctx, tenantC, auditapp.AuditContext{TenantID: tenantC.String()}); err != nil {
 		t.Fatalf("rebaseline: %v", err)
 	}
-	assertChainOK("after rebaseline")
+	assertChainOK("after rebaseline", tenantC)
 }
 
 // The prune refuses (and deletes nothing) when the chain no longer matches
@@ -155,7 +169,6 @@ func TestPruneChainPrefix_RefusesAStaleRead(t *testing.T) {
 	repo := postgres.NewAuditRepository(db)
 	svc := auditapp.NewAuditService(repo, logger.NewNop())
 	tenant, _ := seedRebaselineTenant(ctx, t, db)
-	cleanupAnchors(t, db, tenant)
 	logTenantEvents(ctx, t, svc, tenant, 2)
 	chain := readChain(ctx, t, db, tenant)
 
@@ -177,6 +190,16 @@ func TestPruneChainPrefix_RefusesAStaleRead(t *testing.T) {
 	}, []shared.ID{id2})
 	if !errors.Is(err, auditdom.ErrChainPruneConflict) {
 		t.Fatalf("non-prefix prune: err = %v, want ErrChainPruneConflict", err)
+	}
+	// A true prefix that is less than 365 days old is refused by the database
+	// whatever the caller claims: the API role cannot shorten retention.
+	err = repo.PruneChainPrefix(ctx, auditdom.ChainAnchor{
+		TenantID: tenant, AnchorHash: chain[0].Hash, LastChainPosition: chain[0].Position,
+		PrunedCount: 1, OldestLoggedAt: time.Now().AddDate(-2, 0, 0), NewestLoggedAt: time.Now().AddDate(-2, 0, 0),
+		ArchivePath: "/nowhere", ArchiveSHA256: strings.Repeat("b", 64),
+	}, []shared.ID{id})
+	if err == nil || errors.Is(err, auditdom.ErrChainPruneConflict) {
+		t.Fatalf("recent prefix prune: err = %v, want a refusal", err)
 	}
 	if n := len(readChain(ctx, t, db, tenant)); n != 2 {
 		t.Fatalf("refused prune deleted entries: %d left", n)

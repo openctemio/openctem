@@ -40,6 +40,10 @@ const Pre79OffsetNS = 123
 // rows and refuses to change a row's version, so the rows are deleted and
 // inserted again (new positions, same order). It returns how many rows it
 // wrote.
+//
+// Only the schema owner's functions may delete or rewrite chain rows, so db
+// must be a superuser connection (testdb.OpenAdmin): the rows are replaced with
+// triggers off (session_replication_role).
 func Resign(ctx context.Context, db *sql.DB, tenantID string, kinds ...Kind) (int, error) {
 	srcs, err := readChain(ctx, db, tenantID)
 	if err != nil {
@@ -50,6 +54,9 @@ func Resign(ctx context.Context, db *sql.DB, tenantID string, kinds ...Kind) (in
 		return 0, fmt.Errorf("begin resign: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		return 0, fmt.Errorf("triggers off (needs a superuser connection): %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM audit_log_chain WHERE tenant_id = $1`, tenantID); err != nil {
 		return 0, fmt.Errorf("clear chain: %w", err)
 	}

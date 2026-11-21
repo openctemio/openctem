@@ -88,6 +88,9 @@ type TaskQuery struct {
 	TotalAdded     int
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// TextRedacted is set on a copy read for a caller who may not read the
+	// query's literals: Text then has them masked (querylang.Redact).
+	TextRedacted bool
 }
 
 // NormalizeTaskQueryText trims a query and checks its length.

@@ -389,13 +389,18 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	return resp, nil
 }
 
-// startWithCode opens a request under the code the sensor started with, so
-// the console command, the sensor's output and the approval link show one
-// code. It attaches to the organization's open expectation with that code;
-// otherwise the code becomes the request's own (rows of that code past
-// their expiry are closed first); a code another open request holds gives
-// a new code. The answer has the same shape whether or not the platform
-// expected the code, so it tells a guesser nothing.
+// startWithCode opens a request for a start that carries a code. A code
+// belongs to the organization that made it and pairs one sensor, once,
+// before it expires: the start attaches to that organization's open
+// expectation (one atomic compare-and-set on the row: open, unexpired, no
+// other key), so the console command, the sensor's output and the approval
+// link show one code. Any other code (expired, used, canceled, held by
+// another key, or never made) is never used: it would otherwise turn into a
+// code with no organization that any organization could look up, and
+// install snippets keep codes long after they are spent. The request opens
+// under a new code instead, printed only on the host (the codeless flow),
+// and the organization that made the code, if any, gets an audit record.
+// The code is looked up by its keyed hash, never compared in the clear.
 func (s *Service) startWithCode(ctx context.Context, p *sensordom.Pairing, code string, now time.Time) (string, error) {
 	hash := s.codeHash(code)
 	ok, err := s.repo.AttachToExpectationUnscoped(ctx, hash, p, now)
@@ -411,21 +416,36 @@ func (s *Service) startWithCode(ctx context.Context, p *sensordom.Pairing, code 
 	if err := s.repo.ExpireStaleCodeUnscoped(ctx, hash, now); err != nil {
 		return "", err
 	}
-	p.CodeHash = hash
-	err = s.repo.CreateForward(ctx, p)
-	if err == nil {
-		return code, nil
-	}
-	if !errors.Is(err, shared.ErrConflict) {
-		return "", err
-	}
-	// Another open request holds the code (or, in a race, the key): a new
-	// code; a key conflict fails here too and is key-busy.
 	fresh, err := s.createWithCode(ctx, p)
 	if err != nil {
 		return "", keyConflict(err)
 	}
+	s.auditCodeRefused(ctx, p, hash)
 	return fresh, nil
+}
+
+// auditCodeRefused tells the organization that made a code that a sensor
+// started with it after it stopped pairing. Best effort: a failure is
+// logged. A code no organization made writes nothing (there is nobody to
+// tell, and a guess must not reach any organization's log).
+func (s *Service) auditCodeRefused(ctx context.Context, p *sensordom.Pairing, hash string) {
+	expID, tenantID, found, err := s.repo.CodeOwnerUnscoped(ctx, hash)
+	if err != nil {
+		s.log.Warn("sensor pairing: read the owner of a refused code", "error", logger.SanitizeError(err))
+		return
+	}
+	if !found {
+		s.log.Info("sensor pairing: a start carried a code no organization made; paired under a new code",
+			"key_fingerprint", pairing.KeyFingerprint(p.Thumbprint), "source_ip", ipString(p))
+		return
+	}
+	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: actorSensor, ActorIP: ipString(p)},
+		auditapp.NewFailureEvent(auditdom.ActionSensorPairingCodeRefused, auditdom.ResourceTypeSensor, expID.String(), nil).
+			WithMessage("A sensor started pairing with a pairing code of this organization that no longer pairs (expired, used, canceled or held by another sensor); the code was not used").
+			WithSeverity(auditdom.SeverityMedium).
+			WithMetadata("key_fingerprint", pairing.KeyFingerprint(p.Thumbprint)).
+			WithMetadata("source_ip", ipString(p)).
+			WithMetadata("new_pairing_id", p.ID.String()))
 }
 
 // releaseKey lets a key that was never approved start again: a sensor

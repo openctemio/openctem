@@ -368,20 +368,20 @@ func TestPairing_ReverseModeAndUniformAnswers_DB(t *testing.T) {
 	if s.resp.UserCode != exp.Code || s.resp.PairingID != exp.ID {
 		t.Fatalf("reverse start answer: %+v", s.resp)
 	}
-	// A code nobody expected gets the same shape of answer (threat 5): it
-	// becomes that request's own code, reachable only by that code and
-	// bound to no organization.
+	// A code nobody expected gets the same shape of answer (threat 5): a
+	// pending request bound to no organization, under a new code; the code
+	// it carried finds nothing (threat 36).
 	decoy := newSensor(22)
 	f.start(decoy, "ZZZZ-ZZZZ", "")
-	if decoy.resp.UserCode != "ZZZZ-ZZZZ" || decoy.resp.PairingID == "" || decoy.resp.PairingID == exp.ID {
+	if decoy.resp.UserCode == "" || decoy.resp.UserCode == "ZZZZ-ZZZZ" || decoy.resp.PairingID == "" || decoy.resp.PairingID == exp.ID {
 		t.Fatalf("decoy answer differs: %+v", decoy.resp)
 	}
 	f.reveal(decoy)
 	if f.status(decoy).Status != pairing.StatusPending {
 		t.Fatal("decoy status")
 	}
-	if v, err := f.svc.Lookup(ctx, b, "ZZZZ-ZZZZ"); err != nil || v.ID != decoy.resp.PairingID {
-		t.Fatalf("an unexpected code is the request's own code: %v %+v", err, v)
+	if _, err := f.svc.Lookup(ctx, b, "ZZZZ-ZZZZ"); !errors.Is(err, sensorpairing.ErrNotFound) {
+		t.Fatalf("an unexpected code became a code of no organization: %v", err)
 	}
 
 	f.reveal(s)

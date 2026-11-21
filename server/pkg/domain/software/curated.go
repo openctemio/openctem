@@ -5,6 +5,8 @@
 // Design: docs/rfcs/RFC-066-inventory-vulnerability-matching.md.
 package software
 
+import "sort"
+
 // Curated is one public product the platform knows by name. Its CPE
 // identity is the one the vulnerability feed uses; AltCPE lists the other
 // vendor:product pairs the feed has used for the same product (a vendor
@@ -106,4 +108,40 @@ var curated = []Curated{
 	{"o", "Fortinet", "FortiOS", "fortinet", "fortios", nil, []string{"fortios"}},
 	{"o", "Canonical", "Ubuntu Linux", "canonical", "ubuntu_linux", nil, []string{"ubuntu", "ubuntu linux"}},
 	{"o", "Debian", "Debian Linux", "debian", "debian_linux", nil, []string{"debian", "debian linux"}},
+}
+
+// curatedAppNames is every name of a curated application product (part "a"),
+// normalised.
+var curatedAppNames = func() map[string]bool {
+	out := map[string]bool{}
+	for _, c := range curated {
+		if c.Part != "a" {
+			continue
+		}
+		for _, n := range c.Names {
+			out[NormalizeName(n)] = true
+		}
+	}
+	return out
+}()
+
+// IsCuratedAppName reports whether a name is one the curated list knows for
+// a public application product. Only such a name becomes a software link when
+// the version is unknown: the product is then known for certain, its catalog
+// row is global, and a private or made-up name never reaches the catalog
+// this way. Operating systems are left out: a distribution name without a
+// version says nothing a vulnerability range could use.
+func IsCuratedAppName(name string) bool {
+	n := NormalizeName(name)
+	return n != "" && curatedAppNames[n]
+}
+
+// CuratedAppNames returns the names IsCuratedAppName accepts, sorted.
+func CuratedAppNames() []string {
+	out := make([]string, 0, len(curatedAppNames))
+	for n := range curatedAppNames {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }

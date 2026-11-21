@@ -29,7 +29,7 @@ type SAMLHandler struct {
 	svc         *auth.SAMLService
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
-	publicURL   string // configured public origin (APP_URL); see samlBaseURL
+	publicURL   string // configured public origin (APP_URL); see baseURL
 	audit       *auditsvc.AuditService
 	changes     *auth.SSOChangeService
 	logger      *logger.Logger
@@ -62,8 +62,8 @@ func (h *SAMLHandler) SetAuditService(svc *auditsvc.AuditService) {
 }
 
 // SetPublicURL sets the configured public origin (APP_URL) the SP URLs are
-// built on. When empty, forwarded headers are honored only from trusted
-// proxies.
+// built on. When it is empty or not an absolute http(s) URL, the SAML routes
+// refuse: the origin is never taken from a request.
 func (h *SAMLHandler) SetPublicURL(publicURL string) {
 	h.publicURL = publicURL
 }
@@ -123,7 +123,12 @@ func isTrueParam(v string) bool { return v == "true" || v == "1" }
 func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 	forceAuthn := isTrueParam(r.URL.Query().Get("reauth"))
-	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r), forceAuthn)
+	base, ok := h.baseURL()
+	if !ok {
+		h.redirectWithError(w, r, errSAMLPublicURLUnset)
+		return
+	}
+	redirectURL, requestID, err := h.svc.Login(r.Context(), org, base, forceAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -176,9 +181,15 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 	})
 
+	base, ok := h.baseURL()
+	if !ok {
+		h.redirectWithError(w, r, errSAMLPublicURLUnset)
+		return
+	}
+
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), org, h.baseURL(r), r, possibleRequestIDs, forcedAuthn)
+	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), org, base, r, possibleRequestIDs, forcedAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -202,44 +213,22 @@ func (h *SAMLHandler) redirectWithError(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
+// errSAMLPublicURLUnset refuses SAML sign-in when the deployment has no
+// configured public origin. The log names the setting; the browser gets the
+// generic SAML failure code.
+var errSAMLPublicURLUnset = errors.New("saml: the public URL of the API is not configured (set APP_URL)")
+
 // baseURL is the deployment origin (scheme://host) the SP URLs are built
-// on: entity ID, ACS URL, and the audience/destination an assertion must
-// carry. See samlBaseURL.
-func (h *SAMLHandler) baseURL(r *http.Request) string {
-	return samlBaseURL(r, h.publicURL, trustedProxiesForAuth)
-}
-
-// samlBaseURL derives the SP origin. In order:
+// on: entity ID, ACS URL, and the audience, recipient and destination an
+// assertion must carry. It comes from configuration only (SetPublicURL).
 //
-//  1. the configured public URL (APP_URL), when set — the only source a
-//     client cannot influence, and what production should use;
-//  2. X-Forwarded-Proto / X-Forwarded-Host, but only when the TCP peer is a
-//     trusted proxy (SERVER_TRUSTED_PROXIES) and the values are well formed;
-//  3. the request's own Host and TLS state.
-//
-// Taking the forwarded headers from any client let a request to the ACS
-// choose the audience the SP checks, so an assertion issued to a different
-// service provider at the same IdP could be replayed here.
-func samlBaseURL(r *http.Request, publicURL string, trusted *httpsec.TrustedProxySet) string {
-	if origin, ok := originOf(publicURL); ok {
-		return origin
-	}
-
-	scheme := "https"
-	if r.TLS == nil {
-		scheme = "http"
-	}
-	host := r.Host
-
-	if fromTrustedProxy(r, trusted) {
-		if fp := strings.ToLower(firstForwardedValue(r.Header.Get("X-Forwarded-Proto"))); fp == "http" || fp == "https" {
-			scheme = fp
-		}
-		if fh := firstForwardedValue(r.Header.Get("X-Forwarded-Host")); validForwardedHost(fh) {
-			host = fh
-		}
-	}
-	return scheme + "://" + host
+// Nothing of the request takes part. A Host or X-Forwarded-Host header chose
+// the audience the SP checks when the origin was derived from the request,
+// so an assertion issued to another service provider at the same IdP could
+// be replayed here. Without a configured origin there is no SAML: sign-in
+// and the ACS are refused and the metadata route answers 409.
+func (h *SAMLHandler) baseURL() (string, bool) {
+	return originOf(h.publicURL)
 }
 
 // originOf returns scheme://host[:port] of an absolute http(s) URL.
@@ -266,29 +255,15 @@ func fromTrustedProxy(r *http.Request, trusted *httpsec.TrustedProxySet) bool {
 	return ip != nil && trusted.Contains(ip)
 }
 
-// firstForwardedValue takes the left-most entry of a comma-separated
-// forwarded header (the value the outermost proxy set).
-func firstForwardedValue(v string) string {
-	if i := strings.IndexByte(v, ','); i >= 0 {
-		v = v[:i]
-	}
-	return strings.TrimSpace(v)
-}
-
-// validForwardedHost accepts host or host:port with DNS/IP characters only,
-// so nothing that changes the URL structure is echoed into SP URLs.
-func validForwardedHost(h string) bool {
-	if h == "" || len(h) > 253 {
-		return false
-	}
-	u, err := url.Parse("http://" + h)
-	return err == nil && u.Host == h && u.Path == "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && !strings.ContainsAny(h, " \\\t\r\n")
-}
-
 // Metadata handles GET /api/v1/auth/saml/{org}/metadata (public).
 func (h *SAMLHandler) Metadata(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
-	xmlStr, err := h.svc.Metadata(r.Context(), org, h.baseURL(r))
+	base, ok := h.baseURL()
+	if !ok {
+		apierror.FromCode(apierror.CodeSAMLPublicURLUnset).WriteJSON(w)
+		return
+	}
+	xmlStr, err := h.svc.Metadata(r.Context(), org, base)
 	if err != nil {
 		apierror.NotFound("tenant").WriteJSON(w)
 		return

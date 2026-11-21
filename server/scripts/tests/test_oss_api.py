@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenCTEM OSS API Integration Tests
+OpenCTEM API Integration Tests
 Tests all major API flows to ensure migrations and code are working correctly.
 """
 
@@ -842,7 +842,7 @@ def cleanup():
 
 def main():
     """Run all tests."""
-    print(f"\n{Colors.BOLD}OpenCTEM OSS API Integration Tests{Colors.RESET}")
+    print(f"\n{Colors.BOLD}OpenCTEM API Integration Tests{Colors.RESET}")
     print(f"Base URL: {BASE_URL}")
     print(f"Test Email: {TEST_EMAIL}")
     print(f"Test Team: {TEST_TEAM_NAME}")

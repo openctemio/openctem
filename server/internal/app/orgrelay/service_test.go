@@ -39,7 +39,7 @@ func TestModeDefaultsAndChange(t *testing.T) {
 	}
 
 	svc, audit := newSvc(true, "")
-	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "off", "free tier abuse", 0, "", ""); err != nil {
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), "off", "relay abuse", 0, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if svc.RelayMode(ctx) != emailpkg.RelayModeOff {

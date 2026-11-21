@@ -173,6 +173,8 @@ export type AuditAction =
   | 'scope_target.activated'
   | 'scope_target.deactivated'
   | 'scope_target.replaced'
+  | 'scope_target.provider_moved'
+  | 'scope_target.provider_kept'
   | 'scope_exclusion.created'
   | 'scope_exclusion.updated'
   | 'scope_exclusion.deleted'

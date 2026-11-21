@@ -40,7 +40,7 @@ other stored secrets.
   in force for every message: a change applies without a restart. An
   organization's own e-mail integration still wins for its mail.
 - The SMTP connection keeps the e-mail package's guards: the host is resolved
-  through `httpsec.ResolveSafeHost` (private addresses only when allowed by
+  through `httpsec.ResolveSafeHost` (private addresses only where opened: console System > Private networks or
   `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`), TLS 1.2 or later, no certificate
   verification switch.
 - Internal CA: the setting can carry a PEM bundle of the certificate authority

@@ -65,9 +65,13 @@ describe('OAuth callback route handler', () => {
     expect(handleOAuthCallback).not.toHaveBeenCalled()
   })
 
-  it('lands on the same-site path kept in the oauth_redirect cookie', async () => {
+  // The landing is decided by /auth/continue from the memberships (a new
+  // request reads the cookies just set); the kept path travels with it.
+  it('continues to the landing with the same-site path kept in the oauth_redirect cookie', async () => {
     cookieJar.set('oauth_redirect', '/findings?severity=high')
-    expect(await callback('microsoft', 'code=c&state=s')).toBe('/findings?severity=high')
+    expect(await callback('microsoft', 'code=c&state=s')).toBe(
+      `/auth/continue?next=${encodeURIComponent('/findings?severity=high')}`
+    )
     expect(handleOAuthCallback).toHaveBeenCalledWith('microsoft', 'c', 's')
   })
 
@@ -75,7 +79,7 @@ describe('OAuth callback route handler', () => {
     'ignores an off-site oauth_redirect cookie: %j',
     async (bad) => {
       cookieJar.set('oauth_redirect', bad)
-      expect(await callback('google', 'code=c&state=s')).toBe('/')
+      expect(await callback('google', 'code=c&state=s')).toBe('/auth/continue')
     }
   )
 

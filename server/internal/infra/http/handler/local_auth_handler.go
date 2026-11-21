@@ -574,6 +574,7 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 	result, err := h.authService.ExchangeToken(r.Context(), auth.ExchangeTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
+		UserAgent:    r.UserAgent(),
 	})
 	if err != nil {
 		h.handleAuthError(w, err)
@@ -881,7 +882,7 @@ type SessionMFAChallengeRequest struct {
 // place. The completion signs the person in again with a session that proved
 // the factor.
 // @Summary      Start the second-factor step for a signed-in session
-// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an identity provider.
+// @Description  For a session refused with MFA_ENROLLMENT_REQUIRED: issues an enrollment challenge (no factor yet) or a verify challenge (factor enabled), with the names of the organizations that require it. Authenticated by the refresh token (body or cookie with the CSRF pair); the refresh token is not spent. Enrollment challenges need a session signed in within the last 15 minutes (else 403 REAUTH_REQUIRED: sign in again with the password); verify challenges have no such limit. Refused for sessions started through an organization's identity provider; a session started with a social provider (Google, GitHub, Microsoft) may enroll.
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
@@ -1485,17 +1486,16 @@ type AccountTokenResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-// AccountToken mints an account-only access token for a signed-in person who
-// has no organization they can open (docs/architecture/tenantless-account-space.md).
+// AccountToken mints an account-only access token for any signed-in person,
+// member of an organization or not (docs/architecture/tenantless-account-space.md).
 // @Summary      Account-only access token
-// @Description  For an account with no organization it can open: an access token without a tenant that reaches only the account routes (profile, security, sessions, sign-in methods, preferences, creating an organization where allowed). An account that can open an organization gets 409 and exchanges its token with /auth/token instead. Rotates the refresh token.
+// @Description  For any signed-in account: an access token without a tenant that reaches only the account routes (profile, security, sessions, sign-in methods, preferences, invitations, creating an organization where allowed). Every other route refuses it with 401 TENANT_REQUIRED; an organization's data needs that organization's token from /auth/token, which applies its sign-in rules. Bound to the same session as the refresh token. Rotates the refresh token.
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
 // @Param        request  body      AccountTokenRequest  false  "Refresh token (or cookie + CSRF)"
 // @Success      200  {object}  AccountTokenResponse
 // @Failure      401  {object}  apierror.Error
-// @Failure      409  {object}  apierror.Error
 // @Router       /auth/account-token [post]
 func (h *LocalAuthHandler) AccountToken(w http.ResponseWriter, r *http.Request) {
 	var req AccountTokenRequest
@@ -1509,10 +1509,6 @@ func (h *LocalAuthHandler) AccountToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	result, err := h.authService.AccountToken(r.Context(), refreshToken)
-	if errors.Is(err, auth.ErrAccountTokenHasOrganization) {
-		apierror.Conflict("This account belongs to an organization: open it instead.").WriteJSON(w)
-		return
-	}
 	if err != nil {
 		h.handleAuthError(w, err)
 		return

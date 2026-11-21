@@ -100,6 +100,19 @@ func (m *AuditMiddleware) AuditLog(action, resourceType, resourceIDParam string)
 				}
 			}
 
+			// A handler that checks a reason (SetAuditReason) decides what
+			// the row keeps: the trimmed, accepted reason, or none.
+			if created.reasonSet {
+				if requestBody == nil {
+					requestBody = map[string]interface{}{}
+				}
+				delete(requestBody, "reason")
+				if created.reason != "" {
+					requestBody["reason"] = created.reason
+				}
+				builder.Request(r.Method, r.URL.Path, requestBody)
+			}
+
 			// Set response status
 			builder.Response(wrappedWriter.statusCode)
 
@@ -321,6 +334,20 @@ type auditCreatedResource struct {
 	// action, when set, replaces the route's action (SetAuditAction).
 	action string
 	high   bool
+	// reason replaces the body's "reason" when reasonSet (SetAuditReason).
+	reason    string
+	reasonSet bool
+}
+
+// SetAuditReason records the reason the handler accepted for the current
+// request (trimmed; "" when none was given or it was refused). The row then
+// keeps exactly that reason instead of the raw body field. A no-op outside an
+// audited request.
+func SetAuditReason(ctx context.Context, reason string) {
+	if c, ok := ctx.Value(auditResourceKey{}).(*auditCreatedResource); ok {
+		c.reason = reason
+		c.reasonSet = true
+	}
 }
 
 // SetAuditAction replaces the route's audit action for the current request,

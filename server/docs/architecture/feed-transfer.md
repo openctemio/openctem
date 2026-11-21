@@ -178,29 +178,29 @@ the vulnerability event log). A refused stream is recorded as
 import; the other stream and the next run are unaffected.
 
 Per source, the sync status row's metadata says which path supplied the data
-held and how current the bundle's copy is: `delivered_via` (`bundle` or
-`direct`), `intel_as_of` (data date), `bundle_fetched_at`,
+held and how current the bundle's copy is: `delivered_via` (`bundle`; rows
+from before the platform stopped fetching itself may say `direct`),
+`intel_as_of` (data date), `bundle_fetched_at`,
 `bundle_sequence`, `bundle_error`.
 
-#### Direct fetch as a fallback
+#### No direct fetch
 
-The platform also fetches KEV (hourly, conditional request) and EPSS (daily)
-from CISA and FIRST itself. Two console settings (`threat_intel.source`,
-System > Threat intelligence, `/admin/settings/threat-intel-source`; super
-admin, step-up, audited) decide how the two paths combine:
+Upgrade note: an installation without the bundle import (`VULNFEED_ROOT_KEY_ID`
+empty) no longer receives KEV or EPSS.
 
-| Setting | Effect |
-|---|---|
-| source `direct` (default), direct fetch `auto` (default) | the own fetch runs on its schedule and supplies the data; the release copy is applied when its data date is newer |
-| source `bundle`, direct fetch `auto` | the release supplies the data; the scheduled own fetch runs only when the release's copy was last read by the collector more than 6 hours ago (KEV) or 48 hours ago (EPSS), or never (`bundle_fetched_at`, not the publisher's data date, which can be days old while the data is current); it records `delivered_via = direct`, and the newer-data rule lets the release win again once it catches up |
-| direct fetch `off` | the platform never calls CISA or FIRST (the scheduled and the manual sync both refuse); the release is the only supplier and a stale copy shows as stale |
-
-The default stays `direct` until the publisher has released hourly for seven
-days without a gap. Then an administrator sets source `bundle`: the page shows
-per feed when the collector last read the source and whether the release's copy
-is fresh, which is the check to make first. A withheld release (a freeze)
-degrades to the own fetch, not to stale data, and the stale alert still fires.
-The sync status of each feed reports `delivered_via` and `data_as_of`.
+The platform never calls CISA or FIRST: KEV and EPSS arrive only in the signed
+release, fetched from the feed origin (direct mode) or through a relay sensor
+(relay mode). Each release that carries a stream is a check of that feed: a
+copy the collector read within the feed's stale limit (the feed status's
+threshold, `feedstatus.StaleAfter`) marks the feed's last success even when the data did not change; an
+older copy fails the check with `source_stale`, and a refused stream with its
+refusal code, so the console and the freshness watch
+([intelligence feeds](intelligence-feeds.md)) show a stale or blocked collector
+instead of a quiet success. The hourly KEV and daily EPSS controllers fetch
+nothing: they compare open findings with the catalogs at least daily. "Sync
+now" for KEV or EPSS imports the newest release. Rows written before this
+change may still say `delivered_via = direct`; the next newer release
+replaces them.
 
 ## Relay: feeds through a platform sensor (no outbound access)
 
@@ -217,7 +217,7 @@ makes no outbound feed request:
 | Feed | In relay mode |
 |---|---|
 | vulnerability feed (corpus, KEV/EPSS side manifest, aliases, vulnerability ids) | relayed from `VULNFEED_BASE_URL` (not the direct-mode mirrors); the importer reads the relay working directory as its only origin |
-| KEV / EPSS direct fetch | off (the source policy is "bundle, direct fetch off") |
+| KEV / EPSS | carried by the vulnerability feed's side manifest (the platform never fetches them itself, in either mode) |
 | version check (release feed) | relayed; applied with origin `relay` (the same file again each day is not an error); the online check does not run |
 | program feed URLs | not fetched (a `PROGRAMFEED_DIR` still is); listed as `not_relayed` in the status |
 
@@ -297,14 +297,16 @@ organization's sensor) and the open alerts.
 
 **Alerts** (RFC-142 §2.5): in relay mode the controller tells the platform
 administrators (e-mail and the alert webhook, as the system checks) when no
-designated relay is seen for 1 hour (`relay_offline`), the vulnerability feed's
-applied release is 48 hours old (`feed_stale:vulnfeed`), or the newest failed
+designated relay is seen for 1 hour (`relay_offline`), or the newest failed
 round since the last import has `verify_failed`, `pin_mismatch`,
 `rollback_refused` (critical) or `signer_refused`
 (`round_failed:<feed>:<code>`). Open alerts are stored in the platform setting
 `feed_relay.alerts` (one per condition across restarts and lease moves); a
 cleared condition gets one "resolved" notice. Every alert also logs a WARN
-line with `alert=feed_relay_<condition>`.
+line with `alert=feed_relay_<condition>`. The age of the data itself is
+watched in every mode by the freshness watch
+([intelligence feeds](intelligence-feeds.md#freshness-alarms-in-every-mode-and-the-all-user-banner)),
+which replaced the relay's own 48-hour `feed_stale` alert.
 
 A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing job signer locks relay
 mode off.

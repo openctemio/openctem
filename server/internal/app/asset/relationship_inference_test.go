@@ -226,3 +226,58 @@ func TestInferGraphEdges_DiscoveredURLExcluded(t *testing.T) {
 		t.Fatalf("discovered_url must not produce Exposes edges, got %+v", res.AutoEdges)
 	}
 }
+
+// research/531: an address inside a shared provider range is never the
+// container of a service, and a name contains the services named by its own
+// host name, whatever address they were found on.
+func TestInferGraphEdges_ProviderAddressNeverContainer(t *testing.T) {
+	nameID, providerID, ownID := shared.NewID(), shared.NewID(), shared.NewID()
+	svcByName, svcByURL, svcOnProvider, svcOnOwn := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	assets := []GraphAsset{
+		{ID: nameID, Type: assetdom.AssetTypeSubdomain, Name: "mail.example.com"},
+		{ID: providerID, Type: assetdom.AssetTypeIPAddress, Name: "13.107.128.10"},
+		{ID: ownID, Type: assetdom.AssetTypeIPAddress, Name: "198.51.100.7"},
+		{ID: svcByName, Type: assetdom.AssetTypeService, SubType: "open_port", Name: "mail.example.com:443:tcp",
+			Props: map[string]any{"host": "13.107.128.10", "port": 443}},
+		{ID: svcByURL, Type: assetdom.AssetTypeService, SubType: "http", Name: "https://mail.example.com:443",
+			Props: map[string]any{"ip": "13.107.128.10"}},
+		{ID: svcOnProvider, Type: assetdom.AssetTypeService, SubType: "open_port", Name: "13.107.128.10:25:tcp",
+			Props: map[string]any{"host": "13.107.128.10", "port": 25}},
+		{ID: svcOnOwn, Type: assetdom.AssetTypeService, SubType: "open_port", Name: "198.51.100.7:22:tcp",
+			Props: map[string]any{"host": "198.51.100.7", "port": 22}},
+	}
+	res := InferGraphEdges(assets)
+	parent := map[shared.ID]shared.ID{}
+	for _, e := range append(res.AutoEdges, res.Suggestions...) {
+		if e.SourceID == providerID {
+			t.Fatalf("a provider address became a container: %+v", e)
+		}
+		parent[e.TargetID] = e.SourceID
+	}
+	if parent[svcByName] != nameID || parent[svcByURL] != nameID {
+		t.Fatalf("name services' parents = %v / %v, want the name", parent[svcByName], parent[svcByURL])
+	}
+	if _, ok := parent[svcOnProvider]; ok {
+		t.Fatal("a service on a provider address got an inferred parent")
+	}
+	if parent[svcOnOwn] != ownID {
+		t.Fatal("a dedicated address no longer contains its service")
+	}
+}
+
+func TestServiceNameHost(t *testing.T) {
+	for in, want := range map[string]string{
+		"api.example.com:443:tcp":       "api.example.com",
+		"https://api.example.com:8443/": "api.example.com",
+		"http://api.example.com/x":      "api.example.com",
+		"api.example.com:443":           "api.example.com",
+		"203.0.113.10:22/tcp":           "203.0.113.10",
+		"[2001:db8::1]:443":             "2001:db8::1",
+		"shop.example.com":              "",
+		"2001:db8::1:443:tcp":           "",
+	} {
+		if got := serviceNameHost(in); got != want {
+			t.Errorf("serviceNameHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

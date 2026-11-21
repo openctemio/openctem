@@ -20,10 +20,6 @@ import (
 
 var _ audit.ChainRetentionRepository = (*AuditRepository)(nil)
 
-// chainLockKey is the advisory lock AppendNextChainEntry takes, so a prune and
-// an append of the same chain never interleave.
-const chainLockQuery = `SELECT pg_advisory_xact_lock(hashtext('audit_log_chain'), hashtext($1))`
-
 // ChainAnchorHash returns the newest anchor hash of a tenant chain, or "".
 func (r *AuditRepository) ChainAnchorHash(ctx context.Context, tenantID shared.ID) (string, error) {
 	return chainAnchorHash(ctx, r.db, tenantID)
@@ -126,13 +122,17 @@ func (r *AuditRepository) ChainPrefixOlderThan(ctx context.Context, tenantID sha
 	return out, rows.Err()
 }
 
-// PruneChainPrefix records the anchor and deletes the pruned prefix, all in
-// one transaction under the chain's advisory lock.
+// PruneChainPrefix archives nothing itself: the archive is already stored. It
+// calls audit_chain_prune_prefix, which under the chain's advisory lock checks
+// that the ids are exactly the chain's entries up to the anchor position, that
+// the last one still carries the anchor hash and that every row is older than
+// 365 days, then records the anchor and deletes the prefix. The function runs
+// as the schema owner; the API role holds no DELETE on the audit tables
+// (migration audit_chain_owner_only).
 func (r *AuditRepository) PruneChainPrefix(ctx context.Context, anchor audit.ChainAnchor, auditLogIDs []shared.ID) error {
 	if len(auditLogIDs) == 0 || len(auditLogIDs) != anchor.PrunedCount {
 		return fmt.Errorf("%w: pruned count %d does not match %d ids", shared.ErrValidation, anchor.PrunedCount, len(auditLogIDs))
 	}
-	tenant := anchor.TenantID.String()
 	ids := make([]string, len(auditLogIDs))
 	for i, id := range auditLogIDs {
 		ids[i] = id.String()
@@ -146,62 +146,29 @@ func (r *AuditRepository) PruneChainPrefix(ctx context.Context, anchor audit.Cha
 	if err := setLocalStatementTimeout(ctx, tx, timeoutBatch); err != nil {
 		return err
 	}
-
-	if _, err := tx.ExecContext(ctx, chainLockQuery, tenant); err != nil {
-		return fmt.Errorf("lock chain: %w", err)
+	var pruned int
+	if err := tx.QueryRowContext(ctx, `SELECT audit_chain_prune_prefix($1, $2, $3, $4::uuid[], $5, $6)`,
+		anchor.TenantID.String(), anchor.LastChainPosition, anchor.AnchorHash, pq.Array(ids),
+		anchor.ArchivePath, anchor.ArchiveSHA256).Scan(&pruned); err != nil {
+		if isAuditChainConflict(err) {
+			return audit.ErrChainPruneConflict
+		}
+		return fmt.Errorf("prune chain prefix: %w", err)
 	}
-
-	// The ids must be exactly the entries at or before the last position,
-	// and the last one must still carry the anchor hash. Otherwise the chain
-	// changed (a rebaseline rewrote it, or the read raced an append).
-	var atOrBefore, matching int
-	var lastHash sql.NullString
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*) FILTER (WHERE chain_position <= $2),
-		       COUNT(*) FILTER (WHERE chain_position <= $2 AND audit_log_id = ANY($3::uuid[])),
-		       MAX(hash) FILTER (WHERE chain_position = $2)
-		  FROM audit_log_chain
-		 WHERE tenant_id = $1`, tenant, anchor.LastChainPosition, pq.Array(ids)).
-		Scan(&atOrBefore, &matching, &lastHash); err != nil {
-		return fmt.Errorf("check prefix: %w", err)
-	}
-	if atOrBefore != len(ids) || matching != len(ids) || !lastHash.Valid || lastHash.String != anchor.AnchorHash {
-		return audit.ErrChainPruneConflict
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO audit_chain_anchors (tenant_id, anchor_hash, last_chain_position, pruned_count,
-			oldest_logged_at, newest_logged_at, archive_path, archive_sha256)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		tenant, anchor.AnchorHash, anchor.LastChainPosition, anchor.PrunedCount,
-		anchor.OldestLoggedAt, anchor.NewestLoggedAt, anchor.ArchivePath, anchor.ArchiveSHA256); err != nil {
-		return fmt.Errorf("record anchor: %w", err)
-	}
-	// Rebaseline evidence for these rows is in the archive too.
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM audit_chain_rebaseline_entries
-		 WHERE tenant_id = $1 AND audit_log_id = ANY($2::uuid[])`, tenant, pq.Array(ids)); err != nil {
-		return fmt.Errorf("prune rebaseline entries: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM audit_log_chain
-		 WHERE tenant_id = $1 AND audit_log_id = ANY($2::uuid[])`, tenant, pq.Array(ids)); err != nil {
-		return fmt.Errorf("prune chain entries: %w", err)
-	}
-	// System-chain rows have no tenant; tenant rows must belong to the chain.
-	res, err := tx.ExecContext(ctx, `
-		DELETE FROM audit_logs
-		 WHERE id = ANY($2::uuid[])
-		   AND (tenant_id = $1::uuid OR ($1::uuid = $3::uuid AND tenant_id IS NULL))`,
-		tenant, pq.Array(ids), audit.SystemChainTenantID.String())
-	if err != nil {
-		return fmt.Errorf("prune audit logs: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n != int64(len(ids)) {
+	if pruned != len(ids) {
 		return audit.ErrChainPruneConflict
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit prune: %w", err)
 	}
 	return nil
+}
+
+// sqlStateAuditChainChanged is the SQLSTATE the audit chain functions raise
+// when the chain is no longer what the caller read.
+const sqlStateAuditChainChanged = "OC409"
+
+func isAuditChainConflict(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && string(pqErr.Code) == sqlStateAuditChainChanged
 }

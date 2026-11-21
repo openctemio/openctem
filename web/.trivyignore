@@ -1,0 +1,6 @@
+# GHSA-fc5q-39xc-vjpf (CVE-2026-112366): picomatch ReDoS through repeated extglob patterns.
+# No patched release as of 2026-11-17 (vulnerable <= 4.0.7, no first patched version; 4.0.7 is the latest).
+# Reached only through build and test tooling (rollup plugins, fdir, vite, vitest, knip, lint-staged);
+# no runtime code passes patterns to picomatch.
+# Remove this entry when a fixed picomatch is published and the lock is updated.
+CVE-2026-112366 exp:2026-12-31

@@ -105,6 +105,7 @@ const (
 	codeLinkProofUnavailable    apierror.Code = "LINK_PROOF_UNAVAILABLE"
 	codeInvitationAlreadyMember apierror.Code = "INVITATION_ALREADY_MEMBER"
 	codeInvitationSuspended     apierror.Code = "INVITATION_MEMBERSHIP_SUSPENDED"
+	codeInvitationOtherAddress  apierror.Code = "INVITATION_FOR_ANOTHER_ADDRESS"
 	codeMembershipReactivate    apierror.Code = "MEMBERSHIP_SUSPENDED_REACTIVATE"
 	codeInviteeNotOnVerifiedDom apierror.Code = "INVITEE_NOT_ON_VERIFIED_DOMAIN"
 	codeInviteeDomainNotAllowed apierror.Code = "INVITEE_DOMAIN_NOT_ALLOWED"
@@ -234,12 +235,16 @@ var authErrorTable = []authErrorEntry{
 
 	// Invitations.
 	{e(tenantapp.ErrInvitationAlreadyMember), http.StatusBadRequest, codeInvitationAlreadyMember, "This person is already a member of this organization.", ""},
+	{e(tenantapp.ErrInvitationForAnotherAddress), http.StatusForbidden, codeInvitationOtherAddress, "This invitation was sent to another email address. Sign in with that account to accept it.", ""},
 	{e(tenantapp.ErrInvitationMembershipSuspended), http.StatusBadRequest, codeInvitationSuspended, "Your access to this organization is suspended. Contact an administrator to be reactivated.", ""},
 	{e(tenantapp.ErrMembershipSuspendedReactivate), http.StatusBadRequest, codeMembershipReactivate, "This person's membership is suspended. Reactivate it in Members instead.", ""},
 	{e(tenantapp.ErrInviteeNotOnVerifiedDomain), http.StatusForbidden, codeInviteeNotOnVerifiedDom, "This address is not on a domain verified for the organization.", ""},
 	{e(tenantapp.ErrEmailDomainNotAllowed), http.StatusBadRequest, codeInviteeDomainNotAllowed, "This email domain is not allowed for the organization.", ""},
 	{e(tenantapp.ErrInvitationNoLongerValid), http.StatusForbidden, codeInvitationNoLongerValid, "This invitation is no longer valid. Ask the organization for a new one.", ""},
-	{e(tenantapp.ErrPersonalAccountsBlocked), http.StatusForbidden, codePersonalAccountsBlocked, "This organization does not accept personal email accounts.", ""},
+	// The invitation check (tenant) and the token check (auth) are one answer:
+	// without the auth sentinel a token request refused for a personal
+	// account was a 500.
+	{e(tenantapp.ErrPersonalAccountsBlocked, auth.ErrPersonalAccountsBlocked), http.StatusForbidden, codePersonalAccountsBlocked, "This organization does not accept personal email accounts.", ""},
 	{e(tenantdom.ErrInvitationResendTooSoon), http.StatusTooManyRequests, codeInvitationResendTooSoon, "This invitation was sent a moment ago. Try again shortly.", ""},
 	{e(tenantdom.ErrInvitationRateLimited), http.StatusTooManyRequests, codeInvitationsRateLimited, "Too many invitations were sent. Try again later.", ""},
 }

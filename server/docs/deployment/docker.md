@@ -323,10 +323,37 @@ cookies); GitHub sees the server's IP address, as for any download.
   release on a connected machine and import it in the console (Monitoring > Software
   updates, super administrator). It is verified exactly like the online check.
 - Internal mirror: `VERSION_CHECK_URL=https://...` (https only). The signature,
-  not the host, is trusted; a mirror on a private address also needs the private
-  egress allowlist (`OPENCTEM_HTTPSEC_*`).
+  not the host, is trusted; a mirror on a private address also needs its range
+  opened (next section).
 
 Details: [version check](../architecture/version-check.md).
+
+### Services on private addresses (GitLab, Jira, mail relay)
+
+The API refuses outbound connections to private addresses (10.0.0.0/8,
+172.16.0.0/12, 192.168.0.0/16, fc00::/7) until they are opened, so a webhook or
+an integration cannot reach the platform's own network. To let the platform
+reach a service on your network, such as a self-managed GitLab whose CI tokens
+it verifies:
+
+1. Sign in to the platform console as a platform owner and open System >
+   Private networks.
+2. Under "Test a destination", enter the service's host name
+   (`gitlab.example.com`, no `https://` or path). The page lists each address
+   the name resolves to and whether the platform may reach it; a blocked
+   private address comes with the range that would open it.
+3. Add the narrowest range that holds the service (its `/32`, or its `/24`),
+   with a note such as "GitLab", and save with a reason. The change applies
+   without a restart, on every API server within 15 seconds, and is recorded in
+   the admin audit log.
+
+Every organization's webhooks, integrations and CI connections can reach an
+opened range, so open only your own services. Loopback, link-local and cloud
+metadata addresses are never reachable, and nothing can be opened while
+`SIGNUP_MODE=open`. Ranges can also be set in the environment
+(`OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS=10.20.0.0/24`, applied at start-up); the
+console shows them read only, labelled "Set on the server". Details:
+[outbound requests](../architecture/outbound-requests.md#private-network-destinations).
 
 ### Gateway user
 
@@ -382,6 +409,9 @@ make docker-psql         # psql shell in the postgres container
 
 ## Troubleshooting
 
+- **Start here:** `./support.sh doctor` in `server/deploy` checks the installation and names the fix for
+  each failed check; `./support.sh bundle` writes an archive without your data to send to whoever helps
+  you ([Diagnose and get support](../operations/diagnose-and-get-support.md)).
 - **Hot reload does not pick up changes:** `.air.toml` uses polling
   (`poll = true`, `poll_interval = 500`); check the bind mount works on your
   host.

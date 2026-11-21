@@ -6,14 +6,18 @@ package query
 // ("findings where <filter> | count by field | top N by count") built and
 // run through the plan layer, so the tenant, the data scope, the pentest
 // member rule and the mandatory exclusions apply exactly as for the list.
+//
+// Answers are not kept between requests: every call resolves the caller's
+// data scope and runs the query, so a removed group, grant, campaign
+// membership or role changes the next answer (the 0-second revocation of
+// docs/architecture/permission-realtime-sync.md). The 1 s budget and the
+// per-user, per-tenant and per-process slots bound the cost instead.
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -27,11 +31,8 @@ const (
 	// has no counts rather than late or wrong ones.
 	ValuesBudget = time.Second
 	// MaxValues is the most values returned.
-	MaxValues = 20
-	// valuesCacheTTL and valuesCacheSize bound the per-caller cache.
-	valuesCacheTTL  = 60 * time.Second
-	valuesCacheSize = 2000
-	maxPrefixLen    = 100
+	MaxValues    = 20
+	maxPrefixLen = 100
 )
 
 // ValuesInput asks for the values of one field.
@@ -87,11 +88,6 @@ func (s *Service) Values(ctx context.Context, c Caller, in ValuesInput) (*Values
 	if len(prefix) > maxPrefixLen {
 		return nil, fmt.Errorf("%w: prefix too long", shared.ErrValidation)
 	}
-	key := strings.Join([]string{c.TenantID, c.UserID, fmt.Sprint(c.IsAdmin), ent.Name, path, prefix, in.Filter}, "\x00")
-	if res, ok := s.values.get(key); ok {
-		return res, nil
-	}
-
 	q, _, err := querylang.ParseFilter(ent, in.Filter)
 	if err != nil {
 		return nil, err
@@ -144,7 +140,6 @@ func (s *Service) Values(ctx context.Context, c Caller, in ValuesInput) (*Values
 			break
 		}
 	}
-	s.values.put(key, res)
 	return res, nil
 }
 
@@ -216,60 +211,4 @@ func withoutPath(ent *querylang.Entity, x querylang.Expr, path string) querylang
 		return kept[0]
 	}
 	return &querylang.Logic{Kind: querylang.And, Terms: kept, Span: l.Span}
-}
-
-// valuesCache keeps answers for valuesCacheTTL, keyed by tenant, user and
-// request: one caller's counts are never served to another.
-type valuesCache struct {
-	mu      sync.Mutex
-	now     func() time.Time
-	entries map[string]valuesEntry
-}
-
-type valuesEntry struct {
-	res     *ValuesResult
-	expires time.Time
-}
-
-func newValuesCache() *valuesCache {
-	return &valuesCache{now: time.Now, entries: map[string]valuesEntry{}}
-}
-
-func (c *valuesCache) get(key string) (*ValuesResult, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	e, ok := c.entries[key]
-	if !ok || c.now().After(e.expires) {
-		delete(c.entries, key)
-		return nil, false
-	}
-	return e.res, true
-}
-
-func (c *valuesCache) put(key string, res *ValuesResult) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	now := c.now()
-	if len(c.entries) >= valuesCacheSize {
-		// Drop expired entries, then the oldest half.
-		type kv struct {
-			k string
-			t time.Time
-		}
-		all := make([]kv, 0, len(c.entries))
-		for k, e := range c.entries {
-			if now.After(e.expires) {
-				delete(c.entries, k)
-				continue
-			}
-			all = append(all, kv{k, e.expires})
-		}
-		if len(c.entries) >= valuesCacheSize {
-			sort.Slice(all, func(i, j int) bool { return all[i].t.Before(all[j].t) })
-			for _, x := range all[:len(all)/2] {
-				delete(c.entries, x.k)
-			}
-		}
-	}
-	c.entries[key] = valuesEntry{res: res, expires: now.Add(valuesCacheTTL)}
 }

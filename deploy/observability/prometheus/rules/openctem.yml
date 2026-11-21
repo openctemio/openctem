@@ -200,6 +200,20 @@ groups:
           description: Vulnerability, exploit and priority data goes stale. Threat intel, Sync status shows the last error; for the bundle feed check that the publisher's newest release is current.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale
 
+      # The freshness watch's open conditions (internal/app/feedwatch): stale
+      # data, a newest CVE record older than 12 hours, failing or refused
+      # imports, a collapsed daily CVE count. The platform also e-mails the
+      # administrators and shows every user a banner; this is the same signal
+      # for the operator's own alerting.
+      - alert: FeedFreshness
+        expr: max by (code) (openctem_feed_freshness_alerts) > 0
+        for: 10m
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: 'Vulnerability data freshness problem: {{ $labels.code }}'
+          description: New vulnerabilities may not reach findings and alerts. System, Threat intelligence in the platform console names the feed and the cause.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedfreshness
+
   - name: openctem-work
     rules:
       - alert: SensorsOffline

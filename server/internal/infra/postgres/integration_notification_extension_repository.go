@@ -57,9 +57,10 @@ func (r *IntegrationNotificationExtensionRepository) createWithExecutor(ctx cont
 		INSERT INTO integration_notification_extensions (
 			integration_id,
 			enabled_severities, enabled_event_types,
-			message_template, detail_level, min_interval_minutes
+			message_template, detail_level, min_interval_minutes,
+			group_similar, group_window_minutes, urgent_at_once
 		) VALUES (
-			$1, $2, $3, $4, $5, $6
+			$1, $2, $3, $4, $5, $6, $7, $8, $9
 		)
 	`
 
@@ -70,6 +71,9 @@ func (r *IntegrationNotificationExtensionRepository) createWithExecutor(ctx cont
 		ext.MessageTemplate(),
 		string(ext.DetailLevel()),
 		ext.MinIntervalMinutes(),
+		ext.Grouping().Enabled,
+		ext.Grouping().WindowMinutes,
+		ext.Grouping().UrgentAtOnce,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -88,7 +92,8 @@ func (r *IntegrationNotificationExtensionRepository) GetByIntegrationID(ctx cont
 		SELECT integration_id,
 			   COALESCE(enabled_severities, '["critical", "high"]'::jsonb),
 			   COALESCE(enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
-			   message_template, detail_level, min_interval_minutes
+			   message_template, detail_level, min_interval_minutes,
+			   group_similar, group_window_minutes, urgent_at_once
 		FROM integration_notification_extensions
 		WHERE integration_id = $1
 	`
@@ -118,7 +123,10 @@ func (r *IntegrationNotificationExtensionRepository) Update(ctx context.Context,
 			enabled_event_types = $3,
 			message_template = $4,
 			detail_level = $5,
-			min_interval_minutes = $6
+			min_interval_minutes = $6,
+			group_similar = $7,
+			group_window_minutes = $8,
+			urgent_at_once = $9
 		WHERE integration_id = $1
 	`
 
@@ -129,6 +137,9 @@ func (r *IntegrationNotificationExtensionRepository) Update(ctx context.Context,
 		ext.MessageTemplate(),
 		string(ext.DetailLevel()),
 		ext.MinIntervalMinutes(),
+		ext.Grouping().Enabled,
+		ext.Grouping().WindowMinutes,
+		ext.Grouping().UrgentAtOnce,
 	)
 	if err != nil {
 		return fmt.Errorf("update notification extension: %w", err)
@@ -202,7 +213,8 @@ func (r *IntegrationNotificationExtensionRepository) ListIntegrationsWithNotific
 			i.config, i.metadata, i.stats, i.created_at, i.updated_at, i.created_by,
 			COALESCE(n.enabled_severities, '["critical", "high"]'::jsonb),
 			COALESCE(n.enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
-			n.message_template, n.detail_level, n.min_interval_minutes
+			n.message_template, n.detail_level, n.min_interval_minutes,
+			COALESCE(n.group_similar, true), COALESCE(n.group_window_minutes, 2), COALESCE(n.urgent_at_once, true)
 		FROM integrations i
 		LEFT JOIN integration_notification_extensions n ON i.id = n.integration_id
 		WHERE i.tenant_id = $1 AND i.category = 'notification'
@@ -241,12 +253,14 @@ func (r *IntegrationNotificationExtensionRepository) scanNotificationExtension(r
 		messageTemplate     sql.NullString
 		detailLevel         string
 		minIntervalMinutes  int
+		grouping            integration.Grouping
 	)
 
 	err := row.Scan(
 		&integrationID,
 		&enabledSeveritiesDB, &enabledEventTypesDB,
 		&messageTemplate, &detailLevel, &minIntervalMinutes,
+		&grouping.Enabled, &grouping.WindowMinutes, &grouping.UrgentAtOnce,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -263,7 +277,7 @@ func (r *IntegrationNotificationExtensionRepository) scanNotificationExtension(r
 	// Parse event types from JSONB
 	enabledEventTypes := parseEventTypesFromJSON(enabledEventTypesDB)
 
-	return integration.ReconstructNotificationExtension(
+	ext := integration.ReconstructNotificationExtension(
 		intgID,
 		"", // channelID - deprecated, now in integrations.metadata
 		"", // channelName - deprecated, now in integrations.metadata
@@ -272,7 +286,9 @@ func (r *IntegrationNotificationExtensionRepository) scanNotificationExtension(r
 		messageTemplate.String,
 		detailLevel,
 		minIntervalMinutes,
-	), nil
+	)
+	ext.SetGrouping(grouping)
+	return ext, nil
 }
 
 // parseSeveritiesFromJSON parses a JSONB array into []Severity.
@@ -344,6 +360,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 		messageTemplate     sql.NullString
 		detailLevel         sql.NullString
 		minIntervalMinutes  sql.NullInt32
+		grouping            integration.Grouping
 	)
 
 	err := rows.Scan(
@@ -355,6 +372,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 		// Notification extension
 		&enabledSeveritiesDB, &enabledEventTypesDB,
 		&messageTemplate, &detailLevel, &minIntervalMinutes,
+		&grouping.Enabled, &grouping.WindowMinutes, &grouping.UrgentAtOnce,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan integration with notification row: %w", err)
@@ -390,6 +408,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 			detailLevel.String,
 			int(minIntervalMinutes.Int32),
 		)
+		notifExt.SetGrouping(grouping)
 	}
 
 	return integration.NewIntegrationWithNotification(intg, notifExt), nil

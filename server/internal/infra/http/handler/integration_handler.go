@@ -1280,6 +1280,13 @@ type NotificationExtensionResponse struct {
 	MessageTemplate    string   `json:"message_template,omitempty"`
 	DetailLevel        string   `json:"detail_level" example:"standard" enums:"minimal,standard,full"`
 	MinIntervalMinutes int      `json:"min_interval_minutes" example:"5"`
+	// GroupSimilar: similar alerts about findings within the window reach
+	// the channel as one message.
+	GroupSimilar       bool `json:"group_similar" example:"true"`
+	GroupWindowMinutes int  `json:"group_window_minutes" example:"2" minimum:"1" maximum:"60"`
+	// UrgentAtOnce: a critical or known-exploited alert is sent on its own
+	// at once (a few per window); the rest are grouped.
+	UrgentAtOnce bool `json:"urgent_at_once" example:"true"`
 }
 
 // IntegrationWithNotificationResponse represents an integration with notification extension.
@@ -1317,6 +1324,9 @@ func toIntegrationWithNotificationResponse(iwn *integration.IntegrationWithNotif
 			MessageTemplate:    iwn.Notification.MessageTemplate(),
 			DetailLevel:        string(iwn.Notification.DetailLevel()),
 			MinIntervalMinutes: iwn.Notification.MinIntervalMinutes(),
+			GroupSimilar:       iwn.Notification.Grouping().Enabled,
+			GroupWindowMinutes: iwn.Notification.Grouping().WindowMinutes,
+			UrgentAtOnce:       iwn.Notification.Grouping().UrgentAtOnce,
 		}
 	}
 
@@ -1373,6 +1383,10 @@ type CreateNotificationIntegrationRequest struct {
 	// DetailLevel: minimal, standard (default) or full.
 	DetailLevel        string `json:"detail_level" validate:"omitempty,oneof=minimal standard full"`
 	MinIntervalMinutes *int   `json:"min_interval_minutes"`
+	// Grouping of similar alerts (default: on, 2 minutes, urgent at once).
+	GroupSimilar       *bool `json:"group_similar"`
+	GroupWindowMinutes *int  `json:"group_window_minutes" validate:"omitempty,min=1,max=60"`
+	UrgentAtOnce       *bool `json:"urgent_at_once"`
 
 	// Metadata holds non-sensitive provider-specific config (e.g. Splunk HEC
 	// hec_url / index / sourcetype). The credential (token/URL) still goes in
@@ -1436,6 +1450,9 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		MessageTemplate:    req.MessageTemplate,
 		DetailLevel:        req.DetailLevel,
 		MinIntervalMinutes: minInterval,
+		GroupSimilar:       req.GroupSimilar,
+		GroupWindowMinutes: req.GroupWindowMinutes,
+		UrgentAtOnce:       req.UrgentAtOnce,
 		Metadata:           req.Metadata,
 		CanEnableOrgMail:   canEnableOrgMail(r),
 	}
@@ -1469,6 +1486,9 @@ type UpdateNotificationIntegrationRequest struct {
 	MessageTemplate    *string  `json:"message_template"`
 	DetailLevel        *string  `json:"detail_level" validate:"omitempty,oneof=minimal standard full"`
 	MinIntervalMinutes *int     `json:"min_interval_minutes"`
+	GroupSimilar       *bool    `json:"group_similar"`
+	GroupWindowMinutes *int     `json:"group_window_minutes" validate:"omitempty,min=1,max=60"`
+	UrgentAtOnce       *bool    `json:"urgent_at_once"`
 
 	// Metadata, when non-nil, replaces the integration's non-sensitive
 	// provider config (e.g. Splunk HEC hec_url / index / sourcetype).
@@ -1522,6 +1542,9 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		MessageTemplate:    req.MessageTemplate,
 		DetailLevel:        req.DetailLevel,
 		MinIntervalMinutes: req.MinIntervalMinutes,
+		GroupSimilar:       req.GroupSimilar,
+		GroupWindowMinutes: req.GroupWindowMinutes,
+		UrgentAtOnce:       req.UrgentAtOnce,
 		Metadata:           req.Metadata,
 		CanEnableOrgMail:   canEnableOrgMail(r),
 	}

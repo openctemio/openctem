@@ -23,6 +23,12 @@ describe('AwaitingApprovalBand', () => {
     expect(screen.getByText(/Reason:\s*new subsidiary/)).toBeInTheDocument()
   })
 
+  it('prints the reason and the note on separate labelled lines, the note only when present', () => {
+    band({ reason: 'Scanner was wrong', note: 'False' })
+    expect(screen.getByText(/Reason:\s*Scanner was wrong/)).toBeInTheDocument()
+    expect(screen.getByText('Note: False')).toBeInTheDocument()
+  })
+
   it('offers no Cancel unless the caller says the viewer may cancel', () => {
     band()
     expect(screen.queryByRole('button', { name: 'Cancel request' })).toBeNull()

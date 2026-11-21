@@ -14,8 +14,7 @@ import (
 // OPENCTEM_HTTPSEC_ALLOW_PRIVATE* env vars inherited from the harness cannot
 // drift a test result.
 func TestMain(m *testing.M) {
-	allowPrivate = false
-	allowedPrivateCIDRs = nil
+	policy.Store(&egressPolicy{})
 	m.Run()
 }
 
@@ -97,9 +96,7 @@ func TestIsIPBlocked_Ranges(t *testing.T) {
 // on-prem operator can scan 10/8 + 192.168/16 without accidentally
 // opening up the cloud metadata endpoint.
 func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
-	prev := allowPrivate
-	allowPrivate = true
-	defer func() { allowPrivate = prev }()
+	setPolicyForTest(t, &egressPolicy{all: true})
 
 	// RFC1918 / ULA now pass.
 	rfc1918 := []string{
@@ -151,9 +148,7 @@ func TestIsIPBlocked_AllowPrivateMode(t *testing.T) {
 // CIDRs anyway, but ValidateURL intercepts them earlier on a name
 // match, and that branch must not be loosened.
 func TestValidateURL_AllowPrivate_KeepsAliasesBlocked(t *testing.T) {
-	prev := allowPrivate
-	allowPrivate = true
-	defer func() { allowPrivate = prev }()
+	setPolicyForTest(t, &egressPolicy{all: true})
 
 	cases := []string{
 		"http://localhost:8080/",
@@ -171,9 +166,7 @@ func TestValidateURL_AllowPrivate_KeepsAliasesBlocked(t *testing.T) {
 // still reject so TestIsIPBlocked_Ranges above remains robust when
 // the env var is unset.
 func TestIsIPBlocked_DefaultMode_BlocksPrivate(t *testing.T) {
-	prev := allowPrivate
-	allowPrivate = false
-	defer func() { allowPrivate = prev }()
+	setPolicyForTest(t, &egressPolicy{all: false})
 
 	for _, ip := range []string{"10.0.0.1", "192.168.1.1", "172.16.0.1"} {
 		if !IsIPBlocked(net.ParseIP(ip)) {
@@ -185,14 +178,14 @@ func TestIsIPBlocked_DefaultMode_BlocksPrivate(t *testing.T) {
 // AllowPrivate() exposes the runtime toggle for startup logging.
 // Trivial, but pinned so a refactor can't silently flip the return.
 func TestAllowPrivate_ReturnsCurrentToggle(t *testing.T) {
-	prev := allowPrivate
-	defer func() { allowPrivate = prev }()
+	prev := policy.Load()
+	defer policy.Store(prev)
 
-	allowPrivate = true
+	policy.Store(&egressPolicy{all: true})
 	if !AllowPrivate() {
 		t.Error("AllowPrivate() should return true when allowPrivate is true")
 	}
-	allowPrivate = false
+	policy.Store(&egressPolicy{})
 	if AllowPrivate() {
 		t.Error("AllowPrivate() should return false when allowPrivate is false")
 	}
@@ -248,5 +241,18 @@ func TestSafeHTTPClientWithHeaderTimeout(t *testing.T) {
 	}
 	if d := SafeHTTPClientWithHeaderTimeout(time.Second, 0).Transport.(*http.Transport).ResponseHeaderTimeout; d != 15*time.Second {
 		t.Fatalf("default header timeout lost: %s", d)
+	}
+}
+
+// Every never-reachable range has a reason, and the reasons name no range
+// that is not in the table.
+func TestHardBlockedReason_CoversTable(t *testing.T) {
+	for _, c := range hardBlockedIPRanges {
+		if hardBlockedReason[c] == "" {
+			t.Errorf("%s has no hard-block reason", c)
+		}
+	}
+	if len(hardBlockedReason) != len(hardBlockedIPRanges) {
+		t.Errorf("%d reasons for %d ranges", len(hardBlockedReason), len(hardBlockedIPRanges))
 	}
 }

@@ -111,7 +111,7 @@ func TestSSOConnectionsLimitReadErrorRefuses(t *testing.T) {
 	}
 }
 
-// Without a limit source (self-managed Community) connections are unlimited.
+// Without a limit source (a self-managed default build) connections are unlimited.
 func TestSSOConnectionsNoLimitSourceIsUnlimited(t *testing.T) {
 	ctx := context.Background()
 	sso := &SSOService{logger: logger.NewNop()}

@@ -28,6 +28,15 @@ entries and replaces its published ranges with the providers' own lists:
 A shared range wins over a dedicated one that overlaps it (the classifier
 answers "not shared" when any dedicated range holds an address), so a
 dedicated prefix overlapping a shared one is dropped here.
+
+The Microsoft service tags file has a dated name and is downloaded by hand
+(see SOURCES); without it, `build` keeps the dataset's current Azure Front
+Door ranges and says so.
+
+Freshness: the Go unit test TestEdgeaddr_DatasetAge (pkg/domain/edgeaddr)
+fails once the dataset's `version` date is more than 30 days old, so CI
+asks for a refresh at least monthly. Run `fetch` and `build` as above,
+review the diff (counts per provider are printed), and commit it.
 """
 
 import ipaddress
@@ -53,6 +62,8 @@ SOURCES = {
 # Microsoft publishes the service tags under a dated file name: download it
 # from https://www.microsoft.com/en-us/download/details.aspx?id=56519 and
 # save it as azure.json in the same directory.
+
+USER_AGENT = "edgeaddr-dataset/1"
 
 SUCURI = ["192.88.134.0/23", "185.93.228.0/22", "66.248.200.0/22", "2a02:fe80::/29"]
 
@@ -89,7 +100,9 @@ def fetch(dest: pathlib.Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for name, (method, url) in SOURCES.items():
         data = b"resp_format=json" if method == "POST" else None
-        req = urllib.request.Request(url, data=data, method=method, headers={"Accept": "application/json"})
+        # Some publishers refuse the default Python client name.
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Accept": "application/json", "User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 - fixed https URLs
             (dest / name).write_bytes(resp.read())
         print(f"fetched {name}")
@@ -158,10 +171,19 @@ def build(src: pathlib.Path, out: pathlib.Path) -> None:
     add("Imperva", "edge", nets(imperva["ipRanges"] + imperva.get("ipv6Ranges", [])))
     add("Sucuri", "edge", nets(SUCURI))
 
-    azure = json.loads((src / "azure.json").read_text())
-    for v in azure["values"]:
-        if v["name"] == "AzureFrontDoor.Frontend":
-            add("Azure Front Door", "edge", nets(v["properties"]["addressPrefixes"]))
+    old = json.loads(out.read_text())
+    if (src / "azure.json").exists():
+        azure = json.loads((src / "azure.json").read_text())
+        for v in azure["values"]:
+            if v["name"] == "AzureFrontDoor.Frontend":
+                add("Azure Front Door", "edge", nets(v["properties"]["addressPrefixes"]))
+    else:
+        # The service tags file is downloaded by hand; without it the
+        # dataset keeps its current Azure Front Door ranges.
+        print("azure.json missing: keeping the current Azure Front Door ranges")
+        for r in old["ranges"]:
+            if r["provider"] == "Azure Front Door":
+                add(r["provider"], r["class"], nets(r["prefixes"]))
 
     m365 = json.loads((src / "m365.json").read_text())
     add("Microsoft 365", "cloud_shared", nets([ip for e in m365 if e.get("serviceArea") == "Exchange" for ip in e.get("ips", [])]))
@@ -180,7 +202,6 @@ def build(src: pathlib.Path, out: pathlib.Path) -> None:
             ns = [n for n in ns if not any(n.version == s.version and n.overlaps(s) for s in shared_all)]
         entries.append({"provider": prov, "class": cls, "prefixes": [str(n) for n in ns]})
 
-    old = json.loads(out.read_text())
     orgs = old["orgs"]
     known = {o["match"] for o in orgs}
     # Specific names first: "cloudfront" must win over the generic "amazon".

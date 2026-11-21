@@ -29,9 +29,39 @@ its snippet. The fields:
   issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, in
   **GitHub Enterprise issuer** (the wizard covers github.com only). The
   platform fetches the issuer's keys over HTTPS through the outbound-request
-  guard; an issuer on a private address needs its subnet in
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API. When the issuer cannot be
-  reached, keys fetched earlier keep verifying for at most 6 hours.
+  guard; an issuer on a private address needs its subnet opened by a platform
+  administrator under console System > Private networks (or in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API). "Test a destination"
+  there shows what the issuer's name resolves to and whether it is reachable.
+  When the issuer cannot be
+  reached, keys fetched earlier keep verifying for at most 6 hours. When the
+  platform cannot or must not reach the provider, paste its keys instead
+  (**Signing keys**, below).
+- **Signing keys**: **Fetch from the provider** (the default: the platform
+  fetches the issuer's discovery document and keys, so it needs to reach the
+  provider) or **Use keys I paste**. With pasted keys, job tokens are verified
+  with those keys only and the platform never contacts the provider, even
+  when it could. Paste the provider's whole key document (a JWKS,
+  `{"keys":[...]}`, all keys):
+  - GitLab: `https://<your GitLab>/oauth/discovery/keys`;
+  - GitHub Actions: `<issuer>/.well-known/jwks`
+    (`https://token.actions.githubusercontent.com/.well-known/jwks` for github.com);
+  - other providers: the `jwks_uri` in `<issuer>/.well-known/openid-configuration`.
+
+  The document is public key material and is shown back on the trust. It is
+  checked when saved: at most 64 KiB and 10 keys, each an RSA key of at least
+  2048 bits (RS256) or an EC P-256 key (ES256), with a unique `kid`, `use`
+  absent or `sig`. A key carrying private parameters (`d`, `p`, `q`, `dp`,
+  `dq`, `qi`, `k`) is refused. The trust card lists the key ids, their
+  algorithm, when they were pasted and the last key that verified a token.
+  **Rotation**: providers rotate their keys. A token signed with a key that is
+  not pasted is refused with `CI_TOKEN_UNKNOWN_KEY` (never retried), the audit
+  log records `ci_run.token_refused` (`unknown_key`, with the token's and the
+  pasted key ids) and the organization's administrators get an alert (CI
+  token refusals channel, e-mail), at most once an hour per trust. Paste the
+  provider's current document again; pasting all its keys, including the next
+  one it publishes ahead of a rotation, avoids the gap. The change is audited
+  with the old and new key ids.
 - **Check a sample token** (in the dialog): paste a token from a job of that
   pipeline. The platform verifies its signature against the issuer's keys and
   shows its claims, the repository, ref, commit and run it reads from them,
@@ -74,6 +104,16 @@ The same through the API:
 curl -X POST "$API/api/v1/ci/trust-configs" -H "Authorization: Bearer $SESSION" \
   -H 'Content-Type: application/json' \
   -d '{"name":"acme on GitHub","provider":"github","rules":{"owners":["acme"],"refs":["main","feature/*"]}}'
+```
+
+With pasted keys (a self-managed GitLab the platform does not reach):
+
+```bash
+KEYS=$(curl -s https://gitlab.example.com/oauth/discovery/keys)   # run where GitLab is reachable
+jq -n --arg keys "$KEYS" '{name:"acme on GitLab", provider:"gitlab", issuer:"https://gitlab.example.com",
+  rules:{owners:["acme"]}, key_source:"pasted", signing_keys:$keys}' |
+curl -X POST "$API/api/v1/ci/trust-configs" -H "Authorization: Bearer $SESSION" \
+  -H 'Content-Type: application/json' -d @-
 ```
 
 ## 2. Run the scan in CI
@@ -264,7 +304,10 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 
 | Symptom | Cause |
 |---|---|
-| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** under **Settings > Trusted pipelines** lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted: the trust configuration accepts only ...`) | The token verified but a rule refused it. On a self-managed issuer the message names the rule and quotes the job's own value that did not match (for a pipeline file, the exact `ci_config_ref_uri` or `job_workflow_ref`, such as `gitlab.example.com/grp/proj//.gitlab-ci.yml@refs/heads/main`); `details.reasons` lists the rule codes. **Recent refused pipelines** shows the same value next to the configuration that refused it, and for a pipeline file or a branch offers to add it (`POST /api/v1/ci/trust-configs/{id}/allow` with the refusal's id, same permission, recent sign-in and audit as editing the configuration) |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | The token did not verify, or no trust configuration has its issuer: a wrong audience or tenant id, an expired token, or an issuer that differs from the configured one (a trailing slash, another host name). These never reach the audit log (anyone can send a token), but the organization keeps a short record per issuer: **Tokens refused before verification** (`GET /api/v1/ci/trust-refusals/unverified`) lists the issuer the token named, the reason, how often and when, and the configured issuer nearest to it with the difference |
+| `503 CI_ISSUER_UNAVAILABLE` | The platform could not fetch the CI provider's signing keys. For a self-managed issuer `details.cause` and the message name the class (for GitHub, gitlab.com and other hosted services the job gets a plain retry message and only the organization's record names it): `blocked_address` (the provider's host resolves to a private address the platform does not connect to: a platform administrator opens it under System > Private networks in the platform console), `dns`, `tls` (a private certificate authority or a wrong certificate), `timeout`, `issuer_mismatch` (the provider's discovery document names another issuer), `http_status`, `key_not_found` (keys just rotated) or `unreachable`. The same cause is shown under Tokens refused before verification. No address is ever named. A trust can also use pasted signing keys instead of fetching them |
+| `CI_TOKEN_UNKNOWN_KEY` | The trust uses pasted signing keys and the token is signed with another key: the provider rotated its keys. Paste its current key document in the trust (**Signing keys**) |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `CI_TOKEN_PIPELINE_IDENTITY` | The token carries no repository/project id or no usable workflow path |

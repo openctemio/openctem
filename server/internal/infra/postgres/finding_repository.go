@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 
 	"github.com/lib/pq"
 
@@ -1147,9 +1148,8 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 // PentestCampaignRole returns the user's role in a pentest campaign of the
 // tenant, or "" when the user is not a member.
 func (r *FindingRepository) PentestCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (string, error) {
-	const q = `SELECT role FROM pentest_campaign_members
-		WHERE tenant_id = $1 AND campaign_id = $2 AND user_id = $3`
-	var role string
+	q := "SELECT " + campaignaccess.RoleSQL("$1", "$2", "$3")
+	var role sql.NullString
 	err := r.db.QueryRowContext(ctx, q, tenantID, campaignID, userID).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -1157,7 +1157,7 @@ func (r *FindingRepository) PentestCampaignRole(ctx context.Context, tenantID, c
 	if err != nil {
 		return "", err
 	}
-	return role, nil
+	return role.String, nil
 }
 
 // GetByID retrieves a finding by ID.
@@ -3619,12 +3619,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		tenantIdx := argIndex + 1
 		args = append(args, filter.PentestCampaignMemberUserID.String(), filter.TenantID.String())
 		argIndex += 2
-		conditions = append(conditions, fmt.Sprintf(
-			`pentest_campaign_id IN (
-				SELECT campaign_id FROM pentest_campaign_members
-				WHERE user_id = $%d AND tenant_id = $%d
-				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
-			)`, userIdx, tenantIdx))
+		conditions = append(conditions, campaignaccess.FindingVisibleSQL(
+			"pentest_campaign_id", "findings.status", fmt.Sprintf("$%d", tenantIdx), fmt.Sprintf("$%d", userIdx)))
 	}
 
 	// Pentest membership visibility for the GENERIC findings surface: show
@@ -3636,12 +3632,8 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		tenantIdx := argIndex + 1
 		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
 		argIndex += 2
-		conditions = append(conditions, fmt.Sprintf(
-			`(source != 'pentest' OR pentest_campaign_id IN (
-				SELECT campaign_id FROM pentest_campaign_members
-				WHERE user_id = $%d AND tenant_id = $%d
-				  AND (role <> 'client' OR findings.status NOT IN ('draft', 'in_review'))
-			))`, userIdx, tenantIdx))
+		conditions = append(conditions, "(source != 'pentest' OR "+campaignaccess.FindingVisibleSQL(
+			"pentest_campaign_id", "findings.status", fmt.Sprintf("$%d", tenantIdx), fmt.Sprintf("$%d", userIdx))+")")
 	}
 
 	// RelatedToUserID: "assigned to / owned by me" — a finding is the user's when

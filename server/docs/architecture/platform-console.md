@@ -172,7 +172,6 @@ the alert webhook).
 | CAPTCHA (Turnstile site key and secret), with "check the secret key" | Settings > CAPTCHA | `/admin/settings/captcha`, `/verify` | `CAPTCHA_TURNSTILE_SECRET` + `_SITE_KEY` lock it | guarded |
 | Deployment region, once, before the first organization (the platform's system tenant does not count) | Settings > Configuration | `/admin/settings/region` | `DEPLOYMENT_REGION` locks it | guarded; immutable once set |
 | Default storage quota per organization (an organization's `storage_mb` limit wins; 0 = no quota) | Settings > Limits | `/admin/settings/storage-quota` | `STORAGE_TENANT_QUOTA_MB` is the default until the console stores one | super admin + step-up, audited |
-| Where CISA KEV and EPSS come from: the platform's own fetch (default) or the signed vulnerability release with the own fetch as a fallback for a stale copy (KEV older than 6 hours, EPSS older than 48 hours), and whether the platform may call CISA and FIRST at all (strict-egress installs turn it off) | System > Threat intelligence | `/admin/settings/threat-intel-source` | none | super admin + step-up, audited |
 | The scan identification markers every organization's scan jobs carry: a User-Agent and up to 4 request headers, each optionally enforced (no organization, program or sensor-local layer replaces it); organizations add their own over them ([scan identification](scan-identification.md)) | System > Scan identification | `/admin/settings/scan-identification` | none | step-up and a reason, audited, every administrator notified |
 | Alert webhook (HTTPS only, SSRF-guarded, optional HMAC signature), with "send a test alert" | Settings > Alerts | `/admin/settings/alerts`, `/test` | none (the kit's host probes stay host-side) | guarded; the previous receiver is told first |
 | Platform AI provider (Claude, OpenAI, Gemini or an OpenAI-compatible server with a base URL), model and key, a toggle to allow a private-network server, a model allow-list, off by default, with "test the key" | Settings > AI provider | `/admin/settings/ai`, `/test` | any of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` locks it | guarded |
@@ -348,6 +347,14 @@ How it works for the administrators:
 3. A repeats the action within 24 hours of asking. The approval is bound to
    A, the action and its exact target (the e-mail address, administrator or
    organization), and works once.
+
+The roster actions (role or active-state change, new administrator, reset of
+the console second factor, break-glass test, identity-provider unbind) take an
+optional `reason` (1 to 1000 characters after trimming; longer is refused with
+400). It is kept in the action's admin audit row and in the gate's
+`approval.used` or `approval.single_admin` row, next to the reason of the
+approval request. The redesigned console sends it with every one of these
+actions; it becomes required once that console ships.
 
 With only one named super admin (break-glass accounts do not count), the
 actions run on the super admin's own step-up, each recorded as critical

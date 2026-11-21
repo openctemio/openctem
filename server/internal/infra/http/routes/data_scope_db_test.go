@@ -115,7 +115,13 @@ func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 		if user != "" && user != (shared.ID{}).String() {
 			ctx = context.WithValue(ctx, middleware.UserIDKey, user)
 		}
-		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
+		// A test that plays a caller of another organization names its tenant,
+		// as the real principal carries it.
+		tenant := h.tenant.String()
+		if t := r.Header.Get("X-Test-Tenant"); t != "" {
+			tenant = t
+		}
+		ctx = context.WithValue(ctx, middleware.TenantIDKey, tenant)
 		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
 		perms := dsMemberPerms
 		if p := r.Header.Get("X-Test-Perms"); p != "" {

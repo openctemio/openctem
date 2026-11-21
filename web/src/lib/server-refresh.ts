@@ -25,6 +25,7 @@
 
 import { createHash } from 'node:crypto'
 
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { env } from '@/lib/env'
 import { rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
@@ -108,7 +109,12 @@ export async function callRefreshEndpoint(
   try {
     const response = await fetch(`${env.api.url}/api/v1/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // The browser's User-Agent, so the API's rotation grace sees the
+        // browser as the client, not this server.
+        ...(await browserContextHeaders()),
+      },
       body: JSON.stringify({ refresh_token: refreshToken, tenant_id: tenantId }),
     })
     const data = await response.json().catch(() => ({}))

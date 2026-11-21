@@ -31,7 +31,7 @@ func TestProcess_DeadChannelCountsADeadLetter(t *testing.T) {
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
 	for i := 0; i < outboxdom.MaxDeliveryAttempts(); i++ {
 		makeDue(entry)
-		if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+		if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 			t.Fatal(err)
 		}
 		got := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel)) - before

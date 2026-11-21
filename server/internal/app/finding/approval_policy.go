@@ -122,6 +122,10 @@ func (s *VulnerabilityService) orgApprovalPolicy(ctx context.Context, tid shared
 	if s.approvalSettings == nil {
 		return out, nil
 	}
+	memo := approvalMemoFor(ctx, tid)
+	if op, ok := memo.cachedOrgPolicy(); ok {
+		return op, nil
+	}
 	settings, err := s.approvalSettings.GetFindingApprovalSettings(ctx, tid.String())
 	if err != nil {
 		return out, fmt.Errorf("read the organization's approval settings: %w", err)
@@ -132,12 +136,22 @@ func (s *VulnerabilityService) orgApprovalPolicy(ctx context.Context, tid shared
 	out.acceptLevel = settings.EffectiveAcceptApproval(now)
 	out.secondLookPercent = settings.EffectiveSecondLookPercent(now)
 	out.poolConfigured = out.policy.SecurityPoolGroupID != ""
+	if memo != nil {
+		memo.setOrg(out)
+	}
 	return out, nil
 }
 
 // findingPolicyFacts are the policy facts of f: from the finding itself,
 // and the asset and owners when the repository can read them.
 func (s *VulnerabilityService) findingPolicyFacts(ctx context.Context, f *vulnerability.Finding) (PolicyFacts, error) {
+	if r, ok := s.approvalRepo.(policyFactsManyReader); ok {
+		if m := approvalMemoFor(ctx, f.TenantID()); m.covers(f.ID()) {
+			if pf, ok, err := m.policyFacts(ctx, r, f.ID()); err != nil || ok {
+				return pf, err
+			}
+		}
+	}
 	if r, ok := s.approvalRepo.(policyFactsReader); ok {
 		pf, err := r.PolicyFacts(ctx, f.TenantID(), f.ID())
 		if err != nil {
@@ -174,7 +188,13 @@ func (s *VulnerabilityService) approverCandidates(ctx context.Context, tid, find
 		}
 		return out, nil
 	}
-	all, err := s.approverDir.FindingApprovers(ctx, tid)
+	memo := approvalMemoFor(ctx, tid)
+	var all []FindingApprover
+	if memo != nil {
+		all, err = memo.findingApprovers(ctx, s.approverDir)
+	} else {
+		all, err = s.approverDir.FindingApprovers(ctx, tid)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list finding approvers: %w", err)
 	}
@@ -184,7 +204,11 @@ func (s *VulnerabilityService) approverCandidates(ctx context.Context, tid, find
 		if err != nil {
 			continue
 		}
-		if s.dataScope != nil {
+		if s.dataScope != nil && memo.covers(findingID) {
+			if !s.approverSees(ctx, memo, uid, findingID) {
+				continue
+			}
+		} else if s.dataScope != nil {
 			if err := s.dataScope.AssertFindingForUser(ctx, tid, uid, findingID); err != nil {
 				if !errors.Is(err, shared.ErrNotFound) {
 					s.logger.Warn("approval policy: data scope", "error", logger.SanitizeError(err))
@@ -204,6 +228,10 @@ func (s *VulnerabilityService) securityPoolMembers(ctx context.Context, tid shar
 	if !op.poolConfigured {
 		return inPool, nil
 	}
+	memo := approvalMemoFor(ctx, tid)
+	if p, ok := memo.cachedPoolMembers(); ok {
+		return p, nil
+	}
 	r, ok := s.approvalRepo.(securityPoolReader)
 	if !ok {
 		return inPool, nil
@@ -218,6 +246,9 @@ func (s *VulnerabilityService) securityPoolMembers(ctx context.Context, tid shar
 	}
 	for _, id := range members {
 		inPool[id] = true
+	}
+	if memo != nil {
+		memo.setPool(inPool)
 	}
 	return inPool, nil
 }
@@ -290,13 +321,41 @@ func kindOfStatus(status vulnerability.FindingStatus) (approvalpolicy.Kind, bool
 	return "", false
 }
 
+// storedPolicyEval is the evaluation kept on a request: the result and how
+// many people could sign it off when it was made (the people themselves are
+// not kept; they are evaluated again at decision time).
+type storedPolicyEval struct {
+	approvalpolicy.Result
+	EligibleApprovers *int `json:"eligible_approvers,omitempty"`
+}
+
 // policyEvalJSON is the evaluation kept on the request as evidence.
 func policyEvalJSON(res approvalpolicy.Result) []byte {
-	b, err := json.Marshal(res)
+	n := len(res.Eligible)
+	b, err := json.Marshal(storedPolicyEval{Result: res, EligibleApprovers: &n})
 	if err != nil {
 		return nil
 	}
 	return b
+}
+
+// StoredPolicySummary reads what a request's stored evaluation says: the
+// stable reason codes (never nil) and how many people could sign it off when
+// it was made (nil for a request stamped before the count was kept, or not
+// stamped at all).
+func StoredPolicySummary(raw []byte) (reasons []string, eligible *int) {
+	reasons = []string{}
+	if len(raw) == 0 {
+		return reasons, nil
+	}
+	var ev storedPolicyEval
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		return reasons, nil
+	}
+	if ev.Reasons != nil {
+		reasons = ev.Reasons
+	}
+	return reasons, ev.EligibleApprovers
 }
 
 func factsJSON(f approvalpolicy.Facts) []byte {
@@ -580,5 +639,15 @@ func (s *VulnerabilityService) isAIAgent(ctx context.Context, tenantID, requeste
 	if s.aiAgents == nil || requester.IsZero() {
 		return false, nil
 	}
-	return s.aiAgents.IsAIAgent(ctx, tenantID, requester)
+	memo := approvalMemoFor(ctx, tenantID)
+	if memo != nil {
+		if v, ok := memo.cachedAIAgent(requester); ok {
+			return v, nil
+		}
+	}
+	v, err := s.aiAgents.IsAIAgent(ctx, tenantID, requester)
+	if err == nil && memo != nil {
+		memo.setAIAgent(requester, v)
+	}
+	return v, err
 }

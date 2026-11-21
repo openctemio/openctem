@@ -4,4 +4,7 @@
 # pattern lives in .github/scripts/check-attribution.sh, shared with the
 # "No AI attribution" CI job so both enforce the same rule.
 root=$(git rev-parse --show-toplevel) || exit 0
-exec bash "$root/.github/scripts/check-attribution.sh" "$1"
+bash "$root/.github/scripts/check-attribution.sh" "$1" || exit 1
+# Restricted wording: only when the rules are in the environment.
+[ -n "${RESTRICTED_WORDING_RULES:-}" ] || exit 0
+exec bash "$root/.github/scripts/check-restricted-wording.sh" --text "$1" >/dev/null

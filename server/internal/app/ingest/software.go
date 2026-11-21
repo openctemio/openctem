@@ -147,78 +147,19 @@ func (s *Service) recordSoftware(ctx context.Context, tenantID shared.ID, scope 
 	}
 }
 
-// resolveSoftware turns observations into links: identity and version
-// parsed, products resolved in one pass, versions created once per report.
+// resolveSoftware turns observations into links (software.BuildLinks).
 func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work []softwareWork, observedAt time.Time) ([]software.Link, error) {
-	type item struct {
-		assetID shared.ID
-		obs     software.Observation
-		parsed  software.Parsed
+	n := 0
+	for _, w := range work {
+		n += len(w.obs)
 	}
-	items := make([]item, 0, len(work))
-	ids := make([]software.Identity, 0, len(work))
+	obs := make([]software.AssetObservation, 0, n)
 	for _, w := range work {
 		for _, o := range w.obs {
-			p, ok := software.Parse(o)
-			if !ok {
-				continue
-			}
-			items = append(items, item{assetID: w.assetID, obs: o, parsed: p})
-			ids = append(ids, p.Identity)
+			obs = append(obs, software.AssetObservation{AssetID: w.assetID, Obs: o, ObservedAt: observedAt})
 		}
 	}
-	if len(items) == 0 {
-		return nil, nil
-	}
-	refs, err := s.software.repo.Resolve(ctx, tenantID, ids)
-	if err != nil {
-		return nil, err
-	}
-	type versionKey struct {
-		product shared.ID
-		v       software.VersionKey
-	}
-	versions := map[versionKey]shared.ID{}
-	type linkKey struct {
-		asset, version shared.ID
-		location       string
-	}
-	byKey := map[linkKey]int{}
-	links := make([]software.Link, 0, len(items))
-	for _, it := range items {
-		ref, ok := refs[it.parsed.Identity]
-		if !ok {
-			continue
-		}
-		vk := versionKey{product: ref.ID, v: it.parsed.Version}
-		vid, ok := versions[vk]
-		if !ok {
-			vid, err = s.software.repo.EnsureVersion(ctx, tenantID, ref, it.parsed.Version)
-			if err != nil {
-				return nil, err
-			}
-			versions[vk] = vid
-		}
-		l := software.Link{
-			AssetID: it.assetID, ProductID: ref.ID, VersionID: vid,
-			Location: it.obs.Location, Port: it.obs.Port, Transport: it.obs.Transport,
-			Source: it.obs.Source, Evidence: it.obs.Evidence,
-			Confidence: software.Confidence(it.parsed, it.obs, ref.Global),
-			Version:    it.parsed.Version, Segments: it.parsed.Segments,
-			Class: software.ClassOf(it.obs, it.parsed), ObservedAt: observedAt,
-		}
-		k := linkKey{asset: it.assetID, version: vid, location: l.Location}
-		if i, seen := byKey[k]; seen {
-			if l.Class.Rank() > links[i].Class.Rank() ||
-				(l.Class == links[i].Class && l.Confidence > links[i].Confidence) {
-				links[i] = l
-			}
-			continue
-		}
-		byKey[k] = len(links)
-		links = append(links, l)
-	}
-	return links, nil
+	return software.BuildLinks(ctx, s.software.repo, tenantID, obs)
 }
 
 // softwareObservations reads every product a CTIS asset says it runs.
@@ -226,7 +167,9 @@ func softwareObservations(a *ctis.Asset) []software.Observation {
 	out := make([]software.Observation, 0, len(a.Technologies)+3)
 	for _, t := range a.Technologies {
 		// A detection is a component only when it names a real product
-		// with a version or CPE (RFC-112); the rest stay asset technologies.
+		// with a version or CPE, or a curated public product whose version
+		// is hidden (RFC-112, IsSoftwareCandidate); the rest stay asset
+		// technologies.
 		if !assettech.IsSoftwareCandidate(t.Name, t.Version, t.CPE, t.Categories) {
 			continue
 		}
@@ -252,8 +195,13 @@ func softwareObservations(a *ctis.Asset) []software.Observation {
 	// The HTTP Server header of a web origin.
 	if a.Technical != nil && a.Technical.HTTP != nil && strings.TrimSpace(a.Technical.HTTP.WebServer) != "" {
 		v := a.Technical.HTTP.WebServer
-		for _, b := range software.ParseBanner(v) {
+		banners := software.ParseBanner(v)
+		for _, b := range banners {
 			out = append(out, software.Observation{Name: b.Name, Version: b.Version, Source: software.SourceService, Evidence: v})
+		}
+		if len(banners) == 0 && software.IsCuratedAppName(v) {
+			// "Server: nginx" with the version hidden: the product is known.
+			out = append(out, software.Observation{Name: strings.TrimSpace(v), Source: software.SourceService, Evidence: v})
 		}
 	}
 	if a.IdentityHints != nil && a.IdentityHints.OSCPE != "" {

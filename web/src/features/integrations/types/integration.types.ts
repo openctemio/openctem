@@ -140,6 +140,11 @@ export interface NotificationExtension {
   /** How much of an event the channel receives: minimal, standard or full. */
   detail_level: 'minimal' | 'standard' | 'full'
   min_interval_minutes: number
+  /** Similar alerts about findings within the window come as one message. */
+  group_similar?: boolean
+  group_window_minutes?: number
+  /** A critical or known-exploited alert is sent on its own at once. */
+  urgent_at_once?: boolean
 }
 
 /**
@@ -260,6 +265,9 @@ export interface CreateNotificationIntegrationRequest {
   message_template?: string
   detail_level?: 'minimal' | 'standard' | 'full'
   min_interval_minutes?: number
+  group_similar?: boolean
+  group_window_minutes?: number
+  urgent_at_once?: boolean
   // Non-sensitive provider config (e.g. Splunk HEC hec_url / index / sourcetype).
   metadata?: Record<string, unknown>
 }

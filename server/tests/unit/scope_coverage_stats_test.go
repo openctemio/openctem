@@ -86,3 +86,21 @@ func TestInventoryCoveragePercent(t *testing.T) {
 		}
 	}
 }
+
+func TestInventoryCoverageNotCovered(t *testing.T) {
+	cases := []struct {
+		in   scopedom.InventoryCoverage
+		want int64
+	}{
+		{scopedom.InventoryCoverage{}, 0},
+		{scopedom.InventoryCoverage{InternetFacing: 10, InScope: 6, Excluded: 1, Internal: 7}, 3},
+		{scopedom.InventoryCoverage{InternetFacing: 4, InScope: 4}, 0},
+		// Counts never go below zero, even from inconsistent inputs.
+		{scopedom.InventoryCoverage{InternetFacing: 1, InScope: 1, Excluded: 1}, 0},
+	}
+	for _, c := range cases {
+		if got := c.in.NotCovered(); got != c.want {
+			t.Errorf("%+v: %d, want %d", c.in, got, c.want)
+		}
+	}
+}

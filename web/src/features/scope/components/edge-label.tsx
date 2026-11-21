@@ -63,10 +63,10 @@ export function EdgeLabel({ edge, excluded, onExcluded }: EdgeLabelProps) {
   if (!edge.address) {
     return (
       <EdgeChipView
-        text={t('assets.facts.behind', 'Behind {provider}', { provider })}
+        text={t('assets.facts.behind', 'Served by {provider}', { provider })}
         hint={t(
           'assets.facts.behindHint',
-          "Served through {provider}'s edge: its addresses belong to {provider}, not to this service.",
+          '{provider} serves this name. Its addresses belong to {provider} and are recorded on the name, not as your assets. Scans test the name.',
           { provider }
         )}
       />

@@ -584,7 +584,7 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 		// pkg/domain/module/dependency.go. Reject if any hard-dependent
 		// module remains enabled in the post-update state. Deps that
 		// reference modules NOT present in the registry (e.g.
-		// platform-edition mismatch, or a dep migration that hasn't
+		// a build without that module, or a dep migration that hasn't
 		// run yet) are skipped — we cannot block on something the
 		// deployment doesn't know about. Returns a structured
 		// ToggleError the HTTP handler can serialise as JSON.

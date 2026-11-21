@@ -156,7 +156,8 @@ the trusted root from the same medium as the artifacts it verifies.
 ## Content and intelligence feeds
 
 All outbound calls go through the SSRF-guarded client: an internal mirror on
-a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`.
+a private address needs its range opened, in the console (System > Private
+networks) or in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`.
 `HTTPS_PROXY` is not read. Where the only way out is a corporate proxy, set
 `OPENCTEM_HTTPSEC_FEED_PROXY` (Ansible: `openctem_feed_proxy`): the platform's
 own feeds (vulnerability bundles, KEV, EPSS, CTEM-ID, program feed, release
@@ -171,10 +172,17 @@ firewall or the proxy, or replace them with a mirror or a local directory:
 | Host | Used for | Setting that replaces it |
 |---|---|---|
 | `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` | vulnerability bundles (the release download redirects to the asset hosts), release feed | `VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`, `VULNFEED_BUNDLE_DIR`; `VERSION_CHECK_URL` or admin import |
-| `www.cisa.gov`, then `raw.githubusercontent.com` | CISA KEV (fallback origin) | carried in the signed bundle (Console > Threat intelligence, source "bundle") |
-| `epss.empiricalsecurity.com` | EPSS | carried in the signed bundle |
 | `ctem.org` | CTEM-ID catalog | none yet (the catalog stays at the version shipped) |
 | your `PROGRAMFEED_URL` host | public program feed | `PROGRAMFEED_DIR` |
+
+CISA KEV and EPSS are not on this list: they arrive only inside the signed
+vulnerability bundle; the platform never calls CISA or FIRST itself.
+
+**Upgrading:** an installation without the bundle import (`VULNFEED_ROOT_KEY_ID`
+empty) no longer receives KEV or EPSS. Configure the bundle import (default
+origin, a mirror, a bundle directory or the feed relay) before upgrading, and
+remove the egress rules for `www.cisa.gov`, `raw.githubusercontent.com` and
+`epss.empiricalsecurity.com` once it works.
 
 A host whose DNS answers include IPv6 is tried over both families; without an
 IPv6 route the IPv4 addresses are used, and a failure names every address
@@ -184,7 +192,7 @@ points.
 
 | Feed | Offline path today | If absent |
 |---|---|---|
-| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; verified against the pinned official root key id (`VULNFEED_ROOT_KEY_ID` overrides it); the source is on by default | catalog and inventory matching go stale (status turns stale after 3 days) |
+| Vulnerability catalog (vulnfeed: CVE/NVD/OSV, emerging vulnerabilities) | signed bundles from `VULNFEED_BASE_URL`/`VULNFEED_MIRRORS` (a raw proxy) or files in `VULNFEED_BUNDLE_DIR`; verified against the pinned official root key id (`VULNFEED_ROOT_KEY_ID` overrides it); the source is on by default | catalog and inventory matching go stale (the status turns stale after 12 hours, the administrators are alerted and every user sees a banner) |
 | Public program feed (programfeed) | `PROGRAMFEED_URL`/`PROGRAMFEED_MIRRORS`, or a bundle in `PROGRAMFEED_DIR` | no public program catalog |
 | Content catalog, content packs, scanner templates | admin import endpoints (content catalog needs `CONTENT_TRUST_ROOT_KEY_IDS`); template sources in internal git/S3 | |
 | Sensor scanner content (nuclei, trivy, opengrep) | sensor-side local mirror or directory | sensor health shows stale content |

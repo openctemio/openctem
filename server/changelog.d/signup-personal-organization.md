@@ -1,0 +1,8 @@
+### Added: create a personal organization on sign-up
+
+- The sign-up policy has a new switch, "Create a personal organization on sign-up" (Console > System > Sign-up, `personal_organization` on `GET/PUT /api/v1/admin/settings/signup`, plus `effective_personal_organization` on `GET`). It is off by default and needs organization self-service. When it is on, a person who signs up by themselves (e-mail and password, or a first Google, Microsoft or GitHub sign-in) and has no other way in gets their own organization, with them as owner, at their first sign-in after their address is verified.
+- Nobody else gets one: not an invited person (invitation or ownership invitation), not an address whose domain an organization verified (joinable, SSO required or closed), not someone admitted by an organization's SSO, not a disposable address, and not an account created by an administrator. Made at most once per account (one transaction under a row lock), at most 5 per network prefix and 50 per e-mail domain per hour; any refusal leaves the normal "create your organization" step.
+- The organization is named "<Display name>'s organization", gets a random address, the self-service starting limits and every module, and is recorded as `tenant.created` (`via: personal_organization`) and as a "Created at sign-up" event in Console > Sign-ups.
+- New environment variable `SIGNUP_PERSONAL_ORGANIZATION` (default `false`): the switch's value in the policy stored at the first start under `SIGNUP_MODE=open`.
+- Migration `20261118094017_personal_organizations` adds an empty table; no backfill.
+- Docs: server/docs/architecture/user-onboarding.md, server/docs/configuration/environment-variables.md

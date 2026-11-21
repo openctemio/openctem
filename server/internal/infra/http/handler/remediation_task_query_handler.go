@@ -77,8 +77,12 @@ type QueryTaskPreviewResponse struct {
 
 // TaskQueryResponse is the query a task was created from.
 type TaskQueryResponse struct {
-	TaskID         string     `json:"task_id"`
-	Query          string     `json:"query"`
+	TaskID string `json:"task_id"`
+	Query  string `json:"query"`
+	// QueryRedacted is true when the reader is not the query's owner and is
+	// restricted to a data scope: names, addresses, ids and free text in
+	// Query are then masked as "***" (fields, operators and enum values stay).
+	QueryRedacted  bool       `json:"query_redacted"`
 	QueryVersion   int        `json:"query_version"`
 	Mode           string     `json:"mode"`
 	AutoState      *string    `json:"auto_state"`
@@ -118,11 +122,13 @@ type CreateQueryTaskResponse struct {
 
 // QueryRerunPreviewResponse is what a re-run would add.
 type QueryRerunPreviewResponse struct {
-	Query     string          `json:"query"`
-	New       int             `json:"new"`
-	Truncated bool            `json:"truncated"`
-	Room      int             `json:"room"`
-	Stats     *QueryStatsResp `json:"stats,omitempty"`
+	Query string `json:"query"`
+	// QueryRedacted: Query has its literals masked (see TaskQueryResponse).
+	QueryRedacted bool            `json:"query_redacted"`
+	New           int             `json:"new"`
+	Truncated     bool            `json:"truncated"`
+	Room          int             `json:"room"`
+	Stats         *QueryStatsResp `json:"stats,omitempty"`
 }
 
 // QueryRerunResponse is what a confirmed re-run added.
@@ -167,7 +173,7 @@ func toStatsResp(st *remediation.QueryPreviewStats) *QueryStatsResp {
 }
 
 func toTaskQueryResp(q *remediation.TaskQuery) TaskQueryResponse {
-	r := TaskQueryResponse{TaskID: q.TaskID.String(), Query: q.Text, QueryVersion: q.Version, Mode: string(q.Mode), Cap: q.Cap,
+	r := TaskQueryResponse{TaskID: q.TaskID.String(), Query: q.Text, QueryRedacted: q.TextRedacted, QueryVersion: q.Version, Mode: string(q.Mode), Cap: q.Cap,
 		OwnerUserID: optIDStr(q.OwnerUserID), LastRunAt: q.LastRunAt, LastAddedCount: q.LastAddedCount,
 		TotalAdded: q.TotalAdded, CreatedAt: q.CreatedAt}
 	if q.AutoState != nil {
@@ -355,7 +361,7 @@ func (h *RemediationTaskHandler) PreviewQueryRerun(w http.ResponseWriter, r *htt
 		h.handleQueryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, QueryRerunPreviewResponse{Query: p.Query, New: p.New, Truncated: p.Truncated, Room: p.Room, Stats: toStatsResp(p.Stats)})
+	writeJSON(w, http.StatusOK, QueryRerunPreviewResponse{Query: p.Query, QueryRedacted: p.QueryRedacted, New: p.New, Truncated: p.Truncated, Room: p.Room, Stats: toStatsResp(p.Stats)})
 }
 
 // RerunQuery adds a re-run's new matches.

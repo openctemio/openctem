@@ -46,6 +46,9 @@ type ComponentListResponse struct {
 
 func (h *ComponentHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, shared.ErrQueryTimeout):
+		// Counted and logged by the repository (by read name, no values).
+		apierror.QueryTimeout("The components query took too long; narrow the search or the filters").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Component").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
@@ -106,6 +109,7 @@ func listInputFromRequest(r *http.Request) asset.ListComponentsInput {
 // @Param        per_page             query  int     false  "Page size (max 100)"
 // @Success      200  {object}  ComponentListResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error  "QUERY_TIMEOUT: the read ran out of time; narrow the search or filters"
 // @Router       /components [get]
 func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 	page, err := pagination.FromRequest(r.URL.Query(), 25)
@@ -136,6 +140,7 @@ func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Success      200  {object}  component.Summary
 // @Failure      400  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error  "QUERY_TIMEOUT: the read ran out of time; narrow the search or filters"
 // @Router       /components/summary [get]
 func (h *ComponentHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	s, err := h.service.Summary(r.Context(), listInputFromRequest(r))

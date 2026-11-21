@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Edition fence: the Community build never contains extension code, and the
-# open core builds from public sources only. Checks the git INDEX (what is
+# Edition fence: the default build never contains extension code, and the
+# core builds from public sources only. Checks the git INDEX (what is
 # tracked or staged), so the same script runs in CI and in pre-commit.
 #
 #   a. no tracked file under a web extension mount point (an extension's web
@@ -8,7 +8,7 @@
 #      and .gitignore lists every mount point;
 #   b. server/go.mod has no replace directive (the core always builds from public
 #      sources and works as a dependency of a custom build, which imports
-#      server/pkg/server and server/pkg/extension; docs/development/editions.md);
+#      server/pkg/server and server/pkg/extension; docs/development/extensions.md);
 #   c. no web code imports a mount point directly (the default build reaches
 #      it only through the @extension/* alias, which points at the empty
 #      default), and the mount directory is named only in the web build
@@ -108,7 +108,7 @@ else
 fi
 
 if (( status )); then
-  echo "edition fence: see server/docs/development/editions.md" >&2
+  echo "edition fence: see server/docs/development/extensions.md" >&2
 else
   echo "edition fence: ok"
 fi

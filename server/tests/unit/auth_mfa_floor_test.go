@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -123,6 +124,91 @@ func TestMFAFloor_PrivilegedRoleCountsAsAdministrator(t *testing.T) {
 	priv.h.svc.SetMFAFloor(priv.floor, privStub{perms: []string{string(permission.RolesWrite)}})
 	if err := priv.exchange(); !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
 		t.Fatalf("member with a privileged role: %v, want ErrMFAEnrollmentRequired", err)
+	}
+}
+
+// "Administrator" for the 2FA rules is effective privilege above the built-in
+// member role. A member whose grants are exactly the member role's (which
+// carries a privileged permission of its own) is not an administrator, under
+// the organization's "2FA for administrators" and under the platform floor
+// alike; a grant above it (a privileged permission the member role lacks,
+// full data access, organization dashboards) makes them one.
+func TestMFAFloor_MemberRoleIsNotAdministrator(t *testing.T) {
+	past := time.Now().Add(-30 * 24 * time.Hour)
+	memberPerms := permission.ToStrings(permission.RolePermissions[tenant.RoleMember])
+	cases := []struct {
+		name  string
+		priv  privStub
+		gated bool
+	}{
+		{"the member role's own permissions", privStub{perms: memberPerms}, false},
+		{"plus a privileged permission the member role lacks", privStub{perms: append(slices.Clone(memberPerms), string(permission.APIKeysWrite))}, true},
+		{"plus full data access", privStub{perms: memberPerms, full: true}, true},
+		{"plus organization dashboards", privStub{perms: append(slices.Clone(memberPerms), string(permission.DashboardsOrgView))}, true},
+	}
+	for _, c := range cases {
+		t.Run("floor: "+c.name, func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorAdmins, past)
+			f.h.svc.SetMFAFloor(f.floor, c.priv)
+			checkGated(t, f.exchange(), c.gated)
+		})
+		t.Run("organization rule: "+c.name, func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorNone, past)
+			st := f.tn.TypedSettings()
+			st.Security.MFARequiredForAdmins = true
+			if err := f.tn.UpdateSettings(st); err != nil {
+				t.Fatal(err)
+			}
+			f.h.svc.SetMFAFloor(f.floor, c.priv)
+			checkGated(t, f.exchange(), c.gated)
+		})
+	}
+}
+
+// Every privileged permission, alone in a custom role on top of the viewer
+// baseline, makes its holder an administrator for "2FA for administrators"
+// and for the platform floor; the one exception is the permission the
+// built-in member role already carries. A new privileged permission is
+// covered by this table without an edit.
+func TestMFAFloor_EachPrivilegedPermissionAloneMakesAnAdministrator(t *testing.T) {
+	past := time.Now().Add(-30 * 24 * time.Hour)
+	viewerPerms := permission.ToStrings(permission.RolePermissions[tenant.RoleViewer])
+	member := map[string]bool{}
+	for _, p := range permission.RolePermissions[tenant.RoleMember] {
+		member[string(p)] = true
+	}
+	privileged := permission.PrivilegedPermissions()
+	if len(privileged) == 0 {
+		t.Fatal("no privileged permissions")
+	}
+	for _, p := range privileged {
+		role := privStub{perms: append(slices.Clone(viewerPerms), string(p))}
+		gated := !member[string(p)]
+		t.Run("floor: "+string(p), func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorAdmins, past)
+			f.h.svc.SetMFAFloor(f.floor, role)
+			checkGated(t, f.exchange(), gated)
+		})
+		t.Run("organization rule: "+string(p), func(t *testing.T) {
+			f := newFloorFixture(t, "member", 400*24*time.Hour, tenant.MFAFloorNone, past)
+			st := f.tn.TypedSettings()
+			st.Security.MFARequiredForAdmins = true
+			if err := f.tn.UpdateSettings(st); err != nil {
+				t.Fatal(err)
+			}
+			f.h.svc.SetMFAFloor(f.floor, role)
+			checkGated(t, f.exchange(), gated)
+		})
+	}
+}
+
+func checkGated(t *testing.T, err error, gated bool) {
+	t.Helper()
+	if gated && !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
+		t.Fatalf("exchange: %v, want ErrMFAEnrollmentRequired", err)
+	}
+	if !gated && err != nil {
+		t.Fatalf("exchange: %v, want a token", err)
 	}
 }
 

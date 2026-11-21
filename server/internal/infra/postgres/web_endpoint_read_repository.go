@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -20,8 +21,8 @@ import (
 // and the caller's data scope (on the origin asset) are always in the WHERE.
 
 const (
-	webEndpointListTimeout  = "3s"
-	webEndpointStatsTimeout = "1500ms"
+	webEndpointListTimeout  = 3 * time.Second
+	webEndpointStatsTimeout = 1500 * time.Millisecond
 )
 
 var errUncompiledWebEndpointFilter = errors.New("web endpoint filter was not compiled for a tenant")
@@ -85,14 +86,11 @@ func (r *WebEndpointRepository) ListWhere(ctx context.Context, w *filterspec.Whe
 	if err := checkWebEndpointWhere(w); err != nil {
 		return empty, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, webEndpointListTimeout)
 	if err != nil {
 		return empty, fmt.Errorf("begin endpoint list: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+webEndpointListTimeout+"'"); err != nil {
-		return empty, fmt.Errorf("set endpoint list timeout: %w", err)
-	}
 	var total int64
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*)"+webEndpointFrom+" WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("count endpoints: %w", err)
@@ -129,14 +127,11 @@ func (r *WebEndpointRepository) StatsWhere(ctx context.Context, w *filterspec.Wh
 	if err := checkWebEndpointWhere(w); err != nil {
 		return nil, err
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, webEndpointStatsTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin endpoint stats: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+webEndpointStatsTimeout+"'"); err != nil {
-		return nil, fmt.Errorf("set endpoint stats timeout: %w", err)
-	}
 	// w.SQL comes from filterspec.Compile (checked above): registry
 	// constants and bound placeholders only.
 	q := `SELECT 'method', e.method, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.method` + //nolint:gosec // G202: compiled filter

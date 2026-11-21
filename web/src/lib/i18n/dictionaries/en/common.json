@@ -23,6 +23,7 @@
   "common.awaitingApproval.cancelDesc": "The request is withdrawn and nothing changes. You can send a new request afterwards.",
   "common.awaitingApproval.cancelTitle": "Cancel this approval request?",
   "common.awaitingApproval.keep": "Keep request",
+  "common.awaitingApproval.note": "Note:",
   "common.awaitingApproval.reason": "Reason:",
   "common.bootstrap.busyBody": "It asked us to slow down. We try again in a few seconds, or retry now.",
   "common.bootstrap.busyTitle": "The server is busy",

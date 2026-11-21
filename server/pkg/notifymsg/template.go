@@ -243,6 +243,12 @@ func VarsOf(c Card, count int) map[Var]string {
 // layout; one that does not validate (stored before the variable set was
 // closed) also keeps it, and ok is false so the caller can log it.
 func ApplyTemplate(c Card, src string) (Card, bool) {
+	return ApplyTemplateCount(c, src, 1)
+}
+
+// ApplyTemplateCount is ApplyTemplate for a message about count objects (a
+// grouped message): the count variable says how many.
+func ApplyTemplateCount(c Card, src string, count int) (Card, bool) {
 	if strings.TrimSpace(src) == "" {
 		return c, true
 	}
@@ -250,7 +256,7 @@ func ApplyTemplate(c Card, src string) (Card, bool) {
 	if err != nil {
 		return c, false
 	}
-	lines := t.Render(VarsOf(c, 1))
+	lines := t.Render(VarsOf(c, count))
 	if len(lines) == 0 {
 		return c, true
 	}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -246,7 +247,7 @@ func (r *DashboardSnapshotRepository) ScopeFingerprint(ctx context.Context, tena
 	if !allCampaigns {
 		if err := r.db.QueryRowContext(ctx, `
 			SELECT md5(COALESCE(string_agg(campaign_id::text, ',' ORDER BY campaign_id), ''))
-			FROM pentest_campaign_members WHERE user_id = $1 AND tenant_id = $2`,
+			FROM (`+campaignaccess.MemberCampaignsSQL("$2", "$1")+`) m`,
 			userID.String(), tenantID.String()).Scan(&campaigns); err != nil {
 			return "", fmt.Errorf("fingerprint campaigns: %w", err)
 		}

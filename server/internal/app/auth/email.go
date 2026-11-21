@@ -516,6 +516,22 @@ func (s *EmailService) NotifyMFADisabled(ctx context.Context, userEmail, userNam
 		emaildom.Text(loc, "notice.mfaOff.message"))
 }
 
+// NotifyMFAEnabled tells the user 2FA was turned on for their account.
+func (s *EmailService) NotifyMFAEnabled(ctx context.Context, userEmail, userName, ipAddress string) {
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.mfaOn.subject"),
+		emaildom.Text(loc, "notice.mfaOn.message"))
+}
+
+// NotifyMFAReplaced tells the user their 2FA authenticator was replaced.
+func (s *EmailService) NotifyMFAReplaced(ctx context.Context, userEmail, userName, ipAddress string) {
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.mfaReplaced.subject"),
+		emaildom.Text(loc, "notice.mfaReplaced.message"))
+}
+
 // NotifyRecoveryCodeUsed tells the user a recovery code was used to sign in.
 func (s *EmailService) NotifyRecoveryCodeUsed(ctx context.Context, userEmail, userName, ipAddress string, remaining int) {
 	loc := s.localeForEmail(ctx, userEmail, "")

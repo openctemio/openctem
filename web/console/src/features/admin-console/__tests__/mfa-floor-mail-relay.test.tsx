@@ -132,9 +132,9 @@ describe('organization mail servers', () => {
     // No unsaved change, no save bar.
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await userEvent.click(screen.getByLabelText('Never'))
-    await confirmWithReason('free plan')
+    await confirmWithReason('relay abuse')
     await waitFor(() =>
-      expect(saveEmailRelay).toHaveBeenCalledWith({ mode: 'off', reason: 'free plan', version: 1 })
+      expect(saveEmailRelay).toHaveBeenCalledWith({ mode: 'off', reason: 'relay abuse', version: 1 })
     )
   })
 

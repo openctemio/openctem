@@ -1,0 +1,5 @@
+# Sign-in journeys (specs/58-sign-in-journeys.spec.ts) that fail on the current code.
+# One test title per line, then "#" and the expected outcome. A listed journey
+# runs as an expected failure (test.fail): it is reported, and it fails once it
+# passes until its line is removed. Never list a BYPASS failure.
+

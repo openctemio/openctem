@@ -421,3 +421,36 @@ func TestClassOf(t *testing.T) {
 		t.Fatal("Strong")
 	}
 }
+
+// The product seen with its version hidden, then a version read once (even
+// from a weak source): the version replaces the version-less row at once,
+// which keeps its history; hiding the version again changes nothing.
+func TestVersionReplacesVersionless(t *testing.T) {
+	blind := ver{id: shared.NewID(), raw: ""}
+	v := mkVer("1.25.3")
+	rows, changed := history(t,
+		one(see(blind, t0, ClassHeuristic, 65)),
+		one(see(v, t0.Add(time.Hour), ClassHeuristic, 40)),
+		one(see(blind, t0.Add(2*time.Hour), ClassHeuristic, 65)),
+	)
+	if !changed[0] || !changed[1] || changed[2] {
+		t.Fatalf("established changes = %v, want [true true false]", changed)
+	}
+	if cur := current(t, rows); cur.VersionID != v.id {
+		t.Fatalf("established = %q, want 1.25.3", cur.Raw)
+	}
+	b := row(t, rows, blind)
+	if !b.Superseded || b.Sightings != 2 || !b.SupersededAt.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("version-less row = %+v, want superseded at the version's reading with both sightings", b)
+	}
+}
+
+// A version-less sighting with nothing established is established; two
+// version-less sightings at one place stay one row.
+func TestVersionlessAloneIsEstablished(t *testing.T) {
+	blind := ver{id: shared.NewID(), raw: ""}
+	rows, _ := history(t, one(see(blind, t0, ClassHeuristic, 65)), one(see(blind, t0.Add(time.Hour), ClassHeuristic, 65)))
+	if len(rows) != 1 || current(t, rows).VersionID != blind.id || rows[0].Sightings != 2 {
+		t.Fatalf("rows = %+v", rows)
+	}
+}

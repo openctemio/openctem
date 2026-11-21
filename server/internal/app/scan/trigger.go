@@ -1595,6 +1595,9 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.WildcardOnly > 0 {
 		runContext["wildcard_only_target_count"] = r.WildcardOnly
 	}
+	if r.ProviderHeld > 0 {
+		runContext["provider_address_target_count"] = r.ProviderHeld
+	}
 	if r.Incompatible > 0 {
 		runContext["incompatible_target_count"] = r.Incompatible
 	}
@@ -1613,22 +1616,22 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if len(r.SelectorRoots) > 0 {
 		runContext[RunContextKeySelectorRoots] = r.SelectorRoots
 	}
-	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed+r.WildcardOnly+r.ProviderHeld == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
 			fmt.Sprintf("This scan has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", r.IncompatibleReason),
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed+r.WildcardOnly+r.ProviderHeld == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeTierExceeds,
 			"No target of this scan may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Scope, or use a less intrusive scanner.",
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.Unconfirmed+r.WildcardOnly > 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.Unconfirmed+r.WildcardOnly+r.ProviderHeld > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
 			"No target of this scan is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Scope.",
 			shared.ErrValidation)
 	}
-	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed+r.WildcardOnly == 0 && r.Excluded == 0 {
+	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed+r.WildcardOnly+r.ProviderHeld == 0 && r.Excluded == 0 {
 		return shared.NewDomainError("INTERNAL_TARGET_OUTSIDE_ZONES",
 			"This scan has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.",
 			shared.ErrValidation)

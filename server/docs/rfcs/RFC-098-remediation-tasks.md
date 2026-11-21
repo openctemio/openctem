@@ -373,6 +373,15 @@ cause is gone.
 assignment-grants-view work); everyone else sees a task through its findings in their own scope, the rest
 as a count (§11).
 
+**Who reads the query text.** The stored text is what its author typed: it can name assets, addresses or
+people outside the scope of someone who sees the task through one of its findings. The query's owner,
+administrators and full-data roles read it in full. Any other reader (`GET .../query`, the re-run preview,
+the auto-include state answer, the creation entry of the timeline, and their own re-run audit entry) gets it
+with its literals masked: names, addresses, ids and free text become `"***"`, while the entity, fields,
+operators, the number of values in a list, numbers, relative dates, `me` and enum values stay, so the task
+still says what it selects; the answer carries `query_redacted: true`. A text that no longer parses is
+not shown at all. The query still runs on the server with the full text.
+
 **Threat model.** A crafted query cannot widen its scope: the text never carries the principal, the plan
 layer injects every rule, and executors cannot build a plan. A client cannot name another tenant (the caller
 is built from the authenticated request and checked against the tenant). A creator cannot keep reading

@@ -90,11 +90,13 @@ func TestApplyBundleKEV_NotNewerOnlyRefreshesFreshness(t *testing.T) {
 	}
 }
 
-func TestApplyBundleKEV_DoesNotOverwriteNewerDirectData(t *testing.T) {
+// Data held from before the platform stopped fetching KEV itself (rows say
+// "direct") is not replaced by an older bundle copy.
+func TestApplyBundleKEV_DoesNotOverwriteNewerDataHeld(t *testing.T) {
 	repo := newThreatIntelMockRepo()
 	status := threatIntelAddSyncStatus(repo, "kev", true)
 	meta := status.Metadata()
-	meta[threat.MetaDeliveredVia] = threat.ViaDirect
+	meta[threat.MetaDeliveredVia] = "direct"
 	meta[threat.MetaIntelAsOf] = bDay2.Format(time.RFC3339)
 	status.SetMetadata(meta)
 	svc := newThreatIntelService(repo)
@@ -102,8 +104,8 @@ func TestApplyBundleKEV_DoesNotOverwriteNewerDirectData(t *testing.T) {
 	if err != nil || out.Applied || len(repo.kev.entries) != 0 {
 		t.Fatalf("%+v %v %d", out, err, len(repo.kev.entries))
 	}
-	if status.Metadata()[threat.MetaDeliveredVia] != threat.ViaDirect {
-		t.Fatal("an older bundle copy replaced the direct fetch's record")
+	if status.Metadata()[threat.MetaDeliveredVia] != "direct" {
+		t.Fatal("an older bundle copy replaced the record of the newer data held")
 	}
 }
 

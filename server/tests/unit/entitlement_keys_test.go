@@ -55,7 +55,7 @@ func TestLimitKeysAreListed(t *testing.T) {
 	}
 }
 
-// adHocEntitlement matches a check of a commercial plan, tier or edition by
+// adHocEntitlement matches a check of a plan, tier or edition by
 // name: comparisons with plan names, plan-named helpers, and the removed plan
 // tables. Words such as "plan" and "tier" alone are not matched: scan plans
 // and scope tiers are product concepts.
@@ -149,7 +149,7 @@ func TestAdHocEntitlementPattern(t *testing.T) {
 	}
 }
 
-// planWording matches commercial plan, edition and upgrade wording. The core
+// planWording matches plan, edition and upgrade wording. The core
 // talks of limits and of what is "not available for this organization";
 // plans and prices exist only in a hosted service's own control plane.
 var planWording = regexp.MustCompile(`(?i)\b(your|organization'?s|this organization'?s|their|the organization's) plan\b` +

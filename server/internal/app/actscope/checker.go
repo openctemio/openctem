@@ -88,6 +88,9 @@ const (
 	ReasonOutOfDataScope = "the asset is outside your data scope"
 	ReasonNotAnAsset     = "not an asset in your data scope; restricted members may scan only their assets"
 	ReasonNoScopeTarget  = "no scope entry covers it; add it to Scoping before scanning it"
+	// ReasonProviderHeld: only entries the organization holds on a
+	// provider's shared addresses cover it (research/531 D3).
+	ReasonProviderHeld = "it is a provider's shared address; answer it on the Scope page (move out of scope or keep scanning) before scanning it"
 )
 
 // ProgramMembers lists the bug-bounty programs whose group has a user
@@ -237,6 +240,9 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 		}
 		if _, ok := auth.Covers(t); !ok {
 			out.RefusedTargets[t] = ReasonNoScopeTarget
+			if auth.Held(t) {
+				out.RefusedTargets[t] = ReasonProviderHeld
+			}
 		}
 	}
 	return out, nil

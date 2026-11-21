@@ -23,6 +23,9 @@ import (
 // paramCount is the message parameter of a count.
 const paramCount = "count"
 
+// paramMax is the message parameter of a cap.
+const paramMax = "max"
+
 // SourceRetirementService is the use cases the handler calls.
 type SourceRetirementService interface {
 	Preview(ctx context.Context, tenantID shared.ID, src sourceretireapp.Source, opts sourceretire.Options) (*sourceretire.Preview, string, error)

@@ -112,11 +112,12 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 				errors = `+mergeErrorsHead+`$16`+mergeErrorsTail+`,
 				updated_at = GREATEST(updated_at, $17),
 				outcomes = `+addOutcomesSQL("outcomes", "$18")+`,
-				released_from_quarantine = released_from_quarantine OR $19
+				released_from_quarantine = released_from_quarantine OR $19,
+				addresses_on_name = addresses_on_name + $20
 			WHERE tenant_id = $1 AND id = $2`,
 			d.TenantID.String(), id.String(), d.Reports, d.Received, d.AssetsCreated, d.AssetsUpdated,
 			applied.created, applied.still, applied.reopened, applied.closed, d.Skipped, d.Failed, d.Suppressed,
-			applied.rows, applied.truncated, string(errs), at, outcomes, d.Released)
+			applied.rows, applied.truncated, string(errs), at, outcomes, d.Released, d.AddressesOnName)
 		if err != nil {
 			return fmt.Errorf("update receipt counts: %w", err)
 		}
@@ -832,7 +833,7 @@ const receiptColumns = `id::text, tenant_id::text, source_kind, source_ref, acto
 	reports, findings_received, assets_created, assets_updated, components, statements, vex_stored, vex_closed,
 	findings_created, findings_updated, findings_reopened, findings_closed, findings_untouched,
 	skipped, findings_failed, findings_suppressed, actions_recorded, actions_truncated, errors,
-	created_at, updated_at, finished_at, outcomes, released_from_quarantine, closing`
+	created_at, updated_at, finished_at, outcomes, released_from_quarantine, closing, addresses_on_name`
 
 type receiptScanner interface{ Scan(...any) error }
 
@@ -852,7 +853,8 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		&rec.Components, &rec.Statements, &rec.VEXStored, &rec.VEXRequested,
 		&rec.Counts.Created, &rec.Counts.StillDetected, &rec.Counts.Reopened, &rec.Counts.Closed, &untouched,
 		&rec.Counts.Skipped, &rec.Counts.Failed, &rec.Counts.Suppressed, &rec.ActionsRecorded, &rec.ActionsTruncated,
-		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine, &closing)
+		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine, &closing,
+		&rec.AddressesOnName)
 	if err != nil {
 		return nil, err
 	}

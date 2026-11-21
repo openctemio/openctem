@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -49,6 +50,9 @@ func (r *AssetEnrichmentRequestRepository) Request(ctx context.Context, tenantID
 		SELECT a.tenant_id, a.id, $3, now()
 		  FROM assets a
 		 WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[]) AND a.deleted_at IS NULL
+		   -- A provider's shared address is never enriched.
+		   AND NOT EXISTS (SELECT 1 FROM asset_attributions pa WHERE pa.tenant_id = a.tenant_id AND pa.asset_id = a.id
+		                   AND `+attribution.ProviderAddressSQL("pa")+`)
 		ON CONFLICT ON CONSTRAINT pk_asset_enrichment_requests DO UPDATE SET
 		       reason = EXCLUDED.reason, requested_at = EXCLUDED.requested_at,
 		       dispatched_at = NULL, outcome = ''

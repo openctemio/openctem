@@ -504,7 +504,7 @@ stateDiagram-v2
   100, floor 1).
 - A host the breaker refuses gets HTTP 503 from the forwarder; the task still
   completes, and the host is reported as a coverage gap (`breaker_open`,
-  `rate_floor`, `blocked`, `proxy_unavailable`) in the result's
+  `rate_floor`, `blocked`, `proxy_unavailable`, `slots_full`) in the result's
   `coverage_gaps`. The API treats those hosts as not covered, so no finding
   closes because of them (`internal/app/ingest/coverage_targets.go`).
 - A reset from a host that already answered only halves the rate; 20 in a row

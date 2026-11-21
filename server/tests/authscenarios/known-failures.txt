@@ -1,0 +1,5 @@
+# Sign-in scenarios that fail on the current code (server/tests/authscenarios).
+# One scenario id per line, then "#" and the expected outcome. A listed
+# scenario still runs: its failure is reported, not failed, and the job fails
+# once it passes until the line is removed. Never list a BYPASS failure.
+

@@ -27,7 +27,8 @@ flowchart LR
 ## What the platform enforces
 
 - The SMTP host is resolved through `httpsec.ResolveSafeHost`; a private address
-  needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` (the kit sets exactly the relay's
+  needs its range opened (console System > Private networks, or
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`; the kit sets exactly the relay's
   /32 when `openctem_mail_relay` is true).
 - TLS 1.2 or later. The roots are the system roots, or only the stored internal
   CA bundle (`ca_pem`): certificates only, at most 16 and 64 KB, write-only,
@@ -49,7 +50,7 @@ flowchart LR
 | `auth_required` | 530 at MAIL FROM | Add a login, or allow the API's address on the server |
 | `relay_denied` | Recipient refused at RCPT TO | Relay rules on the server; authenticate |
 | `sender_rejected` | Sender address refused | Send-as right; change the sender |
-| `host_rejected` | SSRF guard refused the address | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` |
+| `host_rejected` | SSRF guard refused the address | Open its range: console System > Private networks, or `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` |
 | `connect_failed`, `timeout` | Network | Name, port, firewall, egress policy |
 
 Delivery problems after acceptance (SPF fail, DKIM or DMARC reject, port 25

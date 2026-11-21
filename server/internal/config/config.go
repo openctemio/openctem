@@ -869,6 +869,12 @@ type AuthConfig struct {
 	// SignupCaptcha is SignupCaptchaOffAccepted or empty: see
 	// validateProductionAuth.
 	SignupCaptcha string
+	// SignupPersonalOrganization is the first-start value of the sign-up
+	// policy's "Create a personal organization on sign-up" switch
+	// (SIGNUP_PERSONAL_ORGANIZATION). It seeds the stored policy only when
+	// none is stored and SIGNUP_MODE is open; afterwards the console value
+	// wins.
+	SignupPersonalOrganization bool
 
 	// Provider determines which authentication methods are available.
 	// Values: "local", "oidc", "hybrid"
@@ -1082,7 +1088,16 @@ type RateLimitConfig struct {
 	// Env: RATE_LIMIT_READ_PER_MIN. Default 120. Values <= 0 fall back
 	// to the default; they never disable the limiter.
 	ReadRequestsPerMin int
+	// TokenExchangePerMin is the per-address budget for token requests
+	// (/auth/token, which an invitation's Open and a team switch use).
+	// Env: RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN. Default 20; 0 or less keeps the
+	// default. Only a test stack raises it, where every simulated browser
+	// shares one address; production refuses a value above the default.
+	TokenExchangePerMin int
 }
+
+// DefaultTokenExchangePerMin is the production per-address token budget.
+const DefaultTokenExchangePerMin = 20
 
 // SensorPublicHost is the host:port sensors dial for the protocol v3 gRPC
 // binding: SENSOR_PUBLIC_HOST when set (a dedicated sensor host name, or an
@@ -1788,9 +1803,10 @@ func LoadWithExtensionKeys(extensionKeys []string) (*Config, error) {
 				DisplayName:    getEnv("SSO_ENTRA_DISPLAY_NAME", "Microsoft Entra ID"),
 				AllowedTenants: getEnvSlice("SSO_ENTRA_ALLOWED_TENANTS", nil),
 			},
-			AllowedRedirectURIs: getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
-			SignupMode:          strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
-			SignupCaptcha:       strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
+			AllowedRedirectURIs:        getEnvSlice("SSO_ALLOWED_REDIRECT_URIS", nil),
+			SignupMode:                 strings.ToLower(strings.TrimSpace(getEnv("SIGNUP_MODE", SignupModeDisabled))),
+			SignupCaptcha:              strings.TrimSpace(getEnv("SIGNUP_CAPTCHA", "")),
+			SignupPersonalOrganization: getEnvBool("SIGNUP_PERSONAL_ORGANIZATION", false),
 		},
 		Keycloak: KeycloakConfig{
 			BaseURL:             getEnv("KEYCLOAK_BASE_URL", "http://localhost:8080"),
@@ -1818,7 +1834,8 @@ func LoadWithExtensionKeys(extensionKeys []string) (*Config, error) {
 			CleanupInterval: getEnvDuration("RATE_LIMIT_CLEANUP", 1*time.Minute),
 			// Per-user GET budget. 120/min matches the historical
 			// hard-coded default (DefaultReadEndpointRateLimitConfig).
-			ReadRequestsPerMin: getEnvInt("RATE_LIMIT_READ_PER_MIN", 120),
+			ReadRequestsPerMin:  getEnvInt("RATE_LIMIT_READ_PER_MIN", 120),
+			TokenExchangePerMin: getEnvInt("RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN", DefaultTokenExchangePerMin),
 		},
 		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{
@@ -2659,6 +2676,9 @@ func (c *Config) validateProductionSecurity() error {
 	}
 	if !c.RateLimit.Enabled {
 		return fmt.Errorf("rate limiting must be enabled in production")
+	}
+	if c.RateLimit.TokenExchangePerMin > DefaultTokenExchangePerMin {
+		return fmt.Errorf("RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN above %d is not allowed in production", DefaultTokenExchangePerMin)
 	}
 	if c.Log.Level == "debug" {
 		return fmt.Errorf("log level should not be 'debug' in production")

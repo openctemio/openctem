@@ -51,7 +51,6 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/components/ui/image-upload.tsx': 'not-org-data',
   'src/features/account/api/use-preferences.ts': 'not-org-data',
   'src/features/account/components/account-sign-out.tsx': 'not-org-data',
-  'src/features/account/components/welcome-hub.tsx': 'not-org-data',
   'src/features/activity/lib/reactions.ts': 'not-org-data',
   'src/features/announcements/components/platform-announcement-banner.tsx': 'not-org-data',
   'src/features/auth/components/login-form.tsx': 'not-org-data',

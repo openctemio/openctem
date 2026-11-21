@@ -129,6 +129,33 @@ func (s *GroupService) teamAccessView(roles []*roledom.Role) TeamAccessView {
 	return v
 }
 
+// ListTeamAccess returns the access each of the given teams carries (the same
+// view as GetTeamAccess), loaded for all of them in a constant number of
+// queries. The teams must belong to the tenant: bindings are read with the
+// tenant id, so a team of another tenant has an empty view.
+func (s *GroupService) ListTeamAccess(ctx context.Context, tenantID string, groups []*groupdom.Group) (map[shared.ID]TeamAccessView, error) {
+	out := make(map[shared.ID]TeamAccessView, len(groups))
+	if len(groups) == 0 || s.roles == nil {
+		return out, nil
+	}
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	ids := make([]roledom.ID, len(groups))
+	for i, g := range groups {
+		ids[i] = asRoleID(g.ID())
+	}
+	byTeam, err := s.roles.roleRepo.ListTeamRoles(ctx, tid, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range groups {
+		out[g.ID()] = s.teamAccessView(byTeam[asRoleID(g.ID())])
+	}
+	return out, nil
+}
+
 // GetTeamAccess returns the access a team carries.
 func (s *GroupService) GetTeamAccess(ctx context.Context, tenantID, groupID string) (*TeamAccessView, error) {
 	if err := s.requireBindings(); err != nil {

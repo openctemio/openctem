@@ -80,6 +80,8 @@ var (
 		"Notification outbox entries by status (pending, failed, dead)", []string{"status"}, nil)
 	descFeedLastSuccess = prometheus.NewDesc("openctem_feed_last_success_timestamp_seconds",
 		"Unix time of the last successful import of an enabled intelligence feed (epss, kev, vulnfeed); absent until the first success", []string{"source"}, nil)
+	descFeedFreshness = prometheus.NewDesc("openctem_feed_freshness_alerts",
+		"Open freshness conditions of the platform's vulnerability data, by code (data_stale, import_failing, import_refused, newest_record_old, volume_low); 0 when none", []string{"code"}, nil)
 	descFeedFailing = prometheus.NewDesc("openctem_feed_failing",
 		"1 when the last run of an enabled intelligence feed failed", []string{"source"}, nil)
 	descOutboxOldest = prometheus.NewDesc("openctem_outbox_oldest_pending_seconds",
@@ -115,7 +117,7 @@ func New(source Source, cfg Config, log *logger.Logger) *Collector {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		descUp, descBuild, descSchema, descSchemaDirty, descSensors, descSensorConfig, descSensorUnhardened, descSensorSDK,
-		descCommands, descCommandOldest, descQueueDepth, descQueueTenants, descQueueTopTenant, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest, descFeedLastSuccess, descFeedFailing,
+		descCommands, descCommandOldest, descQueueDepth, descQueueTenants, descQueueTopTenant, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest, descFeedLastSuccess, descFeedFailing, descFeedFreshness,
 	} {
 		ch <- d
 	}
@@ -161,6 +163,17 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(descOutbox, prometheus.GaugeValue, float64(snap.OutboxDead), "dead")
 	ch <- prometheus.MustNewConstMetric(descOutboxOldest, prometheus.GaugeValue, snap.OutboxOldestPendingSec)
 	collectFeeds(ch, snap.Feeds)
+	collectFreshness(ch, snap.FreshnessAlerts)
+}
+
+// freshnessCodes is the closed set of condition codes the gauge reports
+// (always, 0 when none, so an alert has a series before the first problem).
+var freshnessCodes = []string{"data_stale", "import_failing", "import_refused", "newest_record_old", "volume_low"}
+
+func collectFreshness(ch chan<- prometheus.Metric, open map[string]int) {
+	for _, code := range freshnessCodes {
+		ch <- prometheus.MustNewConstMetric(descFeedFreshness, prometheus.GaugeValue, float64(open[code]), code)
+	}
 }
 
 // collectFeeds emits the feeds' progress. Closed-set source labels only

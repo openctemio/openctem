@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // SLAPolicyRepository implements sla.Repository using PostgreSQL.
@@ -387,4 +390,55 @@ func nullDays(v sql.NullInt64) int {
 		return 0
 	}
 	return int(v.Int64)
+}
+
+// PreviewDefault counts the open findings the default of a practice governs
+// and how the windows would move their deadlines. One aggregate over the
+// tenant's open findings; the windows arrive as a small table (class x
+// severity), so the rule stays in the domain.
+func (r *SLAPolicyRepository) PreviewDefault(ctx context.Context, tenantID shared.ID, practice string, windows []sla.PreviewWindow, kevCapDays int) (sla.DefaultPreview, error) {
+	classes := make([]string, len(windows))
+	sevs := make([]string, len(windows))
+	days := make([]int32, len(windows))
+	for i, w := range windows {
+		classes[i], sevs[i], days[i] = w.PriorityClass, w.Severity, int32(w.Days) //nolint:gosec // windows are 0..365
+	}
+	query := `
+		WITH w AS (
+			SELECT * FROM unnest($3::text[], $4::text[], $5::int[]) AS t(priority_class, severity, days)
+		), g AS (
+			SELECT f.sla_deadline,
+			       COALESCE(f.sla_started_at, f.first_detected_at, f.created_at) AS started,
+			       f.is_in_kev, COALESCE(w.days, 0) AS days
+			FROM findings f
+			LEFT JOIN w ON w.severity = f.severity
+			           AND w.priority_class = CASE WHEN f.priority_class IN ('P0','P1','P2','P3') THEN f.priority_class ELSE '' END
+			WHERE f.tenant_id = $1
+			  AND ` + vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "f.status") + `
+			  AND (($2::text = 'compliance') = (f.practice = 'compliance'))
+			  AND NOT EXISTS (
+			      SELECT 1 FROM sla_policies sp
+			      WHERE sp.tenant_id = f.tenant_id AND sp.asset_id = f.asset_id AND sp.is_active
+			        AND sp.practice IS NOT DISTINCT FROM NULLIF($2::text, ''))
+		), n AS (
+			SELECT sla_deadline,
+			       CASE WHEN days > 0 THEN
+			            CASE WHEN is_in_kev AND $6::int > 0
+			                 THEN LEAST(started + days * interval '1 day', started + $6::int * interval '1 day')
+			                 ELSE started + days * interval '1 day' END
+			       END AS new_deadline
+			FROM g
+		)
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE new_deadline < sla_deadline),
+		       COUNT(*) FILTER (WHERE new_deadline <= now() AND (sla_deadline IS NULL OR sla_deadline > now())),
+		       COUNT(*) FILTER (WHERE new_deadline > sla_deadline)
+		FROM n`
+	var p sla.DefaultPreview
+	err := r.db.QueryRowContext(ctx, query, tenantID.String(), practice, pq.Array(classes), pq.Array(sevs), pq.Array(days), kevCapDays).
+		Scan(&p.Governed, &p.Earlier, &p.BecomeOverdue, &p.Later)
+	if err != nil {
+		return sla.DefaultPreview{}, fmt.Errorf("preview sla default: %w", err)
+	}
+	return p, nil
 }

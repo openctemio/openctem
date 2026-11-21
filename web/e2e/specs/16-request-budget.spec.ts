@@ -87,10 +87,12 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
 
 /** Adds the budget, duplicate and session-read problems of one load. */
 function checkLoad(route: string, max: number, requests: string[], problems: string[]): void {
-  if (requests.length > max) {
-    problems.push(
-      `${route}: ${requests.length} API requests (budget ${max})\n    ${requests.join('\n    ')}`
-    )
+  // The shell's own reads (request-budget.json, shellRequests) are not a
+  // page's: each is still sent once (the duplicate check below).
+  const shell = (budget as { shellRequests?: string[] }).shellRequests ?? []
+  const own = requests.filter((r) => !shell.includes(r))
+  if (own.length > max) {
+    problems.push(`${route}: ${own.length} API requests (budget ${max})\n    ${own.join('\n    ')}`)
   }
   const counts = new Map<string, number>()
   for (const r of requests) counts.set(r, (counts.get(r) ?? 0) + 1)

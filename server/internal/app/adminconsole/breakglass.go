@@ -93,7 +93,8 @@ func (s *Service) alertBreakGlass(ctx context.Context, a *admin.AdminUser, clien
 
 // ConfirmBreakGlassTest records that target's last sign-in was a test. Another
 // super admin confirms it (four eyes): an account cannot vouch for its own use.
-func (s *Service) ConfirmBreakGlassTest(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, client ClientInfo) (*admin.AdminUser, error) {
+// reason (may be empty) is kept in the audit row.
+func (s *Service) ConfirmBreakGlassTest(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, reason string, client ClientInfo) (*admin.AdminUser, error) {
 	if actor.ID() == targetID {
 		return nil, admin.ErrCannotModifySelfBreakGlassTest
 	}
@@ -115,7 +116,7 @@ func (s *Service) ConfirmBreakGlassTest(ctx context.Context, actor *admin.AdminU
 		entry := admin.NewAuditLogBuilder(actor, ActionBreakGlassTested).
 			Resource("admin_user", ptr(target.ID()), target.Email()).
 			Context(client.IP, client.UserAgent).
-			Request("", "", map[string]interface{}{"sign_in_at": used.UTC().Format(time.RFC3339)}).
+			Request("", "", addReason(map[string]interface{}{"sign_in_at": used.UTC().Format(time.RFC3339)}, reason)).
 			Build()
 		s.writeAudit(ctx, ActionBreakGlassTested, entry)
 	}

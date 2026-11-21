@@ -1177,6 +1177,51 @@ flowchart TD
     data scope: they are excluded too), and for a shared front end
     `edge {class, provider, address}` with `names_unaffected: true`.
 
+## 4m2. Provider addresses are recorded on the name (built)
+
+An address inside a range a provider publishes for infrastructure many
+organizations share (`edgeaddr.SharedFrontEnd`: published-range basis only,
+anything in doubt is "may be dedicated") is the provider's, not the
+organization's. Mail names, names behind a CDN and SaaS front ends resolve to a
+different set of those addresses every day, so the name is the asset and the
+addresses are observations on it.
+
+- **Ingest** (`ingest/processor_assets.go` `createDNSResolvesToRelationships`):
+  such an address seen only as a name's DNS answer gets no address asset and no
+  `resolves_to` edge. It is kept in the name's `ip_addresses` set elements per
+  source, with first seen, last seen and removed (RFC-069 set attributes). The
+  answer is counted on the receipt (`ingest_receipts.addresses_on_name`,
+  `assets.recorded_on_name` in the receipt API) only after the name's set write
+  succeeded; when it did not (the report may not change the name, the
+  observation cap, a failed write) the answer takes the normal path after all,
+  an address asset recorded as the provider's. Nothing is dropped.
+- A port result that carries a host name never links the name to a shared
+  address (`ingest/ports.go`); the result stays on the address asset.
+- **An address a scan reports results on itself** is still recorded as an
+  asset, attribution `dependency` with reason `provider_shared_front_end`
+  (`attribution.IsProviderAddress`). Unknown and dedicated addresses keep the
+  normal path and the auto-add rules.
+- **Inference** (`asset/relationship_inference.go`): a provider address is
+  never a service's container; a domain or subdomain contains the services
+  named by its own host name (`host:port`, `https://host:port`).
+- **Scans** target the name (URL, SNI and Host carry the name). A name whose
+  answers include a shared address stays capped to the web ports:
+  `AttributionRepository.AddressesOf` adds the shared addresses of the name's
+  current `ip_addresses` to the ones its edges hold.
+- **Inventory and totals:** the default list (`attribution=approved`) and the
+  attributed population leave provider addresses out; `attribution=provider_address`
+  lists them (the "Provider addresses (N)" chip). The EASM summary, the
+  dashboard asset totals, the inventory overview and the precomputed posture
+  surface (`easm_posture_assets`) use the same rule. They stay in the
+  attribution counts of their state.
+- **Name detail:** `GET /assets/{id}/addresses` returns every address the name
+  resolved to, current first, with provider, first seen, last seen and each
+  source's record; the web shows them grouped by provider ("Served by
+  <provider>") with the history in a dialog.
+- **Search:** an inventory search for an address also finds the names that
+  resolve or resolved to it (`idx_asset_set_elements_tenant_address`).
+- Liveness and enrichment never take a provider address.
+
 ## 4o. Certificate exposures per host (built)
 
 A probe of an https service records the certificate the host served

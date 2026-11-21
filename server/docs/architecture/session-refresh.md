@@ -36,11 +36,15 @@ sequenceDiagram
     end
 ```
 
-Only `/auth/refresh` has the grace. `/auth/token` (organization switch),
+`/auth/refresh` and `/auth/token` (organization switch) have the grace, with
+the same rules: two tabs of one browser opening two organizations at the same
+moment, or a tab that missed a rotation by seconds, get the successor the first
+request issued, each with an access token for the organization it asked for.
+`/auth/token` checks the organization's rules first and rotates through
+`rotateRefreshToken` (a derived successor), so a grace request can rebuild it.
 `/auth/account-token`, `/auth/create-first-team`,
 `/invitations/accept-with-refresh` and `/auth/mfa/enroll/session` spend the
-token with `spendRefreshToken` (`MarkUsedIfUnused`), so two tabs switching
-organization at the same moment end the session as a reuse.
+token with `spendRefreshToken` (`MarkUsedIfUnused`) and have no grace.
 
 ## CSRF
 
@@ -98,6 +102,13 @@ the request is a reuse and ends the session:
   (signing out revokes every token of the session, used ones included);
 - the same client presents it: a hash of the user agent recorded at rotation
   (`refresh_tokens.rotated_fingerprint`) matches, compared in constant time.
+  The console calls the API from its server and forwards the browser's
+  `User-Agent` on `/auth/refresh` and `/auth/token`, so "the same client" is the
+  same browser software. A user agent is not a secret: this check stops a
+  different kind of client (another browser, a script), not someone who copies
+  the victim's user agent. A grace hand-out is audited (`auth.refresh_grace`,
+  low severity, with the session and the flow) so a successor that left twice
+  can be seen.
 
 Every refusal the refresh applies (suspended account or organization, membership,
 SSO, two-factor, email verification and the other organization policies) runs before
@@ -137,3 +148,29 @@ In the browser, refreshes share one in-tab promise and a cross-tab Web Lock, and
 refresh another tab finished moments ago is reused instead of repeated. When a
 session ends, the sign-in page says why (signed out elsewhere or for safety,
 expired, or ended by an administrator).
+
+A refresh the organization refuses is not a dead session
+(`web/src/lib/auth/refresh-failure.ts`). Only a 401 or `OWN_SIGN_IN_REQUIRED`
+signs the person out. `MFA_ENROLLMENT_REQUIRED` opens the two-factor setup.
+`SSO_REQUIRED`, `MFA_IDP_EVIDENCE_REQUIRED`, `EMAIL_NOT_VERIFIED`,
+`PERSONAL_ACCOUNTS_BLOCKED` and `ORGANIZATION_SUSPENDED` keep the session (the
+API refused before spending the refresh token): `/api/auth/refresh` drops only
+that organization's access token and selection, and the browser opens
+`/welcome?notice=<reason>&org=<slug>`, which names the reason and its one next
+step (that organization's identity provider, the verification link, a work
+account; nothing for a suspension). Only known notice values and a valid slug
+show anything.
+
+The sign-in landing (`/auth/continue`, `web/src/features/auth/lib/sign-in-landing.ts`)
+does the same for a person whose one organization refuses the new session: it
+keeps the account-only session and opens `/welcome?notice=<reason>&org=<slug>`.
+When the memberships listing already gives that organization a refusing `admission`, the landing
+uses it and sends no token request; a token request that gets no decision (no answer, 429, 5xx)
+lands on `/welcome?start_failed=1`, never on a plain account space.
+There `OWN_SIGN_IN_REQUIRED` (a session from another organization's identity
+provider) is a notice too, with "Sign in with your own account", since no
+organization was open yet and the account settings stay reachable. A page
+request with a session but no organization selected and none of the landing's
+cookies (the account-only marker, the picker's list) goes to `/auth/continue`
+first (`web/src/lib/middleware/auth.ts`), so an app page never loads without
+an organization and the client never guesses from a `TENANT_REQUIRED` answer.

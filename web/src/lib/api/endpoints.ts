@@ -2080,6 +2080,12 @@ export const threatIntelEndpoints = {
    */
   stats: () => `${API_BASE.THREAT_INTEL}/stats`,
 
+  /**
+   * Freshness of the platform's vulnerability data (any signed-in user):
+   * the stale-data banner and the "data as of" line.
+   */
+  freshness: () => `${API_BASE.THREAT_INTEL}/freshness`,
+
   // ============================================
   // SYNC STATUS
   // ============================================

@@ -212,7 +212,7 @@ func laterOf(a, b time.Time) time.Time {
 }
 
 // ReadOnly reports whether the organization refuses changes now (cached for
-// a minute). Fail-open on a read error: the read-only state is a commercial
+// a minute). Fail-open on a read error: the read-only state is a capacity
 // nudge, not a security boundary, and must not take an organization down.
 func (s *Service) ReadOnly(ctx context.Context, tenantID shared.ID) bool {
 	now := s.now()

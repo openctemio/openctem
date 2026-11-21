@@ -51,6 +51,8 @@ var registry = map[Code]Spec{
 	CodeBulkNotAllowed:          {http.StatusBadRequest, "This change cannot be made in bulk. Change each item on its own."},
 	CodeOperationRunning:        {http.StatusConflict, "You already have an operation running. Wait for it to finish."},
 	CodeIdempotencyKeyReused:    {http.StatusUnprocessableEntity, "This idempotency key was already used for a different request."},
+	// Bulk dismiss of findings (details.count, details.max).
+	CodeBulkDismissTooLarge: {http.StatusBadRequest, "Dismiss takes at most 500 findings at a time. Narrow the selection, or create a rule for a repeating pattern."},
 
 	// Integrations (test connection and calls to a connected service).
 	CodeIntegrationNoCredentials:         {http.StatusUnprocessableEntity, "This connection has no credentials. Add them to use it."},
@@ -103,6 +105,13 @@ var registry = map[Code]Spec{
 	CodeSAMLMetadataUnreachable: {http.StatusBadGateway, "The metadata address did not answer with a document. Check the address, or upload the metadata file instead."},
 	CodeSAMLPublicURLUnset:      {http.StatusConflict, "The public address of the app is not set. Set APP_URL on the API to get the service provider metadata."},
 }
+
+// Bulk dismiss codes, registered above.
+const (
+	// CodeBulkDismissTooLarge: a bulk dismiss selects more than 500 findings
+	// (details.count, details.max).
+	CodeBulkDismissTooLarge Code = "BULK_DISMISS_TOO_LARGE"
+)
 
 // SAML metadata import codes, registered above.
 const (

@@ -113,9 +113,10 @@ var (
 	ErrSSOMFAEvidenceRequired = fmt.Errorf("%w: the identity provider did not confirm a second factor", ErrMFAEnrollmentRequired)
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
-	// ErrMFAFederatedSession: a session from a social or identity-provider
-	// sign-in cannot start our own second-factor step from an invitation.
-	ErrMFAFederatedSession = errors.New("this session was started through an identity provider; sign in with your password to set up two-factor authentication")
+	// ErrMFAFederatedSession: a session issued by an organization's own
+	// identity provider cannot start our second-factor step: that provider
+	// owns the second factor.
+	ErrMFAFederatedSession = errors.New("this session was started through an organization's identity provider; sign in with your password to set up two-factor authentication")
 	// ErrReauthRequired: an enrollment challenge was asked for with a session
 	// that was not signed in recently. Binding a first authenticator is
 	// account takeover if a stolen refresh token alone could do it, so the
@@ -136,6 +137,11 @@ const sessionEnrollFreshness = 15 * time.Minute
 // committed and failures are only logged.
 type SecurityNotifier interface {
 	NotifyMFADisabled(ctx context.Context, email, name, ipAddress string)
+	// NotifyMFAEnabled and NotifyMFAReplaced tell the person a second factor
+	// was turned on or moved to a new authenticator, so a hijacked session
+	// that binds its own authenticator is noticed.
+	NotifyMFAEnabled(ctx context.Context, email, name, ipAddress string)
+	NotifyMFAReplaced(ctx context.Context, email, name, ipAddress string)
 	NotifyRecoveryCodeUsed(ctx context.Context, email, name, ipAddress string, remaining int)
 	NotifyPasswordChanged(ctx context.Context, email, name, ipAddress string)
 }
@@ -179,6 +185,11 @@ type MFAStatus struct {
 	// CanTurnOff is false while anybody requires the factor or that could not
 	// be read: POST /users/me/2fa/disable would refuse.
 	CanTurnOff bool `json:"can_turn_off"`
+	// EnrollThroughSession is true for an account that signs in only through
+	// a social provider: it has no password for the self-service setup, so
+	// the page sets the factor up with the session step
+	// (POST /auth/mfa/enroll/session, within minutes of signing in).
+	EnrollThroughSession bool `json:"enroll_through_session,omitempty"`
 }
 
 // MFASetup is a freshly generated secret awaiting confirmation.
@@ -411,7 +422,8 @@ func (s *AuthService) BeginMFAEnrollmentFromChallenge(ctx context.Context, token
 }
 
 // CompleteMFAEnrollmentFromChallenge confirms the enrollment with a code,
-// turns 2FA on and signs the user in. The recovery codes are returned once.
+// turns 2FA on, signs out every earlier session of the user and signs the
+// user in. The recovery codes are returned once.
 func (s *AuthService) CompleteMFAEnrollmentFromChallenge(ctx context.Context, input CompleteMFAEnrollmentInput) (*LoginResult, []string, error) {
 	c, u, err := s.openChallenge(ctx, input.Token, mfa.PurposeEnroll)
 	if err != nil {
@@ -427,7 +439,11 @@ func (s *AuthService) CompleteMFAEnrollmentFromChallenge(ctx context.Context, in
 	if _, err := s.mfaRepo.ConsumeChallenge(ctx, c.ID); err != nil {
 		return nil, nil, err
 	}
-	s.auditMFAEnabled(ctx, auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent}, u, "organization_policy")
+	// Every session the user had predates the factor, including one that
+	// asked for this challenge in place (invitation): none went through the
+	// second step, so none may carry on. The login below opens the one that
+	// did.
+	s.secondFactorTurnedOn(ctx, auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent}, u, shared.ID{}, "organization_policy")
 
 	s.recordLoginSuccess(ctx, u)
 	res, err := s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
@@ -448,6 +464,14 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 		return nil, err
 	}
 	st := &MFAStatus{Supported: isPasswordAccount(u)}
+	if !st.Supported && isSocialAccount(u) {
+		// No password to confirm a self-service change with: the factor is
+		// set up through the signed-in session step instead
+		// (SessionMFAChallenge, a recent sign-in), and turning it off is not
+		// offered.
+		st.Supported = true
+		st.EnrollThroughSession = true
+	}
 	if !st.Supported {
 		return st, nil
 	}
@@ -467,7 +491,7 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 		st.CanTurnOff = false
 	} else {
 		st.RequiredBy = holders
-		st.CanTurnOff = !holders.Any()
+		st.CanTurnOff = !holders.Any() && !st.EnrollThroughSession
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
@@ -538,8 +562,7 @@ func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext,
 		return nil, err
 	}
 	except, _ := shared.IDFromString(actx.SessionID)
-	s.revokeUserSessions(ctx, u.ID(), except)
-	s.auditMFAEnabled(ctx, actx, u, "self_service")
+	s.secondFactorTurnedOn(ctx, actx, u, except, "self_service")
 	return codes, nil
 }
 
@@ -743,8 +766,10 @@ func (s *AuthService) tenantNeedsSecondFactor(ctx context.Context, t *tenantdom.
 // for example right after accepting an invitation or when a token refresh is
 // refused. The caller proves the session with its refresh token, exactly as
 // AcceptInvitationWithRefreshToken does; the token is not spent. A user without an enabled factor gets an enrollment challenge, a
-// user who has one gets a verify challenge. Enrollment needs a recent sign-in (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does not. Federated sessions are refused:
-// they cannot complete our second step here.
+// user who has one gets a verify challenge. Enrollment needs a recent sign-in
+// (sessionEnrollFreshness, else ErrReauthRequired); a verify challenge does
+// not. A session issued by an organization's own identity provider is
+// refused (that provider owns the second factor); a social sign-in is not.
 func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip, ua string) (*MFAChallengeInfo, error) {
 	if !s.mfaEnabled() {
 		return nil, ErrMFAUnavailable
@@ -774,7 +799,11 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 	if !sess.IsActive() {
 		return nil, sessiondom.ErrSessionExpired
 	}
-	if sess.AuthMethod().IsFederated() {
+	// A session an organization's own identity provider issued leaves the
+	// second factor to that provider. A social sign-in (no issuing
+	// organization) is a first factor like a password: it may enroll and
+	// verify our second step, which opens a new session that went through it.
+	if sess.AuthMethod().IsFederated() && !sess.IDPTenantID().IsZero() {
 		return nil, ErrMFAFederatedSession
 	}
 	userID, err := shared.IDFromString(claims.UserID)
@@ -790,6 +819,13 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 	}
 	if !u.IsActive() {
 		return nil, ErrAccountSuspended
+	}
+	// The in-place step is for social-provider sessions only, named by the
+	// account's provider kind rather than by the absence of an issuing
+	// organization: a federated session recorded without one (before the
+	// issuing organization was stored) of any other account stays refused.
+	if sess.AuthMethod().IsFederated() && !isSocialAccount(u) {
+		return nil, ErrMFAFederatedSession
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
@@ -815,12 +851,17 @@ func (s *AuthService) SessionMFAChallenge(ctx context.Context, refreshToken, ip,
 //     if the IdP proved a second factor in the signed id_token (amr=mfa) or
 //     assertion (a multi-factor AuthnContext).
 //   - A password session passes only when the user has 2FA on. The password
-//     login verified the code (loginMFAChallenge), so an enabled factor means
-//     this session went through the second step.
+//     login verified the code (loginMFAChallenge), and every path that turns
+//     a factor on signs out the sessions opened before it
+//     (secondFactorTurnedOn), so an enabled factor means this session went
+//     through the second step.
 //   - Any other federated session (social OAuth, another organization's IdP)
 //     never went through our second step, and its IdP is not one this tenant
 //     chose, so it is refused whether or not the user has enrolled. The user
-//     signs in again — with password and 2FA, or through this tenant's IdP.
+//     takes our second step: in place (SessionMFAChallenge, for a social
+//     session), or by signing in again — a social or password sign-in asks
+//     for the factor, and the session it opens went through it — or signs in
+//     through this tenant's IdP.
 func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {
 	if !s.mfaEnabled() {
 		return nil
@@ -899,6 +940,20 @@ func (s *AuthService) mfaSatisfied(ctx context.Context, sess *sessiondom.Session
 
 func isPasswordAccount(u *userdom.User) bool {
 	return u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil
+}
+
+// isSocialAccount reports an account without a password that signs in through
+// a social provider (Google, GitHub, personal Microsoft). An organization's
+// own identity provider is not one: it owns the second factor.
+func isSocialAccount(u *userdom.User) bool {
+	if u.PasswordHash() != nil {
+		return false
+	}
+	switch u.AuthProvider() {
+	case userdom.AuthProviderGoogle, userdom.AuthProviderGitHub, userdom.AuthProviderMicrosoft:
+		return true
+	}
+	return false
 }
 
 func (s *AuthService) mfaUser(ctx context.Context, userID string) (*userdom.User, error) {
@@ -1108,11 +1163,22 @@ func isDigits(s string) bool {
 	return s != ""
 }
 
-func (s *AuthService) auditMFAEnabled(ctx context.Context, actx auditapp.AuditContext, u *userdom.User, via string) {
+// secondFactorTurnedOn is what every path that turns a second factor on does
+// next: it signs out every session of the user except `except` (zero ID = all
+// of them) and audits the change. A password session opened before the factor
+// existed never went through the second step, yet the organization 2FA rule
+// (mfaSatisfied) accepts any password session of a user whose factor is on,
+// so such a session must not outlive the change.
+func (s *AuthService) secondFactorTurnedOn(ctx context.Context, actx auditapp.AuditContext, u *userdom.User, except shared.ID, via string) {
+	s.revokeUserSessions(ctx, u.ID(), except)
 	s.audit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionAuthMFAEnabled, auditdom.ResourceTypeUser, u.ID().String()).
 		WithResourceName(u.Email()).
-		WithMessage("Two-factor authentication enabled").
-		WithMetadata("via", via))
+		WithMessage("Two-factor authentication enabled; other sessions signed out").
+		WithMetadata("via", via).
+		WithMetadata("other_sessions_ended", true))
+	if s.securityNotifier != nil {
+		s.securityNotifier.NotifyMFAEnabled(ctx, u.Email(), u.Name(), actx.ActorIP)
+	}
 }
 
 func (s *AuthService) audit(ctx context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) {

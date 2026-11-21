@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
+| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented; pasted signing keys (§3.2) implemented |
 | Related | RFC-008 (shift-left CI scanning), RFC-023 (sensors), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
 ## 1. Summary
@@ -79,6 +79,8 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | `rules.workflow_refs` | Optional: admit only jobs that run one of these pipeline definitions, `<path>@<ref>` (the path exact, the ref a pattern like `refs`). GitHub: the `job_workflow_ref` claim (`acme/security/.github/workflows/scan.yml@refs/heads/main`), so an organization can trust only its central reusable workflow, and a pull request that edits or adds a workflow file is refused (`workflow_not_allowed`). GitLab: the `ci_config_ref_uri` claim (`gitlab.example.com/grp/ci//scan.yml@refs/heads/main`). At most 20 entries. Other providers' tokens do not name the definition: the rule is refused when the configuration is saved, and a token without the claim is refused |
 | `default_branch` | The baseline branch when the platform does not know the repository's default branch yet. A pipeline cannot set it |
 | `rules.workspace_uuid` | Bitbucket only, required: the workspace's immutable id, compared with the token's `workspaceUuid` |
+| `key_source` | `fetch` (default): the issuer's discovery document and JWKS are fetched (section 4). `pasted`: tokens are verified with `signing_keys` only and nothing is ever fetched (section 3.2) |
+| `signing_keys` | The provider's public JWKS document as an administrator pasted it (migration `ci_trust_signing_keys`); with `signing_keys_updated_at` and `last_key_id` (the kid that verified the last admitted token) |
 
 A configuration must name at least one owner or repository: there is no "any
 repository" trust. Several configurations may exist; the first that admits the
@@ -127,6 +129,43 @@ token against its issuer's keys at the token's own issue time, and returns
 the claims (without e-mail addresses), the normalized repository, ref,
 commit and run, and the admission result. Nothing is stored and the token's
 id is not recorded; an invalid draft fetches nothing.
+
+### 3.2 Pasted signing keys
+
+A platform that cannot reach a provider (a self-managed GitLab on a network
+the platform has no route to), or that must not make outbound connections,
+verifies with keys an administrator pasted instead of fetching them.
+
+- **Validation on save** (`oidc.ParseStaticJWKS`): `{"keys":[...]}`, at most
+  64 KiB, 1 to 10 keys; each RSA (at least 2048 bits, `alg` RS256 or absent)
+  or EC P-256 (`alg` ES256 or absent), `use` absent or `sig`, a `kid`, no
+  duplicate `kid`. A key with any private or symmetric member (`d`, `p`, `q`,
+  `dp`, `dq`, `qi`, `oth`, `k`) is refused. The document is stored as pasted;
+  it is public and shown back.
+- **Verification**: the same checks as fetched keys (issuer, audience, `exp`,
+  `nbf`, `iat`, lifetime, `jti`, the algorithm allow-list, the rules), with
+  the token's key looked up by `kid` in the pasted set only. A key verifies
+  only its own algorithm (RS256 or ES256). No discovery document or JWKS is
+  fetched, whether or not the issuer is reachable. Two configurations of one
+  issuer with different pasted keys are verified separately. Stored keys that
+  no longer parse refuse the token.
+- **Rotation**: a token whose `kid` is not pasted is refused with
+  `CI_TOKEN_UNKNOWN_KEY` (`401`; never `503`, a retry cannot help). The
+  configuration's tenant gets an audit entry (`ci_run.token_refused`, reason
+  `unknown_key`, the token's `kid` and the pasted kids) and an alert to its
+  administrators (event `ci.token_refusals`, in-app and e-mail), at most once
+  an hour per configuration: the `kid` comes from a token nobody verified,
+  so an anonymous caller cannot fill the audit log or the inboxes. When a
+  configuration that fetches cannot get the keys, the exchange is still the
+  retryable `503 CI_ISSUER_UNAVAILABLE`.
+- **Audit**: creating or changing a configuration records the key source and
+  the kids before and after, never the document.
+- **Security**: a tenant administrator who pastes an attacker's key affects
+  only that tenant's own trust (the same as naming an attacker's issuer, and
+  behind the same permission and step-up); the audience still has to name the
+  tenant. No URL is fetched, so pasted keys open no outbound request.
+- **Planned**: a sensor of the organization fetching the keys for the
+  platform (the platform still makes no outbound connection).
 
 ## 4. Token exchange
 
@@ -548,9 +587,10 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A re-run of only the gate job judging an empty run and passing | Retries and re-runs re-open the pipeline run's one aggregate run (section 4.1); carried scanner failures; a run with no report fails (`no_results`) |
 | A failed default-branch run becoming its own baseline (rerun whitewash) | Default-branch runs compare only with the recorded gate baseline (section 6.2); runs never write it |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
+| An all-projects GitLab configuration: a stranger's group approved by name, or a flood of new top-level groups | Approving a group trusts its name: a GitLab token carries the project and its direct namespace id but no top-level group id, so a subgroup never seen before (`acme/new`) is pinned on first use and admitted if the top-level name later changes hands. The approval pins the namespaces seen (`namespace_id`) and the console offers approving a single project as the cautious choice. Residual: a user allowed to create top-level groups can fill the pending list (500 rows, 25 per group); a bulk block of a group clears its rows. Follow-up: a per-configuration "Approve projects one by one" default and a daily cap on new groups |
 | A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
 | A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
-| A GitHub organization or GitLab namespace renamed or deleted and its name registered by someone else | The first admitted exchange pins the name to its immutable id (`repository_owner_id`, `namespace_id`) per trust configuration (`ci_trust_owner_pins`, audited); a token with the same name and another id is refused (`owner_id_mismatch`). Changing the configuration's issuer, owners or repositories drops its pins; `GET /ci/trust-configs/{id}` lists them (RFC-077 G-10) |
+| A GitHub organization or GitLab namespace renamed or deleted and its name registered by someone else | The first admitted exchange pins the name to its immutable id (`repository_owner_id`, `namespace_id`) per trust configuration (`ci_trust_owner_pins`, audited); a token with the same name and another id is refused (`owner_id_mismatch`). Changing the configuration's issuer drops its pins; changing its owners or repositories drops only the pins of names no longer listed; `GET /ci/trust-configs/{id}` lists them (RFC-077 G-10) |
 | A Bitbucket repository reporting as another (the name is not signed) | Rules list repository UUIDs; a name stays bound to the first UUID that used it (`repository_binding`) |
 | A name that changed hands (GitHub or GitLab organization renamed or deleted and its name registered again, a repository deleted and created anew): trust rules match names | GitHub, GitLab and Bitbucket: a repository name stays bound to the repository id (`repository_id`, `project_id`, `repositoryUuid`) that first reported under it while that pipeline is not retired; another id is refused (`repository_binding`, audited) until an administrator retires the old pipeline. A rename keeps the id and is admitted |
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |

@@ -485,6 +485,11 @@ type ScopeStatsResponse struct {
 	// InventoryInScope is the part of it an active scope target covers and
 	// no exclusion removes.
 	InventoryInScope int64 `json:"inventory_in_scope"`
+	// InventoryExcluded is the part of it an active exclusion removes.
+	InventoryExcluded int64 `json:"inventory_excluded"`
+	// InventoryNotCovered is the part of it no active scope target covers and
+	// no exclusion removes (found, but neither in nor out of scope).
+	InventoryNotCovered int64 `json:"inventory_not_covered"`
 	// InventoryInternal counts internal names and private addresses
 	// (zone-gated), left out of both.
 	InventoryInternal int64 `json:"inventory_internal"`
@@ -1564,7 +1569,7 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 
 // GetStats handles GET /api/v1/scope/stats
 // @Summary      Get scope statistics
-// @Description  Aggregate counts of scope targets and exclusions, and the share of the internet-facing inventory (domains, subdomains, public addresses, services, applications in the inventory) that the active scope targets cover. The inventory counts include only the assets the caller may see.
+// @Description  Aggregate counts of scope targets and exclusions, and the share of the internet-facing inventory (domains, subdomains, public addresses, services, applications in the inventory) that the active scope targets cover, the part active exclusions remove and the part neither covers nor removes. The inventory counts include only the assets the caller may see.
 // @Tags         Scope
 // @Produce      json
 // @Success      200  {object}  ScopeStatsResponse
@@ -1590,6 +1595,8 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 		InventoryInternetFacing: stats.Inventory.InternetFacing,
 		InventoryInScope:        stats.Inventory.InScope,
+		InventoryExcluded:       stats.Inventory.Excluded,
+		InventoryNotCovered:     stats.Inventory.NotCovered(),
 		InventoryInternal:       stats.Inventory.Internal,
 	}
 

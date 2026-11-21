@@ -323,16 +323,23 @@ func (s *TaskService) GetTaskQuery(ctx context.Context, tenantID, taskID shared.
 	if _, err := s.GetTask(ctx, tenantID, taskID); err != nil {
 		return nil, err
 	}
-	return s.queries.GetTaskQuery(ctx, tenantID, taskID)
+	q, err := s.queries.GetTaskQuery(ctx, tenantID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return s.readableQuery(ctx, tenantID, q)
 }
 
 // QueryRerunPreview is what a re-run would add.
 type QueryRerunPreview struct {
-	Query     string
-	New       int
-	Truncated bool
-	Room      int
-	Stats     *remediationdom.QueryPreviewStats
+	Query string
+	// QueryRedacted is true when Query has its literals masked (the caller
+	// is not the query's owner and is restricted to a data scope).
+	QueryRedacted bool
+	New           int
+	Truncated     bool
+	Room          int
+	Stats         *remediationdom.QueryPreviewStats
 }
 
 // queryForChange loads a task the caller may change and its query, and
@@ -370,7 +377,10 @@ func (s *TaskService) PreviewQueryRerun(ctx context.Context, tenantID, taskID sh
 	if err != nil {
 		return nil, err
 	}
-	p := &QueryRerunPreview{Query: m.Query, New: m.Total, Truncated: m.Truncated, Room: room}
+	p := &QueryRerunPreview{New: m.Total, Truncated: m.Truncated, Room: room}
+	if p.Query, p.QueryRedacted, err = s.queryTextFor(ctx, tenantID, q.OwnerUserID, m.Query); err != nil {
+		return nil, err
+	}
 	if p.Stats, err = s.queries.QueryPreviewStats(ctx, tenantID, m.IDs, remediationdom.QueryPreviewSample); err != nil {
 		return nil, err
 	}
@@ -419,10 +429,17 @@ func (s *TaskService) RerunQuery(ctx context.Context, in RerunQueryInput, actx a
 	if err := s.queries.RecordQueryRun(ctx, in.TenantID, in.TaskID, len(res.Added), time.Now()); err != nil {
 		s.logger.Warn("record query run failed", "task_id", in.TaskID.String(), "error", logger.SanitizeError(err))
 	}
+	// The person who re-runs reads their own audit entries: the text there
+	// follows the same rule as the query endpoint.
+	auditText, auditRedacted, terr := s.queryTextFor(ctx, in.TenantID, q.OwnerUserID, q.Text)
+	if terr != nil {
+		auditText, auditRedacted = redactedQueryText(q.Text), true
+	}
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionRemediationTaskQueryRerun, auditdom.ResourceTypeRemediationTask, in.TaskID.String()).
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("Query of remediation task %q re-run: %d finding(s) added", t.Title, len(res.Added))).
-		WithMetadata("query", q.Text).WithMetadata("added", len(res.Added)).WithMetadata("skipped", len(res.Skipped)).
+		WithMetadata("query", auditText).WithMetadata("query_redacted", auditRedacted).WithMetadata("query_version", q.Version).
+		WithMetadata("added", len(res.Added)).WithMetadata("skipped", len(res.Skipped)).
 		WithMetadata("capped", len(res.Capped)))
 	nt, err := s.repo.GetTask(ctx, in.TenantID, in.TaskID)
 	if err != nil {
@@ -479,7 +496,7 @@ func (s *TaskService) SetQueryAutoState(ctx context.Context, in SetQueryAutoStat
 		}
 	}
 	if *q.AutoState == target {
-		return q, nil
+		return s.readableQuery(ctx, in.TenantID, q)
 	}
 	if err := s.queries.SetAutoState(ctx, in.TenantID, in.TaskID, in.Version, target, nil); err != nil {
 		return nil, err
@@ -488,7 +505,11 @@ func (s *TaskService) SetQueryAutoState(ctx context.Context, in SetQueryAutoStat
 		WithResourceName(t.Title).
 		WithMessage(fmt.Sprintf("Auto include of remediation task %q %s", t.Title, map[bool]string{true: "paused", false: "resumed"}[in.Paused])).
 		WithMetadata("from", string(*q.AutoState)).WithMetadata("to", string(target)))
-	return s.queries.GetTaskQuery(ctx, in.TenantID, in.TaskID)
+	nq, err := s.queries.GetTaskQuery(ctx, in.TenantID, in.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	return s.readableQuery(ctx, in.TenantID, nq)
 }
 
 // ownerCaller resolves the owner of an auto task as a query caller, with

@@ -143,12 +143,23 @@ type Stats struct {
 }
 
 // InventoryCoverage is how much of the internet-facing inventory the active
-// scope targets cover (research/53 SC8): InScope of InternetFacing. Internal
-// names and addresses (zone-gated) are counted apart, in neither.
+// scope targets cover (research/53 SC8): InScope of InternetFacing. Excluded
+// is the part an active exclusion removes (whether or not an entry covers
+// it). Internal names and addresses (zone-gated) are counted apart, in none.
 type InventoryCoverage struct {
 	InternetFacing int64 `json:"internet_facing"`
 	InScope        int64 `json:"in_scope"`
+	Excluded       int64 `json:"excluded"`
 	Internal       int64 `json:"internal"`
+}
+
+// NotCovered is the internet-facing inventory that no active entry covers
+// and no exclusion removes: found, but neither in nor out of scope.
+func (c InventoryCoverage) NotCovered() int64 {
+	if n := c.InternetFacing - c.InScope - c.Excluded; n > 0 {
+		return n
+	}
+	return 0
 }
 
 // Percent is InScope as a share of InternetFacing, rounded to two decimals

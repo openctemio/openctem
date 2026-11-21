@@ -77,9 +77,12 @@ type GroupResponse struct {
 	OutsideMembers []OutsideMemberDetail `json:"outside_members,omitempty"`
 	// CarriesFullData: on a single team, whether it carries a full-data
 	// role; nobody outside the organization can then join it.
-	CarriesFullData bool      `json:"carries_full_data,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CarriesFullData bool `json:"carries_full_data,omitempty"`
+	// Access is set by the list only: the scope mode and presets the team
+	// carries (the same shape as GET /groups/{groupId}/access).
+	Access    *TeamAccessResponse `json:"access,omitempty"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
 }
 
 // GroupMemberResponse represents a group member in API responses.
@@ -476,12 +479,21 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("failed to get group counts", "error", err)
 	}
 
+	access, err := h.service.ListTeamAccess(ctx, tenantID, output.Groups)
+	if err != nil {
+		h.logger.Warn("failed to get team access summaries", "error", err)
+	}
+
 	groups := make([]GroupResponse, len(output.Groups))
 	for i, g := range output.Groups {
 		groups[i] = toGroupResponse(g)
 		if c, ok := counts[g.ID()]; ok {
 			groups[i].MemberCount = c.MemberCount
 			groups[i].AssetCount = c.AssetCount
+		}
+		if v, ok := access[g.ID()]; ok {
+			a := toTeamAccessResponse(&v)
+			groups[i].Access = &a
 		}
 	}
 

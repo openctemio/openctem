@@ -2,6 +2,7 @@ package audit_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -364,6 +366,18 @@ func TestApplyChainRebaseline_IsAtomic(t *testing.T) {
 		assertUnchanged(t, rb.ID)
 	})
 
+	// SECURITY: the database computes a version 2 row's hash itself, so a
+	// caller cannot give one a hash of its choosing.
+	t.Run("a version 2 entry only takes the hash of its row", func(t *testing.T) {
+		rb := base()
+		rb.Rewrites = []auditdom.ChainRewrite{rewrite(0, strings.Repeat("a", 64))}
+		err := repo.ApplyChainRebaseline(ctx, rb)
+		if err == nil || errors.Is(err, auditdom.ErrChainRebaselineConflict) {
+			t.Fatalf("err = %v, want a refusal", err)
+		}
+		assertUnchanged(t, rb.ID)
+	})
+
 	t.Run("a chain that grew past the walked tail is a conflict", func(t *testing.T) {
 		rb := base()
 		rb.LastChainPosition = before[1].Position
@@ -392,13 +406,21 @@ func TestApplyChainRebaseline_IsAtomic(t *testing.T) {
 // tamperChain rewrites chain hashes the way an attacker with the database
 // role would: the table refuses UPDATE unless the transaction declares a
 // rebaseline, so the forgery has to declare one too.
-func tamperChain(ctx context.Context, db *postgres.DB, q string, args ...any) error {
-	tx, err := db.BeginTx(ctx, nil)
+func tamperChain(ctx context.Context, _ *postgres.DB, q string, args ...any) error {
+	// Only the schema owner's functions may rewrite chain rows (migration
+	// audit_chain_owner_only), so the tamper runs as the superuser
+	// (DATABASE_ADMIN_URL) with triggers off.
+	admin, err := sql.Open("postgres", testdb.AdminURL())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = admin.Close() }()
+	tx, err := admin.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.audit_rebaseline = 'on'`); err != nil {
+	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {

@@ -106,7 +106,17 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 		}
 		in.DataAsOf, in.HasAppliedData = d.BundleCreatedAt, d.AppliedSequence > 0
 	case SourceEPSS:
+		// The score date of the scores held.
 		v.DataAsOf = metaTime(meta[MetaDataAsOf])
+		if v.DataAsOf == nil {
+			v.DataAsOf = metaTime(meta["intel_as_of"])
+		}
+		if v.DataAsOf == nil {
+			v.DataAsOf = v.LastSuccessAt
+		}
+	case SourceKEV:
+		// When the collector last read the catalog (the release says so).
+		v.DataAsOf = metaTime(meta["bundle_fetched_at"])
 		if v.DataAsOf == nil {
 			v.DataAsOf = v.LastSuccessAt
 		}

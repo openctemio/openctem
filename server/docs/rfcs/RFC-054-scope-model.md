@@ -769,8 +769,15 @@ scope target covers and no exclusion removes:
 ```json
 { "total_targets": 7, "active_targets": 7, "total_exclusions": 3, "active_exclusions": 3,
   "coverage": 75.36,
-  "inventory_internet_facing": 69, "inventory_in_scope": 52, "inventory_internal": 4 }
+  "inventory_internet_facing": 69, "inventory_in_scope": 52, "inventory_excluded": 3,
+  "inventory_not_covered": 14, "inventory_internal": 4 }
 ```
+
+`inventory_excluded` is the internet-facing inventory an active, approved,
+unexpired exclusion removes (covered by an entry or not);
+`inventory_not_covered` is the rest that no active entry covers: found, but
+neither in nor out of scope (the Scope page's "Found but unknown"). Both use
+the same data scope as the other inventory counts.
 
 ## 7. Approvals and notification (S3)
 

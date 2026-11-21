@@ -45,6 +45,10 @@ var synonymKeyAllowed = map[string][]string{
 	// A search-box short name for the asset.ip query field: a query alias,
 	// never read from or written to asset properties.
 	"pkg/querylang/entities.go": {"ip"},
+	// The support bundle: a key of its build information file, and names of
+	// log fields whose values are masked. Neither touches asset properties.
+	"internal/diag/bundle.go":         {"os"},
+	"internal/diag/redact/logline.go": {"ip", "ips", "addresses"},
 }
 
 func TestPropertySynonyms_NeverIndexedOrWritten(t *testing.T) {

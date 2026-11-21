@@ -16,6 +16,11 @@ import {
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
 import { isStepUpRequired, requestStepUp, stepUpPromptOf } from './step-up'
 import { isTenantRequired, routeToWelcomeOnce } from './tenant-required'
+import {
+  refreshFailureAction,
+  TWO_FACTOR_SETUP_PATH,
+  twoFactorSetupHref,
+} from '@/lib/auth/refresh-failure'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
@@ -104,6 +109,8 @@ const DEFAULT_TIMEOUT = 30000
 
 /** Why the last refresh failed, carried to the sign-in page. */
 let lastRefreshFailureCode: string | undefined
+/** The HTTP status of the last failed refresh (0: no answer). */
+let lastRefreshFailureStatus = 0
 
 /**
  * Redirect lock to prevent multiple redirects to login
@@ -145,6 +152,7 @@ async function tryRefreshToken(options?: { force?: boolean }): Promise<boolean> 
     return true
   }
   lastRefreshFailureCode = outcome.code
+  lastRefreshFailureStatus = outcome.status
   devLog.warn('[API Client] Token refresh failed:', outcome.status, outcome.code)
   return false
 }
@@ -174,6 +182,33 @@ function renewStaleToken(): void {
   if (now - lastStaleRenewAt < STALE_RENEW_GAP_MS) return
   lastStaleRenewAt = now
   void tryRefreshToken()
+}
+
+/**
+ * Acts on a failed refresh by its answer: sign out only for a dead session;
+ * an organization that holds the session back sends the person to the step
+ * that admits them (two-factor setup, or the account space); a server or
+ * network failure changes nothing.
+ */
+function handleRefreshFailure(): void {
+  if (typeof window === 'undefined') return
+  switch (refreshFailureAction(lastRefreshFailureStatus, lastRefreshFailureCode)) {
+    case 'sign_out':
+      redirectToLoginOnce()
+      return
+    case 'two_factor_setup':
+      if (!window.location.pathname.startsWith(TWO_FACTOR_SETUP_PATH)) {
+        window.location.assign(
+          twoFactorSetupHref(`${window.location.pathname}${window.location.search}`)
+        )
+      }
+      return
+    case 'account_space':
+      routeToWelcomeOnce(window.location)
+      return
+    case 'keep':
+      return
+  }
 }
 
 /**
@@ -368,8 +403,9 @@ export async function apiClient<T = unknown>(
           return apiClient<T>(endpoint, { ...options, _skipRefreshRetry: true })
         }
 
-        // Refresh failed - redirect to login (this sets the lock and clears auth)
-        redirectToLoginOnce()
+        // The refresh's answer decides, never this route's 401 alone: only a
+        // dead session signs the person out (refresh-failure.ts).
+        handleRefreshFailure()
       }
 
       // Handle 403 Forbidden - user doesn't have permission

@@ -1,5 +1,5 @@
 // Package extensionhost is the core (host) side of the public extension API
-// (pkg/extension, docs/development/editions.md): it checks the extensions a
+// (pkg/extension, docs/development/extensions.md): it checks the extensions a
 // build passed to server.Main, builds the Deps each one gets from core
 // services, and wires what they add into the server. Nothing here is visible
 // to an extension; an extension imports only pkg/extension and other public
@@ -37,7 +37,7 @@ type Host struct {
 }
 
 // Set is the checked list of a build's extensions, in the order the build
-// passed them (empty for Community).
+// passed them (empty for the default build).
 type Set struct {
 	exts []ext.Extension
 }
@@ -63,7 +63,7 @@ func New(exts []ext.Extension) (*Set, error) {
 	return &Set{exts: out}, nil
 }
 
-// Empty reports whether the build has no extension (Community).
+// Empty reports whether the build has no extension (the default build).
 func (s *Set) Empty() bool { return s == nil || len(s.exts) == 0 }
 
 // Extensions returns a copy of the build's extensions.
@@ -87,7 +87,7 @@ func (s *Set) Info() []version.Extension {
 }
 
 // ConfigKeys returns every config key the build's extensions declared (nil
-// for Community). The environment check at start counts them as read.
+// for the default build). The environment check at start counts them as read.
 func (s *Set) ConfigKeys() []string {
 	if s == nil {
 		return nil
@@ -136,7 +136,7 @@ func (noGrants) RequireGrant(_ context.Context, _ shared.ID, key limits.GrantKey
 // Grants returns the build's grant provider, or nil when there is none.
 // When the extension fails to build it, the error is logged and the core
 // runs with no provider: an extension can never stop the server or switch
-// off a Community feature, only leave its own grants off.
+// off a feature of the default build, only leave its own grants off.
 func (s *Set) Grants(ctx context.Context, h Host) limits.GrantProvider {
 	if s == nil {
 		return nil
@@ -184,7 +184,7 @@ func (s *Set) Controllers(ctx context.Context, h Host) ([]controller.Controller,
 	return out, nil
 }
 
-// Routes returns every extension's routes, validated (none in the Community
+// Routes returns every extension's routes, validated (none in the default
 // build). A route path used by two extensions, or any route the core
 // refuses, is an error that stops the start.
 func (s *Set) Routes(ctx context.Context, h Host) ([]Route, error) {

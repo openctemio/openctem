@@ -76,6 +76,11 @@ type OpsSnapshot struct {
 	// kev, vulnfeed): when it last imported successfully and whether its
 	// last run failed. No tenant data.
 	Feeds []OpsFeed
+
+	// FreshnessAlerts counts the open freshness conditions by code (the
+	// feed freshness watch's stored state, platform setting
+	// feed_freshness.state). No tenant data.
+	FreshnessAlerts map[string]int
 }
 
 // OpsFeed is the progress of one platform-wide intelligence feed.
@@ -191,6 +196,10 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 		return s, fmt.Errorf("feeds: %w", err)
 	}
 	s.Feeds = feeds
+
+	if s.FreshnessAlerts, err = readFreshnessAlerts(ctx, db); err != nil {
+		return s, fmt.Errorf("feed freshness: %w", err)
+	}
 
 	s.SchemaVersion, s.SchemaDirty, s.SchemaKnown, err = migrate.AppliedVersion(ctx, db)
 	if err != nil {
@@ -310,6 +319,33 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 		}
 		for _, reason := range sensor.DerivePosture(in).Unhardened {
 			out[reason] += n
+		}
+	}
+	return out, rows.Err()
+}
+
+// readFreshnessAlerts counts the open freshness conditions by code.
+func readFreshnessAlerts(ctx context.Context, db opsQuerier) (map[string]int, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT c.elem->>'code', count(*)
+		FROM platform_settings ps
+		CROSS JOIN LATERAL jsonb_array_elements(
+			CASE WHEN jsonb_typeof(ps.value->'open') = 'array' THEN ps.value->'open' ELSE '[]'::jsonb END) AS c(elem)
+		WHERE ps.key = 'feed_freshness.state'
+		GROUP BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var code sql.NullString
+		var n int
+		if err := rows.Scan(&code, &n); err != nil {
+			return nil, err
+		}
+		if code.Valid {
+			out[code.String] = n
 		}
 	}
 	return out, rows.Err()

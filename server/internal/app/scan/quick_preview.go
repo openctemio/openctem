@@ -35,10 +35,13 @@ const (
 
 // Reasons a name is left out of a run, as the preview reports them.
 const (
-	SkipExcluded         = "excluded"
-	SkipOutOfScope       = "out_of_scope"
-	SkipNotConfirmed     = "ownership_unconfirmed"
-	SkipWildcardOnly     = "wildcard_only"
+	SkipExcluded     = "excluded"
+	SkipOutOfScope   = "out_of_scope"
+	SkipNotConfirmed = "ownership_unconfirmed"
+	SkipWildcardOnly = "wildcard_only"
+	// SkipProviderAddress: a provider's shared address only held scope
+	// entries cover (research/531 D3).
+	SkipProviderAddress  = "provider_address"
 	SkipTierExceeded     = "tier_exceeded"
 	SkipInternalNoZone   = "internal_outside_zones"
 	SkipIncompatibleType = "incompatible_type"
@@ -210,6 +213,7 @@ func (s *Service) previewQuickTarget(ctx context.Context, tenantID shared.ID, in
 	skip(SkipOutOfScope, resolved.OutOfScope)
 	skip(SkipNotConfirmed, resolved.Unconfirmed)
 	skip(SkipWildcardOnly, resolved.WildcardOnly)
+	skip(SkipProviderAddress, resolved.ProviderHeld)
 	skip(SkipTierExceeded, resolved.TierExceeded)
 	skip(SkipInternalNoZone, resolved.InternalOutsideZones)
 	skip(SkipIncompatibleType, resolved.Incompatible)

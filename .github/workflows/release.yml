@@ -177,9 +177,29 @@ jobs:
           python3 .github/scripts/release/sanitize-notes.py notes.md
           bash .github/scripts/release/gh-retry.sh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
 
+  # The release feed is uploaded to GitHub's "Latest" release; a hotfix of an
+  # older line is not the latest and must not replace the newest line's feed.
+  newest:
+    name: Newest release line
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      is_newest: ${{ steps.n.outputs.is_newest }}
+    steps:
+      - id: n
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          newest="$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'v*' |
+            sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          [ -n "$newest" ] || { echo "::error::could not list the release tags"; exit 1; }
+          if [ "$newest" = "$TAG" ]; then echo "is_newest=true"; else echo "is_newest=false"; fi >> "$GITHUB_OUTPUT"
+          echo "newest release tag: $newest"
+
   release-feed:
     name: Release feed
-    needs: [release]
+    needs: [release, newest]
+    if: needs.newest.outputs.is_newest == 'true'
     # id-token: the feed is signed keyless (Sigstore); release-feed.yml gives
     # it to its sign job only.
     permissions:

@@ -2,19 +2,34 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
 	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
+// groupFamily is the family dimension of the grouped view.
+const groupFamily = "family"
+
+// groupQuerier is the read transaction the grouped view runs in.
+type groupQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // ListFindingGroups returns findings grouped by a dimension.
 // Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family.
+// The count and the page run in one read-only transaction with the
+// interactive read timeout: a grouping too broad to finish answers
+// vulnerability.ErrFindingQueryTimeout (503 QUERY_TIMEOUT), never a request
+// that holds a pool connection until the role's limit.
 func (r *FindingRepository) ListFindingGroups(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -22,25 +37,40 @@ func (r *FindingRepository) ListFindingGroups(
 	filter vulnerability.FindingFilter,
 	page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
+	var empty pagination.Result[*vulnerability.FindingGroup]
+	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
+	if err != nil {
+		return empty, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := r.listFindingGroups(ctx, tx, tenantID, groupBy, filter, page)
+	if err != nil {
+		return empty, readTimeout(ctx, readFindingGroups, vulnerability.ErrFindingQueryTimeout, err)
+	}
+	return res, tx.Commit()
+}
+
+func (r *FindingRepository) listFindingGroups(
+	ctx context.Context,
+	q groupQuerier,
+	tenantID shared.ID,
+	groupBy string,
+	filter vulnerability.FindingFilter,
+	page pagination.Pagination,
+) (pagination.Result[*vulnerability.FindingGroup], error) {
 	switch groupBy {
 	case "cve_id":
-		return r.groupByCVE(ctx, tenantID, filter, page)
+		return r.groupByCVE(ctx, q, tenantID, filter, page)
 	case "rule_id":
-		return r.groupByRule(ctx, tenantID, filter, page)
+		return r.groupByRule(ctx, q, tenantID, filter, page)
 	case "asset_id":
-		return r.groupByAsset(ctx, tenantID, filter, page)
+		return r.groupByAsset(ctx, q, tenantID, filter, page)
 	case "owner_id":
-		return r.groupByOwner(ctx, tenantID, filter, page)
+		return r.groupByOwner(ctx, q, tenantID, filter, page)
 	case "component_id":
-		return r.groupByComponent(ctx, tenantID, filter, page)
-	case "severity":
-		return r.groupByField(ctx, tenantID, "severity", filter, page)
-	case "source":
-		return r.groupByField(ctx, tenantID, "source", filter, page)
-	case "finding_type":
-		return r.groupByField(ctx, tenantID, "finding_type", filter, page)
-	case "family":
-		return r.groupByField(ctx, tenantID, "family", filter, page)
+		return r.groupByComponent(ctx, q, tenantID, filter, page)
+	case auditKeySeverity, auditKeySource, "finding_type", groupFamily:
+		return r.groupByField(ctx, q, tenantID, groupBy, filter, page)
 	default:
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
@@ -206,10 +236,8 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 
 	// Pentest findings only to members of their campaign; others to everyone.
 	if filter.PentestMemberOrNonPentestUserID != nil {
-		clauses = append(clauses, fmt.Sprintf(`(f.source != 'pentest' OR f.pentest_campaign_id IN (
-			SELECT campaign_id FROM pentest_campaign_members WHERE user_id = $%d AND tenant_id = $%d
-			  AND (role <> 'client' OR f.status NOT IN ('draft', 'in_review'))
-		))`, argOffset, argOffset+1))
+		clauses = append(clauses, "(f.source != 'pentest' OR "+campaignaccess.FindingVisibleSQL(
+			"f.pentest_campaign_id", "f.status", fmt.Sprintf("$%d", argOffset+1), fmt.Sprintf("$%d", argOffset))+")")
 		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
 		argOffset += 2
 	}
@@ -226,7 +254,7 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 }
 
 func (r *FindingRepository) groupByCVE(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	filterWhere, filterArgs := buildFilterWhere(filter, 2)
@@ -244,7 +272,7 @@ func (r *FindingRepository) groupByCVE(
 
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by cve: %w", err)
 	}
 
@@ -278,7 +306,7 @@ func (r *FindingRepository) groupByCVE(
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
 
 	args := append(countArgs, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by cve: %w", err)
 	}
@@ -356,7 +384,7 @@ func (r *FindingRepository) groupByCVE(
 // Findings without a rule_id are not grouped. The label is the rule name when
 // one was stored, else the first title.
 func (r *FindingRepository) groupByRule(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	filterWhere, filterArgs := buildFilterWhere(filter, 2)
@@ -373,7 +401,7 @@ func (r *FindingRepository) groupByRule(
 	`, scope, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by rule: %w", err)
 	}
 
@@ -400,7 +428,7 @@ func (r *FindingRepository) groupByRule(
 	args := make([]any, 0, len(countArgs)+2)
 	args = append(args, countArgs...)
 	args = append(args, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by rule: %w", err)
 	}
@@ -454,7 +482,7 @@ func (r *FindingRepository) groupByRule(
 }
 
 func (r *FindingRepository) groupByAsset(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	filterWhere, filterArgs := buildFilterWhere(filter, 2)
@@ -469,7 +497,7 @@ func (r *FindingRepository) groupByAsset(
 	`, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by asset: %w", err)
 	}
 
@@ -492,7 +520,7 @@ func (r *FindingRepository) groupByAsset(
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
 
 	args := append(countArgs, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by asset: %w", err)
 	}
@@ -543,7 +571,7 @@ func (r *FindingRepository) groupByAsset(
 }
 
 func (r *FindingRepository) groupByOwner(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	filterWhere, filterArgs := buildFilterWhere(filter, 2)
@@ -561,7 +589,7 @@ func (r *FindingRepository) groupByOwner(
 	`, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by owner: %w", err)
 	}
 
@@ -583,7 +611,7 @@ func (r *FindingRepository) groupByOwner(
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
 
 	args := append(countArgs, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by owner: %w", err)
 	}
@@ -628,7 +656,7 @@ func (r *FindingRepository) groupByOwner(
 }
 
 func (r *FindingRepository) groupByComponent(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	filterWhere, filterArgs := buildFilterWhere(filter, 2)
@@ -643,7 +671,7 @@ func (r *FindingRepository) groupByComponent(
 	`, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by component: %w", err)
 	}
 
@@ -664,7 +692,7 @@ func (r *FindingRepository) groupByComponent(
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
 
 	args := append(countArgs, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by component: %w", err)
 	}
@@ -710,7 +738,7 @@ func (r *FindingRepository) groupByComponent(
 
 // groupByField handles simple GROUP BY on a single column (severity, source, finding_type).
 func (r *FindingRepository) groupByField(
-	ctx context.Context, tenantID shared.ID,
+	ctx context.Context, q groupQuerier, tenantID shared.ID,
 	field string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	// Whitelist field names to prevent SQL injection
@@ -735,7 +763,7 @@ func (r *FindingRepository) groupByField(
 	`, field, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
 	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+	if err := q.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by %s: %w", field, err)
 	}
 
@@ -750,7 +778,7 @@ func (r *FindingRepository) groupByField(
 	`, field, statusCountCols(), extraWhere, field, nextArg, nextArg+1)
 
 	args := append(countArgs, page.Limit(), page.Offset())
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by %s: %w", field, err)
 	}
@@ -885,9 +913,14 @@ func (r *FindingRepository) FindRelatedCVEs(
 
 	args := append([]any{tenantID.String(), cveID}, filterArgs...)
 	args = append(args, sourceArgs...)
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	tx, err := beginRead(ctx, r.db.DB, interactiveReadTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("find related cves: %w", err)
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, readTimeout(ctx, readFindingGroups, vulnerability.ErrFindingQueryTimeout, fmt.Errorf("find related cves: %w", err))
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -899,7 +932,10 @@ func (r *FindingRepository) FindRelatedCVEs(
 		}
 		results = append(results, rc)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, readTimeout(ctx, readFindingGroups, vulnerability.ErrFindingQueryTimeout, err)
+	}
+	return results, nil
 }
 
 // ListByStatusAndAssets returns findings with a specific status on specific assets.

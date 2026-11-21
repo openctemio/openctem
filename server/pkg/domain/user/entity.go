@@ -484,7 +484,7 @@ func (u *User) IsActive() bool {
 }
 
 // Note: User-level Suspend/Activate/Deactivate methods were removed
-// because the OSS product has no admin path that calls them. Member
+// because this build has no admin path that calls them. Member
 // access is managed at the membership level via TenantService.SuspendMember
 // / ReactivateMember (see internal/app/tenant). The
 // `users.status` column and StatusInactive/StatusSuspended constants

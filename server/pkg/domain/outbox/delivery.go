@@ -22,6 +22,11 @@ const (
 	// DeliveryDead: retries exhausted, or the channel may no longer receive
 	// the event. Terminal; a redelivery is a new outbox entry.
 	DeliveryDead DeliveryStatus = "dead"
+	// DeliveryGrouped: handed to a notification group (GroupID); the group's
+	// one message carries it. Terminal for this entry; the group's message
+	// has its own delivery state (an outbox entry of aggregate type
+	// AggregateNotificationGroup).
+	DeliveryGrouped DeliveryStatus = "grouped"
 )
 
 // DeliveryBackoff is the wait before each retry of a failed channel: the
@@ -56,6 +61,8 @@ type ChannelDelivery struct {
 	LastAttemptAt   *time.Time     `json:"last_attempt_at,omitempty"`
 	LastError       string         `json:"last_error,omitempty"`
 	MessageID       string         `json:"message_id,omitempty"`
+	// GroupID is the notification group that carries a grouped delivery.
+	GroupID string `json:"group_id,omitempty"`
 }
 
 // NewChannelDelivery is a pending delivery due now.
@@ -106,6 +113,16 @@ func (d *ChannelDelivery) Abandon(now time.Time, reason string) {
 	d.LastAttemptAt = &now
 	d.NextAttemptAt = nil
 	d.LastError = truncateError(reason)
+}
+
+// RecordGrouped hands the channel's delivery to a notification group. It
+// does not count as an attempt.
+func (d *ChannelDelivery) RecordGrouped(now time.Time, groupID string) {
+	d.Status = DeliveryGrouped
+	d.GroupID = groupID
+	d.LastAttemptAt = &now
+	d.NextAttemptAt = nil
+	d.LastError = ""
 }
 
 func truncateError(s string) string {
@@ -193,11 +210,18 @@ func (o *Outbox) DeliveryResults() (succeeded, failed int, results []SendResult)
 		if d.LastAttemptAt != nil {
 			r.SentAt = *d.LastAttemptAt
 		}
-		if d.Status == DeliverySucceeded {
+		switch d.Status {
+		case DeliverySucceeded:
 			r.Status = "success"
 			r.Error = ""
 			succeeded++
-		} else {
+		case DeliveryGrouped:
+			// Handed over: the group's message reports the send itself.
+			r.Status = string(DeliveryGrouped)
+			r.GroupID = d.GroupID
+			r.Error = ""
+			succeeded++
+		default:
 			r.Status = "failed"
 			failed++
 		}

@@ -17,6 +17,6 @@ import (
 
 // Main runs the API server (or one of its bundled command-line tools, chosen
 // by the name the binary was invoked as) with the given extensions, and exits
-// the process when it stops. The Community build passes none. An invalid
+// the process when it stops. The default build passes none. An invalid
 // set of extensions stops the start before anything else runs.
 func Main(exts ...extension.Extension) { internalserver.Main(exts...) }

@@ -117,7 +117,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*userdom.U
 // GetOrCreateFromLocalToken gets an existing user by ID from local JWT claims.
 // This is used by the UserSync middleware for local auth.
 //
-// IMPORTANT: For OSS/local auth, we do NOT auto-create users from JWT tokens.
+// IMPORTANT: For local auth, we do NOT auto-create users from JWT tokens.
 // Users MUST register through the /api/v1/auth/register endpoint first.
 // This prevents creating passwordless users that cannot login.
 func (s *UserService) GetOrCreateFromLocalToken(ctx context.Context, userID, email, name string) (*userdom.User, error) {

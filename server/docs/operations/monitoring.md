@@ -149,6 +149,7 @@ Besides the Go runtime and process metrics:
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
 | `openctem_notification_dead_letters_total` | where | Notifications the outbox gave up on after their retries: one channel (`channel`) or the whole event (`entry`). |
 | `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
+| `openctem_db_read_timeouts_total` | read (`findings`, `finding_groups`, `finding_export`, `assets`, `components`, ...) | Interactive reads (lists, counts, stats, facets, groups, export pages) stopped by their statement timeout and answered `503 QUERY_TIMEOUT`. A steady rise for one read names the filter or grouping that needs an index or a precomputed figure (`docs/architecture/list-query-contract.md`, "Timeouts"). |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
 | `openctem_sensors_unhardened` | kind (policy_none, pin_none, tools_unconfined, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
@@ -325,6 +326,20 @@ expired or a refused signature; `releases/latest` of the bundle repository
 must name a current release. The import controller also returns its failure,
 so `controller=vuln-feed-import` appears in [ControllerErrors](#controllererrors)
 counts and the API log warns "vulnerability corpus is stale".
+
+### FeedFreshness
+
+The platform's freshness watch has an open condition (the `code` label):
+`data_stale` (a feed's data is older than its limit: bundle 12 hours, KEV 6
+hours, EPSS 36 hours), `newest_record_old` (the newest CVE in the corpus is
+older than 12 hours), `import_refused` or `import_failing` (the bundle or a
+feed import is refused or keeps failing), `volume_low` (far fewer CVEs in the
+last 24 hours than usual). The administrators also get an e-mail and every
+user sees a banner while data is stale. Open System, Threat intelligence in
+the platform console: the banner there names the feed and the cause. For
+`data_stale` on the bundle with a clean import, the publisher has not released
+recently: check the newest release of the bundle repository. In relay mode
+check the relay sensor first.
 
 ### SensorsOffline
 

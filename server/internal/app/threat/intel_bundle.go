@@ -1,21 +1,25 @@
 package threat
 
-// KEV and EPSS delivered by the signed vulnerability release.
+// KEV and EPSS delivered by the signed vulnerability release, their only
+// supply: the platform never calls CISA or FIRST itself.
 //
 // The collector publishes both next to each release as a signed side
 // manifest (pkg/vulnbundle/intel.go). The importer verifies it and hands the
 // parsed streams here. A stream is applied only when its data date is newer
-// than the date of the data the platform holds, whichever path (bundle or
-// direct fetch) stored it, so a replayed, withheld-and-resent or carried
-// older copy never rolls the catalog back. A snapshot far smaller than what
+// than the date of the data the platform holds, so a replayed,
+// withheld-and-resent or carried older copy never rolls the catalog back. A snapshot far smaller than what
 // is stored is refused as truncated, and a KEV snapshot may remove only as
 // many entries as a direct sync may (pruneRemovedKEV).
 //
-// Freshness is recorded per source in the sync status row's metadata so the
-// feed status can say which path supplied the data and how current the
-// bundle's copy is:
+// The feed's status row follows the release: a stream that verified and was
+// read by the collector recently is a successful check (its last success
+// moves even when the data did not change), a stream the collector last read
+// longer ago than the feed's stale limit, or a refused stream, is a failed
+// one, so a stale or refused copy shows in the console and alarms
+// (internal/app/feedwatch). Freshness is also recorded in the row's metadata:
 //
-//	delivered_via     "bundle" or "direct": the path that stored the data held
+//	delivered_via     "bundle" (older rows: "direct", from before the
+//	                  platform stopped fetching itself)
 //	intel_as_of       data date of the data held (RFC 3339)
 //	bundle_fetched_at when the collector last read the source (RFC 3339);
 //	                  refreshed even when the data did not change
@@ -28,7 +32,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 )
 
@@ -41,11 +45,8 @@ const (
 	MetaBundleError    = "bundle_error"
 )
 
-// Paths that deliver KEV and EPSS.
-const (
-	ViaBundle = "bundle"
-	ViaDirect = "direct"
-)
+// ViaBundle is the path that delivers KEV and EPSS.
+const ViaBundle = "bundle"
 
 // bundleShrinkFloor: a snapshot under this share of the stored record count
 // is refused as truncated.
@@ -127,7 +128,30 @@ func (s *IntelService) recordBundleSeen(ctx context.Context, source string, st B
 		meta[MetaBundleError] = cause.Error()
 	}
 	status.SetMetadata(meta)
+	switch {
+	case cause != nil:
+		markFailed(status, cause)
+	case s.sourceStale(source, st.FetchedAt):
+		// The release carries the stream, but the collector has not read
+		// the source for longer than the feed may be old: not a success.
+		markFailed(status, feedstatus.Tag(feedstatus.CodeSourceStale,
+			map[string]string{"fetched_at": st.FetchedAt.UTC().Format(time.RFC3339)},
+			fmt.Errorf("%w: the collector last read %s at %s", ErrSourceStale, source, st.FetchedAt.UTC().Format(time.RFC3339))))
+	default:
+		status.MarkSyncUnchanged(0, 0)
+	}
 	return status, nil
+}
+
+// ErrSourceStale: the release's copy of a feed was read by the collector
+// longer ago than the feed's stale limit.
+var ErrSourceStale = errors.New("the release's copy of the feed is old")
+
+// sourceStale: the collector read the source longer ago than the feed's
+// stale limit (feedstatus.StaleAfter); a zero time is stale.
+func (s *IntelService) sourceStale(source string, fetchedAt time.Time) bool {
+	limit := feedstatus.StaleAfter(source)
+	return limit > 0 && (fetchedAt.IsZero() || s.now().Sub(fetchedAt) > limit)
 }
 
 // BundleWanted reports whether a stream dated asOf would change what the
@@ -255,139 +279,4 @@ func (s *IntelService) ApplyBundleEPSS(ctx context.Context, st BundleStream, sco
 		s.afterBundle(ctx, source)
 	}
 	return BundleOutcome{Applied: true, Records: len(scores)}, nil
-}
-
-// markDirect records that a direct fetch stored the data held, with its
-// data date (zero: unknown, the date is left as it was).
-func markDirect(meta map[string]any, asOf time.Time) {
-	meta[MetaDeliveredVia] = ViaDirect
-	if !asOf.IsZero() {
-		meta[MetaIntelAsOf] = asOf.UTC().Format(time.RFC3339)
-	}
-}
-
-// How old the bundle copy of a source may be before the direct fetch runs as
-// a fallback (when the platform setting prefers the bundle). Age is measured
-// from when the collector last read the source (bundle_fetched_at), not from
-// the publisher's data date, which can be days old while the data is current.
-const (
-	KEVBundleStaleAfter  = 6 * time.Hour
-	EPSSBundleStaleAfter = 48 * time.Hour
-)
-
-// ErrDirectFetchOff is returned by a direct sync when the platform setting
-// forbids calling CISA and FIRST (strict-egress installs).
-var ErrDirectFetchOff = errors.New("direct fetch of this feed is switched off in the platform settings")
-
-// SourcePolicy is the platform setting that decides where KEV and EPSS come
-// from (*threatsource.Service).
-type SourcePolicy interface {
-	Policy(ctx context.Context) (threatsource.Policy, error)
-}
-
-// SetSourcePolicy wires the setting (nil: defaults, the direct fetch runs on
-// its schedule).
-func (s *IntelService) SetSourcePolicy(p SourcePolicy) { s.policy = p }
-
-// FetchDecision says whether the scheduled direct fetch of a source runs, and
-// why (a stable code for the status and the logs).
-type FetchDecision struct {
-	Run    bool
-	Reason string
-}
-
-// Reasons of a FetchDecision.
-const (
-	ReasonDirectPreferred = "direct_preferred"
-	ReasonBundleFresh     = "bundle_fresh"
-	ReasonBundleStale     = "bundle_stale"
-	ReasonBundleMissing   = "bundle_missing"
-	ReasonDirectOff       = "direct_fetch_off"
-)
-
-func (s *IntelService) sourcePolicy(ctx context.Context) threatsource.Policy {
-	p := threatsource.Policy{DirectAllowed: true}
-	if s.policy == nil {
-		return p
-	}
-	got, err := s.policy.Policy(ctx)
-	if err != nil {
-		// The setting cannot be read: behave as before it existed.
-		s.logger.Warn("threat intel source setting not read; using the defaults", "error", err)
-		return p
-	}
-	return got
-}
-
-// ShouldFetchDirect decides whether the scheduled direct fetch of source
-// ("kev" or "epss") runs now:
-//
-//   - direct fetch off: never;
-//   - source "direct" (default): always, as the schedule says;
-//   - source "bundle": only when the bundle's copy was last read by the
-//     collector longer ago than the source's stale threshold, or never.
-func (s *IntelService) ShouldFetchDirect(ctx context.Context, source string) FetchDecision {
-	p := s.sourcePolicy(ctx)
-	if !p.DirectAllowed {
-		return FetchDecision{Reason: ReasonDirectOff}
-	}
-	if !p.PreferBundle {
-		return FetchDecision{Run: true, Reason: ReasonDirectPreferred}
-	}
-	status, err := s.repo.SyncStatus().GetBySource(ctx, source)
-	if err != nil {
-		// Unknown state: fetch (a stale feed is worse than a redundant call).
-		return FetchDecision{Run: true, Reason: ReasonBundleMissing}
-	}
-	fetched := parseMetaTime(status.Metadata()[MetaBundleFetched])
-	if fetched.IsZero() {
-		return FetchDecision{Run: true, Reason: ReasonBundleMissing}
-	}
-	limit := KEVBundleStaleAfter
-	if source == bundleSourceEPSS {
-		limit = EPSSBundleStaleAfter
-	}
-	if s.now().Sub(fetched) > limit {
-		return FetchDecision{Run: true, Reason: ReasonBundleStale}
-	}
-	return FetchDecision{Reason: ReasonBundleFresh}
-}
-
-// BundleReadiness is how the signed release is doing for one source: what an
-// administrator checks before letting the release supply the feed.
-type BundleReadiness struct {
-	Source string
-	// DeliveredVia: the path that stored the data held ("" before any).
-	DeliveredVia string
-	// DataAsOf is the data date of the data held (zero: unknown).
-	DataAsOf time.Time
-	// BundleFetchedAt is when the collector last read the source, as the
-	// release says (zero: no release has carried the feed yet).
-	BundleFetchedAt time.Time
-	// Fresh: BundleFetchedAt is within the source's stale threshold.
-	Fresh bool
-	// BundleError is why the last bundle copy was refused ("" when none).
-	BundleError string
-}
-
-// BundleReadiness reports the bundle's state for KEV and EPSS.
-func (s *IntelService) BundleReadiness(ctx context.Context) []BundleReadiness {
-	out := make([]BundleReadiness, 0, 2)
-	for _, src := range []string{bundleSourceKEV, bundleSourceEPSS} {
-		r := BundleReadiness{Source: src}
-		if st, err := s.repo.SyncStatus().GetBySource(ctx, src); err == nil {
-			meta := st.Metadata()
-			r.DeliveredVia, _ = meta[MetaDeliveredVia].(string)
-			r.BundleError, _ = meta[MetaBundleError].(string)
-			r.DataAsOf = storedAsOf(meta)
-			r.BundleFetchedAt = parseMetaTime(meta[MetaBundleFetched])
-			limit := KEVBundleStaleAfter
-			if src == bundleSourceEPSS {
-				limit = EPSSBundleStaleAfter
-			}
-			r.Fresh = !r.BundleFetchedAt.IsZero() && s.now().Sub(r.BundleFetchedAt) <= limit
-		}
-		out = append(out, r)
-	}
-	return out
 }

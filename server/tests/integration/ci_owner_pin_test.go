@@ -11,8 +11,9 @@ import (
 
 // A trust configuration pins the namespace id that first used a name: a
 // group renamed or deleted and registered again by someone else (same name,
-// new id) is refused and audited; changing the configuration's owners drops
-// the pins; another tenant pins on its own (RFC-077 G-10).
+// new id) is refused and audited; listing another owner keeps the pin,
+// removing the name drops it (listing it again re-pins); another tenant pins
+// on its own (RFC-077 G-10).
 func TestCIOwnerIDPinning(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
@@ -50,14 +51,28 @@ func TestCIOwnerIDPinning(t *testing.T) {
 	if pins, _ := r.svc.OwnerPins(ctx, r.tenant, cfg.ID); len(pins) != 1 || pins[0].OwnerID != "100" {
 		t.Fatalf("other tenant changed this tenant's pin: %+v", pins)
 	}
-	// Changing the owners drops the pins; the next admitted id pins again.
-	if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, cirunapp.TrustConfigInput{Name: cfg.Name, Issuer: cfg.Issuer,
-		Audience: cfg.Audience, Rules: cirun.Rules{Owners: []string{"acme", "acme2"}}}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
-		t.Fatalf("update: %v", err)
+	setOwners := func(owners ...string) {
+		t.Helper()
+		if _, err := r.svc.UpdateTrustConfig(ctx, r.tenant, cfg.ID, cirunapp.TrustConfigInput{Name: cfg.Name, Issuer: cfg.Issuer,
+			Audience: cfg.Audience, Rules: cirun.Rules{Owners: owners}}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+			t.Fatalf("update: %v", err)
+		}
 	}
+	// Listing another owner keeps the pin of a name still listed.
+	setOwners("acme", "acme2")
+	if pins, _ := r.svc.OwnerPins(ctx, r.tenant, cfg.ID); len(pins) != 1 || pins[0].OwnerID != "100" {
+		t.Fatalf("pins after an owner was added: %+v", pins)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, cfg.Audience, "acme/api", "main", sha, ns("200"))); code != http.StatusUnauthorized {
+		t.Fatalf("other namespace id after an unrelated edit: %d", code)
+	}
+	// Removing the name drops its pin; listing it again, the next admitted
+	// id pins again.
+	setOwners("acme2")
 	if pins, _ := r.svc.OwnerPins(ctx, r.tenant, cfg.ID); len(pins) != 0 {
-		t.Fatalf("pins after owners changed: %+v", pins)
+		t.Fatalf("pins after the owner was removed: %+v", pins)
 	}
+	setOwners("acme", "acme2")
 	if code, out := r.exchange(r.tenant, r.idp.token(t, cfg.Audience, "acme/api", "main", sha, ns("200"))); code != http.StatusCreated {
 		t.Fatalf("after re-pin: %d %v", code, out)
 	}

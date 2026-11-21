@@ -136,15 +136,52 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 - Enter your GitLab URL as the **Issuer** in step 1 (for example
   `https://gitlab.example.com`). It must match the `iss` claim exactly.
-- OpenCTEM fetches your GitLab's signing keys over HTTPS through its
-  outbound-request guard. A GitLab on a private address needs its subnet in
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
-  `10.20.0.0/16`).
-- The certificate must be trusted by the API (a public CA, or your CA added to
-  the API container).
+- By default OpenCTEM fetches your GitLab's signing keys over HTTPS through
+  its outbound-request guard. A GitLab on a private address needs its subnet
+  opened: a platform administrator adds it under console System > Private
+  networks (for example `10.20.0.0/24`, note "GitLab"; applied without a
+  restart), or the operator sets `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the
+  API. "Test a destination" on that page resolves the GitLab host name and
+  says which range would open each address. Its certificate must be trusted by the API (a public
+  CA, or your CA added to the API container).
+- When the platform cannot or must not reach your GitLab, choose **Use keys I
+  paste** under **Signing keys** in the trust: open
+  `https://<your GitLab>/oauth/discovery/keys` and paste the whole document
+  (all keys). Tokens are then verified with those keys only and OpenCTEM
+  never contacts your GitLab. When GitLab rotates its signing key, jobs are
+  refused with `CI_TOKEN_UNKNOWN_KEY` and the administrators are alerted:
+  paste the current document again.
 - A custom audience in the trust configuration replaces
   `openctem:tenant:<id>`; it must contain the organization id. Set the same
   value in `id_tokens`.
+
+### Every project on this GitLab
+
+On a self-managed GitLab, a trust configuration can accept every project
+without naming its groups ("Every project on this GitLab",
+`rules.all_repositories`; not available for gitlab.com). Any user of your
+GitLab can create a personal project, so a project seen for the first time is
+not trusted on sight: it is listed under **New repositories**, grouped by
+top-level group, and its jobs are refused with
+`CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until you approve it. Approve the
+project, or the whole group (every current and future project of that group
+is then accepted with no further step), or block either (refused with
+`CI_TOKEN_REPOSITORY_BLOCKED`, reversible). Several items can be decided at
+once. Only approved projects are added to scope. An approval binds to the
+project and namespace ids that were seen: if the path changes hands
+afterwards, the new project's jobs are refused. A group lists at most 25
+pending projects; past that its new projects are refused without being
+listed until you decide some of them. "Protected branches and tags
+only" and "Notify me when a new group asks" are on by default for such a
+configuration.
+
+Approving a whole group trusts its name. A GitLab token carries no top-level
+group id, so if the group is renamed or deleted and its name is taken by
+someone else, a subgroup that was never seen before is accepted under the
+approved name. Approve single projects when you do not control who owns the
+group. Anyone who can create top-level groups on your GitLab can also fill the
+New repositories list with new groups; block such a group in one step to clear
+its rows.
 
 ## Security notes
 
@@ -192,7 +229,7 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 | Symptom | Cause and fix |
 |---|---|
-| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Settings > Trusted pipelines > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Settings > Trusted pipelines > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify, which are listed per issuer under Tokens refused before verification. A rule refusal quotes the job's own value, such as its `ci_config_ref_uri`, so a pipeline file missing from Pipeline definitions is visible in the job log |
 | `CI_TOKEN_REPLAY_LIMIT`, `CI_TOKEN_REPLAY_RUN_CLOSED` | The job's ID token was already exchanged five times, or its run already has its verdict: rerun the job for a new token |
 | `CI_TOKEN_REPLAY` | A different token under an ID token id already used, or a token presented to another organization: refused and audited at high severity |
 | `the gitlab OIDC token was already exchanged` (openctem-ci v0.3.0 and older) | The first exchange of the job failed and the CLI hid why; update the pinned `openctemio/ci` release, which prints the real cause |
@@ -202,7 +239,8 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |
 | "scan-only mode" in the log, nothing uploaded | `OPENCTEM_TENANT_ID` is not set in the job, or the pipeline runs for a fork merge request |
-| Self-managed: token refused with an issuer or key error | The Issuer URL does not match `iss`, or the API cannot reach your GitLab's keys (private address flag, certificate) |
+| Self-managed: token refused with an issuer or key error | The Issuer URL does not match `iss`, or the API cannot reach your GitLab's keys (private address flag, certificate): allow it, or paste the keys in the trust |
+| `CI_TOKEN_UNKNOWN_KEY` | The trust uses pasted keys and GitLab signed the token with another key (a rotation): paste the current `https://<your GitLab>/oauth/discovery/keys` document |
 
 ## No API keys in CI
 

@@ -715,7 +715,7 @@ sensors take from files (`SENSOR_INSTANCE_ENROLLMENT_TOKEN_FILE`, the pins'
 
 ## Shared sensors on the tenant plane
 
-Platform sensors become **shared sensors** (instance scope) in every edition;
+Platform sensors become **shared sensors** (instance scope) in every build;
 the design, access layers, deployment defaults and rollout are in
 [RFC-100](../rfcs/RFC-100-shared-sensors.md). Until its gate (§11) is met,
 no organization may use them.

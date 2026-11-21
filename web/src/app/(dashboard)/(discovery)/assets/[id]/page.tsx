@@ -40,6 +40,7 @@ import {
   ResolvedPortsSection,
   hasResolvedPorts,
 } from '@/features/assets/components/resolved-ports-section'
+import { NameAddressesSection } from '@/features/assets/components/name-addresses-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
@@ -274,6 +275,8 @@ export default function AssetDetailPage() {
             </CardContent>
           </Card>
           {/* Open ports of the addresses a domain or subdomain resolves to. */}
+          {/* The addresses it resolves to, by provider, with history (research/531). */}
+          {hasResolvedPorts(asset.type) && <NameAddressesSection assetId={asset.id} />}
           {hasResolvedPorts(asset.type) && <ResolvedPortsSection assetId={asset.id} />}
           {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
           <AssetWebEvidenceCard assetId={asset.id} />

@@ -1,6 +1,6 @@
 
 .PHONY: platform-authz-docs sigstore-root-refresh
-.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
+.PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix auth-scenarios migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
 APP_NAME := openctem
@@ -209,6 +209,11 @@ authz-docs:
 ##               MATRIX_REPORT=<file.json> writes the report)
 authz-matrix:
 	@bash tests/authzmatrix/ci/run.sh
+
+## auth-scenarios: the sign-in scenario suite (tests/authscenarios) on a
+## scratch stack; docs/development/auth-scenarios.md.
+auth-scenarios:
+	@bash tests/authscenarios/ci/run.sh -parallel 16
 
 ## swagger-check: Generate the spec, then fail if the annotations, the spec and
 ## the routes disagree. Compares SETS of operations, not bytes — see

@@ -158,6 +158,9 @@ var findingMergeKeptRefs = map[string]string{
 	// What an exploration step yielded is history: the link names the
 	// finding as it was, and the tombstone resolves to the survivor.
 	"exploration_links.finding_id": "kept on the tombstone; history of what a lead's step yielded",
+	// One row per finding (primary key tenant_id, finding_id): the survivor
+	// keeps its own web location, the tombstone keeps the one it observed.
+	"finding_web_locations.finding_id": "kept on the tombstone; the survivor keeps its own web location",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to

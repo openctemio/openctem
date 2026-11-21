@@ -102,25 +102,23 @@ func TestAlertBootstrapNeverEnrolled(t *testing.T) {
 	}
 }
 
-// A feed older than its alert age alerts once; the release feed (issued
-// per release) has no age alert.
-func TestAlertFeedStale(t *testing.T) {
+// The age of the data is the freshness watch's in every mode
+// (internal/app/feedwatch): the relay does not raise a second alert for the
+// same old release.
+func TestAlertFeedStaleIsNotTheRelays(t *testing.T) {
 	f := newFixture(t)
 	n := f.withNotifier()
 	f.relayOn(t)
-	f.at(t, 46*time.Hour) // published tNow-1h: 47h old
-	for _, s := range n.Subjects {
-		if strings.Contains(s, "out of date") {
-			t.Fatalf("stale too early: %v", n.Subjects)
+	f.at(t, 50*time.Hour)
+	for _, k := range openKeys(t, f.svc) {
+		if strings.HasPrefix(k, AlertConditionStale) {
+			t.Fatalf("relay stale alert: %v", openKeys(t, f.svc))
 		}
 	}
-	f.at(t, 2*time.Hour)
-	found := false
-	for _, k := range openKeys(t, f.svc) {
-		found = found || k == AlertConditionStale+":"+dom.FeedVulnFeed
-	}
-	if !found {
-		t.Fatalf("no stale alert: %v", openKeys(t, f.svc))
+	for _, s := range n.Subjects {
+		if strings.Contains(s, "out of date") {
+			t.Fatalf("relay stale mail: %v", n.Subjects)
+		}
 	}
 }
 

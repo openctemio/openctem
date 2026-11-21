@@ -757,7 +757,7 @@ func TestResetCredentialsRequiresReenrollment(t *testing.T) {
 	_, token := h.enroll(t)
 	actor, _ := admin.NewAdminUser("root@acme.io", "Root", admin.AdminRoleSuperAdmin, nil)
 
-	if err := h.svc.ResetCredentials(ctx, actor, h.admin.ID(), client); err != nil {
+	if err := h.svc.ResetCredentials(ctx, actor, h.admin.ID(), "", client); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.svc.Authenticate(ctx, token); err == nil {

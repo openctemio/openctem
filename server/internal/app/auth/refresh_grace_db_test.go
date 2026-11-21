@@ -322,4 +322,228 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 			t.Fatal("a signed-out session must not be refreshed through the grace")
 		}
 	})
+
+	// /auth/token (ExchangeToken) has the same grace: two tabs of one browser
+	// opening two organizations at once, or a tab that missed a rotation.
+	exchange := func(svc *AuthService, rt, tenantID, ua string) (*ExchangeTokenResult, error) {
+		return svc.ExchangeToken(ctx, ExchangeTokenInput{RefreshToken: rt, TenantID: tenantID, UserAgent: ua})
+	}
+	isReuse := func(err error) bool {
+		return errors.Is(err, sessiondom.ErrRefreshTokenUsed) || errors.Is(err, sessiondom.ErrRefreshTokenRevoked)
+	}
+	// secondOrg makes u a member of one more organization.
+	secondOrg := func(t *testing.T, u *userdom.User) string {
+		t.Helper()
+		tn, err := tenantdom.NewTenant("Grace org 2", "grace2-"+shared.NewID().String()[24:], u.ID().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tenants.Create(ctx, tn); err != nil {
+			t.Fatalf("create tenant: %v", err)
+		}
+		ms, err := tenantdom.NewMembership(u.ID(), tn.ID(), tenantdom.Role("member"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tenants.CreateMembership(ctx, ms); err != nil {
+			t.Fatalf("create membership: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenant_members WHERE tenant_id = $1`, tn.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tn.ID().String())
+		})
+		return tn.ID().String()
+	}
+
+	t.Run("exchange: two tabs open two organizations at once and share one successor", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tidA := newMember(t)
+		tidB := secondOrg(t, u)
+		sid, rt := signIn(t, svc, u)
+
+		var ra, rb *ExchangeTokenResult
+		var ea, eb error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); ra, ea = exchange(svc, rt, tidA, ua) }()
+		go func() { defer wg.Done(); rb, eb = exchange(svc, rt, tidB, ua) }()
+		wg.Wait()
+		if ea != nil || eb != nil {
+			t.Fatalf("parallel exchanges: %v / %v", ea, eb)
+		}
+		if ra.RefreshToken != rb.RefreshToken {
+			t.Fatal("the two tabs got different successors: the family forked")
+		}
+		if ra.TenantID != tidA || rb.TenantID != tidB {
+			t.Fatal("each tab must get a token for the organization it asked for")
+		}
+		if familySize(t, sid) != 2 || !sessionActive(t, sid) || reuseAudits(t, sid) != 0 {
+			t.Fatal("two tabs of one client must not end the session")
+		}
+		if _, err := exchange(svc, ra.RefreshToken, tidA, ua); err != nil {
+			t.Fatalf("the successor must rotate normally: %v", err)
+		}
+	})
+
+	t.Run("exchange: a stale tab gets the successor once; an older token ends the session", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		first, err := exchange(svc, rt, tid, ua)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stale, err := exchange(svc, rt, tid, ua)
+		if err != nil || stale.RefreshToken != first.RefreshToken {
+			t.Fatalf("the stale tab must get the same successor, err=%v", err)
+		}
+		next, err := exchange(svc, first.RefreshToken, tid, ua)
+		if err != nil || next.RefreshToken == first.RefreshToken {
+			t.Fatalf("the successor must rotate, err=%v", err)
+		}
+		// rt is now two rotations old: a real reuse.
+		if _, err := exchange(svc, rt, tid, ua); !isReuse(err) {
+			t.Fatalf("an older token: want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("a token reused after its successor rotated must end the session and be audited")
+		}
+		if _, err := exchange(svc, next.RefreshToken, tid, ua); err == nil {
+			t.Fatal("after the reuse every token of the session is revoked")
+		}
+	})
+
+	t.Run("exchange: after the grace the replaced token ends the session", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sqlDB.ExecContext(ctx, `UPDATE refresh_tokens SET used_at = NOW() - interval '31 seconds'
+			WHERE session_id = $1 AND used_at IS NOT NULL`, sid.String()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, ua); !isReuse(err) {
+			t.Fatalf("want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("a reuse after the grace must end the session and be audited")
+		}
+	})
+
+	t.Run("exchange: another client within the grace ends the session", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, "curl/8.0"); !isReuse(err) {
+			t.Fatalf("want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("a different client must end the session and be audited")
+		}
+	})
+
+	t.Run("exchange: a token rotated by a refresh is re-presented at the exchange", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		r, err := refresh(svc, rt, tid, ua)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ex, err := exchange(svc, rt, tid, ua)
+		if err != nil || ex.RefreshToken != r.RefreshToken {
+			t.Fatalf("the exchange must hand out the refresh's successor, err=%v", err)
+		}
+		if !sessionActive(t, sid) || reuseAudits(t, sid) != 0 {
+			t.Fatal("the session must stay")
+		}
+	})
+
+	t.Run("exchange: grace off, a stale tab ends the session", func(t *testing.T) {
+		svc := newService(0)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, ua); !isReuse(err) {
+			t.Fatalf("want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("with the grace off any reuse ends the session")
+		}
+	})
+
+	// A grace hand-out is audited (auth.refresh_grace), for both calls.
+	graceAudits := func(t *testing.T, sid shared.ID, flow string) int {
+		t.Helper()
+		var n int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs
+			WHERE action = 'auth.refresh_grace' AND session_id = $1
+			  AND metadata->>'flow' = $2 AND severity = 'low'`, sid.String(), flow).Scan(&n); err != nil {
+			t.Fatalf("count grace audits: %v", err)
+		}
+		return n
+	}
+	t.Run("refresh: a grace hand-out is audited, a normal rotation is not", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if graceAudits(t, sid, "refresh") != 0 {
+			t.Fatal("a normal rotation must not be audited as a grace hand-out")
+		}
+		if _, err := refresh(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if got := graceAudits(t, sid, "refresh"); got != 1 {
+			t.Fatalf("grace audits = %d, want 1", got)
+		}
+	})
+	t.Run("exchange: a grace hand-out is audited", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if got := graceAudits(t, sid, "token_exchange"); got != 1 {
+			t.Fatalf("grace audits = %d, want 1", got)
+		}
+	})
+
+	// The membership is checked before the organization's status: a session
+	// cannot learn whether an organization it is not in is suspended.
+	t.Run("refresh: a non-member of a suspended organization gets access denied", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		svc.SetOrganizationGate(&suspendedGate{})
+		u, _ := newMember(t)
+		_, otherTenant := newMember(t) // u is not a member
+		sid, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, otherTenant, ua); !errors.Is(err, ErrTenantAccessDenied) {
+			t.Fatalf("want ErrTenantAccessDenied, got %v", err)
+		}
+		if !sessionActive(t, sid) {
+			t.Fatal("a refused organization must not end the session")
+		}
+	})
+	t.Run("refresh: a member of a suspended organization still hears it is suspended", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		svc.SetOrganizationGate(&suspendedGate{})
+		u, tid := newMember(t)
+		_, rt := signIn(t, svc, u)
+		if _, err := refresh(svc, rt, tid, ua); !errors.Is(err, tenantdom.ErrOrganizationSuspended) {
+			t.Fatalf("want ErrOrganizationSuspended, got %v", err)
+		}
+	})
 }

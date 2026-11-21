@@ -32,8 +32,9 @@ func TestResultHoldHosts(t *testing.T) {
 			{"host":"d.example.com","reason":"proxy_unavailable"},
 			{"host":"e.example.com","reason":"edge_protected"},
 			{"host":"f.example.com","reason":"catch_all"},
-			{"host":"192.0.2.10:8080","reason":"throttled"}
-		],"coverage_gaps_total":8}}`, []string{"a.example.com", "b.example.com", "e.example.com", "f.example.com", "192.0.2.10"}},
+			{"host":"192.0.2.10:8080","reason":"throttled"},
+			{"host":"g.example.com","reason":"slots_full"}
+		],"coverage_gaps_total":9}}`, []string{"a.example.com", "b.example.com", "e.example.com", "f.example.com", "192.0.2.10"}},
 	} {
 		got := resultHoldHosts(json.RawMessage(tc.raw))
 		if !slices.Equal(got, tc.want) {
@@ -103,6 +104,18 @@ func (o *fakeOutbox) EnqueueInTx(_ context.Context, _ *sql.Tx, p outbox.EnqueueP
 }
 
 const throttledResult = `{"metadata":{"coverage_gaps":[{"host":"a.example.com","reason":"throttled"}],"coverage_gaps_total":1}}`
+
+// A slots_full gap is the sensor's own connection limit, not the target's
+// doing: a run with only that gap holds nothing.
+func TestHoldRunFindings_SlotsFullHoldsNothing(t *testing.T) {
+	repo := &fakeHolder{held: []vulnerability.HeldFinding{{ID: shared.NewID(), Severity: "critical"}}}
+	ob := &fakeOutbox{}
+	s := &Service{logger: logger.NewNop(), findingRepo: repo, heldOutbox: ob}
+	raw := json.RawMessage(`{"metadata":{"coverage_gaps":[{"host":"a.example.com","reason":"slots_full","detail":"limit full"}],"coverage_gaps_total":1}}`)
+	if got := s.holdRunFindings(context.Background(), shared.NewID(), shared.NewID(), raw, "r1"); len(got) != 0 || repo.calls != 0 || len(ob.sent) != 0 {
+		t.Fatalf("slots_full held findings: %v, calls %d, notices %d", got, repo.calls, len(ob.sent))
+	}
+}
 
 // A throttled run holds its findings on the throttled host and sends one
 // notice for the held critical ones; a run without such a gap does nothing.

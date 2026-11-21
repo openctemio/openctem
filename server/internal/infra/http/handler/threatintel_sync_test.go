@@ -122,7 +122,7 @@ func results(t *testing.T, rec *httptest.ResponseRecorder) []TriggerResult {
 }
 
 // Sync now queues the work and answers 202 at once; the vulnfeed source is
-// accepted and "all" includes it.
+// accepted and "all" starts only it (it carries KEV and EPSS).
 func TestTriggerSync_QueuesAndAnswers202(t *testing.T) {
 	runner := &fakeRunner{known: map[string]bool{"epss": true, "kev": true, "vulnfeed": true}, outcome: feedsync.Queued}
 	h := triggerHandler(t, runner, true, enabledStatus("epss", true), enabledStatus("kev", true), enabledStatus("vulnfeed", true))
@@ -137,7 +137,8 @@ func TestTriggerSync_QueuesAndAnswers202(t *testing.T) {
 
 	runner.started = nil
 	rec = triggerSync(h, ``)
-	if rec.Code != http.StatusAccepted || len(results(t, rec)) != 3 || len(runner.started) != 3 {
+	// One import brings the records, KEV and EPSS, so "all" starts only it.
+	if rec.Code != http.StatusAccepted || len(results(t, rec)) != 1 || len(runner.started) != 1 {
 		t.Fatalf("all: %d %v", rec.Code, runner.started)
 	}
 
@@ -157,27 +158,35 @@ func TestTriggerSync_Refusals(t *testing.T) {
 	if rec := triggerSync(h, `{bad`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad body: %d", rec.Code)
 	}
-	// Switched off, or no root key: not started, and said so.
-	if rec := triggerSync(h, `{"source":"epss"}`); rec.Code != http.StatusConflict {
+	// Switched off, or no root key: not started, and said so. KEV and EPSS
+	// arrive only in the release, so without the import none of them starts.
+	configured := triggerHandler(t, runner, true, enabledStatus("epss", false), enabledStatus("kev", true), enabledStatus("vulnfeed", true))
+	if rec := triggerSync(configured, `{"source":"epss"}`); rec.Code != http.StatusConflict {
 		t.Fatalf("disabled: %d", rec.Code)
 	}
-	if rec := triggerSync(h, `{"source":"vulnfeed"}`); rec.Code != http.StatusConflict {
-		t.Fatalf("not configured: %d", rec.Code)
+	for _, src := range []string{"vulnfeed", "kev", "epss"} {
+		if rec := triggerSync(h, `{"source":"`+src+`"}`); rec.Code != http.StatusConflict {
+			t.Fatalf("not configured %s: %d", src, rec.Code)
+		}
 	}
-	// All: the others still start; the skipped ones carry a reason.
+	// All: one import brings every feed, so it is the only one listed.
 	rec := triggerSync(h, `{"source":"all"}`)
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusConflict && rec.Code != http.StatusAccepted {
 		t.Fatalf("all: %d", rec.Code)
 	}
 	reasons := map[string]string{}
 	for _, r := range results(t, rec) {
 		reasons[r.Source] = r.Status + ":" + r.Reason
 	}
-	if reasons["epss"] != "skipped:disabled" || reasons["vulnfeed"] != "skipped:not_configured" || reasons["kev"] != "queued:" {
+	if len(reasons) != 1 || reasons["vulnfeed"] != "skipped:not_configured" {
 		t.Fatalf("reasons %v", reasons)
 	}
-	if len(runner.started) != 1 || runner.started[0] != "kev" {
+	if len(runner.started) != 0 {
 		t.Fatalf("started %v", runner.started)
+	}
+	rec = triggerSync(configured, `{"source":"all"}`)
+	if rec.Code != http.StatusAccepted || len(runner.started) != 1 || runner.started[0] != "vulnfeed" {
+		t.Fatalf("configured all: %d started %v", rec.Code, runner.started)
 	}
 }
 

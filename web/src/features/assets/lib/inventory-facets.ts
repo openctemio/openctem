@@ -38,6 +38,7 @@ export const ATTRIBUTION_FILTER_LABELS: Record<string, string> = {
   dependency: 'Dependency',
   monitor_only: 'Monitor only',
   rejected: 'Not ours',
+  provider_address: 'Provider addresses',
 }
 
 /** Deployment environments (mirrors the api CHECK constraint on assets). */

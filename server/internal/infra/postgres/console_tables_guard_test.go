@@ -22,6 +22,9 @@ import (
 // the console pool, or the statement fails with 42501 in production while
 // every single-role environment (dev, UAT, the default CI run) stays green.
 //
+// The same holds for the tenant audit chain's evidence tables (retention
+// anchors, rebaseline records), which only the schema owner's functions write.
+//
 // TestConsoleTables_OnlyConsolePoolRepositories reads the role grants from the
 // script itself and fails when SQL in this package reads a table the app role
 // cannot read, or writes or locks one it cannot write, outside the
@@ -62,15 +65,20 @@ func appRevoked(t *testing.T) (noRead, noWrite []string) {
 		t.Fatal(err)
 	}
 	src := string(raw)
+	// The script may revoke the same privileges in several statements (one
+	// per concern: the console's tables, the audit evidence tables); the
+	// guard covers the union of their lists.
 	list := func(stmt string) []string {
 		re := regexp.MustCompile(regexp.QuoteMeta(stmt) + `\s*FROM unnest\(ARRAY\[([^\]]*)\]\)`)
-		m := re.FindStringSubmatch(src)
-		if m == nil {
+		ms := re.FindAllStringSubmatch(src, -1)
+		if ms == nil {
 			t.Fatalf("%s: no %q statement; update this guard with the script", rolesScript, stmt)
 		}
 		var out []string
-		for _, f := range strings.Split(m[1], ",") {
-			out = append(out, strings.Trim(strings.TrimSpace(f), "'"))
+		for _, m := range ms {
+			for _, f := range strings.Split(m[1], ",") {
+				out = append(out, strings.Trim(strings.TrimSpace(f), "'"))
+			}
 		}
 		return out
 	}
@@ -191,9 +199,10 @@ func TestConsoleTables_OnlyConsolePoolRepositories(t *testing.T) {
 	}
 	sort.Strings(bad)
 	if len(bad) > 0 {
-		t.Fatalf("SQL on the app pool touches the console's identity tables; it fails with 42501 under the "+
-			"least-privilege roles. Move it to a console-pool repository, or read through a narrow SECURITY DEFINER "+
-			"function (see admin_session_live):\n  %s", strings.Join(bad, "\n  "))
+		t.Fatalf("SQL on the app pool touches a table the app role may not read or write (the console's identity "+
+			"tables, the audit chain evidence); it fails with 42501 under the least-privilege roles. Move it to a "+
+			"console-pool repository, or go through a narrow SECURITY DEFINER function (see admin_session_live, "+
+			"audit_chain_prune_prefix):\n  %s", strings.Join(bad, "\n  "))
 	}
 }
 

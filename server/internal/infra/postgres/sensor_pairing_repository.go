@@ -271,6 +271,30 @@ func (r *SensorPairingRepository) ExpireStaleCodeUnscoped(ctx context.Context, c
 	return nil
 }
 
+// CodeOwnerUnscoped returns the newest expectation made with this code hash
+// and its tenant, whatever its status.
+func (r *SensorPairingRepository) CodeOwnerUnscoped(ctx context.Context, codeHash string) (shared.ID, shared.ID, bool, error) {
+	var id, tenant string
+	err := r.db.QueryRowContext(ctx, `SELECT id, tenant_id FROM sensor_pairings
+		WHERE code_hash = $1 AND mode = 'reverse' AND tenant_id IS NOT NULL
+		ORDER BY created_at DESC LIMIT 1`, codeHash).Scan(&id, &tenant)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shared.ID{}, shared.ID{}, false, nil
+	}
+	if err != nil {
+		return shared.ID{}, shared.ID{}, false, fmt.Errorf("pairing code owner: %w", err)
+	}
+	eid, err := shared.IDFromString(id)
+	if err != nil {
+		return shared.ID{}, shared.ID{}, false, err
+	}
+	tid, err := shared.IDFromString(tenant)
+	if err != nil {
+		return shared.ID{}, shared.ID{}, false, err
+	}
+	return eid, tid, true, nil
+}
+
 // CreateExpectation inserts a reverse-mode request for the tenant.
 func (r *SensorPairingRepository) CreateExpectation(ctx context.Context, p *sensordom.Pairing) error {
 	if p.TenantID == nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -97,10 +98,28 @@ func InferGraphEdges(assets []GraphAsset) InferenceResult {
 		}
 		index[key][id] = true
 	}
+	// A name contains the services named by its own host name
+	// ("host:port", "https://host:port"): keyed by its own name only.
+	names := make(map[string]map[shared.ID]bool)
 	for i := range assets {
 		a := &assets[i]
+		if a.Type == assetdom.AssetTypeDomain || a.Type == assetdom.AssetTypeSubdomain {
+			if k := normalizeHostKey(a.Name); k != "" {
+				if names[k] == nil {
+					names[k] = make(map[shared.ID]bool)
+				}
+				names[k][a.ID] = true
+			}
+		}
 		if !isHostContainer(a.Type) {
 			continue
+		}
+		// An address inside a shared provider range serves every customer
+		// of the provider: never a container of a service (research/531).
+		if a.Type == assetdom.AssetTypeIPAddress {
+			if _, provider := edgeaddr.Default().SharedFrontEnd(a.Name); provider {
+				continue
+			}
 		}
 		addKey(a.Name, a.ID)
 		if a.Type == assetdom.AssetTypeHost {
@@ -115,12 +134,68 @@ func InferGraphEdges(assets []GraphAsset) InferenceResult {
 		a := &assets[i]
 		switch {
 		case isServiceLike(a.Type, a.SubType):
-			inferExposes(a, index, &res)
+			if !inferExposedByName(a, names, &res) {
+				inferExposes(a, index, &res)
+			}
 		case isApplicationLike(a.Type):
 			inferRunsOn(a, index, &res)
 		}
 	}
 	return res
+}
+
+// inferExposedByName emits `name --Exposes--> service` for a service named
+// by the host name of exactly one domain or subdomain asset; it reports
+// whether it did (the address containers are then not consulted).
+func inferExposedByName(svc *GraphAsset, names map[string]map[shared.ID]bool, res *InferenceResult) bool {
+	host := serviceNameHost(svc.Name)
+	if host == "" || net.ParseIP(host) != nil {
+		return false
+	}
+	ids := names[normalizeHostKey(host)]
+	if len(ids) != 1 {
+		return false
+	}
+	for id := range ids {
+		if id == svc.ID {
+			return false
+		}
+		res.AutoEdges = append(res.AutoEdges, InferredEdge{
+			SourceID:   id,
+			TargetID:   svc.ID,
+			Type:       assetdom.RelTypeExposes,
+			Confidence: assetdom.ConfidenceHigh,
+			Reason:     fmt.Sprintf("Name exposes its own service %s", svc.Name),
+		})
+	}
+	return true
+}
+
+// serviceNameHost is the host part of a service named "host:port[/proto]"
+// or "scheme://host[:port][/path]"; "" for any other name.
+func serviceNameHost(name string) string {
+	n := strings.TrimSpace(name)
+	if i := strings.Index(n, "://"); i >= 0 {
+		n = n[i+3:]
+		if j := strings.IndexAny(n, "/?#"); j >= 0 {
+			n = n[:j]
+		}
+		if h, _, err := net.SplitHostPort(n); err == nil {
+			return h
+		}
+		return n
+	}
+	if j := strings.Index(n, "/"); j >= 0 {
+		n = n[:j]
+	}
+	if h, _, err := net.SplitHostPort(n); err == nil {
+		return h
+	}
+	// "host:port:proto" (an open_port's stored name).
+	if parts := strings.Split(n, ":"); len(parts) == 3 {
+		return parts[0]
+	}
+	return ""
 }
 
 // inferExposes emits `container --Exposes--> service` edges. Each host-key of

@@ -133,7 +133,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 // GetByID retrieves an asset by its ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.ID) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = $2"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), assetID.String())
 	return r.scanAsset(row, assetID)
@@ -150,7 +150,7 @@ func (r *AssetRepository) GetByIDs(ctx context.Context, tenantID shared.ID, ids 
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
+	rows, err := r.db.QueryContext(ctx, r.selectQuery(ctx)+" WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assets by ids: %w", err)
@@ -215,7 +215,7 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 
 // GetByExternalID retrieves an asset by external ID and provider.
 func (r *AssetRepository) GetByExternalID(ctx context.Context, tenantID shared.ID, provider asset.Provider, externalID string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), provider.String(), externalID)
 	return r.scanAsset(row, shared.ID{})
@@ -228,7 +228,7 @@ func (r *AssetRepository) FindByExternalID(ctx context.Context, tenantID shared.
 	if externalID == "" {
 		return nil, nil
 	}
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), externalID)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -266,7 +266,7 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 	// pattern entirely — defense-in-depth so a future "let users add
 	// custom correlation keys" feature can't accidentally introduce a
 	// vulnerability.
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value, key)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -280,7 +280,7 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 
 // GetByName retrieves an asset by name within a tenant.
 func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = $2"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), name)
 	return r.scanAsset(row, shared.ID{})
@@ -290,7 +290,7 @@ func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, nam
 // name, or an address its properties record (addressPredicate).
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
+	query := r.selectQuery(ctx) + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR ` + addressPredicate("$2", false) + `
 	) LIMIT 1`
@@ -310,7 +310,7 @@ func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip s
 // Searches: name (exact), properties->>'hostname'.
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
+	query := r.selectQuery(ctx) + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR a.properties->>'hostname' = $2
 	) LIMIT 1`
@@ -335,7 +335,7 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 		return make(map[string][]*asset.Asset), nil
 	}
 
-	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+	query := r.selectQuery(ctx) + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('host', 'ip_address')
 		AND (
 			a.name = ANY($2)
@@ -374,7 +374,7 @@ func (r *AssetRepository) FindNetworkDevicesByIPs(ctx context.Context, tenantID 
 	if len(ips) == 0 {
 		return make(map[string][]*asset.Asset), nil
 	}
-	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+	query := r.selectQuery(ctx) + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type = 'network' AND a.sub_type = ANY($3)
 		AND (
 			a.name = ANY($2)
@@ -437,7 +437,7 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 	// 1. Name ends with "/repoName" (e.g., "github.com-org/suborg/repo" matches "repo")
 	// 2. Or name ends with "-repoName" for some formats
 	// 3. Or exact match
-	query := r.selectQuery() + `
+	query := r.selectQuery(ctx) + `
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
@@ -463,7 +463,7 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID shared.ID, fullName string) (*asset.Asset, error) {
 	// Search for repository assets where name or external_id contains the full name pattern
 	// e.g., "github.com/openctemio/sdk-go" should match fullName "openctemio/sdk"
-	query := r.selectQuery() + `
+	query := r.selectQuery(ctx) + `
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
@@ -488,7 +488,12 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 // KEV, EPSS at or above asset.ExploitEPSSThreshold, or a known exploit.
 const exploitSignalClause = `(f.is_in_kev OR f.exploit_available OR COALESCE(f.epss_score, 0) >= 0.5)`
 
-func (r *AssetRepository) selectQuery() string {
+// selectQuery is the asset row with its open-findings counts. The counts
+// follow the findings list's pentest member rule for the viewer recorded in
+// ctx (shared.WithFindingViewer): a member counts a pentest finding only
+// when on its campaign; an administrator and work not on behalf of a person
+// count every finding.
+func (r *AssetRepository) selectQuery(ctx context.Context) string {
 	return `
 		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
@@ -533,6 +538,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'low' AND ` + exploitSignalClause + `) as finding_low_x
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + ` AND NOT f.branch_only
+			  AND ` + pentestVisibilityCond(ctx, "f", "a.tenant_id") + `
 		) fc ON true
 	`
 }
@@ -716,7 +722,7 @@ func (r *AssetRepository) List(
 	opts asset.ListOptions,
 	page pagination.Pagination,
 ) (pagination.Result[*asset.Asset], error) {
-	baseQuery := r.selectQuery()
+	baseQuery := r.selectQuery(ctx)
 	countQuery := `SELECT COUNT(*) FROM assets a`
 
 	whereClause, args := r.buildWhereClause(filter)
@@ -785,7 +791,7 @@ func (r *AssetRepository) ListAfterID(ctx context.Context, filter asset.Filter, 
 			whereClause = cond
 		}
 	}
-	query := r.selectQuery()
+	query := r.selectQuery(ctx)
 	if whereClause != "" {
 		query += " WHERE " + whereClause
 	}
@@ -1366,6 +1372,21 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		))
 		args = append(args, searchPattern, searchPattern, *filter.Search)
 		argIndex += 3
+		// An address finds the names that resolve or resolved to it
+		// (research/531: shared provider addresses are recorded only on the
+		// names), from the tenant's own set elements.
+		// The tenant is bound, not correlated, so the subquery runs once
+		// (a hashed subplan over idx_asset_set_elements_tenant_address)
+		// instead of once per asset row.
+		if addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(*filter.Search), "[]")); err == nil && addr.Zone() == "" &&
+			filter.TenantID != nil && *filter.TenantID != "" {
+			last := len(conditions) - 1
+			conditions[last] = strings.TrimSuffix(conditions[last], ")") + fmt.Sprintf(
+				" OR a.id IN (SELECT se.asset_id FROM asset_attribute_set_elements se WHERE se.tenant_id = $%d::uuid"+
+					" AND se.attribute = 'ip_addresses' AND se.element = $%d))", argIndex, argIndex+1)
+			args = append(args, *filter.TenantID, addr.Unmap().String())
+			argIndex += 2
+		}
 	}
 
 	// Risk score range filters
@@ -1833,7 +1854,7 @@ func (r *AssetRepository) GetByNames(ctx context.Context, tenantID shared.ID, na
 	}
 
 	// Build query with ANY for efficient lookup
-	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = ANY($2)"
+	query := r.selectQuery(ctx) + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = ANY($2)"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(names))
 	if err != nil {
@@ -2519,13 +2540,24 @@ func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) 
 		for i, st := range af.States {
 			states[i] = string(st)
 		}
+		// research/531 D6: the provider addresses leave the population. The
+		// test rides on the same per-row probe (an asset with no record is
+		// never one), so it adds no scan.
+		notProvider := ""
+		if af.NoProviderAddresses {
+			notProvider = " AND NOT " + attribution.ProviderAddressSQL("aat")
+		}
 		parts = append(parts, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
-			argIndex))
+			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d)%s)",
+			argIndex, notProvider))
 		args = append(args, pq.Array(states))
 	}
 	if af.Unrecorded {
 		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+	}
+	if af.ProviderAddresses {
+		parts = append(parts, "EXISTS (SELECT 1 FROM asset_attributions apa WHERE apa.asset_id = a.id AND apa.tenant_id = a.tenant_id AND "+
+			attribution.ProviderAddressSQL("apa")+")")
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "FALSE")
@@ -2891,7 +2923,7 @@ WITH scoped AS (
   SELECT a.id, a.asset_type, COALESCE(a.sub_type, '') AS sub_type, COALESCE(a.asset_lens, '') AS lens,
          a.risk_score, a.first_seen,
          NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = a.id AND iv.tenant_id = a.tenant_id
-                     AND iv.state IN ('needs_review', 'candidate', 'rejected')) AS in_inventory,
+                     AND (iv.state IN ('needs_review', 'candidate', 'rejected') OR ` + attribution.ProviderAddressSQL("iv") + `)) AS in_inventory,
          EXISTS (SELECT 1 FROM asset_attributions rq WHERE rq.asset_id = a.id AND rq.tenant_id = a.tenant_id
                  AND rq.state IN ('needs_review', 'candidate')) AS in_review,
          EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id

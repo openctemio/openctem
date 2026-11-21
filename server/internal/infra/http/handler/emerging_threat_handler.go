@@ -19,6 +19,7 @@ import (
 	threatalertapp "github.com/openctemio/openctem/server/internal/app/threatalert"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -39,32 +40,37 @@ func NewEmergingThreatHandler(svc *threatalertapp.Service, scope DataScopeEnforc
 
 // EmergingThreatSummary is one alert in the list.
 type EmergingThreatSummary struct {
-	ID                   string   `json:"id"`
-	VulnID               string   `json:"vuln_id"`
-	Title                string   `json:"title"`
-	Severity             string   `json:"severity"`
-	Level                string   `json:"level" enums:"immediate,digest,listed"`
-	Tier                 string   `json:"tier" enums:"confirmed,possible"`
-	State                string   `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
-	ETS                  int      `json:"ets"`
-	InKEV                bool     `json:"in_kev"`
-	KEVRansomware        bool     `json:"kev_ransomware"`
-	EPSS                 *float64 `json:"epss"`
-	ConfirmedAssets      int      `json:"confirmed_assets"`
-	PossibleAssets       int      `json:"possible_assets"`
-	InternetFacingAssets int      `json:"internet_facing_assets"`
-	// CriticalAssets counts the affected assets of criticality "critical";
+	ID            string   `json:"id"`
+	VulnID        string   `json:"vuln_id"`
+	Title         string   `json:"title"`
+	Severity      string   `json:"severity"`
+	Level         string   `json:"level" enums:"immediate,digest,listed"`
+	Tier          string   `json:"tier" enums:"confirmed,possible"`
+	State         string   `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
+	ETS           int      `json:"ets"`
+	InKEV         bool     `json:"in_kev"`
+	KEVRansomware bool     `json:"kev_ransomware"`
+	EPSS          *float64 `json:"epss"`
+	// ConfirmedHosts, LikelyHosts and PossibleHosts count the affected hosts
+	// of each tier in the caller's scope, the rows of asset_groups: a host
+	// that serves several ports is one. InternetFacingHosts counts the hosts
+	// with an internet-facing service.
+	ConfirmedHosts      int `json:"confirmed_hosts"`
+	LikelyHosts         int `json:"likely_hosts"`
+	PossibleHosts       int `json:"possible_hosts"`
+	InternetFacingHosts int `json:"internet_facing_hosts"`
+	// CriticalHosts counts the affected hosts of criticality "critical";
 	// Product names the best match and ProductCount the distinct matching
 	// products, all over the caller's scope.
-	CriticalAssets int                   `json:"critical_assets"`
-	Product        string                `json:"product"`
-	ProductCount   int                   `json:"product_count"`
-	ETSBreakdown   threatalert.Breakdown `json:"ets_breakdown"`
-	LastEventKind  string                `json:"last_event_kind"`
-	EventAt        *time.Time            `json:"event_at"`
-	SourceAt       *time.Time            `json:"source_at"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	CriticalHosts int                   `json:"critical_hosts"`
+	Product       string                `json:"product"`
+	ProductCount  int                   `json:"product_count"`
+	ETSBreakdown  threatalert.Breakdown `json:"ets_breakdown"`
+	LastEventKind string                `json:"last_event_kind"`
+	EventAt       *time.Time            `json:"event_at"`
+	SourceAt      *time.Time            `json:"source_at"`
+	CreatedAt     time.Time             `json:"created_at"`
+	UpdatedAt     time.Time             `json:"updated_at"`
 }
 
 // EmergingThreatListResponse is a page of alerts and the viewer's counts.
@@ -89,6 +95,39 @@ type EmergingThreatAsset struct {
 	TaskID         string `json:"task_id"`
 }
 
+// EmergingThreatHostService is one affected asset of a host row.
+type EmergingThreatHostService struct {
+	EmergingThreatAsset
+	// Label names the service within its host: the scheme, an explicit
+	// non-default port and the path ("http", "https:8443"). Empty for an asset
+	// that is not named by a URL.
+	Label string `json:"label"`
+}
+
+// EmergingThreatHost is the affected assets of one host in one tier. Assets
+// named by a URL of the same host share a row; any other asset is a row of
+// its own.
+type EmergingThreatHost struct {
+	// Host is the row's title: the host of the services, or the asset's name.
+	Host string `json:"host"`
+	// AssetID is set when the row is one asset that is not named by a URL.
+	AssetID string `json:"asset_id"`
+	// InternetFacing: any of the services is.
+	InternetFacing bool `json:"internet_facing"`
+	// Criticality is the highest of the services.
+	Criticality string   `json:"criticality"`
+	Products    []string `json:"products"`
+	Versions    []string `json:"versions"`
+	// Services lists every asset of the row with its own finding and task.
+	Services []EmergingThreatHostService `json:"services"`
+}
+
+// EmergingThreatAssetGroup is the host rows of one tier.
+type EmergingThreatAssetGroup struct {
+	Tier  string               `json:"tier" enums:"confirmed,likely,possible"`
+	Hosts []EmergingThreatHost `json:"hosts"`
+}
+
 // EmergingThreatEvent is one public event of the vulnerability.
 type EmergingThreatEvent struct {
 	Kind     string         `json:"kind"`
@@ -111,7 +150,21 @@ type EmergingThreatDetail struct {
 	SuppressedUntil   *time.Time            `json:"suppressed_until"`
 	CanSuppress       bool                  `json:"can_suppress"`
 	Assets            []EmergingThreatAsset `json:"assets"`
-	Timeline          []EmergingThreatEvent `json:"timeline"`
+	// AssetGroups is the same assets as one row per host, by tier (confirmed,
+	// likely, possible; a tier without an asset is left out).
+	AssetGroups []EmergingThreatAssetGroup `json:"asset_groups"`
+	Timeline    []EmergingThreatEvent      `json:"timeline"`
+	// Exploitation is the strongest status a reviewed advisory card states
+	// (none, poc_public, weaponised, exploited_itw,
+	// vendor_confirmed_exploited) and ExploitationSources the public sources
+	// it cites.
+	Exploitation        string   `json:"exploitation" enums:"none,poc_public,weaponised,exploited_itw,vendor_confirmed_exploited"`
+	ExploitationSources []string `json:"exploitation_sources"`
+	// Card is the advisory card when the alert is keyed by one (vuln_id is
+	// then the card id, OCA-YYYY-NNNN). Its text is plain text: render it
+	// as text, never as markup; its links are https and point to public
+	// write-ups (never to be opened by a tool).
+	Card *advisory.Card `json:"card,omitempty"`
 }
 
 // EmergingThreatStateRequest is a triage decision.
@@ -124,8 +177,8 @@ type EmergingThreatStateRequest struct {
 func toEmergingSummary(a *threatalert.Alert) EmergingThreatSummary {
 	return EmergingThreatSummary{ID: a.ID.String(), VulnID: a.VulnID, Title: a.Title, Severity: a.Severity,
 		Level: string(a.Level), Tier: string(a.Tier), State: string(a.State), ETS: a.ETS, InKEV: a.InKEV,
-		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedAssets: a.Confirmed, PossibleAssets: a.Possible,
-		InternetFacingAssets: a.InternetFacing, CriticalAssets: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
+		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedHosts: a.Confirmed, LikelyHosts: a.Likely,
+		PossibleHosts: a.Possible, InternetFacingHosts: a.InternetFacing, CriticalHosts: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
 		ETSBreakdown: a.Breakdown, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
 }
@@ -136,28 +189,60 @@ func toEmergingDetail(d *threatalert.Detail) EmergingThreatDetail {
 		Description:       threatalert.PlainText(d.Vuln.Description, 1000), CVSSScore: d.Vuln.CVSSScore,
 		PublishedAt: d.Vuln.Published, StateReason: d.Alert.StateReason, StateNote: d.Alert.StateNote,
 		StateChangedAt: d.Alert.StateChangedAt, SuppressedUntil: d.Alert.SuppressedUntil, CanSuppress: d.AllInScope,
-		Assets: make([]EmergingThreatAsset, 0, len(d.Assets)), Timeline: make([]EmergingThreatEvent, 0, len(d.Timeline))}
+		Assets: make([]EmergingThreatAsset, 0, len(d.Assets)), Timeline: make([]EmergingThreatEvent, 0, len(d.Timeline)),
+		Exploitation: string(advisory.Stronger(advisory.ExploitNone, d.Vuln.Exploitation)), ExploitationSources: d.Vuln.ExploitationSources,
+		Card: d.Card}
+	if out.ExploitationSources == nil {
+		out.ExploitationSources = []string{}
+	}
 	if d.Vuln.KEVDateAdded != nil {
 		out.KEVDateAdded = d.Vuln.KEVDateAdded.Format(time.DateOnly)
 	}
 	for _, a := range d.Assets {
-		v := EmergingThreatAsset{AssetID: a.AssetID.String(), AssetName: a.Name, AssetType: a.Type, Tier: string(a.Kind),
-			Confidence: a.Confidence, InternetFacing: a.InternetFacing, Criticality: a.Criticality, Product: a.Product,
-			VersionSeen: a.Version, FindingStatus: a.FindingStatus}
-		if a.FindingID != nil {
-			v.FindingID = a.FindingID.String()
-		}
-		if a.TaskID != nil {
-			v.TaskID = a.TaskID.String()
-		}
-		out.Assets = append(out.Assets, v)
+		out.Assets = append(out.Assets, toEmergingAsset(a))
 	}
+	out.AssetGroups = toEmergingAssetGroups(threatalert.GroupByHost(d.Assets))
 	for _, e := range d.Timeline {
 		det := e.Detail
 		if det == nil {
 			det = map[string]any{}
 		}
 		out.Timeline = append(out.Timeline, EmergingThreatEvent{Kind: e.Kind, At: e.At, SourceAt: e.SourceAt, Detail: det})
+	}
+	return out
+}
+
+func toEmergingAsset(a threatalert.AssetView) EmergingThreatAsset {
+	v := EmergingThreatAsset{AssetID: a.AssetID.String(), AssetName: a.Name, AssetType: a.Type, Tier: string(a.Kind),
+		Confidence: a.Confidence, InternetFacing: a.InternetFacing, Criticality: a.Criticality, Product: a.Product,
+		VersionSeen: a.Version, FindingStatus: a.FindingStatus}
+	if a.FindingID != nil {
+		v.FindingID = a.FindingID.String()
+	}
+	if a.TaskID != nil {
+		v.TaskID = a.TaskID.String()
+	}
+	return v
+}
+
+func toEmergingAssetGroups(groups []threatalert.HostGroup) []EmergingThreatAssetGroup {
+	out := make([]EmergingThreatAssetGroup, 0, len(groups))
+	for _, g := range groups {
+		eg := EmergingThreatAssetGroup{Tier: string(g.Kind), Hosts: make([]EmergingThreatHost, 0, len(g.Hosts))}
+		for _, h := range g.Hosts {
+			eh := EmergingThreatHost{Host: h.Host, InternetFacing: h.InternetFacing, Criticality: h.Criticality,
+				Products: append([]string{}, h.Products...), Versions: append([]string{}, h.Versions...),
+				Services: make([]EmergingThreatHostService, 0, len(h.Services))}
+			if h.AssetID != nil {
+				eh.AssetID = h.AssetID.String()
+			}
+			for _, s := range h.Services {
+				eh.Services = append(eh.Services,
+					EmergingThreatHostService{EmergingThreatAsset: toEmergingAsset(s.AssetView), Label: s.Label})
+			}
+			eg.Hosts = append(eg.Hosts, eh)
+		}
+		out = append(out, eg)
 	}
 	return out
 }
@@ -197,7 +282,7 @@ func (h *EmergingThreatHandler) writeErr(w http.ResponseWriter, err error) {
 
 // List handles GET /api/v1/emerging-threats.
 // @Summary      List emerging-threat alerts
-// @Description  One alert per vulnerability that newly affects the organization (new CVE, KEV addition, EPSS jump), with the Emerging Threat Score and the level that decided delivery. Only alerts with at least one asset in the caller's data scope; counts are those in scope. state=open (default) is new, acknowledged and remediating; state=all lists every state.
+// @Description  One alert per vulnerability that newly affects the organization (new CVE, KEV addition, EPSS jump), with the Emerging Threat Score and the level that decided delivery. Only alerts with at least one asset in the caller's data scope; the counts are hosts in scope (confirmed_hosts, likely_hosts, possible_hosts: a host that serves several ports is one). state=open (default) is new, acknowledged and remediating; state=all lists every state.
 // @Tags         Emerging threats
 // @Produce      json
 // @Security     BearerAuth

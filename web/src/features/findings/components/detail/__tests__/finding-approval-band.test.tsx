@@ -68,6 +68,20 @@ describe('FindingApprovalBand', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('shows the closure reason label as the reason and the justification as a note', () => {
+    approvals = [{ ...pending, closure_reason: 'detection_error', justification: 'False' }]
+    render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.getByText(/Reason:\s*Scanner was wrong/)).toBeInTheDocument()
+    expect(screen.getByText('Note: False')).toBeInTheDocument()
+    expect(screen.queryByText(/Reason:\s*False/)).toBeNull()
+  })
+
+  it('shows no note line when the requester wrote none', () => {
+    approvals = [{ ...pending, closure_reason: 'detection_error', justification: '' }]
+    render(<FindingApprovalBand findingId="f1" />)
+    expect(screen.queryByText(/Note:/)).toBeNull()
+  })
+
   it('requests approvals for the finding whatever its status', () => {
     render(<FindingApprovalBand findingId="f1" />)
     expect(lastKey).toHaveBeenCalledWith('f1')

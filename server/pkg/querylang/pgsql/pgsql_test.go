@@ -120,7 +120,7 @@ func TestInjectedPredicates(t *testing.T) {
 		for _, want := range []string{
 			" WHERE findings.tenant_id = $n AND ",
 			"user_accessible_assets uaa WHERE uaa.user_id = $n AND uaa.tenant_id = $n",
-			"findings.source <> 'pentest' OR findings.pentest_campaign_id IN (",
+			"findings.source <> 'pentest' OR (findings.pentest_campaign_id = ANY(ARRAY(SELECT pca.campaign_id FROM pentest_campaign_access pca WHERE pca.tenant_id = $n AND pca.user_id = ",
 			"findings.status <> ALL(",
 			"findings.branch_only = ",
 			"a.program_only",
@@ -140,7 +140,7 @@ func TestInjectedPredicates(t *testing.T) {
 	}
 	_, st := render(t, "findings", adminOf(tenantA))
 	st.SQL = ph.ReplaceAllString(st.SQL, "$$n")
-	if strings.Contains(st.SQL, "pentest_campaign_members") || strings.Contains(st.SQL, "user_accessible_assets") {
+	if strings.Contains(st.SQL, "pentest_campaign_access") || strings.Contains(st.SQL, "pentest_campaign_members") || strings.Contains(st.SQL, "user_accessible_assets") {
 		t.Error("admin got the member rule or scope rows")
 	}
 	if !strings.Contains(st.SQL, "findings.tenant_id = $n") || !strings.Contains(st.SQL, "a.program_only") || !strings.Contains(st.SQL, "ph.program_only") {

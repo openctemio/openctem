@@ -2,7 +2,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { TwoFactorSetup } from '@/features/auth/components/two-factor-setup'
 
 interface TwoFactorSetupPageProps {
-  searchParams: Promise<{ next?: string }>
+  searchParams: Promise<{ next?: string; org?: string }>
 }
 
 /**
@@ -11,11 +11,11 @@ interface TwoFactorSetupPageProps {
  * set it up here, then return to the page they were on.
  */
 export default async function TwoFactorSetupPage({ searchParams }: TwoFactorSetupPageProps) {
-  const { next } = await searchParams
+  const { next, org } = await searchParams
   return (
     <Card className="gap-4">
       <CardContent>
-        <TwoFactorSetup next={next} />
+        <TwoFactorSetup next={next} org={org} />
       </CardContent>
     </Card>
   )

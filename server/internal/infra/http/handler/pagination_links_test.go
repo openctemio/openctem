@@ -11,8 +11,8 @@ import (
 // Pagination links took X-Forwarded-Host / X-Forwarded-Proto from any client,
 // so a request carrying "X-Forwarded-Host: evil.com" got links pointing at
 // evil.com (test_e2e_edge_cases G2). Forwarded headers may only come from a
-// configured trusted proxy — the rule samlBaseURL and client-IP attribution
-// already follow.
+// configured trusted proxy, the rule client-IP attribution
+// already follows.
 func TestPaginationLinksIgnoreForwardedHeadersFromUntrustedPeers(t *testing.T) {
 	prev := trustedProxiesForAuth
 	t.Cleanup(func() { trustedProxiesForAuth = prev })

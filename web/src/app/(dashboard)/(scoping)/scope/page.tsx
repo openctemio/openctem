@@ -47,6 +47,7 @@ import {
 import type { ApiScopeTarget, ScopeExclusionKind } from '@/features/scope/api/scope-api.types'
 import { ScopeApprovals } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
+import { ScopeProviderAddressesCard } from '@/features/scope/components/scope-provider-addresses-card'
 import { useTranslation } from '@/context/i18n-provider'
 
 // Domain proof and Networks are their own pages (route tabs of Scope).
@@ -256,6 +257,10 @@ export default function ScopePage() {
         <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
         <MetricStrip loading={counts.isLoading} items={metrics} />
+
+        {/* Scope entries on provider shared addresses: only while there is
+            something to decide. */}
+        {tab === 'in' && <ScopeProviderAddressesCard />}
 
         {tab === 'in' ? (
           <ScopeEntriesTable

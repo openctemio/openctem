@@ -16,7 +16,6 @@ import (
 //	                                           organization): super_admin + fresh
 //	                                           step-up + reason (critical audit)
 //	/admin/settings/storage-quota  any admin   PUT: super_admin + step-up (audited)
-//	/admin/settings/threat-intel-source  any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/feed-relay     any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
@@ -38,6 +37,11 @@ import (
 //	                                           audit, admins told; a second owner on a
 //	                                           hosted service for grants, extensions
 //	                                           and turning the government rule off)
+//	/admin/settings/private-destinations   any admin   PUT: platform owner
+//	                                           (platform.settings.network) + fresh step-up
+//	                                           + reason (critical audit, admins told);
+//	                                           test: the same permission, rate limited,
+//	                                           resolves only
 //
 // Secrets are never returned by any of them.
 func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlewares []Middleware,
@@ -57,7 +61,6 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		}
 	}
 	captcha, region, quota, alerts, ai := ps.Captcha != nil, ps.Region != nil, ps.StorageQuota != nil, ps.Alerts != nil, ps.AI != nil
-	threatSource := ps.ThreatSource != nil
 	social := ps.SocialLogin != nil
 	// The client check asks a provider with a secret: bounded like a sign-in
 	// attempt, in its own bucket.
@@ -74,10 +77,6 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/storage-quota", func(r Router) {
 		r.GET("/", on(quota, ps.GetStorageQuota))
 		r.PUT("/", on(quota, ps.UpdateStorageQuota), stepUp("settings.storage_quota"))
-	}, adminMiddlewares...)
-	router.Group("/api/v1/admin/settings/threat-intel-source", func(r Router) {
-		r.GET("/", on(threatSource, ps.GetThreatSource))
-		r.PUT("/", on(threatSource, ps.UpdateThreatSource), stepUp("settings.threat_intel_source"))
 	}, adminMiddlewares...)
 	// Feed delivery (RFC-142): direct, or through a platform relay sensor.
 	relay := h.FeedRelay != nil
@@ -125,6 +124,19 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.POST("/exceptions", on(scopeNames, ps.GrantScopeNameException), freshStepUp("settings.scope_name_exception"))
 		r.POST("/exceptions/{id}/extend", on(scopeNames, ps.ExtendScopeNameException), freshStepUp("settings.scope_name_exception"))
 		r.POST("/exceptions/{id}/revoke", on(scopeNames, ps.RevokeScopeNameException), freshStepUp("settings.scope_name_exception"))
+	}, adminMiddlewares...)
+	// Private network destinations: opens the platform's own network to every
+	// organization. The test only resolves (never connects), bounded per
+	// administrator.
+	privateDest := ps.PrivateDestinations != nil
+	router.Group("/api/v1/admin/settings/private-destinations", func(r Router) {
+		r.GET("/", on(privateDest, ps.GetPrivateDestinations))
+		r.PUT("/", on(privateDest, ps.UpdatePrivateDestinations), freshStepUp("settings.private_destinations"))
+		testMW := []Middleware{}
+		if h.AdminDestinationTestLimiter != nil {
+			testMW = append(testMW, h.AdminDestinationTestLimiter.WriteMiddleware())
+		}
+		r.POST("/test", on(privateDest, ps.TestPrivateDestination), testMW...)
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))

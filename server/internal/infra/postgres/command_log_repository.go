@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/server/internal/app/commandlog"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -167,30 +169,73 @@ func (r *CommandLogRepository) ListForCommand(ctx context.Context, tenantID, com
 	return page, err
 }
 
-// SubjectFinding is the finding a command is about, when it has one: the
-// finding a retest checks (finding_retests) or the finding a validate job
-// re-verifies (its payload). nil for every other command.
+// SubjectFindings maps each of commandIDs that is about a finding to that
+// finding: an AI analysis job (the finding of its run, ai_runs.command_id),
+// a retest's check or reach command (finding_retests), or a validate job (its
+// payload's finding_id). A command about no finding is left out. A command
+// whose subject cannot be read (an analysis job without its run, or about
+// something other than a finding; an unreadable id) maps to the zero id,
+// which nobody may read (fail closed).
+func (r *CommandLogRepository) SubjectFindings(ctx context.Context, tenantID shared.ID, commandIDs []shared.ID) (map[shared.ID]shared.ID, error) {
+	out := make(map[shared.ID]shared.ID)
+	if len(commandIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(commandIDs))
+	for i, id := range commandIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id::text,
+		       CASE WHEN c.type = 'analyze' THEN COALESCE(
+		                (SELECT CASE WHEN ar.subject_type = 'finding' THEN ar.subject_id::text ELSE '' END
+		                   FROM ai_runs ar
+		                  WHERE ar.tenant_id = c.tenant_id AND ar.command_id = c.id
+		                  LIMIT 1), '')
+		            ELSE COALESCE(
+		                (SELECT fr.finding_id::text FROM finding_retests fr
+		                  WHERE fr.tenant_id = c.tenant_id AND (fr.check_command_id = c.id OR fr.reach_command_id = c.id)
+		                  LIMIT 1),
+		                CASE WHEN c.type = 'validate' THEN c.payload->>'finding_id' END)
+		       END
+		  FROM commands c
+		 WHERE c.tenant_id = $1 AND c.id = ANY($2::uuid[])`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("read command subjects: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cmd string
+		var subject sql.NullString
+		if err := rows.Scan(&cmd, &subject); err != nil {
+			return nil, fmt.Errorf("scan command subject: %w", err)
+		}
+		if !subject.Valid {
+			continue
+		}
+		cid, err := shared.IDFromString(cmd)
+		if err != nil {
+			continue
+		}
+		fid, err := shared.IDFromString(subject.String)
+		if err != nil {
+			fid = shared.ID{} // an unreadable subject: nobody may read it
+		}
+		out[cid] = fid
+	}
+	return out, rows.Err()
+}
+
+// SubjectFinding is SubjectFindings for one command: nil when it is about
+// no finding, the zero id when its subject cannot be read.
 func (r *CommandLogRepository) SubjectFinding(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error) {
-	var id sql.NullString
-	err := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(
-			(SELECT fr.finding_id::text FROM finding_retests fr
-			  WHERE fr.tenant_id = $1 AND (fr.check_command_id = $2 OR fr.reach_command_id = $2)
-			  LIMIT 1),
-			(SELECT c.payload->>'finding_id' FROM commands c
-			  WHERE c.tenant_id = $1 AND c.id = $2 AND c.type = 'validate'))`,
-		tenantID.String(), commandID.String()).Scan(&id)
+	m, err := r.SubjectFindings(ctx, tenantID, []shared.ID{commandID})
 	if err != nil {
-		return nil, fmt.Errorf("read command subject: %w", err)
+		return nil, err
 	}
-	if !id.Valid || id.String == "" {
+	fid, ok := m[commandID]
+	if !ok {
 		return nil, nil
-	}
-	fid, err := shared.IDFromString(id.String)
-	if err != nil {
-		// An unreadable finding id in a payload: treat it as a subject
-		// nobody can be shown (fail closed).
-		return &shared.ID{}, nil //nolint:nilerr // an unreadable id is a subject nobody may read, not a failure
 	}
 	return &fid, nil
 }

@@ -139,7 +139,7 @@ ENV NEXT_PUBLIC_APP_COMMIT=$NEXT_PUBLIC_APP_COMMIT
 
 RUN npm run build:console
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS console
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS console
 
 RUN apk add --no-cache libstdc++ libgcc libatomic
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
@@ -192,7 +192,7 @@ CMD ["node", "console/server.js"]
 # the one the node image is built on (node:26-alpine), so node finds the C++
 # runtime it was linked against; `node --version` below fails the build
 # otherwise.
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS production
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS production
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
 RUN apk add --no-cache libstdc++ libgcc libatomic && apk upgrade --no-cache zlib

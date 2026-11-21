@@ -38,9 +38,8 @@ type ModulePreset struct {
 	// omitted; they get implicitly included. Hard deps must all be
 	// present — enforced by TestPresetsSatisfyHardDeps at CI.
 	EnabledModules []string
-	// Tier — reserved for a future commercial edition layer (which plans
-	// may subscribe to this bundle). Empty = available in all editions
-	// (OSS). Not consulted by any gate today.
+	// Tier — reserved; empty for every preset. Not consulted by any gate
+	// today.
 	Tier string
 	// Icon — lucide icon name for the preset card.
 	Icon string
@@ -526,8 +525,7 @@ var presetCompliance = ModulePreset{
 }
 
 // presetCTEMFull — Gartner CTEM full lifecycle for mature orgs.
-// Almost everything on except bug-bounty-specific and commercial-only
-// modules that don't make sense for OSS.
+// Almost everything on except bug-bounty-specific modules.
 var presetCTEMFull = ModulePreset{
 	ID:            "ctem_full",
 	Name:          "CTEM Full Lifecycle",

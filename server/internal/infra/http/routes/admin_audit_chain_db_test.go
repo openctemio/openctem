@@ -195,7 +195,7 @@ func (h *chainHarness) organization(n int, kinds ...chaintest.Kind) string {
 		}
 	})
 	h.logEvents(id, n)
-	if _, err := chaintest.Resign(context.Background(), h.db, id, kinds...); err != nil {
+	if _, err := chaintest.Resign(context.Background(), testdb.OpenAdmin(h.t), id, kinds...); err != nil {
 		h.t.Fatal(err)
 	}
 	return id

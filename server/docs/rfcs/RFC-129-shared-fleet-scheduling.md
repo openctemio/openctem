@@ -12,7 +12,7 @@
 ## 1. Summary
 
 The shared fleet (RFC-100) runs scanning jobs of many organizations on
-sensors that the instance operates. In the hosted edition it will serve a
+sensors that the instance operates. On a managed service it will serve a
 large and growing volume of jobs. This RFC fixes how that fleet is shared:
 
 - **Admission** at trigger: proof, deny list, scope gate, daily scan budget,
@@ -43,14 +43,14 @@ It also sets five phases, P0 to P4, each with a measured entry criterion.
 |---|---|
 | D1 | One scheduler, in the claim. The cell's Postgres queue stays the only queue; every fairness rule is part of the claim transaction. No message broker for dispatch. |
 | D2 | The compute unit is `CU = max(vCPU, GiB / 2)`. Resource classes are `small` (0.5 CU), `medium` (2 CU) and `large` (4 CU). Quotas, fair share and metering all count CU. |
-| D3 | Placeholder plan numbers until pricing is set: concurrency limit Free 2 CU, Team 20, Enterprise 100 (contract up to 500); burst none, 40, 200; included CU-minutes per month 1,000, 30,000, contract (default 150,000); Free 10 shared scans a day. Self-managed installs stay unlimited unless the operator sets limits. |
+| D3 | Concurrency limit, burst, included CU-minutes per month and shared scans a day are limits the operator sets per organization (a managed service's control plane may write them). Self-managed installs stay unlimited unless the operator sets limits. |
 | D4 | Burst is lending idle capacity, not a credit balance. An organization above its limit gets new work only while the fleet is below its target utilisation (75 % of its maximum), at the lowest rank. Lent capacity returns within one task (tasks are 5-15 minutes by construction). Running work is never preempted to take it back. |
 | D5 | The concurrency limit is a weight, not a reservation. Under saturation each organization receives a share in proportion to its limit and never above it. |
 | D6 | Priority classes: `critical` = verification and retest, `high` = interactive and on-demand, `normal` = scheduled, `low` = background. Aging: one class up per 30 minutes waited, never into `critical`. |
 | D7 | Class reservation: `normal` and `low` together hold at most 80 % of the fleet's maximum. |
 | D8 | On the shared fleet, per-host politeness is keyed on the target, across organizations: at most `K` shared tasks hold a conflicting host key at once, `K = 2` by default and `K = 1` for intrusive work. `K` is an instance setting in the console. Organization sensors keep per-organization keys. |
 | D9 | A waiting task shows one generic reason (its organization's limit, target politeness, scan window, fleet busy with an estimate, no shared sensor with the tool or region) and never another organization's data. |
-| D10 | Egress of shared executors goes through proxy pools: the organization's own proxy when it routes through one, otherwise the platform's pools, separate for Free and paid plans, with an optional dedicated pool (stable addresses a customer can allowlist). Health scores pull burned endpoints out. Residential proxies are never used for active scanning. Each proxy provider's terms must allow security scanning (written clearance, an operator action before the fleet goes live). Rotating addresses to get past a block is refused. |
+| D10 | Egress of shared executors goes through proxy pools: the organization's own proxy when it routes through one, otherwise the platform's pools, separate per limit profile, with an optional dedicated pool (stable addresses an organization can allowlist). Health scores pull burned endpoints out. Residential proxies are never used for active scanning. Each proxy provider's terms must allow security scanning (written clearance, an operator action before the fleet goes live). Rotating addresses to get past a block is refused. |
 | D11 | Proxies do not replace abuse controls: domain proof for active work on platform sensors under the managed profile, the deny list, cross-organization politeness, a per-organization kill switch for shared scanning, a per-lane kill switch, and a public target opt-out that feeds the deny list all stay mandatory. |
 | D12 | One usage record per finished shared job, written in the job's terminal transition. Per-organization usage is a database record, never a metric label. |
 | D13 | Queue expiry of shared jobs depends on the class: `critical`/interactive 15 minutes, on-demand 6 hours, scheduled at its window's end (or 24 hours), background 72 hours. Expired work is reported with its reason. |
@@ -67,9 +67,9 @@ Admission runs at trigger time, before anything is queued:
    instance requires it (the managed profile turns it on for active work on
    shared sensors).
 2. **Budgets**: `platform_scans_per_day` (exists) and, from P2, the monthly
-   CU-minute budget. Over budget: Free stops (verification and retests still
-   run); Team drops to the background class until the period resets; Enterprise
-   follows its contract.
+   CU-minute budget. Over budget, by the organization's limits: shared scans stop
+   (verification and retests still run), or drop to the background class
+   until the period resets.
 3. **Estimate**: from P2, an organization whose work will wait gets an
    estimated start from its queue position and the learned cost of its tools.
 
@@ -163,9 +163,9 @@ own egress, and their politeness is the organization's business.
 | Case | Egress | Reputation and allowlisting |
 |---|---|---|
 | Organization routes through its own proxy (per sensor, CIDR or asset routes) | the organization's proxy | carried by the organization; platform addresses never touch the target |
-| Free plan on the shared fleet | platform Free pool | separate from paid pools, so Free abuse cannot burn paid customers' allowlisted addresses |
-| Paid plan on the shared fleet | platform paid pool | published egress list per region |
-| Enterprise dedicated egress (add-on) | dedicated pool with stable addresses | the customer allowlists them |
+| Organization on the lowest limit profile | platform basic pool | separate from the standard pool, so abuse there cannot burn addresses other organizations allowlisted |
+| Other organizations on the shared fleet | platform standard pool | published egress list per region |
+| Dedicated egress | dedicated pool with stable addresses | the organization allowlists them |
 
 The pool is chosen at claim from plan and organization settings and bound in
 the signed envelope. Health scores retire burned endpoints automatically. A
@@ -215,7 +215,7 @@ it stays below 0.8 for 15 minutes).
 | T1 | A Free organization scans third parties from platform egress | proof under the managed profile, Free caps, deny list, politeness, separate Free pool, anomaly signals, kill switch, opt-out |
 | T2 | A hostile target exploits a tool, then the kernel, to reach other organizations | one organization per executor lifetime, per-task sandbox inside it, microVM for high-risk lanes and then all lanes, no secrets on the node |
 | T3 | Cost denial of service: an organization floods jobs to scale the fleet | concurrency limit, CU budget, burst only when idle, ticket mint cap, fleet maximum |
-| T4 | One organization's abuse burns paid customers' allowlisted addresses | proxy pools by plan; dedicated pools for Enterprise |
+| T4 | One organization's abuse burns addresses other organizations allowlisted | proxy pools by limit profile; dedicated pools |
 | T5 | Preemption used to force re-runs or duplicates | idempotent ingest by command and lease epoch; preemption counter |
 | T6 | Cross-organization inference through politeness waits | generic wait reason; `K >= 2`; the claim never returns another organization's rows |
 | T7 | Claim cost as a denial of service (deep queues, long history) | bounded claim (§4.2): work bounded by organizations with pending work, partial indexes without finished jobs |
@@ -235,9 +235,9 @@ except P0, which removes known scale bugs.
 | Phase | Entry criterion | Deliverables | Not yet |
 |---|---|---|---|
 | **P0 foundations** | now | F1-F7 below, plus labels as hard selectors, learned tool budget in deadline admission, structured failure codes | executors, cluster, CU quotas, billing |
-| **P1 executors** | hosted-edition launch, or shared slots above 70 % at p95, or more than 50 organizations on shared sensors | shared executors and controller on one cluster in one region; pod isolation with the per-task sandbox; default-deny network policy; one platform proxy pool; on-demand nodes; static warm capacity; usage rows from the executor's final report; runbooks for saturation, bad releases and ticket anomalies | spot capacity, microVMs, learned warm sizing, multi-region, billing |
-| **P2 quotas and metering** | paid plans, or 200 active shared organizations, or one organization's start SLO broken by others | `fleet_tenant_state` and tenant-first claim; CU limits and burst; class reservation; admission estimates; saturation ladder; CU-minute budgets and the usage page; billing outbox; Free and paid proxy pools; kill switches; sealed per-job secrets; microVM for high-risk lanes; live/history split at its trigger | spot, learned warm pools, multi-region |
-| **P3 elasticity and hardening** | fleet compute above budget, or idle warm cost above 30 %, or start SLO broken by cold nodes, or before Enterprise relies on the shared fleet | node autoscaling with spot for scheduled and background work and on-demand fallback; free re-queue on preemption (at most two); learned warm executors per class and hour; scheduled-start levelling; image and content mirrors; microVM for all shared lanes; dedicated egress pools; reputation monitoring | multi-region fleet |
+| **P1 executors** | a managed service opens, or shared slots above 70 % at p95, or more than 50 organizations on shared sensors | shared executors and controller on one cluster in one region; pod isolation with the per-task sandbox; default-deny network policy; one platform proxy pool; on-demand nodes; static warm capacity; usage rows from the executor's final report; runbooks for saturation, bad releases and ticket anomalies | spot capacity, microVMs, learned warm sizing, multi-region, billing |
+| **P2 quotas and metering** | per-organization limits on a managed service, or 200 active shared organizations, or one organization's start SLO broken by others | `fleet_tenant_state` and tenant-first claim; CU limits and burst; class reservation; admission estimates; saturation ladder; CU-minute budgets and the usage page; usage outbox; basic and standard proxy pools; kill switches; sealed per-job secrets; microVM for high-risk lanes; live/history split at its trigger | spot, learned warm pools, multi-region |
+| **P3 elasticity and hardening** | fleet compute above budget, or idle warm cost above 30 %, or start SLO broken by cold nodes, or before organizations with dedicated egress rely on the shared fleet | node autoscaling with spot for scheduled and background work and on-demand fallback; free re-queue on preemption (at most two); learned warm executors per class and hour; scheduled-start levelling; image and content mirrors; microVM for all shared lanes; dedicated egress pools; reputation monitoring | multi-region fleet |
 | **P4 multi-cell, multi-region** | a second cell or region | one executor cluster per region with a namespace and quota per cell; regional proxy pools; usage to global billing; opt-in cross-region scanning (off by default, refused for residency-bound organizations) | cross-cell capacity broker |
 
 ### 11.1 P0 batches

@@ -9,9 +9,15 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR)
 # Private keys, key files and data/ never get committed (same check as CI).
 bash "$top/.github/scripts/check-private-keys.sh" --staged || exit 1
 
-# Enterprise overlay files, overlay imports in the Community build and the
-# commercial brand name stay out of this repository (same check as CI).
+# Extension files, extension imports in the default build and restricted
+# words stay out of this repository (same check as CI).
 bash "$top/.github/scripts/check-edition-fence.sh" || exit 1
+
+# Restricted wording in the staged added lines: only when the rules are in the
+# environment (same check as CI).
+if [ -n "${RESTRICTED_WORDING_RULES:-}" ]; then
+  (cd "$top" && bash .github/scripts/check-restricted-wording.sh --staged >/dev/null) || exit 1
+fi
 
 if printf '%s\n' "$staged" | grep -q '^web/'; then
   if [ -d "$top/web/node_modules" ]; then

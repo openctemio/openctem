@@ -27,6 +27,9 @@ export const PUBLIC_ROUTES = [
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
+  // After a sign-in: decides the landing from the memberships (it sends a
+  // visitor without a session to /login itself).
+  '/auth/continue',
   // Metadata routes (app/icon.tsx, app/apple-icon.tsx, app/opengraph-image.tsx):
   // the sign-in page's favicon and a shared link's preview image must load
   // without a session. They render the instance brand only.
@@ -57,7 +60,28 @@ export const ACCOUNT_ONLY_PAGES = [
   '/account',
   '/account/security',
   '/account/preferences',
+  // The second-factor step an organization asks for before it admits the
+  // session: a member without it holds only an account session.
+  '/two-factor-setup',
 ] as const
+
+/**
+ * Pages a signed-in person opens before an organization is selected (besides
+ * ACCOUNT_ONLY_PAGES): the organization picker, organization creation, the
+ * ownership invitation and the sign-in consent pages. Every other page works
+ * inside an organization: a session that has none selected goes to
+ * CONTINUE_PATH first, which picks it from the memberships.
+ */
+export const NO_ORGANIZATION_PAGES = [
+  '/select-tenant',
+  '/onboarding',
+  '/ownership-invitations',
+  '/oauth',
+  '/mcp',
+] as const
+
+/** Decides the landing of a session that has no organization selected. */
+export const CONTINUE_PATH = '/auth/continue'
 
 /** Where an account-only session lands. */
 export const WELCOME_PATH = '/welcome'

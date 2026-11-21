@@ -111,5 +111,8 @@ func (s *TaskService) listEventsScoped(ctx context.Context, tenantID, taskID sha
 	if err := s.scopeEvents(ctx, tenantID, taskID, scope, res.Data); err != nil {
 		return pagination.Result[remediationdom.TaskEvent]{}, err
 	}
+	if err := s.redactTimelineQueries(ctx, tenantID, taskID, res); err != nil {
+		return pagination.Result[remediationdom.TaskEvent]{}, err
+	}
 	return res, nil
 }

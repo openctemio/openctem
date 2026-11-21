@@ -529,7 +529,10 @@ type ListInput struct {
 	// UserID, when set, lists only the keys that belong to that user. The
 	// handler sets it for callers who are not organization administrators:
 	// they see their own keys, never other people's.
-	UserID    string `json:"user_id" validate:"omitempty,uuid"`
+	UserID string `json:"user_id" validate:"omitempty,uuid"`
+	// OwnerKind limits the list to keys of service accounts ("service") or
+	// of people ("person"); empty lists both.
+	OwnerKind string `json:"owner_kind" validate:"omitempty,oneof=service person"`
 	Status    string `json:"status"`
 	Search    string `json:"search"`
 	Page      int    `json:"page"`
@@ -548,10 +551,14 @@ func (s *Service) List(ctx context.Context, input ListInput) (apikeydom.ListResu
 	filter := apikeydom.Filter{
 		TenantID:  &tenantID,
 		Search:    input.Search,
+		OwnerKind: input.OwnerKind,
 		Page:      input.Page,
 		PerPage:   input.PerPage,
 		SortBy:    input.SortBy,
 		SortOrder: input.SortOrder,
+	}
+	if input.OwnerKind != "" && input.OwnerKind != apikeydom.OwnerService && input.OwnerKind != apikeydom.OwnerPerson {
+		return apikeydom.ListResult{}, fmt.Errorf("%w: invalid owner kind", shared.ErrValidation)
 	}
 
 	if input.Status != "" {

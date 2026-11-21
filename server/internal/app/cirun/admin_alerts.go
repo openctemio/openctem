@@ -49,6 +49,14 @@ func breakGlassAlert(a AdminAlert) AdminAlert {
 	return a
 }
 
+// newGroupAlert is a project of a GitLab group not seen before asking under an
+// all-projects configuration: medium severity, on the ci.new_repository_group
+// channel event.
+func newGroupAlert(a AdminAlert) AdminAlert {
+	a.EventType, a.Severity = string(integration.EventTypeCINewRepositoryGroup), notificationdom.SeverityMedium
+	return a
+}
+
 // AdminAlerter sends AdminAlerts. Best effort: the action it reports already
 // happened and is audited.
 type AdminAlerter interface {

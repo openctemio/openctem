@@ -459,12 +459,22 @@ func applyBatchMemberTx(ctx context.Context, tx *sql.Tx, a *vulnerability.Approv
 	if err != nil {
 		return false, err
 	}
+	if ok && a.SelfApproved {
+		// The sole member's own approval of their group: the rule is checked
+		// again at the moment of writing (as for a single request), and a
+		// refusal undoes the whole group, not just this member.
+		if err := recheckSoloApproval(ctx, tx, a); err != nil {
+			return false, err
+		}
+	}
 	if ok {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE finding_status_approvals SET status = 'approved', approved_by = $3, approved_at = $4, expires_at = $5,
-				version = version + 1, decision_facts = COALESCE($6, decision_facts)
+				version = version + 1, decision_facts = COALESCE($6, decision_facts),
+				self_approved = $7, self_approval_reason = NULLIF($8, '')
 			WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`,
-			a.TenantID.String(), a.ID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt, nullJSON(a.DecisionFacts))
+			a.TenantID.String(), a.ID.String(), a.ApprovedBy.String(), a.ApprovedAt, a.ExpiresAt, nullJSON(a.DecisionFacts),
+			a.SelfApproved, a.SelfApprovalReason)
 		if err == nil {
 			if n, _ := res.RowsAffected(); n == 1 {
 				err = applyApprovedInTx(ctx, tx, a, entry)
@@ -555,6 +565,91 @@ func (r *FindingApprovalRepository) CloseBatch(ctx context.Context, tenantID, ba
 		return nil
 	})
 	return out, err
+}
+
+// RejectBatchMember rejects one pending member request of a pending group
+// exception ("leave out"), with a timeline entry on its finding; the other
+// members stay pending. When no pending member is left the batch closes as
+// rejected with the same reason. It answers the batch (its status after the
+// change) and the rejected member request's id. A finding that is not a
+// member answers shared.ErrNotFound; a member already decided answers
+// vulnerability.ErrBatchMemberNotPending.
+func (r *FindingApprovalRepository) RejectBatchMember(ctx context.Context, tenantID, batchID, findingID, actor shared.ID, reason string) (*vulnerability.ApprovalBatch, shared.ID, error) {
+	var (
+		out      *vulnerability.ApprovalBatch
+		approval shared.ID
+	)
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		b, err := scanBatch(tx.QueryRowContext(ctx, batchSelect+` WHERE b.tenant_id = $1 AND b.id = $2 FOR UPDATE OF b`,
+			tenantID.String(), batchID.String()))
+		if err != nil {
+			return err
+		}
+		if b.Status != vulnerability.ApprovalStatusPending || !b.DecideBy.After(time.Now()) {
+			return vulnerability.ErrBatchNotPending
+		}
+		var aid string
+		err = tx.QueryRowContext(ctx, `
+			UPDATE finding_status_approvals SET status = 'rejected', rejected_by = $4::uuid, rejected_at = now(),
+				rejection_reason = $5, version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2 AND finding_id = $3 AND status = 'pending'
+			RETURNING id::text`, tenantID.String(), batchID.String(), findingID.String(), actor.String(), reason).Scan(&aid)
+		if errors.Is(err, sql.ErrNoRows) {
+			var member bool
+			if qerr := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM finding_status_approvals
+				WHERE tenant_id = $1 AND batch_id = $2 AND finding_id = $3)`,
+				tenantID.String(), batchID.String(), findingID.String()).Scan(&member); qerr != nil {
+				return fmt.Errorf("read group exception member: %w", qerr)
+			}
+			if member {
+				return vulnerability.ErrBatchMemberNotPending
+			}
+			return shared.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("leave out group exception member: %w", err)
+		}
+		if approval, err = shared.IDFromString(aid); err != nil {
+			return fmt.Errorf("leave out group exception member: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_id, actor_type, changes, source, message)
+			VALUES ($1, $2, 'approval_rejected', $3::uuid, 'user', jsonb_build_object('approval_id', $4::text, 'batch_id', $5::text,
+				'approval_status', 'rejected', 'left_out', true, 'reason', $6::text, 'rejected_by', $3::text), 'api',
+				'Left out of the group exception')`,
+			tenantID.String(), findingID.String(), actor.String(), aid, batchID.String(), reason); err != nil {
+			return fmt.Errorf("record left-out member: %w", err)
+		}
+		var left int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM finding_status_approvals
+			WHERE tenant_id = $1 AND batch_id = $2 AND status = 'pending'`, tenantID.String(), batchID.String()).Scan(&left); err != nil {
+			return fmt.Errorf("count pending group exception members: %w", err)
+		}
+		if left == 0 {
+			if _, err := tx.ExecContext(ctx, `UPDATE approval_batches SET status = 'rejected', decided_by = $3, decided_at = now(),
+				rejection_reason = NULLIF($4, ''), version = version + 1 WHERE tenant_id = $1 AND id = $2`,
+				tenantID.String(), batchID.String(), actor.String(), reason); err != nil {
+				return fmt.Errorf("close group exception: %w", err)
+			}
+			b.Status = vulnerability.ApprovalStatusRejected
+			b.DecidedBy = &actor
+			now := time.Now()
+			b.DecidedAt = &now
+			b.RejectionReason = reason
+		} else {
+			if _, err := tx.ExecContext(ctx, `UPDATE approval_batches SET version = version + 1 WHERE tenant_id = $1 AND id = $2`,
+				tenantID.String(), batchID.String()); err != nil {
+				return fmt.Errorf("update group exception: %w", err)
+			}
+		}
+		b.Version++
+		out = b
+		return nil
+	})
+	if err != nil {
+		return nil, shared.ID{}, err
+	}
+	return out, approval, nil
 }
 
 // ExpireOverdueBatches expires pending group exceptions past their decision

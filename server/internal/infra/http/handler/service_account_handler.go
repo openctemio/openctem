@@ -43,6 +43,19 @@ type ServiceAccountResponse struct {
 	Status      string    `json:"status"`
 	APIKeys     int       `json:"api_keys"`
 	CreatedAt   time.Time `json:"created_at"`
+	// AIAgent marks an account that is an AI agent (managed as an AI agent;
+	// it has no API keys).
+	AIAgent bool `json:"ai_agent"`
+	// Roles are the roles assigned to the account directly; Teams the active
+	// teams it belongs to (a team can give it roles too).
+	Roles []ServiceAccountRef `json:"roles"`
+	Teams []ServiceAccountRef `json:"teams"`
+}
+
+// ServiceAccountRef names a role or team of a service account.
+type ServiceAccountRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // ServiceAccountListResponse lists service accounts.
@@ -50,10 +63,19 @@ type ServiceAccountListResponse struct {
 	Data []ServiceAccountResponse `json:"data"`
 }
 
+func toServiceAccountRefs(in []serviceaccount.Ref) []ServiceAccountRef {
+	out := make([]ServiceAccountRef, 0, len(in))
+	for _, r := range in {
+		out = append(out, ServiceAccountRef{ID: r.ID.String(), Name: r.Name})
+	}
+	return out
+}
+
 func toServiceAccountResponse(a *serviceaccount.ServiceAccount) ServiceAccountResponse {
 	r := ServiceAccountResponse{
 		ID: a.ID.String(), Name: a.Name, Description: a.Description, OwnerName: a.OwnerName,
-		Status: a.Status, APIKeys: a.APIKeys, CreatedAt: a.CreatedAt,
+		Status: a.Status, APIKeys: a.APIKeys, CreatedAt: a.CreatedAt, AIAgent: a.AIAgent,
+		Roles: toServiceAccountRefs(a.Roles), Teams: toServiceAccountRefs(a.Teams),
 	}
 	if a.OwnerID != nil {
 		r.OwnerID = a.OwnerID.String()

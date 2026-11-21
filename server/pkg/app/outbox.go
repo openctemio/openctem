@@ -48,7 +48,7 @@ type ListNotificationEventsFilter struct {
 }
 
 // OutboxService defines the interface for notification operations.
-// This is a base interface - Enterprise can extend with advanced features.
+// This is a base interface; a custom build may extend it.
 type OutboxService interface {
 	// Send sends a notification to a specific integration.
 	Send(ctx context.Context, input SendNotificationInput) (*NotificationResult, error)

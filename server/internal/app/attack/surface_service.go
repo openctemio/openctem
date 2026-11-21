@@ -76,7 +76,10 @@ type AssetChange struct {
 	// inventory (RFC-054 §4.4): a name the scan found that waits for review
 	// is listed as "added" with needs_review and in_inventory false.
 	AttributionState string `json:"attribution_state,omitempty"`
-	InInventory      bool   `json:"in_inventory"`
+	// attributionReason is the record's reason (a provider address leaves
+	// the population, attribution.IsProviderAddress).
+	attributionReason string
+	InInventory       bool `json:"in_inventory"`
 }
 
 // AttributionRecords reads the stored attribution of assets
@@ -419,7 +422,7 @@ func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.I
 	s.annotateAttribution(ctx, tenantID, changes)
 	kept := changes[:0]
 	for _, c := range changes {
-		if inPopulation(approved, c.AttributionState) {
+		if inPopulation(approved, c.AttributionState, c.attributionReason) {
 			kept = append(kept, c)
 		}
 	}
@@ -427,17 +430,9 @@ func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.I
 }
 
 // inPopulation reports whether an asset with this recorded attribution state
-// ("" = no record) belongs to the filter's population.
-func inPopulation(f attribution.StateFilter, state string) bool {
-	if state == "" {
-		return f.Unrecorded
-	}
-	for _, st := range f.States {
-		if string(st) == state {
-			return true
-		}
-	}
-	return false
+// and reason ("" = no record) belongs to the filter's population.
+func inPopulation(f attribution.StateFilter, state, reason string) bool {
+	return f.Matches(attribution.Record{State: attribution.State(state), Reason: attribution.Rule(reason)})
 }
 
 // annotateAttribution sets each change's attribution state and inventory
@@ -463,7 +458,8 @@ func (s *SurfaceService) annotateAttribution(ctx context.Context, tenantID share
 	for i := range changes {
 		if r, ok := recs[changes[i].AssetID]; ok {
 			changes[i].AttributionState = string(r.State)
-			changes[i].InInventory = attribution.InInventory(r.State)
+			changes[i].attributionReason = string(r.Reason)
+			changes[i].InInventory = attribution.InInventory(r.State) && !attribution.IsProviderAddress(r)
 		}
 	}
 }

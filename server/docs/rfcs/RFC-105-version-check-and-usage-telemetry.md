@@ -159,7 +159,7 @@ after the release job, so a failure never blocks a release.
 
 Not built. Recorded so the decision is not reopened without these rules:
 
-1. **Off by default** in every self-hosted edition. Only a super
+1. **Off by default** on every self-hosted installation. Only a super
    administrator turns it on, in the console, with a reason, audited. No
    environment variable turns it on silently; an environment variable can
    force it off.
@@ -168,7 +168,7 @@ Not built. Recorded so the decision is not reopened without these rules:
    viewable.
 3. **Aggregates only:** counts and booleans (number of organizations, users,
    assets, findings by severity band, enabled modules, sensor count,
-   edition, version). Never domains, IPs, asset names, finding titles or
+   version). Never domains, IPs, asset names, finding titles or
    details, user names, emails, organization names or free text.
 4. **No stable identifier:** a random report id rotated on every report; no
    hostname; counts bucketed (for example 1–10, 11–100) so a report cannot
@@ -182,9 +182,8 @@ Not built. Recorded so the decision is not reopened without these rules:
 8. **Data handling on our side:** documented retention, no join with other
    data, deletion on request; the privacy notice and the data processing
    terms name it before it ships.
-9. **Enterprise licence:** if a future signed licence needs usage figures,
-   they come from the licence check's own minimal data, stated in the licence
-   terms, not from this ping.
+9. **Grants:** a grant provider that needs usage figures takes them from
+   its own minimal data, never from this ping.
 
 ## 9. Owner actions
 

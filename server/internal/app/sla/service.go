@@ -448,6 +448,56 @@ func (s *Service) UpdateSLAPolicy(ctx context.Context, policyID, tenantID string
 	return policy, nil
 }
 
+// previewSeverities are the severities a finding can carry.
+var previewSeverities = []string{"critical", "high", "medium", "low", "info", "none"}
+
+// PreviewMakeDefault says what making the policy the default would do to the
+// open findings the default governs (see sladom.DefaultPreview). It changes
+// nothing. The same rules as UpdateSLAPolicy apply: only an active, tenant-wide
+// policy can be the default, and another tenant's policy is not found.
+func (s *Service) PreviewMakeDefault(ctx context.Context, policyID, tenantID string) (*sladom.DefaultPreview, error) {
+	parsedID, err := shared.IDFromString(policyID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	policy, err := s.repo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	if policy.IsDefault() {
+		return &sladom.DefaultPreview{AlreadyDefault: true}, nil
+	}
+	if policy.AssetID() != nil {
+		return nil, fmt.Errorf("%w: only a tenant-wide policy can be the default", shared.ErrValidation)
+	}
+	if !policy.IsActive() {
+		return nil, fmt.Errorf("%w: an inactive policy cannot be the default", shared.ErrValidation)
+	}
+	windows := make([]sladom.PreviewWindow, 0, 5*len(previewSeverities))
+	epoch := time.Unix(0, 0).UTC()
+	for _, class := range []string{"", "P0", "P1", "P2", "P3"} {
+		for _, sev := range previewSeverities {
+			d := policy.CalculateDeadlineFor(class, sev, epoch)
+			windows = append(windows, sladom.PreviewWindow{
+				PriorityClass: class, Severity: sev, Days: int(d.Sub(epoch) / (24 * time.Hour)),
+			})
+		}
+	}
+	kev := 0
+	if policy.Practice() != sladom.PracticeCompliance {
+		kev = policy.KEVCapDays()
+	}
+	p, err := s.repo.PreviewDefault(ctx, parsedTenantID, policy.Practice(), windows, kev)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // DeleteSLAPolicy deletes an SLA policy by ID.
 func (s *Service) DeleteSLAPolicy(ctx context.Context, policyID, tenantID string) error {
 	parsedID, err := shared.IDFromString(policyID)

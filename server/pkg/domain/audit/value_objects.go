@@ -72,6 +72,14 @@ const (
 	// rather than per asset so the audit log stays scannable.
 	// Metadata carries counts + bounded lists of affected asset IDs.
 	ActionAssetLifecycleRun Action = "asset.lifecycle_run"
+	// ActionAssetProviderAddressesMoved: the provider-addresses command
+	// folded an organization's provider shared addresses into its names'
+	// address history, moved their name services to the names and archived
+	// the plain ones (one entry per run, with counts).
+	ActionAssetProviderAddressesMoved Action = "asset.provider_addresses_moved"
+	// ActionAssetProviderAddressesRestored: the command restored what such a
+	// run changed.
+	ActionAssetProviderAddressesRestored Action = "asset.provider_addresses_restored"
 	// ActionAssetLivenessApplied: a liveness pass changed asset liveness
 	// states, or closed or reopened findings of gone assets
 	// (docs/architecture/asset-liveness.md). Each finding move also has its
@@ -492,7 +500,11 @@ const (
 	ActionSensorPairingSuperseded Action = "sensor.pairing_superseded"
 	// LookupLocked: a user hit the failed pairing-code lookup limit (high).
 	ActionSensorPairingLookupLocked Action = "sensor.pairing_lookup_locked"
-	ActionSensorRepaired            Action = "sensor.repaired"
+	// CodeRefused: a sensor started pairing with a code of the organization
+	// that no longer pairs (expired, used, canceled, or held by another
+	// sensor); the code was not used.
+	ActionSensorPairingCodeRefused Action = "sensor.pairing_code_refused"
+	ActionSensorRepaired           Action = "sensor.repaired"
 	// Organization enrollment tokens (docs/architecture/sensor-pairing.md).
 	ActionSensorEnrollmentTokenCreated Action = "sensor.enrollment_token_created"
 	ActionSensorEnrollmentTokenRevoked Action = "sensor.enrollment_token_revoked"
@@ -647,7 +659,14 @@ const (
 	ActionScopeTargetDeactivated Action = "scope_target.deactivated"
 	// ActionScopeTargetReplaced: an entry's pattern was replaced by a new
 	// entry (both patterns and the reason in the metadata).
-	ActionScopeTargetReplaced       Action = "scope_target.replaced"
+	ActionScopeTargetReplaced Action = "scope_target.replaced"
+	// ActionScopeProviderMoved: one provider's scope entries on its shared
+	// addresses were moved out of scope (exclusions created, entries
+	// deactivated); counts and ids in the metadata.
+	ActionScopeProviderMoved Action = "scope_target.provider_moved"
+	// ActionScopeProviderKept: the organization chose to keep scanning one
+	// provider's scope entries on its shared addresses.
+	ActionScopeProviderKept         Action = "scope_target.provider_kept"
 	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
 	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
 	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
@@ -766,10 +785,14 @@ const (
 	ActionCampaignMemberAdded       Action = "campaign.member_added"
 	ActionCampaignMemberRemoved     Action = "campaign.member_removed"
 	ActionCampaignMemberRoleChanged Action = "campaign.member_role_changed"
-	ActionCampaignCreated           Action = "campaign.created"
-	ActionCampaignUpdated           Action = "campaign.updated"
-	ActionCampaignStatusChanged     Action = "campaign.status_changed"
-	ActionCampaignDeleted           Action = "campaign.deleted"
+	// A user group added to, changed on or removed from a campaign team.
+	ActionCampaignGroupAdded       Action = "campaign.group_added"
+	ActionCampaignGroupRemoved     Action = "campaign.group_removed"
+	ActionCampaignGroupRoleChanged Action = "campaign.group_role_changed"
+	ActionCampaignCreated          Action = "campaign.created"
+	ActionCampaignUpdated          Action = "campaign.updated"
+	ActionCampaignStatusChanged    Action = "campaign.status_changed"
+	ActionCampaignDeleted          Action = "campaign.deleted"
 	// Completion sign-off: a member signed off or withdrew, or the lead or an
 	// admin changed how many sign-offs completion needs.
 	ActionCampaignSignedOff               Action = "campaign.signed_off"
@@ -928,6 +951,7 @@ func (a Action) IsValid() bool {
 		ActionTenantSuspended, ActionTenantUnsuspended,
 		ActionTenantDeletionScheduled, ActionTenantDeletionCancelled,
 		ActionAssetLifecycleRun, ActionAssetLivenessApplied, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetProviderAddressesMoved, ActionAssetProviderAddressesRestored,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
@@ -981,7 +1005,7 @@ func (a Action) IsValid() bool {
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
 		ActionSensorResultContractMismatch,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked, ActionSensorPairingCodeRefused,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
@@ -1012,7 +1036,7 @@ func (a Action) IsValid() bool {
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
 		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced, ActionScopeProviderMoved, ActionScopeProviderKept,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -1061,6 +1085,7 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignGroupAdded, ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged,
@@ -1134,7 +1159,7 @@ func (a Action) Category() string {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked, ActionSensorPairingCodeRefused,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
@@ -1162,7 +1187,7 @@ func (a Action) Category() string {
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced, ActionScopeProviderMoved, ActionScopeProviderKept,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
@@ -1197,6 +1222,7 @@ func (a Action) Category() string {
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignGroupAdded, ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged:
@@ -1414,6 +1440,7 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnerInvitationSent,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
+		ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
@@ -1421,7 +1448,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionScopeTargetReplaced, ActionEASMSeedCreated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionScopeTargetReplaced, ActionScopeProviderKept, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
@@ -1448,13 +1475,14 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionAssetLifecycleRun, ActionAssetLivenessApplied, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetProviderAddressesMoved, ActionAssetProviderAddressesRestored,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
 		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetBulkTagsChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
-		ActionCampaignMemberAdded,
+		ActionCampaignMemberAdded, ActionCampaignGroupAdded,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,

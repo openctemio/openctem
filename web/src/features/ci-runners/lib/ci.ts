@@ -529,6 +529,7 @@ export const REFUSAL_CODES = [
   'run_mismatch',
   'aggregate_no_run_id',
   'legacy_audience',
+  'unknown_key',
 ] as const
 
 export type RefusalCode = (typeof REFUSAL_CODES)[number]

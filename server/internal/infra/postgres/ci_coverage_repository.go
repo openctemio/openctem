@@ -266,15 +266,36 @@ func (r *CIRunRepository) TokenRefusalsSince(ctx context.Context, tenantID share
 	return n, err
 }
 
+// tokenRefusalColumns are the columns of a refused exchange's audit record.
+const tokenRefusalColumns = `id, logged_at, COALESCE(resource_name, ''), COALESCE(metadata->>'provider', ''),
+	COALESCE(metadata->>'ref', ''), COALESCE(metadata->>'event', ''),
+	COALESCE(metadata->'reasons', '[]'::jsonb), COALESCE(message, ''),
+	COALESCE(metadata->>'issuer', ''), COALESCE(metadata->>'owner', ''),
+	COALESCE(metadata->>'environment', ''), COALESCE(metadata->>'workflow_definition', ''),
+	COALESCE(metadata->'configs', '[]'::jsonb)`
+
+func scanTokenRefusal(sc interface{ Scan(...any) error }) (cirun.TokenRefusal, error) {
+	var (
+		t       cirun.TokenRefusal
+		reasons []byte
+		configs []byte
+	)
+	if err := sc.Scan(&t.ID, &t.At, &t.Repository, &t.Provider, &t.Ref, &t.Event, &reasons, &t.Message,
+		&t.Issuer, &t.Owner, &t.Environment, &t.WorkflowDefinition, &configs); err != nil {
+		return t, err
+	}
+	_ = json.Unmarshal(reasons, &t.Reasons)
+	_ = json.Unmarshal(configs, &t.Configs)
+	return t, nil
+}
+
 // RecentTokenRefusals lists the tenant's latest refused CI token exchanges
 // from the audit log, newest first.
 func (r *CIRunRepository) RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]cirun.TokenRefusal, error) {
 	if limit <= 0 || limit > cirun.MaxTokenRefusals {
 		limit = cirun.MaxTokenRefusals
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT logged_at, COALESCE(resource_name, ''), COALESCE(metadata->>'provider', ''),
-			COALESCE(metadata->>'ref', ''), COALESCE(metadata->>'event', ''),
-			COALESCE(metadata->'reasons', '[]'::jsonb), COALESCE(message, '')
+	rows, err := r.db.QueryContext(ctx, `SELECT `+tokenRefusalColumns+`
 		FROM audit_logs WHERE tenant_id = $1 AND action = 'ci_run.token_refused'
 		ORDER BY logged_at DESC LIMIT $2`, tenantID.String(), limit)
 	if err != nil {
@@ -283,17 +304,28 @@ func (r *CIRunRepository) RecentTokenRefusals(ctx context.Context, tenantID shar
 	defer func() { _ = rows.Close() }()
 	out := []cirun.TokenRefusal{}
 	for rows.Next() {
-		var (
-			t       cirun.TokenRefusal
-			reasons []byte
-		)
-		if err := rows.Scan(&t.At, &t.Repository, &t.Provider, &t.Ref, &t.Event, &reasons, &t.Message); err != nil {
+		t, err := scanTokenRefusal(rows)
+		if err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal(reasons, &t.Reasons)
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// TokenRefusal reads one refused exchange of the tenant by its audit record
+// id (tenant-scoped: another tenant's id is not found).
+func (r *CIRunRepository) TokenRefusal(ctx context.Context, tenantID, id shared.ID) (*cirun.TokenRefusal, error) {
+	t, err := scanTokenRefusal(r.db.QueryRowContext(ctx, `SELECT `+tokenRefusalColumns+`
+		FROM audit_logs WHERE tenant_id = $1 AND id = $2 AND action = 'ci_run.token_refused'`,
+		tenantID.String(), id.String()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, cirun.ErrTokenRefusalNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 // ClearAlert ends a firing alert (its condition no longer holds).

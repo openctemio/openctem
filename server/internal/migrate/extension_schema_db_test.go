@@ -11,15 +11,15 @@ import (
 	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
-// A database that ran an extension build (docs/development/editions.md) has
+// A database that ran an extension build (docs/development/extensions.md) has
 // the extension's own schema next to the core one, with its own migration
-// tracker. A Community build on that database (a rollback, or a database
+// tracker. A default build on that database (a rollback, or a database
 // restored from an extension install) must migrate up and down and start
 // exactly as on a clean database, and must leave the extension schema alone.
 // The extension tables here deliberately reuse core table names, with
 // incompatible columns, so a probe that is not limited to the core schema
 // fails this test.
-func TestCommunityIgnoresAnExtensionSchema_DB(t *testing.T) {
+func TestDefaultBuildIgnoresAnExtensionSchema_DB(t *testing.T) {
 	db := testdb.EmptyDatabase(t, "extschema")
 	ctx := context.Background()
 	for _, s := range []string{

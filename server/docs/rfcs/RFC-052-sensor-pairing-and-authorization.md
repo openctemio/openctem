@@ -222,7 +222,7 @@ Signature: sig1=:<base64 Ed25519 signature>:
 | Reveal / poll / confirm per pairing | 1 per second (burst 5) |
 | Lookups per administrator | 10 per minute; 20 failed lookups per hour lock lookups for that user for an hour |
 | Expiry | 10 minutes from start; an approved pairing must be confirmed within 10 minutes of approval |
-| Code | single use; a used, denied or expired code is never valid again |
+| Code | single use, bound to the organization that made it; a used, denied, expired or cancelled code is never valid again, and a start that carries one pairs under a new code instead (§4.9) |
 
 A start spends the per-address entry budget first. Only a start whose
 signature verified with the key in its body reaches the budget of verified
@@ -257,10 +257,16 @@ uniform answer of a code that matches nothing (threat 5).
 
 Uniformity:
 
-- A start with a reverse-mode code that is unknown, expired or used answers
-  exactly like a valid one (`201`, same shape, no user code); the pairing then
-  simply never gets approved and expires. The sensor's operator sees it wait;
-  the administrator who created the expectation sees no sensor arrive.
+- A start with a reverse-mode code that is unknown, expired, used or held by
+  another key answers with the same shape as a valid one (`201`, a
+  `user_code`), but the request opens under a new code bound to no
+  organization: the code it carried is never used, so it finds nothing in
+  any organization (threat 36). The sensor prints the new code and link; the
+  organization that made the code gets `sensor.pairing_code_refused`. A
+  guesser can tell a hit from a miss by the code in the answer, which gains
+  nothing: a hit only attaches the guesser's key to the expectation, which
+  the organization that made it still has to approve, and a 40-bit code
+  under the start budgets is not guessable.
 - Lookup answers one `404 pairing_not_found` for unknown, expired, used,
   denied, already-claimed and other-tenant re-pair codes.
 - Poll for an unknown pairing id, or with a key other than the pairing's,
@@ -444,14 +450,14 @@ A person installs a sensor with one command and one approval (research
 356). The Add sensor panel offers one path, not a choice between "the
 console shows a code" and "the sensor shows a code":
 
-- **One code everywhere.** A start that carries a code uses it as the
-  request's own: it attaches to the organization's open expectation with
-  that code; otherwise rows of that code past their expiry are closed and
-  the request opens under the same code, bound to no organization; a code
-  another open request holds gives a new code. Every start without a token
-  answers `user_code`. The console's command, the sensor's output and the
-  link show the same code, and a command run after its code expired still
-  pairs (through the link) instead of silently changing code.
+- **One code everywhere.** A start that carries a code attaches to the
+  open expectation of the organization that made it, and the console's
+  command, the sensor's output and the link show that code. Any other code
+  (expired, used, cancelled, held by another key, never made) is not used:
+  rows of that code past their expiry are closed and the request opens
+  under a new code, bound to no organization, that the sensor prints with
+  its link. A command run after its code expired still pairs through the
+  printed link. Every start without a token answers `user_code`.
 - **The link.** `StartResponse` carries `verification_uri`
   (`<APP_URL>/activate`) and `verification_uri_complete`
   (`…/activate?code=K7QM-4ZTD`) when `APP_URL` is an absolute http(s)
@@ -603,6 +609,7 @@ Each line is a test in the implementation PRs.
 | 33 | The attached request of one organization reached by another through the link | Lookup of an attached request is scoped to the session's organization; tenantless requests only by code | another organization's lookup and approval of an attached code `404` |
 | 34 | A sensor (or whoever holds an ordinary code) turns an "add a sensor" code into a re-pair of an existing sensor and gets its working key revoked | The code's target is set by the console only; the approval must name the re-paired sensor | ordinary code + `sensor_id` stays a new-sensor request; approval without or with another `repair_sensor_id` `409`; re-pair code never creates a sensor |
 | 35 | Work claimed with a key a re-pair or revocation withdrew keeps running or reports later | Leased commands taken back at approval and when the last key is revoked; the lease fence refuses the old holder | release called once per re-pair and per last-key revocation |
+| 36 | A leaked, spent code (install snippets keep it in IaC, CI logs, tickets) is replayed by a sensor that lost its state, and another organization approves that sensor | A code only attaches to its own organization's open expectation; any other code is never used: the request opens under a new code printed on the host only, and the organization that made the code gets `sensor.pairing_code_refused` | expired, used, denied and unknown codes: lookup and approval by the old code `404` in every organization, the request stays pending under its new code; audit in the code's organization only; an open code still attaches, and only there |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations

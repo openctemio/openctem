@@ -1,0 +1,22 @@
+{
+  "assetAddresses.col.address": "Địa chỉ",
+  "assetAddresses.col.firstSeen": "Thấy lần đầu",
+  "assetAddresses.col.lastSeen": "Thấy lần cuối",
+  "assetAddresses.col.provider": "Nhà cung cấp",
+  "assetAddresses.col.state": "Hiện tại",
+  "assetAddresses.count": "{count, plural, other {# địa chỉ}}",
+  "assetAddresses.current": "Đang dùng",
+  "assetAddresses.emptyHint": "Chưa có kết quả DNS nào của tên này.",
+  "assetAddresses.emptyPast": "Tên này không còn trỏ tới địa chỉ nào trước đây. Lịch sử liệt kê các địa chỉ đó.",
+  "assetAddresses.emptyTitle": "Không có địa chỉ hiện tại",
+  "assetAddresses.gone": "Không còn trỏ tới",
+  "assetAddresses.history": "Lịch sử",
+  "assetAddresses.historyHint": "Mọi địa chỉ tên này từng trỏ tới, kèm thời điểm thấy lần đầu và lần cuối.",
+  "assetAddresses.historyTitle": "Lịch sử địa chỉ",
+  "assetAddresses.more": "+{count} nữa",
+  "assetAddresses.other": "Địa chỉ khác",
+  "assetAddresses.providerHint": "Địa chỉ mà nhà cung cấp dùng chung cho nhiều tổ chức được ghi trên tên này, không phải tài sản của bạn. Lần quét kiểm tra tên này, không quét các địa chỉ đó.",
+  "assetAddresses.servedBy": "Do {provider} phục vụ",
+  "assetAddresses.title": "Địa chỉ",
+  "assetAddresses.truncated": "{count} địa chỉ cũ hơn không được liệt kê."
+}

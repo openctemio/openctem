@@ -94,7 +94,7 @@ func (a *auditRows) Create(_ context.Context, l *admin.AuditLog) error {
 }
 
 // The rollout gate refuses every organization whatever the settings say,
-// with its own reason, never an edition.
+// with its own reason, never a build.
 func TestSharedSensorsAllowed_GateClosed(t *testing.T) {
 	if sharedSensorsReady {
 		t.Skip("the rollout gate is open")

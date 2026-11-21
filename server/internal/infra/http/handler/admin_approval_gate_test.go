@@ -20,13 +20,15 @@ import (
 // fakeGate records what the protected handler asked and answers with err.
 type fakeGate struct {
 	calls    []string
+	reasons  []string
 	err      error
 	released int
 	active   bool
 }
 
-func (g *fakeGate) Require(_ context.Context, _ *admin.AdminUser, action admin.ApprovalAction, target string, _ adminconsole.ClientInfo) (*adminapproval.Grant, error) {
+func (g *fakeGate) Require(_ context.Context, _ *admin.AdminUser, action admin.ApprovalAction, target, reason string, _ adminconsole.ClientInfo) (*adminapproval.Grant, error) {
 	g.calls = append(g.calls, string(action)+" "+target)
+	g.reasons = append(g.reasons, reason)
 	if g.err != nil {
 		return nil, g.err
 	}

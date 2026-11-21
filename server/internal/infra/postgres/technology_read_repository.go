@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -28,8 +29,8 @@ func NewTechnologyReadRepository(db *DB) *TechnologyReadRepository {
 }
 
 const (
-	technologyListTimeout  = "3s"
-	technologyStatsTimeout = "2s"
+	technologyListTimeout  = 3 * time.Second
+	technologyStatsTimeout = 2 * time.Second
 )
 
 var errUncompiledTechnologyFilter = errors.New("technology filter was not compiled for a tenant")
@@ -52,14 +53,10 @@ const technologyColumns = `g.name_key, g.name, g.version, g.category, COALESCE(g
 	g.first_seen, g.last_seen`
 
 // readOnlyTx opens a read-only transaction with a statement timeout.
-func (r *TechnologyReadRepository) readOnlyTx(ctx context.Context, timeout string) (*sql.Tx, error) {
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+func (r *TechnologyReadRepository) readOnlyTx(ctx context.Context, timeout time.Duration) (*sql.Tx, error) {
+	tx, err := beginRead(ctx, r.db.DB, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin technology read: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+timeout+"'"); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("set technology read timeout: %w", err)
 	}
 	return tx, nil
 }

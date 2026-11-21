@@ -141,10 +141,10 @@ func withFacts(c Card, in Input) Card {
 func normalizeSeverity(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
-	case "critical", "high", "medium", "low":
+	case severityCritical, severityHigh, severityMedium, severityLow:
 		return s
 	default:
-		return "info"
+		return severityInfo
 	}
 }
 

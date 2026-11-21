@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -167,6 +168,7 @@ func (c Config) caps() cirun.PipelineCaps {
 
 // Service is the CI run service.
 type Service struct {
+	allowGate AllowRepositoryGate
 	orgs      tenantdom.AccessGate
 	repo      cirun.Repository
 	verifier  TokenVerifier
@@ -196,6 +198,19 @@ type Service struct {
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
+
+	// unverified throttles the per-tenant record of refusals before
+	// verification (refusal_reasons.go).
+	unverified      unverifiedRecorder
+	unverifiedStore cirun.UnverifiedRefusalStore
+	// newRepos keeps the new repositories of all-projects trust
+	// configurations (new_repositories.go).
+	newRepos cirun.NewRepositoryStore
+	// groupNotices throttles the new-group notices per configuration.
+	groupNotices groupNotices
+
+	// keyNotices throttles the pasted-key rotation notices.
+	keyNotices noticeThrottle
 }
 
 // SetGitLab lets the gate read a GitLab merge request's target branch through
@@ -324,7 +339,10 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	}
 	if len(configs) == 0 {
 		// Before any verification: nothing is written to the tenant's audit
-		// log, so an anonymous caller cannot fill it.
+		// log, so an anonymous caller cannot fill it. The bounded,
+		// deduplicated per-issuer record lets the administrator see that a
+		// token named an issuer no configuration has.
+		s.recordUnverified(ctx, tenantID, issuer, UnverifiedNoConfiguration, "")
 		return nil, s.refuseUnverified("no enabled trust configuration for the issuer")
 	}
 
@@ -332,13 +350,26 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		s.log.Info("ci exchange refused: token did not verify", "tenant_id", tenantID.String(),
 			"issuer", logger.SanitizeValue(issuer), "error", logger.SanitizeError(err))
+		var unknown *pastedKeyUnknownError
+		if errors.As(err, &unknown) {
+			// The trust verifies with pasted keys only and the token names
+			// another key: the provider rotated. Never a 503 (nothing would
+			// change on retry); the administrators are told.
+			s.notePastedKeyUnknown(ctx, tenantID, unknown.configs, oidc.UnverifiedKeyID(in.IDToken))
+			return nil, &RefusedError{Code: RefuseUnknownKey, Message: UnknownKeyMessage}
+		}
 		if errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound) {
 			// The issuer's keys cannot be had right now (the issuer is
 			// unreachable past the stale bound, or it rotated to a key the
 			// platform may fetch only once per interval). Nothing was
 			// claimed: the job may retry the same token shortly.
-			return nil, ErrIssuerUnavailable
+			cause := IssuerCause(err)
+			s.recordUnverified(ctx, tenantID, issuer, UnverifiedKeysUnavailable, cause)
+			// On a hosted issuer the caller may be anyone: the class stays
+			// in the administrator's record.
+			return nil, &IssuerUnavailableError{Cause: cause, Withheld: cirun.SharedIssuer(issuer)}
 		}
+		s.recordUnverified(ctx, tenantID, issuer, UnverifiedNotVerified, "")
 		return nil, ErrExchangeRefused
 	}
 
@@ -346,12 +377,31 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		s.noteRenamedRepository(ctx, tenantID, issuer, claims, configs)
+		// The token verified: on a self-managed issuer the job is told which
+		// rule refused it and its own value that did not match, never the
+		// configuration's values. On a hosted issuer anyone can mint a
+		// verified token, and the rule kinds would map the organization's
+		// trust rules: the job gets the generic refusal, and the
+		// administrator sees the reason under CI/CD.
+		if msg := RuleRefusalMessage(refusals, claims); msg != "" && !refusedOnSharedIssuer(refusals, configs) {
+			return nil, &RefusedError{Code: "not_trusted", Message: msg, Reasons: refusalCodes(refusals)}
+		}
 		return nil, ErrExchangeRefused
 	}
 	// A suspended organization issues no run token. Checked once the
 	// workload token verified, so only a trusted pipeline learns the status.
 	if err := s.organizationOpen(ctx, tenantID); err != nil {
 		return nil, err
+	}
+	// An all-projects configuration admits a repository an administrator
+	// approved; a new one waits (checkNewRepository).
+	if cfg.Rules.AllRepositories {
+		if refusal, err := s.checkNewRepository(ctx, tenantID, cfg, claims); err != nil {
+			return nil, err
+		} else if refusal != nil {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+			return nil, publicRefusal(refusal)
+		}
 	}
 	// A repository name stays with the repository id that first reported
 	// under it (checkRepositoryBinding).
@@ -446,7 +496,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if err != nil {
 		return nil, err
 	}
-	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now())
+	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now(), tok.KeyID)
 	if !legacy && cfg.LegacyAudience != "" {
 		// The pipeline uses the new audience: its legacy one is refused from
 		// now on.
@@ -549,9 +599,25 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 		return nil, cirun.Claims{}, errors.New("no token verifier")
 	}
 	tried := map[string]bool{}
-	var lastErr error
+	var lastErr, fetchErr error
+	var unknownKey []cirun.TrustConfig
 	now := s.now()
 	for _, c := range configs {
+		keys, err := c.PastedKeys()
+		if err != nil {
+			// Stored keys that no longer parse refuse the token (fail
+			// closed); they were valid when saved.
+			s.log.Warn("ci trust configuration has unusable pasted signing keys", "trust_config_id", c.ID.String(),
+				"error", logger.SanitizeError(err))
+			lastErr = err
+			continue
+		}
+		// A configuration with pasted keys is verified on its own: two
+		// configurations of one issuer may hold different keys.
+		scope := ""
+		if keys != nil {
+			scope = c.ID.String()
+		}
 		auds := []string{c.Audience}
 		if c.LegacyAccepted(c.LegacyAudience, now) {
 			// The audience the configuration had before audiences named the
@@ -560,15 +626,21 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 			auds = append(auds, c.LegacyAudience)
 		}
 		for _, aud := range auds {
-			key := string(c.Provider) + "\x00" + aud
+			key := string(c.Provider) + "\x00" + aud + "\x00" + scope
 			if tried[key] {
 				continue
 			}
 			tried[key] = true
 			tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: aud,
-				JTIOptional: cirun.JTIOptional(c.Provider)})
+				JTIOptional: cirun.JTIOptional(c.Provider), Keys: keys})
 			if err != nil {
 				lastErr = err
+				switch {
+				case errors.Is(err, oidc.ErrPastedKeyUnknown):
+					unknownKey = append(unknownKey, c)
+				case errors.Is(err, oidc.ErrJWKSUnavailable) || errors.Is(err, oidc.ErrKeyNotFound):
+					fetchErr = err
+				}
 				continue
 			}
 			claims := cirun.ParseClaims(c.Provider, tok.Claims)
@@ -580,7 +652,14 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 			return tok, claims, nil
 		}
 	}
-	if lastErr == nil {
+	switch {
+	case fetchErr != nil:
+		// A configuration that fetches could not get the keys: the job
+		// may retry (it may verify once the keys are back).
+		return nil, cirun.Claims{}, fetchErr
+	case len(unknownKey) > 0:
+		return nil, cirun.Claims{}, &pastedKeyUnknownError{configs: unknownKey}
+	case lastErr == nil:
 		lastErr = errors.New("no audience to verify against")
 	}
 	return nil, cirun.Claims{}, lastErr
@@ -597,6 +676,7 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 			continue
 		}
 		if r := c.Rules.Admit(claims); r != nil {
+			r.ConfigID, r.ConfigName = c.ID, c.Name
 			refusals = append(refusals, r)
 			continue
 		}
@@ -983,7 +1063,12 @@ func (s *Service) auditRefusal(ctx context.Context, tenantID shared.ID, in Excha
 		WithMetadata("run_attempt", c.RunAttempt).
 		WithMetadata("job_id", c.JobID).
 		WithMetadata("commit_sha", c.SHA).
-		WithMetadata("commit_verified", c.CommitVerified)
+		WithMetadata("commit_verified", c.CommitVerified).
+		WithMetadata("issuer", c.Issuer).
+		WithMetadata("owner", c.Owner()).
+		WithMetadata("environment", c.Environment).
+		WithMetadata("workflow_definition", c.WorkflowDefinition()).
+		WithMetadata("configs", refusalConfigs(refusals))
 	for _, code := range codes {
 		if code == "replay" {
 			ev = ev.WithSeverity(auditdom.SeverityHigh)
@@ -1330,4 +1415,43 @@ func scannedImage(report *ctis.Report) string {
 		}
 	}
 	return ""
+}
+
+// refusedOnSharedIssuer reports whether any refusing configuration trusts a
+// hosted issuer (cirun.SharedIssuer), or a refusal names no configuration.
+func refusedOnSharedIssuer(refusals []*cirun.Refusal, configs []cirun.TrustConfig) bool {
+	for _, r := range refusals {
+		if r == nil {
+			continue
+		}
+		i := slices.IndexFunc(configs, func(c cirun.TrustConfig) bool { return c.ID == r.ConfigID })
+		if r.ConfigID.IsZero() || i < 0 || cirun.SharedIssuer(configs[i].Issuer) {
+			return true
+		}
+	}
+	return false
+}
+
+// refusalCodes are the distinct codes of the refusals.
+func refusalCodes(refusals []*cirun.Refusal) []string {
+	out := make([]string, 0, len(refusals))
+	for _, r := range refusals {
+		if r != nil && !slices.Contains(out, r.Code) {
+			out = append(out, r.Code)
+		}
+	}
+	return out
+}
+
+// refusalConfigs records which configuration refused with which code (audit
+// metadata: the refusals panel offers the fix on that configuration).
+func refusalConfigs(refusals []*cirun.Refusal) []map[string]string {
+	out := make([]map[string]string, 0, len(refusals))
+	for _, r := range refusals {
+		if r == nil || r.ConfigID.IsZero() {
+			continue
+		}
+		out = append(out, map[string]string{"id": r.ConfigID.String(), "name": r.ConfigName, "code": r.Code})
+	}
+	return out
 }

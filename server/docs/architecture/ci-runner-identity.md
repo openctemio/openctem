@@ -84,11 +84,19 @@ sequenceDiagram
   alt none
     S-->>H: ErrExchangeRefused (nothing audited)
   end
-  S->>V: per distinct provider and audience
-  V->>I: discovery + JWKS (SSRF-guarded, same host, TTL 1 h, stale up to 6 h, refetch at most every 30 s)
-  V-->>S: claims (sig, iss, aud, exp, nbf, iat, leeway 1 min, lifetime 24 h max, sub, jti)
-  alt keys unavailable
+  S->>V: per distinct provider and audience (and per configuration with pasted keys)
+  alt key_source fetch
+    V->>I: discovery + JWKS (SSRF-guarded, same host, TTL 1 h, stale up to 6 h, refetch at most every 30 s)
+  else key_source pasted
+    Note over V: signing_keys only, by kid; nothing is fetched
+  end
+  V-->>S: claims (sig, iss, aud, exp, nbf, iat, leeway 1 min, lifetime 24 h max, sub, jti), kid
+  alt keys unavailable (fetch)
     S-->>H: ErrIssuerUnavailable, 503 Retry-After 30
+  end
+  alt kid not among the pasted keys
+    S->>DB: audit ci_run.token_refused (unknown_key) + admin alert, once an hour per configuration
+    S-->>H: RefusedError unknown_key, 401 CI_TOKEN_UNKNOWN_KEY
   end
   S->>S: admit - Rules.Admit (owners, repos, refs, envs, events, forks, protected ref, workflow_refs)
   alt not admitted
@@ -101,7 +109,7 @@ sequenceDiagram
   S->>DB: ClaimReplay (issuer, jti) - the same token again at most 5 times, same run only
   S->>DB: resolveRepositoryAsset (repo id, then host/path), UpsertPipeline (advisory lock per tenant, caps)
   S->>DB: CountPipelineRunsSince 1 h (300 max), CreateRun or OpenAggregateRun + AddRunToken
-  S->>DB: audit ci_run.token_issued, CITrustSeen
+  S->>DB: TouchTrustConfig (last_used_at, last_key_id), audit ci_run.token_issued, CITrustSeen
   H-->>J: 201 run_id, octci_ token (TTL 15 min, SHA-256 stored), secret_key
 ```
 
@@ -184,6 +192,135 @@ The job exits 0 on pass, 1 on fail and 2 when it cannot trust the result
 (gate unreachable without `--fail-on`, or a local failure). The job asks again
 on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 
+### Refusal reasons
+
+What a refused job and the organization's administrators are told, without
+telling a stranger anything about the organization's configuration:
+
+| Refusal | Job (`POST /api/v1/ci/oidc/exchange`) | Organization |
+|---|---|---|
+| Token did not verify, or no enabled configuration has its issuer | `401 CI_TOKEN_NOT_TRUSTED`, generic text | Not in the audit log (an anonymous caller must not fill it). A bounded record per tenant, issuer and reason (`ci_unverified_refusals`): issuer (kept only when a plain https address of at most 255 characters and, for `no_configuration`, close to an issuer the tenant configured: same host or same path; any other issuer is stored as "" so made-up issuers share one row), reason `no_configuration` or `not_verified`, first and last time, count. Written only for a tenant that has a trust configuration, at most once per 30 seconds per (tenant, issuer, reason) per server (repeats are counted), at most 20 new keys per tenant and hour per server, at most 20 rows per tenant (a full tenant takes a new row only in place of one not seen for 7 days, so an anonymous caller cannot push a real record out). No token contents |
+| Issuer keys unavailable | `503 CI_ISSUER_UNAVAILABLE`. Self-managed issuer: `details.cause` and a message per class: `blocked_address`, `dns`, `tls`, `timeout`, `issuer_mismatch`, `http_status`, `key_not_found`, `unreachable`. Hosted issuer (`cirun.SharedIssuer`: GitHub, gitlab.com and the other shared services): a generic retry message, no class. Never an address | Same record, reason `keys_unavailable` with the cause |
+| Verified, refused by a rule | `401 CI_TOKEN_NOT_TRUSTED`. Self-managed issuer: the rule in plain words and the token's own value that did not match (pipeline file, ref, repository, group, environment, event), `details.reasons`. Hosted issuer: the generic text only, no `details` (anyone can mint a verified token there, and the rule kinds would map the organization's trust rules). Never the configuration's name or listed values | Audit row `ci_run.token_refused` with the codes, the token's issuer, owner, environment and pipeline definition, and which configuration refused with which code (`configs`) |
+| After admission (binding, pin, cap, ...) | `401 CI_TOKEN_<reason>` | Audit row, as before |
+
+The cause class comes from the error chain (`cirun.IssuerCause`): the OIDC
+client wraps its fetch errors (`%w`), the outbound guard's
+`ErrBlockedDestination` and `ErrUnresolvable`, TLS and x509 errors, timeouts,
+and the client's own `ErrIssuerMismatch` and `ErrHTTPStatus`.
+
+API for the CI/CD page (CI write, `scans:ci:write`):
+
+- `GET /api/v1/ci/trust-refusals`: verified refusals from the audit log, now
+  with `id`, `issuer`, `owner`, `environment`, `workflow_definition` and
+  `configs` (`[{id, name, code}]`).
+- `GET /api/v1/ci/trust-refusals/unverified`: `{data: [{issuer, reason, cause,
+  first_seen, last_seen, count, nearest_issuer, difference}],
+  configured_issuers: [{config_id, name, provider, issuer, enabled}]}`;
+  `difference` is `trailing_slash`, `case`, `scheme`, `host` or `path`.
+- `POST /api/v1/ci/trust-configs/{id}/allow` (step-up): `{refusal_id}` names
+  a verified refusal (`GET /ci/trust-refusals`, `data[].id`), read for the
+  session's tenant (another tenant's id is not found). Only when this
+  configuration refused it with exactly `workflow_not_allowed` or
+  `ref_not_allowed` (rules checked after the organization, owner and
+  repository rules, so the token passed those) is the value taken from the
+  record and added to Pipeline definitions or Branches and tags; anything
+  else answers 400. On an all-projects configuration (`rules.all_repositories`,
+  which skips the owner and repository rules) the refusal's project must be
+  approved on it first (its Owners or Repositories name it), otherwise 400: a
+  stranger's project can produce these refusals and must not widen the rules
+  of every approved project. The caller never supplies the value. An ordinary audited
+  change of the configuration (`changed: false` when it was already listed);
+  the answer names the `kind` and `value` added.
+
+### Every project on this GitLab (`rules.all_repositories`)
+
+A trust configuration of a self-managed GitLab may accept every project of
+the instance without naming its groups. Refused for gitlab.com (and its
+subdomains), the hosted GitLab services jihulab.com and gitlab.cn, every
+GitHub issuer (including `*.ghe.com` data residency) and every other
+provider: on a shared issuer it would admit anyone in the world
+(`cirun.SharedIssuer`, checked when the configuration is saved). A
+self-managed GitLab with open sign-up has the same exposure; there the
+pending approval below is what protects the configuration.
+
+Risk: any user of the instance can create a personal project and protect its
+branches, so "protected branches only" does not stop them. Therefore:
+
+- A project seen for the first time is a **new repository**: recorded as
+  pending (`ci_trust_new_repositories`) with the verified `project_id`,
+  `namespace_path` and `namespace_id` of that first sighting and, by
+  default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an
+  administrator approves it. At most 25 pending projects per top-level group
+  and 500 per configuration: one instance user creating many projects or
+  personal namespaces fills only their own group's list. Past either bound a
+  project is refused without being listed, and the list names the full
+  groups (`full_groups`) or says the whole list is full (`list_full`).
+- Approval binds to what the administrator saw. Approving pins each covered
+  namespace to the `namespace_id` its pending projects were seen with (an
+  existing pin to another id, or sightings that disagree, refuse the
+  approval), and an approved project keeps its row (state `approved`, not
+  listed) with the `project_id` seen: its runs must carry that id, or they
+  are refused with `CI_TOKEN_REPOSITORY_BINDING`. When the configuration no
+  longer lists the project, its next sighting makes it pending again with the
+  new ids. With `admit_new_repositories` its runs are
+  admitted and imported while it waits, but it is not added to scope.
+- Approving a project adds it to the configuration's Repositories; approving
+  a whole group adds the group to Owners, approves its pending projects at
+  once, and admits every current and future project of the group with no
+  further approval (a group already approved never produces a pending item
+  again). Only approved groups and projects become scope patterns
+  (`ScopePatterns`), so Manage scope applies only after approval.
+- Blocking a project or a group refuses it at once
+  (`CI_TOKEN_REPOSITORY_BLOCKED`), takes it out of the configuration and
+  lists it as blocked; unblocking makes it new again. A block wins over an
+  approved group.
+- Approving a whole group trusts its name, not an id: a GitLab token carries
+  no top-level group id, only the id of the project's direct namespace. The
+  approval pins the namespaces already seen in the group's pending rows, so a
+  group renamed or re-registered afterwards is refused for those names, but a
+  subgroup never seen before (`acme/new`) is pinned on its first use and
+  admitted if the top-level name has changed hands. Prefer approving single
+  projects where the group's owners can change. Follow-up (not in this
+  change): a configuration option "Approve projects one by one" as the
+  default, with "Approve whole groups" as the explicit choice.
+- A user allowed to create top-level groups (the self-managed default) can fill
+  the pending list with new groups (500 rows, 25 per group, 10 notices per
+  hour). Existing decisions are unaffected, and blocking a group in bulk
+  clears its pending rows; watch the held-back count in the notice.
+- Approval is never guessed from the namespace: a GitLab token does not say
+  whether a namespace is a group or a personal namespace.
+- Saved with all_repositories, a new configuration turns on "Protected
+  branches and tags only" and "Notify me when a new group asks"
+  (`notify_new_groups`: in the app and on the organization's channels
+  subscribed to `ci.new_repository_group`, once per group, at most 10 per
+  configuration and hour per server; the first notice after a busy hour says
+  how many were held back); an administrator may turn them off by editing it.
+- Approving or blocking changes the configuration's owners or repositories.
+  That keeps the owner pins of every name still listed: only the pins of
+  names no longer listed are dropped (any configuration, not only this kind).
+  A routine approval therefore never lets a group renamed on the instance
+  and registered again by someone else take its old name over.
+- The trust preview reports the same step as the exchange: a project the
+  draft does not approve is refused as pending approval, or admitted with
+  `pending_approval` when the draft admits new repositories. The configuration's response carries a
+  plain-words warning (`warnings`).
+
+API (CI write, `scans:ci:write`; decisions need a recent sign-in):
+
+- `GET /api/v1/ci/trust-configs/{id}/new-repositories`:
+  `{all_repositories, admit_new_repositories, pending: [{group, full,
+  projects: [{name, first_seen, last_seen, count, project_id,
+  namespace_id}]}], blocked: [{kind, name, blocked_by, blocked_at}],
+  approved_groups, approved_projects, list_full, full_groups}`.
+- `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions`:
+  `{decision: approve | block | unblock, items: [{kind: project | group,
+  name}]}` (1 to 100 items, so several pending projects or groups are decided
+  together); answers the list as above. Audited as
+  `ci_trust_config.new_repositories_decided` with its items, plus the
+  ordinary `ci_trust_config.updated` with before and after when the
+  configuration's lists change.
+
 ## Request chains
 
 | Route | Chain |
@@ -193,7 +330,7 @@ on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit (10/s, burst 100) → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit (2/s, burst 30) → ingest per-tenant limit (20/s, burst 40, when rate limiting is on) and concurrency cap (8 per tenant) → body 50 MB as sent → decompression (`gzip`/`zstd`, at most 20 MB compressed, 100 MB decompressed, ratio 200) → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
 | `GET /api/v1/ci/runs/{id}/results/{report_id}` | per-IP limit → `AuthenticateRun` → per-run limit; `wait` at most 10 s (`ingestqueue.MaxWait`) |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
-| `/api/v1/ci/{settings,trust-configs,runs,pipelines,coverage,gate-policies,gate-settings,gate-baselines,gate-overrides,trust-refusals,code-scanning}` | session tenant chain (`buildTokenTenantMiddlewares`) → `scans` module → `scans:ci:*`; `PUT /settings`, `POST`/`PUT /trust-configs`, `PUT /gate-baselines/{id}` and `POST /gate-overrides` add step-up |
+| `/api/v1/ci/{settings,trust-configs,runs,pipelines,coverage,gate-policies,gate-settings,gate-baselines,gate-overrides,trust-refusals,code-scanning}` | session tenant chain (`buildTokenTenantMiddlewares`) → `scans` module → `scans:ci:*`; `PUT /settings`, `POST`/`PUT /trust-configs`, `POST /trust-configs/{id}/allow`, `PUT /gate-baselines/{id}` and `POST /gate-overrides` add step-up |
 
 ### Uploads are applied by the ingest worker
 
@@ -252,7 +389,10 @@ to it like any other blocking reason.
 ## Data model
 
 - `ci_trust_configs`: per tenant; `rules` JSONB (owners, repositories, refs,
-  environments, events, fork and protected-ref switches).
+  environments, events, fork and protected-ref switches); `key_source`
+  (`fetch` or `pasted`), `signing_keys` (the pasted public JWKS, 64 KiB at
+  most, validated by `oidc.ParseStaticJWKS`), `signing_keys_updated_at` and
+  `last_key_id` (migration `ci_trust_signing_keys`, RFC-051 §3.2).
 - `ci_runs`: per tenant, composite FK to the tenant's repository asset
   (cascade) and to its trust configuration (`(tenant_id, trust_config_id)`,
   `SET NULL (trust_config_id)`: deleting a configuration keeps its runs as

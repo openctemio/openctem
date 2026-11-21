@@ -23,14 +23,10 @@ import (
 
 var errUncompiledWebEventFilter = fmt.Errorf("web endpoint event filter was not compiled for a tenant")
 
-func readTx(ctx context.Context, db *DB, timeout string) (*sql.Tx, error) {
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+func readTx(ctx context.Context, db *DB, timeout time.Duration) (*sql.Tx, error) {
+	tx, err := beginRead(ctx, db.DB, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin read: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+timeout+"'"); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("set statement timeout: %w", err)
 	}
 	return tx, nil
 }

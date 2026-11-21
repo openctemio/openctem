@@ -350,7 +350,6 @@ check_httpsec_used() {
         'server/internal/infra/jira/client.go'
         'server/internal/app/auth/sso.go'
         'server/internal/app/auth/oauth.go'
-        'server/internal/app/threat/intel_service.go'
         'server/internal/app/threat/intel_refresher.go'
         'server/pkg/keycloak/validator.go'
     )

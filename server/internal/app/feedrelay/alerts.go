@@ -20,7 +20,6 @@ import (
 // are told, through the existing admin channel (e-mail and the alert
 // webhook), when
 //   - no designated relay sensor has been seen for AlertRelayOffline,
-//   - a feed's applied release is older than its alert age,
 //   - a cycle failed verification (verify_failed, pin_mismatch,
 //     rollback_refused) or the job signer refused a round.
 //
@@ -41,11 +40,9 @@ const AlertRelayOffline = time.Hour
 // alertEvery bounds how often the conditions are read.
 const alertEvery = time.Minute
 
-// alertAge is how old a feed's applied release may get before the
-// administrators are told. The vulnerability feed carries EPSS, which is
-// stale after 48 hours; the release feed is issued per release, so its age
-// says nothing (its failures and the relay going offline still alert).
-var alertAge = map[string]time.Duration{dom.FeedVulnFeed: 48 * time.Hour}
+// The age of the data a feed holds is watched in every mode, relay or
+// direct, by the freshness watch (internal/app/feedwatch), so the relay
+// alerts only on what is the relay's own: going offline and failed rounds.
 
 // alertCodes are the round failures that alert at once.
 var alertCodes = []string{dom.CodeVerifyFailed, dom.CodePinMismatch, dom.CodeRollbackRefused, dom.CodeSignerRefused}
@@ -53,8 +50,10 @@ var alertCodes = []string{dom.CodeVerifyFailed, dom.CodePinMismatch, dom.CodeRol
 // Alert conditions (the first part of an alert key).
 const (
 	AlertConditionOffline = "relay_offline"
-	AlertConditionStale   = "feed_stale"
-	AlertConditionFailed  = "round_failed"
+	// AlertConditionStale is no longer raised (the freshness watch owns data
+	// age); kept so an alert stored by an older version resolves by name.
+	AlertConditionStale  = "feed_stale"
+	AlertConditionFailed = "round_failed"
 )
 
 // Notifier tells the platform administrators (systemstatus.Notifier: the
@@ -205,7 +204,7 @@ func (s *Service) conditions(ctx context.Context, now time.Time) ([]alert, bool,
 		return nil, true, nil
 	}
 	since := st.Settings.UpdatedAt // grace after the mode or the relays changed
-	out := make([]alert, 0, 1+2*len(st.Feeds))
+	out := make([]alert, 0, 1+len(st.Feeds))
 	var lastSeen time.Time
 	for _, rs := range st.Sensors {
 		if rs.CanRelay && rs.Sensor != nil && rs.Sensor.LastSeenAt != nil && rs.Sensor.LastSeenAt.After(lastSeen) {
@@ -217,9 +216,6 @@ func (s *Service) conditions(ctx context.Context, now time.Time) ([]alert, bool,
 		out = append(out, offlineAlert(st, lastSeen))
 	}
 	for _, fs := range st.Feeds {
-		if a, ok := staleAlert(fs, since, now); ok {
-			out = append(out, a)
-		}
 		failed, err := s.repo.LatestFailed(ctx, fs.Feed)
 		if err != nil {
 			return nil, false, err
@@ -262,28 +258,6 @@ func offlineAlert(st Status, lastSeen time.Time) alert {
 			"If no sensor can reach the feeds, a super administrator can switch feed delivery to direct, or load an offline feed bundle. " +
 			"The platform never does either by itself.</p>" +
 			consoleHint}
-}
-
-func staleAlert(fs FeedStatus, since, now time.Time) (alert, bool) {
-	limit, ok := alertAge[fs.Feed]
-	if !ok {
-		return alert{}, false
-	}
-	ref := since
-	if fs.Freshness.PublishedAt != nil {
-		ref = *fs.Freshness.PublishedAt
-	}
-	if now.Sub(ref) < limit {
-		return alert{}, false
-	}
-	age := "no release has been applied"
-	if fs.Freshness.PublishedAt != nil {
-		age = fmt.Sprintf("the applied release is %d hours old", int(now.Sub(ref).Hours()))
-	}
-	return alert{key: AlertConditionStale + ":" + fs.Feed,
-		subject: "Feed relay: " + fs.Feed + " is out of date",
-		body: "<p>" + html.EscapeString(fmt.Sprintf("%s: %s (alert after %d hours).", fs.Feed, age, int(limit.Hours()))) + "</p>" +
-			"<p>" + html.EscapeString(reasonText(fs.StaleReason)) + "</p>" + consoleHint}, true
 }
 
 // reasonText is the plain sentence of a stale reason, with the fix.

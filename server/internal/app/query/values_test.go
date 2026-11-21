@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/openctemio/openctem/server/pkg/querylang"
 )
@@ -37,27 +36,21 @@ func TestValues_TimeoutListsEnumWithoutCounts(t *testing.T) {
 	}
 }
 
-func TestValues_CachePerCaller(t *testing.T) {
+// No answer outlives its request: a repeat of the same request, by the same
+// caller, runs the query again under the caller's current access (a removed
+// group or grant shows on the next call, not after a cache expiry).
+func TestValues_NoAnswerKeptBetweenRequests(t *testing.T) {
 	ex := &valuesExec{}
 	s := NewService(ex, nil, nil)
-	now := time.Now()
-	s.values.now = func() time.Time { return now }
 	in := ValuesInput{Entity: "findings", Field: "severity"}
-	u1, u2 := adminCaller("22222222-2222-2222-2222-222222222222"), adminCaller("33333333-3333-3333-3333-333333333333")
-	for range 2 {
+	u1 := adminCaller("22222222-2222-2222-2222-222222222222")
+	for i := range 3 {
 		if _, err := s.Values(context.Background(), u1, in); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if ex.calls != 1 {
-		t.Fatalf("same caller twice ran %d queries", ex.calls)
-	}
-	if _, err := s.Values(context.Background(), u2, in); err != nil || ex.calls != 2 {
-		t.Fatalf("another user was served the cache (%d runs, %v)", ex.calls, err)
-	}
-	now = now.Add(valuesCacheTTL + time.Second)
-	if _, _ = s.Values(context.Background(), u1, in); ex.calls != 3 {
-		t.Fatalf("an expired answer was served (%d runs)", ex.calls)
+		if ex.calls != i+1 {
+			t.Fatalf("call %d ran %d queries: an earlier answer was served", i+1, ex.calls)
+		}
 	}
 	// Fields that cannot be grouped, unknown or not, are one answer.
 	for _, f := range []string{"description", "nope", "text_search", "program_asset"} {

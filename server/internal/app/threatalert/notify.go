@@ -115,6 +115,16 @@ func ids(as []*threatalert.Alert) []shared.ID {
 }
 
 // whyNow is the alert's reason in one line (public facts).
+// exploitationWords says, in plain words, the reviewed advisory card
+// evidence behind the exploitation points (KEV and EPSS are named on their
+// own).
+var exploitationWords = map[string]string{
+	threatalert.BasisVendorConfirmed: "exploitation confirmed by the vendor",
+	threatalert.BasisInTheWild:       "exploited in the wild",
+	threatalert.BasisWeaponised:      "a weaponised exploit is public",
+	threatalert.BasisPoCPublic:       "a proof of concept is public",
+}
+
 func whyNow(a *threatalert.Alert) string {
 	var parts []string
 	if a.InKEV {
@@ -123,6 +133,9 @@ func whyNow(a *threatalert.Alert) string {
 			s += " (known ransomware use)"
 		}
 		parts = append(parts, s)
+	}
+	if w := exploitationWords[a.Breakdown.ExploitationBasis]; w != "" {
+		parts = append(parts, w)
 	}
 	if a.EPSS != nil && *a.EPSS >= 0.1 {
 		parts = append(parts, fmt.Sprintf("EPSS %.2f", *a.EPSS))
@@ -136,10 +149,11 @@ func whyNow(a *threatalert.Alert) string {
 	return strings.Join(parts, ", ")
 }
 
-// affects is the alert's reach in one line: counts, and names only when
-// the organization turned them on.
+// affects is the alert's reach in one line: host counts in the console's
+// words (a host that serves several ports is one), and names only when the
+// organization turned them on.
 func (p *Planner) affects(ctx context.Context, pol *policy, a *threatalert.Alert) string {
-	s := fmt.Sprintf("%d confirmed, %d possibly affected (version unknown), %d internet-facing", a.Confirmed, a.Possible, a.InternetFacing)
+	s := a.HostCounts().Sentence()
 	if !pol.settings.AssetNamesInMessages {
 		return s
 	}
@@ -147,19 +161,11 @@ func (p *Planner) affects(ctx context.Context, pol *policy, a *threatalert.Alert
 	if err != nil || len(assets) == 0 {
 		return s
 	}
-	names := make([]string, 0, tenant.MaxEmergingAssetNames)
-	for _, x := range assets {
-		if len(names) == tenant.MaxEmergingAssetNames {
-			break
-		}
-		if n := threatalert.PlainText(x.Name, 80); n != "" {
-			names = append(names, n)
-		}
-	}
+	names := threatalert.HostNames(assets, tenant.MaxEmergingAssetNames)
 	if len(names) == 0 {
 		return s
 	}
-	return s + ". Assets: " + strings.Join(names, ", ")
+	return s + ". Hosts: " + strings.Join(names, ", ")
 }
 
 func deliveryAssets(ctx context.Context, p *Planner, a *threatalert.Alert) []map[string]any {
@@ -182,14 +188,14 @@ func (p *Planner) sendImmediate(ctx context.Context, pol *policy, a *threatalert
 	body := "Why now: " + whyNow(a) + "\nAffects you: " + p.affects(ctx, pol, a) +
 		fmt.Sprintf("\nEmerging threat score: %d", a.ETS)
 	if a.Tier == threatalert.TierPossible {
-		body += "\nThe version is unknown on these assets: confirm before you patch."
+		body += "\nThe version is unknown on these hosts: confirm before you patch."
 	}
 	if p.outbox != nil {
 		params := outbox.EnqueueParams{
 			TenantID: a.TenantID, EventType: string(integration.EventTypeEmergingThreat), AggregateType: "emerging_threat",
 			Title: title, Body: body, Severity: "critical", URL: alertPath(a.ID),
 			Metadata: map[string]any{"schema": "emerging_threat.v1", "vuln_id": a.VulnID, "level": string(a.Level),
-				"tier": string(a.Tier), "ets": a.ETS, "in_kev": a.InKEV, "confirmed": a.Confirmed, "possible": a.Possible,
+				"tier": string(a.Tier), "ets": a.ETS, "in_kev": a.InKEV, "confirmed": a.Confirmed, "likely": a.Likely, "possible": a.Possible,
 				"internet_facing": a.InternetFacing, "assets": deliveryAssets(ctx, p, a)},
 		}
 		if u, err := uuid.Parse(a.ID.String()); err == nil {
@@ -200,7 +206,7 @@ func (p *Planner) sendImmediate(ctx context.Context, pol *policy, a *threatalert
 		}
 	}
 	p.notifyAdmins(ctx, a.TenantID, notificationdom.TypeEmergingThreat, notificationdom.SeverityCritical, title,
-		"Why now: "+whyNow(a)+". Affects you: "+fmt.Sprintf("%d confirmed, %d possibly affected, %d internet-facing.", a.Confirmed, a.Possible, a.InternetFacing),
+		"Why now: "+whyNow(a)+". Affects you: "+a.HostCounts().Sentence()+".",
 		alertPath(a.ID))
 }
 
@@ -208,7 +214,7 @@ func (p *Planner) sendImmediate(ctx context.Context, pol *policy, a *threatalert
 // overflow, or what quiet hours held.
 func (p *Planner) sendSummary(ctx context.Context, pol *policy, tenantID shared.ID, alerts []*threatalert.Alert, quiet bool) {
 	_ = pol
-	title := fmt.Sprintf("[Urgent] %d more emerging threats affect your assets", len(alerts))
+	title := fmt.Sprintf("[Urgent] %d more emerging threats affect your hosts", len(alerts))
 	if quiet {
 		title = fmt.Sprintf("[Urgent] %d emerging threats held during quiet hours", len(alerts))
 	}
@@ -218,7 +224,7 @@ func (p *Planner) sendSummary(ctx context.Context, pol *policy, tenantID shared.
 			lines = append(lines, fmt.Sprintf("and %d more", len(alerts)-10))
 			break
 		}
-		lines = append(lines, fmt.Sprintf("%s (score %d, %d confirmed, %d possibly affected)", threatalert.PlainText(a.VulnID, 64), a.ETS, a.Confirmed, a.Possible))
+		lines = append(lines, fmt.Sprintf("%s (score %d, %s)", threatalert.PlainText(a.VulnID, 64), a.ETS, a.HostCounts().Sentence()))
 	}
 	body := strings.Join(lines, "\n")
 	url := alertsPath + "?level=immediate"
@@ -325,7 +331,7 @@ func (p *Planner) digest(ctx context.Context, rs *runState, tenantID shared.ID) 
 // no asset names (the digest reaches external channels).
 func digestText(d threatalert.Digest, baseline bool) (string, string) {
 	if baseline {
-		title := fmt.Sprintf("Emerging threats: %d actively exploited vulnerabilities affect your assets today", d.Exploited)
+		title := fmt.Sprintf("Emerging threats: %d actively exploited vulnerabilities affect your hosts today", d.Exploited)
 		return title, title + ". From now on you are told only about new ones. Open the list to see them."
 	}
 	title := fmt.Sprintf("Emerging threats: %d urgent, %d new to review", d.Immediate, d.Digest)
@@ -335,8 +341,7 @@ func digestText(d threatalert.Digest, baseline bool) (string, string) {
 	if len(d.Top) > 0 {
 		b.WriteString("\nTop by score:")
 		for _, it := range d.Top {
-			fmt.Fprintf(&b, "\n%s (score %d, %d confirmed, %d possibly affected, %d internet-facing)",
-				threatalert.PlainText(it.VulnID, 64), it.ETS, it.Confirmed, it.Possible, it.InternetFacing)
+			fmt.Fprintf(&b, "\n%s (score %d, %s)", threatalert.PlainText(it.VulnID, 64), it.ETS, it.HostCounts().Sentence())
 		}
 	}
 	return title, b.String()
@@ -383,7 +388,7 @@ func (p *Planner) digestMail(tenantID shared.ID, d threatalert.Digest, baseline 
 	link := html.EscapeString(weblink.Console(p.webBase, alertsPath, tenantID.String()))
 	var b strings.Builder
 	if baseline {
-		fmt.Fprintf(&b, "<p>%d actively exploited vulnerabilities affect assets you can see today. From now on you are told only about new ones.</p>", d.Exploited)
+		fmt.Fprintf(&b, "<p>%d actively exploited vulnerabilities affect hosts you can see today. From now on you are told only about new ones.</p>", d.Exploited)
 	} else {
 		fmt.Fprintf(&b, "<p>Since the last digest: %d urgent, %d to review, %d listed only, %d resolved; %d in the CISA KEV catalog.</p>",
 			d.Immediate, d.Digest, d.Listed, d.Resolved, d.KEV)
@@ -391,8 +396,8 @@ func (p *Planner) digestMail(tenantID shared.ID, d threatalert.Digest, baseline 
 	if len(d.Top) > 0 {
 		b.WriteString("<ul>")
 		for _, it := range d.Top {
-			fmt.Fprintf(&b, "<li>%s: score %d, %d confirmed, %d possibly affected, %d internet-facing</li>",
-				html.EscapeString(threatalert.PlainText(it.Title, 200)), it.ETS, it.Confirmed, it.Possible, it.InternetFacing)
+			fmt.Fprintf(&b, "<li>%s: score %d, %s</li>",
+				html.EscapeString(threatalert.PlainText(it.Title, 200)), it.ETS, html.EscapeString(it.HostCounts().Sentence()))
 		}
 		b.WriteString("</ul>")
 	}

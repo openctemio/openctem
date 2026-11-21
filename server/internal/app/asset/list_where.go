@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/datascope"
 	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
 	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
@@ -46,6 +47,9 @@ func (s *AssetService) ListAssetsWhere(ctx context.Context, c ListCaller, q List
 	if err != nil {
 		return assetdom.WhereResult{}, err
 	}
+	// The per-row counts follow the same pentest member rule as the filter
+	// and the sort compiled above.
+	ctx = shared.WithFindingViewer(ctx, shared.FindingViewer{UserID: listViewerID(c), Admin: c.IsAdmin})
 	return lister.ListWhere(ctx, assetdom.WhereQuery{
 		Where: w, Properties: q.Properties, Page: q.Spec.Page, PerPage: q.Spec.PerPage, Keyset: q.Keyset, After: q.After,
 	})
@@ -94,4 +98,11 @@ func (s *AssetService) NetworkCounts(ctx context.Context, c ListCaller, spec *fi
 		return nil, false, err
 	}
 	return r.NetworkCounts(ctx, w)
+}
+
+// listViewerID is the caller's user id; the zero id (a member of no
+// campaign) when there is none or it does not parse.
+func listViewerID(c ListCaller) shared.ID {
+	id, _ := shared.IDFromString(c.UserID)
+	return id
 }

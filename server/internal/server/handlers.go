@@ -915,7 +915,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		// A test e-mail goes out through the real SMTP server: a handful a minute is plenty.
-		AdminEmailTestLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 5}, log),
+		AdminEmailTestLimiter:       middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 5}, log),
+		AdminDestinationTestLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 10}, log),
 		// Searching and opening accounts: generous for a person, a wall for a script.
 		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
@@ -1098,15 +1099,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			frontendOrigin(cfg.OAuth.FrontendCallbackURL),
 			log,
 		)
-		// SP entity ID / ACS URL come from APP_URL, never from client headers.
-		handlers.SAML.SetPublicURL(cfg.App.URL)
+		// SP entity ID / ACS URL come from configuration, never from a
+		// request (saml_public_url.go).
+		handlers.SAML.SetPublicURL(samlPublicURL(cfg, log))
 		handlers.SAML.SetRefreshDuration(cfg.Auth.RefreshTokenDuration)
 		handlers.SAML.SetAuditService(svc.Audit)
 		// Admin-console SAML changes wait for an owner of the organization.
 		handlers.SAML.SetChangeApproval(svc.SSOChange)
-		if cfg.App.URL == "" && cfg.IsProduction() {
-			log.Warn("saml: APP_URL is not set; SP URLs fall back to the request Host (forwarded headers only from SERVER_TRUSTED_PROXIES). Set APP_URL to the public API origin.")
-		}
 	}
 
 	// AUTHZ-07: record an audit event whenever plaintext leaked-secret values
@@ -2067,6 +2066,8 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
 	}
 	admin.SetRefusalService(ciSvc)
+	admin.SetRefusalActions(ciSvc)
+	admin.SetNewRepositoryService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	if svc.ImportMapping != nil {
 		runner.SetMappingResolver(svc.ImportMapping)
@@ -2128,6 +2129,14 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
+	// Refusals before verification: a bounded per-issuer record the
+	// organization's administrators see (never the tenant audit log).
+	ciSvc.SetUnverifiedRefusalStore(repos.CIRun)
+	// All-projects trust configurations record new repositories here.
+	ciSvc.SetNewRepositoryStore(repos.CIRun)
+	// The one-click "allow" of a refusal needs the refusal's project to be
+	// approved on an all-projects configuration (review R2 of #4126).
+	ciSvc.SetAllowRepositoryGate(cirunapp.ApprovedRepositoryGate)
 	if svc.Suppression != nil {
 		ciSvc.SetSuppressionRules(svc.Suppression)
 	}
@@ -2416,6 +2425,9 @@ func newUserHandler(svc *Services, repos *Repositories, v *validator.Validator, 
 	if svc.AccountDeletion != nil {
 		h.SetAccountDeletion(svc.AccountDeletion)
 	}
+	if svc.Auth != nil {
+		h.SetMembershipAdmission(svc.Auth)
+	}
 	return h
 }
 
@@ -2461,6 +2473,9 @@ func (p platformRoleRoster) NotifyRosterChange(ctx context.Context, actor *admin
 // background runner behind its admin sync endpoint.
 func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logger.Logger) *handler.ThreatIntelHandler {
 	h := handler.NewThreatIntelHandler(deps.Services.ThreatIntel, v, log).SetDataScope(deps.Services.DataScope)
+	if deps.Services.FeedWatch != nil {
+		h.SetFreshness(deps.Services.FeedWatch)
+	}
 	if runner, configured := newFeedRunner(deps, log); runner != nil {
 		h.SetFeedRunner(runner, configured)
 	}

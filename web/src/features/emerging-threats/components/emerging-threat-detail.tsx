@@ -8,27 +8,20 @@
 
 import { ArrowLeft } from 'lucide-react'
 import Link from '@/components/link'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageHeader } from '@/features/shared/components/page-header'
+import { FeedDataAsOf } from '@/features/threat-intel/components/feed-freshness-banner'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
-import type { EmergingThreatAsset, EmergingThreatDetail, EtsBreakdown } from '../types'
+import type { EmergingThreatDetail, EtsBreakdown } from '../types'
+import { AffectedAssets } from './affected-assets'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
 import { EtsCell, LevelBadge, StateBadge, useEventDetail, useEventKindLabel } from './bits'
 
@@ -71,6 +64,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
         description={
           <span className="flex flex-wrap items-center gap-2">
             {alert.title && <span>{alert.title}</span>}
+            <FeedDataAsOf className="text-muted-foreground" />
           </span>
         }
       >
@@ -124,7 +118,7 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
       )}
 
       <Timeline alert={alert} />
-      <AffectedAssets alert={alert} />
+      <AffectedAssets groups={alert.asset_groups ?? []} />
     </>
   )
 }
@@ -247,108 +241,6 @@ function Timeline({ alert }: { alert: EmergingThreatDetail }) {
               )
             })}
           </ol>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function AffectedAssets({ alert }: { alert: EmergingThreatDetail }) {
-  const { t } = useTranslation()
-  const confirmed = alert.assets.filter((a) => a.tier === 'confirmed' || a.tier === 'likely')
-  const possible = alert.assets.filter((a) => a.tier === 'possible')
-  return (
-    <PageStack>
-      <AssetGroup
-        title={t('emergingThreats.assets.confirmed')}
-        assets={confirmed}
-        empty={t('emergingThreats.assets.noneConfirmed')}
-      />
-      {possible.length > 0 && (
-        <AssetGroup title={t('emergingThreats.assets.possible')} assets={possible} />
-      )}
-    </PageStack>
-  )
-}
-
-function AssetGroup({
-  title,
-  assets,
-  empty,
-}: {
-  title: string
-  assets: EmergingThreatAsset[]
-  empty?: string
-}) {
-  const { t } = useTranslation()
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {title} <span className="text-muted-foreground">({assets.length})</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {assets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('emergingThreats.assets.asset')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.exposure')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.criticality')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.product')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.version')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.finding')}</TableHead>
-                <TableHead>{t('emergingThreats.assets.task')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {assets.map((a) => (
-                <TableRow key={`${a.asset_id}-${a.product}-${a.version_seen}`}>
-                  <TableCell>
-                    <Link href={`/assets/${a.asset_id}`} className="font-medium hover:underline">
-                      {a.asset_name}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {a.tier === 'likely' ? t('emergingThreats.assets.likely') : a.asset_type}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    {a.internet_facing ? (
-                      <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {a.criticality ? t(`criticality.${a.criticality}`, a.criticality) : '—'}
-                  </TableCell>
-                  <TableCell>{a.product || '—'}</TableCell>
-                  <TableCell className="font-mono text-xs">{a.version_seen || '—'}</TableCell>
-                  <TableCell>
-                    {a.finding_id ? (
-                      <Link href={`/findings/${a.finding_id}`} className="hover:underline">
-                        {t(`findings.status.${a.finding_status}`, a.finding_status)}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {a.task_id ? (
-                      <Link href={`/remediation/tasks/${a.task_id}`} className="hover:underline">
-                        {t('emergingThreats.assets.openTask')}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         )}
       </CardContent>
     </Card>

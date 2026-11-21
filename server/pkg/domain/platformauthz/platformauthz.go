@@ -69,6 +69,10 @@ const (
 	// SettingsScopeGuardrailsWrite: the blocked target names policy and its
 	// per-organization exceptions (RFC-154). Owner only.
 	SettingsScopeGuardrailsWrite Permission = "platform.settings.scope_guardrails"
+	// SettingsNetworkWrite: the private network destinations the platform's
+	// outbound requests may reach, and the destination test. Owner only: an
+	// opened range is open to every organization.
+	SettingsNetworkWrite Permission = "platform.settings.network"
 
 	AnnouncementsWrite Permission = "platform.announcements.write"
 
@@ -125,6 +129,7 @@ var catalog = []Definition{
 	{SettingsMFAWrite, false, "The platform two-factor floor every organization is held to"},
 	{SettingsAIWrite, false, "Platform AI and the organizations' AI policy"},
 	{SettingsScopeGuardrailsWrite, false, "The blocked target names policy and the organizations' exceptions to the government and military rule"},
+	{SettingsNetworkWrite, false, "The private network destinations the platform may reach (open to every organization), and the destination test"},
 	{AnnouncementsWrite, false, "Publish or end an announcement"},
 	{SensorsRead, true, "Shared sensors, scan zones, the job queue and the scanning settings"},
 	{SensorsJobsRead, false, "Open one shared-sensor job's details"},

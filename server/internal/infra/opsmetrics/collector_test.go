@@ -236,3 +236,22 @@ openctem_feed_failing{source="vulnfeed"} 1
 		t.Fatal(err)
 	}
 }
+
+// The freshness gauge reports every known code (0 when none) and drops any
+// other value the stored state might hold.
+func TestCollectorReportsFreshnessAlerts(t *testing.T) {
+	snap := snapshot()
+	snap.FreshnessAlerts = map[string]int{"data_stale": 2, "newest_record_old": 1, "made_up": 9}
+	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snap, nil }, Config{}, nil)
+	if err := testutil.CollectAndCompare(c, strings.NewReader(`
+# HELP openctem_feed_freshness_alerts Open freshness conditions of the platform's vulnerability data, by code (data_stale, import_failing, import_refused, newest_record_old, volume_low); 0 when none
+# TYPE openctem_feed_freshness_alerts gauge
+openctem_feed_freshness_alerts{code="data_stale"} 2
+openctem_feed_freshness_alerts{code="import_failing"} 0
+openctem_feed_freshness_alerts{code="import_refused"} 0
+openctem_feed_freshness_alerts{code="newest_record_old"} 1
+openctem_feed_freshness_alerts{code="volume_low"} 0
+`), "openctem_feed_freshness_alerts"); err != nil {
+		t.Fatal(err)
+	}
+}

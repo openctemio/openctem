@@ -1,6 +1,7 @@
 /**
- * The account-only session: an access token without an organization, for a
- * signed-in person who has none they can open (api RFC-141). Server only:
+ * The account-only session: an access token without an organization, which
+ * any signed-in person can have (api RFC-141): one with no organization, and a
+ * member whose organization does not admit the session yet. Server only:
  * called from Server Actions and the refresh route, never from the browser.
  *
  * The token reaches only the account routes (profile, security, sessions,
@@ -18,7 +19,7 @@ import { rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
 export type AccountSessionResult =
   | { ok: true; accessToken: string; refreshToken?: string; expiresIn: number }
-  | { ok: false; code: 'HAS_ORGANIZATION' | 'SESSION' | 'ERROR' }
+  | { ok: false; code: 'SESSION' | 'ERROR' }
 
 const WEEK = 7 * 24 * 60 * 60
 
@@ -34,7 +35,6 @@ export async function requestAccountToken(refreshToken: string): Promise<Account
   } catch {
     return { ok: false, code: 'ERROR' }
   }
-  if (response.status === 409) return { ok: false, code: 'HAS_ORGANIZATION' }
   if (response.status === 401) return { ok: false, code: 'SESSION' }
   if (!response.ok) return { ok: false, code: 'ERROR' }
   const body = (await response.json().catch(() => null)) as {

@@ -281,6 +281,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  notification_group_id  query  []string  false  "notification group id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
 // @Param  retired_source_only  query  boolean  false  "retired source only equals"

@@ -10,6 +10,7 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
 	cryptopkg "github.com/openctemio/openctem/server/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -94,11 +95,30 @@ func TestDBChain_AuditRowsAreAppendOnly(t *testing.T) {
 		_, err := db.ExecContext(ctx, q)
 		assertInsufficientPrivilege(t, q, err)
 	}
-	// A rebaseline transaction may not move a row or change its version.
-	err := tamperChain(ctx, db, `UPDATE audit_log_chain SET hash_version = 1 WHERE tenant_id = $1`, tenant.String())
+	// Even the schema owner inside a declared rebaseline (what
+	// audit_chain_rebaseline_apply does) may not move a row or change its
+	// version.
+	err := ownerRebaselineUpdate(ctx, t, `UPDATE audit_log_chain SET hash_version = 1 WHERE tenant_id = $1`, tenant.String())
 	assertInsufficientPrivilege(t, "hash_version under rebaseline", err)
-	err = tamperChain(ctx, db, `UPDATE audit_log_chain SET tenant_id = gen_random_uuid() WHERE tenant_id = $1`, tenant.String())
+	err = ownerRebaselineUpdate(ctx, t, `UPDATE audit_log_chain SET tenant_id = gen_random_uuid() WHERE tenant_id = $1`, tenant.String())
 	assertInsufficientPrivilege(t, "tenant_id under rebaseline", err)
+}
+
+// ownerRebaselineUpdate runs q as the schema owner (DATABASE_MIGRATE_URL) in a
+// transaction that declares a rebaseline, as audit_chain_rebaseline_apply
+// does, and rolls it back.
+func ownerRebaselineUpdate(ctx context.Context, t *testing.T, q string, args ...any) error {
+	t.Helper()
+	tx, err := testdb.OpenMigrator(t).BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.audit_chain_op = 'rebaseline'`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = tx.ExecContext(ctx, q, args...)
+	return err
 }
 
 // Deleting a user or an organization no longer rewrites their audit rows: the
@@ -152,7 +172,7 @@ func TestDBChain_V2ForgeryIsUnexplained(t *testing.T) {
 	}
 
 	chain := readChain(ctx, t, db, tenant)
-	// An attacker who can declare a rebaseline rewrites a middle row's hash.
+	// Someone with owner rights rewrites a middle row's hash.
 	if err := tamperChain(ctx, db, `UPDATE audit_log_chain SET hash = repeat('a', 64) WHERE audit_log_id = $1`,
 		chain[1].AuditLogID); err != nil {
 		t.Fatalf("tamper: %v", err)

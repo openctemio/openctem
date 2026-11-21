@@ -33,7 +33,7 @@ sequenceDiagram
     else several
         W->>W: /select-tenant, then POST /token
     else none open
-        W->>A: POST /account-token - 409 when an open membership exists
+        W->>A: POST /account-token
         A-->>W: access token without tenant claim, /welcome
     end
     A->>A: refreshForMint, membership (403 ORGANIZATION_ACCESS_DENIED), policy chain incl. organizationOpen (403 ORGANIZATION_SUSPENDED)
@@ -60,11 +60,18 @@ reset only by a complete sign-in. A locked account still answers
 `POST /api/v1/auth/account-token` with the refresh token (httpOnly cookie plus the CSRF pair, or
 `refresh_token` in the body). It answers:
 
-- `200 {access_token, token_type, expires_in}` and a rotated refresh cookie, when the account has
-  no organization it can open (none, or every one suspended or closed);
-- `409` when the account can open an organization: exchange with `POST /auth/token` instead;
+- `200 {access_token, token_type, expires_in}` and a rotated refresh cookie, for any signed-in
+  account: one with no organization, and a member as well (since 2026-11-18). A member whose
+  organization does not admit the session yet (two-factor authentication not set up, its own
+  identity provider required, suspended) keeps a usable token for their account and the step that
+  admits them, instead of being signed out. The token reaches only the allow-list, so it skips none
+  of an organization's rules: those apply when the session asks `POST /auth/token` for that
+  organization's token;
 - `401` for a refresh token that is unknown, spent (the family is revoked), expired, or for a
   blocked account.
+
+The access token carries the session id: signing out, or revoking the session, ends the account
+token and every organization token of that session together.
 
 Social and SSO sign-in return a token without a tenant at sign-in; the allow-list applies to it the
 same way.
@@ -80,6 +87,39 @@ will not help.
 To add a route: it must hold no tenant data and act only on the caller's own account. Add it to the
 list in the same pull request; `routes/tenantless_allowlist_test.go` fails until the list and the
 router agree.
+
+## Memberships
+
+`GET /users/me/tenants` (account and organization tokens) lists the caller's organizations. Each
+row carries `admission`: what that organization answers the caller's current session, worked out
+by the same rules as the token request (`AuthService.admitSession`: SSO required, identity
+provider binding, two-factor authentication, verified e-mail, personal-account policy, outside
+privilege, organization open), without minting or spending anything:
+
+| `admission` | Next step the account space shows |
+|---|---|
+| `open` | Open the organization |
+| `MFA_ENROLLMENT_REQUIRED` | Set up two-step verification (`/two-factor-setup?org=`) |
+| `MFA_IDP_EVIDENCE_REQUIRED`, `SSO_REQUIRED` | Sign in through the organization's identity provider |
+| `OWN_SIGN_IN_REQUIRED` | Sign in with the account's own sign-in |
+| `EMAIL_NOT_VERIFIED` | Verify the e-mail address |
+| `ORGANIZATION_SUSPENDED` | Nothing to do; the organization is suspended |
+
+Each row also carries `requires`, what the organization asks of every sign-in of this member
+whatever the session, from its settings and the member's role: `two_factor` (two-factor
+authentication required) and `identity_provider` (its own SSO enforced; the owner keeps a
+password break-glass). The account space shows it before the person opens the organization.
+
+The organizations evaluated are the active memberships of the token's user; the session is the
+token's own session (another person's or an unknown session gets no `admission`). Pending
+invitations are listed by `POST /auth/onboarding/options`.
+
+`POST /api/v1/me/memberships/{id}/leave` (account route, step-up) leaves one of the
+caller's organizations by id: the way out of one that does not admit the session, where
+`POST /organization/leave` (which needs that organization's token) is out of reach. It runs the
+same offboarding and audit (`member.left`, in that organization), refuses the only owner and a
+member who still owns work (409), and answers 404 for any organization the caller is not a member
+of.
 
 ## Invitations
 
@@ -110,16 +150,30 @@ account-only token under each self-hosted setting and expects 403.
 
 ## Web
 
-- Sign-in with no organization calls `POST /auth/account-token` and lands on `/welcome`. The web
-  keeps an `app_account_only` cookie as a routing hint (the API trusts only the token).
+- Password sign-in with no organization calls `POST /auth/account-token` and lands on `/welcome`.
+  A social sign-in lands on `/auth/continue` (web `features/auth/lib/sign-in-landing.ts`), which
+  decides from the memberships, never from a refusal: it takes the account token, reads
+  `GET /users/me/tenants` with it, then
+  - no organization the person can open: `/welcome`, or the invitation page they came from;
+  - one: that organization's token, and the page they asked for; when the organization requires
+    two-factor authentication this session has not proven, `/two-factor-setup?org=…` (the session
+    step, then the organization);
+  - several: `/select-tenant`.
+  The web keeps an `app_account_only` cookie as a routing hint (the API trusts only the token).
 - `/welcome` lists invitations (accept, decline), the organization of a verified domain, "Create an
   organization" when allowed, and links to profile, security, sessions, sign-in methods and
-  preferences.
+  preferences. Joining an organization that requires two-factor authentication goes to its setup.
 - The proxy sends every page of an account-only session except `/welcome`, `/account`,
-  `/account/security` and `/account/preferences` to `/welcome`. Those pages render in a slim shell
-  with no tenant providers.
-- The browser's refresh renews the account-only token while no organization cookie exists.
-- The API client routes `401 TENANT_REQUIRED` to `/welcome` once.
+  `/account/security`, `/account/preferences` and `/two-factor-setup` to `/welcome`. The account
+  pages render in a slim shell with no tenant providers.
+- The browser's refresh renews the account-only token whenever no organization cookie exists.
+- When the browser ends a session (`web/src/lib/auth/refresh-failure.ts`): only when the refresh
+  is refused with 401 (unknown, spent, revoked or expired refresh token, ended session) or the
+  session came from another organization's identity provider. An organization that requires
+  two-factor authentication opens `/two-factor-setup`; a suspended organization or one that
+  requires its own sign-in opens `/welcome`; a server or network failure changes nothing. A route's
+  401 alone never signs anybody out: the client refreshes first, and `401 TENANT_REQUIRED` after
+  that sends the person to `/welcome` once.
 
 ## What does not change
 

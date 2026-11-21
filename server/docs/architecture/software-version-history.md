@@ -69,7 +69,15 @@ heuristic.
    unparseable one, a coarser compatible version ("7.1" against 7.1.3), the
    same upstream version with another distribution build (a back-port is not
    a version change).
-3. **First sighting:** the reading is established.
+3. **First sighting:** the reading is established. A lone sighting without a
+   version (the product seen with its version hidden) is established too: it
+   holds the place.
+   **A version replaces a version-less row at once.** When the only
+   established row has no usable version, the first reading of any version
+   (any class) is established and the version-less row is superseded at that
+   reading's time; nothing known is displaced. While a known version is
+   established, a later version-less sighting only adds history to the
+   superseded row and never brings it back.
 4. **A new version is a candidate.** It joins or replaces the established
    set only when
    - it is **strong**: class `sbom` or `inventory`, or a `probe` at

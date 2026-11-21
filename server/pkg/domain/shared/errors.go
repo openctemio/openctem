@@ -17,6 +17,10 @@ var (
 	ErrConflict       = errors.New("conflict")
 	ErrValidation     = errors.New("validation error")
 	ErrNotImplemented = errors.New("not implemented")
+	// ErrQueryTimeout: an interactive read ran past its statement timeout
+	// (a filter, search or grouping too broad to finish in time). The API
+	// answers 503 QUERY_TIMEOUT so the person narrows the filter.
+	ErrQueryTimeout = errors.New("query took too long")
 )
 
 // DomainError represents a domain-specific error.

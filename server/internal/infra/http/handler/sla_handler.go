@@ -386,6 +386,50 @@ func (h *SLAHandler) Update(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toSLAPolicyResponse(p))
 }
 
+// SLADefaultPreviewResponse is what making a policy the default would do.
+type SLADefaultPreviewResponse struct {
+	// AlreadyDefault: the policy is the default now; the counts are 0.
+	AlreadyDefault bool `json:"already_default"`
+	// Governed: open findings the default governs (no active policy of their asset).
+	Governed int `json:"governed"`
+	// Earlier: findings whose deadline would be earlier.
+	Earlier int `json:"earlier"`
+	// BecomeOverdue: findings not overdue today that would be past the new deadline now.
+	BecomeOverdue int `json:"become_overdue"`
+	// Later: findings whose new deadline would be later; they keep the current one.
+	Later int `json:"later"`
+}
+
+// PreviewDefault handles GET /api/v1/sla-policies/{id}/default-preview
+// @Summary      Preview making an SLA policy the default
+// @Description  Counts the open findings the default governs whose deadline would be earlier, and those that would be overdue, if this policy became the default. Read-only; nothing is changed.
+// @Tags         SLA Policies
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "SLA Policy ID"
+// @Success      200  {object}  SLADefaultPreviewResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Router       /sla-policies/{id}/default-preview [get]
+func (h *SLAHandler) PreviewDefault(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	policyID := r.PathValue("id")
+	if policyID == "" {
+		apierror.BadRequest("Policy ID is required").WriteJSON(w)
+		return
+	}
+	p, err := h.service.PreviewMakeDefault(r.Context(), policyID, tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(SLADefaultPreviewResponse{
+		AlreadyDefault: p.AlreadyDefault, Governed: p.Governed, Earlier: p.Earlier,
+		BecomeOverdue: p.BecomeOverdue, Later: p.Later,
+	})
+}
+
 // Delete handles DELETE /api/v1/sla-policies/{id}
 // @Summary      Delete SLA policy
 // @Description  Deletes an SLA policy

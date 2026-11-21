@@ -179,7 +179,17 @@ var tenantIsolationRegistry = map[string]isolationDecl{ //nolint:gochecknoglobal
 // TestName" (a cross-organization test that exists) or "scope: <why an id
 // alone is safe>".
 var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // registry
-	"PUT /api/v1/ai/agents/{id}/executor": "test: TestAIWorker_ChangeExecutor_DB",
+	"GET /api/v1/assets/{id}/addresses":                             "test: TestNameAddresses_DataScopeAndTenant",
+	"POST /api/v1/ci/trust-configs/{id}/allow":                      "test: TestCIRefusal_WorkflowValueAndAllow",
+	"POST /api/v1/findings/bulk-dismissals/{id}/reopen":             "test: TestBulkDismiss_Undo_DB",
+	"GET /api/v1/sla-policies/{id}/default-preview":                 "test: TestSLADefaultPreview_DB",
+	"PUT /api/v1/ai/agents/{id}/executor":                           "test: TestAIWorker_ChangeExecutor_DB",
+	"GET /api/v1/ci/trust-configs/{id}/new-repositories":            "test: TestCIAllProjects_PendingApproveBlock",
+	"POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions": "test: TestCIAllProjects_PendingApproveBlock",
+	"POST /api/v1/approvals/batches/{id}/self-approve":              "test: TestGroupException_SoleOwnerSelfApprove_DB",
+	"POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject": "test: TestGroupException_LeaveOutMember_DB",
+	"GET /api/v1/assets/{id}/web-paths/":                            "test: TestWebPaths_TenantAndDataScope_DB",
+	"POST /api/v1/me/memberships/{id}/leave":                        "scope: the id only selects the caller's own membership (GetMembership with the token's user and that organization); any organization the caller is not a member of answers 404 and nothing is read or changed",
 }
 
 // baselineCap is the number of id routes the baseline held when the guard was

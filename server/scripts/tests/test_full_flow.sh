@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# OpenCTEM OSS - Full Flow Test Script
+# OpenCTEM - Full Flow Test Script
 # =============================================================================
 # This script tests a complete user flow:
 # 1. Register a new user
@@ -38,7 +38,7 @@ TEST_TENANT_SLUG="test-tenant-${TIMESTAMP}"
 TEST_TENANT_NAME="Test Tenant ${TIMESTAMP}"
 
 echo "=============================================="
-echo "OpenCTEM OSS - Full Flow Test"
+echo "OpenCTEM - Full Flow Test"
 echo "=============================================="
 echo "API URL: ${API_URL}"
 echo "Test Email: ${TEST_EMAIL}"

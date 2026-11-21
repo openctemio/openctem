@@ -23,7 +23,7 @@ func (r *fedLoginAuditRepo) Create(_ context.Context, l *audit.AuditLog) error {
 // A federated sign-in (here the SAML tail) is audited as auth.login with its
 // method, and its session records the browser's address and user agent. It
 // used to write no audit event at all and store an empty device, so SSO
-// sign-ins (the main path for enterprise organizations) were invisible in
+// sign-ins (the main path for large organizations) were invisible in
 // the audit log and showed a blank device under My account → Sessions.
 func TestCompleteFederatedLogin_AuditedWithClientInfo(t *testing.T) {
 	sessions := newSSOmockSessionRepo()

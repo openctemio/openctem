@@ -1,6 +1,12 @@
 package integration
 
-import "github.com/openctemio/openctem/server/pkg/notifymsg"
+import (
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
+)
 
 // ============================================================================
 // SEVERITY TYPES
@@ -197,6 +203,9 @@ const (
 	// a burst of refused CI token exchanges (once while it lasts).
 	EventTypeCIBreakGlass    EventType = "ci.break_glass"
 	EventTypeCITokenRefusals EventType = "ci.token_refusals"
+	// EventTypeCINewRepositoryGroup: a project of a group not seen before
+	// asks to send CI results to an all-projects trust configuration.
+	EventTypeCINewRepositoryGroup EventType = "ci.new_repository_group"
 	// EventTypeCIUngatedMerge: a pull request merged into the default branch
 	// without a passing gate verdict (RFC-077).
 	EventTypeCIUngatedMerge EventType = "ci.ungated_merge"
@@ -298,6 +307,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
 		{Type: EventTypeCIBreakGlass, Category: EventCategorySensor, Label: "CI Break-glass", Description: "A break-glass was created, or let a failing CI run pass", RequiredModule: ModuleScans},
 		{Type: EventTypeCITokenRefusals, Category: EventCategorySensor, Label: "CI Token Refusals", Description: "Many CI token exchanges were refused in a short time", RequiredModule: ModuleScans},
+		{Type: EventTypeCINewRepositoryGroup, Category: EventCategorySensor, Label: "CI New Group", Description: "A project of a GitLab group not seen before asks to send CI results (all-projects trust)", RequiredModule: ModuleScans},
 		{Type: EventTypeCIUngatedMerge, Category: EventCategorySensor, Label: "CI Ungated Merge", Description: "A pull request was merged into the default branch without a passing CI gate verdict", RequiredModule: ModuleScans},
 	}
 }
@@ -376,6 +386,7 @@ func DefaultEnabledEventTypes() []EventType {
 		EventTypeCIBreakGlass,
 		EventTypeCITokenRefusals,
 		EventTypeCIUngatedMerge,
+		EventTypeCINewRepositoryGroup,
 	}
 }
 
@@ -421,7 +432,7 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// The CI signals carry a constant severity chosen by the CI alert job,
 	// not a finding's severity.
 	case EventTypeScanScheduleMissed, EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
-		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
+		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge, EventTypeCINewRepositoryGroup:
 		return false
 	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
 	// of an approaching deadline, whatever the finding's severity. It is opt-in
@@ -445,6 +456,20 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+// Groupable reports whether events of this type about one finding may be
+// delivered grouped (docs/architecture/notification-system.md, "Grouped
+// alerts"). Approvals, digests, sensor, CI and emerging-threat messages are
+// one decision or one summary each and are never grouped.
+func Groupable(eventType EventType) bool {
+	switch MapLegacyEventType(eventType) {
+	case EventTypeNewFinding, EventTypeFindingPriorityEscalated, EventTypeFindingFixed,
+		EventTypeFindingReopened, EventTypeFindingAssigned, EventTypeSLABreach, EventTypeSLAWarning:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -565,8 +590,53 @@ type NotificationExtension struct {
 	messageTemplate string
 	detailLevel     notifymsg.Level
 
-	// Rate limiting
+	// Stored and returned, never enforced: grouping (below) is what keeps a
+	// burst from becoming a message per event.
 	minIntervalMinutes int
+
+	// grouping: similar alerts within a window reach the channel as one
+	// message (docs/architecture/notification-system.md, "Grouped alerts").
+	grouping Grouping
+}
+
+// Grouping is how a channel groups similar alerts.
+type Grouping struct {
+	// Enabled groups alerts of the same kind about findings that arrive
+	// within Window into one message.
+	Enabled bool
+	// WindowMinutes is how long a group collects (MinGroupWindowMinutes to
+	// MaxGroupWindowMinutes).
+	WindowMinutes int
+	// UrgentAtOnce sends a critical or known-exploited alert on its own at
+	// once (a few per window); the rest are grouped.
+	UrgentAtOnce bool
+}
+
+// Group window bounds and default, in minutes.
+const (
+	MinGroupWindowMinutes     = 1
+	MaxGroupWindowMinutes     = 60
+	DefaultGroupWindowMinutes = 2
+)
+
+// DefaultGrouping is the setting of a new channel: grouped, two minutes,
+// urgent alerts at once.
+func DefaultGrouping() Grouping {
+	return Grouping{Enabled: true, WindowMinutes: DefaultGroupWindowMinutes, UrgentAtOnce: true}
+}
+
+// Window is the group window as a duration, clamped to the bounds.
+func (g Grouping) Window() time.Duration {
+	m := min(max(g.WindowMinutes, MinGroupWindowMinutes), MaxGroupWindowMinutes)
+	return time.Duration(m) * time.Minute
+}
+
+// ValidateGroupWindow refuses a window outside the bounds.
+func ValidateGroupWindow(minutes int) error {
+	if minutes < MinGroupWindowMinutes || minutes > MaxGroupWindowMinutes {
+		return fmt.Errorf("%w: group window must be %d to %d minutes", shared.ErrValidation, MinGroupWindowMinutes, MaxGroupWindowMinutes)
+	}
+	return nil
 }
 
 // NewNotificationExtension creates a new notification extension with defaults.
@@ -577,6 +647,7 @@ func NewNotificationExtension(integrationID ID) *NotificationExtension {
 		enabledEventTypes:  DefaultEnabledEventTypes(),
 		detailLevel:        notifymsg.DefaultLevel,
 		minIntervalMinutes: 5,
+		grouping:           DefaultGrouping(),
 	}
 }
 
@@ -616,6 +687,7 @@ func ReconstructNotificationExtension(
 		messageTemplate:    messageTemplate,
 		detailLevel:        level,
 		minIntervalMinutes: minIntervalMinutes,
+		grouping:           DefaultGrouping(),
 	}
 }
 
@@ -633,6 +705,14 @@ func (n *NotificationExtension) EnabledEventTypes() []EventType { return n.enabl
 func (n *NotificationExtension) MessageTemplate() string        { return n.messageTemplate }
 func (n *NotificationExtension) DetailLevel() notifymsg.Level   { return n.detailLevel }
 func (n *NotificationExtension) MinIntervalMinutes() int        { return n.minIntervalMinutes }
+func (n *NotificationExtension) Grouping() Grouping             { return n.grouping }
+
+// SetGrouping sets how the channel groups similar alerts. The window is
+// clamped to its bounds (callers validate a requested value first).
+func (n *NotificationExtension) SetGrouping(g Grouping) {
+	g.WindowMinutes = min(max(g.WindowMinutes, MinGroupWindowMinutes), MaxGroupWindowMinutes)
+	n.grouping = g
+}
 
 // Backward compatibility getters (derived from enabledSeverities)
 func (n *NotificationExtension) NotifyOnCritical() bool { return n.IsSeverityEnabled(SeverityCritical) }

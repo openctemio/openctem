@@ -31,6 +31,7 @@ func goldenCards() map[string]notifymsg.Card {
 	minimal := notifymsg.Build(notifymsg.SampleInput("new_exposure", notifymsg.LevelMinimal, "en", goldenBase))
 	templated, _ := notifymsg.ApplyTemplate(exposure, "{asset} needs a look: {what}\nOwner team: platform")
 	return map[string]notifymsg.Card{
+		"group_standard_en":    sampleGroupCard(14),
 		"exposure_standard_en": exposure,
 		"finding_full_vi":      finding,
 		"exposure_minimal_en":  minimal,

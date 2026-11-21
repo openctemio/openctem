@@ -29,7 +29,7 @@ and get one answer.
 | D6 | Proof wording: `proven` only from a deterministic check or a person with evidence. Exposure chains and attack paths are labelled "possible path, not proven" until a verdict exists. |
 | D7 | An out-of-band interaction collector for blind proofs is a platform-owned sensor role, built only after its own threat model. |
 | D8 | Learning priors: per organization in P1; aggregated counts across organizations (no identifiers, opt-out) may come later, never on self-managed installs unless enabled. |
-| D9 | The read path and the propose contract are in Community; Enterprise builds estate analytics on the public extension points. |
+| D9 | The read path and the propose contract are in the core; further analytics can be built on the public extension points. |
 | D10 | Clean-room implementation: our own design and code only. |
 | D11 | Names: the feature is "Exploration", the unit a "lead"; UI rows "Next steps" and "How we found this". |
 | D12 | Nothing is purged: leads, links and verdicts are kept. |

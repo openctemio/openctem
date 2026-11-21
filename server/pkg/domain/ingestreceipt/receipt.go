@@ -261,21 +261,24 @@ type Counts struct {
 
 // Receipt is the stored receipt.
 type Receipt struct {
-	ID               shared.ID
-	TenantID         shared.ID
-	SourceKind       SourceKind
-	SourceRef        string
-	ActorUserID      *shared.ID
-	ToolName         string
-	Format           string
-	FilenameSHA256   string
-	Coverage         string
-	CoverageNote     string
-	Status           string
-	Reports          int
-	Received         int
-	AssetsCreated    int
-	AssetsUpdated    int
+	ID             shared.ID
+	TenantID       shared.ID
+	SourceKind     SourceKind
+	SourceRef      string
+	ActorUserID    *shared.ID
+	ToolName       string
+	Format         string
+	FilenameSHA256 string
+	Coverage       string
+	CoverageNote   string
+	Status         string
+	Reports        int
+	Received       int
+	AssetsCreated  int
+	AssetsUpdated  int
+	// AddressesOnName: DNS answers inside a shared provider range recorded
+	// on the name instead of as address assets (research/531).
+	AddressesOnName  int
 	Components       int
 	Statements       int
 	VEXStored        int
@@ -326,9 +329,12 @@ type Delta struct {
 	Received      int
 	AssetsCreated int
 	AssetsUpdated int
-	Skipped       int
-	Failed        int
-	Suppressed    int
+	// AddressesOnName: DNS answers inside a shared provider range recorded
+	// on the name instead of as address assets (research/531).
+	AddressesOnName int
+	Skipped         int
+	Failed          int
+	Suppressed      int
 	// Outcomes counts where the received findings went beyond the action
 	// counts (Outcome* codes). The repository adds OutcomeMerged for the
 	// findings an earlier delta of the receipt already acted on.
@@ -471,7 +477,7 @@ type Instance struct {
 
 // Empty reports whether the delta changes nothing.
 func (d *Delta) Empty() bool {
-	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
+	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 && d.AddressesOnName == 0 &&
 		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Outcomes) == 0 && !d.Released && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
 		len(d.Decided) == 0 && len(d.Items) == 0 &&

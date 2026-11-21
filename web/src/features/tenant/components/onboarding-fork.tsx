@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { Building2, Clock, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
+import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { safeText } from '@/lib/api/error-message'
 
@@ -69,6 +70,11 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
       }
       if (res.success) {
         toast.success(t('org.onboarding.requested', undefined, { name: res.organizationName }))
+      } else if (res.code === 'MFA_ENROLLMENT_REQUIRED' && res.organizationId) {
+        // Joined; the organization requires two-factor authentication: set it
+        // up now (the session stays), then go straight into the organization.
+        window.location.assign(twoFactorSetupHref('/', res.organizationId))
+        return
       } else if (res.code === 'OFFER_UNAVAILABLE') {
         toast.error(t('org.onboarding.unavailable'))
       } else {

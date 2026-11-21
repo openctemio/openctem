@@ -42,6 +42,9 @@ import type {
   UpdateScopeSettingsInput,
   PathExclusionFields,
   SetExclusionTestingInput,
+  ApiScopeProviderAddresses,
+  ApiScopeProviderMove,
+  ApiScopeProviderKeep,
 } from './scope-api.types'
 
 // ============================================
@@ -633,6 +636,44 @@ export function updateScopeIntrusiveSettings(input: {
   reason: string
 }) {
   return put<ApiScopeSettings>(`${SETTINGS_URL}/intrusive`, input)
+}
+
+// ============================================
+// PROVIDER SHARED ADDRESSES (the Scope page card)
+// ============================================
+
+const PROVIDERS_URL = `${BASE_URL}/provider-addresses`
+
+/** GET /scope/provider-addresses (scope:read): what is left to decide, per provider. */
+export function useScopeProviderAddresses(enabled = true, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? PROVIDERS_URL : null
+  return useSWR<ApiScopeProviderAddresses>(
+    key,
+    (url: string) => get<ApiScopeProviderAddresses>(url),
+    {
+      ...defaultConfig,
+      // The card is optional: a failed read hides it instead of a toast.
+      onError: () => undefined,
+      ...config,
+    }
+  )
+}
+
+/**
+ * POST /scope/provider-addresses/move (scope:write): the provider's listed
+ * entries become exclusions and are turned off. `preview` counts only.
+ */
+export function moveScopeProviderAddresses(provider: string, preview = false) {
+  return post<ApiScopeProviderMove>(`${PROVIDERS_URL}/move`, { provider, preview })
+}
+
+/**
+ * POST /scope/provider-addresses/keep (scope:write, step-up: the client asks
+ * the person to confirm their identity and retries).
+ */
+export function keepScopeProviderAddresses(provider: string) {
+  return post<ApiScopeProviderKeep>(`${PROVIDERS_URL}/keep`, { provider })
 }
 
 // ============================================

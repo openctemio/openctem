@@ -101,7 +101,7 @@ jobs:
         run: |
           shellcheck -x .github/scripts/release/*.sh .github/scripts/release/tests/*.sh
           # The Compose install scripts (their tests run in API CI too).
-          shellcheck -x server/deploy/install.sh server/deploy/setup.sh server/deploy/lib/common.sh server/deploy/install.test.sh
+          shellcheck -x server/deploy/install.sh server/deploy/setup.sh server/deploy/lib/common.sh server/deploy/install.test.sh server/deploy/support.sh server/deploy/support.test.sh
       - name: Tests
         run: bash .github/scripts/release/tests/run.sh
 

@@ -454,6 +454,7 @@ export const ATTRIBUTION_FILTER_VALUES = [
   'dependency',
   'monitor_only',
   'rejected',
+  'provider_address',
 ] as const
 
 /**

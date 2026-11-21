@@ -6,6 +6,9 @@ const (
 	ActionCITrustConfigCreated Action = "ci_trust_config.created"
 	ActionCITrustConfigUpdated Action = "ci_trust_config.updated"
 	ActionCITrustConfigDeleted Action = "ci_trust_config.deleted"
+	// ActionCINewRepositoriesDecided records an administrator approving,
+	// blocking or unblocking new repositories of an all-projects trust.
+	ActionCINewRepositoriesDecided Action = "ci_trust_config.new_repositories_decided"
 
 	// ActionCISettingsUpdated records a change of the tenant's CI settings
 	// (OIDC required for CI results).
@@ -94,6 +97,7 @@ const (
 var _ = registerActions("ci", map[Action]Severity{
 	ActionCITrustConfigCreated:        SeverityHigh,
 	ActionCITrustConfigUpdated:        SeverityHigh,
+	ActionCINewRepositoriesDecided:    SeverityHigh,
 	ActionCITrustConfigDeleted:        SeverityMedium,
 	ActionCISettingsUpdated:           SeverityMedium,
 	ActionCIRunnerKeyRefused:          SeverityMedium,

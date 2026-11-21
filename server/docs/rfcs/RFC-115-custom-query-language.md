@@ -70,7 +70,7 @@ sensors, remediation and audit.
 ## 6. Open questions
 
 - Distributed concurrency limits (the caps are per API process today).
-- Hourly cost-unit quotas by edition (needs the cost estimator).
+- Hourly cost-unit quotas as operator-set limits (needs the cost estimator).
 
 ## 7. Implementation
 

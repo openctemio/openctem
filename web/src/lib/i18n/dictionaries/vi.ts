@@ -13,6 +13,7 @@ import vi_announcements from './vi/announcements.json'
 import vi_assetFreshness from './vi/assetFreshness.json'
 import vi_assetLiveness from './vi/assetLiveness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
+import vi_assetAddresses from './vi/assetAddresses.json'
 import vi_assetPorts from './vi/assetPorts.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
@@ -118,6 +119,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assetFreshness: vi_assetFreshness,
   assetLiveness: vi_assetLiveness,
   assetCoverage: vi_assetCoverage,
+  assetAddresses: vi_assetAddresses,
   assetPorts: vi_assetPorts,
   assetSources: vi_assetSources,
   assets: vi_assets,

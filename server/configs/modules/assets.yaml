@@ -17,6 +17,7 @@
     - AssetGroupRulesController
     - AssetIdentityBackfillController
     - AssetTechnologyBackfillController
+    - AssetSoftwareLinkBackfillController
     - AssetChangeTimelineController
     - AssetLifecycleController
     - AssetLivenessController

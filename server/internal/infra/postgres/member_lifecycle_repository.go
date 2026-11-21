@@ -19,6 +19,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
@@ -90,7 +91,7 @@ func accessReport(ctx context.Context, q lifecycleQueryer, m *tenant.Membership)
 			ORDER BY u.name, k.name`},
 		{&rep.Campaigns, `
 			SELECT c.id::text, c.name, c.status, pcm.role
-			FROM pentest_campaign_members pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
+			FROM ` + campaignaccess.View + ` pcm JOIN pentest_campaigns c ON c.id = pcm.campaign_id
 			WHERE pcm.tenant_id = $1 AND c.tenant_id = $1 AND pcm.user_id = $2
 			ORDER BY c.name`},
 		{&rep.OwnedScans, `
@@ -302,6 +303,13 @@ func (r *MemberLifecycleRepository) Offboard(ctx context.Context, m *tenant.Memb
 		}
 	}()
 
+	if plan.RequireOtherOwner {
+		// Before the member's own row, in one ordered statement, so owners
+		// leaving together queue up instead of deadlocking.
+		if stepErr := requireOtherOwner(ctx, tx, tid, uid); stepErr != nil {
+			return nil, stepErr
+		}
+	}
 	if stepErr := lockMembershipForOffboard(ctx, tx, tid, uid); stepErr != nil {
 		return nil, stepErr
 	}
@@ -344,6 +352,41 @@ func (r *MemberLifecycleRepository) Offboard(ctx context.Context, m *tenant.Memb
 	}
 	out.OffboardedAt = now
 	return out, nil
+}
+
+// requireOtherOwner locks the organization's active owner rows (ordered, so
+// concurrent offboardings take the locks in the same order) and refuses when
+// the leaver is the only one. The check and the tombstone are in the same
+// transaction, and a second owner leaving at the same moment waits here until
+// the first commits, then sees the first as no longer an active owner.
+func requireOtherOwner(ctx context.Context, tx *sql.Tx, tid, uid string) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT m.user_id::text FROM tenant_members m
+		WHERE m.tenant_id = $1 AND m.status = 'active'
+		  AND m.user_id IN (SELECT ver.user_id FROM v_user_effective_role ver
+		                    WHERE ver.tenant_id = $1 AND ver.role = 'owner')
+		ORDER BY m.user_id FOR UPDATE OF m`, tid)
+	if err != nil {
+		return fmt.Errorf("lock owners: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	other := false
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("scan owner: %w", err)
+		}
+		if id != uid {
+			other = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read owners: %w", err)
+	}
+	if !other {
+		return tenant.ErrNoOtherOwner
+	}
+	return nil
 }
 
 // lockMembershipForOffboard locks the membership row so two offboardings (or

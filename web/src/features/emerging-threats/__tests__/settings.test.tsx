@@ -89,7 +89,7 @@ describe('EmergingThreatsSettingsForm', () => {
     api.put.mockImplementation(async (_u: string, body: EmergingThreatsSettings) => body)
     renderForm()
     await userEvent.click(screen.getByRole('switch', { name: 'Emerging-threat alerts' }))
-    await userEvent.click(screen.getByRole('switch', { name: 'Name assets in messages' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Name hosts in messages' }))
     await userEvent.click(screen.getByRole('button', { name: /Save/ }))
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/organization/settings/emerging-threats', {

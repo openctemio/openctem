@@ -6,7 +6,7 @@
  *
  * Flow:
  * 1. Read refresh token from cookie
- * 2. Read tenant info from tenant cookie
+ * 2. Read tenant info from tenant cookie (none: renew the account-only token)
  * 3. Refresh through refreshSessionOnce (one API call per refresh token)
  * 4. Update cookies with new tokens
  * 5. Return new access token to client
@@ -16,6 +16,7 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
+import { refreshFailureAction } from '@/lib/auth/refresh-failure'
 import { requestAccountToken } from '@/features/auth/lib/account-session'
 import { devLog } from '@/lib/logger'
 import { csrfRejection } from '@/lib/server-auth-cookies'
@@ -70,12 +71,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (!tenantId && cookieStore.get(env.cookies.accountOnly)?.value) {
-      // No organization: renew the account-only token (api RFC-141).
+    if (!tenantId) {
+      // No organization selected (none yet, or a social sign-in that has not
+      // opened one): renew with the account-only token (api RFC-141), which
+      // every signed-in person can have. It keeps the session alive on the
+      // account pages; a route that needs an organization answers
+      // TENANT_REQUIRED and the client goes to the account space. Never a
+      // sign-out: only a refused refresh token (401) ends the session.
       const account = await requestAccountToken(refreshToken)
       if (!account.ok) {
-        const status =
-          account.code === 'SESSION' ? 401 : account.code === 'HAS_ORGANIZATION' ? 409 : 502
+        const status = account.code === 'SESSION' ? 401 : 502
         const failed = NextResponse.json(
           {
             success: false,
@@ -116,14 +121,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           maxAge: 7 * 24 * 60 * 60,
         })
       }
+      // The routing hint for the proxy and the layout (not a credential).
+      ok.cookies.set(env.cookies.accountOnly, '1', { ...base, maxAge: 7 * 24 * 60 * 60 })
       return ok
-    }
-
-    if (!tenantId) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NO_TENANT', message: 'No tenant context found' } },
-        { status: 400 }
-      )
     }
 
     // One refresh per refresh token across every route of this server:
@@ -158,16 +158,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // authentication and this user has not set it up. The session stays: the
       // cookies are kept so the person can set it up on /two-factor-setup
       // (the refresh token is not spent by a refused refresh).
-      // ORGANIZATION_SUSPENDED (403): the organization was suspended by the
-      // platform operator; signing in again lists it as suspended.
       // OWN_SIGN_IN_REQUIRED (403): the session came from another
       // organization's identity provider; the person signs in again with
       // their own account.
-      if (
-        result.status === 401 ||
-        result.code === 'ORGANIZATION_SUSPENDED' ||
-        result.code === 'OWN_SIGN_IN_REQUIRED'
-      ) {
+      // The organization does not admit this session for another reason
+      // (refreshFailureAction 'account_space': suspended, its identity
+      // provider required, a verified address or a work account needed): the
+      // session stays for the account space and the person's other
+      // organizations (the API refused before spending the refresh token);
+      // only this organization's access token and selection go, so the
+      // account space opens instead of sending the browser back here.
+      if (refreshFailureAction(result.status, result.code) === 'account_space') {
+        for (const name of [ACCESS_TOKEN_COOKIE, TENANT_COOKIE]) {
+          errorResponse.cookies.set(name, '', {
+            httpOnly: name === ACCESS_TOKEN_COOKIE,
+            secure: process.env.SECURE_COOKIES !== 'false',
+            sameSite: 'lax',
+            maxAge: 0,
+            path: '/',
+          })
+        }
+      }
+      if (result.status === 401 || result.code === 'OWN_SIGN_IN_REQUIRED') {
         devLog.log('[Refresh] Clearing ALL auth cookies due to invalid refresh token')
         for (const name of [ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE]) {
           errorResponse.cookies.set(name, '', {
@@ -180,6 +192,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
         // Clear tenant cookie to prevent login loops
         // When user logs in again, they'll go through proper tenant selection
+        errorResponse.cookies.set(TENANT_COOKIE, '', {
+          httpOnly: false,
+          secure: process.env.SECURE_COOKIES !== 'false',
+          sameSite: 'lax',
+          maxAge: 0,
+          path: '/',
+        })
+      }
+
+      // ORGANIZATION_ACCESS_DENIED (403): the person is no longer a member of
+      // the organization in the tenant cookie. Only that cookie goes: the
+      // session is alive, and without it the next refresh renews the account
+      // token instead of failing the same way every time.
+      if (result.code === 'ORGANIZATION_ACCESS_DENIED') {
         errorResponse.cookies.set(TENANT_COOKIE, '', {
           httpOnly: false,
           secure: process.env.SECURE_COOKIES !== 'false',

@@ -75,6 +75,10 @@ type PreviewResult struct {
 	Repository   string          `json:"repository_asset,omitempty"`
 	PipelineKey  string          `json:"pipeline_key,omitempty"`
 	ReplayKeyJTI bool            `json:"replay_key_from_jti"`
+	// PendingApproval: the configuration admits every project and this one
+	// is not approved yet; with admit_new_repositories its runs are admitted
+	// and it is listed for approval (not added to scope until approved).
+	PendingApproval bool `json:"pending_approval,omitempty"`
 }
 
 // errPreviewToken: the sample is not a readable JWT.
@@ -93,6 +97,7 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	cfg := &cirun.TrustConfig{TenantID: tenantID, Name: in.Config.Name, Provider: cirun.Provider(in.Config.Provider),
 		Issuer: in.Config.Issuer, Audience: in.Config.Audience, DefaultBranch: in.Config.DefaultBranch,
 		Rules: in.Config.Rules, Enabled: true}
+	applySigningKeys(cfg, in.Config, s.now().UTC())
 	if strings.TrimSpace(cfg.Name) == "" {
 		cfg.Name = "preview"
 	}
@@ -108,8 +113,16 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	if s.verifier == nil {
 		return nil, errors.New("no token verifier")
 	}
+	keys, err := cfg.PastedKeys()
+	if err != nil {
+		return nil, errPreviewWrap(err)
+	}
 	tok, err := s.verifier.VerifyWorkloadToken(ctx, in.IDToken, oidc.WorkloadExpectations{Issuer: cfg.Issuer,
-		Audience: cfg.Audience, JTIOptional: cirun.JTIOptional(cfg.Provider), IgnoreTimes: true})
+		Audience: cfg.Audience, JTIOptional: cirun.JTIOptional(cfg.Provider), IgnoreTimes: true, Keys: keys})
+	if errors.Is(err, oidc.ErrPastedKeyUnknown) {
+		out.VerifyError = UnknownKeyMessage
+		return out, nil
+	}
 	if err != nil {
 		out.VerifyError = previewError(err)
 		return out, nil
@@ -136,6 +149,18 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	if refusal != nil {
 		out.Refusal = refusal
 		return out, nil
+	}
+	// An all-projects configuration admits only approved projects (the
+	// exchange's checkNewRepository). The draft's approvals are its owners
+	// and repositories; blocks and the ids of past sightings are not read.
+	if cfg.Rules.AllRepositories {
+		if r := pendingRefusal(cfg, c); r != nil {
+			if !cfg.Rules.AdmitNewRepositories {
+				out.Refusal = &PreviewRefusal{Code: r.Code, Detail: r.Detail}
+				return out, nil
+			}
+			out.PendingApproval = true
+		}
 	}
 	out.PipelineKey = key.ExternalRepoID + " " + key.WorkflowPath
 	out.Admitted = true

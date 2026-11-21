@@ -35,6 +35,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
+import Link from '@/components/link'
 
 import {
   useDisableTwoFactor,
@@ -94,6 +95,8 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
   const requiredBy = useRequiredByLabel(status)
   // Older servers do not send can_turn_off: the API still refuses when required.
   const canTurnOff = status?.can_turn_off !== false
+  // A social-only account: no password to confirm the self-service actions.
+  const throughSession = !!status?.enroll_through_session
   // While in grace only (not enforced yet), the due-date chip says it instead.
   const showRequiredBadge =
     !!requiredBy && (status?.enabled || status?.required_by_organization || !status?.grace_due_at)
@@ -151,10 +154,15 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                   ? t('settings.twoFactor.turnedOnAt', 'Turned on {date}.', {
                       date: formatDateSafe(status.enabled_at),
                     })
-                  : t(
-                      'settings.twoFactor.passwordOnly',
-                      'Anyone with your password can sign in.'
-                    )}{' '}
+                  : throughSession
+                    ? t(
+                        'settings.twoFactor.providerOnly',
+                        'Only your sign-in provider protects this account.'
+                      )
+                    : t(
+                        'settings.twoFactor.passwordOnly',
+                        'Anyone with your password can sign in.'
+                      )}{' '}
                 {status.enabled && (
                   <span className={lowOnCodes ? 'text-warning' : undefined}>
                     {status.recovery_codes_remaining === 1
@@ -175,7 +183,15 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {status.enabled ? (
+              {throughSession ? (
+                !status.enabled && (
+                  <Button size="sm" asChild>
+                    <Link href="/two-factor-setup?next=%2Faccount%2Fsecurity">
+                      {t('settings.twoFactor.setUp', 'Set up')}
+                    </Link>
+                  </Button>
+                )
+              ) : status.enabled ? (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setDialog('replace')}>
                     <RefreshCw className="h-4 w-4" aria-hidden />

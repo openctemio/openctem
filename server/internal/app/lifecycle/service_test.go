@@ -169,10 +169,10 @@ func TestChangePolicy(t *testing.T) {
 	if len(repo.policies) != 0 {
 		t.Fatal("refused changes must not be stored")
 	}
-	if err := svc.ChangePolicy(context.Background(), op, id, true, "hosted free tier", "", ""); err != nil {
+	if err := svc.ChangePolicy(context.Background(), op, id, true, "idle policy opt-in", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if p := repo.policies[id]; !p.Enabled || p.Reason != "hosted free tier" || p.By == nil {
+	if p := repo.policies[id]; !p.Enabled || p.Reason != "idle policy opt-in" || p.By == nil {
 		t.Fatalf("stored %+v", p)
 	}
 	if adminAudit.n != 1 || len(audit.actions) != 1 || audit.actions[0] != auditdom.ActionTenantIdlePolicyChanged {

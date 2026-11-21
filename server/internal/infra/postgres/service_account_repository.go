@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/server/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -69,7 +71,8 @@ func createServiceAccountTx(ctx context.Context, tx *sql.Tx, a *serviceaccount.S
 const serviceAccountSelect = `
 	SELECT u.id, u.service_tenant_id, u.name, COALESCE(u.preferences->>'description', ''),
 	       u.service_owner_id, COALESCE(o.name, o.email, ''), COALESCE(tm.status, 'active'), u.created_at,
-	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active'),
+	       (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.tenant_id = u.service_tenant_id AND k.status = 'active'
+		       AND (k.expires_at IS NULL OR k.expires_at > now())),
 	       EXISTS (SELECT 1 FROM ai_agents a WHERE a.user_id = u.id)
 	FROM users u
 	LEFT JOIN users o ON o.id = u.service_owner_id
@@ -110,7 +113,69 @@ func (r *ServiceAccountRepository) List(ctx context.Context, tenantID shared.ID)
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.loadMemberships(ctx, tenantID, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// loadMemberships fills Roles and Teams of the accounts with two queries
+// whatever the number of accounts. Both are scoped to the tenant.
+func (r *ServiceAccountRepository) loadMemberships(ctx context.Context, tenantID shared.ID, accounts []*serviceaccount.ServiceAccount) error {
+	byID := make(map[string]*serviceaccount.ServiceAccount, len(accounts))
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
+		a.Roles, a.Teams = []serviceaccount.Ref{}, []serviceaccount.Ref{}
+		byID[a.ID.String()] = a
+		ids = append(ids, a.ID.String())
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, q := range []struct {
+		sql  string
+		into func(a *serviceaccount.ServiceAccount, ref serviceaccount.Ref)
+	}{
+		{`SELECT ur.user_id, r.id, r.name
+		    FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+		   WHERE ur.tenant_id = $1 AND ur.user_id = ANY($2::uuid[])
+		   ORDER BY r.name`, func(a *serviceaccount.ServiceAccount, ref serviceaccount.Ref) { a.Roles = append(a.Roles, ref) }},
+		{`SELECT gm.user_id, g.id, g.name
+		    FROM group_members gm JOIN groups g ON g.id = gm.group_id
+		   WHERE g.tenant_id = $1 AND g.is_active AND gm.user_id = ANY($2::uuid[])
+		     AND (gm.expires_at IS NULL OR gm.expires_at > now())
+		   ORDER BY g.name`, func(a *serviceaccount.ServiceAccount, ref serviceaccount.Ref) { a.Teams = append(a.Teams, ref) }},
+	} {
+		if err := r.scanMemberships(ctx, q.sql, tenantID.String(), ids, byID, q.into); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scanMemberships runs one (user_id, id, name) query and hands each row to
+// into for the account it belongs to.
+func (r *ServiceAccountRepository) scanMemberships(ctx context.Context, query, tenantID string, ids []string,
+	byID map[string]*serviceaccount.ServiceAccount, into func(*serviceaccount.ServiceAccount, serviceaccount.Ref)) error {
+	rows, err := r.db.QueryContext(ctx, query, tenantID, pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("load service account memberships: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var uid, rid, name string
+		if err := rows.Scan(&uid, &rid, &name); err != nil {
+			return fmt.Errorf("scan service account membership: %w", err)
+		}
+		if a := byID[uid]; a != nil {
+			id, _ := shared.IDFromString(rid)
+			into(a, serviceaccount.Ref{ID: id, Name: name})
+		}
+	}
+	return rows.Err()
 }
 
 // Get returns one service account of the tenant.
@@ -121,6 +186,9 @@ func (r *ServiceAccountRepository) Get(ctx context.Context, tenantID, id shared.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get service account: %w", err)
+	}
+	if err := r.loadMemberships(ctx, tenantID, []*serviceaccount.ServiceAccount{a}); err != nil {
+		return nil, err
 	}
 	return a, nil
 }

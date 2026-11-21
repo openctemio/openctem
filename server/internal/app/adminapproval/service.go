@@ -181,8 +181,10 @@ func (s *Service) Status(ctx context.Context, actor *admin.AdminUser) (Status, e
 
 // Require is the gate of a protected action. It spends the actor's approval
 // for (action, target), or allows the single-admin fallback, or returns
-// *admin.ApprovalRequiredError. Any other error refuses the action.
-func (s *Service) Require(ctx context.Context, actor *admin.AdminUser, action admin.ApprovalAction, target string, client adminconsole.ClientInfo) (*Grant, error) {
+// *admin.ApprovalRequiredError. Any other error refuses the action. reason is
+// the reason the actor gave for the action itself (may be empty); the gate's
+// audit row keeps it beside the approval it spent.
+func (s *Service) Require(ctx context.Context, actor *admin.AdminUser, action admin.ApprovalAction, target, reason string, client adminconsole.ClientInfo) (*Grant, error) {
 	if actor == nil || !action.IsValid() || !action.ValidTarget(target) {
 		return nil, admin.ErrInvalidApproval
 	}
@@ -192,9 +194,9 @@ func (s *Service) Require(ctx context.Context, actor *admin.AdminUser, action ad
 	}
 	label := s.label(ctx, target)
 	if !st.Active {
-		entry := s.entry(actor, ActionSingleAdmin, nil, action, client, map[string]any{
+		entry := s.entry(actor, ActionSingleAdmin, nil, action, client, withReason(map[string]any{
 			"action": string(action), "target": target, "target_label": label,
-		})
+		}, reason))
 		if err := s.writeAudit(ctx, entry); err != nil {
 			return nil, err
 		}
@@ -216,9 +218,10 @@ func (s *Service) Require(ctx context.Context, actor *admin.AdminUser, action ad
 	if err != nil {
 		return nil, fmt.Errorf("use approval: %w", err)
 	}
-	entry := s.entry(actor, ActionUsed, &a.ID, action, client, map[string]any{
+	entry := s.entry(actor, ActionUsed, &a.ID, action, client, withReason(map[string]any{
 		"action": string(action), "target": target, "target_label": a.TargetLabel, "approved_by": idString(a.DecidedBy),
-	})
+		"request_reason": a.Reason,
+	}, reason))
 	if err := s.writeAudit(ctx, entry); err != nil {
 		if rerr := s.repo.Release(ctx, a.ID); rerr != nil {
 			s.log.Error("release approval after audit failure", "approval_id", a.ID.String(), "error", rerr)
@@ -361,6 +364,14 @@ func (s *Service) entry(actor *admin.AdminUser, action string, id *shared.ID, pr
 		Request("", "", body).
 		Critical().
 		Build()
+}
+
+// withReason adds the action's own reason to a gate audit body, when given.
+func withReason(body map[string]any, reason string) map[string]any {
+	if reason = strings.TrimSpace(reason); reason != "" {
+		body["reason"] = reason
+	}
+	return body
 }
 
 // writeAudit writes the row or fails: an approval step without its audit row

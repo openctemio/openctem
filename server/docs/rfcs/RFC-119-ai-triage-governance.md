@@ -26,7 +26,7 @@ language model. Until now:
 | # | Decision |
 |---|---|
 | D1 | AI triage is off for an organization until an organization administrator turns it on. Organizations that already used it stay on (migration, audited). |
-| D2 | Organizations may use their own key in every edition (designed). |
+| D2 | Organizations may use their own key in every build (designed). |
 | D3 | Local and self-hosted models through one OpenAI-compatible provider with a base URL (designed). |
 | D4 | A small default monthly budget; it counts every organization's tokens, with the platform key or its own. |
 | D5 | Pentest content follows the same organization policy as MCP. |

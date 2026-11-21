@@ -73,6 +73,9 @@ const (
 	// SourceControlPlane: an organization the hosted service's control plane
 	// provisioned.
 	SourceControlPlane Source = "control_plane"
+	// SourcePersonalOrganization: the organization the platform made for a
+	// person at sign-up (the sign-up policy's personal organization switch).
+	SourcePersonalOrganization Source = "personal_organization"
 )
 
 // SelfService reports whether the person signing up drove the event. Only
@@ -81,7 +84,7 @@ const (
 // comes from the operator's own address.
 func (s Source) SelfService() bool {
 	switch s {
-	case SourcePassword, SourceInvitation, SourceOAuth, SourceSSO, SourceSelfService, SourcePublic:
+	case SourcePassword, SourceInvitation, SourceOAuth, SourceSSO, SourceSelfService, SourcePublic, SourcePersonalOrganization:
 		return true
 	}
 	return false

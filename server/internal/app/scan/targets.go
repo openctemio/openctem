@@ -58,6 +58,11 @@ type resolvedTargets struct {
 	// confirms the asset; RFC-088 A4). Not an ownership question: the
 	// name may not exist at all.
 	WildcardOnly int
+	// ProviderHeld counts targets left out because only scope entries the
+	// organization holds on a provider's shared addresses cover them
+	// (research/531 D3): passive until someone answers them on the Scope
+	// page.
+	ProviderHeld int
 	// Archived counts group members left out because the asset is archived.
 	Archived int
 	// Incompatible counts group members left out because the run's scanner
@@ -332,6 +337,10 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.WildcardOnly, ReasonWildcardOnly))
 	}
+	if out.ProviderHeld > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s", out.ProviderHeld, actscope.ReasonProviderHeld))
+	}
 	if out.InternalOutsideZones > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d internal address target(s) were skipped: %s", out.InternalOutsideZones, ReasonInternalOutsideZones))
@@ -363,6 +372,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 	for _, r := range refused {
 		switch {
+		case r.Code == scopedom.RefusalProviderAddress:
+			out.ProviderHeld++
+			out.skipped(SkipProviderAddress, r.Target)
 		case r.Reason == ReasonOwnershipNotConfirmed && r.Code == scopedom.RefusalWildcardOnly:
 			out.WildcardOnly++
 			out.skipped(SkipWildcardOnly, r.Target)

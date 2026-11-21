@@ -136,7 +136,8 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	// Saved views (D15) on the same router, so ?view=<id> runs end to end.
 	viewSvc := savedviewapp.NewService(postgres.NewSavedViewRepository(db), map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {Registry: vulnerability.FindingFields, Permission: permission.FindingsRead.String(),
-			GroupBy: vulnerability.FindingGroupDimensions(), Extra: []string{"branch_status"}},
+			GroupBy: vulnerability.FindingGroupDimensions(), Extra: []string{"branch_status", savedviewapp.ModeParam},
+			Params: savedviewapp.ListModeParams},
 	}, log)
 	viewSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.views = viewSvc

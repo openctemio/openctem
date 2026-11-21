@@ -113,6 +113,9 @@ type UpdateAdminRequest struct {
 	IsActive *bool   `json:"is_active,omitempty"`
 	// IsBreakGlass marks or unmarks an emergency-access administrator.
 	IsBreakGlass *bool `json:"is_break_glass,omitempty"`
+	// Reason (optional, 1 to 1000 characters after trimming) is kept in the
+	// audit record and in the four-eyes gate's record.
+	Reason string `json:"reason,omitempty"`
 }
 
 // =============================================================================
@@ -218,6 +221,11 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
+	reason, ok := adminActionReason(w, req.Reason)
+	middleware.SetAuditReason(ctx, reason)
+	if !ok {
+		return
+	}
 
 	// No self-deactivation or self-role-change. Together with the ban on
 	// deleting yourself, the super admin making a change always remains an
@@ -285,7 +293,7 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// super admin, or one session could remove the others and act alone.
 	var grant *adminapproval.Grant
 	if action, ok := before.superAdminChange(adminUser); ok {
-		if grant, ok = requireSecondApproval(w, r, h.approvals, currentAdmin, action, "admin:"+adminUser.ID().String(), h.logger); !ok {
+		if grant, ok = requireSecondApprovalWithReason(w, r, h.approvals, currentAdmin, action, "admin:"+adminUser.ID().String(), reason, h.logger); !ok {
 			return
 		}
 	}

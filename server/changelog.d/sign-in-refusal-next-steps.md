@@ -1,0 +1,5 @@
+### Fixed: a refresh refused by an organization names the reason and its next step
+
+- When an organization stops admitting a signed-in session (single sign-on or its identity provider's second-factor proof now required, a verified address or a work account needed, the organization suspended), the console opens the account space with the reason and its one next step instead of retrying or showing a bare sign-in page. The session stays for the person's other organizations.
+- The same applies right after a sign-in: a returning member whose one organization refuses the new session (its identity provider required, or the account's own sign-in when the session came from another organization's identity provider) lands in the account space with the reason and its one next step, instead of a plain account space or a page that never loads. A page opened with a session but no organization selected goes through the sign-in landing first.
+- Docs: server/docs/architecture/session-refresh.md (refresh refusals are classified by web/src/lib/auth/refresh-failure.ts)

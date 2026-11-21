@@ -11,6 +11,10 @@ package vulnfeed
 // corpus import; the other stream and the next run are unaffected. A stream
 // name this platform does not know is skipped and reported (the manifest is
 // signed, so skipping is safe).
+//
+// The cards stream (advisory cards) is applied the same way when a card
+// store is wired: only when its data date is newer than the newest card the
+// platform holds.
 
 import (
 	"context"
@@ -19,6 +23,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
@@ -39,11 +44,18 @@ func (im *Importer) WithIntel(a IntelApplier) *Importer {
 	return im
 }
 
+// WithCards wires the advisory card store (nil: the cards stream is
+// skipped as unknown).
+func (im *Importer) WithCards(s advisory.Store) *Importer {
+	im.cards = s
+	return im
+}
+
 // intelSources maps a stream name to the sync status source it feeds.
 var intelSources = map[string]string{vulnbundle.IntelStreamKEV: "kev", vulnbundle.IntelStreamEPSS: "epss"}
 
 func (im *Importer) syncIntel(ctx context.Context, f smallFetcher, sequence, minKeySet uint64) {
-	if im.intel == nil || sequence == 0 {
+	if (im.intel == nil && im.cards == nil) || sequence == 0 {
 		return
 	}
 	skipped, err := im.applyIntel(ctx, f, sequence, minKeySet)
@@ -86,7 +98,9 @@ func (im *Importer) applyIntel(ctx context.Context, f smallFetcher, sequence, mi
 	m, err := im.verifyIntel(ctx, f, raw, sequence, minKeySet)
 	if err != nil {
 		for _, src := range intelSources {
-			im.intel.RecordBundleRefused(ctx, src, err)
+			if im.intel != nil {
+				im.intel.RecordBundleRefused(ctx, src, err)
+			}
 		}
 		return nil, err
 	}
@@ -94,8 +108,17 @@ func (im *Importer) applyIntel(ctx context.Context, f smallFetcher, sequence, mi
 	var first error
 	for i := range m.Streams {
 		s := &m.Streams[i]
+		if s.Name == vulnbundle.IntelStreamCards && im.cards != nil {
+			if err := im.applyCards(ctx, f, s, sequence); err != nil {
+				im.logger.Warn("vulnfeed: advisory cards refused", "sequence", sequence, "error", err)
+				if first == nil {
+					first = fmt.Errorf("%s: %w", s.Name, err)
+				}
+			}
+			continue
+		}
 		src, known := intelSources[s.Name]
-		if !known {
+		if !known || im.intel == nil {
 			skipped = append(skipped, s.Name)
 			continue
 		}
@@ -155,4 +178,33 @@ func (im *Importer) applyIntelStream(ctx context.Context, f smallFetcher, source
 	}
 	_, err = im.intel.ApplyBundleEPSS(ctx, st, scores)
 	return err
+}
+
+// applyCards applies the cards stream whenever its file differs from the
+// last one applied. Apply is idempotent per card (revision compare), so a
+// replay is safe; a data-date gate would drop a new card reviewed before
+// the newest one, or a withdrawal published without a later timestamp.
+func (im *Importer) applyCards(ctx context.Context, f smallFetcher, s *vulnbundle.IntelStream, sequence uint64) error {
+	held, err := im.cards.AppliedFile(ctx)
+	if err != nil {
+		return err
+	}
+	if held != "" && held == s.File.SHA256 {
+		return nil
+	}
+	gz, err := f.Small(ctx, s.File.Name, vulnbundle.MaxIntelCardsBytes)
+	if err != nil {
+		return fmt.Errorf("entries: %w", err)
+	}
+	cards, err := vulnbundle.ParseIntelCards(gz, s)
+	if err != nil {
+		return err
+	}
+	res, err := im.cards.Apply(ctx, cards, advisory.StreamApplied{Sequence: sequence, FileSHA256: s.File.SHA256, AsOf: s.AsOf}, im.now())
+	if err != nil {
+		return err
+	}
+	im.logger.Info("vulnfeed: advisory cards applied", "sequence", sequence, "published", res.Published,
+		"updated", res.Updated, "withdrawn", res.Withdrawn, "unchanged", res.Unchanged)
+	return nil
 }

@@ -92,6 +92,11 @@ type Policy struct {
 	// RequestAccess lets people who cannot sign up ask the platform
 	// administrators for an organization (admin_only mode).
 	RequestAccess bool `json:"request_access"`
+	// PersonalOrganization: a person who signs up with no other way in (no
+	// invitation, no organization claiming their e-mail domain) gets their
+	// own organization as soon as their address is verified. Needs
+	// self_service. Off by default.
+	PersonalOrganization bool `json:"personal_organization,omitempty"`
 }
 
 // PolicySource answers the policy in force. Implementations are fail-closed:
@@ -120,6 +125,10 @@ var ErrInvalidPolicy = fmt.Errorf("%w: invalid sign-up policy", shared.ErrValida
 // without open account sign-up (nobody could reach it).
 var ErrSelfServiceNeedsOpenAccounts = fmt.Errorf("%w: organization self-service needs open account sign-up", shared.ErrValidation)
 
+// ErrPersonalOrgNeedsSelfService is returned for a personal organization at
+// sign-up without organization self-service.
+var ErrPersonalOrgNeedsSelfService = fmt.Errorf("%w: a personal organization at sign-up needs organization self-service", shared.ErrValidation)
+
 // AccountSignup is who may create an account by public sign-up. An empty
 // Accounts follows Mode: self_service meant anyone may sign up, admin_only
 // meant nobody. An unknown value is closed.
@@ -142,6 +151,9 @@ func (p Policy) Validate() error {
 	if p.Mode == ModeSelfService && p.AccountSignup() != AccountsOpen {
 		return ErrSelfServiceNeedsOpenAccounts
 	}
+	if p.PersonalOrganization && p.Mode != ModeSelfService {
+		return ErrPersonalOrgNeedsSelfService
+	}
 	return nil
 }
 
@@ -154,6 +166,12 @@ func (p Policy) Normalized() Policy {
 // AllowsSelfService reports whether people may create their own organization.
 func (p Policy) AllowsSelfService() bool {
 	return p.Mode == ModeSelfService && p.AccountSignup() == AccountsOpen
+}
+
+// CreatesPersonalOrganization reports whether a person who signs up with no
+// other way in gets their own organization.
+func (p Policy) CreatesPersonalOrganization() bool {
+	return p.PersonalOrganization && p.AllowsSelfService()
 }
 
 // AllowsPublicSignup reports whether some public account sign-up is open

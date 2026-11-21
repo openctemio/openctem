@@ -60,6 +60,11 @@ export const SCOPE_REFUSAL_TEXT = {
     message:
       'This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.',
   },
+  provider_address: {
+    label: "Provider's shared address",
+    message:
+      "This address is a provider's shared infrastructure, used by its other customers too. Your organization holds such scope entries until someone answers them on the Scope page (move out of scope or keep scanning).",
+  },
   guardrailed: {
     label: 'Held by a platform guardrail',
     message:
@@ -209,6 +214,9 @@ export const SCOPE_ERROR_TEXT = {
     'Your organization already has this scope entry. Find it in the scope list instead of adding it again.',
   SCOPE_EXCLUSION_EXISTS:
     'Your organization already has this exclusion. Find it in the Out of scope list instead of adding it again.',
+  PROVIDER_SHARED_RANGE:
+    "This range is a provider's shared infrastructure, used by its other customers too. A review rule never adds it to scope.",
+  PROVIDER_NOT_LISTED: 'No scope entry of this provider is waiting for an answer any more.',
 } as const satisfies Record<string, string>
 
 export type ScopeErrorCode = keyof typeof SCOPE_ERROR_TEXT

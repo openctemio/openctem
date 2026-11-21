@@ -13,7 +13,7 @@ import (
 // sensor, an API key, a CI trust or a finding passes it. Nil: no limits.
 //
 // The check reads usage before the insert, outside its transaction: two
-// concurrent additions can each pass at limit-1. The limit is a commercial
+// concurrent additions can each pass at limit-1. The limit is a capacity
 // cap, not a security boundary, so that overshoot by the concurrency is
 // accepted.
 type limitChecks struct {

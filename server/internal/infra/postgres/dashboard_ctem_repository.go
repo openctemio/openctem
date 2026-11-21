@@ -8,6 +8,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -104,8 +105,7 @@ func findingWhere(scope dashboard.ReadScope) *whereBuilder {
 	}
 	if scope.CampaignViewer != nil {
 		user := b.arg(scope.CampaignViewer.String())
-		b.add(fmt.Sprintf(`(f.source <> 'pentest' OR f.pentest_campaign_id IN (SELECT pcm.campaign_id
-			FROM pentest_campaign_members pcm WHERE pcm.user_id = %s AND pcm.tenant_id = $1))`, user))
+		b.add(fmt.Sprintf(`(f.source <> 'pentest' OR f.pentest_campaign_id IN (%s))`, campaignaccess.MemberCampaignsSQL("$1", user)))
 	}
 	return b
 }
@@ -122,8 +122,7 @@ func (r *DashboardWidgetRepository) CrownJewels(ctx context.Context, scope dashb
 		cond := fmt.Sprintf("s.tenant_id = $1 AND s.asset_id = a.id AND s.lens = 'open' AND s.priority_class = ANY(%s::text[])", b.arg(pq.Array(priorities)))
 		if scope.CampaignViewer != nil {
 			user := b.arg(scope.CampaignViewer.String())
-			cond += fmt.Sprintf(` AND (s.source <> 'pentest' OR s.pentest_campaign_id IN (SELECT pcm.campaign_id
-				FROM pentest_campaign_members pcm WHERE pcm.user_id = %s AND pcm.tenant_id = $1))`, user)
+			cond += fmt.Sprintf(` AND (s.source <> 'pentest' OR s.pentest_campaign_id IN (%s))`, campaignaccess.MemberCampaignsSQL("$1", user))
 		}
 		exposed = "EXISTS (SELECT 1 FROM dash_asset_state s WHERE " + cond + ")"
 	}

@@ -17,7 +17,7 @@ import (
 // compiled by filterspec, so the tenant predicate is always the first
 // condition and no request value is part of the SQL text.
 
-const scanListTimeout = "5s"
+const scanListTimeout = interactiveReadTimeout
 
 var (
 	errUncompiledScanFilter = errors.New("scan filter was not compiled for a tenant")
@@ -31,13 +31,9 @@ var (
 
 // readOnlyTx opens a read-only transaction with a statement timeout.
 func readOnlyTx(ctx context.Context, db *DB, what string) (*sql.Tx, error) {
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, db.DB, scanListTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("begin %s: %w", what, err)
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+scanListTimeout+"'"); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("set %s timeout: %w", what, err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return tx, nil
 }

@@ -109,6 +109,10 @@ func registerThreatIntelRoutes(
 		// nor toggle them, so there is no write route here. Operators use
 		// /api/v1/admin/threat-intel.
 
+		// Freshness of the platform's vulnerability data: any signed-in user
+		// (the banner and "data as of"); no organization data.
+		r.GET("/freshness", h.GetFreshness)
+
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
 		r.POST("/enrich", h.EnrichCVEs, middleware.Require(permission.VulnerabilitiesRead))
@@ -292,6 +296,12 @@ func registerVulnerabilityRoutes(
 			middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsStatus), requireStepUpWhenClosing())
 		r.POST("/bulk/by-filter/assignee", h.BulkAssignFindingsByFilter,
 			middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsAssign))
+		// Bulk "Dismiss" (false positive / accepted risk): each finding under
+		// the single-request approval policy, a group for the rest, step-up
+		// above 25 decided alone in the service; undo by its creator.
+		r.POST("/bulk-dismissals/preview", h.PreviewBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
+		r.POST("/bulk-dismissals", h.BulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
+		r.POST("/bulk-dismissals/{id}/reopen", h.UndoBulkDismiss, middleware.RequireAll(permission.FindingsBulkUpdate, permission.FindingsWrite))
 
 		// Remediation groups (RFC-015): one fix → many findings (must be before /{id}).
 		if remediationGroupHandler != nil {
@@ -504,6 +514,17 @@ func registerVulnerabilityRoutes(
 		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
 		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
 		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
+		// The sole member's own group: findings:approve; the service checks
+		// owner, sole active person, fresh authenticator code, reason and
+		// every member in scope.
+		r.POST("/batches/{id}/self-approve", h.SelfApproveApprovalBatch, middleware.Require(permission.FindingsApprove))
+		// Leave one member out (reject it with a reason); the rest stays
+		// pending. The service refuses the group's requester.
+		r.POST("/batches/{id}/items/{finding_id}/reject", h.LeaveOutApprovalBatchMember, middleware.Require(permission.FindingsApprove))
+		// Decide many at once: each id goes through its single path; one
+		// step-up for the whole approve call.
+		r.POST("/bulk/approve", h.BulkApproveApprovals, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
+		r.POST("/bulk/reject", h.BulkRejectApprovals, middleware.Require(permission.FindingsApprove))
 	}, tenantMiddlewares...)
 
 	// The organization's finding approval settings: read with findings:read;

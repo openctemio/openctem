@@ -247,6 +247,20 @@ func (m *mockRoleRepo) ListRoleMembers(_ context.Context, _ role.ID, _ role.ID) 
 	return m.roleMembers, nil
 }
 
+func (m *mockRoleRepo) CountHoldersByRole(context.Context, role.ID) (map[role.ID]int, error) {
+	return map[role.ID]int{}, nil
+}
+
+func (m *mockRoleRepo) ListByIDs(context.Context, role.ID, []role.ID) ([]*role.Role, error) {
+	return nil, nil
+}
+
+func (m *mockRoleRepo) ListTeamRoles(context.Context, role.ID, []role.ID) (map[role.ID][]*role.Role, error) {
+	return map[role.ID][]*role.Role{}, nil
+}
+
+func (m *mockRoleRepo) CountPendingApprovals(context.Context, role.ID) (int, error) { return 0, nil }
+
 // ListRoleHolderIDs mirrors ListRoleMembers: the mock has no team bindings.
 func (m *mockRoleRepo) ListRoleHolderIDs(_ context.Context, _ role.ID, _ role.ID) ([]role.ID, error) {
 	m.listMembersCalls++

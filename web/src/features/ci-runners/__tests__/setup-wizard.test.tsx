@@ -46,6 +46,7 @@ async function throughToWaiting() {
   // Step 2: the GitHub App installation is offered as an owner.
   const create = within(dialog).getByRole('button', { name: /create trust/i })
   expect(create).toBeDisabled()
+  expect(within(dialog).getByText(/Several values: separate them with commas/)).toBeInTheDocument()
   await userEvent.click(within(dialog).getByRole('button', { name: 'acme' }))
   expect(within(dialog).getByLabelText(/organizations or owners/i)).toHaveValue('acme')
   await userEvent.click(create)

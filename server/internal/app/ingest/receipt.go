@@ -126,21 +126,22 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		return
 	}
 	d := &ingestreceipt.Delta{
-		TenantID:      tenantID,
-		Source:        receiptSource(agt, binding, opts, reportIDOf(ctx)),
-		Instance:      receiptInstance(agt, binding, opts, report),
-		Reports:       1,
-		AssetsCreated: output.AssetsCreated,
-		AssetsUpdated: output.AssetsUpdated,
-		Failed:        len(output.FailedFindings),
-		Suppressed:    output.FindingsSuppressed,
-		Released:      opts.ReleasedFromQuarantine,
-		Created:       output.CreatedIDs,
-		Reopened:      output.ReopenedIDs,
-		StillDetected: sightedNotFailed(output),
-		Decided:       output.Decided,
-		Items:         output.Items,
-		At:            time.Now(),
+		TenantID:        tenantID,
+		Source:          receiptSource(agt, binding, opts, reportIDOf(ctx)),
+		Instance:        receiptInstance(agt, binding, opts, report),
+		Reports:         1,
+		AssetsCreated:   output.AssetsCreated,
+		AssetsUpdated:   output.AssetsUpdated,
+		AddressesOnName: output.AddressesOnName,
+		Failed:          len(output.FailedFindings),
+		Suppressed:      output.FindingsSuppressed,
+		Released:        opts.ReleasedFromQuarantine,
+		Created:         output.CreatedIDs,
+		Reopened:        output.ReopenedIDs,
+		StillDetected:   sightedNotFailed(output),
+		Decided:         output.Decided,
+		Items:           output.Items,
+		At:              time.Now(),
 	}
 	d.Outcomes = output.Outcomes
 	if report != nil {

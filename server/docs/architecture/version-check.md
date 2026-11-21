@@ -19,7 +19,7 @@ version locally. Nothing about the instance is sent.
 | Headers | `User-Agent: openctem-version-check/1`, `Accept: application/json`. No version, no instance id, no cookies, no `Referer`, no query string |
 | Body | none |
 | Who sees it | the host of the file (by default GitHub, which serves release assets) sees the source IP of one anonymous download a day; OpenCTEM receives only the aggregate download count GitHub shows for an asset |
-| Default | on, in every edition |
+| Default | on, in every build |
 | Turn it off | `VERSION_CHECK_ENABLED=false`: no request at all. The console still shows a feed imported by hand |
 
 There is no usage reporting of any kind. Usage telemetry is designed in the

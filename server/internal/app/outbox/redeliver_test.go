@@ -143,7 +143,7 @@ func TestRedeliver_EntrySendsToItsChannelOnly(t *testing.T) {
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t",
 		Metadata: map[string]any{MetaRedeliveryOf: shared.NewID().String()}})
 	entry.SetDeliveries([]outboxdom.ChannelDelivery{outboxdom.NewChannelDelivery(b.Integration.ID().String(), "b", "webhook")})
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	if h.sentTo("https://a.example.com/hook") != 0 || h.sentTo("https://b.example.com/hook") != 1 {
@@ -178,7 +178,7 @@ func TestSigning_ConfigFromStoredSecret(t *testing.T) {
 		return inner(cfg)
 	}
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(cfgs) != 1 || len(cfgs[0].SigningSecrets) != 1 || cfgs[0].SigningSecrets[0] != secret {

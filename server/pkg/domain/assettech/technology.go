@@ -6,8 +6,9 @@
 // Design: docs/rfcs/RFC-112-asset-technologies.md.
 //
 // A technology is not a software component. Only a detection that names a
-// real product with a version or a CPE also becomes a component for CVE
-// matching (IsSoftwareCandidate); hosting, CDN, WAF, analytics and security
+// real product with a version or a CPE, or a public product the curated list
+// knows by name, also becomes a component for CVE matching
+// (IsSoftwareCandidate); hosting, CDN, WAF, analytics and security
 // header detections stay facts about the asset.
 package assettech
 
@@ -20,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
@@ -259,14 +261,17 @@ func CleanVersion(v string) string {
 
 // IsSoftwareCandidate reports whether a detection should also become a
 // software component (CVE matching): it names a real product, and has a
-// CPE or a version. Security headers, hosting, CDN, WAF and analytics never
-// do, whatever version string a tool attaches.
+// CPE, a version, or a name the curated list knows for a public application
+// (software.IsCuratedAppName: the product is certain, only its version is
+// hidden, and the matcher shows it as possibly affected). Security headers,
+// hosting, CDN, WAF and analytics never do, whatever version string a tool
+// attaches.
 func IsSoftwareCandidate(name, version, cpe string, toolCategories []string) bool {
 	key := Key(name)
 	if strings.TrimSpace(cpe) != "" {
 		return key == "" || Classify(key, toolCategories).Kind() == KindSoftware
 	}
-	if key == "" || CleanVersion(version) == "" {
+	if key == "" || (CleanVersion(version) == "" && !software.IsCuratedAppName(key)) {
 		return false
 	}
 	return Classify(key, toolCategories).Kind() == KindSoftware

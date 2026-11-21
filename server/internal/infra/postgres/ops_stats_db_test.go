@@ -57,6 +57,10 @@ func TestReadOpsSnapshot(t *testing.T) {
 		VALUES ($1, 'scan', 'pending', now() + interval '1 day')`, tenant.String())
 	exec(`INSERT INTO notification_outbox (tenant_id, event_type, title, status)
 		VALUES ($1, 'test', 'ops snapshot test', 'dead')`, tenant.String())
+	// The freshness watch's stored state: counted by code.
+	exec(`INSERT INTO platform_settings (key, value) VALUES ('feed_freshness.state',
+		'{"open":[{"code":"data_stale"},{"code":"data_stale"},{"code":"volume_low"}]}')
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`)
 
 	after, err := ReadOpsSnapshot(ctx, tx)
 	if err != nil {
@@ -67,6 +71,9 @@ func TestReadOpsSnapshot(t *testing.T) {
 	}
 	if after.CommandOldestPendingSecs < 3500 {
 		t.Errorf("oldest pending = %.0fs, want about an hour", after.CommandOldestPendingSecs)
+	}
+	if after.FreshnessAlerts["data_stale"] != 2 || after.FreshnessAlerts["volume_low"] != 1 {
+		t.Errorf("freshness alerts = %v", after.FreshnessAlerts)
 	}
 	if got := after.OutboxDead - before.OutboxDead; got != 1 {
 		t.Errorf("dead outbox entries +%d, want +1", got)

@@ -56,9 +56,9 @@ beforeEach(() => {
 })
 
 describe('EdgeLabel', () => {
-  it('a name served through a provider: "Behind <provider>", no action', () => {
+  it('a name served through a provider: "Served by <provider>", no action', () => {
     wrap(<EdgeLabel edge={{ class: 'edge', provider: 'Cloudflare' }} />)
-    expect(screen.getByText('Behind Cloudflare')).toBeInTheDocument()
+    expect(screen.getByText('Served by Cloudflare')).toBeInTheDocument()
     expect(screen.queryByRole('button')).toBeNull()
   })
 

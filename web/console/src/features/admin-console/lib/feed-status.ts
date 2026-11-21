@@ -207,6 +207,18 @@ export function feedProblem(f: ThreatIntelFeed, t: Translate): FeedProblem | nul
         message: t('admin.ti.error.not_configured', 'Bundle import is not configured.'),
         action: t('admin.ti.action.not_configured', 'Set VULNFEED_ROOT_KEY_ID.'),
       }
+    case 'source_stale':
+      return {
+        message: t(
+          'admin.ti.error.source_stale',
+          'The signed release carries an old copy: the collector last read this source at {when}.',
+          { when: p.fetched_at ?? '' }
+        ),
+        action: t(
+          'admin.ti.action.source_stale',
+          'The collector cannot read the source. Check the publisher of the vulnerability bundle.'
+        ),
+      }
     case 'interrupted':
       return {
         message: t('admin.ti.error.interrupted', 'The last run did not finish.'),

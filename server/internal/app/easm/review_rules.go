@@ -503,6 +503,10 @@ type RuleActionInput struct {
 	CanWriteScope bool
 }
 
+// RuleRefusalProviderShared refuses an accept rule whose pattern lies wholly
+// inside a provider's published shared range (scope.SharedProviderEntry).
+const RuleRefusalProviderShared = "PROVIDER_SHARED_RANGE"
+
 // RuleRefusal is why an action cannot be taken.
 type RuleRefusal struct {
 	Code    string `json:"code"`
@@ -605,6 +609,15 @@ func (s *RuleService) Preview(ctx context.Context, tenantID shared.ID, in RuleAc
 		typ, err := ruleType(in.TargetType)
 		if err != nil {
 			return nil, err
+		}
+		// A review rule never adds an entry on a provider's shared
+		// addresses: they are the provider's, shared with its other
+		// customers (research/531 D14). A person adds one, after the
+		// warning, on the Scope page.
+		if r, shared := scopedom.SharedProviderEntry(typ, in.Pattern); shared {
+			out.Refusal = &RuleRefusal{Code: RuleRefusalProviderShared,
+				Message: "This range is " + r.Provider + " shared infrastructure, used by its other customers too; a review rule never adds it to scope."}
+			return out, nil
 		}
 		p, refusal := s.previewTarget(ctx, tenantID, typ, in)
 		if refusal != nil {

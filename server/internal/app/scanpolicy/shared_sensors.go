@@ -53,7 +53,7 @@ const (
 	ActionSharedSensorsAccessChanged = "organization.shared_sensors_access_changed"
 )
 
-// Refusal reasons: what the organization is told, never an edition.
+// Refusal reasons: what the organization is told, never a build.
 const (
 	ReasonSharedSensorsNotReady    = "shared sensors are not available yet"
 	ReasonSharedSensorsOff         = "shared sensors are turned off on this instance"

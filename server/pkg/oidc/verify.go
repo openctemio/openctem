@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"errors"
+	"slices"
 	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -64,6 +65,12 @@ type TokenPolicy struct {
 	// signature, iss and aud are still checked. Only a diagnostic preview
 	// that never grants anything may set it.
 	IgnoreTimes bool
+	// Keys, when set, are the only keys the token may be signed with (keys
+	// an administrator pasted): JWKSURI is not used and nothing is fetched.
+	// A key verifies only its own algorithm.
+	Keys *StaticKeySet
+	// usedKey, when set, is told the kid of the key that verified the token.
+	usedKey func(kid string)
 }
 
 var errIncompletePolicy = errors.New("incomplete token policy")
@@ -76,12 +83,15 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 	if raw == "" || len(raw) > MaxTokenSize {
 		return ErrTokenSize
 	}
-	if p.JWKSURI == "" ||
+	if (p.JWKSURI == "" && p.Keys == nil) ||
 		(p.Issuer == "" && !p.IssuerCheckedByCaller) ||
 		(p.Audience == "" && !p.AudienceCheckedByCaller) {
 		return errIncompletePolicy
 	}
 	methods := allowedMethods(p.Algorithms)
+	if p.Keys != nil {
+		methods = slices.DeleteFunc(slices.Clone(methods), func(m string) bool { return !slices.Contains(p.Keys.algorithms(), m) })
+	}
 	if len(methods) == 0 {
 		return errIncompletePolicy
 	}
@@ -111,9 +121,21 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 	}
 	keyFunc := func(t *jwtv5.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
-		key, err := c.key(ctx, p.JWKSURI, kid)
-		if err != nil {
-			return nil, err
+		var key any
+		if p.Keys != nil {
+			k, ok := p.Keys.lookup(kid)
+			if !ok {
+				return nil, ErrPastedKeyUnknown
+			}
+			if t.Method.Alg() != k.alg {
+				return nil, errors.New("alg does not match the pasted key")
+			}
+			key = k.key
+		} else {
+			var err error
+			if key, err = c.key(ctx, p.JWKSURI, kid); err != nil {
+				return nil, err
+			}
 		}
 		switch t.Method.(type) {
 		case *jwtv5.SigningMethodRSA, *jwtv5.SigningMethodRSAPSS:
@@ -126,6 +148,9 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 			}
 		default:
 			return nil, errors.New("unsupported alg")
+		}
+		if p.usedKey != nil {
+			p.usedKey(kid)
 		}
 		return key, nil
 	}

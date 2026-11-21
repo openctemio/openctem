@@ -10,6 +10,10 @@ const (
 	// IntentOrganization: a new organization (create-first-team,
 	// POST /tenants).
 	IntentOrganization Intent = "organization"
+	// IntentPersonalOrganization: the organization the platform creates on
+	// its own for a person who signed up and has no other way in
+	// ("Create a personal organization on sign-up").
+	IntentPersonalOrganization Intent = "personal_organization"
 )
 
 // Identity is what the path knows about the person, all of it already
@@ -35,6 +39,13 @@ type Identity struct {
 	// (pkg/emaildomain). Self-service sign-up refuses it; an invitation or an
 	// organization's SSO is the organization choosing the person.
 	DisposableEmail bool
+	// EmailVerified: the address is verified (by the link we sent, or by a
+	// provider that vouches for it).
+	EmailVerified bool
+	// DomainClaimed: an organization verified the address's domain. The
+	// person belongs with that organization (join, SSO or an invitation),
+	// so no personal organization is made for them.
+	DomainClaimed bool
 }
 
 // Outcome is the admission decision.
@@ -59,6 +70,11 @@ const (
 	// session, no organization) and answers the same "not set up" response
 	// whatever the reason, so the answer does not enumerate.
 	OutcomeNotSetUp Outcome = "not_set_up"
+	// OutcomePersonalOrganization: create the person's own organization
+	// now (IntentPersonalOrganization). Every other answer for that intent
+	// is not_set_up: nothing is created and the person keeps the normal
+	// "create or join an organization" step.
+	OutcomePersonalOrganization Outcome = "personal_organization"
 )
 
 // Admitted reports whether the outcome lets the path go on.
@@ -76,6 +92,11 @@ func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp && o != OutcomeSS
 //	  accounts open, not disposable        → self_service
 //	  accounts domain, joinable domain, not disposable → domain_account
 //	otherwise                              → not_set_up (write nothing)
+//	the personal organization at sign-up:
+//	  switch on, self-service, verified email, no invitation, no SSO
+//	  admission, no claimed domain, not blocked, not disposable
+//	                                       → personal_organization
+//	  anything else                        → not_set_up (create nothing)
 //
 // The policy passed in is the policy in force (clamped to the ceiling). An
 // existing account signing in is never refused here: a policy change never
@@ -85,6 +106,12 @@ func Admit(p Policy, id Identity) Outcome {
 	case IntentOrganization:
 		if p.AllowsSelfService() && !id.WorkspacesBlocked {
 			return OutcomeSelfService
+		}
+		return OutcomeNotSetUp
+	case IntentPersonalOrganization:
+		if p.CreatesPersonalOrganization() && id.EmailVerified && !id.InvitedPending && !id.JITEligible &&
+			!id.SSORequired && !id.DomainJoinable && !id.DomainClaimed && !id.WorkspacesBlocked && !id.DisposableEmail {
+			return OutcomePersonalOrganization
 		}
 		return OutcomeNotSetUp
 	case IntentAccount:

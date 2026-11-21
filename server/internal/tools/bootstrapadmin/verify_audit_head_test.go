@@ -10,7 +10,7 @@ import (
 )
 
 // The verify-audit output, text and JSON, carries the chain head, so the
-// export can be checked offline in Community.
+// export can be checked offline in the default build.
 func TestPrintAuditReportCarriesChainHead(t *testing.T) {
 	r := &admin.AuditChainReport{Entries: 4, FirstPosition: 1, LastPosition: 4,
 		Breaks: []admin.AuditChainBreak{}, Head: &admin.AuditChainHead{Position: 4, Hash: "abc123"}}

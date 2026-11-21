@@ -71,15 +71,21 @@ func TestScopeCoverageRepository(t *testing.T) {
 	seedScopeTarget(t, db, tenantB, "domain", "*.acme.com")
 	asset(tenantB, "domain", "b1.acme.com", "")
 	asset(tenantB, "domain", "b2.acme.com", "")
+	// Tenant A's exclusion of a tenant B name removes nothing in tenant B.
+	exclusion(tenantA, "domain", "b2.acme.com", true)
 
 	repo := postgres.NewScopeCoverageRepository(&postgres.DB{DB: db})
 	got, err := repo.CountCoverage(ctx, tenantA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := scopedom.InventoryCoverage{InternetFacing: 8, InScope: 5, Internal: 3}
+	want := scopedom.InventoryCoverage{InternetFacing: 8, InScope: 5, Excluded: 1, Internal: 3}
 	if got != want {
 		t.Fatalf("tenant-wide = %+v, want %+v", got, want)
+	}
+	// 198.51.100.7 and old.inactive.example: found, neither in nor out.
+	if n := got.NotCovered(); n != 2 {
+		t.Fatalf("not covered = %d, want 2", n)
 	}
 	if p := got.Percent(); p != 62.5 {
 		t.Fatalf("percent = %v", p)

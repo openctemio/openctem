@@ -1,6 +1,6 @@
 // Package example is a complete extension written only against the public
-// extension API (pkg/extension). It is the reference for anyone building
-// their own edition and is compiled and tested in every core build, so a
+// extension API (pkg/extension). It is the reference for anyone writing
+// an extension and is compiled and tested in every core build, so a
 // change that breaks the API breaks this package in the core's own CI.
 //
 // It adds organization notes: one table in its own schema, a grant key, two

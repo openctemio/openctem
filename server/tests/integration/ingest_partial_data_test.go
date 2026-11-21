@@ -407,7 +407,7 @@ func TestIngestFinding_PartialData_ComplianceFields(t *testing.T) {
 	})
 
 	t.Run("FullComplianceCheck", func(t *testing.T) {
-		// Enterprise tool with full compliance mapping
+		// A tool with full compliance mapping
 		ctisFinding := &ctis.Finding{
 			Type:     ctis.FindingTypeCompliance,
 			Title:    "Password Policy Non-Compliant",
@@ -421,7 +421,7 @@ func TestIngestFinding_PartialData_ComplianceFields(t *testing.T) {
 			},
 		}
 
-		// Verify top-level fields for enterprise compliance
+		// Verify top-level compliance fields
 		if ctisFinding.Type != ctis.FindingTypeCompliance {
 			t.Error("Type should be compliance")
 		}

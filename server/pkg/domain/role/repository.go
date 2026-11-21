@@ -23,6 +23,14 @@ type Repository interface {
 	// Includes both system roles and tenant's custom roles.
 	ListForTenant(ctx context.Context, tenantID ID) ([]*Role, error)
 
+	// ListByIDs returns the given roles visible to the tenant (managed roles
+	// included) with their permissions loaded in one batch.
+	ListByIDs(ctx context.Context, tenantID ID, ids []ID) ([]*Role, error)
+
+	// ListTeamRoles returns, per team of the tenant, the roles bound to it
+	// (managed presets and hand-bound roles) in a constant number of queries.
+	ListTeamRoles(ctx context.Context, tenantID ID, groupIDs []ID) (map[ID][]*Role, error)
+
 	// ListSystemRoles returns only system roles.
 	ListSystemRoles(ctx context.Context) ([]*Role, error)
 
@@ -75,6 +83,15 @@ type Repository interface {
 
 	// CountUsersWithRole returns the count of users with a specific role.
 	CountUsersWithRole(ctx context.Context, roleID ID) (int, error)
+
+	// CountHoldersByRole returns, for the tenant, how many distinct users hold
+	// each role, directly or through a team, in one grouped query. A role
+	// nobody holds is absent from the map.
+	CountHoldersByRole(ctx context.Context, tenantID ID) (map[ID]int, error)
+
+	// CountPendingApprovals returns how many finding approval requests of the
+	// tenant are waiting for a decision (pending and not past their expiry).
+	CountPendingApprovals(ctx context.Context, tenantID ID) (int, error)
 }
 
 // PermissionRepository defines the interface for permission persistence operations.

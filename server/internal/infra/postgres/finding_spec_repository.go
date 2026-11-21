@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -24,7 +25,7 @@ import (
 // findingListTimeout bounds one list, count, stats or SLA statement
 // (RFC-048 §3.7): a search or filter that cannot finish in time is a 503
 // QUERY_TIMEOUT, never a request that holds a connection for minutes.
-const findingListTimeout = "5s"
+const findingListTimeout = interactiveReadTimeout
 
 // maxFindingPageRows is the largest findings page (pagination.New clamps to it).
 const maxFindingPageRows = 100
@@ -39,26 +40,18 @@ type findingRowQuerier interface {
 // beginFindingRead opens a read-only transaction whose statements stop after
 // findingListTimeout. The caller rolls it back (or commits).
 func (r *FindingRepository) beginFindingRead(ctx context.Context) (*sql.Tx, error) {
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, findingListTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin finding read: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("set finding read timeout: %w", err)
 	}
 	return tx, nil
 }
 
 // findingTimeout maps a statement timeout (query_canceled) to
 // vulnerability.ErrFindingQueryTimeout, so the handler answers a typed 503
-// instead of a 500.
-func findingTimeout(err error) error {
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
-		return fmt.Errorf("%w: %w", vulnerability.ErrFindingQueryTimeout, err)
-	}
-	return err
+// instead of a 500 (counted and logged by readTimeout).
+func findingTimeout(ctx context.Context, err error) error {
+	return readTimeout(ctx, readFindings, vulnerability.ErrFindingQueryTimeout, err)
 }
 
 // checkFindingWhere is defense in depth: a WHERE that does not start with the
@@ -85,12 +78,12 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 
 	var total int64
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
-		return empty, findingTimeout(fmt.Errorf("failed to count findings: %w", err))
+		return empty, findingTimeout(ctx, fmt.Errorf("failed to count findings: %w", err))
 	}
 	query := buildFindingPageQuery(r.selectQuery(), w.SQL, w.OrderBy, page.Limit(), page.Offset())
 	rows, err := tx.QueryContext(ctx, query, w.Args...)
 	if err != nil {
-		return empty, findingTimeout(fmt.Errorf("failed to query findings: %w", err))
+		return empty, findingTimeout(ctx, fmt.Errorf("failed to query findings: %w", err))
 	}
 	defer rows.Close()
 	// A constant capacity: pagination.New caps a page at maxFindingPageRows,
@@ -104,7 +97,7 @@ func (r *FindingRepository) ListWhere(ctx context.Context, w *filterspec.Where, 
 		findings = append(findings, f)
 	}
 	if err := rows.Err(); err != nil {
-		return empty, findingTimeout(fmt.Errorf("failed to iterate findings: %w", err))
+		return empty, findingTimeout(ctx, fmt.Errorf("failed to iterate findings: %w", err))
 	}
 	if err := tx.Commit(); err != nil {
 		return empty, fmt.Errorf("commit finding list: %w", err)
@@ -124,7 +117,7 @@ func (r *FindingRepository) CountWhere(ctx context.Context, w *filterspec.Where)
 	defer func() { _ = tx.Rollback() }()
 	var total int64
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM findings WHERE "+w.SQL, w.Args...).Scan(&total); err != nil {
-		return 0, findingTimeout(fmt.Errorf("failed to count findings: %w", err))
+		return 0, findingTimeout(ctx, fmt.Errorf("failed to count findings: %w", err))
 	}
 	return total, tx.Commit()
 }
@@ -142,7 +135,7 @@ func (r *FindingRepository) GetStatsWhere(ctx context.Context, w *filterspec.Whe
 	defer func() { _ = tx.Rollback() }()
 	stats, err := r.queryFindingStats(ctx, tx, findingStatsSelect+" WHERE "+w.SQL, w.Args)
 	if err != nil {
-		return nil, findingTimeout(err)
+		return nil, findingTimeout(ctx, err)
 	}
 	return stats, tx.Commit()
 }
@@ -187,7 +180,7 @@ func (r *FindingRepository) GetSLABreakdownWhere(ctx context.Context, w *filters
 		&b.UpTo7, &b.D8to30, &b.D31to90, &b.Over90,
 		&crit, &high, &med, &low, &info,
 	); err != nil {
-		return nil, findingTimeout(fmt.Errorf("failed to get sla breakdown: %w", err))
+		return nil, findingTimeout(ctx, fmt.Errorf("failed to get sla breakdown: %w", err))
 	}
 	b.PastDueBySeverity[vulnerability.SeverityCritical] = crit
 	b.PastDueBySeverity[vulnerability.SeverityHigh] = high
@@ -198,7 +191,7 @@ func (r *FindingRepository) GetSLABreakdownWhere(ctx context.Context, w *filters
 }
 
 // findingExportTimeout bounds one export statement (RFC-048 §3.7).
-const findingExportTimeout = "60s"
+const findingExportTimeout = 60 * time.Second
 
 // MaxFindingExportBatch is the number of rows one export statement reads.
 const MaxFindingExportBatch = 1000
@@ -223,7 +216,7 @@ func (r *FindingRepository) ExportSortedWhere(ctx context.Context, w *filterspec
 	if limit <= 0 {
 		return 0, false, nil
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := beginReadSnapshot(ctx, r.db.DB, findingExportTimeout)
 	if err != nil {
 		return 0, false, fmt.Errorf("begin finding export: %w", err)
 	}
@@ -234,9 +227,6 @@ func (r *FindingRepository) ExportSortedWhere(ctx context.Context, w *filterspec
 	}
 	if !got {
 		return 0, false, vulnerability.ErrExportInProgress
-	}
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingExportTimeout+"'"); err != nil {
-		return 0, false, fmt.Errorf("set finding export timeout: %w", err)
 	}
 	for rows <= limit {
 		// One row past the limit tells whether the export is truncated.
@@ -307,14 +297,11 @@ func (r *FindingRepository) CountFacetsWhere(ctx context.Context, w *filterspec.
 	for i, p := range preds {
 		cols[i] = "COUNT(*) FILTER (WHERE " + p + ")"
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, findingListTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin finding facet count: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
-		return nil, fmt.Errorf("set finding facet count timeout: %w", err)
-	}
 	out := make([]int64, len(preds))
 	dest := make([]any, len(preds))
 	for i := range out {
@@ -343,14 +330,11 @@ func (r *FindingRepository) IDsWhere(ctx context.Context, w *filterspec.Where, l
 	if limit <= 0 {
 		return nil, nil
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := beginRead(ctx, r.db.DB, findingListTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin finding ids: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+findingListTimeout+"'"); err != nil {
-		return nil, fmt.Errorf("set finding ids timeout: %w", err)
-	}
 	// w.SQL comes only from filterspec.Compile (registry SQL, bound values).
 	query := "SELECT findings.id FROM findings WHERE " + w.SQL + //nolint:gosec // G202: see above
 		fmt.Sprintf(" ORDER BY findings.id LIMIT $%d", w.NextArg)

@@ -1,0 +1,22 @@
+{
+  "assetAddresses.col.address": "Address",
+  "assetAddresses.col.firstSeen": "First seen",
+  "assetAddresses.col.lastSeen": "Last seen",
+  "assetAddresses.col.provider": "Provider",
+  "assetAddresses.col.state": "Now",
+  "assetAddresses.count": "{count, plural, one {# address} other {# addresses}}",
+  "assetAddresses.current": "Current",
+  "assetAddresses.emptyHint": "No DNS answer for this name is on record yet.",
+  "assetAddresses.emptyPast": "This name resolves to none of the addresses it had. History lists them.",
+  "assetAddresses.emptyTitle": "No current addresses",
+  "assetAddresses.gone": "No longer resolves",
+  "assetAddresses.history": "History",
+  "assetAddresses.historyHint": "Every address this name resolved to, with when it was first and last seen.",
+  "assetAddresses.historyTitle": "Address history",
+  "assetAddresses.more": "+{count} more",
+  "assetAddresses.other": "Other addresses",
+  "assetAddresses.providerHint": "Addresses a provider shares with many organizations are recorded on this name, not as your assets. Scans test this name, not those addresses.",
+  "assetAddresses.servedBy": "Served by {provider}",
+  "assetAddresses.title": "Addresses",
+  "assetAddresses.truncated": "{count} older addresses are not listed."
+}

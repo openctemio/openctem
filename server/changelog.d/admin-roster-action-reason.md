@@ -1,0 +1,6 @@
+### Security: the admin roster actions keep the reason in the audit record
+
+- `PATCH /api/v1/admin/users/{id}` (role change, including making or unmaking a super admin, activate and deactivate), `POST /api/v1/admin/administrators`, `POST /api/v1/admin/users/{id}/reset-credentials`, `POST /api/v1/admin/users/{id}/break-glass-test` and `DELETE /api/v1/admin/users/{id}/idp-binding` accept an optional `reason` (1 to 1000 characters after trimming; a longer one is refused with 400 and nothing changes). It is kept in the action's admin audit row and, for an action that needs a second super admin, in the gate's `approval.used` or `approval.single_admin` row next to the reason of the approval request. The last three take it as a JSON body `{"reason": "..."}`; no body still works.
+- Step-up, second approval and permissions are unchanged. The request field is additive (contract v1).
+- **Upgrade note:** the reason is optional in this release because the console released with it does not send it yet. The redesigned console sends it with every one of these actions; once that console ships the reason becomes required.
+- Docs: server/docs/architecture/platform-console.md, server/docs/architecture/authorization-matrix.md

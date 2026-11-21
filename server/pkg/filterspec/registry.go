@@ -116,12 +116,21 @@ var suffixOps = []struct {
 //     member visibility rule;
 //   - UpperToken: in a Search template only, q trimmed and upper-cased
 //     (bound as is, never a pattern), for exact identifier matches such as a
-//     CVE id.
+//     CVE id;
+//   - MemberToken: the constant TRUE when the member visibility rule applies
+//     to the actor (a request caller who is not an administrator), FALSE
+//     otherwise, for a field whose SQL reads rows of another registry that
+//     has such a rule (the open findings an asset counts). It is a literal,
+//     not a bound value, so the planner drops the rule for an administrator.
+//
+// Field.SQL and Field.SortSQL may use TenantToken, UserToken and MemberToken
+// too; they are rendered the same way.
 const (
 	ArgToken    = "{arg}"
 	TenantToken = "{tenant}"
 	UserToken   = "{user}"
 	UpperToken  = "{upper}"
+	MemberToken = "{member}"
 )
 
 // Limits (RFC-048 §3.7).

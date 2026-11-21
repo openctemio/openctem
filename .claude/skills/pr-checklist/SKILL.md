@@ -41,6 +41,11 @@ Mark clearly what is shipped and what is only designed.
 ## Wording
 - Describe the design on its own terms. Do not name or compare with other products in code, docs, commit
   messages or PR text; integrations and tools the code actually runs, and standards, are fine to name.
+- Describe the code in its own terms: extension, extension point, optional module, the default build, this
+  build; limits are values an operator sets.
+- The `Restricted wording` check (`.github/scripts/check-restricted-wording.sh`) reads added lines, commit
+  messages, the PR title and body and the branch name; its rules are not in the repository, and a hit names
+  file:line only.
 - No RFC or phase tags in code comments; link the design once at the top of the file.
 - No AI attribution lines (the `commit-msg` hook rejects them) and no `@mentions`; wrap package names
   such as `` `@types/node` `` in backticks in titles.

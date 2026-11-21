@@ -39,18 +39,25 @@ import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { SheetDetailToolbar } from '@/features/shared/components/sheet-detail-toolbar'
 import { useEmergingThreat } from '../api'
-import type { EmergingThreatAsset, EmergingThreatDetail, RecommendedAction } from '../types'
+import type {
+  AssetTier,
+  EmergingThreatAssetGroup,
+  EmergingThreatDetail,
+  RecommendedAction,
+} from '../types'
+import { HostTitle, type HostRow } from './affected-assets'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
 import {
   EtsBreakdownList,
   ExploitBadges,
   LevelBadge,
   StateBadge,
+  hostTierParts,
   useEventDetail,
   useEventKindLabel,
 } from './bits'
 
-const TOP_ASSETS = 5
+const TOP_HOSTS = 5
 const TOP_EVENTS = 5
 
 const ACTION_TONE: Record<RecommendedAction, DetailCalloutTone> = {
@@ -60,48 +67,61 @@ const ACTION_TONE: Record<RecommendedAction, DetailCalloutTone> = {
 }
 
 const CRITICALITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const TIER_RANK: Record<AssetTier, number> = { confirmed: 0, likely: 1, possible: 2 }
 
-/** Crown jewels first, then internet-facing, then confirmed before possible. */
-export function rankAssets(assets: EmergingThreatAsset[]): EmergingThreatAsset[] {
-  const tier = (a: EmergingThreatAsset) => (a.tier === 'possible' ? 1 : 0)
-  return [...assets].sort(
-    (a, b) =>
-      (CRITICALITY_RANK[a.criticality] ?? 4) - (CRITICALITY_RANK[b.criticality] ?? 4) ||
-      Number(b.internet_facing) - Number(a.internet_facing) ||
-      tier(a) - tier(b) ||
-      a.asset_name.localeCompare(b.asset_name)
-  )
+/**
+ * The host rows of every tier, most important first: crown jewels, then
+ * internet-facing, then the stronger tier. A host that serves several ports
+ * is one row (the API folds its services, `asset_groups`).
+ */
+export function rankHosts(groups: EmergingThreatAssetGroup[]): HostRow[] {
+  return groups
+    .flatMap((g) =>
+      g.hosts.map((h, i) => ({ ...h, tier: g.tier, key: `${g.tier}:${h.asset_id || h.host}:${i}` }))
+    )
+    .sort(
+      (a, b) =>
+        (CRITICALITY_RANK[a.criticality] ?? 4) - (CRITICALITY_RANK[b.criticality] ?? 4) ||
+        Number(b.internet_facing) - Number(a.internet_facing) ||
+        TIER_RANK[a.tier] - TIER_RANK[b.tier] ||
+        a.host.localeCompare(b.host)
+    )
 }
 
 export interface ProductVersions {
   product: string
-  /** Version seen to the number of assets running it; '' is "version unknown". */
-  versions: { version: string; assets: number }[]
+  /** Version seen to the number of hosts running it; '' is "version unknown". */
+  versions: { version: string; hosts: number }[]
 }
 
-/** The affected assets grouped by product, then by the version seen. */
-export function groupByProduct(assets: EmergingThreatAsset[]): ProductVersions[] {
+/** The affected hosts grouped by product, then by the version seen. */
+export function groupByProduct(groups: EmergingThreatAssetGroup[]): ProductVersions[] {
   const byProduct = new Map<string, Map<string, Set<string>>>()
-  for (const a of assets) {
-    const product = a.product.trim()
-    if (!product) continue
-    const versions = byProduct.get(product) ?? new Map<string, Set<string>>()
-    const ids = versions.get(a.version_seen) ?? new Set<string>()
-    ids.add(a.asset_id)
-    versions.set(a.version_seen, ids)
-    byProduct.set(product, versions)
+  for (const g of groups) {
+    for (const h of g.hosts) {
+      const hostId = h.asset_id ? `a:${h.asset_id}` : `h:${h.host}`
+      for (const svc of h.services) {
+        const product = svc.product.trim()
+        if (!product) continue
+        const versions = byProduct.get(product) ?? new Map<string, Set<string>>()
+        const ids = versions.get(svc.version_seen) ?? new Set<string>()
+        ids.add(hostId)
+        versions.set(svc.version_seen, ids)
+        byProduct.set(product, versions)
+      }
+    }
   }
   return [...byProduct.entries()]
     .map(([product, versions]) => ({
       product,
       versions: [...versions.entries()]
-        .map(([version, ids]) => ({ version, assets: ids.size }))
-        // Known versions first, most assets first.
-        .sort((x, y) => Number(!x.version) - Number(!y.version) || y.assets - x.assets),
+        .map(([version, ids]) => ({ version, hosts: ids.size }))
+        // Known versions first, most hosts first.
+        .sort((x, y) => Number(!x.version) - Number(!y.version) || y.hosts - x.hosts),
     }))
     .sort(
       (x, y) =>
-        y.versions.reduce((n, v) => n + v.assets, 0) - x.versions.reduce((n, v) => n + v.assets, 0)
+        y.versions.reduce((n, v) => n + v.hosts, 0) - x.versions.reduce((n, v) => n + v.hosts, 0)
     )
 }
 
@@ -165,8 +185,19 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
   const { t, locale } = useTranslation()
   const kindLabel = useEventKindLabel()
   const detailOf = useEventDetail()
-  const products = useMemo(() => groupByProduct(alert.assets), [alert.assets])
-  const top = useMemo(() => rankAssets(alert.assets).slice(0, TOP_ASSETS), [alert.assets])
+  const groups = alert.asset_groups
+  const products = useMemo(() => groupByProduct(groups ?? []), [groups])
+  const hosts = useMemo(() => rankHosts(groups ?? []), [groups])
+  const top = hosts.slice(0, TOP_HOSTS)
+  // "+1 likely, +2 possibly affected" under the confirmed figure.
+  const weaker = hostTierParts(t, {
+    confirmed: Math.max(1, alert.confirmed_hosts),
+    likely: alert.likely_hosts ?? 0,
+    possible: alert.possible_hosts,
+  })
+    .slice(1)
+    .map((p) => p.text)
+    .join(', ')
   const more = Math.max(0, alert.product_count - 1)
   const b = alert.ets_breakdown
 
@@ -216,24 +247,18 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
           />
           <DetailStat
             label={t('emergingThreats.sheet.statAffected')}
-            value={alert.confirmed_assets}
-            caption={
-              alert.possible_assets > 0
-                ? t('emergingThreats.sheet.possibleCaption', undefined, {
-                    n: alert.possible_assets,
-                  })
-                : undefined
-            }
+            value={alert.confirmed_hosts}
+            caption={weaker || undefined}
           />
           <DetailStat
             label={t('emergingThreats.sheet.statInternet')}
-            value={alert.internet_facing_assets}
-            tone={alert.internet_facing_assets > 0 ? 'warning' : 'default'}
+            value={alert.internet_facing_hosts}
+            tone={alert.internet_facing_hosts > 0 ? 'warning' : 'default'}
           />
           <DetailStat
             label={t('emergingThreats.sheet.statCritical')}
-            value={alert.critical_assets}
-            tone={alert.critical_assets > 0 ? 'destructive' : 'default'}
+            value={alert.critical_hosts}
+            tone={alert.critical_hosts > 0 ? 'destructive' : 'default'}
           />
         </DetailStatGrid>
       </div>
@@ -299,7 +324,7 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
                         {v.version || t('emergingThreats.sheet.versionUnknown')}
                       </span>
                       <span className="text-muted-foreground tabular-nums">
-                        {t('emergingThreats.sheet.assetsOn', undefined, { n: v.assets })}
+                        {t('emergingThreats.sheet.hostsOn', undefined, { n: v.hosts })}
                       </span>
                     </span>
                   ))}
@@ -310,10 +335,10 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
         )}
 
         <DetailSection
-          title={t('emergingThreats.sheet.topAssets')}
-          count={alert.assets.length}
+          title={t('emergingThreats.sheet.topHosts')}
+          count={hosts.length}
           actions={
-            alert.assets.length > TOP_ASSETS ? (
+            hosts.length > TOP_HOSTS ? (
               <Link href={fullPage} className="text-sm hover:underline">
                 {t('emergingThreats.sheet.viewAll')}
               </Link>
@@ -325,34 +350,20 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
               {t('emergingThreats.assets.noneConfirmed')}
             </p>
           ) : (
-            <ul className="divide-y text-sm">
-              {top.map((a) => (
-                <li
-                  key={`${a.asset_id}-${a.product}-${a.version_seen}`}
-                  className="flex items-center gap-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={`/assets/${a.asset_id}`}
-                      className="block truncate font-medium hover:underline"
-                    >
-                      {a.asset_name}
-                    </Link>
-                    <p className="truncate text-muted-foreground">
-                      {a.tier === 'possible'
-                        ? t('emergingThreats.assets.possible')
-                        : a.tier === 'likely'
-                          ? t('emergingThreats.assets.likely')
-                          : t('emergingThreats.tier.confirmed')}
-                    </p>
+            <ul className="divide-y text-sm" data-testid="et-top-hosts">
+              {top.map((h) => (
+                <li key={h.key} className="flex items-start gap-3 py-2">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <HostTitle row={h} />
+                    <p className="text-muted-foreground">{t(`emergingThreats.assets.${h.tier}`)}</p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                    {a.criticality && (
+                    {h.criticality && (
                       <Badge variant="outline">
-                        {t(`criticality.${a.criticality}`, a.criticality)}
+                        {t(`criticality.${h.criticality}`, h.criticality)}
                       </Badge>
                     )}
-                    {a.internet_facing && (
+                    {h.internet_facing && (
                       <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
                     )}
                   </div>

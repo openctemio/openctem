@@ -248,7 +248,7 @@ func TestInfoString(t *testing.T) {
 func TestExtensionsAreReported(t *testing.T) {
 	t.Cleanup(func() { SetExtensions(nil) })
 	if got := Get().Extensions; got == nil || len(got) != 0 {
-		t.Fatalf("Community build: Extensions = %#v, want an empty list", got)
+		t.Fatalf("default build: Extensions = %#v, want an empty list", got)
 	}
 	in := []Extension{{Name: "example", Version: "v1.2.3"}}
 	SetExtensions(in)

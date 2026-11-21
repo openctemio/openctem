@@ -65,6 +65,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [mode, setMode] = useState<Mode>((policy.mode as Mode) ?? 'admin_only')
   const [accounts, setAccounts] = useState<Accounts>(storedAccounts)
   const [requestAccess, setRequestAccess] = useState(!!policy.request_access)
+  const [personalOrg, setPersonalOrg] = useState(!!policy.personal_organization)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
@@ -75,17 +76,27 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
     setMode((policy.mode as Mode) ?? 'admin_only')
     setAccounts((policy.accounts as Accounts) ?? 'closed')
     setRequestAccess(!!policy.request_access)
+    setPersonalOrg(!!policy.personal_organization)
   }, [policy])
   useEffect(reset, [reset])
 
   // Organization self-service needs open account sign-up.
   const chooseAccounts = (a: Accounts) => {
     setAccounts(a)
-    if (a !== 'open') setMode('admin_only')
+    if (a !== 'open') chooseMode('admin_only')
+  }
+
+  // A personal organization at sign-up needs organization self-service.
+  const chooseMode = (m: Mode) => {
+    setMode(m)
+    if (m !== 'self_service') setPersonalOrg(false)
   }
 
   const dirty =
-    mode !== policy.mode || accounts !== storedAccounts || requestAccess !== !!policy.request_access
+    mode !== policy.mode ||
+    accounts !== storedAccounts ||
+    requestAccess !== !!policy.request_access ||
+    personalOrg !== !!policy.personal_organization
 
   const openConfirm = () => {
     setConfirmOpen(true)
@@ -99,6 +110,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
         mode,
         accounts,
         request_access: requestAccess,
+        personal_organization: personalOrg,
         version: policy.version ?? 0,
         totp_code: rc.code.trim(),
       })
@@ -179,7 +191,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
           <p className="text-sm font-medium">{t('admin.signup.title')}</p>
           <RadioGroup
             value={mode}
-            onValueChange={(v) => setMode(v as Mode)}
+            onValueChange={(v) => chooseMode(v as Mode)}
             disabled={!canEdit}
             aria-label={t('admin.signup.title')}
           >
@@ -211,6 +223,23 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
               </Label>
             </div>
           </RadioGroup>
+
+          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+            <Label htmlFor={`${codeId}-po`} className="grid gap-1 font-normal">
+              <span className="font-medium">{t('admin.signup.personalOrg')}</span>
+              <span className="text-sm text-muted-foreground">
+                {mode === 'self_service'
+                  ? t('admin.signup.personalOrgHint')
+                  : t('admin.signup.personalOrgNeedsSelfService')}
+              </span>
+            </Label>
+            <Switch
+              id={`${codeId}-po`}
+              checked={personalOrg}
+              onCheckedChange={setPersonalOrg}
+              disabled={!canEdit || mode !== 'self_service'}
+            />
+          </div>
 
           <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <Label htmlFor={`${codeId}-ra`} className="grid gap-1 font-normal">
@@ -278,6 +307,13 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
                 requestAccess: requestAccess ? t('admin.signup.on') : t('admin.signup.off'),
               })}
             </p>
+            {personalOrg !== !!policy.personal_organization && (
+              <p>
+                {t('admin.signup.confirmPersonalOrg', undefined, {
+                  state: personalOrg ? t('admin.signup.on') : t('admin.signup.off'),
+                })}
+              </p>
+            )}
             <p>
               {t('admin.signup.confirmAccounts', undefined, {
                 accounts: t(`admin.signup.accounts.${accounts}`),

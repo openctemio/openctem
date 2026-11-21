@@ -235,8 +235,7 @@ func TestSignIn_PasswordAccountWithoutGateIsRefused(t *testing.T) {
 	}
 }
 
-// No factor needed: the session is issued; an account of the provider itself
-// (no password) never consults the gate.
+// No factor needed: the session is issued.
 func TestSignIn_NoSecondFactorNeeded(t *testing.T) {
 	t.Run("linked password account without a factor", func(t *testing.T) {
 		acct := verifiedPasswordAccount(t, "p@gmail.com")
@@ -248,17 +247,60 @@ func TestSignIn_NoSecondFactorNeeded(t *testing.T) {
 			t.Fatalf("no session: %+v %v", res, err)
 		}
 	})
-	t.Run("provider account", func(t *testing.T) {
+	t.Run("provider account with nothing to ask", func(t *testing.T) {
 		acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
 		f := newLinkFixture(t, acct)
 		f.idents.bindTo(acct, googleIssuer, "g-9")
-		gate := &fakeGate{challenge: &MFAChallengeInfo{Token: "x"}}
+		gate := &fakeGate{}
 		f.svc.SetSecondFactorGate(gate)
 		res, err := f.svc.signIn(context.Background(), googleInfo("g@gmail.com", "g-9", ""), OAuthProviderGoogle, "/")
-		if err != nil || res.AccessToken == "" || len(gate.asked) != 0 {
+		if err != nil || res.AccessToken == "" || len(gate.asked) != 1 || f.sessions.created != 1 {
 			t.Fatalf("provider account: %+v %v asked=%v", res, err, gate.asked)
 		}
 	})
+}
+
+// Without the second-factor gate a provider account gets no session either:
+// a missing wiring must never skip a factor the account has.
+func TestSignIn_ProviderAccountWithoutGateIsRefused(t *testing.T) {
+	acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
+	f := newLinkFixture(t, acct)
+	f.idents.bindTo(acct, googleIssuer, "g-9")
+	res, err := f.svc.signIn(context.Background(), googleInfo("g@gmail.com", "g-9", ""), OAuthProviderGoogle, "/")
+	if !errors.Is(err, ErrOAuthExchangeFailed) {
+		t.Fatalf("want refusal, got %+v %v", res, err)
+	}
+	if f.sessions.created != 0 {
+		t.Fatal("session issued without the gate")
+	}
+}
+
+// An account of the provider itself (no password) takes our second step too
+// when it has a factor or an organization it belongs to requires one: the
+// session it then gets went through that step, which is what such an
+// organization's token request checks. Without this the person, invited into
+// an organization that requires 2FA, could never get in (the social session
+// is refused and there is no password to sign in with).
+func TestSignIn_ProviderAccountTakesTheSecondStep(t *testing.T) {
+	for _, purpose := range []mfa.Purpose{mfa.PurposeEnroll, mfa.PurposeVerify} {
+		t.Run(string(purpose), func(t *testing.T) {
+			acct, _ := userdom.NewOAuthUser("g@gmail.com", "G", "", userdom.AuthProviderGoogle)
+			f := newLinkFixture(t, acct)
+			f.idents.bindTo(acct, googleIssuer, "g-9")
+			gate := &fakeGate{challenge: &MFAChallengeInfo{Token: "c", Purpose: purpose, ExpiresAt: time.Now().Add(time.Minute)}}
+			f.svc.SetSecondFactorGate(gate)
+			res, err := f.svc.signIn(context.Background(), googleInfo("g@gmail.com", "g-9", ""), OAuthProviderGoogle, "/")
+			if err != nil {
+				t.Fatalf("sign-in: %v", err)
+			}
+			if res.MFAChallenge == nil || res.MFAChallenge.Purpose != purpose {
+				t.Fatalf("no second step: %+v", res)
+			}
+			if res.AccessToken != "" || res.RefreshToken != "" || f.sessions.created != 0 {
+				t.Fatal("a session was issued before the second factor")
+			}
+		})
+	}
 }
 
 // --- explicit linking --------------------------------------------------------

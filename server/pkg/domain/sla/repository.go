@@ -41,6 +41,12 @@ type Repository interface {
 	// a single asset. With none, every asset is governed by the tenant default.
 	HasAssetOverride(ctx context.Context, tenantID shared.ID) (bool, error)
 
+	// PreviewDefault counts, for the tenant, the open findings governed by
+	// the default of the given practice ("" or PracticeCompliance) whose
+	// deadline would move if the windows were the default's, with one
+	// aggregate query. kevCapDays 0 means no known exploited cap.
+	PreviewDefault(ctx context.Context, tenantID shared.ID, practice string, windows []PreviewWindow, kevCapDays int) (DefaultPreview, error)
+
 	// ListByTenant returns all policies for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*Policy, error)
 }

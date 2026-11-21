@@ -10,9 +10,10 @@ package finding
 // member) and only approvers eligible for every member; each member keeps its
 // own acceptance cap (an end past a member's cap is shortened for that member
 // and shown in the preview). The caller must have every member in their data
-// scope to request, approve or reject. Member requests cannot be decided one
-// by one, and once applied each is an ordinary decision with its own expiry
-// and material-change check.
+// scope to request, approve or reject. A member request is never approved
+// alone; an approver may leave one member out (reject it with a reason) while
+// the rest stays pending, and once applied each is an ordinary decision with
+// its own expiry and material-change check.
 
 import (
 	"context"
@@ -44,6 +45,7 @@ type batchStore interface {
 		finish func(a *vulnerability.Approval) (*vulnerability.FindingActivity, bool, error),
 	) (*vulnerability.ApprovalBatch, int, []shared.ID, error)
 	CloseBatch(ctx context.Context, tenantID, batchID, actor shared.ID, status vulnerability.ApprovalStatus, reason string) (*vulnerability.ApprovalBatch, error)
+	RejectBatchMember(ctx context.Context, tenantID, batchID, findingID, actor shared.ID, reason string) (*vulnerability.ApprovalBatch, shared.ID, error)
 }
 
 // ErrGroupExceptionPending: the task already has a pending exception;
@@ -161,7 +163,7 @@ func (s *VulnerabilityService) planGroupException(ctx context.Context, in GroupE
 	var org orgPolicy
 	for _, fid := range in.FindingIDs {
 		m := GroupExceptionMember{FindingID: fid}
-		f, err := s.findingRepo.GetByID(ctx, in.TenantID, fid)
+		f, err := s.memoFinding(ctx, in.TenantID, fid)
 		if err != nil {
 			m.Skipped = GroupSkipNotFound
 			preview.Members = append(preview.Members, m)
@@ -254,8 +256,9 @@ func (s *VulnerabilityService) RequestGroupException(ctx context.Context, in Gro
 		return nil, err
 	}
 	res := preview.Result
-	if n := len([]rune(strings.TrimSpace(in.Justification))); n < res.MinNoteLength || n == 0 {
-		return nil, fmt.Errorf("%w: this exception needs a note of at least %d characters (%s tier)", shared.ErrValidation, max(res.MinNoteLength, 1), res.Tier)
+	// A group is always decided by another person: it always needs a note.
+	if need := noteRequired(false, approvalpolicy.Facts{}, 0, res.MinNoteLength); noteLength(in.Justification) < need {
+		return nil, fmt.Errorf("%w: this exception needs a note of at least %d characters (%s tier)", shared.ErrValidation, need, res.Tier)
 	}
 	now := time.Now()
 	status := vulnerability.FindingStatus(in.RequestedStatus)
@@ -514,6 +517,52 @@ func (s *VulnerabilityService) closeGroupException(ctx context.Context, tenantID
 		}
 	}
 	return closed, nil
+}
+
+// MaxRejectionReasonLength bounds the reason of a rejection.
+const MaxRejectionReasonLength = 2000
+
+// LeaveOutGroupMember rejects one member of a pending group exception with a
+// reason ("leave out"); the other members stay pending. The caller must have
+// every member in their data scope (as for rejecting the whole group) and
+// must not be its requester (four-eyes: the requester cancels the whole group
+// instead). When no pending member is left the group closes as rejected.
+func (s *VulnerabilityService) LeaveOutGroupMember(ctx context.Context, tenantID, batchID, findingID, by shared.ID, reason string) (*vulnerability.ApprovalBatch, error) {
+	store, err := s.batches()
+	if err != nil {
+		return nil, err
+	}
+	b, err := store.GetBatch(ctx, tenantID, batchID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.batchMembersInScope(ctx, store, b); err != nil {
+		return nil, err
+	}
+	if b.Status != vulnerability.ApprovalStatusPending {
+		return nil, vulnerability.ErrBatchNotPending
+	}
+	if !b.RequestedBy.IsZero() && b.RequestedBy == by {
+		return nil, fmt.Errorf("%w; another person decides your group: cancel it to withdraw it", vulnerability.ErrSelfApproval)
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, fmt.Errorf("%w: leaving a finding out needs a reason", shared.ErrValidation)
+	}
+	if len(reason) > MaxRejectionReasonLength {
+		return nil, fmt.Errorf("%w: the reason is at most %d characters", shared.ErrValidation, MaxRejectionReasonLength)
+	}
+	out, _, err := store.RejectBatchMember(ctx, tenantID, batchID, findingID, by, reason)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyRequesterDecided(ctx, tenantID, findingID, b.RequestedBy, by, statusLabel(string(b.RequestedStatus)), decisionRejected)
+	if out.Status == vulnerability.ApprovalStatusRejected {
+		if members, merr := store.BatchMembers(ctx, tenantID, batchID); merr == nil {
+			s.notifyBatchRequesterDecided(ctx, tenantID, out, members, by, decisionRejected)
+		}
+	}
+	return out, nil
 }
 
 // GetGroupException reads a group exception and its members; the caller

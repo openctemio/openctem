@@ -42,7 +42,7 @@ func NewQueryExecutor(db *DB, timeout time.Duration) *QueryExecutor {
 var _ querylang.Executor = (*QueryExecutor)(nil)
 
 func (e *QueryExecutor) begin(ctx context.Context) (*sql.Tx, error) {
-	tx, err := readTx(ctx, e.db, fmt.Sprintf("%dms", e.timeout.Milliseconds()))
+	tx, err := readTx(ctx, e.db, e.timeout)
 	if err != nil {
 		return nil, err
 	}

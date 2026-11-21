@@ -14,7 +14,6 @@ import {
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
-import { ThreatSourceCard } from '@console/features/admin-console/components/threat-source-card'
 import { FeedRelayCard } from '@console/features/admin-console/components/feed-relay-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminHas } from '@console/features/admin-console/types'
@@ -188,7 +187,6 @@ export default function ThreatIntelFeedsPage() {
           </div>
         )}
         <FeedRelayCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
-        <ThreatSourceCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
       </PageStack>
     </Main>
   )

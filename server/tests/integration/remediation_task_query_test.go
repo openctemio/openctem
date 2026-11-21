@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 type qtAudit struct {
@@ -537,4 +538,74 @@ func (r *rtRig) taskVersion(id shared.ID) int {
 	t, err := r.repo.GetTask(context.Background(), r.tenant, id)
 	require.NoError(r.t, err)
 	return t.Version
+}
+
+// A restricted member who sees a task through one finding in their scope
+// must not read the names its author typed for assets outside that scope:
+// the query endpoint and the timeline give them the query with its
+// literals masked. The author, administrators and full-data roles read it
+// in full.
+func TestRemediationTaskQuery_TextRedactedForRestrictedReader(t *testing.T) {
+	r := newQTRig(t)
+	_ = r.finding(r.assetA, "new", nil)
+	_ = r.finding(r.assetB, "new", nil)
+	nameA := "rt-" + r.assetA.String() + ".example.com"
+	nameB := "rt-" + r.assetB.String() + ".example.com"
+	text := `findings where asset.name in ("` + nameA + `", "` + nameB + `") and severity = high`
+
+	res, err := r.createQueryTask(r.adminCtx(), r.adminCaller(), r.admin, text, remediation.QueryModeSnapshot, 0, remediation.ConflictResolution{})
+	require.NoError(t, err)
+	taskID := res.Task.ID
+
+	// The author (an administrator here) reads the full text.
+	got, err := r.svc.GetTaskQuery(r.adminCtx(), r.tenant, taskID)
+	require.NoError(t, err)
+	assert.False(t, got.TextRedacted)
+	assert.Contains(t, got.Text, nameB)
+
+	// The restricted member sees the task (one finding on assetA) ...
+	_, err = r.svc.GetTask(r.memberCtx(), r.tenant, taskID)
+	require.NoError(t, err)
+	// ... and its query with the names masked, fields and operators kept.
+	got, err = r.svc.GetTaskQuery(r.memberCtx(), r.tenant, taskID)
+	require.NoError(t, err)
+	assert.True(t, got.TextRedacted)
+	assert.NotContains(t, got.Text, nameB)
+	assert.NotContains(t, got.Text, nameA)
+	assert.Equal(t, `findings where asset.name in ("***", "***") and severity = high`, got.Text)
+
+	// The timeline entry of the creation carries the same masked text.
+	evs, err := r.svc.ListEvents(r.memberCtx(), r.tenant, taskID, pagination.New(1, 50))
+	require.NoError(t, err)
+	seen := false
+	for _, e := range evs.Data {
+		q, ok := e.Data["query"]
+		if !ok {
+			continue
+		}
+		seen = true
+		assert.NotContains(t, fmt.Sprint(q), nameB)
+		assert.Equal(t, true, e.Data["query_redacted"])
+	}
+	assert.True(t, seen, "the creation entry carries the query")
+
+	// The administrator's timeline keeps the full text.
+	evs, err = r.svc.ListEvents(r.adminCtx(), r.tenant, taskID, pagination.New(1, 50))
+	require.NoError(t, err)
+	for _, e := range evs.Data {
+		if q, ok := e.Data["query"]; ok {
+			assert.Contains(t, fmt.Sprint(q), nameB)
+			assert.NotContains(t, e.Data, "query_redacted")
+		}
+	}
+
+	// A member who owns their query reads it in full.
+	_ = r.finding(r.assetA, "new", nil)
+	own, err := r.createQueryTask(r.memberCtx(), r.memberCaller(), r.member, qtHigh, remediation.QueryModeSnapshot, 0,
+		remediation.ConflictResolution{Skip: true})
+	require.NoError(t, err)
+	got, err = r.svc.GetTaskQuery(r.memberCtx(), r.tenant, own.Task.ID)
+	require.NoError(t, err)
+	assert.False(t, got.TextRedacted)
+	assert.Equal(t, qtHigh, got.Text)
 }

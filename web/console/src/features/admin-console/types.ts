@@ -1012,6 +1012,48 @@ export interface LeakedSecretStorageSettings extends SettingChange {
   version: number
 }
 
+/** One opened private range. */
+export interface PrivateRange {
+  cidr: string
+  note?: string
+  /** wider than /24 (IPv4) or /64 (IPv6) */
+  wide: boolean
+}
+
+/** System > Private networks: the private ranges outbound requests may reach. */
+export interface PrivateDestinationsSettings extends SettingChange {
+  /** set on the server (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS), read only here */
+  server_ranges: PrivateRange[]
+  ranges: PrivateRange[]
+  /** the console ranges the answering server applies now */
+  in_force: string[]
+  refresh_seconds: number
+  /** the development-only switch opens every private range */
+  all_private_open: boolean
+  /** SIGNUP_MODE=open: anyone may create an organization, so no range can be opened */
+  signup_open: boolean
+  max_ranges: number
+  version: number
+}
+
+export type DestinationVerdict = 'allowed' | 'allowed_private' | 'blocked_private' | 'hard_blocked'
+
+export interface DestinationAddress {
+  address: string
+  verdict: DestinationVerdict
+  opened_by?: string
+  source?: 'server' | 'console'
+  all_private_open?: boolean
+  suggested?: string
+  hard_block?: string
+}
+
+export interface DestinationTestResult {
+  host: string
+  name_blocked: boolean
+  addresses: DestinationAddress[]
+}
+
 /** Settings > CAPTCHA: the Turnstile keys; the secret is never returned. */
 export interface CaptchaSettings extends SettingChange {
   site_key: string
@@ -1073,22 +1115,6 @@ export interface StorageQuotaSettings extends SettingChange {
   environment_mb: number
   max_mb: number
   version: number
-}
-
-/** Where CISA KEV and EPSS come from, and how the signed release is doing. */
-export interface ThreatSourceSettings extends SettingChange {
-  source: 'direct' | 'bundle'
-  direct_fetch: 'auto' | 'off'
-  stored: boolean
-  version: number
-  feeds: {
-    source: 'kev' | 'epss'
-    delivered_via?: 'bundle' | 'direct'
-    data_as_of?: string
-    bundle_fetched_at?: string
-    bundle_fresh: boolean
-    bundle_error?: string
-  }[]
 }
 
 /** Settings > Alerts: the alert webhook; address and secret never returned. */

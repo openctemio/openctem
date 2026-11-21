@@ -26,7 +26,7 @@ func TestAPIVersionMirroredInVersion(t *testing.T) {
 	}
 }
 
-func TestCommunityBuildIsValid(t *testing.T) {
+func TestDefaultBuildIsValid(t *testing.T) {
 	if err := extension.ValidateBuild(nil); err != nil {
 		t.Fatal(err)
 	}

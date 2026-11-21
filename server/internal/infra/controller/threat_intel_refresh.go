@@ -2,12 +2,10 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 	"github.com/openctemio/openctem/server/internal/app/threat"
-	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -36,33 +34,31 @@ const (
 	intelFeedKEV  = "kev"
 )
 
-// ThreatIntelRefreshController periodically refreshes one threat intel feed.
-// The EPSS refresh runs daily (FIRST publishes once a day); the KEV refresh
-// runs hourly with a conditional request, so a CISA addition reaches
-// findings and emerging-threat alerts within the hour. After a sync it
-// queues a priority recompute for only the open findings whose CVE changed
-// (an EPSS threshold crossed, KEV membership changed), never a whole
-// tenant; the KEV refresh then reconciles the is_in_kev flag of findings with
-// the catalog. Both report material changes to the vulnerability event log.
+// ThreatIntelRefreshController is the periodic pass of one threat intel feed
+// (KEV hourly, EPSS daily). It fetches nothing: KEV and EPSS arrive only in
+// the signed vulnerability release, and the bundle importer runs the same
+// sweep right after it applied one (Sweeper). This pass compares open
+// findings with the catalogs at least daily, so findings created since the
+// last change (or a sweep that failed) are still reconciled, and reports
+// material changes to the vulnerability event log.
 type ThreatIntelRefreshController struct {
-	service *threat.IntelService
-	feed    string
-	logger  *logger.Logger
+	feed   string
+	logger *logger.Logger
 	// sweeper does the work after the feed changed, whichever path
 	// delivered it (see IntelSweeper).
 	sweeper *IntelSweeper
 }
 
-// NewThreatIntelRefreshController creates the daily EPSS refresh. queue may
-// be nil.
-func NewThreatIntelRefreshController(service *threat.IntelService, queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
-	return &ThreatIntelRefreshController{service: service, feed: intelFeedEPSS, logger: log,
+// NewThreatIntelRefreshController creates the daily EPSS pass. queue may be
+// nil.
+func NewThreatIntelRefreshController(queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
+	return &ThreatIntelRefreshController{feed: intelFeedEPSS, logger: log,
 		sweeper: NewIntelSweeper(nil, queue, log)}
 }
 
-// NewKEVRefreshController creates the hourly KEV refresh. queue may be nil.
-func NewKEVRefreshController(service *threat.IntelService, escalator threat.KEVEscalator, queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
-	return &ThreatIntelRefreshController{service: service, feed: intelFeedKEV, logger: log,
+// NewKEVRefreshController creates the hourly KEV pass. queue may be nil.
+func NewKEVRefreshController(escalator threat.KEVEscalator, queue IntelChangeQueue, log *logger.Logger) *ThreatIntelRefreshController {
+	return &ThreatIntelRefreshController{feed: intelFeedKEV, logger: log,
 		sweeper: NewIntelSweeper(escalator, queue, log)}
 }
 
@@ -91,40 +87,10 @@ func (c *ThreatIntelRefreshController) Interval() time.Duration {
 	return feedstatus.IntervalEPSS
 }
 
-// Reconcile fetches and persists the feed, queues the findings whose intel
-// moved, reconciles KEV flags and reports material changes.
+// Reconcile runs the sweep (the comparison of open findings with the
+// catalogs when it is due, and the event log).
 func (c *ThreatIntelRefreshController) Reconcile(ctx context.Context) (int, error) {
-	var r threat.IntelSyncResult
-	// The signed release carries the feed too: the direct fetch is the
-	// supplier or a fallback depending on the platform setting.
-	if d := c.service.ShouldFetchDirect(ctx, c.feed); !d.Run {
-		r = threat.IntelSyncResult{Source: c.feed, Skipped: true, SkipReason: d.Reason}
-	} else if c.feed == intelFeedKEV {
-		r = c.service.SyncKEV(ctx)
-	} else {
-		r = c.service.SyncEPSS(ctx)
-	}
-	if r.Skipped && errors.Is(r.Error, threatintel.ErrSyncAlreadyRunning) {
-		// An operator's run (or another replica's) holds the feed; its own
-		// pass compares the findings with the catalogs.
-		c.logger.Debug("threat intel sync already running", "source", r.Source)
-		return 0, nil
-	}
-	processed := 0
-	switch {
-	case r.Skipped:
-		c.logger.Debug("threat intel direct fetch not needed", "source", r.Source, "reason", r.SkipReason)
-	case r.Error != nil:
-		c.logger.Warn("threat intel sync failed", "source", r.Source, "error", r.Error)
-	case r.NotModified:
-		c.logger.Debug("threat intel unchanged", "source", r.Source)
-	default:
-		processed += r.RecordsSynced
-		c.logger.Info("threat intel synced", "source", r.Source, "records", r.RecordsSynced, "duration_ms", r.DurationMs)
-	}
-	processed += c.sweeper.Run(ctx, c.feed, r.Error == nil && !r.NotModified && !r.Skipped, r.Error == nil)
-
-	return processed, nil
+	return c.sweeper.Run(ctx, c.feed, false, true), nil
 }
 
 // Exclusive: it runs on one API replica at a time (controller lease, RFC-046

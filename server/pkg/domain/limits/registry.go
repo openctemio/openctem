@@ -4,7 +4,7 @@ package limits
 // feature has a description here, and nothing else may be used as a key
 // (tests/unit/entitlement_keys_test.go fails on an unregistered or
 // undescribed key, and on a key built from a string literal). Module
-// features take their description from the module registry. A paid feature
+// features take their description from the module registry. A granted feature
 // registers its key here and is checked through the entitlement service.
 
 // KeyDescriptions describes every limit key (what it counts or bounds).

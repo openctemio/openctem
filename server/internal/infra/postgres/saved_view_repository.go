@@ -13,7 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// SavedViewRepository stores saved views (migration 000777). Every statement
+// SavedViewRepository stores saved views (docs/architecture/saved-views.md). Every statement
 // carries the tenant; reads return only views the user may see.
 type SavedViewRepository struct {
 	db *DB
@@ -187,9 +187,17 @@ func (r *SavedViewRepository) count(ctx context.Context, q string, args ...any) 
 	return n, nil
 }
 
-// CountByOwner counts the owner's views in the tenant.
-func (r *SavedViewRepository) CountByOwner(ctx context.Context, tenantID, ownerID shared.ID) (int, error) {
-	return r.count(ctx, `SELECT COUNT(*) FROM saved_views WHERE tenant_id = $1 AND owner_id = $2`, tenantID.String(), ownerID.String())
+// CountByOwner counts the owner's views in the tenant: all of them, and the
+// ones of one page (one read of idx_saved_views_owner).
+func (r *SavedViewRepository) CountByOwner(ctx context.Context, tenantID, ownerID shared.ID, page string) (int, int, error) {
+	var total, onPage int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE page = $3)
+		FROM saved_views WHERE tenant_id = $1 AND owner_id = $2`,
+		tenantID.String(), ownerID.String(), page).Scan(&total, &onPage)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count saved views: %w", err)
+	}
+	return total, onPage, nil
 }
 
 // CountByGroup counts the views shared with a group of the tenant.

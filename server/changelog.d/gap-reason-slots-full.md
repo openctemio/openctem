@@ -1,0 +1,4 @@
+### Added: coverage-gap reason `slots_full`
+
+- A sensor can report the coverage-gap reason `slots_full`: its own per-host connection limit was full, so part of the host was not scanned (a connection found no free slot for the whole wait, or a connection whose answer may still have been arriving was closed to free its slot). The run ends partial and the host is not covered, but the reason says nothing about the target: it never holds findings, never counts against a proxy, and the console shows it as a sensor-side limit. The target keeps the outcome its tool gave it, so no follow-up command scans the host again at once; the next run scans it again. (`host_busy` stays the placement reason for a task waiting on a host another task holds.)
+- Docs: server/docs/architecture/asset-coverage.md, server/docs/architecture/held-findings.md

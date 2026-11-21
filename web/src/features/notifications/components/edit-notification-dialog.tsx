@@ -35,7 +35,6 @@ import {
   Mail,
 } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Slider } from '@/components/ui/slider'
 import type { Integration } from '@/features/integrations'
 import {
   ALL_NOTIFICATION_SEVERITIES,
@@ -47,6 +46,7 @@ import { EventTypeSelector } from './event-type-selector'
 import { cn } from '@/lib/utils'
 import { DETAIL_LEVELS, detailLevelOf } from '../lib/message-template'
 import { ChannelMessageSettings } from './channel-message-settings'
+import { ChannelGroupingSettings, DEFAULT_GROUPING } from './channel-grouping-settings'
 import { SEVERITY_TEXT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
@@ -65,7 +65,9 @@ const formSchema = z.object({
   // Advanced settings
   message_template: z.string().max(2000).optional(),
   detail_level: z.enum(DETAIL_LEVELS),
-  min_interval_minutes: z.number().min(5).max(60),
+  group_similar: z.boolean(),
+  group_window_minutes: z.number().int().min(1).max(60),
+  urgent_at_once: z.boolean(),
   // Email-specific fields
   smtp_host: z.string().optional(),
   smtp_port: z.number().optional(),
@@ -176,7 +178,9 @@ export function EditNotificationDialog({
       // Advanced settings
       message_template: ext?.message_template || '',
       detail_level: detailLevelOf(ext?.detail_level),
-      min_interval_minutes: ext?.min_interval_minutes ?? 5,
+      group_similar: ext?.group_similar ?? DEFAULT_GROUPING.group_similar,
+      group_window_minutes: ext?.group_window_minutes ?? DEFAULT_GROUPING.group_window_minutes,
+      urgent_at_once: ext?.urgent_at_once ?? DEFAULT_GROUPING.urgent_at_once,
       // Email defaults (leave empty - user must re-enter for security)
       smtp_host: '',
       smtp_port: 587,
@@ -211,7 +215,9 @@ export function EditNotificationDialog({
         // Advanced settings
         message_template: ext?.message_template || '',
         detail_level: detailLevelOf(ext?.detail_level),
-        min_interval_minutes: ext?.min_interval_minutes ?? 5,
+        group_similar: ext?.group_similar ?? DEFAULT_GROUPING.group_similar,
+        group_window_minutes: ext?.group_window_minutes ?? DEFAULT_GROUPING.group_window_minutes,
+        urgent_at_once: ext?.urgent_at_once ?? DEFAULT_GROUPING.urgent_at_once,
         // Email config from metadata (non-sensitive fields)
         smtp_host: (metadata.smtp_host as string) || '',
         smtp_port: (metadata.smtp_port as number) || 587,
@@ -227,7 +233,7 @@ export function EditNotificationDialog({
         org_mail: metadata.org_mail === true,
       })
       // Open advanced section if any advanced settings are configured
-      setAdvancedOpen(!!(ext?.message_template || ext?.min_interval_minutes))
+      setAdvancedOpen(!!(ext?.message_template || ext?.group_similar === false))
     }
   }, [open, integration, ext, reset, defaultEventTypes, brand.name])
 
@@ -287,7 +293,9 @@ export function EditNotificationDialog({
         // pointer as "no change", which previously made the old template stick.
         message_template: data.message_template ?? '',
         detail_level: data.detail_level,
-        min_interval_minutes: data.min_interval_minutes,
+        group_similar: data.group_similar,
+        group_window_minutes: data.group_window_minutes,
+        urgent_at_once: data.urgent_at_once,
       })
 
       toast.success(`Notification channel "${data.name}" updated`)
@@ -588,27 +596,24 @@ export function EditNotificationDialog({
                   onTemplateChange={(v) => setValue('message_template', v, { shouldDirty: true })}
                 />
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="edit_min_interval">Rate Limiting</Label>
-                    <span className="text-sm text-muted-foreground">
-                      {`${watch('min_interval_minutes')} min`}
-                    </span>
-                  </div>
-                  <Slider
-                    id="edit_min_interval"
-                    min={5}
-                    max={60}
-                    step={5}
-                    value={[watch('min_interval_minutes')]}
-                    onValueChange={([value]) => setValue('min_interval_minutes', value)}
-                    className="w-full"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Minimum interval between notifications (minimum 5 min). Prevents notification
-                    spam.
-                  </p>
-                </div>
+                <ChannelGroupingSettings
+                  idPrefix="edit"
+                  value={{
+                    group_similar: watch('group_similar'),
+                    group_window_minutes: watch('group_window_minutes'),
+                    urgent_at_once: watch('urgent_at_once'),
+                  }}
+                  onChange={(next) => {
+                    if (next.group_similar !== undefined)
+                      setValue('group_similar', next.group_similar, { shouldDirty: true })
+                    if (next.group_window_minutes !== undefined)
+                      setValue('group_window_minutes', next.group_window_minutes, {
+                        shouldDirty: true,
+                      })
+                    if (next.urgent_at_once !== undefined)
+                      setValue('urgent_at_once', next.urgent_at_once, { shouldDirty: true })
+                  }}
+                />
               </CollapsibleContent>
             </Collapsible>
           </DialogBody>

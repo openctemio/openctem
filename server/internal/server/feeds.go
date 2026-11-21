@@ -16,9 +16,11 @@ import (
 )
 
 // feedControllers are the controllers of the platform-wide intelligence feeds:
-// the daily EPSS refresh, the hourly KEV refresh and the vulnerability bundle
-// import. The scheduler runs one set; the admin "Sync now" runs another set
-// in the background (the feed's status row serializes the two).
+// the vulnerability bundle import (which also carries KEV and EPSS: the
+// platform fetches neither itself) and the daily and hourly passes that
+// compare open findings with the KEV and EPSS catalogs. The scheduler runs
+// one set; the admin "Sync now" runs another set in the background (the
+// feed's status row serializes the two).
 type feedControllers struct {
 	epss, kev *controller.ThreatIntelRefreshController
 	// bundles is nil when the bundle import cannot be built.
@@ -42,8 +44,8 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 		vulnEvents = vulneventapp.NewEmitter(repos.VulnEvent, log)
 	}
 	f := feedControllers{
-		epss:              controller.NewThreatIntelRefreshController(svc.ThreatIntel, intelQueue, log.With("controller", "threat-intel-refresh")),
-		kev:               controller.NewKEVRefreshController(svc.ThreatIntel, repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh")),
+		epss:              controller.NewThreatIntelRefreshController(intelQueue, log.With("controller", "threat-intel-refresh")),
+		kev:               controller.NewKEVRefreshController(repos.KEVEscalator, intelQueue, log.With("controller", "kev-refresh")),
 		bundlesConfigured: cfg.Worker.VulnFeedRootKeyID != "",
 	}
 	if vulnEvents != nil {
@@ -61,6 +63,10 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 			im.WithRelay(svc.FeedRelay.DirIfRelay(feedrelayVulnFeed))
 		}
 		f.importer = im
+		// Advisory cards ride the same side manifest (the cards stream).
+		if repos.AdvisoryCards != nil {
+			im.WithCards(repos.AdvisoryCards)
+		}
 		// KEV and EPSS ride the same release as a signed side manifest: applied
 		// when newer than what the platform holds, then the same findings sweep
 		// and event log as after a direct sync.
@@ -95,12 +101,13 @@ func newFeedRunner(deps *HandlerDeps, log *logger.Logger) (*feedsync.Runner, boo
 	}) feedsync.Job {
 		return func(ctx context.Context) error { _, err := c.Reconcile(ctx); return err }
 	}
-	jobs := map[string]feedsync.Job{
-		feedstatus.SourceEPSS: pass(f.epss),
-		feedstatus.SourceKEV:  pass(f.kev),
-	}
+	// KEV and EPSS ride the vulnerability release: "Sync now" for either
+	// imports the newest release.
+	jobs := map[string]feedsync.Job{}
 	if f.bundles != nil {
 		jobs[feedstatus.SourceVulnfeed] = pass(f.bundles)
+		jobs[feedstatus.SourceKEV] = pass(f.bundles)
+		jobs[feedstatus.SourceEPSS] = pass(f.bundles)
 	}
 	return feedsync.New(jobs, log), f.bundlesConfigured
 }

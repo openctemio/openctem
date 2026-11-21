@@ -99,6 +99,7 @@ func (c Ceiling) Clamp(p Policy) Policy {
 	}
 	if !p.AllowsSelfService() {
 		p.Mode = ModeAdminOnly
+		p.PersonalOrganization = false
 	}
 	return p
 }

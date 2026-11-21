@@ -18,7 +18,7 @@ Limits are capacity caps, not a security boundary.
 ## The one service
 
 `internal/app/entitlement.Service` answers every question about limits and
-features. Nothing else checks a limit, a plan, a tier or an edition:
+features. Nothing else checks a limit or a feature:
 `tests/unit/entitlement_keys_test.go` fails on such a check anywhere in the
 API or the web console, and lists every key below.
 
@@ -102,7 +102,7 @@ own seam. Core modules can never be denied.
 
 The named features are the deniable features below module level. Security
 controls (MFA, passkeys, session policy, audit, break-glass, SSO sign-in and
-its enforcement) are never features: they are free everywhere, and a plan may
+its enforcement) are never features: they are on everywhere, and a limit may
 only cap how many SSO connections exist (`sso_connections`). Like every feature, these are allowed
 unless the operator or a source (the hosted control plane) denies them, so a
 self-managed instance keeps all of them; the hosted service's control plane
@@ -300,8 +300,8 @@ it can call deletes an organization or its data.
 
 ## Grants: off unless granted (seam only in the open core)
 
-A self-hosted install gets every Community feature, and nothing here changes
-that. Things that are off unless granted are a separate answer, with no change
+A self-hosted install gets every feature of this build, and nothing here
+changes that. Things that are off unless granted are a separate answer, with no change
 to any check of the sections above:
 
 - The core defines the answer's shape (`pkg/domain/limits/grants.go`:
@@ -309,14 +309,14 @@ to any check of the sections above:
   only through `entitlement.Service.Addon` / `RequireAddon` (403
   `ADDON_NOT_LICENSED` or `ADDON_LICENSE_EXPIRED`) and `Notices` (banners for
   platform administrators). A grant never yields a limit or a deny.
-- The Community build registers no provider: every grant is `none`, there are
-  no notices, and no Community feature, limit or security control depends on
-  a grant. A provider error fails closed for grants only.
+- The default build registers no provider: every grant is `none`, there are
+  no notices, and no feature, limit or security control of the default build
+  depends on a grant. A provider error fails closed for grants only.
 - A build's extension may register one provider through the public extension
-  API; the provider, its grant keys and its source (a signed licence file, or
-  a hosted service's control plane) live in that extension
-  ([editions](../development/editions.md),
-  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md), which
+  API; the provider, its grant keys and its source (a signed file, or
+  a managed service's control plane) live in that extension
+  ([extensions](../development/extensions.md),
+  [RFC-145](../rfcs/RFC-145-grants-and-grant-providers.md), which
   lists the guarantees every provider keeps). A control plane keeps writing
   limits and denies for a hosted service; a grant never replaces them.
 

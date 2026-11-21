@@ -181,27 +181,7 @@ func (h *VulnerabilityHandler) bulkByFilter(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	q := url.Values{}
-	for k, v := range req.Filter {
-		q[k] = v
-	}
-	// The selection is the filter only: a saved view is sent as its filter,
-	// and paging and sort do not change which findings match.
-	for _, k := range []string{"view", "page", "per_page", "cursor", "sort"} {
-		if _, ok := q[k]; ok {
-			filterquery.WriteError(w, &filterspec.Error{Details: []filterspec.Detail{{
-				Param: k, Reason: "not part of a bulk selection; send the filter params only",
-			}}})
-			return
-		}
-	}
-	if !rewriteBranchStatus(w, q) {
-		return
-	}
-	route := h.findingsListRoute()
-	route.Name = "POST /findings/bulk/by-filter/" + verb
-	route.Options.Unknown = filterspec.UnknownStrict
-	spec, ok := route.ParseValues(w, r, q)
+	spec, ok := h.bulkSelectionSpec(w, r, req.Filter, "POST /findings/bulk/by-filter/"+verb)
 	if !ok {
 		return
 	}
@@ -238,6 +218,32 @@ func (h *VulnerabilityHandler) bulkByFilter(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(BulkByFilterResponse{Operation: toOperationResponse(res.Operation)})
+}
+
+// bulkSelectionSpec parses a bulk selection's filter (the list's params) as
+// the list does, strictly; it answers the error itself when it fails.
+func (h *VulnerabilityHandler) bulkSelectionSpec(w http.ResponseWriter, r *http.Request, filter FilterValues, routeName string) (*filterspec.Spec, bool) {
+	q := url.Values{}
+	for k, v := range filter {
+		q[k] = v
+	}
+	// The selection is the filter only: a saved view is sent as its filter,
+	// and paging and sort do not change which findings match.
+	for _, k := range []string{"view", "page", "per_page", "cursor", "sort"} { //nolint:goconst // the list's own param names
+		if _, ok := q[k]; ok {
+			filterquery.WriteError(w, &filterspec.Error{Details: []filterspec.Detail{{
+				Param: k, Reason: "not part of a bulk selection; send the filter params only",
+			}}})
+			return nil, false
+		}
+	}
+	if !rewriteBranchStatus(w, q) {
+		return nil, false
+	}
+	route := h.findingsListRoute()
+	route.Name = routeName
+	route.Options.Unknown = filterspec.UnknownStrict
+	return route.ParseValues(w, r, q)
 }
 
 func (h *VulnerabilityHandler) writeBulkByFilterError(w http.ResponseWriter, err error) {

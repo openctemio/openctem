@@ -6,7 +6,7 @@ package tool
 // Security: every source is read for the caller's tenant only (its sensors,
 // their grants and zones, its catalog: platform tools plus its own custom
 // tools); shared platform sensors are left out, as on the Sensors page, since
-// a tenant's scans never run on them in this edition. What a sensor reports
+// a tenant's scans never run on them in this build. What a sensor reports
 // is untrusted display data: claim-time gates stay authoritative.
 
 import (

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -434,10 +436,19 @@ func (r *CIRunRepository) PinOwner(ctx context.Context, tenantID, trustConfigID 
 	return pinned, false, err
 }
 
-// ResetOwnerPins drops a configuration's pins (tenant-scoped).
-func (r *CIRunRepository) ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error) {
-	res, err := r.db.ExecContext(ctx, `DELETE FROM ci_trust_owner_pins WHERE tenant_id = $1 AND trust_config_id = $2`,
-		tenantID.String(), trustConfigID.String())
+// DropOwnerPins drops a configuration's pins except those keep covers
+// (tenant-scoped).
+func (r *CIRunRepository) DropOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID, keep cirun.OwnerPinKeep) (int64, error) {
+	groups, namespaces := keep.Groups, keep.Namespaces
+	if groups == nil {
+		groups = []string{}
+	}
+	if namespaces == nil {
+		namespaces = []string{}
+	}
+	res, err := r.db.ExecContext(ctx, `DELETE FROM ci_trust_owner_pins WHERE tenant_id = $1 AND trust_config_id = $2
+		AND NOT (split_part(owner_name, '/', 1) = ANY($3::text[]) OR owner_name = ANY($4::text[]))`,
+		tenantID.String(), trustConfigID.String(), pq.Array(groups), pq.Array(namespaces))
 	if err != nil {
 		return 0, err
 	}
