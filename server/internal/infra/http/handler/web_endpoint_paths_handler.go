@@ -14,8 +14,9 @@ import (
 )
 
 // WebPathEndpointResponse is an endpoint of a path tree level with the open
-// findings at its path template. Findings carry no HTTP method, so every
-// method of one template shows the same count.
+// findings at it. A finding linked to an endpoint (it names its method and
+// endpoint) counts at that endpoint only; a finding with no link is mapped by
+// its URL and counts at every method of the template.
 type WebPathEndpointResponse struct {
 	WebEndpointResponse
 	FindingCount int    `json:"finding_count"`
@@ -89,8 +90,8 @@ func parseWebPathQuery(r *http.Request) (webendpoint.PathQuery, bool) {
 // @Summary      One level of a web origin's path tree
 // @Description  The origin's endpoints folded by path segment: the child nodes of `path` with the endpoints, the
 // @Description  out-of-scope endpoints and the open findings under each, and one page of the endpoints under
-// @Description  `path` (or only its own, with `here`). Findings map onto endpoints by path template, whatever
-// @Description  the method. 404 for an asset of another tenant or outside the caller's data scope. Values are
+// @Description  `path` (or only its own, with `here`). A finding linked to an endpoint counts at that endpoint;
+// @Description  one with no link maps onto endpoints by path template, whatever the method. 404 for an asset of another tenant or outside the caller's data scope. Values are
 // @Description  scan output: render as text.
 // @Tags         Web Surface
 // @Produce      json

@@ -1,0 +1,49 @@
+{
+  "event_type": "finding_priority_escalated",
+  "event_version": 1,
+  "idempotency_key": "outbox-test",
+  "occurred_at": "\u003cnow\u003e",
+  "timestamp": "\u003cnow\u003e",
+  "title": "14 findings raised to High",
+  "body": "Severity: High\nOrganization: Example Corp\nhttp://203.0.113.10 (service)\n- CVE-2024-4500: PHP 8.1.0 argument injection, High, Known to be exploited\n- CVE-2024-4502: PHP 8.1.2 argument injection, High, Known to be exploited\n- CVE-2024-4504: PHP 8.1.4 argument injection, High, Known to be exploited\n- CVE-2024-4506: PHP 8.1.6 argument injection, High, Known to be exploited\n- CVE-2024-4508: PHP 8.1.8 argument injection, High, Known to be exploited\napp.example.com (service)\n- CVE-2024-4501: PHP 8.1.1 argument injection, High, Known to be exploited\n- CVE-2024-4503: PHP 8.1.3 argument injection, High, Known to be exploited\n- CVE-2024-4505: PHP 8.1.5 argument injection, High, Known to be exploited\n- CVE-2024-4507: PHP 8.1.7 argument injection, High, Known to be exploited\n- CVE-2024-4509: PHP 8.1.9 argument injection, High, Known to be exploited\n+4 more",
+  "severity": "high",
+  "url": "https://ctem.example.com/findings?notification_group_id=0190a5b4-0000-7000-8000-000000000001",
+  "color": "#ea580c",
+  "source": "openctem.io",
+  "notification": {
+    "schema": "openctem.notification/v1",
+    "detail_level": "standard",
+    "locale": "en",
+    "headline": "14 findings raised to High",
+    "severity": "high",
+    "organization": "Example Corp",
+    "sections": [
+      {
+        "title": "http://203.0.113.10 (service)",
+        "items": [
+          "CVE-2024-4500: PHP 8.1.0 argument injection, High, Known to be exploited",
+          "CVE-2024-4502: PHP 8.1.2 argument injection, High, Known to be exploited",
+          "CVE-2024-4504: PHP 8.1.4 argument injection, High, Known to be exploited",
+          "CVE-2024-4506: PHP 8.1.6 argument injection, High, Known to be exploited",
+          "CVE-2024-4508: PHP 8.1.8 argument injection, High, Known to be exploited"
+        ]
+      },
+      {
+        "title": "app.example.com (service)",
+        "items": [
+          "CVE-2024-4501: PHP 8.1.1 argument injection, High, Known to be exploited",
+          "CVE-2024-4503: PHP 8.1.3 argument injection, High, Known to be exploited",
+          "CVE-2024-4505: PHP 8.1.5 argument injection, High, Known to be exploited",
+          "CVE-2024-4507: PHP 8.1.7 argument injection, High, Known to be exploited",
+          "CVE-2024-4509: PHP 8.1.9 argument injection, High, Known to be exploited"
+        ]
+      }
+    ],
+    "more": 4,
+    "text": "Severity: High\nOrganization: Example Corp\nhttp://203.0.113.10 (service)\n- CVE-2024-4500: PHP 8.1.0 argument injection, High, Known to be exploited\n- CVE-2024-4502: PHP 8.1.2 argument injection, High, Known to be exploited\n- CVE-2024-4504: PHP 8.1.4 argument injection, High, Known to be exploited\n- CVE-2024-4506: PHP 8.1.6 argument injection, High, Known to be exploited\n- CVE-2024-4508: PHP 8.1.8 argument injection, High, Known to be exploited\napp.example.com (service)\n- CVE-2024-4501: PHP 8.1.1 argument injection, High, Known to be exploited\n- CVE-2024-4503: PHP 8.1.3 argument injection, High, Known to be exploited\n- CVE-2024-4505: PHP 8.1.5 argument injection, High, Known to be exploited\n- CVE-2024-4507: PHP 8.1.7 argument injection, High, Known to be exploited\n- CVE-2024-4509: PHP 8.1.9 argument injection, High, Known to be exploited\n+4 more",
+    "action": {
+      "label": "Open the list",
+      "url": "https://ctem.example.com/findings?notification_group_id=0190a5b4-0000-7000-8000-000000000001"
+    }
+  }
+}
