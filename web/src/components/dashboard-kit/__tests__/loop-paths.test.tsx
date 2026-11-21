@@ -97,7 +97,7 @@ describe('LoopViz', () => {
     render(<LoopViz result={loop} />)
     for (const li of screen.getAllByRole('listitem')) {
       const status = li.lastElementChild as HTMLElement
-      expect(status).toHaveClass('mt-auto', 'rounded-full')
+      expect(status).toHaveClass('mt-auto', 'rounded-2xl')
       // The sub-line block (detail and flag) keeps its height when empty.
       expect(status.previousElementSibling).toHaveClass('min-h-9')
     }

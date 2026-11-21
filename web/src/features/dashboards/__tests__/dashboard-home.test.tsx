@@ -171,9 +171,14 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: the key figures, the exposure flow (with the
-    // five stages), then the levers; fix next and attack paths follow.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.flow', 'exposure.levers'])
+    // The CTEM story leads: the key figures, the five stages, then Fix next
+    // beside new versus fixed; attack paths follow.
+    expect(metrics.slice(0, 4)).toEqual([
+      'exposure.kpis',
+      'ctem.loop',
+      'fix.next',
+      'flow.new_vs_fixed',
+    ])
     expect(metrics).toContain('fix.next')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
@@ -536,13 +541,12 @@ describe('DashboardHome new layout hint', () => {
       'intel.kev_open',
       'sla.within',
       'exposure.kpis',
-      'exposure.flow',
-      'exposure.levers',
+      'ctem.loop',
       'fix.next',
+      'flow.new_vs_fixed',
+      'exposure.levers',
       'attack_paths.to_crown_jewels',
       'exposure.open_by_priority',
-      'flow.new_vs_fixed',
-      'findings.age_bands',
       'surface.new_assets',
       'certificates.expiry',
       // The person's own extra widget stays.
