@@ -31,13 +31,6 @@ import {
 import { toast } from 'sonner'
 import Link from '@/components/link'
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -56,6 +49,7 @@ import type { AssetEdge } from '@/features/assets/types/asset.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { noLongerOursPattern } from '../lib/exclusion-kind'
 import {
+  authorizedByText,
   coversText,
   entryStatus,
   expiryText,
@@ -67,10 +61,11 @@ import {
 } from '../lib/scope-entry'
 import { ScopeEntryEditDialog } from './scope-entry-edit-dialog'
 import { EdgeLabel } from './edge-label'
+import { ScopeListFilters } from './scope-list-filters'
+import { ScopeRowCard } from './scope-row-card'
 import {
   scopeKindIcon,
   scopeKindOf,
-  ScopeTargetTypeSelect,
   scopeTargetTypeLabel,
   storedTypesFor,
 } from './scope-target-type'
@@ -383,23 +378,20 @@ export function ScopeEntriesTable({
     },
 
     {
-      accessorKey: 'reason',
-      header: t('scope.col.reason', 'Reason'),
+      // What authorizes probing, and who added it; the reason is in the
+      // row's Edit (and this cell's tooltip).
+      id: 'authorized_by',
+      header: t('scope.col.authorizedBy', 'Authorized by'),
       cell: ({ row }) => {
-        const text = row.original.reason || row.original.description
-        return text ? (
-          <span className="line-clamp-2 text-sm text-muted-foreground" title={text}>
-            {text}
-          </span>
-        ) : (
-          <span className="text-sm text-muted-foreground">-</span>
+        const e = row.original
+        const why = e.reason || e.description
+        return (
+          <div className="min-w-0 space-y-0.5" title={why || undefined}>
+            <p className="line-clamp-2 text-sm">{authorizedByText(e, t)}</p>
+            <ActorChip actor={e.created_by} at={e.created_at} compact />
+          </div>
         )
       },
-    },
-    {
-      accessorKey: 'created_by',
-      header: t('scope.col.addedBy', 'Added by'),
-      cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
     },
     {
       id: 'actions',
@@ -418,34 +410,30 @@ export function ScopeEntriesTable({
 
   const filtersActive = !!query.search || query.kind !== 'all' || query.status !== 'all'
 
-  const toolbarStart = (
-    <>
-      {leading}
-      <ScopeTargetTypeSelect
-        value={kind ?? 'all'}
-        onValueChange={onKindChange}
-        withAll
-        className="h-9 w-auto min-w-36"
-        aria-label={t('scope.filter.kind', 'Filter by kind')}
-      />
-      <Select value={query.status} onValueChange={onStatusChange}>
-        <SelectTrigger
-          className="w-auto min-w-36"
-          aria-label={t('scope.filter.status', 'Filter by status')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('scope.filter.allStatuses', 'All statuses')}</SelectItem>
-          {IN_SCOPE_STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {t(`scope.entry.status.${s}.label`, SCOPE_ENTRY_STATUS_LABEL[s])}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </>
+  const filters = (
+    <ScopeListFilters
+      kind={kind ?? 'all'}
+      status={query.status}
+      onKindChange={onKindChange}
+      onStatusChange={onStatusChange}
+      statuses={IN_SCOPE_STATUSES.map((s) => ({
+        value: s,
+        label: t(`scope.entry.status.${s}.label`, SCOPE_ENTRY_STATUS_LABEL[s]),
+      }))}
+    />
   )
+
+  const entryStatusChip = (e: ApiScopeTarget) => {
+    const st = entryStatus(e)
+    return (
+      <StatusLozenge
+        tone={SCOPE_ENTRY_STATUS_TONE[st].tone}
+        icon={SCOPE_ENTRY_STATUS_TONE[st].icon}
+        label={t(`scope.entry.status.${st}.label`, SCOPE_ENTRY_STATUS_LABEL[st])}
+        value={st}
+      />
+    )
+  }
 
   return (
     <>
@@ -478,7 +466,39 @@ export function ScopeEntriesTable({
               placeholder: t('scope.entries.search', 'Search entries…'),
               label: t('scope.entries.searchLabel', 'Search scope entries'),
             }}
-            toolbarStart={toolbarStart}
+            toolbarStart={leading}
+            filter={filters}
+            mobileRow={(e, selection) => (
+              <ScopeRowCard
+                pattern={e.pattern ?? ''}
+                status={entryStatusChip(e)}
+                summary={t('scope.col.covers', 'Covers {what}', { what: coversText(e, t) })}
+                facts={[
+                  scopeTargetTypeLabel(e.target_type ?? '', t),
+                  ...(e.expires_at ? [expiryText(e.expires_at, undefined, t)] : []),
+                  tierCeilings
+                    ? t(
+                        `scope.tier.label.${e.max_tier ?? 't1'}`,
+                        TIER_LABEL[e.max_tier ?? 't1'] ?? '-'
+                      )
+                    : t('scope.entries.perScan', 'Set per scan'),
+                  authorizedByText(e, t),
+                ]}
+                selection={selection}
+                selectLabel={t('scope.col.selectEntry', 'Select {pattern}', {
+                  pattern: e.pattern ?? '',
+                })}
+                actions={
+                  <DataTableRowActions
+                    title={e.pattern ?? ''}
+                    label={t('scope.col.actionsFor', 'Actions for {pattern}', {
+                      pattern: e.pattern ?? '',
+                    })}
+                    actions={actionsFor(e)}
+                  />
+                }
+              />
+            )}
             manualPagination
             rowCount={data?.total ?? 0}
             pagination={{ pageIndex: query.page - 1, pageSize: query.perPage }}

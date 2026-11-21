@@ -228,6 +228,22 @@ describe('ListToolbar slots', () => {
     )
   })
 
+  it('on a phone keeps every token drawn when the list has its own filter control (no sheet holds them)', () => {
+    render(
+      <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search entries' }}
+        filter={<button type="button">Filters</button>}
+        start={<button type="button">Show: Entries</button>}
+      />
+    )
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    // Acceptance 2026-11-21 (/scope): the list switch was hidden on a phone
+    // and no sheet held it, so Exclusions could not be reached.
+    expect(tokens.className).toContain('@max-md/toolbar:row-start-2')
+    expect(tokens.className).not.toContain(':hidden')
+    expect(document.querySelector('[data-phone-filters]')).toBeNull()
+  })
+
   it('on a phone gives a list without a facet panel one Filters button with the count, opening a sheet of the tokens', async () => {
     const user = userEvent.setup()
     render(

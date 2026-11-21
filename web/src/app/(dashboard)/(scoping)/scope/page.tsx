@@ -48,6 +48,9 @@ import type { ApiScopeTarget, ScopeExclusionKind } from '@/features/scope/api/sc
 import { ScopeApprovals } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
 import { ScopeProviderAddressesCard } from '@/features/scope/components/scope-provider-addresses-card'
+import { ScopeCheckTool } from '@/features/scope/components/scope-check-tool'
+import { useScopeStatsApi } from '@/features/scope/api/use-scope-api'
+import { useEASMVerifiedDomains } from '@/features/attack-surface/hooks/use-easm-verified-domains'
 import { useTranslation } from '@/context/i18n-provider'
 
 // Domain proof and Networks are their own pages (route tabs of Scope).
@@ -131,8 +134,6 @@ export default function ScopePage() {
   // Counts for the tabs, the strip and the approvals: two requests (entries,
   // exclusions), each counting every status; the lists load their own rows.
   const counts = useScopeStatusCounts()
-  const activeEntries = counts.targets?.active ?? 0
-  const activeOut = counts.exclusions?.active ?? 0
   const inEntries = counts.targets
     ? sumStatusCounts(counts.targets, ['active', 'pending', 'expired', 'inactive'])
     : undefined
@@ -157,37 +158,70 @@ export default function ScopePage() {
     selectTab(next)
     setStatus('active')
   }
+  // The summary counts known targets (the internet-facing inventory the
+  // caller may see, GET /scope/stats): in scope, excluded, found but covered
+  // by no entry; and the domains still waiting for their DNS proof. A count
+  // the server does not send yet reads "Not measured", never a guess.
+  const stats = useScopeStatsApi()
+  const inventory = stats.data as
+    | (typeof stats.data & { inventory_excluded?: number; inventory_not_covered?: number })
+    | undefined
+  const proofs = useEASMVerifiedDomains()
+  const pendingProof = proofs.domains.filter((d) => d.status !== 'verified').length
+  const counted = (n: number | undefined) => ({
+    value:
+      typeof n === 'number' || stats.isLoading
+        ? (n ?? '')
+        : t('scope.strip.notMeasured', 'Not measured'),
+  })
   const metrics: MetricStripItem[] = [
     {
       key: 'in',
-      label: t('scope.strip.entriesInEffect', 'Entries in effect'),
-      value: activeEntries,
+      label: t('scope.strip.inScope', 'In scope'),
+      ...counted(inventory?.inventory_in_scope),
+      description: t(
+        'scope.strip.inScopeHint',
+        'Known internet-facing targets an entry in effect covers. Opens the entries in effect.'
+      ),
       onClick: () => openInEffect('in'),
       active: tab === 'in' && status === 'active',
     },
     {
       key: 'out',
-      label: t('scope.strip.exclusionsInEffect', 'Exclusions in effect'),
-      value: activeOut,
+      label: t('scope.strip.excluded', 'Excluded'),
+      ...counted(inventory?.inventory_excluded),
+      description: t(
+        'scope.strip.excludedHint',
+        'Known internet-facing targets an exclusion in effect removes. Opens the exclusions in effect.'
+      ),
       onClick: () => openInEffect('out'),
       active: tab === 'out' && status === 'active',
     },
-    ...(showApprovals
+    ...(proofs.enabled
       ? ([
           {
-            key: 'approvals',
-            label: t('scope.strip.waiting', 'Waiting for approval'),
-            value: pending,
-            tone: pending > 0 ? 'warning' : 'default',
-            hint:
-              pending > 0
-                ? t('scope.strip.waitingHint', 'authorize nothing until approved')
-                : undefined,
-            onClick: () => selectTab('approvals'),
-            active: tab === 'approvals',
+            key: 'proof',
+            label: t('scope.strip.pendingProof', 'Pending proof'),
+            value: proofs.isLoading ? '' : pendingProof,
+            tone: pendingProof > 0 ? 'warning' : 'default',
+            description: t(
+              'scope.strip.pendingProofHint',
+              'Domains waiting for their DNS TXT record to be found.'
+            ),
+            href: '/scope/domain-proof',
           },
         ] satisfies MetricStripItem[])
       : []),
+    {
+      key: 'unknown',
+      label: t('scope.strip.foundUnknown', 'Found but unknown'),
+      ...counted(inventory?.inventory_not_covered),
+      description: t(
+        'scope.strip.foundUnknownHint',
+        'Internet-facing targets discovery found that no entry covers and no exclusion removes.'
+      ),
+      href: '/assets?scope_status=not_covered',
+    },
   ]
 
   const addLabel = isRequest
@@ -256,7 +290,17 @@ export default function ScopePage() {
         </PageHeader>
         <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
-        <MetricStrip loading={counts.isLoading} items={metrics} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <MetricStrip
+            className="min-w-0 flex-1"
+            loading={stats.isLoading}
+            error={
+              stats.error ? t('scope.strip.failed', 'Could not read the scope summary.') : undefined
+            }
+            items={metrics}
+          />
+          <ScopeCheckTool />
+        </div>
 
         {/* Scope entries on provider shared addresses: only while there is
             something to decide. */}

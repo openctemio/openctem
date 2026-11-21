@@ -43,7 +43,9 @@ describe('scope exclusions status filter', () => {
     render(
       <ScopeExclusionsTable {...props} query={query('active')} onStatusChange={onStatusChange} />
     )
-    const select = screen.getByRole('combobox', { name: /filter by status/i })
+    // Kind and Status live in the one Filters popover; the trigger counts the status.
+    await userEvent.setup().click(screen.getByTestId('scope-filters'))
+    const select = await screen.findByRole('combobox', { name: 'Status' })
     await userEvent.setup().click(select)
     await userEvent.setup().click(await screen.findByRole('option', { name: 'All statuses' }))
     expect(onStatusChange).toHaveBeenCalledWith('all')

@@ -331,3 +331,31 @@ export function formatDay(d: Date, locale = 'en'): string {
     year: 'numeric',
   }).format(d)
 }
+
+/**
+ * What authorizes probing the entry's targets, in words (the Scope list's
+ * "Authorized by"): a CI trust that manages it, a bug-bounty program, a
+ * letter of authorization, a self-attestation, or ownership (the default).
+ */
+export function authorizedByText(
+  e: {
+    authorization_source?: string
+    origin?: string
+    managed_by?: { trust_name?: string }[]
+  },
+  t?: CoversT
+): string {
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
+  const trust = e.origin === 'ci_trust' ? e.managed_by?.[0]?.trust_name : undefined
+  if (trust) return tr('scope.authorizedBy.ciTrust', 'CI trust {name}', { name: trust })
+  switch (e.authorization_source) {
+    case 'program':
+      return tr('scope.authorizedBy.program', 'A bug bounty program')
+    case 'authorization_letter':
+      return tr('scope.authorizedBy.letter', 'A letter of authorization')
+    case 'self_attestation':
+      return tr('scope.authorizedBy.selfAttestation', 'Attested by a member')
+    default:
+      return tr('scope.authorizedBy.ownership', 'Our organization owns it')
+  }
+}

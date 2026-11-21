@@ -16,6 +16,15 @@ vi.mock('sonner', () => ({
 }))
 vi.mock('@/lib/permissions', () => ({ usePermissions: () => ({ isOwner: () => true }) }))
 vi.mock('@/lib/cookies', () => ({ removeCookie: vi.fn() }))
+// The impact box reads counts the server already returns (member stats, dashboard summary).
+const memberStats = vi.fn()
+const dashStats = vi.fn()
+vi.mock('@/features/organization/api/use-members', () => ({
+  useMemberStats: () => memberStats(),
+}))
+vi.mock('@/features/dashboard/hooks/use-dashboard-stats', () => ({
+  useDashboardStats: () => dashStats(),
+}))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({
     currentTenant: { id: 't1', slug: 'acme', name: 'Acme' },
@@ -41,6 +50,11 @@ async function confirmDelete() {
 }
 
 describe('DeleteOrganization', () => {
+  beforeEach(() => {
+    memberStats.mockReturnValue({ stats: undefined })
+    dashStats.mockReturnValue({ stats: {}, isLoading: true })
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     Object.defineProperty(window, 'location', {
@@ -76,5 +90,32 @@ describe('DeleteOrganization', () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled())
     expect(toastSuccess).not.toHaveBeenCalled()
     expect(switchTeam).not.toHaveBeenCalled()
+  })
+
+  it('says who and what is affected, from the counts the server returns', async () => {
+    memberStats.mockReturnValue({ stats: { active_members: 3 } })
+    dashStats.mockReturnValue({
+      stats: { assets: { total: 1284 }, findings: { total: 1 } },
+      isLoading: false,
+    })
+    const user = userEvent.setup()
+    render(<DeleteOrganization />)
+    await user.click(screen.getByRole('button', { name: /delete organization/i }))
+    const box = screen.getByTestId('delete-impact')
+    expect(box).toHaveTextContent('Who and what is affected')
+    expect(box).toHaveTextContent('3 members lose access')
+    expect(box).toHaveTextContent('1,284 assets, 1 finding,')
+  })
+
+  it('names no number the server did not return', async () => {
+    memberStats.mockReturnValue({ stats: undefined })
+    dashStats.mockReturnValue({ stats: {}, isLoading: false, error: new Error('no') })
+    const user = userEvent.setup()
+    render(<DeleteOrganization />)
+    await user.click(screen.getByRole('button', { name: /delete organization/i }))
+    const box = screen.getByTestId('delete-impact')
+    expect(box).toHaveTextContent('every member loses access')
+    expect(box).toHaveTextContent('every asset, finding')
+    expect(box.textContent).not.toMatch(/\d+ (members?|assets?|findings?)/)
   })
 })

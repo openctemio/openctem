@@ -79,9 +79,9 @@ describe('SecurityOverview', () => {
     render(withSWR(<SecurityOverview />))
     expect(await screen.findByTestId('security-score')).toHaveTextContent('72')
     expect(screen.getByRole('heading', { level: 1, name: 'Security overview' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('progressbar', { name: 'Security score: 72 out of 100' })
-    ).toBeInTheDocument()
+    // Four summary tiles: the score (out of 100) and the three counts.
+    expect(screen.getByText('/ 100')).toBeInTheDocument()
+    expect(screen.getAllByText('Checks at risk').length).toBeGreaterThan(0)
     expect(screen.getByTestId('count-risk')).toHaveTextContent('1')
     expect(screen.getByTestId('count-warn')).toHaveTextContent('2')
     expect(screen.getByTestId('count-pass')).toHaveTextContent('2')
