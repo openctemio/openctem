@@ -121,8 +121,10 @@ describe('Console users list', () => {
   it('keeps the state marks of an account on its row', () => {
     render(<AdminUsersPage />)
     const row = screen.getByRole('link', { name: 'second@example.org' }).closest('tr')!
-    expect(within(row).getByText('Locked')).toBeInTheDocument()
-    expect(within(row).getByText('MFA')).toBeInTheDocument()
+    // The cell draws the marks twice: the phone card's chip (first mark and
+    // "+n") and the marks that fit from 768 px; CSS shows one of them.
+    expect(within(row).getAllByText('Locked').length).toBeGreaterThan(0)
+    expect(within(row).getAllByText('MFA').length).toBeGreaterThan(0)
   })
 
   it('offers the state select and the search, and no control that changes an account', () => {

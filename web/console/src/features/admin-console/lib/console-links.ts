@@ -9,6 +9,11 @@ export function platformUserHref(id: string): string {
   return `/users/${encodeURIComponent(id)}`
 }
 
+/** Admin activity, every event of one administrator (Security and audit > Admin activity). */
+export function adminActivityHref(adminEmail: string): string {
+  return `/security/activity?${new URLSearchParams({ kind: 'all', admin_email: adminEmail })}`
+}
+
 /** The page of one organization (Customers > Organizations). */
 export function organizationHref(id: string): string {
   return `/organizations/${encodeURIComponent(id)}`
