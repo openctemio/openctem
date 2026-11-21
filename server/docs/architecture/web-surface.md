@@ -139,16 +139,19 @@ origin's endpoints folded by path segment, one level per request.
   contains it, any case). The query is strict: an unknown or repeated
   parameter is 400.
 - **Findings per path.** The origin asset's open findings are grouped by
-  `location_key`. A key `url:<origin><path>` (ctis `LocationKey`: scheme, host,
-  port and escaped path, no query) is templated with the same `weburl`
-  templating the endpoints use, so `/api/users/42` lands on
-  `/api/users/{int}`: **exact on the path template**. Findings carry no HTTP
-  method, so every method of one template shows the template's count: **the
-  method is approximate**. A finding at a path no endpoint records keeps a
-  node of its own (`unrecorded_findings`; a scanner can hit a path a crawl
-  never listed). A finding with no URL, or with a URL of another origin, counts
-  as `origin_findings` at the root. A finding stored on another asset (a host)
-  is not part of this origin's tree.
+  `location_key` and by the endpoint they are linked to
+  ([Findings on a path](#findings-on-a-path)). A finding **linked to an
+  endpoint** counts at that endpoint, its template **and method**: exact. A
+  finding with no link falls back to its key `url:<origin><path>` (ctis
+  `LocationKey`: scheme, host, port and escaped path, no query), templated with
+  the same `weburl` templating the endpoints use, so `/api/users/42` lands on
+  `/api/users/{int}`: exact on the path template, **method-blind**, so it
+  shows at every method of the template. A finding at a path no endpoint
+  records keeps a node of its own (`unrecorded_findings`; a scanner can hit a
+  path a crawl never listed). A finding with no URL, or with a URL of another
+  origin, counts as `origin_findings` at the root. A finding stored on another
+  asset (a host) is not part of this origin's tree. A node's own findings
+  (`findings=true`) carry the `method` of their endpoint when linked.
 - **Cost.** One request reads the origin's rows (at most 20,000, the active
   cap with room for gone and ignored rows; `totals.capped` says when more
   exist) on `idx_web_endpoints_origin` and the open findings on
@@ -159,6 +162,46 @@ origin's endpoints folded by path segment, one level per request.
   of the caller's tenant and in the caller's data scope (`AssertAssetRef`)
   before any read, and answers 404 otherwise. Every statement carries the
   tenant. Parameter values are never stored, so none can be returned.
+
+## Findings on a path
+
+A CTIS finding's `web` location (`url`, `method`, `endpoint_ref`, `parameter`,
+`status_code`) is kept in `finding_web_locations`, one row per finding
+(`tenant_id`, `finding_id`; row-level security like the finding):
+
+| Column | From | Notes |
+| --- | --- | --- |
+| `method` | `web.method` | an HTTP method; anything else is not stored |
+| `param_location`, `param_name` | `web.parameter` | the name only, cut at `=`, at most 128 characters; **never a value** |
+| `status_code` | `web.status_code` | 100 to 599 |
+| `endpoint_id` | `web.endpoint_ref`, else method and URL | the `web_endpoints` row the finding belongs to, `NULL` when none matches |
+
+The method and the parameter name already take part in the DAST identity, so
+storing them changes no fingerprint. Written by ingest after the findings and
+endpoints of the report are stored (step 7e of `ProcessBatch`, best effort: a
+failure is logged and never fails the ingest).
+
+**Linking.** `planEndpoints` remembers each report endpoint's `id`, its origin
+ref and its dedup key (`weburl.PathHash` of method and template). After
+`recordEndpoints` has persisted the origin assets, a finding's `endpoint_ref`
+resolves to *(origin asset id, key)*; the ids the report carries are never
+used. With no resolvable ref, the finding's method and the template of its URL
+name the key, on the origin this report stored for that URL's origin, else on
+the finding's own asset; an endpoint under method `ANY` matches when none
+exists for the method. The statement reads `web_endpoints` with the ingest's
+tenant id and a foreign key `(tenant_id, endpoint_id)` guards the row, so a ref
+or a key never links across tenants. A re-sighting keeps a stored method,
+parameter and link where the new report brings none; the status is the latest.
+
+**Path tree.** `OriginOpenFindings` joins the link and returns the endpoint's
+template and method with each group; the join also requires the endpoint's
+origin to be the finding's asset. Findings stored before this table existed
+have no row and keep the approximate mapping until their next sighting.
+
+**Importers.** Which tools fill `web.method` and `web.endpoint_ref` is a
+property of the producer (the sensor tool parsers, the CTIS importers); the
+platform stores whatever the report says. A producer that sends only a URL is
+still linked by method and template when it names the method.
 
 ## Sensitive paths, patterns, origins and the change feed
 

@@ -335,6 +335,8 @@ const NOT_PICKABLE: ReadonlySet<string> = new Set([
   'seen_by_sensor_id',
   'seen_by_scan_id',
   'seen_in_run_id',
+  // The findings of one grouped notification: reached from its link.
+  'notification_group_id',
 ])
 
 /** Whether a person can edit a filter on the field (Add filter offers it). */

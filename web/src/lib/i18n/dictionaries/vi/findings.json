@@ -782,6 +782,7 @@
   "findings.filter.field.network_port": "Cổng",
   "findings.filter.field.network_service": "Dịch vụ",
   "findings.filter.field.network_transport": "Giao thức truyền tải",
+  "findings.filter.field.notification_group_id": "Trong thông báo",
   "findings.filter.field.observation": "Quan sát",
   "findings.filter.field.pending_approval": "Chờ phê duyệt",
   "findings.filter.field.priority_class": "Ưu tiên",
