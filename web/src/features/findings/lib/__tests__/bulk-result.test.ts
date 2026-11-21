@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { summarizeBulkResult } from '../bulk-result'
+import { summarizeApprovalBulk, summarizeBulkResult } from '../bulk-result'
 import { getDictionary, translate } from '@/lib/i18n'
 
 const en = getDictionary('en')
@@ -67,5 +67,79 @@ describe('summarizeBulkResult', () => {
     const r = summarizeBulkResult({ updated: 0, failed: 1, errors: ['x: y'] }, 1, 'updated', tVi)
     expect(r.message).not.toBe('No findings were changed')
     expect(summarizeBulkResult({ updated: 2, failed: 0 }, 2, 'updated', tVi).message).toContain('2')
+  })
+})
+
+// POST /approvals/bulk/approve and /bulk/reject report every id with an
+// outcome and a stable code; the toast gives the counts and, for what was not
+// decided, each plain reason with how many it held.
+describe('summarizeApprovalBulk', () => {
+  it('reports a clean approval', () => {
+    expect(
+      summarizeApprovalBulk(
+        {
+          results: [{ outcome: 'approved' }, { outcome: 'approved' }, { outcome: 'signed' }],
+          approved: 2,
+          signed: 1,
+          rejected: 0,
+          skipped: 0,
+          failed: 0,
+        },
+        t
+      )
+    ).toEqual({
+      kind: 'success',
+      message: '2 approved, 1 waiting for more approvals',
+      description: undefined,
+    })
+  })
+
+  it('lists skipped and failed items with plain reasons, most common first', () => {
+    const s = summarizeApprovalBulk(
+      {
+        results: [
+          { outcome: 'approved' },
+          { outcome: 'skipped', code: 'own_request' },
+          { outcome: 'skipped', code: 'not_found' },
+          { outcome: 'skipped', code: 'not_found' },
+          { outcome: 'failed', code: 'step_up_required' },
+        ],
+        approved: 1,
+        signed: 0,
+        rejected: 0,
+        skipped: 3,
+        failed: 1,
+      },
+      t
+    )
+    expect(s.kind).toBe('warning')
+    expect(s.message).toBe('1 approved, 3 skipped, 1 not decided')
+    expect(s.description).toBe(
+      'Not found, or outside what you can see: 2. Your own request: someone else decides it: 1. Needs its own sign-in check: approve it on its own: 1'
+    )
+  })
+
+  it('is an error when nothing was decided', () => {
+    const s = summarizeApprovalBulk(
+      {
+        results: [{ outcome: 'skipped', code: 'not_pending' }],
+        approved: 0,
+        signed: 0,
+        rejected: 0,
+        skipped: 1,
+        failed: 0,
+      },
+      t
+    )
+    expect(s.kind).toBe('error')
+    expect(s.description).toBe('Already decided: 1')
+  })
+
+  it('reports rejections in Vietnamese', () => {
+    const s = summarizeApprovalBulk(
+      { results: [], approved: 0, signed: 0, rejected: 2, skipped: 0, failed: 0 },
+      tVi
+    )
+    expect(s).toEqual({ kind: 'success', message: '2 đã từ chối', description: undefined })
   })
 })

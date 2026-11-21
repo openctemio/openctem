@@ -1,14 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   dismissBody,
-  dismissNoteMinLength,
   idempotencyKeyFor,
   previewLines,
   previewReason,
-  readLastReason,
   summarizeDismiss,
   summarizeUndo,
-  writeLastReason,
   type DismissResult,
 } from '../bulk-dismiss'
 import { en } from '@/lib/i18n/dictionaries'
@@ -38,20 +35,6 @@ function result(over: Partial<DismissResult> = {}): DismissResult {
     ...over,
   }
 }
-
-describe('bulk dismiss: the note rule (D4)', () => {
-  it('is required until the server has answered', () => {
-    expect(dismissNoteMinLength(undefined)).toBe(1)
-    expect(dismissNoteMinLength(null)).toBe(1)
-  })
-  it('is optional only when the preview says so', () => {
-    expect(dismissNoteMinLength({ note_required: false, note_min_length: 0 })).toBe(0)
-  })
-  it('takes the tier minimum, never below one character', () => {
-    expect(dismissNoteMinLength({ note_required: true, note_min_length: 20 })).toBe(20)
-    expect(dismissNoteMinLength({ note_required: true, note_min_length: 0 })).toBe(1)
-  })
-})
 
 describe('bulk dismiss: the request', () => {
   it('sends ids, or the filter with the confirmed count', () => {
@@ -195,38 +178,5 @@ describe('bulk dismiss: the result and the undo', () => {
       message: 'Reopened 2 findings',
       description: 'The approval request was withdrawn. 1 was left as it is: it changed since.',
     })
-  })
-})
-
-describe('bulk dismiss: the last reason', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-    window.localStorage.clear()
-  })
-
-  it('remembers the last reason per status', () => {
-    writeLastReason('false_positive', 'test_or_example_code')
-    writeLastReason('accepted', 'wont_fix')
-    expect(readLastReason('false_positive')).toBe('test_or_example_code')
-    expect(readLastReason('accepted')).toBe('wont_fix')
-  })
-
-  it('ignores a stored value that is not a reason of that status', () => {
-    window.localStorage.setItem(
-      'openctem.findings.dismiss.lastReason',
-      JSON.stringify({ false_positive: 'wont_fix' })
-    )
-    expect(readLastReason('false_positive')).toBe('')
-  })
-
-  it('works with storage switched off', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('blocked')
-    })
-    expect(() => writeLastReason('false_positive', 'detection_error')).not.toThrow()
-    expect(readLastReason('false_positive')).toBe('')
   })
 })

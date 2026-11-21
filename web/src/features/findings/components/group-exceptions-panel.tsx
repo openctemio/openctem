@@ -4,13 +4,15 @@
  * Group exceptions in the approvals inbox: one row per exception (source
  * task, status, tier and sign-offs, member count, deadline) and a side panel
  * with its members and the decision (approve, reject with a reason, cancel
- * by the requester). See server/docs/rfcs/RFC-111-approval-policy.md.
+ * by the requester, leave one member out with a reason, and the sole
+ * member's own approval). Approvers can select several groups and approve or
+ * reject them at once. See server/docs/rfcs/RFC-111-approval-policy.md.
  * The API decides who may act; the UI hides what the caller could not do.
  */
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { Ban, Check, Loader2, X } from 'lucide-react'
+import { Ban, Check, Loader2, ShieldCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -46,7 +48,8 @@ import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { QueueReasonDialog } from '@/features/shared/components/queue'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import {
@@ -54,12 +57,15 @@ import {
   useApprovalBatch,
   useApprovalBatches,
   type ApprovalBatch,
+  type ApprovalBatchMember,
 } from '../api/use-approval-batches'
 import type { ApprovalStatus } from '../types/finding.types'
 import { approveErrorOutcome, approveResultOutcome, kindLabel } from '../lib/approval-policy'
 import { closureReasonLabel } from '../lib/closure'
 import { ApprovalTierCell } from './approval-tier-cell'
 import { formatDate, formatNumber } from '@/lib/app-locale'
+import { useApprovalBulkDecide } from './approval-bulk-decide'
+import { FindingSelfApproveDialog } from './finding-self-approve-dialog'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -164,6 +170,7 @@ export function GroupExceptionsPanel({
   toolbarEnd,
 }: GroupExceptionsPanelProps) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   const { data, isLoading, isValidating, error, mutate } = useApprovalBatches(
     pagination.pageIndex + 1,
     pagination.pageSize,
@@ -273,6 +280,16 @@ export function GroupExceptionsPanel({
     await Promise.all([mutate(), onDecided?.()])
   }, [mutate, onDecided])
 
+  // Approve or reject the selected groups at once.
+  const groupName = useCallback((b: ApprovalBatch) => batchSourceTitle(b, t), [t])
+  const bulkDecide = useApprovalBulkDecide<ApprovalBatch>({
+    kind: 'batch',
+    idOf: (b) => b.id,
+    nameOf: groupName,
+    canDecide: can(Permission.FindingsApprove) && (status === undefined || status === 'pending'),
+    onDecided: decided,
+  })
+
   return (
     <>
       {!data && accessStateOf(error) === 'no_access' ? (
@@ -297,6 +314,9 @@ export function GroupExceptionsPanel({
           showSearch={false}
           toolbarStart={toolbarStart}
           toolbarEnd={toolbarEnd}
+          bulk={bulkDecide.bulk}
+          resetSelectionKey={bulkDecide.resetKey}
+          showSelectionCount={false}
           emptyMessage={t('findingApprovals.group.empty', 'No group exceptions')}
           emptyDescription={t(
             'findingApprovals.group.emptyDesc',
@@ -310,6 +330,7 @@ export function GroupExceptionsPanel({
         currentUserId={currentUserId}
         onDecided={decided}
       />
+      {bulkDecide.dialogs}
     </>
   )
 }
@@ -333,6 +354,12 @@ export function GroupExceptionSheet({
   const [reason, setReason] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [approveOpen, setApproveOpen] = useState(false)
+  const [selfApproveOpen, setSelfApproveOpen] = useState(false)
+  // "Leave out": one member rejected with a reason, the rest stays pending.
+  const [leaveOut, setLeaveOut] = useState<ApprovalBatchMember | null>(null)
+  const [leaveReason, setLeaveReason] = useState('')
+  const [leaveError, setLeaveError] = useState<string | null>(null)
+  const [leaving, setLeaving] = useState(false)
 
   const pending = batch?.status === 'pending'
   // The four-eyes rule: someone else decides your own request.
@@ -403,6 +430,43 @@ export function GroupExceptionSheet({
       )
     } finally {
       setBusy(null)
+    }
+  }
+
+  const confirmLeaveOut = async () => {
+    if (!batch || !leaveOut || leaving || !leaveReason.trim()) return
+    setLeaving(true)
+    setLeaveError(null)
+    try {
+      const res = await approvalBatchApi.leaveOut(batch.id, leaveOut.finding_id, leaveReason.trim())
+      toast.success(t('findingApprovals.group.leftOut', 'Left out of the group'), {
+        description:
+          res?.status === 'rejected'
+            ? t(
+                'findingApprovals.group.leftOutClosed',
+                'No finding is left waiting, so the group is closed as rejected.'
+              )
+            : t(
+                'findingApprovals.group.leftOutDesc',
+                'The requester sees your reason. The rest of the group still waits for a decision.'
+              ),
+      })
+      setLeaveOut(null)
+      setLeaveReason('')
+      await after()
+    } catch (err) {
+      // The dialog stays open with the reason as typed.
+      const outcome = approveErrorOutcome(t, err)
+      setLeaveError(
+        outcome.kind === 'refused'
+          ? outcome.message
+          : getErrorMessage(
+              err,
+              t('findingApprovals.group.leaveOutFailed', 'Could not leave the finding out')
+            )
+      )
+    } finally {
+      setLeaving(false)
     }
   }
 
@@ -529,11 +593,37 @@ export function GroupExceptionSheet({
                             })}
                           </span>
                         )}
+                        {/* An approver leaves one finding out; the group's
+                            requester cancels the group instead. */}
+                        {pending && !own && m.status === 'pending' && (
+                          <Can permission={Permission.FindingsApprove}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setLeaveReason('')
+                                setLeaveError(null)
+                                setLeaveOut(m)
+                              }}
+                              disabled={!!busy || leaving}
+                              aria-label={t(
+                                'findingApprovals.group.leaveOutNamed',
+                                'Leave out {name}',
+                                {
+                                  name: m.title || m.finding_id,
+                                }
+                              )}
+                              data-testid="batch-member-leave-out"
+                            >
+                              {t('findingApprovals.group.leaveOut', 'Leave out')}
+                            </Button>
+                          </Can>
+                        )}
                       </li>
                     ))}
                   </ul>
                 </section>
-                {pending && own && (
+                {pending && own && !batch.self_approval_available && (
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'findings.approvals.ownRequestHint',
@@ -551,6 +641,20 @@ export function GroupExceptionSheet({
                   <Button variant="outline" onClick={() => setCancelOpen(true)} disabled={!!busy}>
                     <Ban className="me-2 h-4 w-4" aria-hidden />
                     {t('findings.approvals.action.cancel', 'Cancel request')}
+                  </Button>
+                </Can>
+              )}
+              {/* The organization's sole member and owner: nobody else can
+                  decide their group, so they approve it with a code. */}
+              {own && batch.self_approval_available && (
+                <Can permission={Permission.FindingsApprove}>
+                  <Button
+                    onClick={() => setSelfApproveOpen(true)}
+                    disabled={!!busy}
+                    data-testid="batch-self-approve"
+                  >
+                    <ShieldCheck className="me-2 h-4 w-4" aria-hidden />
+                    {t('findingApprovals.selfApprove.cardAction', 'Approve myself')}
                   </Button>
                 </Can>
               )}
@@ -656,6 +760,41 @@ export function GroupExceptionSheet({
         isLoading={busy === 'approve'}
         handleConfirm={approve}
       />
+
+      <QueueReasonDialog
+        open={leaveOut !== null}
+        onOpenChange={(o) => !o && !leaving && setLeaveOut(null)}
+        title={t('findingApprovals.group.leaveOutTitle', 'Leave this finding out?')}
+        description={t(
+          'findingApprovals.group.leaveOutDesc',
+          'Its request is rejected and the finding keeps its status. The rest of the group still waits for a decision. Give a reason; the requester sees it.'
+        )}
+        summary={
+          leaveOut ? (
+            <p className="rounded-md border bg-muted/50 p-2 text-sm break-words">
+              {leaveOut.title || leaveOut.finding_id}
+            </p>
+          ) : null
+        }
+        reason={leaveReason}
+        onReasonChange={setLeaveReason}
+        reasonLabel={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
+        maxLength={2000}
+        error={leaveError}
+        busy={leaving}
+        confirmLabel={t('findingApprovals.group.leaveOut', 'Leave out')}
+        busyLabel={t('findings.approvals.rejecting', 'Rejecting…')}
+        cancelLabel={t('findings.approvals.cancel', 'Cancel')}
+        onConfirm={() => void confirmLeaveOut()}
+      />
+
+      {selfApproveOpen && batch && (
+        <FindingSelfApproveDialog
+          batch={batch}
+          onOpenChange={setSelfApproveOpen}
+          onApproved={() => void after()}
+        />
+      )}
 
       <ConfirmDialog
         open={cancelOpen}

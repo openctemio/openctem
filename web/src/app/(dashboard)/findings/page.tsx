@@ -19,6 +19,8 @@ import {
   type SuggestedRule,
 } from '@/features/findings/components/bulk-dismiss-dialog'
 import { announceDismissResult } from '@/features/findings/components/bulk-dismiss-result'
+import { FindingSelfApproveDialog } from '@/features/findings/components/finding-self-approve-dialog'
+import { approvalBatchApi, type ApprovalBatch } from '@/features/findings/api/use-approval-batches'
 import type { DismissSelection } from '@/features/findings/lib/bulk-dismiss'
 import { SuppressionFormDialog } from '@/features/exceptions/components/suppression-form-dialog'
 import { buildFindingsQuery } from '@/features/findings/api/findings-query'
@@ -634,6 +636,8 @@ function FindingsContent() {
   const [dismissSelection, setDismissSelection] = useState<DismissSelection | null>(null)
   const [dismissOpen, setDismissOpen] = useState(false)
   const [ruleDefaults, setRuleDefaults] = useState<SuggestedRule | null>(null)
+  // The group a Dismiss sent to approval that the caller may approve alone.
+  const [selfApproveGroup, setSelfApproveGroup] = useState<ApprovalBatch | null>(null)
   const [bulkResolveNote, setBulkResolveNote] = useState('')
   // The dry run the confirm dialog ran for the checked rows (one per status).
   const [bulkPreview, setBulkPreview] = useState<{
@@ -3439,7 +3443,14 @@ function FindingsContent() {
           onApplied={(result) => {
             clearSelection()
             void handleRefresh()
-            announceDismissResult(t, result, () => void handleRefresh())
+            void announceDismissResult(
+              t,
+              result,
+              () => void handleRefresh(),
+              hasPermission(Permission.FindingsApprove)
+                ? { load: approvalBatchApi.get, open: setSelfApproveGroup }
+                : undefined
+            )
           }}
           onCreateRule={
             hasPermission(Permission.SuppressionsWrite)
@@ -3449,6 +3460,16 @@ function FindingsContent() {
                 }
               : undefined
           }
+        />
+      )}
+      {/* Approve myself: the group a Dismiss created, when nobody else can approve it. */}
+      {selfApproveGroup && (
+        <FindingSelfApproveDialog
+          batch={selfApproveGroup}
+          onOpenChange={(open) => {
+            if (!open) setSelfApproveGroup(null)
+          }}
+          onApproved={() => void handleRefresh()}
         />
       )}
       {/* Mounted only when Dismiss suggests a rule instead. */}

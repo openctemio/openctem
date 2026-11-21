@@ -49,6 +49,7 @@ import {
   type GroupExceptionStatus,
 } from '../api/use-approval-batches'
 import { groupSkipText, tierLabel } from '../lib/approval-policy'
+import { noteMinLength } from '../lib/approval-note'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { formatDate } from '@/lib/app-locale'
@@ -209,7 +210,8 @@ export function GroupExceptionDialog({
   }, [open, targetKey, status, reason, expiresIso, expiryValid])
 
   const evaluation = preview?.evaluation
-  const minNote = Math.max(1, evaluation?.min_note_length ?? 1)
+  // A group always waits for a second person, so its note is always required.
+  const minNote = noteMinLength({ can_decide_alone: false, material: true, evaluation })
   const noteLength = note.trim().length
   const noteTooShort = noteLength > 0 && noteLength < minNote
   const included = preview?.included ?? 0
@@ -368,7 +370,7 @@ export function GroupExceptionDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="group-exception-note">
-                {t('findings.approvalDialog.justification', 'Justification')}
+                {t('findings.approvalDialog.note', 'Note')}
               </Label>
               <Textarea
                 id="group-exception-note"
