@@ -275,6 +275,10 @@ Every page, top to bottom:
      text and outside the h1, when the title itself is a choice (a chevron that
      switches between dashboards). Not a place for the page's actions.
 4. **One tab row per page**, right under the header, no margins on it.
+   - **Page tabs on a phone: one swipeable row with an edge fade, active tab kept in view** (owner 2026-11-21).
+     The shared strip (`TabsList`, `SectionTabs`) never wraps onto lines and a page never adds its own wrap;
+     it snaps, hides its scrollbar, and the layout check (spec 75) lets a strip marked `data-tab-strip`
+     scroll while its fade shows. Toolbars, filters and action rows still may not scroll.
    - **Section tabs** when the sub-views are routes: the shared
      `<SectionTabs>` (or `<GatedSectionTabs>`), defined once in
      `src/config/section-tabs.ts` and passed as the sidebar item's `sections`

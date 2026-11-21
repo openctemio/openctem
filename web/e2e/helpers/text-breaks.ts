@@ -386,6 +386,12 @@ export async function findBreaks(
           if (!/auto|scroll/.test(cs.overflowX)) continue
           if (sc.scrollWidth <= sc.clientWidth + 2 || sc.clientWidth === 0) continue
           if (!shown(sc) || hiddenByAncestor(sc)) continue
+          // A page tab strip (marked by the shared component) that shows its edge
+          // fade tells a person there are more tabs: it may scroll. Toolbars,
+          // filters and action rows have no such cue and may not.
+          const ds = (sc as HTMLElement).dataset
+          if (ds.tabStrip !== undefined && (ds.fadeEnd === 'true' || ds.fadeStart === 'true'))
+            continue
           const sr = sc.getBoundingClientRect()
           const strip = sr.height <= 56 && !sc.querySelector('table')
           for (const c of Array.from(sc.querySelectorAll(CONTROL))) {

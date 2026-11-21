@@ -265,19 +265,17 @@ const LOPSIDED_DEBT = new Set([
 ])
 
 /**
- * Pages whose in-page tab strip is cut at 390 px (/sensors "Enrollment
- * tokens", /my-work, /settings/members) or whose table action buttons are cut
- * by the table scroller's edge at 1024 px (/exposures "Actions for ...",
- * /sensors "Jobs", /settings/audit-log "Result"), found when the sideways
- * strip and scroller checks were added (owner report 2026-11-20). Only the
- * `clipped` lines about a sideways strip or a scroller's edge are skipped for
- * them. Each moves onto the phone tab rule or pins its actions and leaves this
+ * Pages whose table action buttons are cut by the table scroller's edge at
+ * 1024 px (/exposures "Actions for ...", /sensors "Jobs", /settings/audit-log
+ * "Result"), found when the sideways strip and scroller checks were added
+ * (owner report 2026-11-20). Only the `clipped` lines about a sideways strip or
+ * a scroller's edge are skipped for them. Each pins its actions and leaves this
  * list; it only shrinks, and a route not on it fails on its first such line.
+ * A page tab strip is not debt: the shared strip scrolls with an edge fade
+ * (owner 2026-11-21).
  */
 const SIDEWAYS_DEBT = new Set([
-  '/sensors',
-  '/my-work',
-  '/settings/members',
+  '/sensors', // its Jobs table only; the tab strip is the shared one
   '/exposures',
   '/settings/audit-log',
 ])

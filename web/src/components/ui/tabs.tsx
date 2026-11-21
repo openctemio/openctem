@@ -39,8 +39,15 @@ const TabsVariantContext = React.createContext<TabsVariant>('line')
  * fades out. `useTabStripScroll` sets the `data-fade-start` / `data-fade-end`
  * it reads. Shared by the tab strips and the filter chips row on a phone.
  */
-export const EDGE_FADE_X_CLASS =
-  'data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
+export const EDGE_FADE_X_CLASS = [
+  'data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]',
+  'data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)]',
+  'data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]',
+  // Right to left: the start edge is the right one, so the gradients turn round.
+  'rtl:data-[fade-end=true]:[mask-image:linear-gradient(to_left,black_calc(100%-2.5rem),transparent)]',
+  'rtl:data-[fade-start=true]:[mask-image:linear-gradient(to_left,transparent,black_2.5rem)]',
+  'rtl:data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_left,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]',
+].join(' ')
 
 /** The fade in `EDGE_FADE_X_CLASS` is 2.5rem wide; in px for the scroll hook. */
 function edgeFadeWidth(): number {
@@ -48,7 +55,7 @@ function edgeFadeWidth(): number {
   return (Number.isFinite(rem) && rem > 0 ? rem : 16) * 2.5
 }
 
-export const TAB_STRIP_CLASS = `flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar ${EDGE_FADE_X_CLASS}`
+export const TAB_STRIP_CLASS = `flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain snap-x snap-proximity border-b text-muted-foreground no-scrollbar ${EDGE_FADE_X_CLASS}`
 
 /** One underline tab in a `TAB_STRIP_CLASS` strip. */
 export const TAB_CLASS =
@@ -57,7 +64,7 @@ export const TAB_CLASS =
   // which made every strip 1px taller than its box: on iOS that let the strip
   // scroll vertically and the tabs wobbled under a finger. shrink-0 keeps
   // labels whole; the strip scrolls sideways instead.
-  'inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap px-0.5 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--foreground)] aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-2px_0_var(--foreground)] [&_svg]:size-4 [&_svg]:shrink-0'
+  'inline-flex shrink-0 snap-start items-center justify-center gap-1.5 whitespace-nowrap px-0.5 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--foreground)] aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-2px_0_var(--foreground)] [&_svg]:size-4 [&_svg]:shrink-0'
 
 /**
  * Keeps a horizontally scrolling tab strip usable on narrow screens: marks
@@ -73,6 +80,9 @@ export function useTabStripScroll(
   React.useEffect(() => {
     const el = ref.current
     if (!el) return
+    // Marks a page tab strip: a scroller whose edge fade is the cue that more
+    // tabs are hidden, so the layout checks let it scroll (a toolbar may not).
+    el.dataset.tabStrip = ''
     const update = () => {
       const x = Math.abs(el.scrollLeft)
       const max = el.scrollWidth - el.clientWidth
@@ -137,6 +147,7 @@ export function useTabStripScroll(
       attributeFilter: ['data-state', 'aria-current'],
     })
     return () => {
+      delete el.dataset.tabStrip
       el.removeEventListener('scroll', update)
       ro?.disconnect()
       mo?.disconnect()

@@ -138,7 +138,7 @@ export function ScannerAddressesCard({ enabled = true }: { enabled?: boolean }) 
                 </Button>
               </div>
               <Tabs value={format} onValueChange={(v) => setFormat(v as AllowlistFormat)}>
-                <TabsList className="h-auto max-w-full flex-wrap justify-start">
+                <TabsList>
                   {ALLOWLIST_FORMATS.map((f) => (
                     <TabsTrigger key={f} value={f} className="text-xs">
                       {t(`proxyPools.scanner.format.${f}`)}

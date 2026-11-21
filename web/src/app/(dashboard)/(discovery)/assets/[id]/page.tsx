@@ -551,9 +551,9 @@ export default function AssetDetailPage() {
             <SettleOn pending={related.isLoading || webEvidence.isLoading} />
 
             <div className={STRIP}>
-              {/* Eight tabs do not fit a phone: they wrap to a second line instead of
-                  scrolling out of sight (nothing tells a person this strip scrolls). */}
-              <TabsList className="h-auto min-h-10 flex-wrap gap-y-0 [&>*]:min-h-10">
+              {/* Eight tabs do not fit a phone: the shared strip is one row you swipe
+                  sideways, with an edge fade and the active tab kept in view. */}
+              <TabsList>
                 {tabs.map((key) => {
                   const Icon = TAB_ICON[key]
                   return (
