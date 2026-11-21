@@ -94,6 +94,10 @@ export function SecurityOverview() {
     'securityOverview.description',
     'How well this organization is protected, and what to fix first.'
   )
+  const firstGroupOf = (status: CheckStatus) => {
+    const hit = open.find(([, checks]) => checks.some((c) => c.status === status))
+    return hit ? `#security-group-${hit[0]}` : '#security-score'
+  }
   const recheck = (
     <Button
       variant="outline"
@@ -139,6 +143,10 @@ export function SecurityOverview() {
           items={[
             {
               key: 'score',
+              href:
+                firstGroupOf('risk') !== '#security-score'
+                  ? firstGroupOf('risk')
+                  : firstGroupOf('warn'),
               label: t('securityOverview.score.title', 'Security score'),
               value: <span data-testid="security-score">{score}</span>,
               hint: t('securityOverview.score.outOf', '/ 100'),
@@ -148,18 +156,21 @@ export function SecurityOverview() {
             },
             {
               key: 'risk',
+              href: firstGroupOf('risk'),
               label: t('securityOverview.counts.risk', 'Checks at risk'),
               value: <span data-testid="count-risk">{counts.risk ?? 0}</span>,
               tone: (counts.risk ?? 0) > 0 ? 'danger' : 'default',
             },
             {
               key: 'warn',
+              href: firstGroupOf('warn'),
               label: t('securityOverview.counts.warn', 'Checks with a warning'),
               value: <span data-testid="count-warn">{counts.warn ?? 0}</span>,
               tone: (counts.warn ?? 0) > 0 ? 'warning' : 'default',
             },
             {
               key: 'pass',
+              href: passed.length > 0 ? '#security-passed' : '#security-score',
               label: t('securityOverview.counts.pass', 'Checks passed'),
               value: <span data-testid="count-pass">{counts.pass ?? 0}</span>,
             },
