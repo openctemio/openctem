@@ -716,7 +716,7 @@ post-merge run.
   of every full push or nightly run; a test counts for the spec file that ran it,
   even when a helper declares it; a spec without a recorded duration costs the
   median, 60 s when none exist). It sets the shard
-  count to `ceil(total / 240 s)` clamped to 1 to 4, assigns specs longest first
+  count to `ceil(total / 240 s)` clamped to 1 to 5, assigns specs longest first
   to the lightest shard, and emits the matrix the shard jobs read with
   `fromJSON`. The request budget job exists only when a `@budget` spec is
   selected (any change to a feature's `hooks/` or `server/`, a page, or
