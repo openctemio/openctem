@@ -111,6 +111,12 @@ describe('ReceiptHistory', () => {
     }
   })
 
+  it('puts the totals after the list on a phone (list first)', () => {
+    render(<ReceiptHistory />)
+    const section = screen.getByTestId('receipt-totals').closest('section')
+    expect(section).toHaveClass('order-last', 'md:order-none')
+  })
+
   it('shows the totals of the filter (the dashboard figure) and the filters as removable chips', async () => {
     render(<ReceiptHistory />)
     expect(swr.key).toBe(

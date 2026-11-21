@@ -299,7 +299,11 @@ export function ReceiptHistory() {
         />
         <RetiredSourcesSection />
         {totals && totals.receipts > 0 && (
-          <section aria-labelledby="receipt-totals" className="rounded-lg border p-3">
+          <section
+            aria-labelledby="receipt-totals"
+            // On a phone the list comes first and the totals follow it.
+            className="order-last rounded-lg border p-3 md:order-none"
+          >
             <h2 id="receipt-totals" className="text-muted-foreground mb-2 text-xs font-medium">
               {tCount(
                 t,
