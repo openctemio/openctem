@@ -184,7 +184,10 @@ before `accounts` existed reads as `open` with `self_service` and `closed`
 otherwise.
 
 Plus `request_access`: whether people who cannot sign up may ask for an
-organization (the request queue follows in its own change).
+organization (the request queue follows in its own change), and
+`personal_organization`: "Create a personal organization on sign-up" (off by
+default, needs `self_service`; see
+[Personal organization at sign-up](#personal-organization-at-sign-up)).
 
 - **Who reads it.** create-first-team, `POST /tenants` and
   `GET /auth/providers` (`tenant_creation_mode`, which the web uses to offer
@@ -569,6 +572,72 @@ has an account or an organization exists:
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
 
+### Personal organization at sign-up
+
+With `personal_organization` on (Console > System > Sign-up, "Create a
+personal organization on sign-up"; it needs `self_service`, so `accounts:
+open` and `SIGNUP_MODE=open`), a person who signs up with no other way in
+gets their own organization, with them as owner, without the "create your
+organization" step. Off by default; `SIGNUP_PERSONAL_ORGANIZATION=true` turns
+it on in the policy stored at the first start (only under `SIGNUP_MODE=open`);
+after that the console value wins.
+
+- **Who gets one.** Only an account created by self-service sign-up (admission
+  outcome `self_service`: password register or first social sign-in) while the
+  switch is on is marked `pending` in `personal_organizations` (migration
+  `20261118094017`). An account created by an invitation, an organization's
+  SSO, a verified domain (`domain_account`), the console or SCIM is never
+  marked.
+- **When.** At the account's first sign-in (password or social) after its
+  address is verified, before the second-factor step (a new organization asks
+  its owner for a second factor, so the person enrols at that sign-in). A
+  social sign-in makes it too: under a platform two-factor floor that covers
+  owners (grace over) the organization refuses the session with
+  `MFA_ENROLLMENT_REQUIRED`, which keeps the session; the person enrols a
+  second factor in place (within 15 minutes of the sign-in, an older session
+  gets `REAUTH_REQUIRED` and signs in again) and the session that step opens
+  reaches the organization.
+  A mark older than 30 days is no longer honored. Google
+  and Microsoft addresses count as verified; a GitHub address only when GitHub
+  marks it verified. `signup.Admit` with the intent `personal_organization`
+  decides again at that moment: switch on and self-service in force, verified,
+  no pending invitation, no organization SSO admits the identity, and no
+  organization claims the address's domain (joinable, SSO required, closed to
+  joining or blocking new organizations; rechecked inside the transaction),
+  and not a disposable address.
+- **Name and address.** "<Display name>'s organization" (in the person's
+  language when they chose another one; the e-mail's local part when there is no
+  display name), renameable later. The address (slug) is the name's ASCII
+  letters and digits (at most 30) and a random 6-character suffix, so it says
+  nothing about other organizations; a taken one is retried with another.
+- **Defaults.** The same as create-first-team: the self-service starting
+  limits, every module, the default settings of a new organization; the
+  per-person cap (`orgs_per_user`) applies.
+- **Once, even under concurrency.** One transaction locks the account's mark
+  (`SELECT … FOR UPDATE`), re-checks membership, pending invitations and open
+  ownership invitations, creates the organization, owner membership and owner
+  role, and settles the mark (`created`). Two tabs or retries wait on the lock
+  and then find it settled. An account that joined or created an organization
+  another way first settles as `skipped`; a waiting invitation leaves it
+  `pending` (if the person declines, a later sign-in can still make one). An
+  organization made and later deleted is never made again.
+- **Rate bounds.** At most 5 per client network prefix (/24, /48) and 50 per
+  registrable e-mail domain in a rolling hour (the domain bound skips consumer
+  mailbox providers such as gmail.com, listed in `pkg/emaildomain`), counted exactly under a
+  transaction-scoped advisory lock. Above a bound nothing is made and the mark
+  stays pending.
+- **Never in the way.** Any refusal or error is logged and the sign-in goes
+  on: the person lands on the normal onboarding with "create your
+  organization".
+- **Recorded.** `tenant.created` in the new organization's audit log
+  (`via: personal_organization`) and an `organization_created` sign-up event
+  with source `personal_organization` ("Created at sign-up" in Console >
+  Sign-ups).
+- **Turning it on or off** is a sign-up policy change like any other (super
+  admin, authenticator code, critical admin audit row with the before and
+  after values). It does not count as opening sign-up wider: it lets nobody in
+  who could not already create an organization.
+
 ### Limits of a self-service organization
 
 An organization a person creates themselves starts with the instance's
@@ -763,6 +832,7 @@ UPDATE tenants
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `SIGNUP_MODE` | `disabled` | The sign-up **ceiling** (see [Sign-up ceiling](#sign-up-ceiling)): `disabled`, `domain` or `open`. Seeds the console policy on the first start; the policy in force never exceeds it. Anything else fails startup. |
+| `SIGNUP_PERSONAL_ORGANIZATION` | `false` | First-start value of "Create a personal organization on sign-up" (only under `SIGNUP_MODE=open` when no policy is stored); afterwards the console value wins. |
 | `SIGNUP_CAPTCHA` | — | `off-i-understand` accepts `SIGNUP_MODE=open` in production without Turnstile keys. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
@@ -781,5 +851,6 @@ UPDATE tenants
 | Request access | `internal/app/accessrequest`, `pkg/domain/accessrequest`, `handler/access_request_handler.go`, `controller/access_request_retention.go` (migration 001380) |
 | Sign-up feed and burst alerts | `internal/app/signupevent`, `pkg/domain/signupevent`, `internal/infra/postgres/signup_event_repository.go`, `handler/admin_signup_event_handler.go` (`docs/architecture/signup-activity.md`) |
 | Sign-up policy | `internal/app/signup`, `pkg/domain/signup`, `internal/infra/postgres/signup_policy_repository.go`, `handler/admin_signup_handler.go` |
+| Personal organization at sign-up | `internal/app/auth/personal_org.go`, `pkg/domain/tenant/personal_organization.go`, `internal/infra/postgres/personal_organization_repository.go` |
 | SSO admission | `SSOService.jitProvisioningAllowed` (`internal/app/auth/sso.go`) |
 | Set-password email | `EmailService.SendAccountSetupEmail`, template `account_setup` |

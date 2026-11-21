@@ -101,6 +101,9 @@ type AdminProvisionRequest struct {
 	Role  string `json:"role"`
 	// BreakGlass makes a local emergency-access administrator (super_admin only).
 	BreakGlass bool `json:"break_glass"`
+	// Reason (optional, 1 to 1000 characters after trimming) is kept in the
+	// audit record and in the four-eyes gate's record.
+	Reason string `json:"reason,omitempty"`
 }
 
 // AdminChangePasswordRequest changes the signed-in administrator's password.
@@ -224,7 +227,7 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Provision handles POST /api/v1/admin/administrators (super admin).
 // @Summary Make someone a platform administrator
-// @Description Creates a local account for the email (an email that already has an account is refused) with no password, and emails the new administrator a single-use set-password link valid for 24 hours. No password is ever returned. Without platform e-mail the link is returned once, only for a non-super role or while four-eyes approvals are off; a new super admin is refused while approvals are on.
+// @Description Creates a local account for the email (an email that already has an account is refused) with no password, and emails the new administrator a single-use set-password link valid for 24 hours. No password is ever returned. Without platform e-mail the link is returned once, only for a non-super role or while four-eyes approvals are off; a new super admin is refused while approvals are on. An optional reason is kept in the audit record.
 // @Tags Admin Users
 // @Accept json
 // @Produce json
@@ -237,8 +240,12 @@ func (h *AdminConsoleHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) {
 	actor := middleware.MustGetAdminUser(r.Context())
 	var req AdminProvisionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAdminActionReasonBody)).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	reason, ok := adminActionReason(w, req.Reason)
+	if !ok {
 		return
 	}
 	role := admin.AdminRole(req.Role)
@@ -273,13 +280,12 @@ func (h *AdminConsoleHandler) Provision(w http.ResponseWriter, r *http.Request) 
 			apierror.BadRequest("a valid email is required").WriteJSON(w)
 			return
 		}
-		var ok bool
-		if grant, ok = requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalGrantSuperAdmin, target, h.logger); !ok {
+		if grant, ok = requireSecondApprovalWithReason(w, r, h.approvals, actor, admin.ApprovalGrantSuperAdmin, target, reason, h.logger); !ok {
 			return
 		}
 	}
 	res, err := h.svc.Provision(r.Context(), actor, adminconsole.ProvisionInput{
-		Email: req.Email, Name: req.Name, Role: role, BreakGlass: req.BreakGlass,
+		Email: req.Email, Name: req.Name, Role: role, BreakGlass: req.BreakGlass, Reason: reason,
 		// A grant that is not the single-admin fallback means approvals are on.
 		ApprovalsActive: grant != nil && !grant.SingleAdmin,
 	}, clientInfo(r))
@@ -505,9 +511,11 @@ func (h *AdminConsoleHandler) EndElevation(w http.ResponseWriter, r *http.Reques
 // (super admin): removes another administrator's second factor and ends their
 // console sessions, for a lost authenticator.
 // @Summary Reset another administrator's two-step verification
-// @Description Super admin only, with another super admin's approval (428 SECOND_APPROVAL_REQUIRED). Removes the target administrator's TOTP second factor and ends their console sessions (lost authenticator); they enroll again the next time they open the console.
+// @Description Super admin only, with another super admin's approval (428 SECOND_APPROVAL_REQUIRED). Removes the target administrator's TOTP second factor and ends their console sessions (lost authenticator); they enroll again the next time they open the console. An optional reason is kept in the audit record.
 // @Tags Admin Users
+// @Accept json
 // @Param id path string true "Admin user ID"
+// @Param request body AdminActionReasonRequest false "Reason (optional)"
 // @Success 204 "No Content"
 // @Failure 400 {object} apierror.Error "Bad Request"
 // @Failure 403 {object} apierror.Error "Forbidden"
@@ -526,14 +534,18 @@ func (h *AdminConsoleHandler) ResetCredentials(w http.ResponseWriter, r *http.Re
 		apierror.BadRequest("use the password endpoint to change your own credentials").WriteJSON(w)
 		return
 	}
-	// Removing another administrator's second factor lets the next sign-in
-	// as them enroll a new one: a second super admin approves, so one
-	// session cannot take over another approver.
-	grant, ok := requireSecondApproval(w, r, h.approvals, actor, admin.ApprovalResetCredentials, "admin:"+id.String(), h.logger)
+	reason, ok := readAdminActionReason(w, r)
 	if !ok {
 		return
 	}
-	if err := h.svc.ResetCredentials(r.Context(), actor, id, clientInfo(r)); err != nil {
+	// Removing another administrator's second factor lets the next sign-in
+	// as them enroll a new one: a second super admin approves, so one
+	// session cannot take over another approver.
+	grant, ok := requireSecondApprovalWithReason(w, r, h.approvals, actor, admin.ApprovalResetCredentials, "admin:"+id.String(), reason, h.logger)
+	if !ok {
+		return
+	}
+	if err := h.svc.ResetCredentials(r.Context(), actor, id, reason, clientInfo(r)); err != nil {
 		releaseSecondApproval(r, h.approvals, actor, grant)
 		if admin.IsAdminNotFound(err) {
 			apierror.NotFound("admin user").WriteJSON(w)

@@ -1811,6 +1811,51 @@ func TestTenantSvc_AcceptInvitation_Success(t *testing.T) {
 	}
 }
 
+// tenantGate is an organization access gate with a fixed answer for one
+// organization (every other one is open).
+type tenantGate struct {
+	tenantID shared.ID
+	err      error
+}
+
+func (g tenantGate) CheckAccess(_ context.Context, id shared.ID) error {
+	if id == g.tenantID {
+		return g.err
+	}
+	return nil
+}
+
+// A suspended organization takes no new member: accepting its invitation is
+// refused with ErrOrganizationSuspended before anything changes (no
+// membership, the invitation stays pending), whichever way it is accepted.
+// Another organization's suspension does not stop an acceptance.
+func TestTenantSvc_AcceptInvitation_SuspendedOrganization(t *testing.T) {
+	svc, repo := newTestTenantService()
+	tenantID := shared.NewID()
+	svc.SetOrganizationGate(tenantGate{tenantID: tenantID, err: tenant.ErrOrganizationSuspended})
+	inv := seedPendingInvitation(repo, tenantID, "user@test.com", tenant.RoleMember, shared.NewID())
+
+	_, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "user@test.com", audit.AuditContext{})
+	if !errors.Is(err, tenant.ErrOrganizationSuspended) {
+		t.Fatalf("want ErrOrganizationSuspended, got %v", err)
+	}
+	if repo.acceptInvTxCalls != 0 || !inv.IsPending() {
+		t.Fatalf("a refused acceptance must change nothing (tx calls %d, pending %v)", repo.acceptInvTxCalls, inv.IsPending())
+	}
+
+	other := shared.NewID()
+	inv2 := seedPendingInvitation(repo, other, "second@test.com", tenant.RoleMember, shared.NewID())
+	if _, err := svc.AcceptInvitation(context.Background(), inv2.Token(), shared.NewID(), "second@test.com", audit.AuditContext{}); err != nil {
+		t.Fatalf("another organization's invitation: %v", err)
+	}
+
+	// An unreadable status refuses (the gate fails closed).
+	svc.SetOrganizationGate(tenantGate{tenantID: tenantID, err: errors.New("store down")})
+	if _, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "user@test.com", audit.AuditContext{}); err == nil {
+		t.Fatal("an unreadable organization status must refuse the acceptance")
+	}
+}
+
 func TestTenantSvc_AcceptInvitation_EmailMismatch(t *testing.T) {
 	svc, repo := newTestTenantService()
 	tenantID := shared.NewID()

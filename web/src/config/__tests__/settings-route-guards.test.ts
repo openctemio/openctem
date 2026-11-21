@@ -22,11 +22,11 @@ function isCollapsible(item: NavItem): item is NavCollapsible {
 
 describe('personal settings are ungated', () => {
   for (const path of [
-    '/account/notifications',
+    '/settings/me/notifications',
     '/account',
     '/account/security',
     '/account/preferences',
-    '/account/activity',
+    '/settings/me/activity',
   ]) {
     it(path, () => {
       expect(matchRoutePermission(path)).toBeUndefined()

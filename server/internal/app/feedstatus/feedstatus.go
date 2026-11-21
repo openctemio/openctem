@@ -36,11 +36,15 @@ const (
 	IntervalVulnfeed = 20 * time.Minute
 )
 
-// Data older than this is stale.
+// Data older than this is stale: the console shows the feed as stale, the
+// administrators are alerted and every user sees the freshness banner
+// (internal/app/feedwatch). The bundle feed is published hourly, so 12 hours
+// is many missed releases (to be lowered to 6 hours once the publisher's own
+// scheduler has proven itself); KEV is read hourly; EPSS is published daily.
 const (
-	StaleAfterEPSS     = 48 * time.Hour
+	StaleAfterEPSS     = 36 * time.Hour
 	StaleAfterKEV      = 6 * time.Hour
-	StaleAfterVulnfeed = 72 * time.Hour
+	StaleAfterVulnfeed = 12 * time.Hour
 )
 
 // runningTimeout: a row that has said "running" for longer than this was
@@ -108,6 +112,9 @@ const (
 	CodeNotConfigured    = "not_configured"
 	CodeInterrupted      = "interrupted"
 	CodeFailed           = "failed"
+	// CodeSourceStale: a signed release carried a feed (KEV, EPSS) the
+	// collector last read longer ago than the feed's stale limit.
+	CodeSourceStale = "source_stale"
 )
 
 // refused codes: a feed that verified and then refused what it was offered.

@@ -63,6 +63,23 @@ type ViewReader interface {
 	EventsWhere(ctx context.Context, w *filterspec.Where, page pagination.Pagination) (pagination.Result[*Event], error)
 }
 
+// PathReader reads what one origin's path tree is built from. Every read is
+// tenant-scoped; the caller checks the origin's data scope first.
+type PathReader interface {
+	// OriginName returns the name of a live asset of the tenant, or
+	// shared.ErrNotFound.
+	OriginName(ctx context.Context, tenantID, assetID shared.ID) (string, error)
+	// OriginEndpoints returns at most limit endpoint rows of the origin, by
+	// path template, and whether more exist.
+	OriginEndpoints(ctx context.Context, tenantID, assetID shared.ID, limit int) ([]*Endpoint, bool, error)
+	// OriginOpenFindings groups the origin asset's open findings by location
+	// key and severity.
+	OriginOpenFindings(ctx context.Context, tenantID, assetID shared.ID) ([]PathFinding, error)
+	// OriginURLFindings returns the origin asset's open findings with a URL
+	// location, most severe first, at most MaxPathFindingRows.
+	OriginURLFindings(ctx context.Context, tenantID, assetID shared.ID) ([]FindingRow, error)
+}
+
 // Retention (WS14): unseen for GoneAfter -> gone; gone for PurgeAfter ->
 // deleted (params and events follow); events older than EventsKeep deleted.
 const (

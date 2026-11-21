@@ -39,6 +39,7 @@ import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
+import { ViewSwitcher } from '@/features/shared/components/view-switcher'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -330,33 +331,16 @@ export function AssetRelationshipsTab({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         {graphAvailable ? (
-          <div
-            role="group"
-            aria-label={t('assets.related.viewLabel', 'View')}
-            className="inline-flex rounded-md border p-0.5"
-          >
-            {(['list', 'graph'] as const).map((v) => {
-              const Icon = v === 'list' ? List : Network
-              const label =
-                v === 'list'
-                  ? t('assets.related.viewList', 'List')
-                  : t('assets.related.viewGraph', 'Graph')
-              return (
-                <Button
-                  key={v}
-                  type="button"
-                  size="sm"
-                  variant={view === v ? 'secondary' : 'ghost'}
-                  className="h-7 px-2"
-                  aria-pressed={view === v}
-                  onClick={() => setView(v)}
-                >
-                  <Icon className="h-4 w-4" aria-hidden />
-                  <span className="ml-1">{label}</span>
-                </Button>
-              )
-            })}
-          </div>
+          // The shared view switcher: the row's control height, one look
+          // with every other list / graph switch.
+          <ViewSwitcher
+            options={[
+              { value: 'list', label: t('assets.related.viewList', 'List'), icon: List },
+              { value: 'graph', label: t('assets.related.viewGraph', 'Graph'), icon: Network },
+            ]}
+            value={view}
+            onChange={setView}
+          />
         ) : (
           <span />
         )}

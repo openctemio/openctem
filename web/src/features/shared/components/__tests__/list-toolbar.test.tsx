@@ -6,6 +6,7 @@ import { ListToolbar } from '../list-toolbar'
 import { ListSearch, ListSearchModeSwitch } from '../list-search'
 import { FilterButton, FilterPanelToggle } from '../filter-button'
 import { FilterChipsRow, LockedChip } from '../filter-chips-row'
+import { FilterSheet } from '../filter-sheet'
 import { useSearchQuery, SEARCH_DEBOUNCE_MS } from '@/hooks/use-search-query'
 
 // Radix Tooltip measures its content; jsdom has no ResizeObserver.
@@ -54,7 +55,7 @@ describe('ListToolbar slots', () => {
     render(<Search filter={<FilterButton activeCount={2} />} />)
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar).toHaveAttribute('data-slot', 'list-toolbar')
-    expect(names(bar)).toEqual(['Filters (2 active)', 'Search sensors', 'Status: Online', 'View'])
+    expect(names(bar)).toEqual(['Filters, 2 active', 'Search sensors', 'Status: Online', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 
@@ -92,7 +93,11 @@ describe('ListToolbar slots', () => {
   it('draws the trigger alone in the search place when the list has no search', () => {
     render(<ListToolbar filter={<FilterButton />} end={<button type="button">View</button>} />)
     const start = document.querySelector('[data-slot="list-toolbar-start"]') as HTMLElement
-    expect(start.firstElementChild).toBe(screen.getByRole('button', { name: 'Filters' }))
+    const lead = start.firstElementChild as HTMLElement
+    expect(lead).toHaveAttribute('data-slot', 'list-toolbar-lead')
+    // No box of its own on a desktop: the trigger is the first control.
+    expect(lead).toHaveClass('contents')
+    expect(lead.firstElementChild).toBe(screen.getByRole('button', { name: 'Filters' }))
     expect(document.querySelector('[data-slot="list-search"]')).toBeNull()
   })
 
@@ -105,74 +110,190 @@ describe('ListToolbar slots', () => {
 
   it('puts the chips in their own full-width row 8px under the toolbar', () => {
     render(<ListToolbar end={<button type="button">View</button>} below={<span>chip</span>} />)
-    const region = document.querySelector('[data-slot="list-toolbar-region"]') as HTMLElement
-    expect(region).toHaveClass('flex', 'flex-wrap', 'gap-2')
+    const layout = document.querySelector('[data-slot="list-toolbar-layout"]') as HTMLElement
+    expect(layout).toHaveClass('flex', 'flex-wrap', 'gap-2')
+    expect(layout.parentElement).toHaveAttribute('data-slot', 'list-toolbar-region')
     const below = screen.getByTestId('data-table-toolbar-below')
     expect(below).toHaveTextContent('chip')
     expect(below).toHaveClass('basis-full')
-    expect(region.firstElementChild).toBe(screen.getByTestId('data-table-toolbar'))
+    expect(layout.firstElementChild).toBe(screen.getByTestId('data-table-toolbar'))
     expect(screen.getByTestId('data-table-toolbar')).toHaveClass('basis-full')
   })
 
-  it('on a phone lends the toolbar to the region so the end group joins the chips row', () => {
+  it('on a phone lends the toolbar to a grid inside the region (the container)', () => {
     render(<ListToolbar end={<button type="button">View</button>} below={<span>chip</span>} />)
     const region = document.querySelector('[data-slot="list-toolbar-region"]') as HTMLElement
-    // The region answers the toolbar's container queries once the toolbar box is lent out.
+    // The region answers the toolbar's container queries once the toolbar box
+    // is lent out; a query never styles the container, so the grid is inside.
     expect(region.className).toMatch(/@container\/toolbar/)
+    expect(region.className).not.toContain('@max-md/toolbar:grid')
+    const layout = document.querySelector('[data-slot="list-toolbar-layout"]') as HTMLElement
+    expect(layout.className).toContain('@max-md/toolbar:grid')
+    expect(layout.className).toContain('@max-md/toolbar:grid-cols-[auto_minmax(0,1fr)_auto]')
+    // No grid gaps: a line that draws nothing takes no room.
+    expect(layout.className).toContain('@max-md/toolbar:gap-0')
     const bar = screen.getByTestId('data-table-toolbar')
     expect(bar.className).toContain('@max-md/toolbar:contents')
     // Not a container itself: a box-less container would answer no query.
     expect(bar.className).not.toMatch(/(^|\s)@container\/toolbar/)
-    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
-    expect(end.className).toContain('@max-md/toolbar:order-last')
-    // Basis 0: the chips take the room the actions leave, never a line of their own.
-    expect(screen.getByTestId('data-table-toolbar-below').className).toContain(
-      '@max-md/toolbar:flex-[1_1_0%]'
-    )
-    expect(screen.getByTestId('data-table-toolbar-below').className).not.toContain('basis-auto')
+    // No tokens: the chips own the whole second line.
+    const below = screen.getByTestId('data-table-toolbar-below')
+    expect(below.className).toContain('@max-md/toolbar:row-start-2')
+    expect(below.className).toContain('@max-md/toolbar:col-end-4')
   })
 
-  it('on a phone is two lines: the search alone, then tokens scrolling beside the pinned actions', () => {
+  it('on a phone puts the end actions on the search line, so Views never sits on a line alone', () => {
     render(
       <ListToolbar
         search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
         start={<button type="button">Status: Open</button>}
-        end={<button type="button">Refresh</button>}
+        end={<button type="button">Views</button>}
       />
     )
     const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
-    expect(lead.className).toContain('@max-md/toolbar:basis-full')
+    expect(lead.className).toContain('@max-md/toolbar:row-start-1')
+    expect(lead.className).toContain('@max-md/toolbar:col-start-1')
+    expect(lead.className).toContain('@max-md/toolbar:col-end-3')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:row-start-1')
+    expect(end.className).toContain('@max-md/toolbar:col-start-3')
+    // The search keeps at least 12rem; wider actions wrap inside their group.
+    expect(end.className).toContain('@max-md/toolbar:max-w-[calc(100cqw-12rem)]')
+    expect(end.className).toContain('flex-wrap')
+    expect(end.className).not.toContain('order-last')
     const startGroup = document.querySelector('[data-slot="list-toolbar-start"]') as HTMLElement
     expect(startGroup.className).toContain('@max-md/toolbar:contents')
-    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
-    // One scrolling strip with the edge fade, never a wrap.
-    expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
-    expect(tokens.className).toContain('@max-md/toolbar:flex-nowrap')
-    expect(tokens.className).toContain('data-[fade-end=true]')
-    expect(tokens).toHaveTextContent('Status: Open')
-    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
-    // The pinned actions wrap rather than run past the edge when they do not fit.
-    expect(end.className).not.toContain('@max-md/toolbar:flex-nowrap')
-    expect(end.className).toContain('flex-wrap')
     // Desktop: the wrappers draw no box, the row is as before.
     expect(lead.className).toMatch(/(^|\s)contents(\s|$)/)
-    expect(tokens.className).toMatch(/(^|\s)contents(\s|$)/)
   })
 
-  it('on a phone with a chips row pins the tokens (Add filter) after the chips, beside the actions', () => {
+  it('on a phone in Query mode gives the field the whole line: the end actions step down, the inert tokens go', () => {
+    render(
+      <ListToolbar
+        search={{
+          value: '',
+          onChange: () => {},
+          placeholder: 'Search things',
+          query: { active: true, onActiveChange: () => {}, renderEditor: () => null },
+        }}
+        start={<button type="button">Status: Open</button>}
+        end={<button type="button">Views</button>}
+      />
+    )
+    const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
+    expect(lead.className).toContain('@max-md/toolbar:col-end-4')
+    expect(lead.className).not.toContain('@max-md/toolbar:col-end-3')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:row-start-2')
+    expect(end.className).not.toContain('@max-md/toolbar:row-start-1')
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    expect(tokens.className).toContain('@max-md/toolbar:hidden')
+    expect(tokens.className).not.toContain('@max-md/toolbar:flex ')
+  })
+
+  it('on a phone never puts the tokens in a sideways strip: only the ones that filter show, wrapping', () => {
     render(
       <ListToolbar
         search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
-        start={<button type="button">Add filter</button>}
+        start={
+          <>
+            <button type="button">Kind: Appeared</button>
+            <button type="button" aria-pressed="true">
+              Internet-facing
+            </button>
+          </>
+        }
         end={<button type="button">Views</button>}
         below={<span>chip</span>}
       />
     )
     const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
-    expect(tokens.className).toContain('@max-md/toolbar:order-last')
-    // Capped, so the chips keep room; it scrolls past that.
-    expect(tokens.className).toContain('@max-md/toolbar:max-w-[60%]')
-    expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
+    // Owner report 2026-11-20: a strip that scrolls sideways reads as hidden buttons.
+    expect(tokens.className).not.toContain('overflow-x-auto')
+    expect(tokens.className).not.toContain('flex-nowrap')
+    expect(tokens.className).toContain('@max-md/toolbar:flex-wrap')
+    // Line 2, the whole line; the tokens that do not filter are in the sheet.
+    expect(tokens.className).toContain('@max-md/toolbar:row-start-2')
+    expect(tokens.className).toContain('@max-md/toolbar:col-end-4')
+    expect(tokens.className).toContain(
+      '@max-md/toolbar:[&>*:not([data-filtered=true],[aria-pressed=true]):not(:has([data-filtered=true],[aria-pressed=true]))]:hidden'
+    )
+    // Desktop: the wrapper draws no box, the row is as before.
+    expect(tokens.className).toMatch(/(^|\s)contents(\s|$)/)
+    // The chips row follows on line 2, or on line 3 under drawn tokens.
+    const below = screen.getByTestId('data-table-toolbar-below')
+    expect(below.className).toContain('@max-md/toolbar:row-start-2')
+    expect(below.className).toContain(
+      '@max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens]:not([data-empty])]/toolbar:row-start-3'
+    )
+  })
+
+  it('on a phone gives a list without a facet panel one Filters button with the count, opening a sheet of the tokens', async () => {
+    const user = userEvent.setup()
+    render(
+      <ListToolbar
+        start={
+          <>
+            <div data-slot="filter-select" data-filtered="false">
+              <button type="button">Kind: Appeared</button>
+            </div>
+            <div data-slot="filter-select" data-filtered="true">
+              <button type="button">Status: Pending</button>
+            </div>
+            <button type="button" aria-pressed="true">
+              Internet-facing
+            </button>
+          </>
+        }
+        end={<button type="button">Refresh</button>}
+      />
+    )
+    const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
+    // No search: the button starts the first line, the end group ends it.
+    expect(lead.className).toContain('@max-md/toolbar:row-start-1')
+    const button = lead.querySelector('[data-phone-filters]') as HTMLElement
+    expect(button).toBeTruthy()
+    // A phone only: from a 28rem toolbar the tokens are drawn in the row.
+    expect(button.className).toContain('@md/toolbar:hidden')
+    // Two tokens filter: the chosen status and the pressed toggle.
+    expect(button).toHaveAccessibleName('Filters, 2 active')
+    await user.click(button)
+    const sheet = await screen.findByRole('dialog')
+    expect(sheet.textContent).toContain('Kind: Appeared')
+    expect(sheet.textContent).toContain('Status: Pending')
+  })
+
+  it('on a phone shows the tokens at the top of the facet sheet its Filters button opens', async () => {
+    const user = userEvent.setup()
+    function Page() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <ListToolbar
+            search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
+            filterToggle={{
+              open: false,
+              onToggle: () => {},
+              onOpenSheet: () => setOpen(true),
+              activeCount: 0,
+              controlsId: 'panel',
+              sheetOnly: true,
+            }}
+            start={<button type="button">State: Open</button>}
+          />
+          <FilterSheet open={open} onOpenChange={setOpen} title="Finding filters">
+            <p>facets</p>
+          </FilterSheet>
+        </>
+      )
+    }
+    render(<Page />)
+    // One filter entry: no second Filters button of the toolbar's own.
+    expect(document.querySelector('[data-phone-filters]')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
+    const sheet = await screen.findByRole('dialog')
+    const host = sheet.querySelector('[data-slot="filter-sheet-tokens"]') as HTMLElement
+    expect(host.textContent).toContain('State: Open')
   })
 
   it('has the same boxes with and without a chips row, so the first chip moves nothing', () => {
@@ -181,7 +302,9 @@ describe('ListToolbar slots', () => {
         (document.querySelector(`[data-slot="${slot}"]`) as HTMLElement).className
       return {
         region: q('list-toolbar-region'),
+        layout: q('list-toolbar-layout'),
         toolbar: q('list-toolbar'),
+        lead: q('list-toolbar-lead'),
         tokens: q('list-toolbar-tokens'),
         end: q('list-toolbar-end'),
       }
@@ -198,41 +321,6 @@ describe('ListToolbar slots', () => {
     // The region is the size container in both.
     expect(without.region).toMatch(/@container\/toolbar/)
     expect(without.toolbar).not.toMatch(/(^|\s)@container\/toolbar/)
-  })
-
-  it('on a phone anchors the tokens to the end of line 2, the chips own its start', () => {
-    render(
-      <ListToolbar
-        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
-        start={<button type="button">Status: Open</button>}
-        end={<button type="button">Views</button>}
-      />
-    )
-    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
-    // After the chips (order-last), pushed to the end while there is no chip.
-    expect(tokens.className).toContain('@max-md/toolbar:order-last')
-    expect(tokens.className).toContain('@max-md/toolbar:ms-auto')
-    expect(tokens.className).not.toContain('@max-md/toolbar:flex-[1_1_0%]')
-    // Never shrinks: its width does not depend on the chips beside it.
-    expect(tokens.className).toContain('@max-md/toolbar:flex-[0_0_auto]')
-    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
-    expect(end.className).toContain('@max-md/toolbar:order-last')
-    // The end group sits right after the tokens: a second auto margin would
-    // split the free room between them, and the first chip (which takes that
-    // room) would then move the tokens.
-    expect(end.className).toContain('@max-md/toolbar:ms-0')
-  })
-
-  it('on a phone without tokens pushes the end group to the end of line 2', () => {
-    render(
-      <ListToolbar
-        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
-        end={<button type="button">Views</button>}
-      />
-    )
-    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
-    expect(end.className).toContain('ms-auto')
-    expect(end.className).not.toContain('@max-md/toolbar:ms-0')
   })
 
   it('passes its className to the outer region', () => {
@@ -338,10 +426,11 @@ describe('ListSearch', () => {
     expect(container.querySelector('[data-slot="list-search"]')!.className).not.toMatch(/max-w-xl/)
   })
 
-  it('holds its Basic width in Query mode, so the tokens leaving move nothing', () => {
+  it('holds its Basic width in Query mode, so the tokens leaving move nothing; a phone holds nothing', () => {
     const rect = HTMLElement.prototype.getBoundingClientRect
+    let toolbar = 700
     HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-      const width = this.dataset.slot === 'list-search' ? 333 : 0
+      const width = this.dataset.slot === 'list-search' ? 333 : toolbar
       return { width, height: 32, top: 0, left: 0, right: width, bottom: 32, x: 0, y: 0 } as DOMRect
     }
     try {
@@ -358,6 +447,10 @@ describe('ListSearch', () => {
       expect(field().style.width).toBe('333px')
       expect(field().style.flex).toMatch(/none|0 0 auto/)
       rerender(<ListSearch {...props(false)} />)
+      expect(field().style.width).toBe('')
+      // A phone's toolbar (under 28rem): the Query field takes the whole line.
+      toolbar = 358
+      rerender(<ListSearch {...props(true)} />)
       expect(field().style.width).toBe('')
     } finally {
       HTMLElement.prototype.getBoundingClientRect = rect

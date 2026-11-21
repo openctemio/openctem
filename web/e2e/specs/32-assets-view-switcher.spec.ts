@@ -35,13 +35,19 @@ for (const width of [390, 1440]) {
       expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(2)
       await page.goto('/assets')
       // Export: a button of the list's title row from 768 px; on a phone an
-      // item of that row's More, so the row keeps the view's name and state.
+      // item of the More menu that ends the toolbar (a control never stands
+      // alone on the phone title row), so the row keeps the view's name and state.
       const titleRow = page.getByTestId('inventory-title-row')
       await expect(titleRow).toBeVisible({ timeout: 30_000 })
       const exportButton = titleRow.getByRole('button', { name: /^export/i })
       if (width < 768) {
         await expect(exportButton).toHaveCount(0)
-        await titleRow.getByRole('button', { name: 'More actions' }).click()
+        await expect(titleRow.getByRole('button', { name: 'More actions' })).toHaveCount(0)
+        await page
+          .locator('[data-slot="list-toolbar-region"], [data-testid="data-table-toolbar"]')
+          .first()
+          .getByRole('button', { name: 'More actions' })
+          .click()
         // A menu, or a bottom sheet when the menu does not fit.
         const item = page
           .getByRole('menuitem', { name: 'Export' })

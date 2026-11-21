@@ -70,6 +70,10 @@ type APIKeyResponse struct {
 	// ExceedsOrgMax: an active key minted for longer than the organization's
 	// current maximum lifetime (it keeps its expiry; rotate it sooner).
 	ExceedsOrgMax bool `json:"exceeds_org_max,omitempty"`
+	// OwnerName and OwnerKind ("person" or "service") describe the identity
+	// the key belongs to; set by the list only.
+	OwnerName string `json:"owner_name,omitempty"`
+	OwnerKind string `json:"owner_kind,omitempty"`
 }
 
 // CreateAPIKeyResponse includes the plaintext key (only shown once).
@@ -147,7 +151,7 @@ func (h *APIKeyHandler) orgMaxLifetime(r *http.Request, tenantID string) int {
 // exceedsLifetime reports an active key minted for longer than maxDays (a
 // key minted before the organization lowered its maximum).
 func exceedsLifetime(key *apikeydom.APIKey, maxDays int) bool {
-	if maxDays <= 0 || key == nil || key.ExpiresAt() == nil || key.Status() != apikeydom.StatusActive {
+	if maxDays <= 0 || key == nil || key.ExpiresAt() == nil || key.EffectiveStatus(time.Now()) != apikeydom.StatusActive {
 		return false
 	}
 	return key.ExpiresAt().Sub(key.CreatedAt()) > time.Duration(maxDays)*24*time.Hour+time.Minute
@@ -180,9 +184,28 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// owner=me lists the caller's own keys, owner=service_accounts the keys of
+	// service accounts. A caller who sees only their own keys never gets more
+	// than that: the filters only narrow.
+	userID, ownerKind := ownerFilter, ""
+	switch query.Get("owner") {
+	case "":
+	case "me":
+		userID = middleware.GetUserID(r.Context())
+		if userID == "" || (ownerFilter != "" && userID != ownerFilter) {
+			apierror.BadRequest("owner=me needs a signed-in user").WriteJSON(w)
+			return
+		}
+	case "service_accounts":
+		ownerKind = apikeydom.OwnerService
+	default:
+		apierror.BadRequest("owner must be me or service_accounts").WriteJSON(w)
+		return
+	}
 	input := apikey.ListInput{
 		TenantID:  tenantID,
-		UserID:    ownerFilter,
+		UserID:    userID,
+		OwnerKind: ownerKind,
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
 		Page:      paging.Page,
@@ -202,6 +225,9 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	for i, key := range result.Data {
 		data[i] = toAPIKeyResponse(r.Context(), key)
 		data[i].ExceedsOrgMax = exceedsLifetime(key, maxDays)
+		if o, ok := result.Owners[key.ID()]; ok {
+			data[i].OwnerName, data[i].OwnerKind = o.Name, o.Kind
+		}
 	}
 
 	response := ListResponse[APIKeyResponse]{
@@ -320,7 +346,7 @@ func toAPIKeyResponse(ctx context.Context, k *apikeydom.APIKey) APIKeyResponse {
 		KeyPrefix:   k.KeyPrefix(),
 		Scopes:      k.Scopes(),
 		RateLimit:   k.RateLimit(),
-		Status:      string(k.Status()),
+		Status:      string(k.EffectiveStatus(time.Now())),
 		ExpiresAt:   k.ExpiresAt(),
 		LastUsedAt:  k.LastUsedAt(),
 		UseCount:    k.UseCount(),

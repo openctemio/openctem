@@ -240,6 +240,13 @@ type Output struct {
 	SourceRetired bool `json:"source_retired,omitempty"`
 	AssetsCreated int  `json:"assets_created"`
 	AssetsUpdated int  `json:"assets_updated"`
+	// AddressesOnName counts the (name, address) pairs of DNS answers whose
+	// address lies inside a provider's published shared range: recorded on
+	// the name's address history, not as address assets (research/531 D1).
+	AddressesOnName int `json:"addresses_recorded_on_name,omitempty"`
+	// providerAnswers are those pairs while the name's set write is
+	// pending (Service.settleProviderAnswers).
+	providerAnswers []providerAnswer
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`

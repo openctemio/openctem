@@ -45,6 +45,15 @@ const SAFE_CALLS = new Set([
   // features/asset-groups/lib/group-link.ts: /assets/groups/ with the id
   // URI-encoded as one path segment.
   'assetGroupHref',
+  // app/(dashboard)/settings/roles/page.tsx: `/settings/roles?role=` with the id URI-encoded in the query.
+  'roleHref',
+  // app/(dashboard)/settings/sla-policies/page.tsx: `/settings/sla-policies?policy=` with the id URI-encoded in the query.
+  'policyHref',
+  // features/access-control/components/teams-section.tsx and assignment-rules-section.tsx:
+  // `/settings/teams?team=` and `/settings/teams?tab=assignment-rules&rule=` with the id
+  // URI-encoded in the query.
+  'teamHref',
+  'ruleHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
@@ -120,7 +129,6 @@ const REVIEWED = new Set([
   // integrationManageHref returns one of the constant settings paths only.
   'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(row.original)}',
   'app/(dashboard)/settings/integrations/page.tsx|LinkCard|href={category.href}',
-  'components/profile-dropdown.tsx|Link|href={item.url}',
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={url}',

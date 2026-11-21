@@ -17,7 +17,10 @@ import { LazyStepUpDialogHost } from '@/components/step-up-dialog-lazy'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
-import { LazyPendingLinkPrompt } from '@/components/layout/lazy-shell-branches'
+import {
+  LazyFeedFreshnessBanner,
+  LazyPendingLinkPrompt,
+} from '@/components/layout/lazy-shell-branches'
 import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 import { OwnershipInvitationBanner } from '@/features/account/components/ownership-invitation-banner'
@@ -65,6 +68,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                     <ShellBannerSlot>
                       {/* The platform operator's notices (maintenance, warnings). */}
                       <PlatformAnnouncementBanner />
+                      {/* The platform's vulnerability data is out of date: every user is told. */}
+                      <LazyFeedFreshnessBanner />
                       {/* Platform support can read this organization's data now (RFC-063). */}
                       <SupportAccessBanner />
                       {/* An organization created for this account waits for it to accept ownership. */}

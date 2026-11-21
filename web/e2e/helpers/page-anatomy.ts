@@ -21,14 +21,13 @@ import { checkScrollEnd } from './scroll-end'
  */
 const SAVE_EXCEPTIONS = new Set<string>([
   '/account',
-  '/account/notifications',
+  '/settings/me/notifications',
   '/account/preferences',
   '/settings/ai',
   '/settings/asset-sources',
   '/settings/finding-lifecycle',
   '/settings/mcp',
   '/settings/pentest',
-  '/settings/scope',
 ])
 
 const NAME_MIN_1440 = 160

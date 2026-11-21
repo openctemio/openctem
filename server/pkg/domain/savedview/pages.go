@@ -286,13 +286,17 @@ var PagesWithoutViews = map[string]string{
 	"/assets/attention/unscanned":         noViewsPreset,
 	"/assets/attention/validate-primary":  noViewsPreset,
 
-	"/account":                noViewsAccount,
-	"/account/activity":       noViewsAccount,
-	"/account/connected-apps": noViewsAccount,
-	"/account/notifications":  noViewsAccount,
-	"/account/organizations":  noViewsAccount,
-	"/account/preferences":    noViewsAccount,
-	"/account/security":       noViewsAccount,
+	"/account":               noViewsAccount,
+	"/account/organizations": noViewsAccount,
+	"/account/preferences":   noViewsAccount,
+	"/account/security":      noViewsAccount,
+
+	// Membership pages live in the organization's settings, not the account
+	// space: they are the person's data inside this organization.
+	"/settings/me":                noViewsAccount,
+	"/settings/me/activity":       noViewsAccount,
+	"/settings/me/connected-apps": noViewsAccount,
+	"/settings/me/notifications":  noViewsAccount,
 
 	"/settings":                                  noViewsDashboard,
 	"/settings/ai":                               noViewsForm,
@@ -355,6 +359,7 @@ var PagesWithoutViews = map[string]string{
 	"console:/system/leaked-credentials":  noViewsAdmin,
 	"console:/system/legal":               noViewsAdmin,
 	"console:/system/limits":              noViewsAdmin,
+	"console:/system/private-networks":    noViewsAdmin,
 	"console:/system/scan-approval":       noViewsAdmin,
 	"console:/system/scan-identification": noViewsAdmin,
 	"console:/system/sign-up":             noViewsAdmin,

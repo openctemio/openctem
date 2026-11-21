@@ -124,14 +124,12 @@ export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; to
       <EntryCard>
         <EntryHeader title={copy.invalidTitle} description={copy.invalidDescription} />
         <EntryActions>
-          <Button variant="outline" asChild>
+          {/* The one way on is the card's main action. */}
+          <Button variant="signal" asChild>
             {copy.newLink ? (
               <Link href={copy.newLink.href}>{copy.newLink.label}</Link>
             ) : (
-              <Link href="/login">
-                <ArrowLeft aria-hidden className="size-4" />
-                {t('auth.common.backToSignIn', 'Back to sign in')}
-              </Link>
+              <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
             )}
           </Button>
         </EntryActions>
@@ -187,7 +185,9 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         )
         setError(errorMessage)
         setErrorCode(code)
-        toast.error(errorMessage)
+        // A setup link only comes from an administrator: the toast says what the
+        // banner says, never "request a new one".
+        toast.error(isStaleLinkError(code) && !copy.newLink ? copy.newLinkHint : errorMessage)
       }
     })
   }
@@ -219,19 +219,23 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
           onSubmit={form.handleSubmit(onSubmit)}
           className="flex flex-col gap-3.5"
         >
-          {error && (
-            <EntryBanner tone="danger" role="alert">
-              <p>{error}</p>
-              {isStaleLinkError(errorCode) &&
-                (copy.newLink ? (
+          {error &&
+            (isStaleLinkError(errorCode) && !copy.newLink ? (
+              // A setup link only comes from an administrator: say so instead of
+              // the generic "request a new one", which has no page to go to.
+              <EntryBanner tone="danger" role="alert" title={copy.invalidTitle}>
+                <p>{copy.newLinkHint}</p>
+              </EntryBanner>
+            ) : (
+              <EntryBanner tone="danger" role="alert">
+                <p>{error}</p>
+                {isStaleLinkError(errorCode) && copy.newLink && (
                   <TextLink href={safeHref(copy.newLink.href)} variant="inline">
                     {copy.newLink.label}
                   </TextLink>
-                ) : (
-                  <p>{copy.newLinkHint}</p>
-                ))}
-            </EntryBanner>
-          )}
+                )}
+              </EntryBanner>
+            ))}
 
           <FormField
             control={form.control}

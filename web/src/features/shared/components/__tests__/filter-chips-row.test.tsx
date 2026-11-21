@@ -128,7 +128,7 @@ describe('FilterChipsRow measuring', () => {
     }
   })
 
-  it('on a phone keeps every chip in a strip that scrolls sideways, never "+N more"', () => {
+  it('on a phone keeps every chip and wraps them, never scrolls or "+N more"', () => {
     const width = window.innerWidth
     widths.chip = 70
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
@@ -137,13 +137,11 @@ describe('FilterChipsRow measuring', () => {
       for (const c of ['a', 'b', 'c']) expect(screen.getByText(c)).toBeInTheDocument()
       expect(screen.queryByText(/more/)).toBeNull()
       const strip = document.querySelector('[data-slot="filter-chips-strip"]') as HTMLElement
-      expect(strip).toHaveAttribute('data-scroll')
-      expect(strip).toHaveClass('overflow-x-auto')
-      // The locked chip scrolls with the chips: one line.
+      expect(strip).toHaveAttribute('data-wrap')
+      expect(strip).toHaveClass('flex-wrap')
+      expect(strip.className).not.toContain('overflow-x')
+      // The locked chip wraps with the chips.
       expect(strip).toContainElement(screen.getByText('Informational hidden (12)'))
-      // The edge fade reads the attributes the scroll hook sets.
-      expect(strip.className).toContain('data-[fade-end=true]')
-      expect(strip).toHaveAttribute('data-fade-end')
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
       widths.chip = 130

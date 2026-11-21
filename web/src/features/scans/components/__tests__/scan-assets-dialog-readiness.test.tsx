@@ -14,6 +14,12 @@ vi.mock('../target-picker/selection-summary', () => ({
 vi.mock('../scanner-select', async () => {
   const React = await import('react')
   return {
+    useScannerOptions: () => ({
+      options: [],
+      availability: null,
+      isLoading: false,
+      error: undefined,
+    }),
     // A scanner is already chosen: only readiness decides the button.
     ScannerSelect: ({ onChange }: { onChange: (v: string) => void }) => {
       React.useEffect(() => onChange('nuclei'), [onChange])

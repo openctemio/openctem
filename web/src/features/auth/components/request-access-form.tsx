@@ -13,6 +13,7 @@ import { submitAccessRequestAction } from '../actions/local-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { TurnstileWidget } from './turnstile-widget'
 import { isSignupNotAvailable } from '../lib/signup-outcome'
+import { authErrorText } from '../lib/auth-error-codes'
 
 const MAX_COMPANY = 200
 const MAX_NOTE = 1000
@@ -61,7 +62,14 @@ export function RequestAccessForm() {
       } else if (res.code === 'CAPTCHA_FAILED') {
         setError(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
-        setError(res.error)
+        // The words come from the API's code; the server's sentence is never shown.
+        setError(
+          authErrorText(
+            res.code,
+            t,
+            t('auth.requestAccess.failed', 'Could not send the request. Try again in a minute.')
+          )
+        )
       }
     })
   }
@@ -85,7 +93,7 @@ export function RequestAccessForm() {
           </p>
         </EntryBanner>
         <EntryActions>
-          <Button asChild variant="outline">
+          <Button asChild variant="signal">
             <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
           </Button>
         </EntryActions>

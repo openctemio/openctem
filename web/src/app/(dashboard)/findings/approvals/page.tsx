@@ -52,6 +52,7 @@ import {
   isOwnApproval,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
 import { Tag } from '@/components/ui/tag'
 import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
 import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
@@ -187,16 +188,19 @@ function RelativeTime({ value, locale }: { value: string; locale: string }) {
 function RequesterCell({
   approval,
   currentUserId,
+  inline = false,
 }: {
   approval: ApiApproval
   currentUserId: string | undefined
+  /** In a facts line: the line's own size. */
+  inline?: boolean
 }) {
   const { t } = useTranslation()
   const who = approvalRequester(approval, currentUserId)
   switch (who.kind) {
     case 'actor':
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className={cn(!inline && 'text-sm', 'text-muted-foreground')}>
           {t(
             `findings.approvals.actor.${who.actor}`,
             APPROVAL_ACTOR_LABELS[who.actor] ?? who.actor
@@ -205,13 +209,15 @@ function RequesterCell({
       )
     case 'you':
       return (
-        <span className="text-sm font-medium">{t('findings.approvals.requesterYou', 'You')}</span>
+        <span className={cn(!inline && 'text-sm', 'font-medium')}>
+          {t('findings.approvals.requesterYou', 'You')}
+        </span>
       )
     case 'member':
-      return <span className="text-sm">{who.name}</span>
+      return <span className={cn(!inline && 'text-sm')}>{who.name}</span>
     default:
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className={cn(!inline && 'text-sm', 'text-muted-foreground')}>
           {t('findings.approvals.requesterFormer', 'Former member')}
         </span>
       )
@@ -401,7 +407,7 @@ export default function ApprovalsPage() {
 
   // The row's decision controls; the table cell and the phone card share them.
   const actionsCell = useCallback(
-    (approval: ApiApproval, layout: 'row' | 'card' = 'row') => {
+    (approval: ApiApproval, layout: 'row' | 'compact' = 'row') => {
       if (approval.status !== 'pending') return null
       // A member of a group exception is decided only with its group.
       if (approval.batch_id) {
@@ -760,7 +766,9 @@ export default function ApprovalsPage() {
   const titleRow = (
     // Count once: under Pending the selected tab already shows the number of
     // the view, so the row names the view for assistive technology only and
-    // shows no count; another lens holds a number no tab shows, so it stays.
+    // shows no count (the row then takes no room); another lens holds a
+    // number no tab shows, so it stays. Refresh sits at the end of the
+    // toolbar, so no line ever holds it alone.
     <ListTitleRow
       title={viewTitle}
       titleHidden
@@ -785,9 +793,7 @@ export default function ApprovalsPage() {
           />
         )
       }
-    >
-      {refreshButton}
-    </ListTitleRow>
+    />
   )
 
   // ============================================
@@ -829,6 +835,7 @@ export default function ApprovalsPage() {
                     onOpenChange={changeOpenBatch}
                     onDecided={mutate}
                     toolbarStart={statusLens}
+                    toolbarEnd={refreshButton}
                   />
                 ) : noAccess ? (
                   <NoAccessState
@@ -859,45 +866,55 @@ export default function ApprovalsPage() {
                     pinActions
                     showSearch={false}
                     toolbarStart={statusLens}
+                    toolbarEnd={refreshButton}
                     emptyState={emptyState}
                     mobileRow={(approval) => (
                       <QueueCard
                         data-testid="approval-phone-card"
+                        href={`/findings/${encodeURIComponent(approval.finding_id)}`}
                         title={
                           <ApprovalFindingLink
                             findingId={approval.finding_id}
                             findingTitle={approval.finding_title}
                           />
                         }
-                        marks={
-                          <>
-                            {statusCell(approval)}
-                            {requestedCell(approval)}
-                            <ApprovalTierCell approval={approval} inline />
-                          </>
-                        }
-                        meta={
-                          <>
-                            <RequesterCell approval={approval} currentUserId={currentUserId} />
-                            {approval.decide_by && approval.status === 'pending' && (
-                              <span>
-                                {/* "Overdue, 12 Nov" says it alone. */}
-                                {decideByState(approval.decide_by) !== 'overdue' && (
-                                  <>{t('findings.approvals.col.decideBy', 'Decide by')} </>
-                                )}
-                                <QueueDecideBy value={approval.decide_by} className="text-xs" />
-                              </span>
-                            )}
+                        // The state; under Pending (every card is pending) what
+                        // is asked for takes its place.
+                        state={showStatusColumn ? statusCell(approval) : requestedCell(approval)}
+                        reason={
+                          <div className="grid gap-1">
+                            <JustificationCell approval={approval} lines={2} />
                             {approval.expires_at && (
-                              <span>
+                              <span className="text-meta text-muted-foreground">
                                 {t('findings.approvals.col.expires', 'Acceptance ends')}{' '}
                                 {formatCalendarDate(approval.expires_at, locale)}
                               </span>
                             )}
-                          </>
+                          </div>
                         }
-                        reason={<JustificationCell approval={approval} lines={2} />}
-                        actions={actionsCell(approval, 'card')}
+                        // What is asked, by when, then who asked (cut first).
+                        meta={[
+                          showStatusColumn ? (
+                            <span key="asked">{requestedCell(approval)}</span>
+                          ) : null,
+                          approval.decide_by && approval.status === 'pending' ? (
+                            <span key="due">
+                              {/* "Overdue, 12 Nov" says it alone. */}
+                              {decideByState(approval.decide_by) !== 'overdue' && (
+                                <>{t('findings.approvals.col.decideBy', 'Decide by')} </>
+                              )}
+                              <QueueDecideBy value={approval.decide_by} className="text-xs" />
+                            </span>
+                          ) : null,
+
+                          <RequesterCell
+                            key="by"
+                            inline
+                            approval={approval}
+                            currentUserId={currentUserId}
+                          />,
+                        ]}
+                        actions={actionsCell(approval, 'compact')}
                       />
                     )}
                   />

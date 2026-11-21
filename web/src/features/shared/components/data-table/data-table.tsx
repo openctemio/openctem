@@ -514,6 +514,11 @@ const MOBILE_CARD_FIELDS = 2
 const CARD_STATUS_KINDS = new Set<ColumnKind>(['status', 'status-edit'])
 /** Column kinds that may make the card's muted subtitle line. */
 const CARD_SUBTITLE_KINDS = new Set<ColumnKind>(['asset', 'owner', 'id', 'text'])
+/**
+ * Column kinds that hold the list's key figures (a count, a score, a
+ * deadline): they take the card's field places before descriptive columns.
+ */
+const CARD_FIGURE_KINDS = new Set<ColumnKind>(['number', 'risk', 'severity', 'priority', 'due'])
 
 /**
  * Widest actions cell kept on a phone card's title line: one icon button (the
@@ -625,9 +630,23 @@ const CARD_HEAD_CONTROL_CLASS =
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
-/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+/**
+ * A field that took the whole line for its chip. A chip there is never cut at
+ * its border: the value's own box (`[&>span>*]`, inside the cell's `contents`
+ * span) is at most the line, so a chip that still does not fit (a long
+ * translation on a narrow phone) gives way with an ellipsis, its border whole.
+ * Only on the whole line: on a half line the chip overflows instead, which is
+ * what moves the field onto the whole line.
+ */
+const CARD_WIDE_VALUE_CLASS =
+  '[&>span>*]:max-w-full [&_[data-slot=badge]]:min-w-0 [&_[data-slot=badge]]:shrink [&_[data-slot=badge]:not(:has(svg))]:inline-block [&_[data-slot=badge]:not(:has(svg))]:truncate'
+
+/**
+ * A chip in a value cell: the kit Badge, the named badges, chips and tags, and
+ * the status pills (HealthStatus, TonePill, StatusLozenge).
+ */
 const CARD_CHIP_SELECTOR =
-  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag],[data-slot=health-status],[data-slot=status-lozenge]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch
@@ -636,7 +655,7 @@ const CARD_CHIP_SELECTOR =
  * over a bare control. The switch keeps its own name and state for a screen
  * reader; the word is for the eye only.
  */
-function CardFieldValue({ children }: { children: React.ReactNode }) {
+function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   const { t } = useTranslation()
   const cellRef = React.useRef<HTMLSpanElement>(null)
   const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
@@ -660,7 +679,13 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect()
   }, [])
   return (
-    <dd className={cn(CARD_VALUE_CLASS, switchOn !== null && 'flex items-center gap-2')}>
+    <dd
+      className={cn(
+        CARD_VALUE_CLASS,
+        wide && CARD_WIDE_VALUE_CLASS,
+        switchOn !== null && 'flex items-center gap-2'
+      )}
+    >
       <span ref={cellRef} className="contents">
         {children}
       </span>
@@ -691,9 +716,11 @@ const PHONE_CARD_FOCUS_CLASS =
  *   says nothing or repeats the title;
  * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
  *   other columns that say something (no empty or dash-only value, no repeat
- *   of the title; a switch counts as a value), chosen before paint. A chip
- *   value is never cut: a field whose chip does not fit half the line takes
- *   the whole line and the other field goes on the line under it.
+ *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS, `cardFigure`)
+ *   before the rest, shown in column order, chosen before paint. A chip
+ *   or a key figure is never cut: a field whose chip or figure does not fit
+ *   half the line takes the whole line and the other field goes on the line
+ *   under it.
  * Every line but the title is one line high whatever its cell draws.
  */
 function AutoMobileCard<TData>({
@@ -716,7 +743,15 @@ function AutoMobileCard<TData>({
   const data = cells.filter((c) => !CONTROL_COLUMN_IDS.has(c.column.id))
   const title = data.find((c) => kindOf(c) === 'name') ?? data[0]
   const rest = data.filter((c) => c !== title)
-  const status = rest.find((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  // The title line's chip is the row's own state: a status column the table
+  // keeps at every width wins over one the page lets a narrow table drop
+  // (`hideBelow`, e.g. an environment beside the criticality); the dropped
+  // one is then a field candidate like any other column.
+  const statusCells = rest.filter((c) => CARD_STATUS_KINDS.has(kindOf(c)))
+  const status =
+    statusCells.find(
+      (c) => !(c.column.columnDef.meta as DataTableColumnMeta | undefined)?.hideBelow
+    ) ?? statusCells[0]
   // Only a column the page marked as a naming kind; an unmarked column stays a
   // labelled field (its meaning would be lost on an unlabelled line).
   const subtitle = rest.find((c) => {
@@ -743,19 +778,40 @@ function AutoMobileCard<TData>({
     actionsLine: boolean
   } | null>(null)
   const pick = chosen && chosen.of === row.original ? chosen : null
+  // Measured with the fallback font, a field fits that the web font then
+  // widens past its half of the line (a chip cut at its border on a phone):
+  // once the fonts arrive, the card measures again.
+  React.useEffect(() => {
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    if (!fonts || fonts.status === 'loaded') return
+    let live = true
+    void fonts.ready.then(() => {
+      if (live) setChosen(null)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
   React.useLayoutEffect(() => {
     if (pick) return
     const titleText = normalText(titleRef.current?.textContent)
     const fields: string[] = []
     const wide: string[] = []
-    for (const field of Array.from(fieldsRef.current?.children ?? [])) {
+    // Key figures (`data-figure`) are tried first, then the other columns;
+    // each group keeps its column order (Array.sort is stable). Shown fields
+    // keep column order.
+    const rank = (el: Element) => (el.hasAttribute('data-figure') ? 0 : 1)
+    const ordered = Array.from(fieldsRef.current?.children ?? []).sort((a, b) => rank(a) - rank(b))
+    for (const field of ordered) {
       const id = field.getAttribute('data-column') ?? ''
       if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
         fields.push(id)
-        // A chip is never cut (it has no ellipsis): one that overflows its half
-        // of the line gets the whole line, and the other field moves under it.
+        // A chip is never cut (it has no ellipsis), nor a key figure (a cut
+        // "about 1…" says nothing): one that overflows its half of the line
+        // gets the whole line, and the other field moves under it.
         const dd = field.querySelector('dd')
-        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+        const keep = !!dd?.querySelector(CARD_CHIP_SELECTOR) || field.hasAttribute('data-figure')
+        if (dd && keep && dd.scrollWidth > dd.clientWidth + 1) {
           wide.push(id)
         }
       }
@@ -872,6 +928,12 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
+              data-figure={
+                CARD_FIGURE_KINDS.has(kindOf(cell)) ||
+                (cell.column.columnDef.meta as DataTableColumnMeta | undefined)?.cardFigure
+                  ? ''
+                  : undefined
+              }
               className={cn(
                 'flex min-w-0 items-baseline gap-1.5',
                 pick?.wide.includes(cell.column.id) && 'col-span-2'
@@ -880,7 +942,7 @@ function AutoMobileCard<TData>({
               <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
-              <CardFieldValue>
+              <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>
@@ -1380,12 +1442,22 @@ export function DataTable<TData, TValue>({
   // "Select all N that match": the selection is the list's filter, not ids.
   const [matchingSelected, setMatchingSelected] = React.useState(false)
   const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
+  const lastParentKey = React.useRef(resetSelectionKey)
+  // Set below, where the phone select mode is known.
+  const endSelectModeRef = React.useRef<() => void>(() => {})
   React.useEffect(() => {
     const next = `${resetSelectionKey}|${pageScope}`
     if (lastResetKey.current === next) return
     lastResetKey.current = next
     setRowSelection({})
     setMatchingSelected(false)
+    // The parent ended the selection (an action finished): a phone list leaves
+    // select mode with it, so the bar does not stay at "0 selected". Paging or
+    // sorting a server table clears the rows only, the mode stays.
+    if (lastParentKey.current !== resetSelectionKey) {
+      lastParentKey.current = resetSelectionKey
+      endSelectModeRef.current()
+    }
   }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
@@ -1470,6 +1542,7 @@ export function DataTable<TData, TValue>({
     [onSelectModeChange]
   )
   const selecting = phoneSelect && (selectMode || selectedCount > 0)
+  endSelectModeRef.current = () => setSelectMode(false)
   React.useEffect(() => {
     if (!phoneSelect && selectMode) setSelectMode(false)
   }, [phoneSelect, selectMode, setSelectMode])

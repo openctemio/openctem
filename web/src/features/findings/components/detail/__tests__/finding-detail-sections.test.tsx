@@ -73,6 +73,15 @@ function finding(over: Partial<FindingDetail> = {}): FindingDetail {
 }
 
 describe('FindingWhyItMatters', () => {
+  it('gives a closed finding no deadline', () => {
+    for (const status of ['resolved', 'false_positive', 'accepted'] as const) {
+      const { unmount } = render(<FindingWhyItMatters finding={finding({ status })} />)
+      const panel = screen.getByRole('region', { name: 'Why it matters' })
+      expect(within(panel).queryByText(/fix within/)).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('leads with the P-class and the reason, then the grouped signals', () => {
     render(<FindingWhyItMatters finding={finding()} />)
     const panel = screen.getByRole('region', { name: 'Why it matters' })

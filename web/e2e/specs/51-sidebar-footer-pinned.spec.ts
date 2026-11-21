@@ -2,7 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Settings and Help (the sidebar footer) stay at the bottom of the sidebar
+ * Organization settings and Help (the sidebar footer) stay at the bottom of the sidebar
  * while the nav scrolls on its own: on the desktop sidebar at a short and a
  * tall window, and in the phone drawer upright. (A phone on its side scrolls
  * the whole drawer column: 44-sidebar-phone-drawer.)
@@ -31,7 +31,13 @@ async function expectPinned(sidebar: Locator, page: Page) {
   ).toBeLessThan(1)
   expect(box.footerBottom, 'footer inside the viewport').toBeLessThanOrEqual(box.viewport + 0.5)
   expect(box.footerTop, 'footer visible').toBeLessThan(box.viewport)
-  await expect(sidebar.getByRole('link', { name: /^settings$/i })).toBeInViewport()
+  // The footer row is "Organization settings": a link on the desktop sidebar,
+  // a button in the phone drawer (it shows the settings rail there).
+  await expect(
+    sidebar
+      .getByRole('link', { name: /^organization settings$/i })
+      .or(sidebar.getByRole('button', { name: /^organization settings$/i }))
+  ).toBeInViewport()
   return { box, page }
 }
 

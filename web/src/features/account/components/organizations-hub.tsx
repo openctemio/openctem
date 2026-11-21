@@ -26,9 +26,12 @@ import { readTenantCookieId } from '@/lib/tenant-epoch'
 import { safeText } from '@/lib/api/error-message'
 import { formatRelative } from '@/lib/format-date'
 
+import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
+
 import { useProfile } from '../api'
 import { welcomeView } from '../lib/welcome-view'
 import { MembershipsCard } from './memberships-card'
+import { WelcomeNotice } from './welcome-notice'
 
 interface OrganizationsHubProps {
   /**
@@ -36,6 +39,12 @@ interface OrganizationsHubProps {
    * ask the API for the account-only token first, then load.
    */
   needsSession: boolean
+  /**
+   * Why the account space opened instead of an organization (a refused
+   * refresh), already validated by the page: it shows the reason and its one
+   * next step.
+   */
+  notice?: { notice: Notice; org?: string }
 }
 
 /**
@@ -45,7 +54,7 @@ interface OrganizationsHubProps {
  * allows it for this person. With no organization at all it is the first page a
  * new person sees, so it starts with a welcome.
  */
-export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
+export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps) {
   const { t, locale } = useTranslation()
   const { profile } = useProfile()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
@@ -90,6 +99,14 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
   const { data: memberships } = useMyTenants({ skip: starting })
   const [currentId] = useState(readTenantCookieId)
   const firstRun = !!memberships && memberships.length === 0
+
+  // The organization a notice names comes from the page URL, which anyone can
+  // write: it is shown, and its identity-provider button offered, only when
+  // it is one of this person's own memberships. Otherwise the notice is the
+  // generic one (no name, no button).
+  const { data: myTenants } = useMyTenants({ skip: !notice?.org })
+  const noticeOrg =
+    notice?.org && myTenants?.some((m) => m.slug === notice.org) ? notice.org : undefined
 
   const accept = (ref: string) => {
     setBusyRef(ref)
@@ -164,6 +181,10 @@ export function OrganizationsHub({ needsSession }: OrganizationsHubProps) {
 
       {memberships && memberships.length > 0 && (
         <MembershipsCard memberships={memberships} currentId={currentId} />
+      )}
+
+      {notice && (
+        <WelcomeNotice notice={notice.notice} org={noticeOrg} email={email ?? undefined} />
       )}
 
       {loading && (

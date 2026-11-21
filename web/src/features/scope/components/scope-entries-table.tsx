@@ -12,6 +12,7 @@
  * are no longer required a leftover pending entry can be put in effect.
  */
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -308,13 +309,15 @@ export function ScopeEntriesTable({
       cell: ({ row }) => (
         <div className="min-w-0 space-y-0.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-              {row.original.pattern}
+            <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+              <BreakText>{row.original.pattern}</BreakText>
             </code>
             <EntryEdgeLabel entry={row.original} />
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t('scope.col.covers', 'Covers {what}', { what: coversText(row.original) })}
+          {/* Not in the phone card's two-line title, where it was cut mid-line
+              (the card has the kind; the full sentence is in the row's Edit). */}
+          <p className="text-xs text-muted-foreground in-data-[slot=mobile-card-title]:hidden">
+            {t('scope.col.covers', 'Covers {what}', { what: coversText(row.original, t) })}
           </p>
           <ManagedByCITrust entry={row.original} />
         </div>
@@ -326,8 +329,8 @@ export function ScopeEntriesTable({
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
           {scopeKindIcon(row.original.target_type)}
-          <span className="text-sm text-foreground">
-            {scopeTargetTypeLabel(row.original.target_type ?? '')}
+          <span className="whitespace-nowrap text-sm text-foreground">
+            {scopeTargetTypeLabel(row.original.target_type ?? '', t)}
           </span>
         </div>
       ),
@@ -350,7 +353,9 @@ export function ScopeEntriesTable({
               value={st}
             />
             {e.expires_at && (
-              <span className="text-xs text-muted-foreground">{expiryText(e.expires_at)}</span>
+              <span className="text-xs text-muted-foreground">
+                {expiryText(e.expires_at, undefined, t)}
+              </span>
             )}
           </span>
         )
