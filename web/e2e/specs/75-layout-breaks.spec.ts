@@ -646,42 +646,53 @@ function pathsLevel(path: string) {
   }
 }
 
+/** What the Paths views are checked at: every width and language, and the sheet. */
+const PATHS_VARIANTS = () =>
+  variants().filter((x) => x.scen === 'rich' && (!x.overlay || x.overlay === 'detail'))
+
+/**
+ * One test per view (variant and level), each a few seconds: a single test
+ * that walked all twelve views took four minutes on a loaded box and ran into
+ * its timeout. The origin is created once per test through the API.
+ */
 test.describe(
   'Layout breaks: web origin Paths',
   { tag: ['@assets', '@attack-surface', '@phone'] },
   () => {
-    test('/assets/[id]?tab=paths', async ({ page, baseURL }, testInfo) => {
-      test.setTimeout(240_000)
-      await page.goto('/assets', { timeout: 60_000 })
-      const created = await page.evaluate(async () => {
-        const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
-        const res = await fetch('/api/v1/assets', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
-          body: JSON.stringify({
-            name: `https://layout-${Date.now()}.example.com`,
-            type: 'service',
-            sub_type: 'http',
-            criticality: 'medium',
-          }),
-        })
-        return { status: res.status, body: await res.json().catch(() => null) }
-      })
-      const id = (created.body as { id?: string } | null)?.id
-      test.skip(!id, `could not create a web origin: ${created.status}`)
-      const report: Record<string, Breaks | string> = {}
-      const route = `/assets/${id}?tab=paths`
-      const paths: [string, string][] = [
-        ['root', route],
-        ['level', `${route}&path=${encodeURIComponent('/api/{int}')}`],
-      ]
-      for (const v of variants().filter(
-        (x) => x.scen === 'rich' && (!x.overlay || x.overlay === 'detail')
-      )) {
-        for (const [name, url] of paths) {
-          await page.unrouteAll({ behavior: 'ignoreErrors' })
+    test.describe.configure({ mode: 'parallel' })
+    for (const v of PATHS_VARIANTS()) {
+      for (const name of ['root', 'level'] as const) {
+        test(`/assets/[id]?tab=paths ${name} ${v.tag}`, async ({ page, baseURL }, testInfo) => {
+          test.setTimeout(90_000)
+          await page.goto('/assets', { timeout: 60_000 })
+          const created = await page.evaluate(async () => {
+            const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+            const res = await fetch('/api/v1/assets', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': decodeURIComponent(csrf),
+              },
+              body: JSON.stringify({
+                name: `https://layout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.example.com`,
+                type: 'service',
+                sub_type: 'http',
+                criticality: 'medium',
+              }),
+            })
+            return { status: res.status, body: await res.json().catch(() => null) }
+          })
+          const id = (created.body as { id?: string } | null)?.id
+          test.skip(!id, `could not create a web origin: ${created.status}`)
+          const route = `/assets/${id}?tab=paths`
+          const url = name === 'root' ? route : `${route}&path=${encodeURIComponent('/api/{int}')}`
           await prepare(page, v, baseURL!)
+          // The banner's own request is not what is checked here, and a slow
+          // or missing answer to it must not keep the page "loading".
+          await page.route('**/api/v1/threat-intel/freshness', (r) =>
+            r.fulfill({ json: { stale: false, reasons: [] } })
+          )
           await page.route('**/api/v1/assets/*/web-paths**', (r) =>
             r.fulfill({
               json: pathsLevel(new URL(r.request().url()).searchParams.get('path') ?? '/'),
@@ -711,10 +722,7 @@ test.describe(
           if (v.overlay) {
             // The endpoint sheet: a phone list row, or a table row.
             const row = page.locator('main [data-testid=path-drill] button, main tbody tr').first()
-            if (!(await row.count())) {
-              report[`${name}-${v.tag}`] = 'no such overlay'
-              continue
-            }
+            test.skip(!(await row.count()), 'no such overlay')
             await row.click().catch(() => {})
             await page
               .locator('[role=dialog]:visible')
@@ -725,20 +733,15 @@ test.describe(
             scope = '[role=dialog]'
           }
           const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
-          report[`${name}-${v.tag}`] = found
           if (OUT || formatBreaks(found).length) {
             await keep(testInfo, `asset-paths-${name}__${v.tag}.png`, await page.screenshot())
           }
-          if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
-        }
+          await keep(testInfo, `asset-paths-${name}__${v.tag}.json`, JSON.stringify(found, null, 1))
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `paths ${name}-${v.tag}: ${kind}`).toEqual([])
+        })
       }
-      await keep(testInfo, 'asset-paths.json', JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        if (typeof found === 'string') continue
-        for (const kind of BREAK_KINDS)
-          expect.soft(found[kind], `paths ${tag}: ${kind}`).toEqual([])
-      }
-    })
+    }
   }
 )
 
