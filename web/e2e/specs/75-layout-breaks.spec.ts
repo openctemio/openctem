@@ -65,6 +65,7 @@ const CI_ROUTES = [
   '/findings/approvals',
   '/findings/ready-to-close',
   '/findings/imports',
+  '/exceptions',
   '/vulnerabilities',
   '/components',
   '/exposures',
@@ -234,6 +235,101 @@ function toolSources(scen: Scenario) {
   ]
   return { sources: sources.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : sources.length) }
 }
+/** Exception rules with long names, every state and type (the API returns the whole list). */
+function suppressions(scen: Scenario) {
+  const day = 24 * 60 * 60 * 1000
+  const base = {
+    tenant_id: 't',
+    requested_by: '00000000-0000-4000-8000-000000000001',
+    requested_at: new Date(Date.now() - 3 * day).toISOString(),
+    created_at: '2026-10-01T08:00:00Z',
+    updated_at: '2026-10-01T08:00:00Z',
+  }
+  const rules = [
+    {
+      id: 'sup-1',
+      name: 'Payments legacy TLS until the migration of the card gateway is finished',
+      suppression_type: 'accepted_risk',
+      rule_id: 'tls-weak-cipher-suites-accepted-on-legacy-gateways',
+      tool_name: 'nuclei',
+      status: 'pending',
+      expires_at: new Date(Date.now() + 40 * day).toISOString(),
+    },
+    {
+      id: 'sup-2',
+      name: 'Test fixtures in example/payments',
+      suppression_type: 'false_positive',
+      rule_id: 'generic-api-key',
+      path_pattern: 'test/fixtures/**',
+      status: 'approved',
+      approved_by: '00000000-0000-4000-8000-000000000002',
+      expires_at: new Date(Date.now() + 5 * day).toISOString(),
+    },
+    {
+      id: 'sup-3',
+      name: 'Kiosk Windows 7 build',
+      suppression_type: 'wont_fix',
+      tool_name: 'network-scanner',
+      status: 'expired',
+      expires_at: '2026-11-01T00:00:00Z',
+    },
+    {
+      id: 'sup-4',
+      name: 'Old marketing site on www.example.com',
+      suppression_type: 'false_positive',
+      path_pattern: 'legacy/**',
+      status: 'rejected',
+      rejected_by: '00000000-0000-4000-8000-000000000002',
+      rejection_reason: 'Not funded',
+    },
+  ].map((r) => ({ ...base, ...r }))
+  const data = rules.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : rules.length)
+  return { data, total: data.length }
+}
+
+/** Import and run receipts with long tool names and big counts. */
+function receipts(scen: Scenario) {
+  const counts = (k: number) => ({
+    created: 12 * k,
+    updated: 1280 * k,
+    reactivated: 3,
+    closed: 40 * k,
+    skipped: 9,
+    failed: 1,
+    suppressed: 4,
+  })
+  const kinds = ['upload', 'scan_run', 'command', 'ci_run', 'connector', 'sensor', 'platform']
+  const all = Array.from({ length: 25 }, (_, i) => ({
+    id: `rcpt-${i}`,
+    status: ['completed', 'processing', 'failed', 'queued'][i % 4],
+    source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
+    tool: i % 5 === 4 ? '' : ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
+    received: 18402 - i,
+    counts: counts(i + 1),
+    started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+  }))
+  const data = all.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : all.length)
+  const total = scen === 'rich' ? 380 : data.length
+  return {
+    data,
+    total,
+    page: 1,
+    per_page: 50,
+    total_pages: Math.max(1, Math.ceil(total / 50)),
+    totals: {
+      receipts: total,
+      received: 18402,
+      created: 611,
+      updated: 15002,
+      reactivated: 12,
+      closed: 388,
+      skipped: 300,
+      failed: 57,
+      suppressed: 40,
+    },
+  }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
@@ -246,6 +342,8 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
     },
   ],
   '/settings/scanning/tool-sources': [{ url: '**/api/v1/tool-sources', body: toolSources }],
+  '/exceptions': [{ url: '**/api/v1/suppressions', body: suppressions }],
+  '/findings/imports': [{ url: '**/api/v1/findings/imports?*', body: receipts }],
 }
 
 /**
@@ -258,7 +356,6 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
  */
 const LOPSIDED_DEBT = new Set([
   '/findings', // one row: a title row line holds only its end controls
-  '/findings/imports',
   '/scans/runs',
   '/attack-surface/technologies',
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
