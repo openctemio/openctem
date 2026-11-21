@@ -85,7 +85,14 @@ type ApprovalBatchResponse struct {
 	DecidedAt          *string `json:"decided_at,omitempty"`
 	RejectionReason    string  `json:"rejection_reason,omitempty"`
 	CreatedAt          string  `json:"created_at"`
-	// Members are listed on the read of one exception.
+	// SelfApprovalAvailable (list and read): the caller requested this
+	// pending group and is the organization's only active person and its
+	// owner, so they may approve it themselves
+	// (POST /approvals/batches/{id}/self-approve). Best effort; that call
+	// re-checks everything.
+	SelfApprovalAvailable bool `json:"self_approval_available"`
+	// Members are listed on the read of one exception, each with its own
+	// status (a member left out is rejected while the rest stays pending).
 	Members []ApprovalBatchMemberResponse `json:"members,omitempty"`
 	// Applied / Canceled / Shortened: what the approval that completed it did.
 	Applied   *int     `json:"applied,omitempty"`
@@ -262,9 +269,12 @@ func (h *VulnerabilityHandler) ListApprovalBatches(w http.ResponseWriter, r *htt
 		h.handleServiceError(w, err, "group exceptions")
 		return
 	}
+	selfOK := h.batchSelfApprovalFor(r, res.Data)
 	items := make([]ApprovalBatchResponse, 0, len(res.Data))
 	for _, b := range res.Data {
-		items = append(items, toApprovalBatchResponse(b))
+		item := toApprovalBatchResponse(b)
+		item.SelfApprovalAvailable = selfOK(b)
+		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": items, "total": res.Total, "page": res.Page, "per_page": res.PerPage})
 }
@@ -301,7 +311,14 @@ func (h *VulnerabilityHandler) GetApprovalBatch(w http.ResponseWriter, r *http.R
 		h.handleServiceError(w, err, "group exception")
 		return
 	}
+	writeJSON(w, http.StatusOK, h.batchDetailResponse(r, b, members))
+}
+
+// batchDetailResponse is a group exception with its members and whether the
+// caller may approve it themselves.
+func (h *VulnerabilityHandler) batchDetailResponse(r *http.Request, b *vulnerability.ApprovalBatch, members []vulnerability.ApprovalBatchMember) ApprovalBatchResponse {
 	out := toApprovalBatchResponse(b)
+	out.SelfApprovalAvailable = h.batchSelfApprovalFor(r, []*vulnerability.ApprovalBatch{b})(b)
 	out.Members = make([]ApprovalBatchMemberResponse, 0, len(members))
 	for _, m := range members {
 		out.Members = append(out.Members, ApprovalBatchMemberResponse{
@@ -309,7 +326,26 @@ func (h *VulnerabilityHandler) GetApprovalBatch(w http.ResponseWriter, r *http.R
 			Status: string(m.Status), ExpiresAt: rfc3339Ptr(m.ExpiresAt),
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
+}
+
+// batchSelfApprovalFor answers, per group, whether the caller may approve
+// it themselves: pending, requested by the caller, and the sole-member check
+// (run once, only when a group could use it).
+func (h *VulnerabilityHandler) batchSelfApprovalFor(r *http.Request, batches []*vulnerability.ApprovalBatch) func(*vulnerability.ApprovalBatch) bool {
+	callerID := middleware.GetUserID(r.Context())
+	own := func(b *vulnerability.ApprovalBatch) bool {
+		return callerID != "" && b.Status == vulnerability.ApprovalStatusPending && !b.RequestedBy.IsZero() && b.RequestedBy.String() == callerID
+	}
+	need := false
+	for _, b := range batches {
+		if own(b) {
+			need = true
+			break
+		}
+	}
+	available := need && h.service.SelfApprovalAvailable(r.Context(), middleware.GetTenantID(r.Context()), callerID)
+	return func(b *vulnerability.ApprovalBatch) bool { return available && own(b) }
 }
 
 // ApproveApprovalBatch handles POST /api/v1/approvals/batches/{id}/approve.
