@@ -471,6 +471,180 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
   }
 })
 
+/**
+ * A web origin's Paths tab (the tree from 1024 px, the drill-down list on a
+ * phone) and its endpoint sheet, with tree data that is hard on the layout:
+ * long segments, variable segments, five-digit counts, out-of-scope marks and
+ * a long endpoint path. The origin is created through the API; its levels are
+ * served by route mocks, so the check needs no crawl.
+ */
+const LONG = 'getting-started-with-your-account-and-first-order-history'
+function pathsLevel(path: string) {
+  const at = (p: string) => (path === '/' ? `/${p}` : `${path}/${p}`)
+  const folder = (name: string, i: number) => ({
+    name,
+    path: at(name),
+    param: name.startsWith('{'),
+    endpoints: 10 ** (i % 5) + i,
+    out_of_scope: i % 3 === 0 ? 2 : 0,
+    findings: i % 2 ? 12_345 : 0,
+    top_severity: i % 4 === 1 ? 'critical' : i % 2 ? 'high' : undefined,
+    has_folders: i % 2 === 0,
+  })
+  const endpoint = (method: string, p: string, i: number) => ({
+    id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    origin_asset_id: 'x',
+    origin: 'https://layout.example.com',
+    method,
+    path_template: p,
+    path_hash: 'h',
+    kind: 'api',
+    sources: ['crawl'],
+    example_path: p,
+    last_status: [200, 403, 302][i % 3],
+    content_type: 'application/vnd.example.order-history+json; charset=utf-8',
+    auth_state: ['none', 'required', 'unknown'][i % 3],
+    technologies: [],
+    labels: [],
+    state: 'active',
+    in_scope: i % 4 !== 0,
+    param_count: i,
+    first_seen_at: new Date(Date.now() - 9e8).toISOString(),
+    last_seen_at: new Date(Date.now() - 3.6e6 * i).toISOString(),
+    finding_count: i % 2 ? 1234 : 0,
+    top_severity: i % 2 ? 'critical' : undefined,
+  })
+  const names = ['api', 'admin', '{int}', LONG, 'static', '{uuid}', 'account', 'docs']
+  return {
+    path,
+    totals: {
+      recorded: 4999,
+      endpoints: 4321,
+      hidden: 678,
+      out_of_scope: 12,
+      findings: 12_345,
+      unrecorded_findings: 3,
+      top_severity: 'critical',
+      origin_findings: 7,
+      capped: false,
+    },
+    folders: names.map(folder),
+    folders_truncated: false,
+    endpoints: ['GET', 'POST', 'DELETE', 'OPTIONS', 'PATCH'].map((m, i) =>
+      endpoint(m, at(i % 2 ? `${LONG}/{int}/attachments/{uuid}/download` : 'orders/{int}'), i)
+    ),
+    endpoint_total: 5,
+    page: 1,
+    per_page: 50,
+    node_findings: [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        title: `SQL injection in the order history export of ${LONG}`,
+        severity: 'critical',
+        status: 'new',
+        path: `/api/v1/${LONG}/{int}`,
+      },
+    ],
+    node_finding_total: 1,
+  }
+}
+
+test.describe(
+  'Layout breaks: web origin Paths',
+  { tag: ['@assets', '@attack-surface', '@phone'] },
+  () => {
+    test('/assets/[id]?tab=paths', async ({ page, baseURL }, testInfo) => {
+      test.setTimeout(240_000)
+      await page.goto('/assets', { timeout: 60_000 })
+      const created = await page.evaluate(async () => {
+        const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+        const res = await fetch('/api/v1/assets', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
+          body: JSON.stringify({
+            name: `https://layout-${Date.now()}.example.com`,
+            type: 'service',
+            sub_type: 'http',
+            criticality: 'medium',
+          }),
+        })
+        return { status: res.status, body: await res.json().catch(() => null) }
+      })
+      const id = (created.body as { id?: string } | null)?.id
+      test.skip(!id, `could not create a web origin: ${created.status}`)
+      const report: Record<string, Breaks | string> = {}
+      const route = `/assets/${id}?tab=paths`
+      const paths: [string, string][] = [
+        ['root', route],
+        ['level', `${route}&path=${encodeURIComponent('/api/{int}')}`],
+      ]
+      for (const v of variants().filter(
+        (x) => x.scen === 'rich' && (!x.overlay || x.overlay === 'detail')
+      )) {
+        for (const [name, url] of paths) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          await page.route('**/api/v1/assets/*/web-paths**', (r) =>
+            r.fulfill({
+              json: pathsLevel(new URL(r.request().url()).searchParams.get('path') ?? '/'),
+            })
+          )
+          await page.route('**/api/v1/web-endpoints/*', (r) =>
+            r.fulfill({ json: { ...pathsLevel('/api').endpoints[1], origin_asset_id: id } })
+          )
+          await page.route('**/api/v1/web-endpoints/*/parameters', (r) =>
+            r.fulfill({
+              json: {
+                data: [
+                  {
+                    location: 'query',
+                    name: 'redirect_uri_for_the_order_history_export',
+                    required: true,
+                    risk_hints: ['ssrf_candidate', 'redirect'],
+                    sources: ['crawl'],
+                  },
+                ],
+              },
+            })
+          )
+          await page.goto(url, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          let scope = 'main'
+          if (v.overlay) {
+            // The endpoint sheet: a phone list row, or a table row.
+            const row = page.locator('main [data-testid=path-drill] button, main tbody tr').first()
+            if (!(await row.count())) {
+              report[`${name}-${v.tag}`] = 'no such overlay'
+              continue
+            }
+            await row.click().catch(() => {})
+            await page
+              .locator('[role=dialog]:visible')
+              .last()
+              .waitFor({ timeout: 5_000 })
+              .catch(() => {})
+            await page.waitForTimeout(400)
+            scope = '[role=dialog]'
+          }
+          const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+          report[`${name}-${v.tag}`] = found
+          if (OUT || formatBreaks(found).length) {
+            await keep(testInfo, `asset-paths-${name}__${v.tag}.png`, await page.screenshot())
+          }
+          if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+        }
+      }
+      await keep(testInfo, 'asset-paths.json', JSON.stringify(report, null, 1))
+      for (const [tag, found] of Object.entries(report)) {
+        if (typeof found === 'string') continue
+        for (const kind of BREAK_KINDS)
+          expect.soft(found[kind], `paths ${tag}: ${kind}`).toEqual([])
+      }
+    })
+  }
+)
+
 test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
   test.describe.configure({ mode: 'parallel' })
   for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
