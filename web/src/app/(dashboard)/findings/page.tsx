@@ -14,6 +14,13 @@ import {
   selectionFilter,
 } from '@/features/findings/lib/bulk-by-filter'
 import { BulkChangePreview } from '@/features/findings/components/bulk-change-preview'
+import {
+  BulkDismissDialog,
+  type SuggestedRule,
+} from '@/features/findings/components/bulk-dismiss-dialog'
+import { announceDismissResult } from '@/features/findings/components/bulk-dismiss-result'
+import type { DismissSelection } from '@/features/findings/lib/bulk-dismiss'
+import { SuppressionFormDialog } from '@/features/exceptions/components/suppression-form-dialog'
 import { buildFindingsQuery } from '@/features/findings/api/findings-query'
 import {
   evaluateFindingTransitions,
@@ -190,6 +197,7 @@ import {
   MoreHorizontal,
   UserPlus,
   Flag,
+  CircleSlash,
   Plus,
   ListChecks,
   FileUp,
@@ -621,6 +629,11 @@ function FindingsContent() {
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  // Bulk Dismiss: the selection it opened with, and the suppression rule it
+  // may suggest instead (null: the rule form is closed).
+  const [dismissSelection, setDismissSelection] = useState<DismissSelection | null>(null)
+  const [dismissOpen, setDismissOpen] = useState(false)
+  const [ruleDefaults, setRuleDefaults] = useState<SuggestedRule | null>(null)
   const [bulkResolveNote, setBulkResolveNote] = useState('')
   // The dry run the confirm dialog ran for the checked rows (one per status).
   const [bulkPreview, setBulkPreview] = useState<{
@@ -1327,7 +1340,10 @@ function FindingsContent() {
   const canBulkAssign = canBulkUpdate && hasPermission(Permission.FindingsAssign)
   const canBulkStatus = canBulkUpdate && hasPermission(Permission.FindingsStatus)
   const canBulkRemediate = hasPermission('findings:remediation:write') && remediationEnabled
-  const canSelect = canBulkAssign || canBulkStatus || canBulkRemediate
+  // Dismiss (false positive or accepted risk) needs findings:bulk_update and
+  // findings:write; who decides alone is the server's call, per finding.
+  const canBulkDismiss = canBulkUpdate && hasPermission(Permission.FindingsWrite)
+  const canSelect = canBulkAssign || canBulkStatus || canBulkRemediate || canBulkDismiss
   // One bulk write at a time (a double click must not send two).
   const [bulkBusy, setBulkBusy] = useState(false)
 
@@ -2118,10 +2134,63 @@ function FindingsContent() {
   // The grouped views do not load the flat page; the tab count is the same number.
   const total = findingsResponse?.total ?? 0
 
-  // The bulk bar: two direct actions (Assign to, Set status), the rest under
-  // More. Each is shown only with its permission (the API checks again).
+  // Dismiss acts on the checked rows, or on every finding the filter selects
+  // (with the count the user saw; the server refuses a changed one).
+  const openDismiss = () => {
+    if (!bulkSelection) return
+    if (bulkSelection.kind === 'ids') {
+      if (selectedFindingIds.length === 0) return
+      setDismissSelection({ kind: 'ids', ids: selectedFindingIds })
+    } else {
+      if (!matchingFilter) return
+      setDismissSelection({ kind: 'filter', filter: matchingFilter, total: bulkSelection.total })
+    }
+    setDismissOpen(true)
+  }
+  // `D` opens Dismiss for the selection; the handler is installed once.
+  const openDismissRef = useRef(openDismiss)
+  const canDismissRef = useRef(false)
+  useEffect(() => {
+    openDismissRef.current = openDismiss
+    canDismissRef.current = canBulkDismiss && selectedTotal > 0 && !dismissOpen
+  })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'd' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      const el = e.target as HTMLElement | null
+      if (
+        el?.closest?.(
+          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]'
+        )
+      )
+        return
+      if (!canDismissRef.current) return
+      e.preventDefault()
+      openDismissRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  // The bulk bar: Dismiss and Set status (and Assign to) as direct actions,
+  // the rest under More. Each is shown only with its permission (the API
+  // checks again).
   const bulkActions = (
     <>
+      {canBulkDismiss && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={openDismiss}
+          disabled={bulkBusy}
+          aria-keyshortcuts="d"
+          title={t('findings.bulkDismiss.barHint', 'Dismiss: false positive or accepted risk (D)')}
+          data-testid="bulk-dismiss"
+        >
+          <CircleSlash className="h-4 w-4 me-2" aria-hidden />
+          {t('findings.bulkDismiss.action', 'Dismiss')}
+        </Button>
+      )}
       {canBulkAssign && (
         <AssigneeSelect
           variant="ghost"
@@ -3360,6 +3429,39 @@ function FindingsContent() {
           mutateStats()
         }}
       />
+
+      {/* Bulk Dismiss: false positive or accepted risk, previewed by the server. */}
+      {canBulkDismiss && (
+        <BulkDismissDialog
+          open={dismissOpen}
+          onOpenChange={setDismissOpen}
+          selection={dismissSelection}
+          onApplied={(result) => {
+            clearSelection()
+            void handleRefresh()
+            announceDismissResult(t, result, () => void handleRefresh())
+          }}
+          onCreateRule={
+            hasPermission(Permission.SuppressionsWrite)
+              ? (defaults) => {
+                  setDismissOpen(false)
+                  setRuleDefaults(defaults ?? {})
+                }
+              : undefined
+          }
+        />
+      )}
+      {/* Mounted only when Dismiss suggests a rule instead. */}
+      {ruleDefaults !== null && (
+        <SuppressionFormDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRuleDefaults(null)
+          }}
+          defaults={ruleDefaults}
+          onSuccess={() => void handleRefresh()}
+        />
+      )}
 
       {/* Bulk status move (confirmed, in progress) and bulk assignment. */}
       <ConfirmDialog

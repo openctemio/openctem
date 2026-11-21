@@ -41,17 +41,20 @@ export type Verification =
   | 'none'
   | 'unknown'
 
-/** The reasons a person may choose when requesting or making a closure. */
+/**
+ * The reasons a person may choose when requesting or making a closure, most
+ * common first (the Dismiss dialog's keys 1-7 follow this order).
+ */
 export const PERSON_CLOSURE_REASONS: Partial<Record<FindingStatus, ClosureReason[]>> = {
   resolved: ['fixed', 'mitigated'],
   false_positive: [
+    'detection_error',
+    'test_or_example_code',
     'component_not_present',
     'vulnerable_code_not_present',
     'vulnerable_code_not_in_execute_path',
     'vulnerable_code_cannot_be_controlled_by_adversary',
     'inline_mitigations_already_exist',
-    'detection_error',
-    'test_or_example_code',
   ],
   accepted: ['risk_accepted', 'compensating_control', 'wont_fix', 'no_fix_available'],
 }
