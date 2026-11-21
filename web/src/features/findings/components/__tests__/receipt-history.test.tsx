@@ -14,6 +14,11 @@ const swr = vi.hoisted(() => ({
 vi.mock('@/context/tenant-provider', () => ({ useCurrentTenantId: () => 't1' }))
 // The retired sources section has its own tests (source-retirement).
 vi.mock('../source-retirement', () => ({ RetiredSourcesSection: () => null }))
+vi.mock('../import-results-dialog', () => ({ ImportResultsDialog: () => null }))
+const perms = vi.hoisted(() => ({ granted: true }))
+vi.mock('@/context/permission-provider', () => ({
+  usePermissions: () => ({ hasPermission: () => perms.granted }),
+}))
 vi.mock('swr', () => ({
   default: (key: string | null) => {
     swr.key = key
@@ -28,6 +33,7 @@ describe('receiptFiltersOf', () => {
         new URLSearchParams('origin=sensor&tool=nuclei&since=2026-09-26T00:00:00Z&page=2&x=1')
       )
     ).toEqual({
+      sourceKind: undefined,
       origin: 'sensor',
       tool: 'nuclei',
       since: '2026-09-26T00:00:00Z',
@@ -35,7 +41,10 @@ describe('receiptFiltersOf', () => {
       perPage: 50,
     })
     // A value the API would refuse never reaches it.
-    expect(receiptFiltersOf(new URLSearchParams('origin=upload&since=yesterday&page=-1'))).toEqual({
+    expect(
+      receiptFiltersOf(new URLSearchParams('origin=upload&since=yesterday&page=-1&source_kind=x'))
+    ).toEqual({
+      sourceKind: undefined,
       origin: undefined,
       tool: undefined,
       since: undefined,
@@ -110,9 +119,33 @@ describe('ReceiptHistory', () => {
     const totals = screen.getByTestId('receipt-totals')
     expect(within(totals).getByText('190')).toBeInTheDocument()
     expect(screen.getByText('Totals of 3 receipts')).toBeInTheDocument()
-    expect(screen.getByText('Scan run')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Remove filter nuclei' }))
+    expect(screen.getAllByText('Scan run').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Remove tool filter: nuclei' }))
     expect(replace).toHaveBeenCalledWith('/?origin=sensor&since=2026-09-26T00%3A00%3A00Z')
+  })
+
+  it('offers Import results only with the import permissions', () => {
+    perms.granted = false
+    const { unmount } = render(<ReceiptHistory />)
+    expect(screen.queryByRole('button', { name: 'Import results' })).not.toBeInTheDocument()
+    unmount()
+    perms.granted = true
+    render(<ReceiptHistory />)
+    expect(screen.getAllByRole('button', { name: 'Import results' }).length).toBeGreaterThan(0)
+  })
+
+  it('opens a receipt in the side sheet from its row', async () => {
+    render(<ReceiptHistory />)
+    await userEvent.click(screen.getAllByRole('row')[1])
+    expect(await screen.findByText('Receipt 1 of 1')).toBeInTheDocument()
+  })
+
+  it('filters by source kind through the URL and the request', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams('source_kind=upload') as unknown as ReturnType<typeof useSearchParams>
+    )
+    render(<ReceiptHistory />)
+    expect(swr.key).toBe('/api/v1/findings/imports?source_kind=upload&per_page=50')
   })
 
   it('shows the error state when the list cannot be read', () => {
