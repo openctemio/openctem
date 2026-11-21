@@ -12,7 +12,7 @@
  *
  * Design: server/docs/development/auth-scenarios.md
  */
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, randomInt } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import type { BrowserContext, Page, Response } from '@playwright/test'
 
@@ -158,8 +158,8 @@ export class Profile {
   constructor(private env: JourneyEnv) {
     // Random, not a counter: a retried test runs in a new worker, and a
     // repeated address would share the previous person's limits.
-    const b = randomBytes(2)
-    this.ip = `198.18.${b[0]}.${(b[1] % 250) + 1}`
+    // randomInt draws without the bias a modulo of random bytes has.
+    this.ip = `198.18.${randomInt(0, 256)}.${randomInt(1, 251)}`
   }
 
   async call(method: string, path: string, body?: unknown): Promise<ApiAnswer> {
