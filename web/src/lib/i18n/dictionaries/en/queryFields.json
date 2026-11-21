@@ -96,6 +96,7 @@
   "queryFields.findings.network_port": "Network port, e.g. port=443",
   "queryFields.findings.network_service": "Network service, e.g. service=ssh",
   "queryFields.findings.network_transport": "Transport: tcp, udp or sctp",
+  "queryFields.findings.notification_group_id": "Identifier of a notification group that reported it",
   "queryFields.findings.observation": "Still seen by the last scan (present) or not (stale)",
   "queryFields.findings.open_on_branch_id": "Identifier of a branch where it is still open",
   "queryFields.findings.pending_approval": "A status change waits for approval",
