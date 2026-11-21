@@ -284,6 +284,49 @@ describe('the Dismiss result toast', () => {
     expect(toastFns.warning).toHaveBeenCalledTimes(1)
   })
 
+  it('offers Approve myself when nobody else can approve the group, Undo beside it', async () => {
+    const open = vi.fn()
+    const batch = { id: 'g-1', status: 'pending', self_approval_available: true }
+    const load = vi.fn().mockResolvedValue(batch)
+    await announceDismissResult(
+      (_k, f) => f ?? '',
+      preview({
+        status: 'applied',
+        bulk_id: 'bulk-2',
+        grouped: { batch_id: 'g-1', count: 4, tier: 'standard' },
+        counts: { decided: 0, grouped: 4, skipped: 0, budget_overflow: 0 },
+      }),
+      vi.fn(),
+      { load, open } as never
+    )
+    expect(load).toHaveBeenCalledWith('g-1')
+    const opts = [...toastFns.success.mock.calls, ...toastFns.warning.mock.calls][0][1]
+    expect(opts.action.label).toBe('Approve myself')
+    expect(opts.cancel.label).toBe('Undo')
+    opts.action.onClick()
+    expect(open).toHaveBeenCalledWith(batch)
+  })
+
+  it('keeps Undo as the action when another person can approve the group', async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValue({ id: 'g-1', status: 'pending', self_approval_available: false })
+    await announceDismissResult(
+      (_k, f) => f ?? '',
+      preview({
+        status: 'applied',
+        bulk_id: 'bulk-3',
+        grouped: { batch_id: 'g-1', count: 4, tier: 'standard' },
+        counts: { decided: 0, grouped: 4, skipped: 0, budget_overflow: 0 },
+      }),
+      vi.fn(),
+      { load, open: vi.fn() } as never
+    )
+    const opts = [...toastFns.success.mock.calls, ...toastFns.warning.mock.calls][0][1]
+    expect(opts.action.label).toBe('Undo')
+    expect(opts.cancel).toBeUndefined()
+  })
+
   it('offers no Undo when nothing changed', () => {
     announceDismissResult(
       (_k, f) => f ?? '',

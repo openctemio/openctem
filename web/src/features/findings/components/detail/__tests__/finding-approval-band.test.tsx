@@ -6,6 +6,8 @@ let approvals: unknown[] | undefined
 let userId: string | undefined
 let perms: string[] = []
 let locale = 'en'
+let admin = false
+let policy: Record<string, unknown> | undefined
 const cancel = vi.fn()
 const mutate = vi.fn()
 const lastKey = vi.fn()
@@ -24,6 +26,13 @@ vi.mock('@/context/permission-provider', () => ({
 }))
 vi.mock('@/lib/permissions', () => ({
   Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
+  usePermissions: () => ({ isAdmin: () => admin }),
+}))
+// The self-approval dialog asks for an authenticator code; here only that it opens.
+vi.mock('../../finding-self-approve-dialog', () => ({
+  FindingSelfApproveDialog: ({ approval }: { approval: { id: string } }) => (
+    <div role="dialog">self-approve {approval.id}</div>
+  ),
 }))
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: userId }) }))
 vi.mock('@/components/link', () => ({
@@ -43,6 +52,9 @@ vi.mock('../../../api/use-findings-api', () => ({
   useFindingApi: () => ({ data: undefined }),
   useApproveStatus: () => ({ trigger: approve, isMutating: false }),
   useRejectApproval: () => ({ trigger: reject, isMutating: false }),
+  useFindingApprovalPolicy: (_id: string, _status: string, enabled: boolean) => ({
+    data: enabled ? policy : undefined,
+  }),
 }))
 
 const pending = {
@@ -62,6 +74,8 @@ beforeEach(() => {
   approvals = [pending]
   perms = ['findings:write', 'findings:approve']
   locale = 'en'
+  admin = false
+  policy = undefined
 })
 
 describe('FindingApprovalBand', () => {
@@ -198,5 +212,81 @@ describe('FindingApprovalBand', () => {
     expect(rejectBtn).toHaveAttribute('data-slot', 'queue-reject')
     // Never a filled button: the page header holds the one main action.
     for (const b of [approveBtn, rejectBtn]) expect(b).toHaveAttribute('data-variant', 'outline')
+  })
+
+  describe('why it waits', () => {
+    it('says the organization asks a second person, in the level in force', () => {
+      userId = 'req'
+      policy = { fp_approval: 'high_and_above' }
+      approvals = [{ ...pending, policy_reasons: ['fp_level'], eligible_approver_count: 2 }]
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.getByTestId('awaiting-approval-why')).toHaveTextContent(
+        'Your organization asks a second person to check every serious false positive.'
+      )
+    })
+
+    it('links owners and administrators to the setting, and nobody else', () => {
+      approvals = [{ ...pending, policy_reasons: ['fp_level'] }]
+      admin = true
+      const { unmount } = render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.getByRole('link', { name: 'Change who approves' })).toHaveAttribute(
+        'href',
+        '/settings/approvals#approval-levels'
+      )
+      unmount()
+      admin = false
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.queryByRole('link', { name: 'Change who approves' })).toBeNull()
+    })
+
+    it('says nobody else can approve when nobody could', () => {
+      approvals = [
+        { ...pending, policy_reasons: ['no_eligible_approver'], eligible_approver_count: 0 },
+      ]
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.getByTestId('awaiting-approval-why')).toHaveTextContent(
+        'Nobody else can approve this. Ask an owner to give someone the approve permission.'
+      )
+    })
+
+    it('shows no why line for a request without stored reasons', () => {
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.getByTestId('awaiting-approval-why')).toBeEmptyDOMElement()
+    })
+  })
+
+  describe('Approve myself', () => {
+    it('is offered to the sole owner on their own request, next to Cancel', () => {
+      userId = 'req'
+      approvals = [
+        {
+          ...pending,
+          policy_reasons: ['no_eligible_approver'],
+          eligible_approver_count: 0,
+          self_approval_available: true,
+        },
+      ]
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.getByTestId('finding-approval-cancel')).toBeInTheDocument()
+      // The sole owner gets the way out, not "ask an owner".
+      expect(screen.getByTestId('awaiting-approval-why')).toBeEmptyDOMElement()
+      fireEvent.click(screen.getByRole('button', { name: 'Approve myself' }))
+      expect(screen.getByRole('dialog')).toHaveTextContent('self-approve a1')
+    })
+
+    it('is not offered to a member who is not the sole owner', () => {
+      userId = 'req'
+      approvals = [{ ...pending, self_approval_available: false }]
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.queryByRole('button', { name: 'Approve myself' })).toBeNull()
+    })
+
+    it('is not offered without the approve permission', () => {
+      userId = 'req'
+      perms = ['findings:write']
+      approvals = [{ ...pending, self_approval_available: true }]
+      render(<FindingApprovalBand findingId="f1" />)
+      expect(screen.queryByRole('button', { name: 'Approve myself' })).toBeNull()
+    })
   })
 })

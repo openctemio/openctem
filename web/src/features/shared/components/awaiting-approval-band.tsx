@@ -59,6 +59,7 @@ export function AwaitingApprovalRequest({
   requestedBy,
   reason,
   note,
+  why,
   details,
   actions,
   onCancel,
@@ -76,6 +77,11 @@ export function AwaitingApprovalRequest({
   reason?: string
   /** The free-text note the requester wrote. Plain text, shown only when present. */
   note?: string
+  /**
+   * Why the request waits for someone, in plain words, and what the viewer
+   * can do about it (a link): shown under who asked.
+   */
+  why?: ReactNode
   /** Extra lines under the request (badges, what changed since). */
   details?: ReactNode
   /** The approver's buttons. */
@@ -96,6 +102,11 @@ export function AwaitingApprovalRequest({
     <li className="space-y-1" data-testid={testId}>
       <p className="font-medium">{title}</p>
       <p className="text-xs text-muted-foreground">{requestedBy}</p>
+      {why && (
+        <div className="text-xs text-foreground empty:hidden" data-testid="awaiting-approval-why">
+          {why}
+        </div>
+      )}
       {details}
       {reason && (
         <p className="text-xs break-words whitespace-pre-wrap text-muted-foreground">

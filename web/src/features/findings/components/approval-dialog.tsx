@@ -24,12 +24,14 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { usePermissions } from '@/lib/permissions'
 import { useFindingApprovalPolicy, useRequestApproval } from '../api/use-findings-api'
 import { ApprovalEvaluationBanner } from './approval-evaluation-banner'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { ApiApproval, FindingStatus } from '../types'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
 import { formatDate } from '@/lib/app-locale'
+import { noteMinLength, readLastReason, writeLastReason } from '../lib/approval-note'
 
 /** Days an accepted risk lasts unless the requester picks another date. */
 const DEFAULT_ACCEPTANCE_DAYS = 90
@@ -91,12 +93,25 @@ export function ApprovalDialog({
   const policyCap = evaluation?.max_acceptance_days ?? 0
   const capDays = policyCap > 0 ? Math.min(propCap, policyCap) : propCap
   const defaultDays = Math.min(DEFAULT_ACCEPTANCE_DAYS, capDays)
-  const minNote = Math.max(0, evaluation?.min_note_length ?? 0)
+  // The note is optional only when the caller decides alone on a finding
+  // that is not serious; otherwise it is required (the server checks again).
+  const minNote = noteMinLength(isFalsePositive || targetStatus === 'accepted' ? fpPolicy : null)
+  const noteOptional = minNote === 0
+  const { isOwner } = usePermissions()
   const [justification, setJustification] = useState(initialJustification ?? '')
   // Why the finding is not a risk to fix: a VEX-aligned code the server
   // requires and stores as the closure reason.
   const [reason, setReason] = useState('')
   const reasons = PERSON_CLOSURE_REASONS[targetStatus] ?? []
+  // The reason picked last time for this status starts selected.
+  useEffect(() => {
+    if (!open || reason) return
+    // Only a reason this status offers comes back (readLastReason checks it).
+    const last = readLastReason(targetStatus)
+    if (last) setReason(last)
+    // Only when the dialog opens: a cleared choice stays cleared.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, targetStatus])
   // An accepted risk always ends: 90 days ahead unless changed, at most a year.
   const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(defaultDays))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
@@ -105,6 +120,12 @@ export function ApprovalDialog({
   // person with approval permission decide alone.
   const isAccepted = targetStatus === 'accepted'
   const decideAlone = (isFalsePositive || isAccepted) && fpPolicy?.can_decide_alone === true
+  // Nobody but the caller could approve the request.
+  const nobodyElse =
+    !decideAlone &&
+    !!evaluation &&
+    evaluation.tier !== 'single' &&
+    evaluation.eligible_approvers === 0
   const othersMayDecideAlone =
     (isFalsePositive || isAccepted) &&
     fpPolicy?.single_person === true &&
@@ -128,10 +149,7 @@ export function ApprovalDialog({
     'Write at least {count} characters for this approval.',
     { count: minNote }
   )
-  const justificationRequired = t(
-    'findings.approvalDialog.justificationRequired',
-    'Justification is required'
-  )
+  const justificationRequired = t('findings.approvalDialog.noteRequired', 'Write a note')
 
   const reasonRequired = t('findings.approvalDialog.reasonRequired', 'Choose a reason')
 
@@ -140,7 +158,7 @@ export function ApprovalDialog({
       toast.error(reasonRequired)
       return
     }
-    if (!justification.trim()) {
+    if (!noteOptional && !justification.trim()) {
       toast.error(justificationRequired)
       return
     }
@@ -164,7 +182,7 @@ export function ApprovalDialog({
   }
 
   const handleSubmit = async () => {
-    if (!justification.trim()) {
+    if (!noteOptional && !justification.trim()) {
       toast.error(justificationRequired)
       return
     }
@@ -178,6 +196,7 @@ export function ApprovalDialog({
           ? { expires_at: new Date(`${expiresAt}T00:00:00`).toISOString() }
           : {}),
       })
+      writeLastReason(targetStatus, reason)
       const appliedAlone =
         (result as { status?: string; single_person?: boolean } | undefined)?.single_person === true
       toast.success(
@@ -235,16 +254,21 @@ export function ApprovalDialog({
                     : t('findings.approvalDialog.title', 'Request Status Approval')}
               </DialogTitle>
               <DialogDescription>
-                {decideAlone
+                {decideAlone && noteOptional
                   ? t(
-                      'findings.approvalDialog.descriptionDecide',
-                      'Your organization lets you decide this alone. Choose a reason and explain it.'
+                      'findings.approvalDialog.descriptionDecideNoteOptional',
+                      'Your organization lets you decide this alone. Choose a reason; a note is optional.'
                     )
-                  : t(
-                      'findings.approvalDialog.descriptionRequest',
-                      'Changing the status to {status} needs approval. Give a justification.',
-                      { status: statusLabel }
-                    )}
+                  : decideAlone
+                    ? t(
+                        'findings.approvalDialog.descriptionDecide',
+                        'Your organization lets you decide this alone. Choose a reason and explain it.'
+                      )
+                    : t(
+                        'findings.approvalDialog.descriptionRequest',
+                        'Changing the status to {status} needs approval. Give a justification.',
+                        { status: statusLabel }
+                      )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -257,16 +281,29 @@ export function ApprovalDialog({
                     {isAccepted
                       ? t(
                           'findingApprovals.single.acceptNotice',
-                          "This organization doesn't require approval for this finding: the risk is accepted at once, until the date you choose. Choose a reason and explain it; the decision is audited, listed in the approvals digest and flagged for review if the finding later becomes more serious."
+                          "This organization doesn't require approval for this finding: the risk is accepted at once, until the date you choose. The decision is audited, listed in the approvals digest and flagged for review if the finding later becomes more serious."
                         )
                       : t(
                           'findingApprovals.single.notice',
-                          "This organization doesn't require approval for this finding: it is marked a false positive at once. Choose a reason and explain it; the decision is audited and flagged for review if the finding later becomes more serious."
+                          "This organization doesn't require approval for this finding: it is marked a false positive at once. The decision is audited and flagged for review if the finding later becomes more serious."
                         )}
                   </div>
                 )}
                 {evaluation && !decideAlone && evaluation.tier !== 'single' && (
                   <ApprovalEvaluationBanner evaluation={evaluation} />
+                )}
+                {nobodyElse && (
+                  <p className="text-sm" data-testid="approval-dialog-nobody-else">
+                    {isOwner()
+                      ? t(
+                          'findings.approvalDialog.nobodyElseOwner',
+                          'Nobody else can approve this. If you are the only member of your organization, you can approve it yourself once it is sent, with a code from your authenticator app.'
+                        )
+                      : t(
+                          'findings.approvalDialog.nobodyElse',
+                          'Nobody else can approve this. Ask an owner to give someone the approve permission.'
+                        )}
+                  </p>
                 )}
                 {othersMayDecideAlone && (
                   <p className="text-sm text-muted-foreground">
@@ -305,13 +342,15 @@ export function ApprovalDialog({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="justification">
-                    {t('findings.approvalDialog.justification', 'Justification')}
+                    {noteOptional
+                      ? t('findings.approvalDialog.noteOptional', 'Note (optional)')
+                      : t('findings.approvalDialog.note', 'Note')}
                   </Label>
                   <Textarea
                     id="justification"
                     placeholder={t(
-                      'findings.approvalDialog.justificationPlaceholder',
-                      'Explain why this status change is needed...'
+                      'findings.approvalDialog.notePlaceholder',
+                      'What did you check?'
                     )}
                     value={justification}
                     onChange={(e) => setJustification(e.target.value)}
@@ -322,7 +361,7 @@ export function ApprovalDialog({
                     {t('findings.approvalDialog.characters', '{count}/2000 characters', {
                       count: justification.length,
                     })}
-                    {minNote > 0 &&
+                    {minNote > 1 &&
                       `, ${t('findingApprovals.evaluation.noteMin', 'at least {count}', {
                         count: minNote,
                       })}`}
@@ -364,7 +403,12 @@ export function ApprovalDialog({
               </Button>
               <Button
                 onClick={handleNext}
-                disabled={!reason || !justification.trim() || noteLength < minNote || !expiryValid}
+                disabled={
+                  !reason ||
+                  (!noteOptional && !justification.trim()) ||
+                  noteLength < minNote ||
+                  !expiryValid
+                }
               >
                 {t('findings.approvalDialog.review', 'Review')}
               </Button>
@@ -403,12 +447,16 @@ export function ApprovalDialog({
                     {closureReasonLabel(t, reason)}
                   </div>
                 )}
-                <div>
-                  <span className="font-medium text-muted-foreground">
-                    {t('findings.approvalDialog.justificationLabel', 'Justification:')}
-                  </span>
-                  <p className="mt-1 rounded-md border bg-muted/50 p-2 text-sm">{justification}</p>
-                </div>
+                {justification.trim() && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">
+                      {t('common.awaitingApproval.note', 'Note:')}
+                    </span>
+                    <p className="mt-1 rounded-md border bg-muted/50 p-2 text-sm whitespace-pre-wrap break-words">
+                      {justification}
+                    </p>
+                  </div>
+                )}
                 {showExpiryPicker && expiresAt && (
                   <div>
                     <span className="font-medium text-muted-foreground">
