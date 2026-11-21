@@ -8,6 +8,7 @@ import enCampaigns from '@/lib/i18n/dictionaries/en/remediationCampaigns.json'
 import enHub from '@/lib/i18n/dictionaries/en/remediationHub.json'
 import enSensors from '@/lib/i18n/dictionaries/en/sensors.json'
 import enPageMonitor from '@/lib/i18n/dictionaries/en/pageMonitor.json'
+import enFindings from '@/lib/i18n/dictionaries/en/findings.json'
 
 describe('status registry', () => {
   it('names every label key in the English catalog', () => {
@@ -16,6 +17,7 @@ describe('status registry', () => {
       ...Object.keys(enHub),
       ...Object.keys(enSensors),
       ...Object.keys(enPageMonitor),
+      ...Object.keys(enFindings),
     ])
     for (const domain of Object.values(STATUS_TONES)) {
       for (const entry of Object.values(domain)) expect(keys.has(entry.labelKey)).toBe(true)
