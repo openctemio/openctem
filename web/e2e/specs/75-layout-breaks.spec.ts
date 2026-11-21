@@ -688,11 +688,6 @@ test.describe(
           const route = `/assets/${id}?tab=paths`
           const url = name === 'root' ? route : `${route}&path=${encodeURIComponent('/api/{int}')}`
           await prepare(page, v, baseURL!)
-          // The banner's own request is not what is checked here, and a slow
-          // or missing answer to it must not keep the page "loading".
-          await page.route('**/api/v1/threat-intel/freshness', (r) =>
-            r.fulfill({ json: { stale: false, reasons: [] } })
-          )
           await page.route('**/api/v1/assets/*/web-paths**', (r) =>
             r.fulfill({
               json: pathsLevel(new URL(r.request().url()).searchParams.get('path') ?? '/'),
