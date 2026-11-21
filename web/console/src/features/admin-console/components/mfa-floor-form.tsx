@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
-import { TonePill } from '@/features/shared/components/tone-pill'
+import {
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsSaveBar,
+  SettingsSection,
+  TonePill,
+} from '@/features/shared'
 import { saveMFAFloor } from '../api/use-platform-settings'
 import type { MFAFloor, MFAFloorSettings } from '../types'
 import {
@@ -109,26 +114,30 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
     }
   }
 
+  const graceError = valid
+    ? undefined
+    : t('admin.mfaFloor.graceInvalid', 'Enter a whole number of days from 0 to 90.')
+
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>{t('admin.mfaFloor.title', 'Two-factor floor')}</CardTitle>
-            <TonePill
-              tone={settings.floor === 'none' ? 'warning' : 'success'}
-              label={label[settings.floor]}
-            />
-          </div>
-          <CardDescription>
-            {t(
-              'admin.mfaFloor.description',
-              'Who must use two-factor in every organization. Organizations can require more, never less.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {settings.recommend_raise && settings.floor === 'none' && (
+      <SettingsSection
+        framed
+        id="mfa-floor"
+        title={t('admin.mfaFloor.title', 'Two-factor floor')}
+        description={t(
+          'admin.mfaFloor.description',
+          'Who must use two-factor in every organization. Organizations can require more, never less.'
+        )}
+        actions={
+          <TonePill
+            tone={settings.floor === 'none' ? 'warning' : 'success'}
+            label={label[settings.floor]}
+          />
+        }
+        meta={<SettingChangedLine change={settings} />}
+      >
+        {settings.recommend_raise && settings.floor === 'none' && (
+          <SettingsBlock>
             <Alert data-testid="mfa-floor-recommend">
               <AlertDescription>
                 {t(
@@ -137,74 +146,78 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
                 )}
               </AlertDescription>
             </Alert>
-          )}
+          </SettingsBlock>
+        )}
+        <SettingsBlock>
           <RadioGroup
             value={floor}
             onValueChange={(v) => setFloor(v as MFAFloor)}
             disabled={!canEdit}
             aria-label={t('admin.mfaFloor.title', 'Two-factor floor')}
-            className="gap-2"
           >
             {(['none', 'admins', 'everyone'] as const).map((f) => (
-              <div key={f} className="flex items-start gap-3 rounded-lg border p-3">
-                <RadioGroupItem value={f} id={`${id}-${f}`} className="mt-0.5" />
-                <div className="space-y-0.5">
-                  <Label htmlFor={`${id}-${f}`} className="font-medium">
-                    {label[f]}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">{hint[f]}</p>
-                  {f === 'everyone' && (
-                    <p
-                      className="text-xs text-muted-foreground"
-                      data-testid="mfa-floor-everyone-note"
-                    >
-                      {t(
-                        'admin.mfaFloor.everyoneNote',
-                        'Your call on a self-managed install. Members need an authenticator app: organization passkeys are not available yet.'
-                      )}
-                    </p>
-                  )}
+              <div key={f} className="flex items-start gap-3">
+                <RadioGroupItem
+                  value={f}
+                  id={`${id}-${f}`}
+                  className="mt-1"
+                  aria-describedby={`${id}-${f}-hint`}
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor={`${id}-${f}`}>{label[f]}</Label>
+                  <span
+                    id={`${id}-${f}-hint`}
+                    className="text-cap text-muted-foreground text-pretty"
+                  >
+                    {hint[f]}
+                    {f === 'everyone' && (
+                      <span className="block" data-testid="mfa-floor-everyone-note">
+                        {t(
+                          'admin.mfaFloor.everyoneNote',
+                          'Your call on a self-managed install. Members need an authenticator app: organization passkeys are not available yet.'
+                        )}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             ))}
           </RadioGroup>
-
-          <fieldset className="space-y-2" disabled={!canEdit}>
-            <legend className="text-sm font-medium">
-              {t('admin.mfaFloor.grace', 'Days to set it up')}
-            </legend>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <Label htmlFor={`${id}-existing`}>
-                  {t('admin.mfaFloor.graceExisting', 'Current members')}
-                </Label>
+        </SettingsBlock>
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField
+              id={`${id}-existing`}
+              label={t('admin.mfaFloor.graceExistingFull', 'Days to set it up: current members')}
+              error={existing === null ? graceError : undefined}
+            >
+              {(control) => (
                 <Input
-                  id={`${id}-existing`}
+                  {...control}
                   inputMode="numeric"
                   value={graceExisting}
                   onChange={(e) => setGraceExisting(e.target.value)}
-                  aria-invalid={existing === null}
+                  disabled={!canEdit}
                 />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor={`${id}-new`}>{t('admin.mfaFloor.graceNew', 'New members')}</Label>
+              )}
+            </SettingsField>
+            <SettingsField
+              id={`${id}-new`}
+              label={t('admin.mfaFloor.graceNewFull', 'Days to set it up: new members')}
+              error={fresh === null ? graceError : undefined}
+            >
+              {(control) => (
                 <Input
-                  id={`${id}-new`}
+                  {...control}
                   inputMode="numeric"
                   value={graceNew}
                   onChange={(e) => setGraceNew(e.target.value)}
-                  aria-invalid={fresh === null}
+                  disabled={!canEdit}
                 />
-              </div>
-            </div>
-            {!valid && (
-              <p className="text-sm text-destructive">
-                {t('admin.mfaFloor.graceInvalid', 'Enter a whole number of days from 0 to 90.')}
-              </p>
-            )}
-          </fieldset>
-
-          <p className="text-xs text-muted-foreground">
+              )}
+            </SettingsField>
+          </SettingsFieldGrid>
+          <p className="text-cap text-muted-foreground">
             {settings.source === 'default'
               ? t('admin.mfaFloor.sourceDefault', 'Server default ({name}).', {
                   name: settings.env_var,
@@ -216,22 +229,16 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
                   date: formatDate(new Date(settings.effective_from)),
                 })}
           </p>
-          <SettingChangedLine change={settings} />
-          {canEdit ? (
-            <SettingsSaveBar
-              className="basis-full"
-              dirty={dirty}
-              saveDisabled={!valid}
-              onSave={() => setConfirmOpen(true)}
-              onDiscard={reset}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saveDisabled={!valid}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      )}
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
