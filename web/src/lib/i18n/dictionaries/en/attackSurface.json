@@ -1,5 +1,7 @@
 {
   "attackSurface.certificates.activeFilters": "Active filters",
+  "attackSurface.certificates.card.expires": "Expires on {date}",
+  "attackSurface.certificates.card.issuer": "Issuer {issuer}",
   "attackSurface.certificates.chip.remove": "Remove filter {filter}",
   "attackSurface.certificates.chip.status": "Status is {status}",
   "attackSurface.certificates.col.detected": "Detected",

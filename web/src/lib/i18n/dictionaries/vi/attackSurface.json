@@ -1,5 +1,7 @@
 {
   "attackSurface.certificates.activeFilters": "Bộ lọc đang dùng",
+  "attackSurface.certificates.card.expires": "Hết hạn ngày {date}",
+  "attackSurface.certificates.card.issuer": "Nhà phát hành {issuer}",
   "attackSurface.certificates.chip.remove": "Bỏ bộ lọc {filter}",
   "attackSurface.certificates.chip.status": "Trạng thái là {status}",
   "attackSurface.certificates.col.detected": "Phát hiện",
