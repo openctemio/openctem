@@ -12,3 +12,4 @@
   progress and the deadline.
 - Permissions are unchanged: creating a task from a query still needs remediation write and findings read, and
   "New campaign" needs remediation write.
+- Docs: none (the redesigned console is documented when it ships)
