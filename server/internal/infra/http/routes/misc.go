@@ -274,6 +274,10 @@ func registerSLARoutes(
 		r.GET("/{id}", h.Get, middleware.Require(permission.SLARead))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SLAWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SLADelete))
+
+		// What "Make default" would do to open findings (read-only; gated
+		// like the write it previews).
+		r.GET("/{id}/default-preview", h.PreviewDefault, middleware.Require(permission.SLAWrite))
 	}, tenantMiddlewares...)
 
 	// Asset-specific SLA policy

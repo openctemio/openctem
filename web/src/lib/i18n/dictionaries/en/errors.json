@@ -2,6 +2,7 @@
   "errors.APPROVAL_REQUIRED": "This change needs an approver. Submit a request instead.",
   "errors.APP_UPDATED_RELOADING": "{product} was updated. Reloading to the latest version.",
   "errors.BAD_REQUEST": "The request is not valid. Check the values and try again.",
+  "errors.BULK_DISMISS_TOO_LARGE": "Dismiss takes at most 500 findings at a time. Narrow the selection, or create a rule for a repeating pattern.",
   "errors.BULK_NOT_ALLOWED": "This change cannot be made in bulk. Change each item on its own.",
   "errors.BULK_TOO_LARGE": "Too many items for one bulk change. Narrow the selection.",
   "errors.CONFIRM_CRITICAL_REQUIRED": "Critical or known-exploited findings would be archived. Review them and confirm them separately.",

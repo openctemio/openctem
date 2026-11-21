@@ -42,6 +42,14 @@ const (
 	ActionFindingApprovalBatchSigned   Action = "finding_approval.batch_signed"
 	ActionFindingApprovalBatchRejected Action = "finding_approval.batch_rejected"
 	ActionFindingApprovalBatchCanceled Action = "finding_approval.batch_canceled"
+	// ActionFindingApprovalBatchSelfApproved: the sole member of the
+	// organization approved their own group exception (fresh authenticator
+	// code and a reason).
+	ActionFindingApprovalBatchSelfApproved Action = "finding_approval.batch_self_approved"
+	// ActionFindingApprovalBatchMemberRejected: an approver left one member
+	// out of a group exception (rejected it with a reason); the rest stays
+	// pending.
+	ActionFindingApprovalBatchMemberRejected Action = "finding_approval.batch_member_rejected"
 	// Material change (RFC-111 §6): a standing decision whose finding turned
 	// worse was ended (accepted risk), flagged for review, or withdrawn
 	// (one-person false positive). Written by the controller.
@@ -70,4 +78,6 @@ var _ = registerActions("finding_approval", map[Action]Severity{
 	ActionFindingApprovalBatchSigned:           SeverityMedium,
 	ActionFindingApprovalBatchRejected:         SeverityMedium,
 	ActionFindingApprovalBatchCanceled:         SeverityLow,
+	ActionFindingApprovalBatchSelfApproved:     SeverityHigh,
+	ActionFindingApprovalBatchMemberRejected:   SeverityMedium,
 })
