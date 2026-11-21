@@ -42,6 +42,7 @@ describe('layout hint', () => {
     expect(hint?.template).toBe('ctem')
     expect(hint?.missing).toEqual([
       'exposure.kpis',
+      'ctem.loop',
       'exposure.levers',
       'surface.new_assets',
       'certificates.expiry',
@@ -51,23 +52,58 @@ describe('layout hint', () => {
     // Nothing removed, nothing duplicated, the person's extra widget kept.
     expect(new Set(metrics).size).toBe(metrics.length)
     expect(metrics).toContain('crown_jewels.exposed')
-    expect(metrics.length).toBe(layout.length + 4)
-    // The key figures lead, then the flow and the levers after it.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.flow', 'exposure.levers'])
+    expect(metrics.length).toBe(layout.length + 5)
+    // The key figures come before the stage row; the person's flow stays where it was.
+    expect(metrics.indexOf('exposure.kpis')).toBeLessThan(metrics.indexOf('ctem.loop'))
+    expect(metrics.indexOf('exposure.flow')).toBe(0)
     expect(next.map((x) => x.y)).toEqual(next.map((_, i) => i))
+  })
+
+  it('a copy of the previous default (flow first, full-width Fix next) is offered the new layout and is left as it is', () => {
+    const at = (id: string, metric: string, ww: number, h: number): DashboardWidget => ({
+      ...w(id, metric),
+      w: ww,
+      h,
+    })
+    const layout = [
+      at('w_ct31', 'exposure.kpis', 12, 1),
+      at('w_ct20', 'exposure.flow', 12, 4),
+      at('w_ct30', 'exposure.levers', 12, 1),
+      at('w_ct6', 'fix.next', 12, 3),
+      at('w_ct7', 'attack_paths.to_crown_jewels', 6, 2),
+      at('w_ct8', 'exposure.open_by_priority', 6, 2),
+      at('w_ct11', 'flow.new_vs_fixed', 6, 2),
+      at('w_ct12', 'findings.age_bands', 6, 2),
+      at('w_ct40', 'surface.new_assets', 6, 1),
+      at('w_ct41', 'certificates.expiry', 6, 1),
+    ]
+    const before = structuredClone(layout)
+    const hint = layoutHintFor({ layout, kind: 'personal' })
+    expect(hint).toMatchObject({ template: 'ctem', missing: ['ctem.loop'], rearranged: true })
+    // Looking never edits the stored layout; only the person's choice does.
+    expect(layout).toEqual(before)
+    // Adding the missing widget keeps every existing one in place and size.
+    const next = withTemplateWidgets(layout, templateByKey('ctem'), hint!.missing)
+    expect(
+      next.filter((x) => (x.config as { id: string }).id !== 'w_ct22').map((x) => [x.w, x.h])
+    ).toEqual(before.map((x) => [x.w, x.h]))
+    // A copy of the new default raises no hint.
+    expect(
+      layoutHintFor({ layout: templateLayout(templateByKey('ctem')), kind: 'personal' })
+    ).toBeNull()
   })
 
   it('a widget id already taken gets a fresh one', () => {
     const layout = [
       w('w_ct1', 'exposure.priority_open'),
       w('w_ct2', 'intel.kev_open'),
-      w('w_ct12', 'findings.open'),
+      w('w_ct11', 'findings.open'),
     ]
     const hint = layoutHintFor({ layout, kind: 'personal' })!
     const next = withTemplateWidgets(layout, templateByKey('ctem'), hint.missing)
     const ids = next.map((x) => (x.config as { id: string }).id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids).toContain('w_ct12_2')
+    expect(ids).toContain('w_ct11_2')
   })
 
   it('organization dashboards and non-template layouts get no hint', () => {

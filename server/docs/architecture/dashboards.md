@@ -1251,15 +1251,17 @@ widget kit's frame, with its own error boundary.
   - Four columns; each visualization has a fixed set of sizes: single
     figures 3x1 (in runs of four), the key figures strip, levers and brief
     12x1, bar lists 6x1, charts 6x2 or 12x2, heatmap, posture and attack
-    paths 6x2, lists 12x3, the flow and tables 12x4.
+    paths 6x2, lists 6x2 or 12x3, the flow and tables 12x4, the CTEM stage
+    row 12x1.
   - Rows are full at four columns, hold one height and one height band
-    (single figures, short bar lists, charts and lists, or a full-width
-    widget alone): rows grow to their tallest widget, so a bar list beside a
+    (single figures, short bar lists, charts and half-width lists, or a
+    full-width widget alone): rows grow to their tallest widget, so a bar list beside a
     chart would stretch into blank space. No hole at two columns or on a
     phone.
   - Sections in order: headline figures first (strip or four figures), the
-    hero visual (flow, posture or a full-width chart), what to act on
-    (levers, brief, lists, attack paths), trends, then breakdowns.
+    hero visual (flow, stage row, posture or a full-width chart), what to
+    act on (levers, brief, lists, attack paths) and trends (one rank, so
+    Fix next reads beside the new-versus-fixed chart), then breakdowns.
   - At most ten widgets; never the same metric, grouping and filter twice;
     never two widgets with the same figures (the strip and a single figure
     it carries, the brief and the levers, the flow and intake or the loop).
@@ -1280,6 +1282,10 @@ widget kit's frame, with its own error boundary.
   new layout offer above.
   `server/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
+  The default CTEM template opens on the key figures strip and the stage
+  row (`ctem.loop`), then Fix next at half width beside new versus fixed;
+  the exposure flow is not in it (the stage row carries the stages), and a
+  copy of the earlier default is offered the new layout (hint version 8).
   Names and descriptions are in the `dashboards` i18n namespace.
 - **Widget titles**: a widget without a title of its own shows the metric's
   name, followed by "by <dimension>" when it groups by something other than

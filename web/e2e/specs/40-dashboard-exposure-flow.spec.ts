@@ -1,4 +1,5 @@
 import path from 'path'
+import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
@@ -26,100 +27,162 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
 ] as const
 
-for (const vp of VIEWPORTS) {
-  for (const scheme of ['light', 'dark'] as const) {
-    test(
-      `exposure flow at ${vp.name} width in ${scheme}`,
-      { tag: ['@dashboard'] },
-      async ({ page }, testInfo) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height })
-        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
-        await page.goto('/')
-        const flow = page.getByTestId('exposure-flow').first()
-        await expect(flow).toBeVisible({ timeout: 45_000 })
-        await page.waitForLoadState('networkidle')
+// The default dashboard opens on the stage row, not the flow: these tests put
+// the flow on a dashboard of their own and open that one.
+let flowDashboardId: string | null = null
 
-        if (vp.width < 768) {
-          const overflow = await page.evaluate(
-            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-          )
-          expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
-        }
-
-        // The actionable total shows once (the ring centre or the phone headline).
-        await expect(flow.getByTestId('flow-centre')).toHaveCount(1)
-        await expect(flow.getByText(/not part of the period/)).toHaveCount(0)
-
-        if (vp.width < 768) {
-          await expect(flow).toHaveAttribute('data-band', 'narrow')
-          const order = await flow.evaluate((el) =>
-            [...el.querySelectorAll('[data-testid]')]
-              .map((n) => n.getAttribute('data-testid'))
-              .filter((id) =>
-                ['flow-headline', 'flow-outcomes', 'flow-stages', 'flow-sources'].includes(id ?? '')
-              )
-          )
-          expect(order.slice(0, 2), 'phone: the answer first').toEqual([
-            'flow-headline',
-            'flow-outcomes',
-          ])
-          // Every figure (link) in the flow is at least 44 px tall to tap.
-          const small = await flow.evaluate((el) =>
-            [...el.querySelectorAll('a[href], [role="link"]')]
-              .map((n) => ({
-                t: (n.textContent ?? '').trim().slice(0, 30),
-                h: n.getBoundingClientRect().height,
-              }))
-              .filter((x) => x.h > 0 && x.h < 43.5)
-          )
-          expect(small, 'phone tap targets under 44 px').toEqual([])
-        } else {
-          await expect(flow.locator('svg[role="group"]')).toBeVisible()
-          // Every ring has its track, so an empty ring still reads as a ring.
-          expect(await flow.locator('[data-testid="ring-track"]').count()).toBeGreaterThan(0)
-          // A source arc (organization read with sources) explains itself on focus.
-          const arc = flow.locator('[data-seg^="s:"][role="link"]').first()
-          if (await arc.count()) {
-            await arc.focus()
-            await expect(page.getByRole('tooltip').getByText('Share of received')).toBeVisible()
-            await page.keyboard.press('Escape')
-          }
-        }
-
-        await page.addScriptTag({ path: AXE })
-        const result = (await page.evaluate(async () => {
-          const w = window as unknown as {
-            axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
-          }
-          return w.axe.run(
-            { include: [['[data-testid="exposure-flow"]']] },
-            { resultTypes: ['violations'] }
-          )
-        })) as AxeResult
-        const serious = result.violations
-          .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-          .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-        expect(serious).toEqual([])
-
-        // Keyboard focus opens the tooltip; its link is the figure's own list.
-        const open = flow.locator('[data-k="o:open"]')
-        const href = await open.getAttribute('href')
-        await open.focus()
-        const tip = page.getByRole('tooltip')
-        await expect(tip).toBeVisible()
-        await expect(open).toHaveAttribute('aria-describedby', (await tip.getAttribute('id')) ?? '')
-        if (href) await expect(tip.getByRole('link')).toHaveAttribute('href', href)
-        await page.keyboard.press('Escape')
-        await expect(tip).toBeHidden()
-
-        await testInfo.attach(`exposure-flow-${vp.name}-${scheme}.png`, {
-          body: await flow.screenshot(),
-          contentType: 'image/png',
-        })
-      }
-    )
-  }
+async function api(page: Page, method: 'POST' | 'DELETE', url: string, data?: unknown) {
+  return page.evaluate(
+    async ({ method, url, data }) => {
+      const r = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: data === undefined ? undefined : JSON.stringify(data),
+      })
+      return { status: r.status, body: await r.text() }
+    },
+    { method, url, data }
+  )
 }
+
+test.describe('exposure flow on its own dashboard', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    const created = await api(page, 'POST', '/api/v1/me/dashboards', {
+      name: `e2e-flow-${Math.random().toString(36).slice(2, 8)}`,
+      columns: 4,
+      layout: [
+        {
+          widget_type: 'metric',
+          x: 0,
+          y: 0,
+          w: 12,
+          h: 4,
+          config: {
+            v: 2,
+            id: 'w_flow',
+            data: { kind: 'metric', metric: 'exposure.flow', filter: {}, time: {} },
+            viz: { type: 'flow', options: {} },
+          },
+        },
+      ],
+    })
+    test.skip(created.status >= 300, 'dashboard could not be created')
+    flowDashboardId = (JSON.parse(created.body) as { id: string }).id
+    await page.evaluate((ref) => {
+      try {
+        localStorage.setItem('openctem:dashboard-choice', ref)
+      } catch {
+        /* private mode */
+      }
+    }, `personal:${flowDashboardId}`)
+  })
+
+  test.afterEach(async ({ page }) => {
+    if (flowDashboardId) await api(page, 'DELETE', `/api/v1/me/dashboards/${flowDashboardId}`)
+    flowDashboardId = null
+  })
+
+  for (const vp of VIEWPORTS) {
+    for (const scheme of ['light', 'dark'] as const) {
+      test(
+        `exposure flow at ${vp.name} width in ${scheme}`,
+        { tag: ['@dashboard'] },
+        async ({ page }, testInfo) => {
+          await page.setViewportSize({ width: vp.width, height: vp.height })
+          await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+          await page.goto('/')
+          const flow = page.getByTestId('exposure-flow').first()
+          await expect(flow).toBeVisible({ timeout: 45_000 })
+          await page.waitForLoadState('networkidle')
+
+          if (vp.width < 768) {
+            const overflow = await page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+            )
+            expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
+          }
+
+          // The actionable total shows once (the ring centre or the phone headline).
+          await expect(flow.getByTestId('flow-centre')).toHaveCount(1)
+          await expect(flow.getByText(/not part of the period/)).toHaveCount(0)
+
+          if (vp.width < 768) {
+            await expect(flow).toHaveAttribute('data-band', 'narrow')
+            const order = await flow.evaluate((el) =>
+              [...el.querySelectorAll('[data-testid]')]
+                .map((n) => n.getAttribute('data-testid'))
+                .filter((id) =>
+                  ['flow-headline', 'flow-outcomes', 'flow-stages', 'flow-sources'].includes(
+                    id ?? ''
+                  )
+                )
+            )
+            expect(order.slice(0, 2), 'phone: the answer first').toEqual([
+              'flow-headline',
+              'flow-outcomes',
+            ])
+            // Every figure (link) in the flow is at least 44 px tall to tap.
+            const small = await flow.evaluate((el) =>
+              [...el.querySelectorAll('a[href], [role="link"]')]
+                .map((n) => ({
+                  t: (n.textContent ?? '').trim().slice(0, 30),
+                  h: n.getBoundingClientRect().height,
+                }))
+                .filter((x) => x.h > 0 && x.h < 43.5)
+            )
+            expect(small, 'phone tap targets under 44 px').toEqual([])
+          } else {
+            await expect(flow.locator('svg[role="group"]')).toBeVisible()
+            // Every ring has its track, so an empty ring still reads as a ring.
+            expect(await flow.locator('[data-testid="ring-track"]').count()).toBeGreaterThan(0)
+            // A source arc (organization read with sources) explains itself on focus.
+            const arc = flow.locator('[data-seg^="s:"][role="link"]').first()
+            if (await arc.count()) {
+              await arc.focus()
+              await expect(page.getByRole('tooltip').getByText('Share of received')).toBeVisible()
+              await page.keyboard.press('Escape')
+            }
+          }
+
+          await page.addScriptTag({ path: AXE })
+          const result = (await page.evaluate(async () => {
+            const w = window as unknown as {
+              axe: { run: (ctx: unknown, opts: unknown) => Promise<AxeResult> }
+            }
+            return w.axe.run(
+              { include: [['[data-testid="exposure-flow"]']] },
+              { resultTypes: ['violations'] }
+            )
+          })) as AxeResult
+          const serious = result.violations
+            .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+            .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+          expect(serious).toEqual([])
+
+          // Keyboard focus opens the tooltip; its link is the figure's own list.
+          const open = flow.locator('[data-k="o:open"]')
+          const href = await open.getAttribute('href')
+          await open.focus()
+          const tip = page.getByRole('tooltip')
+          await expect(tip).toBeVisible()
+          await expect(open).toHaveAttribute(
+            'aria-describedby',
+            (await tip.getAttribute('id')) ?? ''
+          )
+          if (href) await expect(tip.getByRole('link')).toHaveAttribute('href', href)
+          await page.keyboard.press('Escape')
+          await expect(tip).toBeHidden()
+
+          await testInfo.attach(`exposure-flow-${vp.name}-${scheme}.png`, {
+            body: await flow.screenshot(),
+            contentType: 'image/png',
+          })
+        }
+      )
+    }
+  }
+})
 
 test(
   'the receipt list opens with the totals of its filter',
