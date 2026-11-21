@@ -1357,12 +1357,11 @@ export default function UsersPage() {
     /* Invitations created before the RBAC role picker carry only the
        legacy `role` field ("member", "admin", ...) with empty role_ids —
        show that (in the console language) rather than a confusing "No roles". */
-    const legacy = invitation.role ? SYSTEM_ROLE_NAME[invitation.role] : undefined
     return (
       <Badge variant="secondary" className="text-xs">
-        {legacy
-          ? t(legacy.key, legacy.en)
-          : invitation.role || t('org.membersPage.noRoles', 'No roles')}
+        {invitation.role
+          ? roleDisplayName(t, { slug: invitation.role, name: invitation.role, is_system: true })
+          : t('org.membersPage.noRoles', 'No roles')}
       </Badge>
     )
   }
