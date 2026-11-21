@@ -75,7 +75,7 @@ export function ChannelGroupingSettings({
           onValueChange={(v) => onChange({ group_window_minutes: Number(v) })}
           disabled={!value.group_similar}
         >
-          <SelectTrigger id={`${idPrefix}_group_window`} className="h-8 w-[140px]">
+          <SelectTrigger id={`${idPrefix}_group_window`} size="sm" className="w-[140px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
