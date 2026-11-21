@@ -551,7 +551,9 @@ export default function AssetDetailPage() {
             <SettleOn pending={related.isLoading || webEvidence.isLoading} />
 
             <div className={STRIP}>
-              <TabsList>
+              {/* Eight tabs do not fit a phone: they wrap to a second line instead of
+                  scrolling out of sight (nothing tells a person this strip scrolls). */}
+              <TabsList className="h-auto min-h-10 flex-wrap gap-y-0 [&>*]:min-h-10">
                 {tabs.map((key) => {
                   const Icon = TAB_ICON[key]
                   return (
