@@ -177,6 +177,12 @@ export interface UpdateScopeSettingsInput {
    */
   ci_scope_requires_proof?: boolean
   /**
+   * Scope entries on a provider's shared addresses authorize nothing until
+   * someone answers them on the Scope page (default on); omitted
+   * keeps the stored value.
+   */
+  hold_provider_entries?: boolean
+  /**
    * The widest range one scan target may name, as an IPv4 prefix length
    * (8 to 24; IPv6 gets the same address count). Omitted keeps the stored
    * value (RFC-151).
@@ -311,4 +317,59 @@ export interface BulkUpdateTargetsInput {
     add_tags?: string[]
     remove_tags?: string[]
   }
+}
+
+// ============================================
+// Provider shared addresses (the Scope page card)
+// ============================================
+
+/** A scope entry on a provider's shared addresses. */
+export interface ApiScopeProviderEntry {
+  id: string
+  target_type: string
+  pattern: string
+  origin: string
+  status: string
+  created_at: string
+}
+
+/** An address a person confirmed as the organization's inside a provider's shared range. */
+export interface ApiScopeProviderConfirmed {
+  asset_id: string
+  name: string
+  decided_at?: string
+}
+
+/** One provider's row of the card. */
+export interface ApiScopeProviderGroup {
+  provider: string
+  class: string
+  entry_count: number
+  entries: ApiScopeProviderEntry[]
+  confirmed: ApiScopeProviderConfirmed[]
+}
+
+/** GET /scope/provider-addresses. */
+export interface ApiScopeProviderAddresses {
+  dataset_version: string
+  /** The hold_provider_entries setting is on: the entries authorize nothing until answered. */
+  holding: boolean
+  groups: ApiScopeProviderGroup[]
+}
+
+/** POST /scope/provider-addresses/move (preview or act). */
+export interface ApiScopeProviderMove {
+  provider: string
+  preview: boolean
+  entries: number
+  exclusions: number
+  existing: number
+  entry_ids: string[]
+  exclusion_ids: string[]
+}
+
+/** POST /scope/provider-addresses/keep. */
+export interface ApiScopeProviderKeep {
+  provider: string
+  kept: ApiScopeProviderEntry[]
 }

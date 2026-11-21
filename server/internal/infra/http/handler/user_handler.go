@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	"github.com/openctemio/openctem/server/pkg/domain/user"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/validator"
@@ -26,6 +27,8 @@ type UserHandler struct {
 	logger        *logger.Logger
 	// accountDeletion serves DELETE /users/me (account_deletion_handler.go).
 	accountDeletion *accountdeletion.Service
+	// admission reports what each organization says about this session.
+	admission MembershipAdmitter
 }
 
 // NewUserHandler creates a new user handler.
@@ -344,6 +347,66 @@ type TenantMembershipResponse struct {
 	Kind            string     `json:"kind"`
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	BlockedReason   string     `json:"blocked_reason,omitempty"`
+	// Admission is what this organization answers the caller's current
+	// session: "open" when its token request would succeed, otherwise the
+	// code that request would be refused with (MFA_ENROLLMENT_REQUIRED,
+	// SSO_REQUIRED, OWN_SIGN_IN_REQUIRED, MFA_IDP_EVIDENCE_REQUIRED,
+	// EMAIL_NOT_VERIFIED, ORGANIZATION_SUSPENDED, ...), so the account space
+	// shows the one next step. Empty when it could not be worked out.
+	Admission string `json:"admission,omitempty"`
+	// Requires lists what the organization asks of every sign-in of this
+	// member, from its own settings and the member's role, whatever the
+	// session: "two_factor" (2FA required) and "identity_provider" (its own
+	// SSO is enforced; the owner keeps a password break-glass). Shown before
+	// the person opens it.
+	Requires []string `json:"requires"`
+}
+
+// membershipRequirements reads what an organization asks of a member's
+// sign-in from its settings (an unreadable policy is reported as both).
+func membershipRequirements(t *tenantdom.Tenant, role string) []string {
+	out := []string{}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return []string{requireTwoFactor, requireIdentityProvider}
+	}
+	if sec.MFARequiredFor(role) {
+		out = append(out, requireTwoFactor)
+	}
+	if sec.SSOEnforced && role != string(tenantdom.RoleOwner) {
+		out = append(out, requireIdentityProvider)
+	}
+	return out
+}
+
+const (
+	requireTwoFactor        = "two_factor"
+	requireIdentityProvider = "identity_provider"
+)
+
+// MembershipAdmitter answers, per organization of the caller, what the
+// organization's rules say about the current session (auth.AuthService).
+type MembershipAdmitter interface {
+	MembershipAdmission(ctx context.Context, userID, sessionID string) (map[string]error, error)
+}
+
+// SetMembershipAdmission wires the per-membership admission of
+// GET /users/me/tenants.
+func (h *UserHandler) SetMembershipAdmission(a MembershipAdmitter) { h.admission = a }
+
+// admissionOpen: the organization's token request would admit the session.
+const admissionOpen = "open"
+
+// admissionCode is the token request's own answer as a code: "open", the
+// refusal's API code, or "" for an error the table does not know.
+func admissionCode(err error) string {
+	if err == nil {
+		return admissionOpen
+	}
+	if entry, ok := lookupAuthError(err); ok {
+		return string(entry.Code)
+	}
+	return ""
 }
 
 // GetMyTenants returns all tenants the current user belongs to.
@@ -369,10 +432,37 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
+	h.addAdmission(r.Context(), localUser.ID().String(), response)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// addAdmission fills each row's Admission from the caller's own session: the
+// session id and the user both come from the verified access token. It runs
+// only for an account token (no organization claim): the landing and the
+// welcome page, which choose an organization, are its only readers. A token
+// bound to an organization already passed that organization's rules, and the
+// listing is a hot endpoint, so the per-organization policy chain is not run
+// for it.
+func (h *UserHandler) addAdmission(ctx context.Context, userID string, response []TenantMembershipResponse) {
+	if h.admission == nil || middleware.GetTenantID(ctx) != "" {
+		return
+	}
+	sid := middleware.GetSessionID(ctx)
+	if sid == "" {
+		return
+	}
+	byTenant, err := h.admission.MembershipAdmission(ctx, userID, sid)
+	if err != nil {
+		return
+	}
+	for i := range response {
+		if verdict, ok := byTenant[response[i].ID]; ok {
+			response[i].Admission = admissionCode(verdict)
+		}
+	}
 }
 
 // MyTenantsResponse lists the caller's own memberships as GET
@@ -397,6 +487,7 @@ func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) (
 			Kind:            string(memberKindOrInternal(t.Kind)),
 			AccessExpiresAt: t.ExpiresAt,
 			BlockedReason:   t.BlockedReason(),
+			Requires:        membershipRequirements(t.Tenant, t.Role.String()),
 		}
 	}
 	return response, nil

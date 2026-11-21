@@ -11,7 +11,7 @@ import { ArrowRight, Fingerprint, History, Tags } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailSection, EmptyState, RelativeTime } from '@/features/shared'
+import { DetailSection, RelativeTime } from '@/features/shared'
 import { useAssetIdentifiers, useAssetRenames } from '../hooks/use-asset-identity'
 import {
   deriveAlsoKnownAs,
@@ -47,15 +47,14 @@ function SectionSkeleton() {
   )
 }
 
-function compactEmpty(icon: typeof Fingerprint, title: string, description: string) {
+// An empty section of the tab is a short line, as every other section of it
+// (Data freshness, Coverage, Direct access): no centred icon block.
+function compactEmpty(title: string, description: string) {
   return (
-    <EmptyState
-      icon={icon}
-      title={title}
-      description={description}
-      card={false}
-      className="py-4 [&>p:first-of-type]:text-sm [&>svg]:mb-2 [&>svg]:h-6 [&>svg]:w-6"
-    />
+    <p className="text-sm text-muted-foreground">
+      {title}
+      <span className="block text-xs">{description}</span>
+    </p>
   )
 }
 
@@ -84,7 +83,6 @@ export function AssetIdentitySections({
           <SectionSkeleton />
         ) : aka.length === 0 ? (
           compactEmpty(
-            Tags,
             t('assets.identity.noNames', 'No other names'),
             t('assets.identity.noNamesHint', 'Other hostnames, FQDNs and IPs appear here.')
           )
@@ -119,7 +117,6 @@ export function AssetIdentitySections({
           </p>
         ) : sorted.length === 0 ? (
           compactEmpty(
-            Fingerprint,
             t('assets.identity.noIds', 'No identifiers recorded'),
             t(
               'assets.identity.noIdsHint',
@@ -195,7 +192,6 @@ export function AssetIdentitySections({
           </p>
         ) : renames.length === 0 ? (
           compactEmpty(
-            History,
             t('assets.identity.neverRenamed', 'Never renamed'),
             t('assets.identity.neverRenamedHint', 'Name changes the platform followed appear here.')
           )

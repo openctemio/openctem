@@ -33,6 +33,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/stage"
 	tooldom "github.com/openctemio/openctem/server/pkg/domain/tool"
@@ -231,6 +232,13 @@ func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, host
 				rel.Verify()
 				rels = append(rels, rel)
 			}
+		}
+		// A name never links to an address inside a shared provider range
+		// (research/531): the address serves every customer of the
+		// provider. The port result stays on the address asset (the
+		// provider's), and the name's own DNS answers record the address.
+		if _, provider := edgeaddr.Default().SharedFrontEnd(h.host); provider {
+			continue
 		}
 		if n, ok := names[h.hostname]; ok && n != nil && n.TenantID() == tenantID &&
 			(n.Type() == asset.AssetTypeDomain || n.Type() == asset.AssetTypeSubdomain) &&

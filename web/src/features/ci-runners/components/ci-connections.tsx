@@ -30,7 +30,6 @@ import {
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -52,6 +51,7 @@ import { configNames, refusalsOf, type RefusalFix } from '../lib/connect'
 import type { CITokenRefusal, CITrustConfig } from '../types'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CITrustScopeEntries, manageScopeSupported } from './ci-trust-scope'
+import { CITrustSigningKeysSummary } from './ci-trust-signing-keys'
 import { CITrustRefusals, RefusalDetail, recentRefusals } from './ci-refusals'
 import { SnippetPanel, TrustConfigForm } from './ci-trust-form'
 
@@ -529,6 +529,7 @@ function HealthPanel({
           t('scans.ci.health.noneAccepted', 'No job accepted yet')
         )}
       </p>
+      <CITrustSigningKeysSummary config={config} />
       {config.legacy_audience && config.legacy_audience_until && (
         <p className="break-words text-sm text-warning" data-testid="ci-legacy-audience">
           {t(

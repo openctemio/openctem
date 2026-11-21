@@ -630,9 +630,23 @@ const CARD_HEAD_CONTROL_CLASS =
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
-/** A chip in a value cell: the kit Badge and the named badges, chips and tags. */
+/**
+ * A field that took the whole line for its chip. A chip there is never cut at
+ * its border: the value's own box (`[&>span>*]`, inside the cell's `contents`
+ * span) is at most the line, so a chip that still does not fit (a long
+ * translation on a narrow phone) gives way with an ellipsis, its border whole.
+ * Only on the whole line: on a half line the chip overflows instead, which is
+ * what moves the field onto the whole line.
+ */
+const CARD_WIDE_VALUE_CLASS =
+  '[&>span>*]:max-w-full [&_[data-slot=badge]]:min-w-0 [&_[data-slot=badge]]:shrink [&_[data-slot=badge]:not(:has(svg))]:inline-block [&_[data-slot=badge]:not(:has(svg))]:truncate'
+
+/**
+ * A chip in a value cell: the kit Badge, the named badges, chips and tags, and
+ * the status pills (HealthStatus, TonePill, StatusLozenge).
+ */
 const CARD_CHIP_SELECTOR =
-  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag]'
+  '[data-slot=badge],[data-slot$=-badge],[data-slot$=-chip],[data-slot=tag],[data-slot=health-status],[data-slot=status-lozenge]'
 
 /**
  * One field value of the automatic phone card. A value that is only a switch
@@ -641,7 +655,7 @@ const CARD_CHIP_SELECTOR =
  * over a bare control. The switch keeps its own name and state for a screen
  * reader; the word is for the eye only.
  */
-function CardFieldValue({ children }: { children: React.ReactNode }) {
+function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   const { t } = useTranslation()
   const cellRef = React.useRef<HTMLSpanElement>(null)
   const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
@@ -665,7 +679,13 @@ function CardFieldValue({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect()
   }, [])
   return (
-    <dd className={cn(CARD_VALUE_CLASS, switchOn !== null && 'flex items-center gap-2')}>
+    <dd
+      className={cn(
+        CARD_VALUE_CLASS,
+        wide && CARD_WIDE_VALUE_CLASS,
+        switchOn !== null && 'flex items-center gap-2'
+      )}
+    >
       <span ref={cellRef} className="contents">
         {children}
       </span>
@@ -696,10 +716,11 @@ const PHONE_CARD_FOCUS_CLASS =
  *   says nothing or repeats the title;
  * - one line of at most MOBILE_CARD_FIELDS label/value fields: the first
  *   other columns that say something (no empty or dash-only value, no repeat
- *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS)
+ *   of the title; a switch counts as a value), key figures (CARD_FIGURE_KINDS, `cardFigure`)
  *   before the rest, shown in column order, chosen before paint. A chip
- *   value is never cut: a field whose chip does not fit half the line takes
- *   the whole line and the other field goes on the line under it.
+ *   or a key figure is never cut: a field whose chip or figure does not fit
+ *   half the line takes the whole line and the other field goes on the line
+ *   under it.
  * Every line but the title is one line high whatever its cell draws.
  */
 function AutoMobileCard<TData>({
@@ -757,6 +778,20 @@ function AutoMobileCard<TData>({
     actionsLine: boolean
   } | null>(null)
   const pick = chosen && chosen.of === row.original ? chosen : null
+  // Measured with the fallback font, a field fits that the web font then
+  // widens past its half of the line (a chip cut at its border on a phone):
+  // once the fonts arrive, the card measures again.
+  React.useEffect(() => {
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    if (!fonts || fonts.status === 'loaded') return
+    let live = true
+    void fonts.ready.then(() => {
+      if (live) setChosen(null)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
   React.useLayoutEffect(() => {
     if (pick) return
     const titleText = normalText(titleRef.current?.textContent)
@@ -771,10 +806,12 @@ function AutoMobileCard<TData>({
       const id = field.getAttribute('data-column') ?? ''
       if (fields.length < MOBILE_CARD_FIELDS && valueSays(field.querySelector('dd'), titleText)) {
         fields.push(id)
-        // A chip is never cut (it has no ellipsis): one that overflows its half
-        // of the line gets the whole line, and the other field moves under it.
+        // A chip is never cut (it has no ellipsis), nor a key figure (a cut
+        // "about 1…" says nothing): one that overflows its half of the line
+        // gets the whole line, and the other field moves under it.
         const dd = field.querySelector('dd')
-        if (dd?.querySelector(CARD_CHIP_SELECTOR) && dd.scrollWidth > dd.clientWidth + 1) {
+        const keep = !!dd?.querySelector(CARD_CHIP_SELECTOR) || field.hasAttribute('data-figure')
+        if (dd && keep && dd.scrollWidth > dd.clientWidth + 1) {
           wide.push(id)
         }
       }
@@ -891,7 +928,12 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
-              data-figure={CARD_FIGURE_KINDS.has(kindOf(cell)) ? '' : undefined}
+              data-figure={
+                CARD_FIGURE_KINDS.has(kindOf(cell)) ||
+                (cell.column.columnDef.meta as DataTableColumnMeta | undefined)?.cardFigure
+                  ? ''
+                  : undefined
+              }
               className={cn(
                 'flex min-w-0 items-baseline gap-1.5',
                 pick?.wide.includes(cell.column.id) && 'col-span-2'
@@ -900,7 +942,7 @@ function AutoMobileCard<TData>({
               <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
-              <CardFieldValue>
+              <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>

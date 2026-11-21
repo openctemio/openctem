@@ -100,6 +100,18 @@ type Authority struct {
 	// programsOff: program entries cover nothing (the exclusions could not
 	// be read, so fail closed).
 	programsOff bool
+	// held: entries on a provider's shared addresses the tenant holds until
+	// a person answers them (ProviderHolds). They cover nothing; Held says
+	// a name only they would cover.
+	held []*scopedom.Target
+}
+
+// ProviderHolds answers which of the tenant's active entries it holds
+// because they name a provider's shared addresses and nobody answered them
+// yet (*scope.Service, research/531 D3; empty: none). A held entry covers
+// nothing. An error refuses (fail closed).
+type ProviderHolds interface {
+	HeldProviderEntries(ctx context.Context, tenantID shared.ID, targets []*scopedom.Target) (map[shared.ID]bool, error)
 }
 
 // Load reads the tenant's authority. Both sources are required; a nil one
@@ -129,7 +141,23 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 		}
 	}
 	a := &Authority{targets: kept}
-	if hasProgramEntry(kept) {
+	if ph, ok := targets.(ProviderHolds); ok && len(kept) > 0 {
+		held, err := ph.HeldProviderEntries(ctx, tenantID, kept)
+		if err != nil {
+			return nil, fmt.Errorf("list held provider entries: %w", err)
+		}
+		if len(held) > 0 {
+			a.targets = make([]*scopedom.Target, 0, len(kept))
+			for _, t := range kept {
+				if held[t.ID()] {
+					a.held = append(a.held, t)
+				} else {
+					a.targets = append(a.targets, t)
+				}
+			}
+		}
+	}
+	if hasProgramEntry(a.targets) {
 		pe, ok := targets.(ProgramExclusions)
 		if !ok {
 			a.programsOff = true
@@ -260,6 +288,26 @@ func (a *Authority) CoveredByPrograms(name string, programs map[shared.ID]bool) 
 				continue
 			}
 			if a.coversForm(t, f) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Held reports whether name is not covered, but an entry the tenant holds
+// on a provider's shared addresses would cover it (ProviderHolds): the gate
+// keeps it passive with that reason instead of "no entry".
+func (a *Authority) Held(name string) bool {
+	if a == nil || len(a.held) == 0 {
+		return false
+	}
+	if _, ok := a.Covers(name); ok {
+		return false
+	}
+	for _, f := range MatchForms(name) {
+		for _, t := range a.held {
+			if t.Matches(f) {
 				return true
 			}
 		}

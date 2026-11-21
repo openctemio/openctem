@@ -28,10 +28,10 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/server/internal/app/platformmfa"
 	"github.com/openctemio/openctem/server/internal/app/platformsociallogin"
+	"github.com/openctemio/openctem/server/internal/app/privatedestinations"
 	"github.com/openctemio/openctem/server/internal/app/scanidentity"
 	"github.com/openctemio/openctem/server/internal/app/scopenames"
 	"github.com/openctemio/openctem/server/internal/app/storagequota"
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
@@ -64,10 +64,6 @@ type AdminPlatformSettingsHandler struct {
 	StorageQuota *storagequota.Service
 	Alerts       *platformalert.Service
 	AI           *platformai.Service
-	// ThreatSource is where KEV and EPSS come from; ThreatReadiness reports
-	// how the signed release is doing for them.
-	ThreatSource    *threatsource.Service
-	ThreatReadiness ThreatIntelReadiness
 	// ScanIdentity is the platform layer of the scan identification markers.
 	ScanIdentity *scanidentity.Service
 	SocialLogin  *platformsociallogin.Service
@@ -84,6 +80,8 @@ type AdminPlatformSettingsHandler struct {
 	LeakedSecretStorage *leakedsecretpolicy.Service
 	// ScopeNames is the blocked target names policy and its exceptions.
 	ScopeNames *scopenames.Service
+	// PrivateDestinations are the private ranges outbound requests may reach.
+	PrivateDestinations *privatedestinations.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.

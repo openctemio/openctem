@@ -17,6 +17,13 @@
   :is(.prose, .wmde-markdown) a:is(:hover, :focus-visible) {
     text-decoration-color: currentColor;
   }
+  /* A one-line text that ends in an ellipsis keeps its line: Chrome breaks at
+     a <wbr> (BreakText) even under white-space: nowrap, which turned a table's
+     one-line name into two or more lines. A phone card's title wraps (at most
+     two lines), so there the break opportunities stay. */
+  .truncate wbr:not([data-phone-card] wbr) {
+    display: none;
+  }
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: thin;

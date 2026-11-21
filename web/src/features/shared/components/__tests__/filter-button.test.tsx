@@ -32,7 +32,7 @@ describe('FilterButton', () => {
 
   it('shows the active count inside the button and in its accessible name', () => {
     render(<FilterButton activeCount={3} />)
-    const btn = screen.getByRole('button', { name: 'Filters (3 active)' })
+    const btn = screen.getByRole('button', { name: 'Filters, 3 active' })
     expect(btn).toHaveAttribute('data-active')
     const badge = btn.querySelector('[data-slot="filter-count"]')
     expect(badge).toHaveTextContent('3')
@@ -44,7 +44,7 @@ describe('FilterButton', () => {
 
   it('says 9+ above nine and keeps the exact count in the name', () => {
     render(<FilterButton activeCount={150} />)
-    const btn = screen.getByRole('button', { name: 'Filters (150 active)' })
+    const btn = screen.getByRole('button', { name: 'Filters, 150 active' })
     expect(btn.querySelector('[data-slot="filter-count"]')).toHaveTextContent('9+')
   })
 
@@ -93,7 +93,7 @@ describe('FilterPanelToggle', () => {
         controlsId="x-filters"
       />
     )
-    const [panel, sheet] = screen.getAllByRole('button', { name: 'Filters (2 active)' })
+    const [panel, sheet] = screen.getAllByRole('button', { name: 'Filters, 2 active' })
     // Closed: the panel is not in the page, so nothing to point at.
     expect(panel).not.toHaveAttribute('aria-controls')
     expect(panel).toHaveAttribute('aria-pressed', 'false')

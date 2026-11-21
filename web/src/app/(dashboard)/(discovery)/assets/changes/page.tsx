@@ -467,8 +467,9 @@ export default function AssetChangesPage() {
         <AssetsSectionTabs />
 
         {/* The list's title row: the kind on screen and its one count (the
-            changes of that kind in the period), then Refresh. The value feed
-            counts nothing, so it has no count. */}
+            changes of that kind in the period). The value feed counts
+            nothing, so it has no count. Refresh ends the toolbar, so no line
+            holds it alone on a phone. */}
         <ListTitleRow
           title={kindTitle}
           count={
@@ -484,9 +485,7 @@ export default function AssetChangesPage() {
               />
             )
           }
-        >
-          {!isValues && refreshButton}
-        </ListTitleRow>
+        />
 
         {isValues ? (
           <RecentAssetChanges leading={kindSelect} />
@@ -516,6 +515,7 @@ export default function AssetChangesPage() {
             getRowId={(c) => c.id ?? `${c.asset_id}-${c.changed_at}`}
             showSearch={false}
             toolbarStart={toolbarStart}
+            toolbarEnd={refreshButton}
             manualPagination
             rowCount={total}
             pagination={pagination}

@@ -18,6 +18,13 @@ import (
 // the fetch failed (or was throttled) and nothing usable is cached.
 var ErrJWKSUnavailable = errors.New("jwks unavailable")
 
+// ErrIssuerMismatch means the issuer's discovery document names another
+// issuer (a trailing slash, another host name or path).
+var ErrIssuerMismatch = errors.New("discovery document names another issuer")
+
+// ErrHTTPStatus means the issuer answered with a status other than 200.
+var ErrHTTPStatus = errors.New("unexpected HTTP status")
+
 // ErrKeyNotFound means the JWKS has no key for the token's kid.
 var ErrKeyNotFound = errors.New("no signing key for kid")
 
@@ -74,7 +81,12 @@ func (c *Client) key(ctx context.Context, jwksURI, kid string) (any, error) {
 		return k, nil
 	}
 	if fetchErr != nil || !c.HasKeys(jwksURI) {
-		return nil, fmt.Errorf("%w: %v", ErrJWKSUnavailable, fetchErr)
+		if fetchErr == nil {
+			return nil, ErrJWKSUnavailable
+		}
+		// The cause stays reachable with errors.Is/As (a blocked address, a
+		// TLS or DNS failure, a timeout) so the caller can name its class.
+		return nil, fmt.Errorf("%w: %w", ErrJWKSUnavailable, fetchErr)
 	}
 	return nil, fmt.Errorf("%w %q", ErrKeyNotFound, kid)
 }

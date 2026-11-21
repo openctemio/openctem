@@ -5,7 +5,6 @@ import { Lock, type LucideIcon } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -33,15 +32,10 @@ import { safeInternalHref } from '@/lib/safe-href'
  * The row carries no count: a list says its count once, in its title row
  * (`ListCount`).
  *
- * On a phone (under 768px) nothing folds: the chips scroll sideways in their
- * own strip, with a fade on an edge that has more chips past it, so a chip is
- * never cut without a cue and never hidden behind "+N more". At rest the strip
- * starts at its first chip (scrolled back to the start whenever the chips
- * change), so only its end can fade; a leading chip wider than the strip
- * shortens its text (ellipsis, full text in its title) and keeps its icon and
- * actions. The row clips (`overflow: clip`) rather than hides: a hidden box is
- * still a scroll container that focus or `scrollIntoView` can shift sideways,
- * which cut the first chip at the start with no fade.
+ * On a phone (under 768px) nothing folds and nothing scrolls: the chips wrap
+ * onto as many lines as they need, so no chip is hidden past an edge or behind
+ * "+N more"; a leading chip wider than the row shortens its text (ellipsis,
+ * full text in its title) and keeps its icon and actions.
  *
  * Nothing in the row shrinks under its content, so no element is ever drawn
  * over its neighbour: what does not fit folds into "+N more".
@@ -133,18 +127,8 @@ export function FilterChipsRow({
   const keys = chips.map(keyOf)
   const hasLead = !!leading
   const hasEnd = !!trailing
-  // A phone scrolls the chips sideways instead of folding them.
+  // A phone wraps the chips onto more lines instead of folding them.
   const scroll = useIsMobile()
-  const stripRef = React.useRef<HTMLDivElement>(null)
-  useTabStripScroll(stripRef, scroll)
-
-  // At rest a phone strip starts at its first chip: a new chip set (a filter
-  // added or removed, the leading chip arriving) scrolls it back to the start.
-  const chipSet = JSON.stringify([hasLead, keys])
-  React.useLayoutEffect(() => {
-    const strip = stripRef.current
-    if (scroll && strip && strip.scrollLeft !== 0) strip.scrollLeft = 0
-  }, [scroll, chipSet])
 
   // Re-measure when the row or a fixed block changes size (the leading chip's
   // count arrives after its own request, without re-rendering this row).
@@ -171,8 +155,7 @@ export function FilterChipsRow({
     })
     const total = row.clientWidth
     if (total === 0) return set({ fit: chips.length })
-    // A phone: every chip shows, the leading chip first, in one strip that
-    // scrolls.
+    // A phone: every chip shows, the leading chip first, wrapping.
     if (scroll) return set({ fit: chips.length })
     // A chip never measured yet: show them all once to measure (the row
     // clips, so this never takes a second line).
@@ -206,26 +189,19 @@ export function FilterChipsRow({
       data-testid={testId}
       data-bare={bare ? '' : undefined}
       className={cn(
-        // One line of one height: it never wraps and never grows.
-        'flex h-control w-full min-w-0 flex-nowrap items-center gap-2 overflow-clip max-md:h-control-touch',
+        // One line of one height: it never wraps and never grows. On a phone
+        // the chips wrap onto more lines instead (none is hidden).
+        'flex h-control w-full min-w-0 flex-nowrap items-center gap-2 overflow-clip max-md:h-auto max-md:min-h-control-touch',
         className
       )}
     >
-      {/* The strip: on a phone the leading chip and the chips scroll sideways
-          together (fade on an edge with more past it); elsewhere it draws no
-          box and the row folds. Always mounted, so the fade attaches once. */}
+      {/* The strip: on a phone the leading chip and the chips wrap together;
+          elsewhere it draws no box and the row folds. */}
       <div
-        ref={stripRef}
         data-slot="filter-chips-strip"
-        data-scroll={scroll ? '' : undefined}
+        data-wrap={scroll ? '' : undefined}
         className={
-          scroll
-            ? cn(
-                // The padding keeps focus rings inside the scroll box.
-                'no-scrollbar -my-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain py-1',
-                EDGE_FADE_X_CLASS
-              )
-            : 'contents'
+          scroll ? 'flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 py-1' : 'contents'
         }
       >
         {leading ? (
@@ -235,7 +211,7 @@ export function FilterChipsRow({
               'flex',
               // In the phone strip it keeps its width up to the strip's, then
               // its text shortens (never cut at either edge).
-              scroll ? 'max-w-full shrink-0' : 'max-w-[50%] min-w-0 shrink-0'
+              scroll ? 'max-w-full min-w-0 shrink-0' : 'max-w-[50%] min-w-0 shrink-0'
             )}
           >
             <div
@@ -250,7 +226,10 @@ export function FilterChipsRow({
         <ul
           ref={listRef}
           aria-label={label ?? t('common.filterChips.label', 'Active filters')}
-          className="flex shrink-0 flex-nowrap items-center gap-1.5 empty:hidden"
+          className={cn(
+            'flex items-center gap-1.5 empty:hidden',
+            scroll ? 'min-w-0 flex-wrap' : 'shrink-0 flex-nowrap'
+          )}
         >
           {shown.map((chip, i) => (
             <li key={keys[i]} data-chip-key={keys[i]} className="flex shrink-0">

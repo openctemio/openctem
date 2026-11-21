@@ -68,6 +68,9 @@ type Service struct {
 	ciTrustLinks scopedom.CITrustLinkRepository
 	// ledgerTemplates lists the approved template versions for snapshots.
 	ledgerTemplates LedgerTemplateSource
+	// providers keeps the provider addresses card's decisions
+	// (provider_addresses.go).
+	providers ProviderAddressStore
 }
 
 // NewService creates a new Service.

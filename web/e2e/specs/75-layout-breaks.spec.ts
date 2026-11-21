@@ -72,10 +72,14 @@ const CI_ROUTES = [
   '/scans/approvals',
   '/sensors',
   '/my-work',
+  '/settings/service-accounts',
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
+  '/scope',
+  '/settings/general',
   '/settings/members',
+  '/settings/roles',
   '/settings/audit-log',
   '/settings/api-keys',
   '/settings/security',
@@ -84,6 +88,9 @@ const CI_ROUTES = [
   '/settings/risk-scoring',
   '/attack-surface/discovery',
   '/settings/scanning/scan-approval',
+  '/settings/sla-policies',
+  '/settings/scanning/tool-sources',
+  '/settings/teams',
   '/notifications',
   '/oauth/device',
 ]
@@ -145,11 +152,98 @@ function scanGovernance(scen: Scenario) {
     presets: { light: [], standard: [], strict: [] },
   }
 }
-const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }> = {
-  '/settings/scanning/scan-approval': {
-    url: '**/api/v1/organization/settings/scan-governance',
-    body: scanGovernance,
-  },
+/** Presets of the risk scoring page: the known names and one long custom name that must wrap. */
+function riskPresets(scen: Scenario) {
+  const names = [
+    'default',
+    'banking',
+    'healthcare',
+    'ecommerce',
+    'government',
+    'legacy',
+    'regional-payment-processors-and-card-schemes-extended-review',
+  ]
+  const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : names.length
+  return names.slice(0, n).map((name) => ({ name, config: {} }))
+}
+/** A weighted model with every control on screen: the seed's default model hides most of them. */
+function riskSettings() {
+  return {
+    preset: 'custom',
+    score_composition_mode: 'multiply',
+    floor_unowned_at_p2: true,
+    weights: { exposure: 30, criticality: 25, findings: 30, ctem: 15 },
+    exposure_scores: { public: 100, restricted: 70, private: 40, isolated: 10, unknown: 50 },
+    exposure_multipliers: { public: 1.5, restricted: 1.2, private: 1, isolated: 0.5, unknown: 1 },
+    criticality_scores: { critical: 100, high: 75, medium: 50, low: 25, none: 0 },
+    finding_impact: {
+      mode: 'severity_weighted',
+      per_finding_points: 5,
+      finding_cap: 20,
+      severity_weights: { critical: 10, high: 7, medium: 4, low: 2, info: 0 },
+    },
+    ctem_points: {
+      enabled: true,
+      internet_accessible: 15,
+      pii_exposed: 10,
+      phi_exposed: 15,
+      high_risk_compliance: 10,
+      restricted_data: 10,
+    },
+    risk_levels: { critical_min: 80, high_min: 60, medium_min: 40, low_min: 20 },
+  }
+}
+/**
+ * Tool source keys: long source names and tool lists, a set key that was never
+ * used, one rotated by a person with a long name, and a source with no key.
+ */
+function toolSources(scen: Scenario) {
+  const sources = [
+    {
+      id: 'alienvault',
+      name: 'AlienVault OTX',
+      tools: ['subfinder', 'amass', 'httpx', 'nuclei', 'katana'],
+      format: 'key',
+      key: {
+        set: true,
+        last4: 'ab12',
+        enabled: true,
+        updated_at: '2026-11-10T08:00:00Z',
+        updated_by_name: 'Nguyễn Thị Minh Khuê Hoàng Phương Thảo',
+        last_used_at: '2026-11-19T21:30:00Z',
+      },
+    },
+    {
+      id: 'securitytrails-enterprise-passive-dns',
+      name: 'SecurityTrails passive DNS and historical records',
+      tools: ['subfinder'],
+      format: 'key',
+      key: { set: true, last4: '9f0e', enabled: false, updated_at: '2026-10-01T08:00:00Z' },
+    },
+    {
+      id: 'censys',
+      name: 'Censys',
+      tools: ['subfinder', 'amass'],
+      format: 'pair',
+      format_hint: 'TOKEN:ORG_ID',
+      key: null,
+    },
+    { id: 'bevigil', name: 'BeVigil', tools: ['subfinder'], format: 'key', key: null },
+  ]
+  return { sources: sources.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : sources.length) }
+}
+const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
+  '/settings/risk-scoring': [
+    { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
+    { url: '**/api/v1/tenants/*/settings/risk-scoring', body: riskSettings },
+  ],
+  '/settings/scanning/scan-approval': [
+    {
+      url: '**/api/v1/organization/settings/scan-governance',
+      body: scanGovernance,
+    },
+  ],
+  '/settings/scanning/tool-sources': [{ url: '**/api/v1/tool-sources', body: toolSources }],
 }
 
 /**
@@ -165,7 +259,6 @@ const LOPSIDED_DEBT = new Set([
   '/findings/imports',
   '/scans/runs',
   '/attack-surface/technologies',
-  '/settings/audit-log',
   '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
@@ -192,6 +285,43 @@ const CUT_CELL_DEBT = new Set([
 ])
 const inDebt = (route: string, m: string) =>
   CUT_CELL_DEBT.has(route) && m.startsWith('table cell cut')
+
+/**
+ * Pages whose in-page tab strip is cut at 390 px (/sensors "Enrollment
+ * tokens", /my-work, /settings/members) or whose table action buttons are cut
+ * by the table scroller's edge at 1024 px (/exposures "Actions for ...",
+ * /sensors "Jobs", /settings/audit-log "Result"), found when the sideways
+ * strip and scroller checks were added (owner report 2026-11-20). Only the
+ * `clipped` lines about a sideways strip or a scroller's edge are skipped for
+ * them. Each moves onto the phone tab rule or pins its actions and leaves this
+ * list; it only shrinks, and a route not on it fails on its first such line.
+ */
+const SIDEWAYS_DEBT = new Set([
+  '/sensors',
+  '/my-work',
+  '/settings/members',
+  '/exposures',
+  '/settings/audit-log',
+])
+const SIDEWAYS_LINE = /sideways strip|scroller's edge/
+
+/**
+ * Pages whose table must fit its frame at every width: a column is dropped,
+ * never cut off or scrolled sideways (owner report 2026-11-20, tool source keys).
+ */
+const NO_SIDE_SCROLL = new Set(['/settings/scanning/tool-sources'])
+
+/** Scrolling frames inside main that hold more than they show. */
+async function sideScrolling(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('main *')]
+      .filter((el) => {
+        const o = getComputedStyle(el).overflowX
+        return (o === 'auto' || o === 'scroll') && el.scrollWidth > el.clientWidth + 1
+      })
+      .map((el) => `${el.tagName.toLowerCase()} ${el.scrollWidth}>${el.clientWidth}`)
+  )
+}
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
@@ -323,8 +453,7 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
       for (const v of variants()) {
         await page.unrouteAll({ behavior: 'ignoreErrors' })
         await prepare(page, v, baseURL!)
-        const extra = ROUTE_DATA[route]
-        if (extra) {
+        for (const extra of ROUTE_DATA[route] ?? []) {
           await page.route(extra.url, (r) =>
             r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
           )
@@ -341,6 +470,9 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
           scope = layer
         }
         const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+        if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
+          expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+        }
         report[v.tag] = found
         if (OUT || formatBreaks(found).length) {
           await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
@@ -353,7 +485,11 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
         for (const kind of BREAK_KINDS) {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
           const got =
-            kind === 'clipped' ? found.clipped.filter((m) => !inDebt(route, m)) : found[kind]
+            kind === 'clipped'
+              ? found.clipped.filter(
+                  (m) => !inDebt(route, m) && !(SIDEWAYS_DEBT.has(route) && SIDEWAYS_LINE.test(m))
+                )
+              : found[kind]
           expect.soft(got, `${route} ${tag}: ${kind}`).toEqual([])
         }
       }

@@ -24,12 +24,16 @@ const (
 	RefusalDependency    = "dependency"
 	RefusalMonitorOnly   = "monitor_only"
 	RefusalWildcardOnly  = "wildcard_only"
-	RefusalNoEntry       = "no_entry"
-	RefusalEntryPending  = "entry_pending"
-	RefusalEntryExpired  = "entry_expired"
-	RefusalEntryInactive = "entry_inactive"
-	RefusalTierExceeds   = "tier_exceeds"
-	RefusalProofRequired = "proof_required"
+	// RefusalProviderAddress: only scope entries on a provider's shared
+	// addresses cover the target, and the organization holds them until a
+	// person answers them on the Scope page (research/531 D3).
+	RefusalProviderAddress = "provider_address"
+	RefusalNoEntry         = "no_entry"
+	RefusalEntryPending    = "entry_pending"
+	RefusalEntryExpired    = "entry_expired"
+	RefusalEntryInactive   = "entry_inactive"
+	RefusalTierExceeds     = "tier_exceeds"
+	RefusalProofRequired   = "proof_required"
 	// RefusalProgramPlatform: only bug-bounty program entries cover the
 	// target, and platform sensors never probe those (RFC-065 §8).
 	RefusalProgramPlatform = "program_platform"
@@ -153,6 +157,7 @@ var RefusalMessages = map[string]string{
 	RefusalMonitorOnly:         "This asset is watched passively only.",
 	RefusalWildcardOnly:        "This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.",
 	RefusalNoEntry:             "No scope entry covers this target.",
+	RefusalProviderAddress:     "This address is a provider's shared infrastructure, used by its other customers too. Your organization holds such scope entries until someone answers them on the Scope page (move out of scope or keep scanning).",
 	RefusalEntryPending:        "The scope entry that covers this target is waiting for approval.",
 	RefusalEntryExpired:        "The scope entry that covered this target has expired.",
 	RefusalEntryInactive:       "The scope entry that covers this target is deactivated.",

@@ -64,9 +64,7 @@ func TestIsIPBlocked_NamedPrivateRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prevAll, prevNets := allowPrivate, allowedPrivateCIDRs
-	allowPrivate, allowedPrivateCIDRs = false, nets
-	defer func() { allowPrivate, allowedPrivateCIDRs = prevAll, prevNets }()
+	setPolicyForTest(t, &egressPolicy{env: nets})
 
 	for ip, blocked := range map[string]bool{
 		"10.20.1.5":     false,
