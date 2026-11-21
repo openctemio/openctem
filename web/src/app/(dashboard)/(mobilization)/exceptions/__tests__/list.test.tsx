@@ -89,6 +89,12 @@ describe('Exceptions list', () => {
     expect(screen.queryByText(/u-req/)).not.toBeInTheDocument()
   })
 
+  it('gives the name column a floor so a long title never widens the table past its frame', () => {
+    render(<ExceptionsPage />)
+    const header = screen.getAllByRole('columnheader').find((h) => /^Name/.test(h.textContent ?? ''))
+    expect(header?.style.minWidth).toBe('192px')
+  })
+
   it('keeps only the rules ending within the window of the URL', () => {
     at('ends=7')
     render(<ExceptionsPage />)
