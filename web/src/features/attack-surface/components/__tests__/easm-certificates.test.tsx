@@ -23,7 +23,7 @@ vi.mock('@/lib/permissions', async (orig) => {
 const clip = vi.hoisted(() => ({ copyToClipboard: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/lib/clipboard', () => clip)
 
-const { EASMCertificates } = await import('../easm-certificates')
+const { EASMCertificates, CertificatePhoneCard } = await import('../easm-certificates')
 const { certificatesCsv } = await import('../../lib/certificates')
 
 const wrap = (ui: ReactNode) =>
@@ -130,5 +130,16 @@ describe('certificatesCsv', () => {
     expect(lines[1]).toContain(`'=HYPERLINK`)
     expect(lines[1]).toContain(`'+cmd`)
     expect(lines[1]).toContain(FP)
+  })
+})
+
+describe('CertificatePhoneCard', () => {
+  it('shows subject, issuer, expiry with its status and the fingerprint, each on its own line', () => {
+    wrap(<CertificatePhoneCard row={row({ is_wildcard: true }) as never} />)
+    expect(screen.getByText('www.example.com')).toBeInTheDocument()
+    expect(screen.getByText('Wildcard')).toBeInTheDocument()
+    expect(screen.getByText('Issuer Example CA, Example Trust')).toBeInTheDocument()
+    expect(screen.getByText(/^Expires on /)).toBeInTheDocument()
+    expect(screen.getByTitle(FP)).toBeInTheDocument()
   })
 })

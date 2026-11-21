@@ -293,21 +293,18 @@ export default function ScopePage() {
               {t('scope.policy', 'Policy')}
             </Link>
           </Button>
+          <ScopeCheckTool />
           {primary}
         </PageHeader>
         <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-          <MetricStrip
-            className="min-w-0 flex-1"
-            loading={stats.isLoading}
-            error={
-              stats.error ? t('scope.strip.failed', 'Could not read the scope summary.') : undefined
-            }
-            items={metrics}
-          />
-          <ScopeCheckTool />
-        </div>
+        <MetricStrip
+          loading={stats.isLoading}
+          error={
+            stats.error ? t('scope.strip.failed', 'Could not read the scope summary.') : undefined
+          }
+          items={metrics}
+        />
 
         {/* Scope entries on provider shared addresses: only while there is
             something to decide. */}

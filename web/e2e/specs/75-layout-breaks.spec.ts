@@ -66,6 +66,10 @@ const CI_ROUTES = [
   '/findings/ready-to-close',
   '/findings/imports',
   '/exceptions',
+  '/exposures/vulnerabilities',
+  '/exposures/vulnerabilities?tab=catalog',
+  '/attack-surface/certificates',
+  '/attack-surface/changes',
   '/vulnerabilities',
   '/components',
   '/exposures',
@@ -331,6 +335,86 @@ function receipts(scen: Scenario) {
   }
 }
 
+/** Certificates with long subjects, a wildcard, a self-signed one and every status. */
+function certificates(scen: Scenario) {
+  const day = 86_400_000
+  const rows = Array.from({ length: 25 }, (_, i) => {
+    const status = (['expired', 'expiring_soon', 'ok', 'ok', 'unknown'] as const)[i % 5]
+    const days = status === 'expired' ? -(i + 3) : status === 'expiring_soon' ? i + 2 : 90 + i
+    return {
+      asset_id: `00000000-0000-4000-8000-0000000c${String(i).padStart(4, '0')}`,
+      name: `cert-${i}`,
+      subject_cn:
+        i % 4 === 0
+          ? `payments-gateway-eu-west-production-cluster-${i}.internal.example.com`
+          : i % 4 === 1
+            ? '*.example.com'
+            : `www${i}.example.com`,
+      issuer_cn:
+        i % 3 === 0 ? 'Example Trust Services Issuing CA 2 (Extended Validation)' : 'Example CA R3',
+      issuer_org: i % 3 === 0 ? 'Example Trust Services Limited' : 'Example Certificate Authority',
+      fingerprint_sha256: `${'ab12cd34'.repeat(8).slice(0, 63)}${i % 10}`,
+      not_before: new Date(Date.now() - (300 - days) * day).toISOString(),
+      not_after: new Date(Date.now() + days * day).toISOString(),
+      status,
+      days_to_expiry: days,
+      is_self_signed: i % 7 === 3,
+      is_wildcard: i % 4 === 1,
+      first_seen: new Date(Date.now() - (i + 1) * 5 * 3600_000).toISOString(),
+      last_seen: new Date(Date.now() - i * 3600_000).toISOString(),
+    }
+  })
+  const data = rows.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : rows.length)
+  return { data, total: scen === 'rich' ? 312 : data.length, page: 1, per_page: 20 }
+}
+function certificateStats(scen: Scenario) {
+  if (scen === 'empty') return { total: 0, expired: 0, expiring_soon: 0, ok: 0, unknown: 0 }
+  return { total: 312, expired: 41, expiring_soon: 18, ok: 240, unknown: 13 }
+}
+
+/** Attack surface changes of every kind, with long asset names and values. */
+function easmChanges(scen: Scenario) {
+  const kinds = [
+    'dns_dangling',
+    'exposure_new',
+    'port_opened',
+    'host_added',
+    'cert_expiring',
+    'cert_changed',
+    'dns_changed',
+    'tech_changed',
+    'port_closed',
+    'host_removed',
+    'future_kind',
+  ]
+  const items = Array.from({ length: 24 }, (_, i) => ({
+    id: `chg-${i}`,
+    kind: kinds[i % kinds.length],
+    asset_id: i % 6 === 5 ? '' : `00000000-0000-4000-8000-0000000d${String(i).padStart(4, '0')}`,
+    asset_name:
+      i % 6 === 5
+        ? ''
+        : i % 3 === 0
+          ? `customer-portal-staging-eu-central-edge-${i}.internal.example.com`
+          : `host${i}.example.com`,
+    severity: i % 4 === 1 ? 'high' : undefined,
+    exposure_id: i % 4 === 1 ? `exp-${i}` : undefined,
+    new: i % 4 === 1 ? 'Exposed administration interface without authentication' : undefined,
+    added: i % 5 === 2 ? ['443/tcp', '8443/tcp', '9200/tcp'] : [],
+    removed: i % 5 === 3 ? ['80/tcp'] : [],
+    at: new Date(Date.now() - (i + 1) * 2 * 3600_000).toISOString(),
+  }))
+  const data = items.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : items.length)
+  return {
+    items: data,
+    total: data.length,
+    counts: Object.fromEntries(
+      kinds.slice(0, 10).map((k, i) => [k, scen === 'empty' ? 0 : 3 + i * 11])
+    ),
+    next_cursor: scen === 'rich' ? 'cursor-2' : undefined,
+  }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
@@ -345,6 +429,11 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
   '/settings/scanning/tool-sources': [{ url: '**/api/v1/tool-sources', body: toolSources }],
   '/exceptions': [{ url: '**/api/v1/suppressions', body: suppressions }],
   '/findings/imports': [{ url: '**/api/v1/findings/imports?*', body: receipts }],
+  '/attack-surface/certificates': [
+    { url: '**/api/v1/attack-surface/certificates?*', body: certificates },
+    { url: '**/api/v1/attack-surface/certificates/stats*', body: certificateStats },
+  ],
+  '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
 }
 
 /**
