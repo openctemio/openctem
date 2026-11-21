@@ -23,7 +23,7 @@ import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 import { SelectionSummary, type ScanReadiness } from './target-picker/selection-summary'
-import { ScannerSelect } from './scanner-select'
+import { ScannerSelect, useScannerOptions } from './scanner-select'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
 const MAX_TARGETS = 1000
@@ -52,6 +52,11 @@ interface ScanAssetsDialogProps {
   title?: string
   /** Called after a scan is successfully triggered. */
   onSuccess?: () => void
+  /**
+   * Preselect the first scanner with one of these capabilities ("Crawl this
+   * site" picks a crawler); the person can still pick another.
+   */
+  preferCapabilities?: string[]
 }
 
 export function ScanAssetsDialog({
@@ -60,10 +65,23 @@ export function ScanAssetsDialog({
   candidates,
   title,
   onSuccess,
+  preferCapabilities,
 }: ScanAssetsDialogProps) {
   const { t } = useTranslation()
   const router = useRouter()
-  const [scannerName, setScannerName] = useState('')
+  const [picked, setScannerName] = useState('')
+  // The same request ScannerSelect makes (one SWR key), read for the preference.
+  const { options: scannerChoices } = useScannerOptions()
+  const preferred = useMemo(
+    () =>
+      preferCapabilities?.length
+        ? (scannerChoices.find((tool) =>
+            tool.capabilities?.some((c) => preferCapabilities.includes(c))
+          )?.name ?? '')
+        : '',
+    [scannerChoices, preferCapabilities]
+  )
+  const scannerName = picked || preferred
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const [readiness, setReadiness] = useState<ScanReadiness | null>(null)
