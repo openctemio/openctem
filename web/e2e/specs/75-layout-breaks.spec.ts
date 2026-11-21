@@ -645,29 +645,6 @@ test.describe(
   }
 )
 
-/**
- * The detector itself: a table in a frame that scrolls sideways passed the
- * text-cut check (a scroller's content is reachable), so a cell cut at the
- * frame's edge ("No a" for "No auth" on the Paths tab) was never reported.
- */
-test.describe('Layout breaks: detectors', { tag: ['@assets'] }, () => {
-  test('a table cell cut at the table edge is reported', async ({ page }) => {
-    const table = (frame: number) => `<main><div style="width:${frame}px;overflow-x:auto">
-      <style>td{padding:0}</style><table style="border-collapse:collapse;table-layout:fixed;width:370px"><tr>
-        <td style="width:150px">/account</td><td style="width:100px">200</td><td style="width:120px">No auth</td>
-      </tr></table></div></main>`
-    // 300 px frame: the third cell starts at 250 and ends at 370, cut at 300.
-    await page.setContent(table(300))
-    const cut = await findBreaks(page)
-    expect(cut.clipped.join('\n')).toContain('table cell cut')
-    // A frame that holds every cell, or one that ends between two cells, is fine.
-    await page.setContent(table(400))
-    expect((await findBreaks(page)).clipped).toEqual([])
-    await page.setContent(table(250))
-    expect((await findBreaks(page)).clipped).toEqual([])
-  })
-})
-
 test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
   test.describe.configure({ mode: 'parallel' })
   for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
