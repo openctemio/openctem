@@ -91,7 +91,9 @@ describe('Exceptions list', () => {
 
   it('gives the name column a floor so a long title never widens the table past its frame', () => {
     render(<ExceptionsPage />)
-    const header = screen.getAllByRole('columnheader').find((h) => /^Name/.test(h.textContent ?? ''))
+    const header = screen
+      .getAllByRole('columnheader')
+      .find((h) => /^Name/.test(h.textContent ?? ''))
     expect(header?.style.minWidth).toBe('192px')
   })
 
