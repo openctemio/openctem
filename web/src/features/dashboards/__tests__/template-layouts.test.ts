@@ -45,9 +45,63 @@ describe('template layouts', () => {
     })
   }
 
+  it('the CTEM default reads like the board: key figures, stages, Fix next beside new and fixed', () => {
+    const ctem = DASHBOARD_TEMPLATES.find((t) => t.key === 'ctem')!
+    expect([2, 3].map((i) => metricOf(ctem, i))).toEqual(['fix.next', 'flow.new_vs_fixed'])
+    expect(ctem.widgets.slice(2, 4).map((x) => [x.w, x.h])).toEqual([
+      [6, 2],
+      [6, 2],
+    ])
+    // The flow carries the stages; the template holds the stage row instead.
+    expect(ctem.widgets.map((_, i) => metricOf(ctem, i))).not.toContain('exposure.flow')
+  })
+
+  it('a list beside a chart is half width, two rows; a half list beside a bar list is a mixed band', () => {
+    const w = (id: string, metric: string, viz: string, ww: number, h: number) => ({
+      widget_type: 'metric',
+      w: ww,
+      h,
+      config: {
+        v: 2,
+        id,
+        data: { kind: 'metric', metric, filter: {}, time: {} },
+        viz: { type: viz },
+      },
+    })
+    const base = [w('k', 'exposure.kpis', 'kpi', 12, 1)]
+    const ok: DashboardTemplate = {
+      key: 'ctem',
+      columns: 4,
+      widgets: [
+        ...base,
+        w('a', 'fix.next', 'list', 6, 2),
+        w('b', 'flow.new_vs_fixed', 'diverging', 6, 2),
+      ],
+    }
+    expect(templateDefects(ok)).toEqual([])
+    const wrongSize: DashboardTemplate = {
+      ...ok,
+      widgets: [
+        ...base,
+        w('a', 'fix.next', 'list', 6, 3),
+        w('b', 'flow.new_vs_fixed', 'diverging', 6, 2),
+      ],
+    }
+    expect(templateDefects(wrongSize)).toContain('a: list at 6x3, allowed 6x2, 12x3')
+    const mixed: DashboardTemplate = {
+      ...ok,
+      widgets: [
+        ...base,
+        w('a', 'fix.next', 'list', 6, 2),
+        w('b', 'surface.new_assets', 'bar', 6, 1),
+      ],
+    }
+    expect(templateDefects(mixed)).toContain('mixed heights in a+b')
+  })
+
   it('the strip-led templates open on the key figures, then their hero', () => {
     const ctem = DASHBOARD_TEMPLATES.find((t) => t.key === 'ctem')!
-    expect([metricOf(ctem, 0), metricOf(ctem, 1)]).toEqual(['exposure.kpis', 'exposure.flow'])
+    expect([metricOf(ctem, 0), metricOf(ctem, 1)]).toEqual(['exposure.kpis', 'ctem.loop'])
     const exec = DASHBOARD_TEMPLATES.find((t) => t.key === 'executive')!
     expect([metricOf(exec, 0), metricOf(exec, 1)]).toEqual([
       'exposure.kpis',

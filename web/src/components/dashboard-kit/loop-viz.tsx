@@ -20,10 +20,12 @@ export function LoopViz({ result }: { result: StagesResult }) {
   const { t, locale } = useTranslation()
   const label = useLabel()
   const stateText = useStageStateText()
+  // The columns follow the card, not the window: a card beside the sidebar at
+  // 1024 px is 660 px wide and five stages did not fit in it.
   const chart = (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="@container overflow-hidden rounded-lg border">
       <ol
-        className="-ms-px -mt-px grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
+        className="-ms-px -mt-px grid grid-cols-2 @min-[440px]:grid-cols-3 @min-[680px]:grid-cols-5"
         aria-label={t('dashboardKit.stage.listLabel', 'Stages')}
       >
         {result.stages.map((s, i) => {
@@ -60,7 +62,7 @@ export function LoopViz({ result }: { result: StagesResult }) {
                 {s.detail && (
                   <DrillLink
                     to={s.detail.drill}
-                    className="w-fit text-muted-foreground hover:underline"
+                    className="w-fit max-w-full text-muted-foreground hover:underline"
                   >
                     {t(s.detail.label_key, '{n}', { n: formatCount(s.detail.value, locale) })}
                   </DrillLink>
@@ -71,7 +73,9 @@ export function LoopViz({ result }: { result: StagesResult }) {
                   s.flag_key && <span className="text-muted-foreground">{t(s.flag_key)}</span>
                 )}
               </div>
-              <span className="mt-auto inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
+              {/* max-w-full: at 1024px a cell is about 110 px wide and "Needs attention"
+                  ran 6 px past it; the status wraps instead. */}
+              <span className="mt-auto inline-flex w-fit max-w-full items-center gap-1 rounded-2xl border px-2 py-0.5 text-xs">
                 <StageStateIcon state={s.state} />
                 {s.value == null && s.reason_key ? t(s.reason_key) : stateText(s.state)}
               </span>

@@ -11,6 +11,9 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver
 
+vi.mock('@/features/remediation-hub/api/use-owner-names', () => ({
+  useOwnerNames: () => ({ user: () => undefined }),
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/exceptions',
