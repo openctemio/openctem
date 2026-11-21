@@ -15,7 +15,7 @@ function PlatformUserActions(props: Omit<Parameters<typeof Actions>[0], 'part'>)
     </>
   )
 }
-import { PlatformUserBadges } from '../components/platform-user-badges'
+import { PlatformUserBadges, marksThatFit } from '../components/platform-user-badges'
 import type { PlatformUserDetail } from '../types'
 
 vi.mock('../api/use-platform-users', async (orig) => ({
@@ -185,6 +185,36 @@ describe('PlatformUserBadges', () => {
     expect(screen.getByText('Locked')).toBeInTheDocument()
     expect(screen.getByText('Email not verified')).toBeInTheDocument()
     expect(screen.getByText('MFA')).toBeInTheDocument()
+  })
+
+  it('in a list row shows the state first and names what does not fit in "+n"', () => {
+    render(
+      <PlatformUserBadges
+        oneLine
+        user={account({ locked: true, blocked: true, email_verified: false, mfa_enabled: true })}
+      />
+    )
+    const [phone, desktop] = [...document.querySelectorAll('[data-slot="platform-user-badges"]')]
+    // A phone card's chip: the state and how many more.
+    expect([...phone.children].map((c) => c.textContent)).toEqual([
+      'Blocked',
+      '+3Locked, Email not verified, MFA',
+    ])
+    // A desktop row: the marks that fit, then "+n" naming the others.
+    const shown = [...desktop.children].map((c) => c.textContent)
+    expect(shown[0]).toBe('Blocked')
+    const more = shown[shown.length - 1]!
+    expect(more).toMatch(/^\+\d/)
+    expect(more).toContain('MFA')
+    expect(shown.length).toBeLessThan(5)
+  })
+})
+
+describe('marksThatFit', () => {
+  it('keeps every mark that fits, and room for "+n" when some do not', () => {
+    expect(marksThatFit(['Active', 'MFA'])).toBe(2)
+    expect(marksThatFit(['Locked', 'Blocked', 'Email not verified', 'MFA'])).toBe(2)
+    expect(marksThatFit(['Quản trị viên trang quản trị', 'MFA'])).toBe(1)
   })
 })
 
