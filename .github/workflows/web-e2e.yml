@@ -35,7 +35,7 @@ name: Web E2E
 # nightly and dispatch: all of them. Pull request: the @smoke set, or with
 # impact selection the changed files mapped to area tags with
 # web/e2e/impact-map.yml (the @smoke specs always run; a shared or unmapped
-# path runs everything; only docs and unit tests select nothing). The specs are split into 1 to 4 shards
+# path runs everything; only docs and unit tests select nothing). The specs are split into 1 to 5 shards
 # by their recorded durations (artifact `e2e-timings` of the last green
 # develop run, the median for a spec without one), longest first, and the
 # every-page request budget check runs only when the @budget specs are
@@ -47,7 +47,7 @@ name: Web E2E
 #            commits with the same inputs), by digest. `build` pulls them once
 #            and hands the shards one artifact, so no shard builds. A fork pull
 #            request builds them in `build` (bake, GitHub Actions layer cache).
-#   shards   Playwright runs the specs `plan` assigned to each shard (1 to 4)
+#   shards   Playwright runs the specs `plan` assigned to each shard (1 to 5)
 #            plus, when selected, one job for the every-page request budget
 #            check, each against its own stack; 25 minute cap each. The first
 #            failing shard cancels the others (matrix fail-fast, plus
