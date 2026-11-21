@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/filterspec"
@@ -95,8 +96,7 @@ func baseWhere(alias string, t factTable, scope dashboard.ReadScope) *whereBuild
 	}
 	if scope.CampaignViewer != nil {
 		user := b.arg(scope.CampaignViewer.String())
-		member := fmt.Sprintf(`%s.pentest_campaign_id IN (SELECT pcm.campaign_id FROM pentest_campaign_members pcm
-			WHERE pcm.user_id = %s AND pcm.tenant_id = $1)`, alias, user)
+		member := fmt.Sprintf(`%s.pentest_campaign_id IN (%s)`, alias, campaignaccess.MemberCampaignsSQL("$1", user))
 		switch t {
 		case tableState:
 			b.add(fmt.Sprintf("(%s.source <> 'pentest' OR %s)", alias, member))
@@ -389,7 +389,7 @@ func (r *DashboardWidgetRepository) Rank(ctx context.Context, scope dashboard.Re
 
 // CampaignsOf implements dashboard.FactReader.
 func (r *DashboardWidgetRepository) CampaignsOf(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT campaign_id FROM pentest_campaign_members WHERE tenant_id = $1 AND user_id = $2`,
+	rows, err := r.db.QueryContext(ctx, campaignaccess.MemberCampaignsSQL("$1", "$2"),
 		tenantID.String(), userID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list campaign memberships: %w", err)

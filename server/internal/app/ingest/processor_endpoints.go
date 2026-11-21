@@ -66,7 +66,12 @@ func markExcluded(rules *scopeapp.WebRules, obs []webendpoint.Observation) {
 type endpointPlan struct {
 	byOrigin map[string][]webendpoint.Observation
 	origins  map[string]string // origin ref -> normalised origin
+	// refs resolves a finding's web.endpoint_ref: the endpoint id of the
+	// report -> its origin ref and dedup key (web_location.go).
+	refs map[string]planRef
 }
+
+type planRef struct{ originRef, templateHash string }
 
 const syntheticOriginRefPrefix = "openctem-web-origin-"
 
@@ -88,7 +93,7 @@ func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Ou
 	if bound {
 		targets = newCoverTargets(binding.Targets)
 	}
-	plan := &endpointPlan{byOrigin: map[string][]webendpoint.Observation{}, origins: map[string]string{}}
+	plan := &endpointPlan{byOrigin: map[string][]webendpoint.Observation{}, origins: map[string]string{}, refs: map[string]planRef{}}
 	for _, e := range r.Endpoints {
 		obs, err := webendpoint.Observe(e)
 		if err == nil {
@@ -112,6 +117,9 @@ func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Ou
 		ref := refs.refFor(&r, obs.Origin)
 		plan.byOrigin[ref] = append(plan.byOrigin[ref], obs)
 		plan.origins[ref] = obs.Origin
+		if e.ID != "" {
+			plan.refs[e.ID] = planRef{originRef: ref, templateHash: obs.TemplateHash}
+		}
 	}
 	r.Endpoints = nil // stored through the plan only
 	return &r, plan

@@ -981,6 +981,16 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.storeSightingData(ctx, tenantID, interop, src, records)
+	// Step 7e: the web location of each finding (method, parameter name,
+	// status, endpoint), matched by fingerprint like 7b. Best-effort.
+	refs := webRefsOf(ctx)
+	webLocs := make([]vulnerability.WebLocationUpdate, 0)
+	for i := range validFindings {
+		if u, ok := webLocationUpdate(refs, validFindings[i].fingerprint, &validFindings[i].finding); ok {
+			webLocs = append(webLocs, u)
+		}
+	}
+	p.storeWebLocations(ctx, tenantID, webLocs)
 	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported

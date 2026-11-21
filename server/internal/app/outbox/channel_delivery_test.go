@@ -137,7 +137,7 @@ func TestProcess_FailedChannelRetriedAfterAnotherSucceeded(t *testing.T) {
 	h.fail[urlB] = true
 
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(h.events.events) != 0 || h.outbox.deletes != 0 {
@@ -153,7 +153,7 @@ func TestProcess_FailedChannelRetriedAfterAnotherSucceeded(t *testing.T) {
 	// Channel b comes back.
 	h.fail[urlB] = false
 	makeDue(entry)
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	if h.sentTo(urlA) != 1 {
@@ -182,7 +182,7 @@ func TestProcess_ChannelDeadAfterMaxAttempts(t *testing.T) {
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
 	for i := 0; i < outboxdom.MaxDeliveryAttempts(); i++ {
 		makeDue(entry)
-		if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+		if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -212,7 +212,7 @@ func TestProcess_MessageCarriesEventType(t *testing.T) {
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "sensor.offline", Title: "t", Severity: outboxdom.SeverityHigh})
 	for i := 0; i < 2; i++ {
 		makeDue(entry)
-		if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+		if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -237,13 +237,13 @@ func TestProcess_ChannelSetFixedAtFirstPass(t *testing.T) {
 	h := newHarness(a)
 	h.fail["https://a.example.com/hook"] = true
 	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	late := channel(tenant, "late")
 	h.notif.list = []*integration.IntegrationWithNotification{late}
 	makeDue(entry)
-	if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+	if err := h.svc.processOutboxEntry(context.Background(), entry, nil); err != nil {
 		t.Fatal(err)
 	}
 	if h.sentTo("https://late.example.com/hook") != 0 {

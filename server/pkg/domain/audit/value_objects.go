@@ -785,10 +785,14 @@ const (
 	ActionCampaignMemberAdded       Action = "campaign.member_added"
 	ActionCampaignMemberRemoved     Action = "campaign.member_removed"
 	ActionCampaignMemberRoleChanged Action = "campaign.member_role_changed"
-	ActionCampaignCreated           Action = "campaign.created"
-	ActionCampaignUpdated           Action = "campaign.updated"
-	ActionCampaignStatusChanged     Action = "campaign.status_changed"
-	ActionCampaignDeleted           Action = "campaign.deleted"
+	// A user group added to, changed on or removed from a campaign team.
+	ActionCampaignGroupAdded       Action = "campaign.group_added"
+	ActionCampaignGroupRemoved     Action = "campaign.group_removed"
+	ActionCampaignGroupRoleChanged Action = "campaign.group_role_changed"
+	ActionCampaignCreated          Action = "campaign.created"
+	ActionCampaignUpdated          Action = "campaign.updated"
+	ActionCampaignStatusChanged    Action = "campaign.status_changed"
+	ActionCampaignDeleted          Action = "campaign.deleted"
 	// Completion sign-off: a member signed off or withdrew, or the lead or an
 	// admin changed how many sign-offs completion needs.
 	ActionCampaignSignedOff               Action = "campaign.signed_off"
@@ -1081,6 +1085,7 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignGroupAdded, ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged,
@@ -1217,6 +1222,7 @@ func (a Action) Category() string {
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignGroupAdded, ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
 		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged:
@@ -1434,6 +1440,7 @@ func SeverityForAction(a Action) Severity {
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnerInvitationSent,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
+		ActionCampaignGroupRemoved, ActionCampaignGroupRoleChanged,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
@@ -1475,7 +1482,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetBulkStatusChanged, ActionAssetBulkTagsChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
-		ActionCampaignMemberAdded,
+		ActionCampaignMemberAdded, ActionCampaignGroupAdded,
 		ActionRepositoryDeleted, ActionDataExported,
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,

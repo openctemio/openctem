@@ -483,7 +483,7 @@ const (
 // Empty array = all events enabled (backward compatible)
 ```
 
-**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate` (closed variable set, `pkg/notifymsg`), `detailLevel` (minimal, standard, full), `minIntervalMinutes`. Channel messages are `notifymsg.Card`s rendered per provider (`docs/architecture/notification-system.md`, "Channel messages").
+**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate` (closed variable set, `pkg/notifymsg`), `detailLevel` (minimal, standard, full), grouping (`group_similar`, `group_window_minutes`, `urgent_at_once`: similar finding alerts within a window go out as one message, "Grouped alerts" in the doc below; `minIntervalMinutes` is stored, never enforced). Channel messages are `notifymsg.Card`s rendered per provider (`docs/architecture/notification-system.md`, "Channel messages").
 Provider-specific config in `Integration.Metadata` (non-sensitive) and `Integration.CredentialsEncrypted` (sensitive).
 
 **Adding new event type:** Add constant → update `AllKnownEventTypes()` → no migration needed.
