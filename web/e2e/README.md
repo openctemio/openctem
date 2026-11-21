@@ -181,6 +181,7 @@ tests that cover the console's most user-visible flows.
 | `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
 | `57-invitation-accept.spec.ts`              | Accept lands in the joined organization (own one, none, 390px); accepted link offers Open                  |
 | `66-first-sign-in.spec.ts`                  | First Google sign-in (fake provider): closed sign-up, invitation, member, 2FA organization, password 2FA   |
+| `58-sign-in-journeys.spec.ts`               | Sign-in journeys: method x rule x first-time/returning, while signed in; no logout loop, every stop explained (known failures in `sign-in-journeys.known-failures.txt`) |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |

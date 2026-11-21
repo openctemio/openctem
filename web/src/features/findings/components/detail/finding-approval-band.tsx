@@ -29,6 +29,7 @@ import { formatRelative } from '@/lib/format-date'
 import { Permission } from '@/lib/permissions'
 import { useCancelApproval, useFindingApprovals } from '../../api/use-findings-api'
 import { AIProposalBadge } from '../ai-proposal-badge'
+import { closureReasonLabel } from '../../lib/closure'
 import { useApprovalDecision } from '../approval-decision'
 import { ChangedSinceRequest } from '../changed-since-request'
 import { approvalRequester, canCancelApproval, isOwnApproval } from '../../lib/approvals'
@@ -105,7 +106,8 @@ function PendingRequest({
         // In the console language ("3 giờ trước"), not the browser's.
         when: formatRelative(approval.created_at, '—', locale),
       })}
-      reason={approval.justification || undefined}
+      reason={approval.closure_reason ? closureReasonLabel(t, approval.closure_reason) : undefined}
+      note={approval.justification || undefined}
       details={
         <>
           <AIProposalBadge approval={approval} />

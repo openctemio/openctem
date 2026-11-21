@@ -173,6 +173,8 @@ export type AuditAction =
   | 'scope_target.activated'
   | 'scope_target.deactivated'
   | 'scope_target.replaced'
+  | 'scope_target.provider_moved'
+  | 'scope_target.provider_kept'
   | 'scope_exclusion.created'
   | 'scope_exclusion.updated'
   | 'scope_exclusion.deleted'
@@ -340,6 +342,12 @@ export interface AuditLog {
  */
 const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
+  'asset.provider_addresses_moved': 'Provider shared addresses folded into names',
+  'asset.provider_addresses_restored': 'Provider shared addresses restored',
+  'auth.refresh_grace': 'Refresh token accepted again within the grace period',
+  'ci_trust_config.new_repositories_decided': 'CI trust new repositories decided',
+  'scope_target.provider_kept': 'Provider shared addresses kept in scope',
+  'scope_target.provider_moved': 'Provider shared addresses moved out of scope',
   'finding.bulk_updated': 'Findings bulk updated',
   'finding.duplicate_marked': 'Finding marked duplicate',
   'finding.location_changed': 'Finding service location changed',

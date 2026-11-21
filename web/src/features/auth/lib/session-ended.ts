@@ -7,7 +7,11 @@
  */
 
 export type SessionEndReason =
-  'session_reused' | 'session_expired' | 'session_revoked' | 'own_sign_in_required'
+  | 'session_reused'
+  | 'session_expired'
+  | 'session_revoked'
+  | 'own_sign_in_required'
+  | 'organization_suspended'
 
 /** Maps the API's refusal code of a failed refresh to a reason. */
 export function sessionEndReason(code: string | undefined): SessionEndReason | undefined {
@@ -22,6 +26,8 @@ export function sessionEndReason(code: string | undefined): SessionEndReason | u
       return 'session_revoked'
     case 'OWN_SIGN_IN_REQUIRED':
       return 'own_sign_in_required'
+    case 'ORGANIZATION_SUSPENDED':
+      return 'organization_suspended'
     default:
       return undefined
   }
@@ -54,6 +60,12 @@ export function sessionEndedMessage(
         key: 'auth.login.sessionEndedOwnSignIn',
         fallback:
           "You signed in through another organization's identity provider, which does not cover this organization. Sign in with your own account.",
+      }
+    case 'organization_suspended':
+      return {
+        key: 'auth.login.sessionEndedOrgSuspended',
+        fallback:
+          'The organization you were working in is suspended, so it cannot be opened. Sign in to reach your other organizations, or contact its administrator.',
       }
     default:
       return undefined

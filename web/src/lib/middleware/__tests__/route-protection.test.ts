@@ -32,6 +32,10 @@ const COOKIE_STATES: Record<string, Record<string, string>> = {
 }
 
 const SESSION_STATES = new Set(['access', 'refresh', 'refresh+tenant'])
+/** A session (refresh token) with no organization selected and no landing marker. */
+const NO_ORGANIZATION_STATES = new Set(['refresh'])
+/** Protected pages that open before an organization is selected. */
+const ORGANIZATION_FREE_PAGES = new Set(['/select-tenant', '/onboarding/create-team'])
 
 const PUBLIC_PAGES = [
   '/login',
@@ -76,7 +80,14 @@ describe('decideAuth: routes x cookie states', () => {
 
       it.each(PROTECTED_PAGES)('%s needs the tenant session', (pathname) => {
         const decision = decideAuth({ pathname, search: '', cookie: jar(cookies) })
-        if (SESSION_STATES.has(state)) {
+        if (NO_ORGANIZATION_STATES.has(state) && !ORGANIZATION_FREE_PAGES.has(pathname)) {
+          // Signed in, no organization chosen: the landing picks it first.
+          expect(decision.type).toBe('redirect')
+          if (decision.type === 'redirect') {
+            expect(decision.location.startsWith('/auth/continue')).toBe(true)
+            expect(decision.clearCookies).toEqual([])
+          }
+        } else if (SESSION_STATES.has(state)) {
           expect(decision).toEqual({ type: 'allow' })
         } else {
           expect(decision.type).toBe('redirect')
@@ -155,7 +166,11 @@ describe('no redirect loop', () => {
 
   it('a stale (expired, revoked) but well-formed cookie reaches the page', () => {
     expect(
-      decideAuth({ pathname: '/findings', search: '', cookie: jar({ refresh_token: JWT }) })
+      decideAuth({
+        pathname: '/findings',
+        search: '',
+        cookie: jar({ refresh_token: JWT, app_tenant: '{"id":"t1"}' }),
+      })
     ).toEqual({
       type: 'allow',
     })
@@ -205,7 +220,7 @@ describe('handleAuth', () => {
 
   it('lets a request with a session cookie through', () => {
     const req = new NextRequest('https://app.example.test/findings', {
-      headers: { cookie: `refresh_token=${JWT}` },
+      headers: { cookie: `refresh_token=${JWT}; app_tenant=%7B%22id%22%3A%22t1%22%7D` },
     })
     expect(handleAuth(req)).toBeNull()
   })
@@ -310,5 +325,61 @@ describe('an account-only session (signed in, no organization)', () => {
     const res = handleAuth(req)
     expect(res?.status).toBe(307)
     expect(new URL(res!.headers.get('location')!).pathname).toBe('/account/organizations')
+  })
+})
+
+describe('a session with no organization selected (the sign-in callback left only tokens)', () => {
+  const signedIn = { refresh_token: JWT, auth_token: JWT }
+
+  it('goes to the landing first, keeping the deep link', () => {
+    expect(decideAuth({ pathname: '/findings', search: '?x=1', cookie: jar(signedIn) })).toEqual({
+      type: 'redirect',
+      location: `/auth/continue?next=${encodeURIComponent('/findings?x=1')}`,
+      clearCookies: [],
+    })
+    expect(decideAuth({ pathname: '/', search: '', cookie: jar(signedIn) })).toEqual({
+      type: 'redirect',
+      location: '/auth/continue',
+      clearCookies: [],
+    })
+  })
+
+  it.each([
+    '/account/organizations',
+    '/account',
+    '/account/security',
+    '/two-factor-setup',
+    '/select-tenant',
+    '/onboarding/create-team',
+    '/ownership-invitations/x',
+    '/auth/continue',
+    '/login',
+    '/invitations',
+  ])('%s opens without an organization (no loop through the landing)', (pathname) => {
+    expect(decideAuth({ pathname, search: '', cookie: jar(signedIn) })).toEqual({
+      type: 'allow',
+    })
+  })
+
+  // The landing always leaves one of these cookies, so it runs once.
+  it.each([
+    ['an organization', { app_tenant: '{"id":"t1"}' }],
+    ['the account-only marker', { app_account_only: '1' }],
+    ['the picker list', { app_pending_tenants: '[]' }],
+  ])('runs once: after the landing left %s, no second trip', (_, left) => {
+    const decision = decideAuth({
+      pathname: '/findings',
+      search: '',
+      cookie: jar({ ...signedIn, ...left }),
+    })
+    expect(decision.type === 'redirect' && decision.location.startsWith('/auth/continue')).toBe(
+      false
+    )
+  })
+
+  it('an access token without a refresh token is left to the API (the landing needs one)', () => {
+    expect(
+      decideAuth({ pathname: '/findings', search: '', cookie: jar({ auth_token: JWT }) })
+    ).toEqual({ type: 'allow' })
   })
 })

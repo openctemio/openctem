@@ -13,3 +13,14 @@ export const LazyPendingLinkPrompt = dynamic(
     import('@/features/account/components/pending-link-prompt').then((m) => m.PendingLinkPrompt),
   { ssr: false }
 )
+
+// The feed-freshness banner: it renders nothing until the data is known to be
+// stale, and it formats dates (date-fns), which the shell must not download
+// with every route (shell-static-imports.test.ts).
+export const LazyFeedFreshnessBanner = dynamic(
+  () =>
+    import('@/features/threat-intel/components/feed-freshness-banner').then(
+      (m) => m.FeedFreshnessBanner
+    ),
+  { ssr: false }
+)

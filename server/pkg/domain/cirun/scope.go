@@ -39,6 +39,20 @@ func ScopePatterns(c *TrustConfig) []string {
 		}
 		out = append(out, p)
 	}
+	if c.Rules.AllRepositories {
+		// Only what an administrator approved: its groups and projects.
+		for _, o := range c.Rules.Owners {
+			if o = strings.Trim(o, "/"); o != "" {
+				add(host + "/" + o + "/*")
+			}
+		}
+		for _, r := range c.Rules.Repositories {
+			if r = strings.Trim(r, "/"); r != "" && !strings.ContainsAny(r, "*?[") {
+				add(host + "/" + r)
+			}
+		}
+		return out
+	}
 	if len(c.Rules.Repositories) > 0 {
 		for _, r := range c.Rules.Repositories {
 			segs := strings.Split(strings.Trim(r, "/"), "/")
