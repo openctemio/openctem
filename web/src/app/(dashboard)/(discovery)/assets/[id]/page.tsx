@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Bug,
   Cpu,
+  FolderTree,
   Globe,
   Hash,
   History,
@@ -68,7 +69,10 @@ import { AssetIdentitySections } from '@/features/assets/components/asset-identi
 import { AssetLineageSection } from '@/features/assets/components/asset-lineage-section'
 import { RELATED_PREVIEW_ROWS } from '@/features/assets/components/relationships/related-assets-list'
 import { AssetTimeline } from '@/features/assets/components/asset-timeline'
-import { useAssetPageActions } from '@/features/assets/components/asset-page-actions'
+import {
+  useAssetPageActions,
+  useAssetScanGate,
+} from '@/features/assets/components/asset-page-actions'
 import { KeyFactsSection } from '@/features/assets/components/key-facts'
 import { RiskSummarySection } from '@/features/assets/components/asset-overview-sections'
 import type { Asset } from '@/features/assets/types/asset.types'
@@ -137,6 +141,11 @@ const AssetRelationshipsTab = dynamic(
   { ssr: false, loading: TabSkeleton }
 )
 // The open findings and the technologies read their own lists when their tab opens.
+// The origin's path tree: its own chunk, loaded when the tab opens.
+const OriginPathsTab = dynamic(
+  () => import('@/features/web-surface/components/origin-paths-tab').then((m) => m.OriginPathsTab),
+  { ssr: false, loading: TabSkeleton }
+)
 const AssetFindings = dynamic(
   () => import('@/features/assets/components/asset-findings').then((m) => m.AssetFindings),
   { ssr: false, loading: TabSkeleton }
@@ -157,6 +166,7 @@ type TabKey =
   | 'ports'
   | 'technologies'
   | 'web'
+  | 'paths'
   | 'owners'
   | 'activity'
 
@@ -168,6 +178,7 @@ const TAB_LABEL: Record<TabKey, string> = {
   ports: 'Ports and services',
   technologies: 'Technologies',
   web: 'Web',
+  paths: 'Paths',
   owners: 'Owners and access',
   activity: 'Activity',
 }
@@ -180,6 +191,7 @@ const TAB_ICON: Record<TabKey, LucideIcon> = {
   ports: Plug,
   technologies: Cpu,
   web: Globe,
+  paths: FolderTree,
   owners: Users,
   activity: History,
 }
@@ -189,6 +201,22 @@ const GRID = 'grid min-w-0 gap-page xl:grid-cols-[minmax(0,1fr)_19rem]'
 const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
 const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
 const PANEL = 'min-w-0 max-xl:order-4 xl:col-start-1 xl:row-start-2'
+/**
+ * Tabs that hold a wide table or a tree beside a table. From 1280 px their
+ * panel takes the page's full width and the properties rail steps aside (one
+ * screen, one job); below 1280 px the properties already sit above the strip
+ * on every tab, so nothing moves when the tab changes.
+ */
+const WIDE_TABS: ReadonlySet<TabKey> = new Set<TabKey>([
+  'findings',
+  'relationships',
+  'ports',
+  'technologies',
+  'web',
+  'paths',
+])
+const RAIL_ASIDE = 'xl:hidden'
+const PANEL_FULL = 'xl:col-span-2'
 
 /**
  * Same blocks and order as the page (header, tab strip, properties, panel),
@@ -235,6 +263,12 @@ function PanelSkeleton() {
 }
 
 /** Reports the page-level reads that decide which tabs exist to the SettleGroup. */
+/** The origin's Paths; "Crawl this site" follows the page's scan gate. */
+function AssetPathsTab({ asset }: { asset: Asset }) {
+  const { canScan } = useAssetScanGate(asset)
+  return <OriginPathsTab assetId={asset.id} assetName={asset.name} canCrawl={canScan} />
+}
+
 function SettleOn({ pending }: { pending: boolean }) {
   useSettleSignal(pending)
   return null
@@ -349,7 +383,11 @@ export default function AssetDetailPage() {
         ...(technologyCount > 0 ? (['technologies'] as const) : []),
         // The web tab holds the origin's own section, or what a sensor saw
         // when it fetched the asset; hidden when neither applies.
-        ...(isWebOriginType(asset?.type) || webEvidence.items.length > 0 ? (['web'] as const) : []),
+        ...(isWebOriginType(asset?.type, asset?.subType) || webEvidence.items.length > 0
+          ? (['web'] as const)
+          : []),
+        // The origin's endpoints as a tree of paths.
+        ...(isWebOriginType(asset?.type, asset?.subType) ? (['paths'] as const) : []),
         'owners',
         'activity',
       ]
@@ -449,7 +487,10 @@ export default function AssetDetailPage() {
         />
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className={GRID}>
-          <aside aria-label={t('assetDetail.propertiesAria', 'Asset properties')} className={RAIL}>
+          <aside
+            aria-label={t('assetDetail.propertiesAria', 'Asset properties')}
+            className={cn(RAIL, WIDE_TABS.has(tab) && RAIL_ASIDE)}
+          >
             <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
               <PropertyList label={t('assetDetail.properties', 'Properties')}>
                 <PropertyGroup>
@@ -530,7 +571,7 @@ export default function AssetDetailPage() {
               </TabsList>
             </div>
 
-            <div data-slot="asset-panel" className={PANEL}>
+            <div data-slot="asset-panel" className={cn(PANEL, WIDE_TABS.has(tab) && PANEL_FULL)}>
               <TabsContent value="overview">
                 <DetailSectionList>
                   {/* What it is and what runs on it; hidden when nothing was collected. */}
@@ -603,15 +644,21 @@ export default function AssetDetailPage() {
                   {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
                   <AssetWebEvidenceCard assetId={asset.id} />
                   {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
-                  {isWebOriginType(asset.type) && (
+                  {isWebOriginType(asset.type, asset.subType) && (
                     <OriginWebSection
                       assetId={asset.id}
                       assetName={asset.name}
                       properties={asset.metadata}
+                      onOpenPaths={() => setTab('paths')}
                     />
                   )}
                 </div>
               </TabsContent>
+              {isWebOriginType(asset.type, asset.subType) && (
+                <TabsContent value="paths">
+                  <AssetPathsTab asset={asset} />
+                </TabsContent>
+              )}
               <TabsContent value="owners">
                 <AssetOwnersTab assetId={asset.id} />
               </TabsContent>

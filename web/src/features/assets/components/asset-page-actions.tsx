@@ -47,17 +47,25 @@ function snoozedNow(until: string | null | undefined): boolean {
   return Number.isFinite(at) && at > Date.now()
 }
 
+/**
+ * Whether the viewer may scan the asset now, and may mark it out of scope:
+ * the scan gate's answer, read only for a type scans can reach (the same rule
+ * as the drawer's "Scope and scanning"), so no request for any other type.
+ * One SWR key, so every caller on the page shares one request.
+ */
+export function useAssetScanGate(asset: Pick<Asset, 'id' | 'type' | 'subType'>) {
+  const { can } = usePermissions()
+  const { registry } = useAssetTypeRegistry()
+  const scannable = isScannableAssetType(registry, asset.type, asset.subType) !== false
+  const { attribution, mutate } = useAssetAttribution(scannable ? asset.id : null)
+  return { ...assetScanGates(asset, attribution, can), refresh: mutate }
+}
+
 export function useAssetPageActions(asset: Asset, onChanged: () => void): AssetPageActions {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const { registry } = useAssetTypeRegistry()
-  // The scan gate's answer, only for a type scans can reach (the same rule as
-  // the drawer's "Scope and scanning"): no request for any other type.
-  const scannable = isScannableAssetType(registry, asset.type, asset.subType) !== false
-  const { attribution, mutate: refreshAttribution } = useAssetAttribution(
-    scannable ? asset.id : null
-  )
-  const { canScan, canExclude } = assetScanGates(asset, attribution, can)
+  const { canScan, canExclude, refresh: refreshAttribution } = useAssetScanGate(asset)
   const canEdit = can(Permission.AssetsWrite)
 
   const forms = useInventoryAssetForms(registry, onChanged)

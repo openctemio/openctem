@@ -217,6 +217,20 @@ origins, endpoints, the same path across origins, and the endpoint events. It
 reads the endpoints above, so it needs `assets:read` and the `assets` module
 (the route guard says so), not the attack surface module.
 
+A web origin's own page (`/assets/{id}`) has two tabs for it:
+
+- **Web:** the security header posture, parameters and changes of the origin.
+- **Paths** (`?tab=paths&path=<node>`): the origin's endpoints as a tree of path
+  segments, read one level at a time from `GET /assets/{id}/web-paths` (see
+  "Path tree"). From 1024 px the tree sits beside the endpoints of the selected
+  path (everything below it, in the shared table); below 1024 px each level is a
+  list with a breadcrumb, a path drills in and an endpoint opens the sheet. The
+  filters (static files hidden by default, 4xx, with findings, scope, method,
+  gone) are toolbar tokens over both; what they hide is counted on the status
+  line with Show all. A never-crawled origin shows "Crawl this site" to people
+  the scan gate lets scan it, preselecting a scanner with a crawl capability.
+  The endpoint sheet lists the open findings at the endpoint's path.
+
 
 Posture, labels, verification of sensitive paths and change alerts are in
 [web-content-pipeline.md](web-content-pipeline.md).
