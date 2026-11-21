@@ -51,7 +51,7 @@ import {
   type CertificateStatus,
 } from '../lib/certificates'
 
-const PAGE_SIZES = [20, 50, 100]
+const PAGE_SIZES = [25, 50, 100]
 
 /** The full sha256 fingerprint, shortened for the cell and copyable. */
 export function CopyableFingerprint({ value }: { value: string }) {
@@ -115,6 +115,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
     () => [
       {
         id: 'subject_cn',
+        meta: { kind: 'name' },
         header: t('attackSurface.certificates.col.issuedTo', 'Issued to'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -138,12 +139,14 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'fingerprint',
+        meta: { kind: 'id' },
         header: t('attackSurface.certificates.col.fingerprint', 'Fingerprint (SHA-256)'),
         enableSorting: false,
         cell: ({ row }) => <CopyableFingerprint value={row.original.fingerprint_sha256} />,
       },
       {
         id: 'issuer',
+        meta: { kind: 'text' },
         header: t('attackSurface.certificates.col.issuer', 'Issuer'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -157,12 +160,14 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'not_before',
+        meta: { kind: 'date' },
         header: t('attackSurface.certificates.col.issuedOn', 'Issued on'),
         enableSorting: false,
         cell: ({ row }) => formatDateSafe(row.original.not_before),
       },
       {
         id: 'not_after',
+        meta: { kind: 'date' },
         header: t('attackSurface.certificates.col.expiresOn', 'Expires on'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -174,6 +179,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'first_seen',
+        meta: { kind: 'datetime-recent' },
         header: t('attackSurface.certificates.col.detected', 'Detected'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.first_seen} />,
