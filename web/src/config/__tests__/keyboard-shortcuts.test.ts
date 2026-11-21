@@ -63,6 +63,22 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/shared/components/list-toolbar.tsx',
     /aria-keyshortcuts="f"\]:not[\s\S]*trigger\.click\(\)/,
   ],
+  'select-row': [
+    'features/shared/components/data-table/data-table-selection.tsx',
+    /e\.key\.toLowerCase\(\) !== 'x'[\s\S]*e\.shiftKey && anchor\.current[\s\S]*row\.toggleSelected\(\)/,
+  ],
+  'dismiss-selection': [
+    'app/(dashboard)/findings/page.tsx',
+    /e\.key !== 'd' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey[\s\S]*openDismissRef\.current\(\)/,
+  ],
+  'dismiss-reason': [
+    'features/findings/components/bulk-dismiss-dialog.tsx',
+    /n < 1 \|\| n > reasons\.length[\s\S]*setReason\(reasons\[n - 1\]\)/,
+  ],
+  'dismiss-submit': [
+    'features/findings/components/bulk-dismiss-dialog.tsx',
+    /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'[\s\S]*void submit\(\)/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
     // Escape inside an open menu or dialog closes that, not the selection.

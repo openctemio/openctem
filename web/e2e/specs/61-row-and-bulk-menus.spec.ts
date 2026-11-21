@@ -14,6 +14,8 @@ import { openFindingsPhoneSelect } from '../helpers/table'
  * - The bulk bar's More (one item) is a small menu at every width, above its
  *   button (never covering it), inside the gutter, rows of at least 44 on a
  *   phone.
+ * - The bulk bar's Dismiss stays on screen and opens its dialog with the
+ *   server's preview; Escape closes the dialog and keeps the selection.
  *
  * At 375, 390, 768 and 1440 px, in English and Vietnamese.
  */
@@ -162,6 +164,44 @@ for (const locale of ['en', 'vi'] as const) {
         await page.keyboard.press('Escape')
         await expect(menu).toBeHidden()
         // The bar's Escape is for the menu first: the selection stays.
+        await expect(bar).toBeVisible()
+      }
+    )
+
+    test(
+      `The bulk bar's Dismiss opens its dialog with the server's preview at ${width}px (${locale})`,
+      { tag: ['@findings', ...(phone ? ['@phone'] : [])] },
+      async ({ page, baseURL }) => {
+        await openFindings(page, width, locale, baseURL)
+        if (phone) {
+          await openFindingsPhoneSelect(page)
+          await page.getByTestId('finding-phone-card').first().getByRole('checkbox').check()
+        } else {
+          await page.getByRole('row').nth(1).getByRole('checkbox').check()
+        }
+        const bar = page.locator('[data-slot="bulk-action-bar"]')
+        const dismiss = bar.getByTestId('bulk-dismiss')
+        await expect(dismiss).toBeVisible()
+        const d = await settledRect(dismiss)
+        expect(d.left).toBeGreaterThanOrEqual(0)
+        expect(d.right).toBeLessThanOrEqual(width)
+        await dismiss.click()
+        const dialog = page.getByTestId('bulk-dismiss-dialog')
+        await expect(dialog).toBeVisible()
+        // The preview comes from the server and changes nothing.
+        const preview = dialog.getByTestId('bulk-dismiss-preview')
+        await expect(preview.getByRole('listitem').first().or(preview.locator('p'))).toBeVisible({
+          timeout: 30_000,
+        })
+        const r = await settledRect(dialog)
+        test.info().annotations.push({ type: 'dismiss dialog', description: JSON.stringify(r) })
+        expect(r.left).toBeGreaterThanOrEqual(0)
+        expect(r.right).toBeLessThanOrEqual(width)
+        const issues = await page.evaluate(layoutIssues)
+        expect(issues.filter((i) => i.kind === 'popup' || i.kind === 'target')).toEqual([])
+        await page.keyboard.press('Escape')
+        await expect(dialog).toBeHidden()
+        // Escape closed the dialog, not the selection.
         await expect(bar).toBeVisible()
       }
     )
