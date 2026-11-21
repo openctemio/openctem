@@ -661,6 +661,66 @@ function vary(row: unknown, i: number, depth = 0): unknown {
 /** The array keys of a list answer; a list that names its rows is added here. */
 const LIST_KEYS = ['data', 'items', 'roles', 'groups', 'rules']
 
+/** The stored dashboard snapshot the home reads (the one request that opens `/`). */
+const DASHBOARD_DATA = /\/api\/v1\/(me|organization)\/dashboards\/(home|[^/]+\/data)$/
+
+/**
+ * Makes one widget result of a dashboard snapshot hard on the layout: long
+ * English, Vietnamese and host-name titles in its lists, five-digit figures,
+ * long category names. Only results the server sent as ready are changed
+ * (a building or not measured widget keeps its reason); the shape is kept.
+ */
+function richWidget(w: Record<string, unknown>): Record<string, unknown> {
+  if (w.state !== 'ready') return w
+  const o: Record<string, unknown> = { ...w }
+  const big = (v: unknown) => (typeof v === 'number' && v > 0 ? v * 1000 + 840 : v)
+  const scalar = o.scalar as Record<string, unknown> | undefined
+  if (scalar) o.scalar = { ...scalar, value: big(scalar.value), previous: big(scalar.previous) }
+  const items = o.items as { rows?: Record<string, unknown>[]; total?: number } | undefined
+  if (items?.rows?.length) {
+    const rows = Array.from({ length: 10 }, (_, i) => {
+      const r = items.rows![i % items.rows!.length]
+      return {
+        ...r,
+        id: `${String(r.id ?? 'row').slice(0, 24)}-${i}`,
+        title: [r.title, LONG_EN, LONG_VI, LONG_HOST][i % 4],
+        asset_name: [r.asset_name, LONG_HOST, LONG_VI, 'x'][i % 4],
+      }
+    })
+    o.items = { ...items, rows, total: 12840 }
+  }
+  const category = o.category as { rows?: Record<string, unknown>[] } | undefined
+  if (category?.rows?.length) {
+    o.category = {
+      ...category,
+      rows: category.rows.map((r, i) => ({
+        ...r,
+        value: big(r.value),
+        ...(typeof r.label === 'string' ? { label: [r.label, LONG_EN, LONG_VI][i % 3] } : {}),
+      })),
+    }
+  }
+  const stages = o.stages as { stages?: Record<string, unknown>[] } | undefined
+  if (stages?.stages?.length) {
+    o.stages = { ...stages, stages: stages.stages.map((x) => ({ ...x, value: big(x.value) })) }
+  }
+  return o
+}
+
+/** Every widget list inside a dashboard answer (the home nests the snapshot). */
+function richDashboard(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body
+  if (Array.isArray(body)) return body.map(richDashboard)
+  const o: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    o[k] =
+      k === 'widgets' && Array.isArray(v)
+        ? v.map((w) => (w && typeof w === 'object' ? richWidget(w as Record<string, unknown>) : w))
+        : richDashboard(v)
+  }
+  return o
+}
+
 /**
  * Rewrites the JSON list answers of the page's API calls: 200 rows (or 0, or 1)
  * built from the seed rows, with long and Vietnamese names and optional fields
@@ -671,6 +731,14 @@ export async function richData(page: Page, scen: Scenario = 'rich') {
   await page.route('**/api/v1/**', async (route: Route) => {
     const req = route.request()
     const url = new URL(req.url())
+    if (req.method() === 'GET' && scen === 'rich' && DASHBOARD_DATA.test(url.pathname)) {
+      const res = await route.fetch().catch(() => null)
+      if (!res) return route.fallback()
+      const body = await res.json().catch(() => null)
+      return body === null
+        ? route.fulfill({ response: res })
+        : route.fulfill({ response: res, json: richDashboard(body) })
+    }
     if (req.method() !== 'GET' || SKIP.test(url.pathname)) return route.fallback()
     let res
     try {

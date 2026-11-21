@@ -51,6 +51,8 @@ const LAPTOP = { width: 1280, height: 800 }
 
 /** Lists and pages with phone cards, sheets and long names. */
 const CI_ROUTES = [
+  // The home: its dashboard snapshot gets long titles and big figures (richData).
+  '/',
   '/assets',
   '/assets/groups',
   '/assets/changes',

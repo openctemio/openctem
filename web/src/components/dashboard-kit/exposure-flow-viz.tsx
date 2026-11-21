@@ -1070,7 +1070,10 @@ function StageRow({
       {items.map((x) => (
         <li
           key={x.s.key}
-          className="relative grid content-start justify-items-center gap-0.5 text-center text-xs"
+          // min-w-0: a grid item is otherwise as wide as its longest word
+          // run, and a long stage name (vi "Xác định phạm vi" at 1024px) ran
+          // over its neighbour. The name wraps between words instead.
+          className="relative grid min-w-0 content-start justify-items-center gap-0.5 text-center text-xs"
           aria-current={x.act ? 'step' : undefined}
           data-state={x.s.state}
         >
@@ -1080,7 +1083,7 @@ function StageRow({
           >
             <StageStateIcon state={x.s.state} className="size-4" />
           </span>
-          <span className="truncate">{x.name}</span>
+          <span className="max-w-full text-balance">{x.name}</span>
           <FlowLink
             to={x.s.drill}
             className={cn(
