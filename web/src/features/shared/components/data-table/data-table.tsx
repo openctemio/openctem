@@ -1616,6 +1616,7 @@ export function DataTable<TData, TValue>({
         layout.kind === 'name' && layout.style?.minWidth !== undefined && NAME_SIZED_BY_FLOOR,
         // A date is one line: it never breaks between day, month and year.
         (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
+        layout.kind === 'datetime-recent' && 'overflow-hidden text-ellipsis',
         head && stickyHeader && STICKY_HEAD_CLASS,
         head && stickyHeader && pin.className && STICKY_HEAD_PINNED_CLASS,
         // The page's scroller is <main>, under the app header: top 0 sticks the

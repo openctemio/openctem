@@ -39,6 +39,7 @@ import { confirmName } from '@/lib/confirm-name'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleDisplayDescription, roleDisplayName } from '@/features/access-control/lib/system-role'
 import {
   RoleRiskBadge,
   RoleSummaryLine,
@@ -119,11 +120,12 @@ export default function RolesPage() {
       if (!q) return true
       return (
         role.name.toLowerCase().includes(q) ||
+        roleDisplayName(t, role).toLowerCase().includes(q) ||
         role.slug.toLowerCase().includes(q) ||
         !!role.description?.toLowerCase().includes(q)
       )
     })
-  }, [roles, typeFilter, riskFilter, searchQuery])
+  }, [roles, typeFilter, riskFilter, searchQuery, t])
 
   const customCount = useMemo(() => roles.filter((r) => !r.is_system).length, [roles])
   const hasMemberCounts = roles.some((r) => r.members_count !== undefined)
@@ -203,7 +205,8 @@ export default function RolesPage() {
       header: ({ column }) => <DataTableColumnHeader column={column} title={roleLabel} />,
       cell: ({ row }) => {
         const role = row.original
-        const name = toDisplayText(role.name, 200)
+        const name = toDisplayText(roleDisplayName(t, role), 200)
+        const description = roleDisplayDescription(t, role)
         return (
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
@@ -212,9 +215,9 @@ export default function RolesPage() {
               </RowNameLink>
               {role.is_system && systemBadge}
             </div>
-            {role.description && (
+            {description && (
               <p className="text-cap text-muted-foreground truncate">
-                {toDisplayText(role.description, 300)}
+                {toDisplayText(description, 300)}
               </p>
             )}
           </div>
@@ -477,11 +480,11 @@ export default function RolesPage() {
             <PersonPhoneCard
               title={
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="min-w-0">{toDisplayText(role.name, 200)}</span>
+                  <span className="min-w-0">{toDisplayText(roleDisplayName(t, role), 200)}</span>
                   {role.is_system && systemBadge}
                 </span>
               }
-              address={role.description ? toDisplayText(role.description, 300) : undefined}
+              address={toDisplayText(roleDisplayDescription(t, role) ?? '', 300) || undefined}
               onOpen={() => openRole(role)}
               menu={roleMenu(role)}
               facts={
