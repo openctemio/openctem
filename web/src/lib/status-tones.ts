@@ -95,6 +95,25 @@ export const STATUS_TONES = {
       labelKey: 'sensors.tokens.state.revoked',
     },
   },
+  // An upload or run receipt (findings/imports): where its processing stands.
+  ingestReceipt: {
+    queued: {
+      tone: 'triage',
+      icon: DashedCircleGlyph,
+      labelKey: 'findings.receiptHistory.status.queued',
+    },
+    processing: {
+      tone: 'progress',
+      icon: HalfCircleGlyph,
+      labelKey: 'findings.receiptHistory.status.processing',
+    },
+    completed: {
+      tone: 'resolved',
+      icon: CheckCircleGlyph,
+      labelKey: 'findings.receiptHistory.status.completed',
+    },
+    failed: { tone: 'open', icon: RingDotGlyph, labelKey: 'findings.receiptHistory.status.failed' },
+  },
   // Web page monitoring watches (RFC-138): the outcome of the last check.
   webWatch: {
     pending: { tone: 'triage', icon: DashedCircleGlyph, labelKey: 'pageMonitor.state.pending' },

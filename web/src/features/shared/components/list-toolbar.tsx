@@ -270,7 +270,13 @@ const PHONE = {
   // Filters sheet. Pure CSS, so the server's first paint is the final one.
   // The margin is the drawn tokens', so a line of hidden tokens takes no room.
   tokens:
-    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:flex-wrap @max-md/toolbar:items-center @max-md/toolbar:gap-x-2 @max-md/toolbar:*:mt-2 @max-md/toolbar:*:max-w-full @max-md/toolbar:[&>*:not([data-filtered=true],[aria-pressed=true]):not(:has([data-filtered=true],[aria-pressed=true]))]:hidden',
+    '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:flex-wrap @max-md/toolbar:items-center @max-md/toolbar:gap-x-2 @max-md/toolbar:*:mt-2 @max-md/toolbar:*:max-w-full',
+  // The tokens that do not filter are hidden on a phone only where a sheet
+  // holds them (the toolbar's own Filters sheet, or the facet sheet). A list
+  // with its own filter control (`filter`) has no such sheet: its tokens (a
+  // list switch, for one) stay drawn on line 2, or the phone could not reach them.
+  tokensInSheet:
+    '@max-md/toolbar:[&>*:not([data-filtered=true],[aria-pressed=true]):not(:has([data-filtered=true],[aria-pressed=true]))]:hidden',
   end: '@max-md/toolbar:col-start-3 @max-md/toolbar:row-start-1 @max-md/toolbar:ms-2 @max-md/toolbar:max-w-[calc(100cqw-12rem)]',
   // The page's chips row: line 2, or line 3 under the token chips.
   below:
@@ -425,7 +431,8 @@ export function ListToolbar({
             </div>
           ) : null}
           {start ? (
-            // A phone draws no tokens here: they are in the Filters sheet.
+            // A phone draws here only the tokens that filter: the others are in
+            // the Filters sheet (all of them when the list has no such sheet).
             // In Query mode the text owns the filter: the tokens stay in their
             // place, dimmed and inert (no focus, no click, no `f`), so the
             // switch moves nothing (the end group never re-flows up a line).
@@ -438,6 +445,7 @@ export function ListToolbar({
                 top && '*:opacity-50',
                 'contents',
                 PHONE.tokens,
+                (phoneSheet || toggle) && PHONE.tokensInSheet,
                 // Query mode: the text owns the filter, the phone draws no token.
                 top && '@max-md/toolbar:hidden',
                 EMPTY_GROUP_CLASS

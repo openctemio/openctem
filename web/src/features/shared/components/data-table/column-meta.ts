@@ -83,7 +83,10 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   'status-edit': { align: 'start', width: 140, sortFirst: 'asc' },
   asset: { align: 'start', minWidth: 200, maxWidth: 280, sortFirst: 'asc' },
   owner: { align: 'start', width: 160, sortFirst: 'asc' },
-  'datetime-recent': { align: 'end', width: 104, sortFirst: 'desc' },
+  // The longest relative time whole at 14px: "khoảng 11 tháng trước" (vi;
+  // "about 11 months ago" in en) plus the cell padding. Anything longer is
+  // cut with an ellipsis, the exact time in the <time> title.
+  'datetime-recent': { align: 'end', width: 168, maxWidth: 168, sortFirst: 'desc' },
   date: { align: 'end', width: 112, sortFirst: 'desc' },
   // The SLA chip's longest text whole, never cut: "999+ d overdue" (128 with
   // the KEV mark; "Trễ 999+ ngày" 121) plus the cell padding.

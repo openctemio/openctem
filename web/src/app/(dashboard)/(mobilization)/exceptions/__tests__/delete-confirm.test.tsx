@@ -4,6 +4,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const triggerDelete = vi.hoisted(() => vi.fn())
+vi.mock('@/features/remediation-hub/api/use-owner-names', () => ({
+  useOwnerNames: () => ({ user: () => undefined }),
+}))
 vi.mock('@/features/exceptions', async (orig) => {
   const real = await orig<typeof import('@/features/exceptions')>()
   return {

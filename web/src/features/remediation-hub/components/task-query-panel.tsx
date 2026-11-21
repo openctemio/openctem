@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useOwnerNames } from '../api/use-owner-names'
+import { useOwnerLabels } from '../api/use-owner-names'
 import { taskQueryApi, useTaskQuery, type QueryRerunPreview } from '../api/use-task-query'
 import { apiMessage } from './suggestions-inbox'
 import { formatDateTime } from '@/lib/app-locale'
@@ -42,8 +42,8 @@ export function TaskQueryPanel({
   onChanged?: () => void
 }) {
   const { t } = useTranslation()
-  const owners = useOwnerNames()
   const { data: q, mutate } = useTaskQuery(taskId)
+  const owners = useOwnerLabels([q?.owner_user_id ?? undefined], [])
   const [rerun, setRerun] = useState<QueryRerunPreview | null>(null)
   const [rerunOpen, setRerunOpen] = useState(false)
   const [resumeOpen, setResumeOpen] = useState(false)

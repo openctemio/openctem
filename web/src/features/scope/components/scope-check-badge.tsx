@@ -40,7 +40,7 @@ export function ScopeCheckBadge({
       <TonePill
         tone="success"
         label={t('scope.check.inScope', 'In scope')}
-        title={viaText(result.via)}
+        title={viaText(result.via, t)}
         state="allowed"
       />
     )
