@@ -348,7 +348,9 @@ export default function ExceptionsPage() {
       {
         accessorKey: 'name',
         header: t('exceptions.page.colName', 'Name'),
-        meta: { kind: 'name', label: t('exceptions.page.colName', 'Name') },
+        // A floor: the name gives way to the other columns, so a long title is cut by its
+        // ellipsis and the table never scrolls sideways at 1440.
+        meta: { kind: 'name', minWidth: 192, label: t('exceptions.page.colName', 'Name') },
         cell: ({ row }) => (
           <div className="min-w-0">
             <p className="flex min-w-0 items-center gap-2">
