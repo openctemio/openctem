@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -518,17 +519,25 @@ func TestBulkDismiss_RaisedLevelRaceGoesToGroup_DB(t *testing.T) {
 	admin := h.member(org, "admin")
 	h.member(org, "owner")
 	fn := "bd_raise_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	h.exec(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $f$
+	// DDL: the least-privilege app role may not run it, the schema owner does.
+	ddl := testdb.OpenMigrator(t)
+	mustDDL := func(q string) {
+		t.Helper()
+		if _, err := ddl.ExecContext(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustDDL(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $f$
 		BEGIN
 			UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{finding_approvals}', '{"fp_approval":"all"}'::jsonb)
 			WHERE id = NEW.tenant_id;
 			RETURN NEW;
 		END $f$`, fn))
-	h.exec(fmt.Sprintf(`CREATE TRIGGER %s AFTER INSERT ON finding_bulk_dismissals FOR EACH ROW
+	mustDDL(fmt.Sprintf(`CREATE TRIGGER %s AFTER INSERT ON finding_bulk_dismissals FOR EACH ROW
 		WHEN (NEW.tenant_id = '%s'::uuid) EXECUTE FUNCTION %s()`, fn, org, fn))
 	t.Cleanup(func() {
-		_, _ = h.db.ExecContext(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON finding_bulk_dismissals`, fn))
-		_, _ = h.db.ExecContext(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, fn))
+		_, _ = ddl.ExecContext(context.Background(), fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON finding_bulk_dismissals`, fn))
+		_, _ = ddl.ExecContext(context.Background(), fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, fn))
 	})
 
 	ids := h.findings(org, "low", 2)
