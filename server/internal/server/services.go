@@ -1537,6 +1537,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
 	// Bulk changes by filter run as operations the caller reads back.
 	s.Vulnerability.SetOperationStore(postgres.NewOperationRepository(&postgres.DB{DB: deps.DB}))
+	// Bulk dismiss of findings: idempotency, the daily budget and undo.
+	s.Vulnerability.SetBulkDismissStore(postgres.NewFindingBulkDismissRepository(&postgres.DB{DB: deps.DB}))
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
