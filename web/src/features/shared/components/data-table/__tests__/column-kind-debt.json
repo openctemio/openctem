@@ -58,8 +58,6 @@
   "src/features/pentest/components/pentest-retests-section.tsx": 10,
   "src/features/proxy-pools/components/endpoint-table.tsx": 7,
   "src/features/remediation-hub/components/my-tasks-queue.tsx": 4,
-  "src/features/remediation-hub/components/tasks-view.tsx": 6,
-  "src/features/remediation/components/campaign-list.tsx": 6,
   "src/features/reports/components/report-schedules-section.tsx": 8,
   "src/features/scan-profiles/components/scan-profiles-section.tsx": 2,
   "src/features/scan-zones/components/scan-zone-table.tsx": 4,

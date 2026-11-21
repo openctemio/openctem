@@ -78,6 +78,7 @@ const CI_ROUTES = [
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
+  '/remediation/campaigns',
   '/scope',
   '/settings/general',
   '/settings/members',
@@ -261,7 +262,6 @@ const LOPSIDED_DEBT = new Set([
   '/findings/imports',
   '/scans/runs',
   '/attack-surface/technologies',
-  '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
 /**

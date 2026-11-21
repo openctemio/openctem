@@ -290,6 +290,16 @@ for _ in $(seq 1 30); do
 done
 [[ "$n" -ge 15 && "$nt" -ge 10 ]] || { log "only $n of 15 findings and $nt of 10 triage findings visible"; exit 1; }
 
+log "remediation tasks (the tasks and campaigns lists)"
+# Two tasks of the seed findings, one in the campaign with a due date, so the
+# lists show progress, owners, deadlines and a campaign with tasks.
+FIDS=$(jq -c '[.data[]? | select(.title|startswith("E2E finding")) | .id]' <<<"$BODY")
+call GET "/api/v1/remediation/campaigns?per_page=5"
+CAMPAIGN_ID=$(jq -r '[.data[]? | select(.name=="E2E remediation campaign")][0].id // empty' <<<"$BODY")
+DUE=$(date -u -d '+5 days' +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -v+5d +%Y-%m-%dT00:00:00Z)
+call POST /api/v1/remediation/tasks "{\"title\":\"E2E upgrade OpenSSH on the edge hosts\",\"finding_ids\":$(jq -c '.[0:3]' <<<"$FIDS"),\"deadline\":\"$DUE\"${CAMPAIGN_ID:+,\"campaign_id\":\"$CAMPAIGN_ID\"}}"
+call POST /api/v1/remediation/tasks "{\"title\":\"E2E renew the certificate on shop.example.com\",\"finding_ids\":$(jq -c '.[3:4]' <<<"$FIDS")}"
+
 log "a member (E2E_LIMITED_*)"
 # The member-or-viewer checks in 09, 11 and 12 skip without one.
 MEMBER_EMAIL="e2e-member-$RUN@openctem-test.local"
