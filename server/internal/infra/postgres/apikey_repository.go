@@ -126,27 +126,43 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	argIdx := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("k.tenant_id = $%d", argIdx))
 		args = append(args, filter.TenantID.String())
 		argIdx++
 	}
 
 	if filter.UserID != nil {
-		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("k.user_id = $%d", argIdx))
 		args = append(args, filter.UserID.String())
 		argIdx++
 	}
 
+	// The status is derived at read time: an active key past its expiry is
+	// expired, the row keeps what was stored.
 	if filter.Status != nil {
-		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
-		args = append(args, string(*filter.Status))
-		argIdx++
+		switch *filter.Status {
+		case apikey.StatusActive:
+			conditions = append(conditions, "k.status = 'active' AND (k.expires_at IS NULL OR k.expires_at > now())")
+		case apikey.StatusExpired:
+			conditions = append(conditions, "(k.status = 'expired' OR (k.status = 'active' AND k.expires_at IS NOT NULL AND k.expires_at <= now()))")
+		default:
+			conditions = append(conditions, fmt.Sprintf("k.status = $%d", argIdx))
+			args = append(args, string(*filter.Status))
+			argIdx++
+		}
+	}
+
+	switch filter.OwnerKind {
+	case apikey.OwnerService:
+		conditions = append(conditions, "u.kind = 'service'")
+	case apikey.OwnerPerson:
+		conditions = append(conditions, "(u.id IS NULL OR u.kind = 'person')")
 	}
 
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
+		conditions = append(conditions, fmt.Sprintf("(k.name ILIKE $%d OR k.description ILIKE $%d)", argIdx, argIdx))
 		args = append(args, wrapLikePattern(filter.Search))
-		// argIdx not incremented — no further conditions
+		argIdx++
 	}
 
 	whereClause := ""
@@ -154,8 +170,12 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
+	// The owner is joined by primary key, once per row of the page: no
+	// per-key lookup.
+	const from = "FROM api_keys k LEFT JOIN users u ON u.id = k.user_id "
+
 	// Count
-	countQuery := "SELECT COUNT(*) FROM api_keys " + whereClause
+	countQuery := "SELECT COUNT(*) " + from + whereClause
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&result.Total); err != nil {
 		return result, fmt.Errorf("count api keys: %w", err)
 	}
@@ -169,37 +189,38 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	// CodeQL's go/sql-injection flow analysis couldn't trace the
 	// map-lookup guard and kept flagging. Explicit case literals
 	// eliminate the tainted data-flow entirely.
-	orderBy := defaultSortOrder
+	orderBy := "k.created_at DESC"
 	order := "ASC"
 	if strings.EqualFold(filter.SortOrder, "desc") {
 		order = "DESC"
 	}
 	switch filter.SortBy {
 	case "name":
-		orderBy = "name " + order
+		orderBy = "k.name " + order
 	case "status":
-		orderBy = "status " + order
+		orderBy = "k.status " + order
 	case "created_at":
-		orderBy = "created_at " + order
+		orderBy = "k.created_at " + order
 	case "last_used_at":
-		orderBy = "last_used_at " + order
+		orderBy = "k.last_used_at " + order
 	case "expires_at":
-		orderBy = "expires_at " + order
+		orderBy = "k.expires_at " + order
 	}
 
 	offset := (filter.Page - 1) * filter.PerPage
 	args = append(args, filter.PerPage, offset)
 
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, user_id, name, description,
-			key_hash, key_prefix, scopes, rate_limit,
-			status, expires_at, last_used_at, last_used_ip, use_count,
-			created_by, created_at, updated_at, revoked_at, revoked_by
-		FROM api_keys
+		SELECT k.id, k.tenant_id, k.user_id, k.name, k.description,
+			k.key_hash, k.key_prefix, k.scopes, k.rate_limit,
+			k.status, k.expires_at, k.last_used_at, k.last_used_ip, k.use_count,
+			k.created_by, k.created_at, k.updated_at, k.revoked_at, k.revoked_by,
+			COALESCE(NULLIF(u.name, ''), u.email), u.kind
+		%s
 		%s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d
-	`, whereClause, orderBy, argIdx, argIdx+1)
+	`, from, whereClause, orderBy, argIdx, argIdx+1)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -207,12 +228,17 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 	}
 	defer func() { _ = rows.Close() }()
 
+	result.Owners = make(map[apikey.ID]apikey.Owner)
 	for rows.Next() {
-		key, err := r.scanAPIKeyRow(rows)
+		var ownerName, ownerKind sql.NullString
+		key, err := r.scanAPIKeyRow(rows, &ownerName, &ownerKind)
 		if err != nil {
 			return result, err
 		}
 		result.Data = append(result.Data, key)
+		if ownerKind.Valid {
+			result.Owners[key.ID()] = apikey.Owner{Name: ownerName.String, Kind: ownerKind.String}
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -342,7 +368,7 @@ func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
 		createdBy, createdAt, updatedAt, revokedAt, revokedBy)
 }
 
-func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error) {
+func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows, extra ...any) (*apikey.APIKey, error) {
 	var (
 		id, tenantID          string
 		userID, createdBy     sql.NullString
@@ -360,12 +386,13 @@ func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error)
 		revokedBy             sql.NullString
 	)
 
-	err := rows.Scan(
+	dest := append([]any{
 		&id, &tenantID, &userID, &name, &description,
 		&keyHash, &keyPrefix, &scopes, &rateLimit,
 		&status, &expiresAt, &lastUsedAt, &lastUsedIP, &useCount,
 		&createdBy, &createdAt, &updatedAt, &revokedAt, &revokedBy,
-	)
+	}, extra...)
+	err := rows.Scan(dest...)
 	if err != nil {
 		return nil, fmt.Errorf("scan api key row: %w", err)
 	}

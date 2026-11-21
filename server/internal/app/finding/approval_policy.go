@@ -321,13 +321,41 @@ func kindOfStatus(status vulnerability.FindingStatus) (approvalpolicy.Kind, bool
 	return "", false
 }
 
+// storedPolicyEval is the evaluation kept on a request: the result and how
+// many people could sign it off when it was made (the people themselves are
+// not kept; they are evaluated again at decision time).
+type storedPolicyEval struct {
+	approvalpolicy.Result
+	EligibleApprovers *int `json:"eligible_approvers,omitempty"`
+}
+
 // policyEvalJSON is the evaluation kept on the request as evidence.
 func policyEvalJSON(res approvalpolicy.Result) []byte {
-	b, err := json.Marshal(res)
+	n := len(res.Eligible)
+	b, err := json.Marshal(storedPolicyEval{Result: res, EligibleApprovers: &n})
 	if err != nil {
 		return nil
 	}
 	return b
+}
+
+// StoredPolicySummary reads what a request's stored evaluation says: the
+// stable reason codes (never nil) and how many people could sign it off when
+// it was made (nil for a request stamped before the count was kept, or not
+// stamped at all).
+func StoredPolicySummary(raw []byte) (reasons []string, eligible *int) {
+	reasons = []string{}
+	if len(raw) == 0 {
+		return reasons, nil
+	}
+	var ev storedPolicyEval
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		return reasons, nil
+	}
+	if ev.Reasons != nil {
+		reasons = ev.Reasons
+	}
+	return reasons, ev.EligibleApprovers
 }
 
 func factsJSON(f approvalpolicy.Facts) []byte {

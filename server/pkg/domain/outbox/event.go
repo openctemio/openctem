@@ -40,13 +40,16 @@ type SendResult struct {
 	IntegrationID   string    `json:"integration_id"`
 	IntegrationName string    `json:"name"`
 	Provider        string    `json:"provider"`
-	Status          string    `json:"status"` // success, failed
+	Status          string    `json:"status"` // success, failed, grouped
 	MessageID       string    `json:"message_id,omitempty"`
 	Error           string    `json:"error,omitempty"`
 	SentAt          time.Time `json:"sent_at"`
 	// Attempts is how many times the channel was tried (0 in archives
 	// written before per-channel delivery).
 	Attempts int `json:"attempts,omitempty"`
+	// GroupID names the notification group whose one message carried this
+	// event to the channel (status grouped).
+	GroupID string `json:"group_id,omitempty"`
 }
 
 // =============================================================================

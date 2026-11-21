@@ -133,26 +133,55 @@ func (s *Scheduler) processLoop() {
 	}
 }
 
-// processBatch processes a batch of pending outbox entries.
+// maxDrainRounds bounds how many full batches one tick takes in a row. A
+// burst (thousands of events of one re-score) is absorbed in seconds instead
+// of 50 events per tick, so its group gets every event before it is sent.
+const maxDrainRounds = 20
+
+// groupFlushLimit bounds the groups one tick sends.
+const groupFlushLimit = 100
+
+// processBatch sends the groups that are due, processes pending outbox
+// entries (more full batches in a row while the tick lasts), then sends the
+// groups those entries filled.
 func (s *Scheduler) processBatch() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	processed, failed, err := s.service.ProcessOutboxBatch(ctx, s.workerID, s.config.BatchSize)
+	s.flushGroups(ctx)
+	start := time.Now()
+	for round := 0; round < maxDrainRounds; round++ {
+		processed, failed, err := s.service.ProcessOutboxBatch(ctx, s.workerID, s.config.BatchSize)
+		if err != nil {
+			s.log.Error("failed to process notification batch",
+				"error", err,
+				"worker_id", s.workerID,
+			)
+			return
+		}
+		if processed > 0 || failed > 0 {
+			s.log.Info("processed notification batch",
+				"worker_id", s.workerID,
+				"processed", processed,
+				"failed", failed,
+			)
+		}
+		if processed+failed < s.config.BatchSize || time.Since(start) >= s.config.ProcessInterval {
+			break
+		}
+	}
+	s.flushGroups(ctx)
+}
+
+// flushGroups sends the notification groups that are due.
+func (s *Scheduler) flushGroups(ctx context.Context) {
+	n, err := s.service.FlushDueGroups(ctx, groupFlushLimit)
 	if err != nil {
-		s.log.Error("failed to process notification batch",
-			"error", err,
-			"worker_id", s.workerID,
-		)
+		s.log.Error("failed to send notification groups", "error", err, "worker_id", s.workerID)
 		return
 	}
-
-	if processed > 0 || failed > 0 {
-		s.log.Info("processed notification batch",
-			"worker_id", s.workerID,
-			"processed", processed,
-			"failed", failed,
-		)
+	if n > 0 {
+		s.log.Info("sent notification groups", "worker_id", s.workerID, "groups", n)
 	}
 }
 

@@ -1837,6 +1837,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetCampaignGroupGrantRepository(repos.PentestCampaignGroups)
 	s.Pentest.SetCampaignSignoffRepository(repos.PentestSignoff)
 	s.Pentest.SetAttachmentLookup(repos.Attachment) // authorization letter must be a file of the campaign
 	s.Pentest.SetCampaignSecrets(repos.PentestSecret, s.Encryptor)
@@ -2341,6 +2342,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Channel messages name the asset, what it is and why it matters, read
 	// at send time inside the event's tenant (notification-system.md).
 	s.Outbox.SetFactsSource(postgres.NewNotificationFactsRepository(&postgres.DB{DB: deps.DB}))
+	// Grouped alerts: similar finding events reach a channel as one message
+	// (docs/architecture/notification-system.md, "Grouped alerts").
+	s.Outbox.SetGroupRepository(postgres.NewNotificationGroupRepository(&postgres.DB{DB: deps.DB}))
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)

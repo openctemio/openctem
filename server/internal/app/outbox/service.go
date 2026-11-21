@@ -21,6 +21,7 @@ import (
 	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	emailpkg "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
@@ -61,6 +62,16 @@ type Service struct {
 	// facts reads what a message says about the event's object (nil: the
 	// producer's own text only).
 	facts FactsSource
+
+	// groups holds grouped deliveries (group.go; nil: every event is sent
+	// on its own).
+	groups outboxdom.GroupRepository
+}
+
+// SetClientFactory replaces how the provider client of one send is built
+// (tests and load measurements that must not reach a provider).
+func (s *Service) SetClientFactory(f func(notificationclient.Config) (notificationclient.Client, error)) {
+	s.newClient = f
 }
 
 // SetLinkBase sets the console base URL the links of delivered events are
@@ -201,11 +212,30 @@ func (s *Service) ProcessOutboxBatch(ctx context.Context, workerID string, batch
 		"batch_size", len(entries),
 	)
 
-	// Process each entry
+	// Process each entry. The tenant's channels are read once per batch: a
+	// burst of one tenant's events would otherwise read them per event. The
+	// grouped deliveries of the whole batch are written to their groups in
+	// one go (one transaction per group, not per event).
+	channels := map[shared.ID][]*integration.IntegrationWithNotification{}
+	passes := make([]*entryPass, 0, len(entries))
 	for _, entry := range entries {
-		if err := s.processOutboxEntry(ctx, entry); err != nil {
+		p, err := s.preparePass(ctx, entry, channels)
+		if err != nil {
 			s.log.Error("failed to process outbox entry",
 				"outbox_id", entry.ID().String(),
+				"error", err,
+			)
+			failed++
+			continue
+		}
+		passes = append(passes, p)
+	}
+	now := time.Now()
+	s.groupPasses(ctx, passes, now)
+	for _, p := range passes {
+		if err := s.finishPass(ctx, p, now); err != nil {
+			s.log.Error("failed to process outbox entry",
+				"outbox_id", p.entry.ID().String(),
 				"error", err,
 			)
 			failed++
@@ -217,18 +247,48 @@ func (s *Service) ProcessOutboxBatch(ctx context.Context, workerID string, batch
 	return processed, failed, nil
 }
 
+// entryPass is one processing pass over an entry's channels.
+type entryPass struct {
+	entry        *outboxdom.Outbox
+	integrations []*integration.IntegrationWithNotification
+	byID         map[string]*integration.IntegrationWithNotification
+	delivery     bountyprogram.Delivery
+	// grouped holds, by delivery index, the group that took the channel's
+	// delivery (group.go).
+	grouped map[int]outboxdom.GroupAddResult
+}
+
 // processOutboxEntry processes a single outbox entry: one pass over its
 // channels. Each channel (integration) has its own delivery state
 // (outboxdom.ChannelDelivery): a channel that got the event is never sent it
 // again, a failed one is retried on its own backoff whatever the other
 // channels did, and the entry is archived only when every channel is
 // delivered or dead.
-func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbox) error {
-	// Get all notification integrations for this tenant
-	integrations, err := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
+func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbox, channels map[shared.ID][]*integration.IntegrationWithNotification) error {
+	p, err := s.preparePass(ctx, entry, channels)
 	if err != nil {
-		s.failEntry(ctx, entry, fmt.Sprintf("failed to get integrations: %v", err))
 		return err
+	}
+	now := time.Now()
+	s.groupPasses(ctx, []*entryPass{p}, now)
+	return s.finishPass(ctx, p, now)
+}
+
+// preparePass reads the entry's channels and routing, and resolves its
+// channels on the first pass.
+func (s *Service) preparePass(ctx context.Context, entry *outboxdom.Outbox, channels map[shared.ID][]*integration.IntegrationWithNotification) (*entryPass, error) {
+	// Get all notification integrations for this tenant
+	integrations, ok := channels[entry.TenantID()]
+	if !ok {
+		var err error
+		integrations, err = s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
+		if err != nil {
+			s.failEntry(ctx, entry, fmt.Sprintf("failed to get integrations: %v", err))
+			return nil, err
+		}
+		if channels != nil {
+			channels[entry.TenantID()] = integrations
+		}
 	}
 
 	// Where the event may go. An unknown decision is a failure (retried),
@@ -236,7 +296,7 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	delivery, err := s.resolveDelivery(ctx, entry)
 	if err != nil {
 		s.failEntry(ctx, entry, fmt.Sprintf("failed to resolve delivery: %v", err))
-		return err
+		return nil, err
 	}
 
 	// First pass: the channels are the integrations whose filters match the
@@ -258,8 +318,13 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	for _, intg := range integrations {
 		byID[intg.Integration.ID().String()] = intg
 	}
+	return &entryPass{entry: entry, integrations: integrations, byID: byID, delivery: delivery}, nil
+}
 
-	now := time.Now()
+// finishPass attempts the entry's due channels (a grouped one is handed to
+// its group), then settles and archives the entry.
+func (s *Service) finishPass(ctx context.Context, p *entryPass, now time.Time) error {
+	entry, integrations, byID, delivery := p.entry, p.integrations, p.byID, p.delivery
 	deliveries := entry.Deliveries()
 	for i := range deliveries {
 		d := &deliveries[i]
@@ -278,6 +343,11 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 			// The routing rule changed (the event's asset moved into a
 			// private program): never deliver it to this channel.
 			d.Abandon(now, "channel may no longer receive this event")
+			continue
+		}
+		if g, ok := p.grouped[i]; ok {
+			// Delivered as part of the channel's group message.
+			d.RecordGrouped(now, g.GroupID.String())
 			continue
 		}
 		result := s.sendToIntegration(ctx, intg, entry, delivery)
@@ -720,7 +790,16 @@ func (s *Service) UnlockStaleEntries(ctx context.Context, olderThanMinutes int) 
 // CleanupOldEvents removes notification events older than the specified retention days.
 // If retentionDays <= 0, no deletion is performed (unlimited retention).
 func (s *Service) CleanupOldEvents(ctx context.Context, retentionDays int) (deleted int64, err error) {
-	return s.eventRepo.DeleteOldEvents(ctx, retentionDays)
+	deleted, err = s.eventRepo.DeleteOldEvents(ctx, retentionDays)
+	if err != nil || retentionDays <= 0 || s.groups == nil {
+		return deleted, err
+	}
+	// Groups follow the archive's retention: the archived events that name
+	// a group are gone with it.
+	if _, gerr := s.groups.DeleteClosedBefore(ctx, time.Now().AddDate(0, 0, -retentionDays)); gerr != nil {
+		s.logWarn("notification: old groups not removed", "error", logger.SanitizeError(gerr))
+	}
+	return deleted, nil
 }
 
 // getStringFromMap / getBoolFromMap are copied from app.integration_service
