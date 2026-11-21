@@ -133,7 +133,7 @@ export function SplitDialog({
   busy?: boolean
 }) {
   const { t } = useTranslation()
-  const owners = useOwnerNames()
+  const owners = useOwnerNames(open)
   const [title, setTitle] = useState('')
   const [owner, setOwner] = useState<OwnerValue | null>(null)
   const [consent, setConsent] = useState(false)

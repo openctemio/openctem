@@ -52,6 +52,8 @@ export interface UseMembersOptions {
   role?: 'owner' | 'admin' | 'member' | 'viewer'
   /** Internal or external members only (server-side, api RFC-058) */
   kind?: MemberKind
+  /** Only these members (server-side, at most 100); the names of known ids, not a picker. */
+  userIds?: string[]
 }
 
 /**
@@ -108,6 +110,9 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   }
   if (options?.kind) {
     params.set('kind', options.kind)
+  }
+  if (options?.userIds) {
+    params.set('user_ids', options.userIds.slice(0, 100).join(','))
   }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(

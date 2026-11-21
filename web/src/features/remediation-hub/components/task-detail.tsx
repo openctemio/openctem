@@ -46,7 +46,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { ErrorState } from '@/features/shared/components/error-state'
-import { RelativeTime } from '@/features/shared/components/relative-time'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
@@ -63,10 +62,9 @@ import {
   memberPageUrl,
   useRevalidateHub,
   useTask,
-  useTaskTimeline,
   useTasks,
 } from '../api/use-remediation-hub'
-import { useOwnerNames } from '../api/use-owner-names'
+import { useOwnerLabels } from '../api/use-owner-names'
 import { TaskPeople } from './task-people'
 import { fixSteps, groupByAsset, isTypingTarget } from '../lib/hub'
 import { FixStepsBlock } from './fix-steps'
@@ -75,7 +73,7 @@ import { apiMessage } from './suggestions-inbox'
 import { CancelTaskDialog, MarkFixedDialog, SplitDialog } from './task-dialogs'
 import { DeadlinePill, TaskCampaignLink, TaskProgress, TaskStatePill } from './task-bits'
 import { useTaskException } from './task-exception'
-import { TaskQueryPanel } from './task-query-panel'
+import { TaskHistory } from './task-history'
 import { VirtualRows } from './virtual-rows'
 import { TaskFindingDrawer } from './task-finding-drawer'
 import { TaskRowStatus } from './task-row-status'
@@ -95,11 +93,11 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.RemediationWrite)
   const canFix = canWrite && hasPermission(Permission.FindingsFixApply)
-  const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const { data: task, error, isLoading, mutate } = useTask(taskId)
+  // The owner's name by id: the first view never loads the member list.
+  const owners = useOwnerLabels([task?.assignee_user_id], [task?.assignee_group_id])
   useBreadcrumbTitle(task?.title)
-  const { data: timeline } = useTaskTimeline(taskId)
   const members = useSWRInfinite<Page<TaskMember>>(
     (index, prev) =>
       prev && prev.data.length < MEMBER_PAGE ? null : memberPageUrl(taskId, index + 1, MEMBER_PAGE),
@@ -145,13 +143,16 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     },
     [pathname, router, searchStr, setActiveId]
   )
-  const { data: siblings } = useTasks(
+  // The other open tasks of the same fix are drop targets: read them when the
+  // person starts to select or drag (pointer down on the list), not with the page.
+  const [wantTargets, setWantTargets] = useState(false)
+  const { data: siblings, isLoading: targetsLoading } = useTasks(
     {
       actionId: task?.action_id,
       states: ['open', 'in_progress', 'verifying', 'on_hold'],
       perPage: 6,
     },
-    !!task && canWrite
+    !!task && canWrite && (wantTargets || selected.size > 0)
   )
 
   const refresh = useCallback(async () => {
@@ -517,13 +518,6 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </p>
       )}
 
-      <TaskQueryPanel
-        taskId={task.id}
-        taskVersion={task.version}
-        writable={writable}
-        onChanged={() => void mutate()}
-      />
-
       <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-2 rounded-lg border p-4">
           <h2 className="text-sm font-semibold">{t('remediationHub.detail.fix')}</h2>
@@ -548,7 +542,10 @@ export function TaskDetail({ taskId }: { taskId: string }) {
       </section>
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <section className="grid gap-4 lg:grid-cols-[1fr_16rem]">
+        <section
+          className="grid gap-4 lg:grid-cols-[1fr_16rem]"
+          onPointerDownCapture={() => writable && setWantTargets(true)}
+        >
           <div className="rounded-lg border">
             <div className="flex flex-wrap items-center gap-2 border-b p-3">
               <h2 className="text-sm font-semibold">
@@ -652,10 +649,16 @@ export function TaskDetail({ taskId }: { taskId: string }) {
               />
             )}
           </div>
-          {writable && targets.length > 0 && (
+          {writable && (
             <aside className="space-y-2" aria-label={t('remediationHub.detail.dropTargets')}>
               <h2 className="text-sm font-semibold">{t('remediationHub.detail.dropTargets')}</h2>
               <p className="text-muted-foreground text-xs">{t('remediationHub.detail.dropHint')}</p>
+              {targetsLoading && <Skeleton className="h-16 w-full" />}
+              {siblings && targets.length === 0 && (
+                <p className="text-muted-foreground text-xs">
+                  {t('remediationHub.detail.dropNone')}
+                </p>
+              )}
               {targets.map((x) => (
                 <DropTask key={x.id} task={x} />
               ))}
@@ -664,38 +667,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </section>
       </DndContext>
 
-      <section className="rounded-lg border p-4">
-        <h2 className="mb-3 text-sm font-semibold">{t('remediationHub.detail.timeline')}</h2>
-        {(timeline?.data ?? []).length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('remediationHub.detail.noEvents')}</p>
-        ) : (
-          <ol className="space-y-2">
-            {(timeline?.data ?? []).map((e) => (
-              <li key={e.id} className="flex flex-wrap items-baseline gap-2 text-sm">
-                <RelativeTime
-                  date={e.created_at}
-                  className="text-muted-foreground w-28 shrink-0 text-xs"
-                />
-                <span>
-                  {t(`remediationHub.event.${e.kind}`, e.kind, {
-                    count: String(e.data.count ?? e.data.members ?? ''),
-                    to: String(e.data.to ?? e.data.manual_state ?? ''),
-                    title: String(
-                      e.data.to_task_title ?? e.data.from_task_title ?? e.data.title ?? ''
-                    ),
-                    updated: String(e.data.updated ?? ''),
-                  })}
-                </span>
-                <span className="text-muted-foreground text-xs">
-                  {e.actor_type === 'system'
-                    ? t('remediationHub.detail.platform')
-                    : (owners.user(e.actor_id) ?? t('remediationHub.detail.someone'))}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      <TaskHistory task={task} writable={writable} onChanged={() => void mutate()} />
 
       <MovePalette
         open={moveOpen}
