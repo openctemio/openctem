@@ -92,8 +92,10 @@ describe('CAPTCHA settings', () => {
 
   it('offers no change to a non-super admin', () => {
     render(<CaptchaSettingsForm settings={captcha} canEdit={false} onSaved={() => {}} />)
+    // The page shows the view-only notice (SettingsPage readOnly); the form disables itself.
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
-    expect(screen.getByText('Only a super admin can change this setting.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Check' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Site key (public)')).toBeDisabled()
   })
 })
 

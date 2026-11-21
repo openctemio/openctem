@@ -5,11 +5,11 @@ import { Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { RelativeTime } from '@/features/shared'
+import { RelativeTime, SecretField as SecretInput, SettingsField } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SettingChange } from '../types'
 
@@ -73,42 +73,46 @@ export interface SecretFieldProps {
  */
 export function SecretField(p: SecretFieldProps) {
   const { t } = useTranslation()
-  const id = useId()
+  const clearId = useId()
   return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id}>{p.label}</Label>
-      <Input
-        id={id}
-        type="password"
-        value={p.value}
-        onChange={(e) => {
-          p.onChange(e.target.value)
-          p.onClear(false)
-        }}
-        disabled={p.disabled || p.clear}
-        autoComplete="new-password"
-        spellCheck={false}
-        placeholder={
-          p.isSet
-            ? t('admin.settings.secretKeep', 'Stored. Type to replace it.')
-            : (p.placeholder ?? t('admin.settings.secretNone', 'Not set'))
-        }
-      />
-      {p.help && <p className="text-xs text-muted-foreground">{p.help}</p>}
-      {p.isSet && !p.disabled && !p.noClear && (
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={p.clear}
+    <SettingsField label={p.label} hint={p.help}>
+      {(control) => (
+        <div className="flex min-w-0 flex-col gap-2">
+          {/* The kit field: masked, Show value for what was just typed; a
+              stored value is never read back from the server. */}
+          <SecretInput
+            {...control}
+            value={p.value}
             onChange={(e) => {
-              p.onClear(e.target.checked)
-              p.onChange('')
+              p.onChange(e.target.value)
+              p.onClear(false)
             }}
+            disabled={p.disabled || p.clear}
+            autoComplete="new-password"
+            placeholder={
+              p.isSet
+                ? t('admin.settings.secretKeep', 'Stored. Type to replace it.')
+                : (p.placeholder ?? t('admin.settings.secretNone', 'Not set'))
+            }
           />
-          {t('admin.settings.secretClear', 'Remove the stored value')}
-        </label>
+          {p.isSet && !p.disabled && !p.noClear && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={clearId}
+                checked={p.clear}
+                onCheckedChange={(v) => {
+                  p.onClear(v === true)
+                  p.onChange('')
+                }}
+              />
+              <Label htmlFor={clearId} className="font-normal text-muted-foreground">
+                {t('admin.settings.secretClear', 'Remove the stored value')}
+              </Label>
+            </div>
+          )}
+        </div>
       )}
-    </div>
+    </SettingsField>
   )
 }
 
