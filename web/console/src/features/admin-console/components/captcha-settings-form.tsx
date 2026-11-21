@@ -4,12 +4,17 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
-import { TonePill } from '@/features/shared/components/tone-pill'
+import {
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  TonePill,
+} from '@/features/shared'
 import { saveCaptcha, verifyCaptchaSecret } from '../api/use-platform-settings'
 import type { CaptchaSettings } from '../types'
 import {
@@ -108,41 +113,47 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>{t('admin.captcha.title', 'CAPTCHA (Cloudflare Turnstile)')}</CardTitle>
-            <TonePill
-              tone={settings.secret_set ? 'success' : 'warning'}
-              label={
-                settings.secret_set ? t('admin.captcha.on', 'On') : t('admin.captcha.off', 'Off')
-              }
-            />
-          </div>
-          <CardDescription>
-            {t(
-              'admin.captcha.description',
-              'Protects registration, the request-access form and every sign-in after repeated failures, for organizations and this console. Without keys only the rate limits apply.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {locked && <LockedByEnvironment envVar={settings.env_var} />}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-site`}>
-                {t('admin.captcha.siteKey', 'Site key (public)')}
-              </Label>
-              <Input
-                id={`${id}-site`}
-                value={siteKey}
-                onChange={(e) => setSiteKey(e.target.value)}
-                disabled={!editable}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="0x4AAAAAAA..."
-              />
-            </div>
+      <SettingsSection
+        framed
+        id="captcha-keys"
+        title={t('admin.captcha.title', 'CAPTCHA (Cloudflare Turnstile)')}
+        description={t(
+          'admin.captcha.description',
+          'Protects registration, the request-access form and every sign-in after repeated failures, for organizations and this console. Without keys only the rate limits apply.'
+        )}
+        actions={
+          <TonePill
+            tone={settings.secret_set ? 'success' : 'warning'}
+            label={
+              settings.secret_set ? t('admin.captcha.on', 'On') : t('admin.captcha.off', 'Off')
+            }
+          />
+        }
+        meta={<SettingChangedLine change={settings} />}
+      >
+        {locked && (
+          <SettingsBlock>
+            <LockedByEnvironment envVar={settings.env_var} />
+          </SettingsBlock>
+        )}
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField
+              id={`${id}-site`}
+              label={t('admin.captcha.siteKey', 'Site key (public)')}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  value={siteKey}
+                  onChange={(e) => setSiteKey(e.target.value)}
+                  disabled={!editable}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="0x4AAAAAAA..."
+                />
+              )}
+            </SettingsField>
             <SecretField
               label={t('admin.captcha.secret', 'Secret key')}
               isSet={settings.secret_set}
@@ -156,43 +167,38 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
                 'Write-only: it is encrypted on the server and never shown again.'
               )}
             />
-          </div>
+          </SettingsFieldGrid>
           {clearSecret && siteKey.trim() !== '' && (
-            <p className="text-sm text-destructive">
+            <p role="alert" className="text-dense text-destructive">
               {t(
                 'admin.captcha.bothKeys',
                 'Set both keys, or remove both: clear the site key too to turn the CAPTCHA off.'
               )}
             </p>
           )}
-          <SettingChangedLine change={settings} />
-          {canEdit && (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => void check()}
-                disabled={checking || (!settings.secret_set && secret.trim() === '')}
-              >
-                {checking && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.captcha.check', 'Check the secret key')}
-              </Button>
-              {!locked && (
-                <SettingsSaveBar
-                  className="basis-full"
-                  dirty={dirty}
-                  onSave={() => setConfirmOpen(true)}
-                  onDiscard={reset}
-                />
-              )}
-            </div>
-          )}
-          {!canEdit && (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+        {canEdit && (
+          <SettingsRow
+            label={t('admin.captcha.check', 'Check the secret key')}
+            hint={t(
+              'admin.captcha.checkHint',
+              'Asks Turnstile whether it knows the typed secret, or the stored one when the field is empty.'
+            )}
+          >
+            <Button
+              variant="outline"
+              onClick={() => void check()}
+              disabled={checking || (!settings.secret_set && secret.trim() === '')}
+            >
+              {checking && <Loader2 className="animate-spin" aria-hidden />}
+              {t('admin.captcha.checkButton', 'Check')}
+            </Button>
+          </SettingsRow>
+        )}
+      </SettingsSection>
+      {canEdit && !locked && (
+        <SettingsSaveBar dirty={dirty} onSave={() => setConfirmOpen(true)} onDiscard={reset} />
+      )}
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

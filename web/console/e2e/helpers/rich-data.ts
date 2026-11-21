@@ -97,6 +97,61 @@ export const CONSOLE_LIST_DATA: Record<string, { url: string; body: (s: Scenario
     url: '**/api/v1/admin/console-sessions',
     body: (scen) => ({ data: Array.from({ length: rowCount(scen) }, (_, i) => adminSession(i)) }),
   },
+  // Settings pages: 'empty' is a fresh install (nothing stored, server
+  // defaults), the others a stored value changed by a long-named administrator.
+  '/system/captcha': {
+    url: '**/api/v1/admin/settings/captcha',
+    body: (scen) => ({
+      ...settingChange(scen),
+      site_key: scen === 'empty' ? '' : '0x4AAAAAAAexample0123456789abcdef',
+      secret_set: scen !== 'empty',
+      source: scen === 'empty' ? 'none' : 'console',
+      locked_by_environment: false,
+      env_var: 'TURNSTILE_SECRET_KEY',
+      version: 3,
+    }),
+  },
+  '/system/two-factor': {
+    url: '**/api/v1/admin/settings/auth-mfa',
+    body: (scen) => ({
+      ...settingChange(scen),
+      floor: scen === 'empty' ? 'none' : 'admins',
+      source: scen === 'empty' ? 'default' : 'console',
+      default: 'none',
+      env_var: 'MFA_FLOOR',
+      grace_days_existing: 14,
+      grace_days_new: 3,
+      effective_from: scen === 'empty' ? undefined : ago(60 * 24 * 18),
+      recommend_raise: scen === 'empty',
+      version: 2,
+    }),
+  },
+  '/system/alerts': {
+    url: '**/api/v1/admin/settings/alerts',
+    body: (scen) => ({
+      ...settingChange(scen),
+      enabled: scen !== 'empty',
+      url_set: scen !== 'empty',
+      url_host: scen === 'empty' ? undefined : 'hooks.canh-bao-van-hanh.subsidiary.example.com.vn',
+      secret_set: scen === 'rich',
+      version: 4,
+    }),
+  },
+  '/system/leaked-credentials': {
+    url: '**/api/v1/admin/settings/leaked-secret-storage',
+    body: (scen) => ({
+      ...settingChange(scen),
+      store_by_default: scen !== 'rich',
+      source: scen === 'empty' ? 'default' : 'console',
+      default: true,
+      version: 1,
+    }),
+  },
+}
+
+/** Who changed a console setting: nobody on a fresh install, else a long name. */
+function settingChange(scen: Scenario) {
+  return scen === 'empty' ? {} : { changed_at: ago(95), changed_by: LONG_EMAIL }
 }
 
 /** Serves the route's list answer from CONSOLE_LIST_DATA for GET requests. */

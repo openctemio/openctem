@@ -4,11 +4,15 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import {
+  SettingsBlock,
+  SettingsFieldGrid,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { saveAlertWebhook, sendTestAlert } from '../api/use-platform-settings'
 import type { AlertWebhookSettings } from '../types'
 import {
@@ -99,36 +103,30 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.alerts.title', 'Alert webhook')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.alerts.description',
-              'Sends the alerts administrators get by e-mail to a chat or paging tool too: low disk space, stale backups, expiring certificates and changes to these settings. Checks that must run while the API is down stay with the server monitoring.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${id}-enabled`} className="grid gap-1 font-normal">
-              <span className="font-medium">
-                {t('admin.alerts.enabled', 'Send alerts to the webhook')}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {settings.url_host
-                  ? t('admin.alerts.receiver', 'Receiver: {host}', { host: settings.url_host })
-                  : t('admin.alerts.noReceiver', 'No address is set yet.')}
-              </span>
-            </Label>
-            <Switch
-              id={`${id}-enabled`}
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={!canEdit || (!willHaveUrl && !enabled)}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+      <SettingsSection
+        framed
+        id="alert-webhook"
+        title={t('admin.alerts.title', 'Alert webhook')}
+        description={t(
+          'admin.alerts.description',
+          'Sends the alerts administrators get by e-mail to a chat or paging tool too: low disk space, stale backups, expiring certificates and changes to these settings. Checks that must run while the API is down stay with the server monitoring.'
+        )}
+        meta={<SettingChangedLine change={settings} />}
+      >
+        <SettingsSwitchRow
+          id={`${id}-enabled`}
+          label={t('admin.alerts.enabled', 'Send alerts to the webhook')}
+          hint={
+            settings.url_host
+              ? t('admin.alerts.receiver', 'Receiver: {host}', { host: settings.url_host })
+              : t('admin.alerts.noReceiver', 'No address is set yet.')
+          }
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          disabled={!canEdit || (!willHaveUrl && !enabled)}
+        />
+        <SettingsBlock>
+          <SettingsFieldGrid>
             <SecretField
               label={t('admin.alerts.url', 'Webhook address (https)')}
               isSet={settings.url_set}
@@ -156,38 +154,40 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
                 'With a secret, each request carries X-OpenCTEM-Timestamp and X-OpenCTEM-Signature (sha256 HMAC of the timestamp, a dot and the body).'
               )}
             />
-          </div>
+          </SettingsFieldGrid>
           {enabled && !willHaveUrl && (
-            <p className="text-sm text-destructive">
+            <p role="alert" className="text-dense text-destructive">
               {t('admin.alerts.needsUrl', 'Set an address to turn the webhook on.')}
             </p>
           )}
-          <SettingChangedLine change={settings} />
-          {canEdit ? (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => void test()}
-                disabled={testing || dirty || !settings.url_set}
-              >
-                {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.alerts.test', 'Send a test alert')}
-              </Button>
-              <SettingsSaveBar
-                className="basis-full"
-                dirty={dirty}
-                saveDisabled={enabled && !willHaveUrl}
-                onSave={() => setConfirmOpen(true)}
-                onDiscard={reset}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+        {canEdit && (
+          <SettingsRow
+            label={t('admin.alerts.test', 'Send a test alert')}
+            hint={t(
+              'admin.alerts.testHint',
+              'Sends one test alert to the saved address. Save or discard your changes first.'
+            )}
+          >
+            <Button
+              variant="outline"
+              onClick={() => void test()}
+              disabled={testing || dirty || !settings.url_set}
+            >
+              {testing && <Loader2 className="animate-spin" aria-hidden />}
+              {t('admin.alerts.testButton', 'Send test')}
+            </Button>
+          </SettingsRow>
+        )}
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saveDisabled={enabled && !willHaveUrl}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      )}
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

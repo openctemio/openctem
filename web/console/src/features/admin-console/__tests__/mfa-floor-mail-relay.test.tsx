@@ -71,8 +71,8 @@ describe('two-factor floor', () => {
     // No unsaved change, no save bar.
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await userEvent.click(screen.getByLabelText('Everyone'))
-    await userEvent.clear(screen.getByLabelText('Current members'))
-    await userEvent.type(screen.getByLabelText('Current members'), '30')
+    await userEvent.clear(screen.getByLabelText('Days to set it up: current members'))
+    await userEvent.type(screen.getByLabelText('Days to set it up: current members'), '30')
     const dialog = await confirmWithReason('audit finding 12')
     expect(dialog).toHaveTextContent('Change the two-factor floor?')
     await waitFor(() =>
@@ -100,8 +100,8 @@ describe('two-factor floor', () => {
     expect(graceDays('-1')).toBeNull()
     expect(graceDays('7.5')).toBeNull()
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
-    await userEvent.clear(screen.getByLabelText('New members'))
-    await userEvent.type(screen.getByLabelText('New members'), '120')
+    await userEvent.clear(screen.getByLabelText('Days to set it up: new members'))
+    await userEvent.type(screen.getByLabelText('Days to set it up: new members'), '120')
     expect(screen.getByText('Enter a whole number of days from 0 to 90.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
