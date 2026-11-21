@@ -1,36 +1,62 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import Link from '@/components/link'
+import { ChevronRight } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import type { MobileRowSelection } from '../data-table/data-table'
+import { MetaLine } from '../text-layout'
 
 /**
- * A queue item on a phone: fixed slots, so every card of every queue reads
- * in one order. Title (what the request is about), one line of state marks,
- * one line of who asked and by when, the reason in two lines at most, then
- * the decision controls on their own row. In the list's select mode the
- * card starts with the row's checkbox (`selection`, from `DataTable`).
+ * A queue item on a phone, laid out like every other phone card of a list:
+ * the row's name and state on the first line, the end of the card always
+ * holding something, never a line of its own for one control.
+ *
+ *   [ ] Title, up to two lines .......................... [State]
+ *       The reason, two lines at most
+ *       Key facts on one line ......................... [Approve] [...]
+ *
+ * - `state`: the state chip at the end of the title line (Pending, the
+ *   severity of a finding waiting to close).
+ * - `meta`: the key facts, most important first. The first shares the line
+ *   with `actions`; the rest wrap on a line of their own under the reason
+ *   (words wrap, nothing is cut with an ellipsis). A card with no controls
+ *   keeps all of them on one wrapping line.
+ * - `actions`: the decision controls (`QueueDecisionActions layout="card"`:
+ *   the main action and More) at the end of the facts line.
+ * - `href`: where the item opens. When `actions` draws nothing (no
+ *   permission, a decided request) a chevron to it stands in their place, so
+ *   the end of the card still says what a tap does. The chevron is a pointer
+ *   target only: the title is the item's link for the keyboard and screen
+ *   readers.
+ * - `selection`: the row's checkbox in the list's select mode (the second
+ *   argument of `DataTable`'s `mobileRow`), named by `selectLabel`.
  */
 export function QueueCard({
   title,
-  marks,
+  state,
   meta,
   reason,
   actions,
+  href: rawHref,
   className,
   selection,
   selectLabel,
   'data-testid': testId,
 }: {
   title: ReactNode
-  /** Status and what is asked for: lozenges and badges, one wrapping line. */
-  marks?: ReactNode
-  /** Requester, decide-by: text items, one wrapping line. */
-  meta?: ReactNode
-  /** The requester's reason (with its AI mark when an AI wrote it). */
+  /** The item's state chip, at the end of the title line. */
+  state?: ReactNode
+  /** The key facts, one line: null and false items are left out. */
+  meta?: ReactNode[]
+  /** The requester's reason or the evidence (with its AI mark when an AI wrote it). */
   reason?: ReactNode
+  /** The decision controls; drawing nothing leaves the place to the chevron. */
   actions?: ReactNode
+  /** Where the item opens (the chevron's target). */
+  href?: string
   className?: string
   /** The row's selection (the second argument of `DataTable`'s `mobileRow`). */
   selection?: MobileRowSelection
@@ -38,44 +64,80 @@ export function QueueCard({
   selectLabel?: string
   'data-testid'?: string
 }) {
+  // The href comes from row data: a `javascript:` or other unsafe value draws no link.
+  const href = safeHref(rawHref)
   const selectable = !!selection?.selectable
+  const facts = (meta ?? []).filter((m) => m !== null && m !== undefined && m !== false && m !== '')
+  const end = !!actions || !!href
+  // With controls at the end, only the first fact shares their line (the
+  // controls take about half the width of a phone); the others wrap under the
+  // reason, whole words, never cut. Without controls all facts share one line.
+  const key = end ? facts.slice(0, 1) : facts
+  const more = end ? facts.slice(1) : []
   return (
     <div
       data-slot="queue-card"
       data-testid={testId}
       data-state={selectable && selection?.selected ? 'selected' : undefined}
-      className={cn('grid gap-2 p-3 data-[state=selected]:bg-muted', className)}
+      className={cn('flex min-w-0 items-start gap-3 p-3 data-[state=selected]:bg-muted', className)}
     >
-      <div data-slot="queue-card-title" className="flex min-w-0 items-start gap-3">
-        {selectable && (
-          <Checkbox
-            className="mt-0.5 shrink-0"
-            checked={selection?.selected}
-            onCheckedChange={(v) => selection?.onSelectedChange(!!v)}
-            aria-label={selectLabel}
-          />
-        )}
-        <div className="min-w-0 flex-1">{title}</div>
+      {selectable && (
+        <Checkbox
+          className="mt-0.5 shrink-0"
+          checked={selection?.selected}
+          onCheckedChange={(v) => selection?.onSelectedChange(!!v)}
+          aria-label={selectLabel}
+        />
+      )}
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        <div data-slot="queue-card-head" className="flex min-w-0 items-start gap-2">
+          <div data-slot="queue-card-title" className="min-w-0 flex-1">
+            {title}
+          </div>
+          {state ? (
+            <div data-slot="queue-card-state" className="flex shrink-0 items-center gap-1.5">
+              {state}
+            </div>
+          ) : null}
+        </div>
+        {reason ? (
+          <div data-slot="queue-card-reason" className="min-w-0">
+            {reason}
+          </div>
+        ) : null}
+        {more.length > 0 ? (
+          <div data-slot="queue-card-more" className="min-w-0">
+            <MetaLine className="items-center gap-y-0.5" items={more} />
+          </div>
+        ) : null}
+        {key.length > 0 || end ? (
+          <div data-slot="queue-card-line" className="flex min-w-0 items-center gap-2">
+            <div data-slot="queue-card-meta" className="min-w-0 flex-1">
+              {key.length > 0 && <MetaLine className="items-center" items={key} />}
+            </div>
+            {actions ? (
+              // `peer`: the chevron shows only while this draws nothing.
+              <div data-slot="queue-card-actions" className="peer flex shrink-0 empty:hidden">
+                {actions}
+              </div>
+            ) : null}
+            {href ? (
+              <Link
+                href={href}
+                data-slot="queue-card-open"
+                tabIndex={-1}
+                aria-hidden="true"
+                className={cn(
+                  '-me-2 size-control-touch shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted',
+                  actions ? 'hidden peer-empty:inline-flex' : 'inline-flex'
+                )}
+              >
+                <ChevronRight className="size-4 rtl:rotate-180" />
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      {marks ? (
-        <div data-slot="queue-card-marks" className="flex flex-wrap items-center gap-1.5">
-          {marks}
-        </div>
-      ) : null}
-      {meta ? (
-        <div
-          data-slot="queue-card-meta"
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
-        >
-          {meta}
-        </div>
-      ) : null}
-      {reason ? (
-        <div data-slot="queue-card-reason" className="min-w-0">
-          {reason}
-        </div>
-      ) : null}
-      {actions ? <div data-slot="queue-card-actions">{actions}</div> : null}
     </div>
   )
 }

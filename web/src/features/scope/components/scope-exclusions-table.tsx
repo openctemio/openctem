@@ -13,6 +13,7 @@
  * mode…" opens the two-step dialog (exclusion approvers only, step-up).
  */
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
@@ -238,8 +239,8 @@ export function ScopeExclusionsTable({
         if (isPathExclusion(x))
           return (
             <div className="min-w-0 space-y-0.5">
-              <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-                {pathRuleLabel(x)}
+              <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+                <BreakText>{pathRuleLabel(x)}</BreakText>
               </code>
               <p className="text-xs text-muted-foreground">
                 {t(
@@ -256,10 +257,12 @@ export function ScopeExclusionsTable({
           )
         return (
           <div className="min-w-0 space-y-0.5">
-            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">{x.pattern}</code>
+            <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+              <BreakText>{x.pattern}</BreakText>
+            </code>
             <p className="text-xs text-muted-foreground">
               {t('scope.col.covers', 'Covers {what}', {
-                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }),
+                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }, t),
               })}
             </p>
           </div>
@@ -276,10 +279,10 @@ export function ScopeExclusionsTable({
           ) : (
             (scopeKindIcon(row.original.exclusion_type) ?? <Ban className="h-4 w-4" />)
           )}
-          <span className="text-sm text-foreground">
+          <span className="whitespace-nowrap text-sm text-foreground">
             {isPathExclusion(row.original)
               ? t('scope.exclusion.webPath', 'Web path')
-              : scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
+              : scopeTargetTypeLabel(row.original.exclusion_type ?? '', t)}
           </span>
         </div>
       ),
@@ -288,7 +291,7 @@ export function ScopeExclusionsTable({
       id: 'why',
       header: t('scope.col.why', 'Why'),
       cell: ({ row }) => (
-        <span className="text-sm" data-testid="exclusion-why">
+        <span className="whitespace-nowrap text-sm" data-testid="exclusion-why">
           {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
         </span>
       ),
@@ -306,7 +309,7 @@ export function ScopeExclusionsTable({
               tone={s.tone}
               label={statusLabel(x.status ?? 'inactive')}
               title={t(`scope.exclusion.status.${x.status ?? 'inactive'}.hint`, s.hint)}
-              detail={x.expires_at ? expiryText(x.expires_at) : undefined}
+              detail={x.expires_at ? expiryText(x.expires_at, undefined, t) : undefined}
               state={x.status}
             />
             {isPathExclusion(x) && x.status === 'active' && (
@@ -318,7 +321,7 @@ export function ScopeExclusionsTable({
                 title={t(`scope.testing.hint.${mode}`, TESTING_HINT[mode])}
                 detail={
                   mode !== 'blocked' && x.testing_until
-                    ? expiryText(x.testing_until).replace('Expires in', 'Blocked again in')
+                    ? expiryText(x.testing_until, undefined, t, 'blocked')
                     : undefined
                 }
                 state={`testing-${mode}`}

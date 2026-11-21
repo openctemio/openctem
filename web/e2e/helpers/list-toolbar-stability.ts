@@ -359,9 +359,33 @@ async function snap(page: Page): Promise<Snap> {
   })
 }
 
-function compare(step: string, a: Snap, b: Snap) {
+function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
   const problems: string[] = []
+  // On a phone the Query field takes the whole first line: the field grows and
+  // the end actions step down one row (44 px, the list with them) and the
+  // inert tokens are not drawn. Nothing else moves.
+  const ROW = 44
+  const stepsDown = (k: string) =>
+    phoneModeSwitch && (k === 'search field' || k.startsWith('end') || k.startsWith('token'))
+  // On a phone the tokens that filter are drawn on lines below the Query field
+  // and wrap: a token may come or go, and the list moves with the lowest edge of
+  // the field and its tokens, plus the chips row that came, went or wrapped.
+  const belowField = (s: Snap) => {
+    const field = s.controls['search field']
+    return Object.entries(s.controls).filter(
+      ([k, v]) => k.startsWith('token') && field && v.y > field.y
+    )
+  }
+  const stackEdge = (s: Snap) => {
+    const field = s.controls['search field']
+    return Math.max(field ? field.y + field.h : 0, ...belowField(s).map(([, v]) => v.y + v.h))
+  }
+  const chipsPart = (s: Snap) => (s.chipsRow === null ? 0 : s.chipsRow + 8)
+  const tokensWrap = belowField(a).length > 0 || belowField(b).length > 0
   for (const [k, v] of Object.entries(a.controls)) {
+    if (stepsDown(k)) continue
+    // Wrapped tokens flow: one that goes shifts the ones after it up a place.
+    if (tokensWrap && k.startsWith('token')) continue
     const w = b.controls[k]
     if (!w) {
       problems.push(`${k} disappeared`)
@@ -371,7 +395,8 @@ function compare(step: string, a: Snap, b: Snap) {
     if (v.w !== w.w || v.h !== w.h) problems.push(`${k} resized ${w.w - v.w}x${w.h - v.h}`)
   }
   for (const k of Object.keys(b.controls)) {
-    if (!a.controls[k]) problems.push(`${k} appeared`)
+    if (!a.controls[k] && !stepsDown(k) && !(tokensWrap && k.startsWith('token')))
+      problems.push(`${k} appeared`)
   }
   for (const [k, v] of Object.entries(a.titleEnd)) {
     const w = b.titleEnd[k]
@@ -392,7 +417,15 @@ function compare(step: string, a: Snap, b: Snap) {
     const statusWent = a.statusRow !== null && b.statusRow === null
     const statusStep = (b.statusRow ?? a.statusRow ?? 0) + 8
     const delta = b.listTop - a.listTop
+    // A phone wraps its chips onto more lines: a chips row that was already
+    // there grows by whole lines and the list moves with it, by exactly that.
+    const rowGrew = a.chipsRow !== null && b.chipsRow !== null && delta === b.chipsRow - a.chipsRow
+    const tokensGrew =
+      tokensWrap && delta === stackEdge(b) - stackEdge(a) + chipsPart(b) - chipsPart(a)
     if (!(
+      rowGrew ||
+      tokensGrew ||
+      (phoneModeSwitch && Math.abs(delta) === ROW) ||
       (rowCame && delta === step) ||
       (rowWent && delta === -step) ||
       (statusCame && delta === statusStep) ||
@@ -648,7 +681,12 @@ export function headerHoldsStill(route: Route) {
             await act()
             await settle(page)
             const now = await snap(page)
-            compare(`${route} ${width} ${locale}: ${name}`, last, now)
+            compare(
+              `${route} ${width} ${locale}: ${name}`,
+              last,
+              now,
+              width < 448 && /^switch (to Query|back to Basic)/.test(name)
+            )
             last = now
           }
 

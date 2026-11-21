@@ -23,8 +23,8 @@ export function approversText(t: T, ev: ScanApprovalEvaluation): string {
   for (const r of ev.approver_roles ?? []) {
     who.push(
       r === 'owner'
-        ? t('scans.approval.roleOwner', 'an owner')
-        : t('scans.approval.roleAdmin', 'an administrator')
+        ? t('scans.approval.roleOwner', 'owners')
+        : t('scans.approval.roleAdmin', 'administrators')
     )
   }
   if ((ev.approver_user_ids ?? []).length > 0) {

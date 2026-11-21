@@ -77,10 +77,18 @@ const INVITATIONS: OnboardingOptions['invitations'] = [
   },
 ]
 
-async function renderHub(opts: OnboardingOptions) {
+async function renderHub(
+  opts: OnboardingOptions,
+  notice?: { notice: 'sso_required'; org?: string }
+) {
   mocks.options.mockResolvedValue({ success: true, options: opts })
-  render(<OrganizationsHub needsSession={false} />)
-  await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+  render(<OrganizationsHub needsSession={false} notice={notice} />)
+  // The loading state is a status; the refusal notice is one too.
+  await waitFor(() =>
+    expect(
+      screen.queryAllByRole('status').filter((el) => el.dataset.testid !== 'welcome-notice')
+    ).toHaveLength(0)
+  )
 }
 
 describe('OrganizationsHub', () => {
@@ -275,5 +283,41 @@ describe('OrganizationsHub memberships', () => {
     )
     expect(mocks.logout).toHaveBeenCalledWith('/login?org=example')
     expect(screen.queryByRole('link', { name: 'Set up two-factor' })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The organization a refusal notice names comes from the page URL, which
+ * anyone can write. It is named, with its identity-provider button, only when
+ * it is one of the person's own memberships.
+ */
+describe('refusal notice organization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.profile.mockReturnValue({ name: 'Alice', email: 'alice@acme.io' })
+  })
+
+  it('names the organization and offers its identity provider when the person is a member', async () => {
+    mocks.tenants.mockReturnValue([{ ...MEMBERSHIP, slug: 'acme' }])
+    await renderHub(options(), { notice: 'sso_required', org: 'acme' })
+    expect(screen.getByTestId('welcome-notice')).toHaveTextContent('acme')
+    expect(
+      screen.getByRole('button', { name: /continue with acme's identity provider/i })
+    ).toBeInTheDocument()
+  })
+
+  it('a slug that is not one of the memberships gives the generic notice: no name, no button', async () => {
+    mocks.tenants.mockReturnValue([{ ...MEMBERSHIP, slug: 'acme' }])
+    await renderHub(options(), { notice: 'sso_required', org: 'attacker-org' })
+    const notice = screen.getByTestId('welcome-notice')
+    expect(notice).not.toHaveTextContent('attacker-org')
+    expect(screen.queryByRole('button', { name: /identity provider/i })).not.toBeInTheDocument()
+  })
+
+  it('until the memberships are known the notice stays generic', async () => {
+    mocks.tenants.mockReturnValue(undefined)
+    await renderHub(options(), { notice: 'sso_required', org: 'acme' })
+    expect(screen.getByTestId('welcome-notice')).not.toHaveTextContent('acme')
+    expect(screen.queryByRole('button', { name: /identity provider/i })).not.toBeInTheDocument()
   })
 })

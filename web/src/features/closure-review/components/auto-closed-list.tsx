@@ -180,18 +180,14 @@ export function AutoClosedList({
             mobileRow={(row) => (
               <QueueCard
                 data-testid="closure-phone-card"
+                href={`/findings/${encodeURIComponent(row.finding_id)}`}
                 title={
                   <ApprovalFindingLink
                     findingId={row.finding_id}
                     findingTitle={row.finding_title}
                   />
                 }
-                marks={<SeverityBadge severity={row.severity} />}
-                meta={
-                  row.asset_name ? (
-                    <span dir="auto">{toDisplayText(row.asset_name, 120)}</span>
-                  ) : undefined
-                }
+                state={<SeverityBadge severity={row.severity} />}
                 reason={
                   <ClosureEvidence
                     method={row.verification}
@@ -199,6 +195,13 @@ export function AutoClosedList({
                     at={row.resolved_at}
                   />
                 }
+                meta={[
+                  row.asset_name ? (
+                    <span key="asset" dir="auto">
+                      {toDisplayText(row.asset_name, 120)}
+                    </span>
+                  ) : null,
+                ]}
                 actions={reopenButton(row)}
               />
             )}

@@ -131,6 +131,7 @@ WITH inv AS (
 SELECT
 	count(*) FILTER (WHERE NOT cls.internal) AS internet_facing,
 	count(*) FILTER (WHERE NOT cls.internal AND coalesce(m.covered, false) AND NOT coalesce(m.excluded, false)) AS in_scope,
+	count(*) FILTER (WHERE NOT cls.internal AND coalesce(m.excluded, false)) AS excluded,
 	count(*) FILTER (WHERE cls.internal) AS internal
 FROM cls LEFT JOIN matched m ON m.id = cls.id`
 
@@ -154,7 +155,7 @@ func (r *ScopeCoverageRepository) CountCoverage(ctx context.Context, tenantID sh
 	}
 	err := r.db.QueryRowContext(ctx, scopeCoverageQuery, tenantID.String(),
 		pq.Array(scopeCoverageAssetTypes), pq.Array(scopeCoverageInventoryStates), user).
-		Scan(&out.InternetFacing, &out.InScope, &out.Internal)
+		Scan(&out.InternetFacing, &out.InScope, &out.Excluded, &out.Internal)
 	if err != nil {
 		return out, fmt.Errorf("count scope coverage: %w", err)
 	}

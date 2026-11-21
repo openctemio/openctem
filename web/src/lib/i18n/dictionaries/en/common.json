@@ -108,7 +108,7 @@
   "common.failedToLoad": "Couldn't load {title}",
   "common.filter.all": "All",
   "common.filter.clearNamed": "Clear {name}",
-  "common.filterButton.active": "{label} ({count} active)",
+  "common.filterButton.active": "{label}, {count} active",
   "common.filterButton.hide": "Hide {label}",
   "common.filterChips.clear": "Clear filters",
   "common.filterChips.label": "Active filters",

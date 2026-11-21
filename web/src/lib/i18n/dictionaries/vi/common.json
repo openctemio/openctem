@@ -108,7 +108,7 @@
   "common.failedToLoad": "Không tải được {title}",
   "common.filter.all": "Tất cả",
   "common.filter.clearNamed": "Bỏ lọc {name}",
-  "common.filterButton.active": "{label} ({count} đang áp dụng)",
+  "common.filterButton.active": "{label}, {count} đang áp dụng",
   "common.filterButton.hide": "Ẩn {label}",
   "common.filterChips.clear": "Xoá bộ lọc",
   "common.filterChips.label": "Bộ lọc đang áp dụng",

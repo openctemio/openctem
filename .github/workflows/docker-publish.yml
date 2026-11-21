@@ -94,7 +94,13 @@ jobs:
             [[ "$VERSION" == *"-staging"* ]] || VERSION="${VERSION}-staging"
             TAGS="${VERSION},staging-latest"
           else
-            TAGS="${VERSION},latest"
+            # `latest` only for the newest release line: a hotfix of an older
+            # line (prod pinned to it) must not move `latest` back.
+            newest="$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'v*' |
+              sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+            [ -n "$newest" ] || { echo "::error::could not list the release tags"; exit 1; }
+            if [ "$newest" = "$VERSION" ]; then TAGS="${VERSION},latest"; else TAGS="${VERSION}"; fi
+            echo "newest release tag: $newest; image tags: $TAGS"
           fi
           { echo "VERSION=$VERSION"; echo "ENVIRONMENT=$ENVIRONMENT"; echo "TAGS=$TAGS"; echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } >> "$GITHUB_OUTPUT"
 

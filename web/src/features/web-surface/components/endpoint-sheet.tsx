@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from '@/components/link'
-import { EyeOff, Eye, Globe, ListTree, Copy } from 'lucide-react'
+import { EyeOff, Eye, Globe, ListTree, Copy, Bug } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Sheet,
@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SeverityBadge } from '@/components/ui/severity-badge'
 import {
   DetailCallout,
   DetailField,
@@ -30,6 +31,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import type { WebEndpointResponse } from '@/lib/api/generated'
 import { updateWebEndpoint, useWebEndpoint, useWebEndpointParams } from '../api/use-web-surface'
+import { useWebPaths } from '../api/use-web-paths'
+import { DEFAULT_PATH_FILTERS, type PathFilters } from '../lib/web-paths-url'
 import { AuthPill, CatalogBadge, ExcludedBadge, MethodBadge, PathText } from './web-surface-badges'
 
 export const RISK_LABEL: Record<string, string> = {
@@ -61,6 +64,85 @@ export function useWebLabels() {
         SOURCE_LABEL[k] ? t(`attackSurface.web.source.${k}`, SOURCE_LABEL[k]) : k,
     }),
     [t]
+  )
+}
+
+/** No filter: the findings of a path are listed whatever the tree hides. */
+const ALL: PathFilters = { ...DEFAULT_PATH_FILTERS, hideStatic: false, includeGone: true }
+
+/**
+ * The open findings whose URL lies at this endpoint's path template. Findings
+ * record no HTTP method, so the same list shows for every method of the path;
+ * each path is masked like the example path (no token, digest or opaque id).
+ */
+function PathFindingsSection({ assetId, template }: { assetId: string; template: string }) {
+  const { t } = useTranslation()
+  const { data, error, isLoading, mutate } = useWebPaths(assetId, template, ALL, {
+    here: true,
+    findings: true,
+    perPage: 0,
+  })
+  const list = data?.node_findings ?? []
+  const total = data?.node_finding_total ?? 0
+  return (
+    <DetailSection
+      title={t('attackSurface.web.sheet.findingsAtPath', 'Findings at this path')}
+      icon={Bug}
+      count={total}
+    >
+      {isLoading && !data ? (
+        <Skeleton className="h-12 w-full" />
+      ) : error && !data ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          {t('attackSurface.web.sheet.findingsFailed', 'Could not load the findings at this path.')}
+          <Button variant="link" onClick={() => void mutate()}>
+            {t('common.retry', 'Retry')}
+          </Button>
+        </p>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {t('attackSurface.web.sheet.noFindingsAtPath', 'No open findings at this path.')}
+        </p>
+      ) : (
+        <ul
+          className="divide-y rounded-md border"
+          aria-label={t('attackSurface.web.sheet.findingsAtPath', 'Findings at this path')}
+        >
+          {list.map((f) => (
+            <li key={f.id}>
+              <Link
+                href={`/findings/${encodeURIComponent(f.id)}`}
+                className="flex min-h-11 items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
+              >
+                <SeverityBadge severity={f.severity} />
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2">{f.title}</span>
+                  <PathText path={f.path} className="text-xs text-muted-foreground" />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {total > list.length && (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'attackSurface.web.sheet.findingsMore',
+            'Showing the {shown} most severe of {total}.',
+            {
+              shown: list.length,
+              total,
+            }
+          )}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {t(
+          'attackSurface.web.sheet.findingsByPath',
+          'Matched by path: findings do not record the method, so every method of this path lists them.'
+        )}
+      </p>
+    </DetailSection>
   )
 }
 
@@ -252,6 +334,9 @@ export function EndpointSheet({ endpointId, onClose, onChanged }: EndpointSheetP
                     </DetailField>
                   </DetailFieldGrid>
                 </DetailSection>
+                {ep.origin_asset_id && ep.path_template && (
+                  <PathFindingsSection assetId={ep.origin_asset_id} template={ep.path_template} />
+                )}
                 <DetailSection
                   title={t('attackSurface.originWeb.tab.parameters', 'Parameters')}
                   icon={ListTree}

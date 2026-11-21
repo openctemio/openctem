@@ -13,6 +13,7 @@ import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { BreakText } from '@/features/shared/components/break-text'
 import {
   PLATFORM_USER_SEARCH_MIN,
   usePlatformUsers,
@@ -36,7 +37,7 @@ const STATE_LABELS: Record<PlatformUserState, string> = {
   locked: 'Locked',
   blocked: 'Blocked',
   mfa_off: 'No MFA',
-  platform_admins: 'Platform admins',
+  platform_admins: 'Console administrators',
 }
 
 function isState(v: string): v is PlatformUserState {
@@ -94,7 +95,9 @@ export default function AdminUsersPage() {
                 onOpen={() => router.push(href)}
                 title={toDisplayText(row.original.email)}
               >
-                {toDisplayText(row.original.email)}
+                {/* On a phone card the address wraps at its dots and before
+                    the @, never inside a word. */}
+                <BreakText>{toDisplayText(row.original.email)}</BreakText>
               </RowNameLink>
             </div>
           )
@@ -103,8 +106,10 @@ export default function AdminUsersPage() {
       {
         id: 'state',
         header: t('admin.users.col.state', 'State'),
+        // The account's state: on a phone it is the card's chip, at the end
+        // of the title line.
         meta: {
-          kind: 'tags',
+          kind: 'status',
           width: 208,
           label: t('admin.users.col.state', 'State'),
         },

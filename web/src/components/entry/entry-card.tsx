@@ -65,10 +65,11 @@ export interface EntryBannerProps extends Omit<ComponentProps<'div'>, 'title'> {
   title?: ReactNode
   /**
    * `alert` interrupts (a failure the visitor must act on); `status` is read
-   * when the screen reader is idle (a notice, a warning, a success). Default:
-   * `alert` for the danger tone only.
+   * when the screen reader is idle (a notice, a warning, a success); `note`
+   * is a fixed fact of the page that is not announced (no e-mail on this
+   * server). Default: `alert` for the danger tone only.
    */
-  role?: 'alert' | 'status'
+  role?: 'alert' | 'status' | 'note'
 }
 
 /** A notice, a success or an error above the fields, in ink on a tint. */

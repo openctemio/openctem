@@ -11,15 +11,17 @@
  * Read-only: the approvals a widening needs now, the administrators that
  * count, and the operator's active-proof mode. There is no switch that turns
  * scope checks off, here or anywhere.
+ *
+ * Settings page frame (web/docs/ui-style-contract.md, "Settings pages"): the
+ * facts in effect, the policy with the rarely changed options folded under
+ * Advanced, the owner-only intrusive limit, and one save bar.
  */
 
-import { useEffect, useId, useState } from 'react'
-import { Loader2, Lock, Save } from 'lucide-react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
+import { ChevronDown, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -27,9 +29,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection, PageStack } from '@/features/shared'
+import { SettingsRow, SettingsSaveBar, SettingsSection, SettingsSwitchRow } from '@/features/shared'
+import { cn } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
 import {
@@ -131,6 +133,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...autoCoverageOf(s),
     ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
+    hold_provider_entries: (s as { hold_provider_entries?: boolean }).hold_provider_entries ?? true,
     max_range_prefix: s.max_range_prefix || 16,
   }
 }
@@ -191,6 +194,9 @@ export function effectiveApprovalsFor(value: number | null, admins: number): num
   return Math.min(n, 2)
 }
 
+/** The fields of the policy form, in the order the page shows them. */
+type FieldKey = keyof UpdateScopeSettingsInput
+
 export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) {
   const { t } = useTranslation()
   const id = useId()
@@ -198,6 +204,8 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   const [form, setForm] = useState<UpdateScopeSettingsInput>(() => settingsToInput(settings))
   const [saved, setSaved] = useState<ApiScopeSettings>(settings)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [advanced, setAdvanced] = useState(false)
 
   useEffect(() => {
     setSaved(settings)
@@ -205,7 +213,6 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   }, [settings])
 
   const initial = settingsToInput(saved)
-  const dirty = JSON.stringify(initial) !== JSON.stringify(form)
   const admins = saved.admin_count ?? 0
   const proofMode = saved.active_proof === 'platform_sensors' ? 'platform_sensors' : 'off'
   const proof = {
@@ -213,9 +220,45 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
     hint: t(`scope.settings.proof.${proofMode}.hint`, ACTIVE_PROOF_TEXT[proofMode].hint),
   }
   const nextApprovals = effectiveApprovalsFor(form.widening_approvals, admins)
+  const scanApproval = scanApprovalFact(t, saved.approval_policy)
+
+  const LABEL: Partial<Record<FieldKey, string>> = {
+    widening_approvals: t('scope.settings.approvals', 'Approvals for widening'),
+    one_off_targets: t('scope.settings.oneOff', 'One-off entries'),
+    one_off_max_days: t('scope.settings.oneOffDays', 'Longest one-off entry'),
+    default_max_tier: t('scope.settings.defaultTier', 'Default deepest probe'),
+    max_range_prefix: t('scope.settings.maxRange', 'Widest range one scan target may name'),
+    address_auto_add: t('scope.settings.addressLabel', 'Addresses your names resolve to'),
+    auto_join_discovered: t('scope.settings.autoJoin', 'Add discovered names automatically'),
+    confirm_adds_to_scope: t(
+      'scope.settings.confirmAddsToScope',
+      'Confirming an asset adds it to scope'
+    ),
+    auto_coverage: t('scope.settings.autoCoverage', 'Automatic coverage'),
+    info_coverage: t('scope.settings.infoCoverage', 'Info checks'),
+    info_coverage_days: t('scope.settings.infoCoverageDays', 'Info checks interval'),
+    unclassified_scans: t('scope.settings.unclassifiedLabel', 'Scan unclassified assets'),
+    review_before_inventory: t(
+      'scope.settings.reviewBeforeInventory',
+      'Review discovered assets first'
+    ),
+    ci_scope_requires_proof: t(
+      'scope.settings.ciScopeRequiresProof',
+      'Require proof for CI scopes'
+    ),
+    hold_provider_entries: t(
+      'scope.settings.holdProviderEntries',
+      'Hold shared provider addresses until answered'
+    ),
+  }
+  const changes = (Object.keys(LABEL) as FieldKey[])
+    .filter((k) => JSON.stringify(form[k]) !== JSON.stringify(initial[k]))
+    .map((k) => LABEL[k] as string)
+  const dirty = JSON.stringify(initial) !== JSON.stringify(form)
 
   const save = async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const out = await updateScopeSettings({
         ...form,
@@ -232,73 +275,222 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         description: t('scope.settings.notified', 'Every administrator was notified.'),
       })
     } catch (err) {
-      toast.error(
-        scopeErrorMessage(
-          t,
-          err,
-          t('scope.settings.saveFailed', 'Could not save the scope policy.')
-        )
+      const message = scopeErrorMessage(
+        t,
+        err,
+        t('scope.settings.saveFailed', 'Could not save the scope policy.')
       )
+      setSaveError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
   }
 
   const disabled = !canEdit || saving
+  const daysSuffix = (
+    <span className="text-dense text-muted-foreground">{t('scope.settings.days', 'days')}</span>
+  )
+
+  const advancedRows: ReactNode[] = []
+  if (form.unclassified_scans) {
+    const value = form.unclassified_scans
+    advancedRows.push(
+      <FieldRow
+        key="unclassified"
+        id={`${id}-unclassified`}
+        label={LABEL.unclassified_scans as string}
+        hint={`${t(`scope.settings.unclassifiedHint.${value}`, UNCLASSIFIED_HINT[value])}${
+          unclassifiedEffective(saved) === 'off' && value !== 'off'
+            ? ` ${t('scope.settings.unclassifiedStrict', 'Strict scan approval is in force, so this is Off for now.')}`
+            : ''
+        } ${t('scope.settings.unclassifiedPlatformOnly', 'Applies to platform sensors of the hosted service. Your own sensors scan unclassified assets in full.')}`}
+      >
+        {(a) => (
+          <Select
+            value={value}
+            onValueChange={(v) => setForm({ ...form, unclassified_scans: v as UnclassifiedScans })}
+            disabled={disabled}
+          >
+            <SelectTrigger {...a} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">
+                {t('scope.settings.unclassifiedMode.off', 'Off (passive only)')}
+              </SelectItem>
+              <SelectItem value="low_impact">
+                {t('scope.settings.unclassifiedMode.low_impact', 'Low-impact (default)')}
+              </SelectItem>
+              <SelectItem value="full">
+                {t('scope.settings.unclassifiedMode.full', 'Full')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </FieldRow>
+    )
+  }
+  if (autoCoverageEffective(saved) !== undefined) {
+    advancedRows.push(
+      <SettingsSwitchRow
+        key="autocoverage"
+        id={`${id}-autocoverage`}
+        label={LABEL.auto_coverage as string}
+        hint={
+          t(
+            'scope.settings.autoCoverageHint',
+            'On (default): every asset your scope covers gets the checks its type needs (DNS, ports, HTTP probe, templates) on a schedule and when it appears or changes, with no scan to set up. Scope, exclusions, windows and guardrails still decide what may be scanned; intrusive checks never run this way.'
+          ) +
+          (saved.approval_policy?.scan_approval === 'strict' &&
+          typeof (saved as { auto_coverage?: boolean | null }).auto_coverage !== 'boolean'
+            ? ` ${t('scope.settings.autoCoverageStrict', 'Strict scan approval is in force, so it is off until you turn it on.')}`
+            : '')
+        }
+        checked={form.auto_coverage ?? autoCoverageEffective(saved) ?? false}
+        onCheckedChange={(v) => setForm({ ...form, auto_coverage: v })}
+        disabled={disabled}
+      />
+    )
+  }
+  if (form.info_coverage !== undefined) {
+    advancedRows.push(
+      <SettingsSwitchRow
+        key="infocoverage"
+        id={`${id}-infocoverage`}
+        label={LABEL.info_coverage as string}
+        hint={t(
+          'scope.settings.infoCoverageHint',
+          'On (default): web services also get the info-level template checks (technologies, panels, TLS and header posture) on a slower schedule: on the first coverage, when the technologies or web surface change, and otherwise every interval below. Matches are filed as info exposures, not findings. The regular checks keep their own schedule.'
+        )}
+        checked={form.info_coverage}
+        onCheckedChange={(v) => setForm({ ...form, info_coverage: v })}
+        disabled={disabled}
+      />
+    )
+  }
+  if (form.info_coverage_days !== undefined) {
+    advancedRows.push(
+      <FieldRow
+        key="infodays"
+        id={`${id}-infodays`}
+        label={LABEL.info_coverage_days as string}
+        hint={t(
+          'scope.settings.infoCoverageDaysHint',
+          'Days between info checks of an asset, 7 to 90. Longer saves sensor time.'
+        )}
+        narrow
+      >
+        {(a) => (
+          <div className="flex items-center gap-2">
+            <Input
+              {...a}
+              type="number"
+              inputMode="numeric"
+              min={7}
+              max={90}
+              className="w-24"
+              value={form.info_coverage_days}
+              onChange={(e) => setForm({ ...form, info_coverage_days: Number(e.target.value) })}
+              disabled={disabled || form.info_coverage === false}
+            />
+            {daysSuffix}
+          </div>
+        )}
+      </FieldRow>
+    )
+  }
+  advancedRows.push(
+    <SettingsSwitchRow
+      key="reviewfirst"
+      id={`${id}-reviewfirst`}
+      label={LABEL.review_before_inventory as string}
+      hint={t(
+        'scope.settings.reviewBeforeInventoryHint',
+        'Off (default): what discovery finds joins the inventory at once, and gets what Scan unclassified assets allows until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.'
+      )}
+      checked={form.review_before_inventory}
+      onCheckedChange={(v) => setForm({ ...form, review_before_inventory: v })}
+      disabled={disabled}
+    />,
+    <SettingsSwitchRow
+      key="ciproof"
+      id={`${id}-ciproof`}
+      label={LABEL.ci_scope_requires_proof as string}
+      hint={t(
+        'scope.settings.ciScopeRequiresProofHint',
+        "Off (default): the repositories a CI trust names are in scope as soon as the trust is saved, and a verified pipeline run is shown as evidence. On: a CI trust's new repository entries wait until a verified pipeline run under them."
+      )}
+      checked={form.ci_scope_requires_proof ?? false}
+      onCheckedChange={(v) => setForm({ ...form, ci_scope_requires_proof: v })}
+      disabled={disabled}
+    />,
+    <SettingsSwitchRow
+      key="holdproviders"
+      id={`${id}-holdproviders`}
+      label={LABEL.hold_provider_entries as string}
+      hint={t(
+        'scope.settings.holdProviderEntriesHint',
+        "On (default): until someone answers them on the Scope page, scans skip the scope entries on a provider's shared addresses. Names that point at them are still scanned. Off: such entries are scanned like any other entry."
+      )}
+      checked={form.hold_provider_entries ?? true}
+      onCheckedChange={(v) => setForm({ ...form, hold_provider_entries: v })}
+      disabled={disabled}
+    />
+  )
 
   return (
-    <PageStack>
+    <>
       <SettingsSection
+        framed
+        id="scope-in-effect"
         title={t('scope.settings.inEffect', 'In effect now')}
         description={t(
           'scope.settings.inEffectHint',
           "Read-only. These follow from your settings and the platform's configuration."
         )}
       >
-        <Card>
-          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Fact
-              label={t('scope.settings.approvalsNeeded', 'Approvals a widening needs')}
-              value={String(saved.effective_widening_approvals ?? 0)}
-              hint={
-                admins === 1
-                  ? t(
-                      'scope.settings.approvalsNeededHintOne',
-                      'From 1 administrator; the requester never counts. Intrusive (T2) entries always need one.'
-                    )
-                  : t(
-                      'scope.settings.approvalsNeededHint',
-                      'From {count} administrators; the requester never counts. Intrusive (T2) entries always need one.',
-                      { count: admins }
-                    )
-              }
-            />
-            <Fact
-              label={t('scope.settings.proof.title', 'Active-probe proof')}
-              value={proof.label}
-              hint={`${proof.hint} ${t('scope.settings.proof.byOperator', 'Set by the platform operator.')}`}
-              locked
-            />
-            <Fact
-              label={t('scope.settings.scanApproval', 'Scan approval')}
-              value={scanApprovalFact(t, saved.approval_policy).label}
-              hint={scanApprovalFact(t, saved.approval_policy).hint}
-              locked
-            />
-            <Fact
-              label={t('scope.settings.checks', 'Scope checks')}
-              value={t('scope.settings.checksOn', 'Always on')}
-              hint={t(
-                'scope.settings.checksHint',
-                'Every scan target must be covered by a scope entry, seed or verified domain. No setting turns this off.'
-              )}
-              locked
-            />
-          </CardContent>
-        </Card>
+        <Fact
+          label={t('scope.settings.approvalsNeeded', 'Approvals a widening needs')}
+          value={String(saved.effective_widening_approvals ?? 0)}
+          hint={
+            admins === 1
+              ? t(
+                  'scope.settings.approvalsNeededHintOne',
+                  'From 1 administrator; the requester never counts. Intrusive (T2) entries always need one.'
+                )
+              : t(
+                  'scope.settings.approvalsNeededHint',
+                  'From {count} administrators; the requester never counts. Intrusive (T2) entries always need one.',
+                  { count: admins }
+                )
+          }
+        />
+        <Fact
+          label={t('scope.settings.proof.title', 'Active-probe proof')}
+          value={proof.label}
+          hint={`${proof.hint} ${t('scope.settings.proof.byOperator', 'Set by the platform operator.')}`}
+          locked
+        />
+        <Fact
+          label={t('scope.settings.scanApproval', 'Scan approval')}
+          value={scanApproval.label}
+          hint={scanApproval.hint}
+          locked
+        />
+        <Fact
+          label={t('scope.settings.checks', 'Scope checks')}
+          value={t('scope.settings.checksOn', 'Always on')}
+          hint={t(
+            'scope.settings.checksHint',
+            'Every scan target must be covered by a scope entry, seed or verified domain. No setting turns this off.'
+          )}
+          locked
+        />
       </SettingsSection>
 
       <SettingsSection
+        framed
         id="scope-approval-policy"
         title={t('scope.settings.policy', 'Policy')}
         description={
@@ -307,378 +499,254 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 'scope.settings.policyEditHint',
                 'Saving asks you to confirm your identity, is audited, and notifies every administrator.'
               )
-            : t('scope.settings.policyReadHint', 'Only scope approvers can change these.')
-        }
-        actions={
-          canEdit ? (
-            <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {t('scope.settings.save', 'Save changes')}
-            </Button>
-          ) : undefined
+            : undefined
         }
       >
-        <Card>
-          <CardContent className="divide-y">
-            <Row
-              label={t('scope.settings.approvals', 'Approvals for widening')}
-              htmlFor={`${id}-approvals`}
-              hint={t(
-                'scope.settings.approvalsHint',
-                'Adding or widening an entry waits for this many other approvers. With the default, your organization needs {fallback}; with this choice it needs {next}. An organization with two or more administrators never goes below one.',
-                { fallback: effectiveApprovalsFor(null, admins), next: nextApprovals }
-              )}
+        <FieldRow
+          id={`${id}-approvals`}
+          label={LABEL.widening_approvals as string}
+          hint={t(
+            'scope.settings.approvalsHint',
+            'Adding or widening an entry waits for this many other approvers. With the default, your organization needs {fallback}; with this choice it needs {next}. An organization with two or more administrators never goes below one.',
+            { fallback: effectiveApprovalsFor(null, admins), next: nextApprovals }
+          )}
+        >
+          {(a) => (
+            <Select
+              value={
+                form.widening_approvals === null
+                  ? DEFAULT_SENTINEL
+                  : String(form.widening_approvals)
+              }
+              onValueChange={(v) =>
+                setForm({
+                  ...form,
+                  widening_approvals: v === DEFAULT_SENTINEL ? null : Number(v),
+                })
+              }
+              disabled={disabled}
             >
-              <Select
-                value={
-                  form.widening_approvals === null
-                    ? DEFAULT_SENTINEL
-                    : String(form.widening_approvals)
-                }
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    widening_approvals: v === DEFAULT_SENTINEL ? null : Number(v),
-                  })
-                }
-                disabled={disabled}
-              >
-                <SelectTrigger id={`${id}-approvals`} className="w-full sm:w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEFAULT_SENTINEL}>
-                    {t('scope.settings.approvalsDefault', 'Default (one with 2+ admins)')}
+              <SelectTrigger {...a} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_SENTINEL}>
+                  {t('scope.settings.approvalsDefault', 'Default (one with 2+ admins)')}
+                </SelectItem>
+                <SelectItem value="0">{t('scope.settings.approvalsNone', 'None')}</SelectItem>
+                <SelectItem value="1">
+                  {t('scope.settings.approvalsOne', 'One approver')}
+                </SelectItem>
+                <SelectItem value="2">
+                  {t('scope.settings.approvalsTwo', 'Two approvers')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </FieldRow>
+
+        <FieldRow
+          id={`${id}-oneoff`}
+          label={LABEL.one_off_targets as string}
+          hint={t(
+            `scope.settings.oneOff.${form.one_off_targets}.hint`,
+            ONE_OFF_TEXT[form.one_off_targets].hint
+          )}
+        >
+          {(a) => (
+            <Select
+              value={form.one_off_targets}
+              onValueChange={(v) => setForm({ ...form, one_off_targets: v as ScopeOneOffPolicy })}
+              disabled={disabled}
+            >
+              <SelectTrigger {...a} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(ONE_OFF_TEXT) as ScopeOneOffPolicy[]).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {t(`scope.settings.oneOff.${k}.label`, ONE_OFF_TEXT[k].label)}
                   </SelectItem>
-                  <SelectItem value="0">{t('scope.settings.approvalsNone', 'None')}</SelectItem>
-                  <SelectItem value="1">
-                    {t('scope.settings.approvalsOne', 'One approver')}
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FieldRow>
+
+        <FieldRow
+          id={`${id}-days`}
+          label={LABEL.one_off_max_days as string}
+          hint={t(
+            'scope.settings.oneOffDaysHint',
+            'Days a one-off entry may last, 1 to 30. It stops authorizing scans the moment it expires.'
+          )}
+          narrow
+        >
+          {(a) => (
+            <div className="flex items-center gap-2">
+              <Input
+                {...a}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={30}
+                className="w-24"
+                value={form.one_off_max_days}
+                onChange={(e) => setForm({ ...form, one_off_max_days: Number(e.target.value) })}
+                disabled={disabled || form.one_off_targets === 'disabled'}
+              />
+              {daysSuffix}
+            </div>
+          )}
+        </FieldRow>
+
+        <FieldRow
+          id={`${id}-tier`}
+          label={LABEL.default_max_tier as string}
+          hint={`${t('scope.settings.defaultTierHint', 'New entries allow this unless the person adding them picks otherwise.')} ${t(`scope.tier.hint.${form.default_max_tier}`, TIER_HINT[form.default_max_tier])} ${t('scope.settings.defaultTierNoT2', 'Intrusive (T2) is never a default.')}${
+            (saved.approval_policy?.tier_ceilings ?? true)
+              ? ''
+              : ` ${t('scope.entries.perScanHint', 'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.')}`
+          }`}
+        >
+          {(a) => (
+            <Select
+              value={form.default_max_tier}
+              onValueChange={(v) => setForm({ ...form, default_max_tier: v as 't0' | 't1' })}
+              disabled={disabled}
+            >
+              <SelectTrigger {...a} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="t0">{t('scope.tier.label.t0', TIER_LABEL.t0)}</SelectItem>
+                <SelectItem value="t1">{t('scope.tier.label.t1', TIER_LABEL.t1)}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </FieldRow>
+
+        <FieldRow
+          id={`${id}-range`}
+          label={LABEL.max_range_prefix as string}
+          hint={t(
+            'scope.settings.maxRangeHint',
+            'A /16 by default. Choose a wider range only when you scan whole internal networks: a range wider than a /16 is scanned live hosts first, in /16 chunks, only where scope entries cover it, and each such scan asks for a confirmation. Raising it needs a recent sign-in, is audited and every administrator is told. IPv6 gets the same address count (/8 is /104).'
+          )}
+        >
+          {(a) => (
+            <Select
+              value={String(form.max_range_prefix ?? 16)}
+              onValueChange={(v) => setForm({ ...form, max_range_prefix: Number(v) })}
+              disabled={disabled}
+            >
+              <SelectTrigger {...a} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RANGE_PREFIX_CHOICES.map((p) => (
+                  <SelectItem key={p} value={String(p)}>
+                    {t('scope.settings.maxRangeChoice', undefined, {
+                      prefix: `/${p}`,
+                      count: formatNumber(2 ** (32 - p)),
+                    })}
                   </SelectItem>
-                  <SelectItem value="2">
-                    {t('scope.settings.approvalsTwo', 'Two approvers')}
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FieldRow>
+
+        {form.address_auto_add && (
+          <FieldRow
+            id={`${id}-addresses`}
+            label={LABEL.address_auto_add as string}
+            hint={`${t(
+              `scope.settings.addressHint.${form.address_auto_add}`,
+              ADDRESS_HINT[form.address_auto_add]
+            )}${
+              form.address_auto_add === 'auto_strong' && addressAutoAddEffective(saved) === 'ask'
+                ? ` ${t('scope.settings.addressStrict', 'Strict scan approval is in force, so nothing is added automatically for now.')}`
+                : ''
+            }`}
+          >
+            {(a) => (
+              <Select
+                value={form.address_auto_add}
+                onValueChange={(v) => setForm({ ...form, address_auto_add: v as AddressAutoAdd })}
+                disabled={disabled}
+              >
+                <SelectTrigger {...a} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto_strong">
+                    {t(
+                      'scope.settings.addressMode.auto_strong',
+                      'Add automatically when the evidence is strong (default)'
+                    )}
+                  </SelectItem>
+                  <SelectItem value="ask">
+                    {t('scope.settings.addressMode.ask', 'Ask for each')}
+                  </SelectItem>
+                  <SelectItem value="never">
+                    {t('scope.settings.addressMode.never', 'Never suggest')}
                   </SelectItem>
                 </SelectContent>
               </Select>
-            </Row>
-
-            <Row
-              label={t('scope.settings.oneOff', 'One-off entries')}
-              htmlFor={`${id}-oneoff`}
-              hint={t(
-                `scope.settings.oneOff.${form.one_off_targets}.hint`,
-                ONE_OFF_TEXT[form.one_off_targets].hint
-              )}
-            >
-              <Select
-                value={form.one_off_targets}
-                onValueChange={(v) => setForm({ ...form, one_off_targets: v as ScopeOneOffPolicy })}
-                disabled={disabled}
-              >
-                <SelectTrigger id={`${id}-oneoff`} className="w-full sm:w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(ONE_OFF_TEXT) as ScopeOneOffPolicy[]).map((k) => (
-                    <SelectItem key={k} value={k}>
-                      {t(`scope.settings.oneOff.${k}.label`, ONE_OFF_TEXT[k].label)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Row>
-
-            <Row
-              label={t('scope.settings.oneOffDays', 'Longest one-off entry')}
-              htmlFor={`${id}-days`}
-              hint={t(
-                'scope.settings.oneOffDaysHint',
-                'Days a one-off entry may last, 1 to 30. It stops authorizing scans the moment it expires.'
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Input
-                  id={`${id}-days`}
-                  type="number"
-                  min={1}
-                  max={30}
-                  className="w-24"
-                  value={form.one_off_max_days}
-                  onChange={(e) => setForm({ ...form, one_off_max_days: Number(e.target.value) })}
-                  disabled={disabled || form.one_off_targets === 'disabled'}
-                />
-                <span className="text-sm text-muted-foreground">
-                  {t('scope.settings.days', 'days')}
-                </span>
-              </div>
-            </Row>
-
-            <Row
-              label={t('scope.settings.defaultTier', 'Default deepest probe')}
-              htmlFor={`${id}-tier`}
-              hint={`${t('scope.settings.defaultTierHint', 'New entries allow this unless the person adding them picks otherwise.')} ${t(`scope.tier.hint.${form.default_max_tier}`, TIER_HINT[form.default_max_tier])} ${t('scope.settings.defaultTierNoT2', 'Intrusive (T2) is never a default.')}${
-                (saved.approval_policy?.tier_ceilings ?? true)
-                  ? ''
-                  : ` ${t('scope.entries.perScanHint', 'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.')}`
-              }`}
-            >
-              <Select
-                value={form.default_max_tier}
-                onValueChange={(v) => setForm({ ...form, default_max_tier: v as 't0' | 't1' })}
-                disabled={disabled}
-              >
-                <SelectTrigger id={`${id}-tier`} className="w-full sm:w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="t0">{t('scope.tier.label.t0', TIER_LABEL.t0)}</SelectItem>
-                  <SelectItem value="t1">{t('scope.tier.label.t1', TIER_LABEL.t1)}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Row>
-
-            <Row
-              label={t('scope.settings.maxRange', 'Widest range one scan target may name')}
-              htmlFor={`${id}-range`}
-              hint={t(
-                'scope.settings.maxRangeHint',
-                'A /16 by default. Choose a wider range only when you scan whole internal networks: a range wider than a /16 is scanned live hosts first, in /16 chunks, only where scope entries cover it, and each such scan asks for a confirmation. Raising it needs a recent sign-in, is audited and every administrator is told. IPv6 gets the same address count (/8 is /104).'
-              )}
-            >
-              <Select
-                value={String(form.max_range_prefix ?? 16)}
-                onValueChange={(v) => setForm({ ...form, max_range_prefix: Number(v) })}
-                disabled={disabled}
-              >
-                <SelectTrigger id={`${id}-range`} className="w-full sm:w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RANGE_PREFIX_CHOICES.map((p) => (
-                    <SelectItem key={p} value={String(p)}>
-                      {t('scope.settings.maxRangeChoice', undefined, {
-                        prefix: `/${p}`,
-                        count: formatNumber(2 ** (32 - p)),
-                      })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Row>
-
-            <Row
-              label={t('scope.settings.autoJoin', 'Add discovered names automatically')}
-              htmlFor={`${id}-autojoin`}
-              hint={t(
-                'scope.settings.autoJoinHint',
-                'A name discovery finds under a permanent scope entry is confirmed as yours. IP addresses are confirmed only through IP entries; one-off entries never confirm names; exclusions and names marked not yours always win. Off: such names stay discovered until a person confirms them (a scope entry still lets scans reach them).'
-              )}
-            >
-              <Switch
-                id={`${id}-autojoin`}
-                checked={form.auto_join_discovered}
-                onCheckedChange={(v) => setForm({ ...form, auto_join_discovered: v })}
-                disabled={disabled}
-              />
-            </Row>
-
-            <Row
-              label={t('scope.settings.confirmAddsToScope', 'Confirming an asset adds it to scope')}
-              htmlFor={`${id}-confirmadds`}
-              hint={t(
-                'scope.settings.confirmAddsToScopeHint',
-                'A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only.'
-              )}
-            >
-              <Switch
-                id={`${id}-confirmadds`}
-                checked={form.confirm_adds_to_scope}
-                onCheckedChange={(v) => setForm({ ...form, confirm_adds_to_scope: v })}
-                disabled={disabled}
-              />
-            </Row>
-
-            {form.unclassified_scans && (
-              <Row
-                label={t('scope.settings.unclassifiedLabel', 'Scan unclassified assets')}
-                htmlFor={`${id}-unclassified`}
-                hint={`${t(
-                  `scope.settings.unclassifiedHint.${form.unclassified_scans}`,
-                  UNCLASSIFIED_HINT[form.unclassified_scans]
-                )}${
-                  unclassifiedEffective(saved) === 'off' && form.unclassified_scans !== 'off'
-                    ? ` ${t('scope.settings.unclassifiedStrict', 'Strict scan approval is in force, so this is Off for now.')}`
-                    : ''
-                } ${t('scope.settings.unclassifiedPlatformOnly', 'Applies to platform sensors of the hosted service. Your own sensors scan unclassified assets in full.')}`}
-              >
-                <Select
-                  value={form.unclassified_scans}
-                  onValueChange={(v) =>
-                    setForm({ ...form, unclassified_scans: v as UnclassifiedScans })
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger id={`${id}-unclassified`} className="w-full sm:w-72">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">
-                      {t('scope.settings.unclassifiedMode.off', 'Off (passive only)')}
-                    </SelectItem>
-                    <SelectItem value="low_impact">
-                      {t('scope.settings.unclassifiedMode.low_impact', 'Low-impact (default)')}
-                    </SelectItem>
-                    <SelectItem value="full">
-                      {t('scope.settings.unclassifiedMode.full', 'Full')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
             )}
+          </FieldRow>
+        )}
 
-            {form.address_auto_add && (
-              <Row
-                label={t('scope.settings.addressLabel', 'Addresses your names resolve to')}
-                htmlFor={`${id}-addresses`}
-                hint={`${t(
-                  `scope.settings.addressHint.${form.address_auto_add}`,
-                  ADDRESS_HINT[form.address_auto_add]
-                )}${
-                  form.address_auto_add === 'auto_strong' &&
-                  addressAutoAddEffective(saved) === 'ask'
-                    ? ` ${t('scope.settings.addressStrict', 'Strict scan approval is in force, so nothing is added automatically for now.')}`
-                    : ''
-                }`}
-              >
-                <Select
-                  value={form.address_auto_add}
-                  onValueChange={(v) => setForm({ ...form, address_auto_add: v as AddressAutoAdd })}
-                  disabled={disabled}
-                >
-                  <SelectTrigger id={`${id}-addresses`} className="w-full sm:w-72">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto_strong">
-                      {t(
-                        'scope.settings.addressMode.auto_strong',
-                        'Add automatically when the evidence is strong (default)'
-                      )}
-                    </SelectItem>
-                    <SelectItem value="ask">
-                      {t('scope.settings.addressMode.ask', 'Ask for each')}
-                    </SelectItem>
-                    <SelectItem value="never">
-                      {t('scope.settings.addressMode.never', 'Never suggest')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </Row>
-            )}
+        <SettingsSwitchRow
+          id={`${id}-autojoin`}
+          label={LABEL.auto_join_discovered as string}
+          hint={t(
+            'scope.settings.autoJoinHint',
+            'A name discovery finds under a permanent scope entry is confirmed as yours. IP addresses are confirmed only through IP entries; one-off entries never confirm names; exclusions and names marked not yours always win. Off: such names stay discovered until a person confirms them (a scope entry still lets scans reach them).'
+          )}
+          checked={form.auto_join_discovered}
+          onCheckedChange={(v) => setForm({ ...form, auto_join_discovered: v })}
+          disabled={disabled}
+        />
 
-            {autoCoverageEffective(saved) !== undefined && (
-              <Row
-                label={t('scope.settings.autoCoverage', 'Automatic coverage')}
-                htmlFor={`${id}-autocoverage`}
-                hint={
-                  t(
-                    'scope.settings.autoCoverageHint',
-                    'On (default): every asset your scope covers gets the checks its type needs (DNS, ports, HTTP probe, templates) on a schedule and when it appears or changes, with no scan to set up. Scope, exclusions, windows and guardrails still decide what may be scanned; intrusive checks never run this way.'
-                  ) +
-                  (saved.approval_policy?.scan_approval === 'strict' &&
-                  typeof (saved as { auto_coverage?: boolean | null }).auto_coverage !== 'boolean'
-                    ? ` ${t('scope.settings.autoCoverageStrict', 'Strict scan approval is in force, so it is off until you turn it on.')}`
-                    : '')
-                }
-              >
-                <Switch
-                  id={`${id}-autocoverage`}
-                  checked={form.auto_coverage ?? autoCoverageEffective(saved) ?? false}
-                  onCheckedChange={(v) => setForm({ ...form, auto_coverage: v })}
-                  disabled={disabled}
-                />
-              </Row>
-            )}
+        <SettingsSwitchRow
+          id={`${id}-confirmadds`}
+          label={LABEL.confirm_adds_to_scope as string}
+          hint={t(
+            'scope.settings.confirmAddsToScopeHint',
+            'A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only.'
+          )}
+          checked={form.confirm_adds_to_scope}
+          onCheckedChange={(v) => setForm({ ...form, confirm_adds_to_scope: v })}
+          disabled={disabled}
+        />
 
-            {form.info_coverage !== undefined && (
-              <Row
-                label={t('scope.settings.infoCoverage', 'Info checks')}
-                htmlFor={`${id}-infocoverage`}
-                hint={t(
-                  'scope.settings.infoCoverageHint',
-                  'On (default): web services also get the info-level template checks (technologies, panels, TLS and header posture) on a slower schedule: on the first coverage, when the technologies or web surface change, and otherwise every interval below. Matches are filed as info exposures, not findings. The regular checks keep their own schedule.'
-                )}
-              >
-                <Switch
-                  id={`${id}-infocoverage`}
-                  checked={form.info_coverage}
-                  onCheckedChange={(v) => setForm({ ...form, info_coverage: v })}
-                  disabled={disabled}
-                />
-              </Row>
-            )}
-
-            {form.info_coverage_days !== undefined && (
-              <Row
-                label={t('scope.settings.infoCoverageDays', 'Info checks interval')}
-                htmlFor={`${id}-infodays`}
-                hint={t(
-                  'scope.settings.infoCoverageDaysHint',
-                  'Days between info checks of an asset, 7 to 90. Longer saves sensor time.'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Input
-                    id={`${id}-infodays`}
-                    type="number"
-                    min={7}
-                    max={90}
-                    className="w-24"
-                    value={form.info_coverage_days}
-                    onChange={(e) =>
-                      setForm({ ...form, info_coverage_days: Number(e.target.value) })
-                    }
-                    disabled={disabled || form.info_coverage === false}
-                  />
-                  <span className="text-sm text-muted-foreground">
-                    {t('scope.settings.days', 'days')}
-                  </span>
-                </div>
-              </Row>
-            )}
-
-            <Row
-              label={t('scope.settings.reviewBeforeInventory', 'Review discovered assets first')}
-              htmlFor={`${id}-reviewfirst`}
-              hint={t(
-                'scope.settings.reviewBeforeInventoryHint',
-                'Off (default): what discovery finds joins the inventory at once, and gets what Scan unclassified assets allows until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.'
+        <div className="border-t border-border-subtle py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            aria-expanded={advanced}
+            aria-controls={`${id}-advanced`}
+            onClick={() => setAdvanced((v) => !v)}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'transition-transform motion-reduce:transition-none',
+                advanced && 'rotate-180'
               )}
-            >
-              <Switch
-                id={`${id}-reviewfirst`}
-                checked={form.review_before_inventory}
-                onCheckedChange={(v) => setForm({ ...form, review_before_inventory: v })}
-                disabled={disabled}
-              />
-            </Row>
-
-            <Row
-              label={t('scope.settings.ciScopeRequiresProof', 'Require proof for CI scopes')}
-              htmlFor={`${id}-ciproof`}
-              hint={t(
-                'scope.settings.ciScopeRequiresProofHint',
-                "Off (default): the repositories a CI trust names are in scope as soon as the trust is saved, and a verified pipeline run is shown as evidence. On: a CI trust's new repository entries wait until a verified pipeline run under them."
-              )}
-            >
-              <Switch
-                id={`${id}-ciproof`}
-                checked={form.ci_scope_requires_proof ?? false}
-                onCheckedChange={(v) => setForm({ ...form, ci_scope_requires_proof: v })}
-                disabled={disabled}
-              />
-            </Row>
-          </CardContent>
-        </Card>
+            />
+            {t(
+              'scope.settings.advanced',
+              '{count, plural, one {Advanced, # option} other {Advanced, # options}}',
+              { count: advancedRows.length }
+            )}
+          </Button>
+        </div>
+        <div id={`${id}-advanced`} hidden={!advanced}>
+          {advancedRows}
+        </div>
       </SettingsSection>
 
       <ScopeIntrusiveSettings
@@ -688,34 +756,55 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
           setForm(settingsToInput(out))
         }}
       />
-    </PageStack>
+
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={saving}
+          onSave={() => void save()}
+          onDiscard={() => {
+            setForm(initial)
+            setSaveError(null)
+          }}
+          changes={changes}
+          error={saveError}
+        />
+      )}
+    </>
   )
 }
 
-function Row({
+/**
+ * A row whose control is a field or a select: the label names the control,
+ * the hint describes it. `narrow`: a short field that stays beside the text.
+ */
+function FieldRow({
+  id,
   label,
   hint,
-  htmlFor,
+  narrow = false,
   children,
 }: {
+  id: string
   label: string
   hint: string
-  htmlFor: string
-  children: React.ReactNode
+  narrow?: boolean
+  children: (a: { id: string; 'aria-describedby': string }) => ReactNode
 }) {
+  const hintId = `${id}-hint`
   return (
-    <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <div className="min-w-0 sm:max-w-md">
-        <Label htmlFor={htmlFor} className="text-sm font-medium">
-          {label}
-        </Label>
-        <p className="mt-1 text-sm text-muted-foreground text-pretty">{hint}</p>
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
+    <SettingsRow
+      wide={!narrow}
+      label={<label htmlFor={id}>{label}</label>}
+      hint={hint}
+      hintId={hintId}
+    >
+      {children({ id, 'aria-describedby': hintId })}
+    </SettingsRow>
   )
 }
 
+/** A value in effect that this page does not set: label, hint, the value at the end. */
 function Fact({
   label,
   value,
@@ -729,18 +818,17 @@ function Fact({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="min-w-0 space-y-1">
-      <p className="flex items-center gap-1 text-sm text-muted-foreground">
+    <SettingsRow label={label} hint={hint}>
+      <span className="flex items-center gap-1.5 text-body font-medium">
         {locked && (
           <Lock
-            className="h-3.5 w-3.5"
+            className="size-3.5 text-muted-foreground"
+            role="img"
             aria-label={t('scope.settings.notTenantSetting', 'Not an organization setting')}
           />
         )}
-        {label}
-      </p>
-      <p className="text-lg font-semibold">{value}</p>
-      <p className="text-xs text-muted-foreground text-pretty">{hint}</p>
-    </div>
+        {value}
+      </span>
+    </SettingsRow>
   )
 }

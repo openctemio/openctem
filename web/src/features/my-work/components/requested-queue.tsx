@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Ban, BellRing } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -12,6 +13,8 @@ import { remindApprovers } from '@/features/findings/api/use-findings-api'
 import { cancelApproval } from '@/features/findings/api/triage-api'
 import { canCancelApproval } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
+import { QueueDecisionActions } from '@/features/shared/components/queue'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { ApprovalRow } from './approval-row'
 import { QueueFrame } from './queue-frame'
 
@@ -128,6 +131,39 @@ export function RequestedQueue({
                         {t('myWork.requested.withdraw', 'Withdraw')}
                       </Button>
                     </>
+                  ) : null
+                }
+                // On a phone: the same two acts under one More, as on the
+                // approvals page for your own request.
+                phoneActions={
+                  canCancelApproval(a, currentUserId) ? (
+                    <QueueDecisionActions
+                      name={
+                        toDisplayText(a.finding_title, 300) ||
+                        t('myWork.untitled', 'Untitled finding')
+                      }
+                      itemId={a.id}
+                      layout="compact"
+                      canDecide={false}
+                      busy={busy === a.id}
+                      onApprove={() => {}}
+                      onReject={() => {}}
+                      menu={[
+                        {
+                          id: 'remind',
+                          label: t('myWork.requested.remind', 'Remind approvers'),
+                          icon: BellRing,
+                          onSelect: () => void remind(a),
+                        },
+                        {
+                          id: 'withdraw',
+                          label: t('myWork.requested.withdraw', 'Withdraw'),
+                          icon: Ban,
+                          destructive: true,
+                          onSelect: () => setCancelTarget(a),
+                        },
+                      ]}
+                    />
                   ) : null
                 }
               />

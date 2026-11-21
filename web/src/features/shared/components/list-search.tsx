@@ -309,12 +309,16 @@ export function ListSearchModeSwitch({
   )
 }
 
+/** The toolbar width below which the phone layout applies (28rem). */
+const PHONE_TOOLBAR_PX = 448
+
 /**
  * The field's width to hold in Query mode: the width it had in Basic mode
  * just before the switch. Query mode takes the filter tokens beside the field
  * away, and a growing field would move everything after it; held, switching
  * modes moves and resizes nothing. A change of the toolbar's own width (a
- * resized window, a panel opened) lets go, so the field fits again. Nothing
+ * resized window, a panel opened) lets go, so the field fits again; on a
+ * phone nothing is held (the field takes the whole line). Nothing
  * is held for a list opened in Query mode (no switch happened).
  */
 function useModeWidth(
@@ -342,11 +346,17 @@ function useModeWidth(
   React.useLayoutEffect(() => {
     const el = ref.current
     if (!queryActive || !el || basicWidth.current === null) return
-    setHeld(basicWidth.current)
     const bar =
       el.closest<HTMLElement>('[data-slot="list-toolbar-region"]') ??
       el.closest<HTMLElement>('[data-slot="list-toolbar"]') ??
       el.parentElement
+    // A phone's toolbar (under 28rem) gives the Query field the whole line:
+    // the end actions step down, so there is nothing to hold still for.
+    if (bar && bar.getBoundingClientRect().width < PHONE_TOOLBAR_PX) {
+      setHeld(null)
+      return
+    }
+    setHeld(basicWidth.current)
     if (!bar || typeof ResizeObserver === 'undefined') return
     let start: number | null = null
     const ro = new ResizeObserver(() => {

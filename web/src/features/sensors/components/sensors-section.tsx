@@ -851,6 +851,7 @@ export function SensorsSection({
     <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
       <SelectTrigger
         className="w-auto gap-2 sm:min-w-36"
+        iconOnlyBelow="@2xl/toolbar"
         aria-label={t('sensors.list.groupBy.label')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
@@ -918,6 +919,51 @@ export function SensorsSection({
   const noAccess = accessStateOf(error) === 'no_access'
   const narrowed = filterCount > 0 || searchQuery.trim() !== ''
 
+  // The list's own actions. From 768 px: the content refresh, Refresh and
+  // Export as buttons. On a phone they are the items of one More, after
+  // Select, with the way to the approve page (the header keeps Add sensor).
+  const refreshLabel = t('sensors.list.refresh', 'Refresh')
+  const exportLabel = t('sensors.list.export')
+  const nothingToExport = filteredSensors.length === 0
+  const moreItems: ActionMenuEntry[] = [
+    ...(phoneSelect.item ? [phoneSelect.item] : []),
+    { id: 'refresh', label: refreshLabel, icon: RefreshCw, onSelect: () => void handleRefresh() },
+    {
+      id: 'export',
+      label: exportLabel,
+      icon: Download,
+      disabledReason: nothingToExport
+        ? t('sensors.list.exportNothing', 'There are no sensors to export.')
+        : undefined,
+      onSelect: handleExport,
+    },
+    ...(canPairSensors
+      ? [
+          {
+            id: 'approve',
+            section: 'pair',
+            label: t('sensors.list.approve'),
+            icon: ShieldCheck,
+            href: '/activate',
+          },
+        ]
+      : []),
+  ]
+  const viewTitle = t('sensors.list.viewAll', 'All sensors')
+  const moreLabel = t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })
+  const moreMenu = (
+    <ActionMenu
+      title={viewTitle}
+      label={moreLabel}
+      items={moreItems}
+      trigger={
+        <Button variant="outline" size="icon" aria-label={moreLabel}>
+          <MoreHorizontal aria-hidden />
+        </Button>
+      }
+    />
+  )
+
   let body: React.ReactNode
   if (fleetEmpty) {
     // No sensors yet: what a sensor is and how to add one; "Install with an
@@ -980,44 +1026,17 @@ export function SensorsSection({
         }}
         search={search}
         toolbarStart={toolbarStart}
-        toolbarEnd={toolbarEnd}
+        toolbarEnd={
+          <>
+            {toolbarEnd}
+            {isPhone && moreMenu}
+          </>
+        }
         toolbarBelow={chipsRow}
       />
     )
   }
 
-  // The list's own actions. From 768 px: the content refresh, Refresh and
-  // Export as buttons. On a phone they are the items of one More, after
-  // Select, with the way to the approve page (the header keeps Add sensor).
-  const refreshLabel = t('sensors.list.refresh', 'Refresh')
-  const exportLabel = t('sensors.list.export')
-  const nothingToExport = filteredSensors.length === 0
-  const moreItems: ActionMenuEntry[] = [
-    ...(phoneSelect.item ? [phoneSelect.item] : []),
-    { id: 'refresh', label: refreshLabel, icon: RefreshCw, onSelect: () => void handleRefresh() },
-    {
-      id: 'export',
-      label: exportLabel,
-      icon: Download,
-      disabledReason: nothingToExport
-        ? t('sensors.list.exportNothing', 'There are no sensors to export.')
-        : undefined,
-      onSelect: handleExport,
-    },
-    ...(canPairSensors
-      ? [
-          {
-            id: 'approve',
-            section: 'pair',
-            label: t('sensors.list.approve'),
-            icon: ShieldCheck,
-            href: '/activate',
-          },
-        ]
-      : []),
-  ]
-  const viewTitle = t('sensors.list.viewAll', 'All sensors')
-  const moreLabel = t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })
   const titleRow = (
     <ListTitleRow
       title={viewTitle}
@@ -1042,18 +1061,7 @@ export function SensorsSection({
           {exportLabel}
         </Button>
       </div>
-      <div className="md:hidden">
-        <ActionMenu
-          title={viewTitle}
-          label={moreLabel}
-          items={moreItems}
-          trigger={
-            <Button variant="outline" size="icon" aria-label={moreLabel}>
-              <MoreHorizontal aria-hidden />
-            </Button>
-          }
-        />
-      </div>
+      {/* On a phone the "..." menu ends the toolbar (never alone on this row). */}
     </ListTitleRow>
   )
 

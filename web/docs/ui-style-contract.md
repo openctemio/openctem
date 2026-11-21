@@ -459,8 +459,9 @@ reference.
     dialog, with a modifier key, under a modal and in Query mode).
   - Active filters show in `FilterChipsRow`; pass `onClearAll` while two or more
     can be removed and the row draws "Clear filters" after its chips, the same
-    on every list. On a phone the chips strip starts at its first chip (only
-    its end fades) and a leading chip wider than the strip shortens its text.
+    on every list. On a phone the chips wrap onto as many lines as they need (no
+    sideways scroll, no "+N more": no chip is hidden) and a leading chip wider
+    than the row shortens its text.
   - A list whose search takes query text has a status row, owned by
     `ListToolbar` (`data-slot="list-toolbar-status"`, handed to the field as
     `ListSearchStatusSlot`): the field says what is wrong with a refused text
@@ -503,6 +504,10 @@ reference.
     default value when the parameter is absent); the room of its clear button
     is kept while nothing is chosen, so choosing a value never changes the
     token's width;
+    its trigger and its clear button are the full height of the token, border
+    included (36 px on a phone, 32 px from 768px), so neither is a smaller hit
+    area than the controls beside it; the clear button is icon-only, so it is a
+    square of that height (`aspect-square`), like every icon-only button;
     with `foldLabel` the key ("State:") folds away on a narrow toolbar and a
     select with nothing chosen then reads its key ("State") instead of "All"
     (its accessible name stays "State: All"), so two selects never both read
@@ -517,20 +522,45 @@ reference.
   - common combinations are saved views or sidebar quick views;
   - `ViewSwitcher` (or a segmented control) is only for the view mode of the
     same rows (table, board, analytics) at the end of the toolbar.
-  - on a phone the end actions take at most about 40% of the toolbar's second
-    line: a labelled end action (Export CSV) is `<ToolbarAction>` from
+  - on a phone (a toolbar under 28rem) the list comes first and no control
+    sits unseen behind a sideways scroll: the filter tokens are not drawn in
+    the toolbar. One Filters button (`FilterButton`, its count the tokens that
+    filter: a `FilterSelect` with a chosen value, a pressed on/off token) holds
+    them, joined to the search, or alone at the start of the first line on a
+    list without a search. On a list with a facet panel it is the panel's
+    sheet button and the tokens show at the top of that sheet
+    (`FilterSheet`'s token host); otherwise `ListToolbar` draws the button and
+    a sheet of the tokens itself. The tokens that filter stay drawn on the
+    second line and wrap onto lines (never a strip that scrolls), so every
+    filter in force is seen and cleared in place; the chips row follows them.
+    The end actions (Views, Group, Export, Refresh) end the first line and the
+    search keeps at least 12rem. A line that draws nothing takes no room.
+    Every line starts with its content, left to right: no list shows a line
+    holding only Views, or tokens pushed to the end of an empty line.
+    Wrapped tokens rather than a sheet were weighed and refused: a list with
+    three or four tokens then opens with three toolbar lines above its first
+    card (#4193 keeps a phone toolbar to two), and the design board's phone
+    lists show a Filters button with its count beside the search.
+  - Owner decision 2026-11-20: on a phone no control stands alone on a list's
+    title row, the list's "..." menu included. Refresh and the "..." menu are
+    end actions of the toolbar (`toolbarEnd`); when a list has both, Refresh
+    goes into the "..." menu. Desktop keeps the title-row placement. The layout
+    check (spec 75) flags a lone control on the phone title row, a "..." menu
+    included, with no exemption. A list that refreshes on its own needs no Refresh. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
-    tooltip below it, so the filter tokens neither shrink nor wrap to a third
-    line.
+    tooltip below it, so it fits beside the search.
+    In Query mode on a phone the field takes the whole first line (its text
+    keeps at least 55 % of the field at 375 px): the end actions step down to
+    the second line's end and the tokens, inert in that mode, are not drawn.
   - a toolbar group that draws none of its controls at this width (the
     Display menu on a phone, tokens moved into the Filters sheet) takes no
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
     the first chip opens its own line (the list moves 44 px: the row and its
     gap) instead of sitting on a line an empty group already opened.
     An icon counts as drawn by its own box (an icon-only Add filter is not
-    empty), and with the tokens out of the flow the end group keeps its own
-    auto margin: it stays at the end of the line before and after the first
-    chip and in Query mode.
+    empty), and with the tokens out of the flow the chips get the whole second
+    line; the end group stays at the end of the search's line before and
+    after the first chip and in Query mode.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - **An empty list shows its empty state only**: no "Showing 0 - 0 of 0", no
@@ -544,7 +574,8 @@ reference.
   - the title line: the row's name (the column of kind `name`, else the first
     column; never guessed from the values), up to two lines whatever width the
     table cell set for itself, then the status chip (the first column of kind
-    `status` or `status-edit`), the row's checkbox and its row menu. Nothing
+    `status` or `status-edit` the table keeps at every width, i.e. without
+    `hideBelow`; else the first one), the row's checkbox and its row menu. Nothing
     wraps under the title: a status cell too wide for its place gets a line of
     its own under the title, and an actions cell wider than one icon button
     gets one trailing line at the end of the card;
@@ -555,6 +586,10 @@ reference.
     say something. A value that draws nothing or only a dash, or repeats the
     title, is left out (never a label over an empty value), so a later column
     takes its place. "0" is a value and stays; a switch is a value too.
+    Key figures (columns of kind `number`, `risk`, `severity`, `priority`,
+    `due`) take the two places before the other columns, so a count such as
+    "Findings 0" is never pushed out by a descriptive column before it; the
+    fields are still shown in column order.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it.
@@ -770,8 +805,21 @@ and no page rebuilds:
   one polite status region, beside the toast.
 - **Empty** (`QueueEmpty`): first run (the queue never held a request), nothing waiting (decided requests
   exist; offers the way to them), no match (the lens left no row).
-- **Phone** (`QueueCard`): fixed slots in one order: title, state marks, who asked and by when, the reason
-  (two lines), the decision controls on their own row.
+- **Phone** (`QueueCard`): a phone card of the list kit, balanced on both sides, with no line that holds
+  one control alone:
+  - the title line: the item's name (two lines at most) with its state chip at the end (`state`: Pending,
+    the severity of a finding that waits to close);
+  - the reason or evidence, two lines at most;
+  - one line of key facts (`meta`: what is asked, by when, who asked; the last item gives way with an
+    ellipsis) with the decision at its end: `QueueDecisionActions layout="compact"`, one main action (Approve,
+    with its icon) and More, whose first item is the second decision (Reject). "Your request" reads as in a
+    row. Where nothing can be decided (no permission, a decided request) a chevron to the item (`href`) holds
+    the end instead, a pointer target only (the title is the link for the keyboard).
+  - The title row of a queue whose tab already shows its name and count passes `titleHidden` and no count;
+    with nothing else to draw it takes no room (the heading stays for assistive technology), and Refresh goes
+    to the toolbar's end (`toolbarEnd`), never a line of its own.
+  - `e2e/specs/75-layout-breaks.spec.ts` (`lopsided`) fails a phone card whose content stops short of its end
+    and a title row line whose start is empty.
 - A column whose value is the same on every row of the current lens (Status under Pending) is left out on
   that lens. Anything an AI proposed keeps its AI mark in the row, on the card and in the dialogs.
 
@@ -1338,8 +1386,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75-layout-breaks.spec.ts` checks the lists and their overlays at
-  390, 1024 and 1440 px with long English and Vietnamese data: no text over
+  390, 1024, 1280 and 1440 px with long English and Vietnamese data: no text over
   text or a control, no word broken inside, nothing cut without an ellipsis,
+  no button or link whose label a frame cuts ("Manage" shown as "Mana"),
   one control height per row, no English left in vi, no label without a value.
   Stored text shown as written (a dashboard's description) sits in an element
   with `translate="no"`, which the English check skips.

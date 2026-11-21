@@ -173,6 +173,8 @@ export type AuditAction =
   | 'scope_target.activated'
   | 'scope_target.deactivated'
   | 'scope_target.replaced'
+  | 'scope_target.provider_moved'
+  | 'scope_target.provider_kept'
   | 'scope_exclusion.created'
   | 'scope_exclusion.updated'
   | 'scope_exclusion.deleted'
@@ -340,11 +342,20 @@ export interface AuditLog {
  */
 const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
+  'asset.provider_addresses_moved': 'Provider shared addresses folded into names',
+  'asset.provider_addresses_restored': 'Provider shared addresses restored',
+  'auth.refresh_grace': 'Refresh token accepted again within the grace period',
+  'ci_trust_config.new_repositories_decided': 'CI trust new repositories decided',
+  'scope_target.provider_kept': 'Provider shared addresses kept in scope',
+  'scope_target.provider_moved': 'Provider shared addresses moved out of scope',
   'finding.bulk_updated': 'Findings bulk updated',
-  'finding.bulk_dismissed': 'Several findings dismissed at once',
-  'finding.bulk_dismiss_undone': 'Dismissal of several findings undone',
-  'finding_approval.batch_member_rejected': 'Finding left out of a group request',
-  'finding_approval.batch_self_approved': 'Group request self-approved by owner',
+  'campaign.group_added': 'Campaign group added',
+  'campaign.group_removed': 'Campaign group removed',
+  'campaign.group_role_changed': 'Campaign group role changed',
+  'finding.bulk_dismissed': 'Findings dismissed in bulk',
+  'finding.bulk_dismiss_undone': 'Bulk dismissal undone',
+  'finding_approval.batch_member_rejected': 'Finding left out of an approval batch',
+  'finding_approval.batch_self_approved': 'Finding approval batch approved by its requester',
   'finding.duplicate_marked': 'Finding marked duplicate',
   'finding.location_changed': 'Finding service location changed',
   'finding.issue_unlinked': 'Finding taken out of a same-issue group',

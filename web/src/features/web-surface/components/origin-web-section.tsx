@@ -46,21 +46,14 @@ import {
   type OriginPosture,
   type PostureCookie,
 } from '../lib/origin-posture'
-import {
-  downloadCsv,
-  endpointsCsv,
-  eventsCsv,
-  fetchAllEndpoints,
-  fetchAllEvents,
-  paramsCsv,
-} from '../lib/web-csv'
+import { downloadCsv, eventsCsv, fetchAllEvents, paramsCsv } from '../lib/web-csv'
 import { EndpointSheet, RISK_LABEL, useWebLabels } from './endpoint-sheet'
 import { MethodBadge, PathText } from './web-surface-badges'
-import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
+import { EVENT_KINDS, num, useEventColumns } from './web-surface-columns'
 import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 const PAGE_SIZES = [20, 50, 100]
-const SECTION_TABS = ['overview', 'endpoints', 'parameters', 'changes'] as const
+const SECTION_TABS = ['overview', 'parameters', 'changes'] as const
 type SectionTab = (typeof SECTION_TABS)[number]
 
 export interface OriginWebSectionProps {
@@ -69,11 +62,16 @@ export interface OriginWebSectionProps {
   assetName?: string
   /** The asset's properties (`asset.metadata`), read for `http_posture`. */
   properties?: unknown
+  /** Opens the origin's Paths (its endpoints as a tree), where the endpoint list lives. */
+  onOpenPaths?: () => void
 }
 
-/** Asset types that are web origins. */
-export function isWebOriginType(type: string | undefined): boolean {
-  return type === 'http_service' || type === 'website'
+/**
+ * Whether an asset is a web origin: stored as a service with the http
+ * sub-type (what ingest writes for an origin), or by the legacy type names.
+ */
+export function isWebOriginType(type: string | undefined, subType?: string | null): boolean {
+  return type === 'http_service' || type === 'website' || (type === 'service' && subType === 'http')
 }
 
 function usePaging() {
@@ -210,12 +208,7 @@ export function PostureCard({ posture }: { posture: OriginPosture | null }) {
   )
 }
 
-function OverviewTab({
-  assetId,
-  assetName,
-  properties,
-  onOpen,
-}: OriginWebSectionProps & { onOpen: (tab: SectionTab) => void }) {
+function OverviewTab({ assetId, assetName, properties, onOpenPaths }: OriginWebSectionProps) {
   const { t } = useTranslation()
   const filters: EndpointFilters = useMemo(() => ({ originAssetId: assetId }), [assetId])
   const stats = useWebEndpointStats(filters)
@@ -225,21 +218,21 @@ function OverviewTab({
       key: 'endpoints',
       label: t('attackSurface.originWeb.metric.endpoints', 'Endpoints'),
       value: num(s?.total),
-      onClick: () => onOpen('endpoints'),
+      onClick: onOpenPaths,
     },
     {
       key: 'unauth',
       label: t('attackSurface.originWeb.metric.unauth', 'Sensitive, no auth'),
       value: num(s?.unauth_sensitive),
       tone: 'danger',
-      onClick: () => onOpen('endpoints'),
+      onClick: onOpenPaths,
     },
     {
       key: 'untested',
       label: t('attackSurface.originWeb.metric.untested', 'Excluded, untested'),
       value: num(s?.excluded_untested),
       tone: 'warning',
-      onClick: () => onOpen('endpoints'),
+      onClick: onOpenPaths,
     },
   ]
   const posture = useMemo(() => readPosture(properties), [properties])
@@ -256,85 +249,6 @@ function OverviewTab({
       )}
       <PostureCard posture={posture} />
     </div>
-  )
-}
-
-function EndpointsTab({ assetId }: { assetId: string }) {
-  const { t } = useTranslation()
-  const paging = usePaging()
-  const [q, setQ] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
-  const filters: EndpointFilters = useMemo(
-    () => ({ originAssetId: assetId, q: q || undefined }),
-    [assetId, q]
-  )
-  const list = useWebEndpoints(filters, paging.page)
-  const columns = useEndpointColumns()
-  const exp = useExport()
-  return (
-    <>
-      <DataTable
-        columns={columns}
-        data={list.rows}
-        getRowId={(e) => e.id ?? ''}
-        onRowClick={(e) => setSelected(e.id ?? null)}
-        showSearch={false}
-        search={{
-          value: q,
-          onChange: (v: string) => {
-            setQ(v)
-            paging.reset()
-          },
-          placeholder: t('attackSurface.web.search.placeholder', 'Search paths…'),
-        }}
-        showColumnToggle={false}
-        toolbarEnd={
-          <ExportButton
-            busy={exp.busy}
-            onClick={() =>
-              void exp.run(
-                async () =>
-                  endpointsCsv(await fetchAllEndpoints(filters), [
-                    t('attackSurface.originWeb.csv.method', 'Method'),
-                    t('attackSurface.originWeb.csv.path', 'Path'),
-                    t('attackSurface.originWeb.csv.kind', 'Kind'),
-                    t('attackSurface.originWeb.csv.status', 'Status'),
-                    t('attackSurface.originWeb.csv.auth', 'Auth'),
-                    t('attackSurface.originWeb.csv.params', 'Parameters'),
-                    t('attackSurface.originWeb.csv.lastSeen', 'Last seen'),
-                  ]),
-                'web-endpoints'
-              )
-            }
-          />
-        }
-        isLoading={list.isLoading && list.rows.length === 0}
-        errorState={
-          list.error && !list.isLoading ? (
-            <ErrorState
-              title={t('attackSurface.originWeb.errorTitle', 'web surface')}
-              error={list.error}
-              onRetry={() => list.mutate()}
-            />
-          ) : undefined
-        }
-        manualPagination
-        rowCount={list.total}
-        pagination={paging.pagination}
-        onPaginationChange={paging.setPagination}
-        pageSizeOptions={PAGE_SIZES}
-        emptyMessage={t('attackSurface.originWeb.endpoints.empty', 'No endpoints for this origin')}
-        emptyDescription={t(
-          'attackSurface.originWeb.endpoints.emptyHint',
-          'Crawl this origin to record the endpoints it serves.'
-        )}
-      />
-      <EndpointSheet
-        endpointId={selected}
-        onClose={() => setSelected(null)}
-        onChanged={() => void list.mutate()}
-      />
-    </>
   )
 }
 
@@ -589,7 +503,6 @@ export function OriginWebSection(props: OriginWebSectionProps) {
   if (!canRead) return null
   const labels: Record<SectionTab, string> = {
     overview: t('attackSurface.originWeb.tab.overview', 'Overview'),
-    endpoints: t('attackSurface.originWeb.tab.endpoints', 'Endpoints'),
     parameters: t('attackSurface.originWeb.tab.parameters', 'Parameters'),
     changes: t('attackSurface.originWeb.tab.changes', 'Changes'),
   }
@@ -608,10 +521,7 @@ export function OriginWebSection(props: OriginWebSectionProps) {
             ))}
           </TabsList>
           <TabsContent value="overview" className="pt-4">
-            <OverviewTab {...props} onOpen={setTab} />
-          </TabsContent>
-          <TabsContent value="endpoints" className="pt-4">
-            {tab === 'endpoints' && <EndpointsTab assetId={props.assetId} />}
+            <OverviewTab {...props} />
           </TabsContent>
           <TabsContent value="parameters" className="pt-4">
             {tab === 'parameters' && <ParametersTab assetId={props.assetId} />}

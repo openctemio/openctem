@@ -15,9 +15,7 @@ import (
 func allowInstancePrivate(t *testing.T) {
 	t.Helper()
 	_, n, _ := net.ParseCIDR("10.0.0.0/8")
-	prev := allowedPrivateCIDRs
-	allowedPrivateCIDRs = []*net.IPNet{n}
-	t.Cleanup(func() { allowedPrivateCIDRs = prev })
+	setPolicyForTest(t, &egressPolicy{env: []*net.IPNet{n}})
 }
 
 // SECURITY: the private-range decision is made per connection at dial time:

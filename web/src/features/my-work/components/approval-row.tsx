@@ -15,6 +15,8 @@ import { approvalRequester } from '@/features/findings/lib/approvals'
 import type { ApiApproval } from '@/features/findings/types'
 import { acceptanceDays } from '../lib/queues'
 import { ChangedSinceRequest } from '@/features/findings/components/changed-since-request'
+import { QueueCard } from '@/features/shared/components/queue'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 /** English fallbacks; the key is myWork.kind.<requested_status>. */
 const KIND_LABELS: Record<string, string> = {
@@ -27,11 +29,16 @@ const KIND_LABELS: Record<string, string> = {
  * Requested by me): what is asked and how severe it is, the finding, who
  * asked and why, what changed since, the facts an approver weighs, and the
  * row's actions. Every text from the request is shown as plain text.
+ *
+ * On a phone the row is the queue's phone card (`QueueCard`): the finding
+ * with its severity at the end, the reason and what changed, then one line
+ * of facts with `phoneActions` (the compact decision) at its end.
  */
 export function ApprovalRow({
   approval,
   currentUserId,
   actions,
+  phoneActions,
   status,
   focused,
   onFocus,
@@ -41,6 +48,8 @@ export function ApprovalRow({
   currentUserId?: string
   /** The row's buttons (Approve / Reject, or Remind / Cancel). */
   actions?: ReactNode
+  /** The same actions for the phone card (one main action and More). */
+  phoneActions?: ReactNode
   /** A status note shown in the chips line (Requested by me). */
   status?: ReactNode
   focused?: boolean
@@ -48,6 +57,7 @@ export function ApprovalRow({
   rowRef?: (el: HTMLLIElement | null) => void
 }) {
   const { t } = useTranslation()
+  const isPhone = useIsMobile()
   const kind = t(
     `myWork.kind.${approval.requested_status}`,
     KIND_LABELS[approval.requested_status] ?? approval.requested_status
@@ -73,6 +83,85 @@ export function ApprovalRow({
   const changed = approval.changed_since_request ?? []
   const required = approval.approvals_required ?? 0
   const collected = approval.approvals_collected ?? 0
+
+  const rowProps = {
+    ref: rowRef,
+    tabIndex: 0,
+    onFocus,
+    'data-slot': 'approval-row',
+    'data-focused': focused ? 'true' : undefined,
+    'aria-label': `${kind}: ${title}`,
+  }
+
+  if (isPhone) {
+    const href = `/findings/${encodeURIComponent(approval.finding_id)}`
+    return (
+      <li
+        {...rowProps}
+        className={cn(
+          'min-w-0 outline-none focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+          focused && 'bg-muted/40'
+        )}
+      >
+        <QueueCard
+          className="px-4"
+          href={href}
+          title={
+            <Link
+              href={href}
+              dir="auto"
+              className="line-clamp-2 text-body font-medium [unicode-bidi:isolate] hover:underline"
+              tabIndex={-1}
+            >
+              {title}
+            </Link>
+          }
+          state={
+            facts?.severity || facts?.kev ? (
+              <>
+                {facts.kev && <KevBadge />}
+                {facts.severity && <SeverityBadge severity={facts.severity} />}
+              </>
+            ) : undefined
+          }
+          reason={
+            reason || changed.length > 0 || approval.decide_by ? (
+              <div className="grid gap-1">
+                {reason && (
+                  <q dir="auto" className="line-clamp-2 text-sm [unicode-bidi:isolate]">
+                    {reason}
+                  </q>
+                )}
+                {changed.length > 0 && (
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <ChangedSinceRequest changes={changed} />
+                  </div>
+                )}
+                {approval.decide_by && (
+                  <span className="text-meta text-muted-foreground">
+                    {t('myWork.decideBy', 'Expires undecided')}{' '}
+                    <RelativeTime date={approval.decide_by} />
+                  </span>
+                )}
+              </div>
+            ) : undefined
+          }
+          meta={[
+            <span key="kind" className="font-medium text-foreground">
+              {kind}
+              {days !== null && <> {t('myWork.kind.days', '{count} days', { count: days })}</>}
+            </span>,
+            status ? <span key="status">{status}</span> : null,
+
+            <span key="by">
+              {t('myWork.requestedBy', 'Requested by {name}', { name: requesterName })}
+            </span>,
+          ]}
+          actions={phoneActions ?? actions}
+        />
+      </li>
+    )
+  }
 
   return (
     <li

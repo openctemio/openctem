@@ -703,6 +703,8 @@ export interface Finding {
   acceptanceExpiresAt?: string
   /** Why it is closed (lib/closure.ts); absent while open. */
   closureReason?: string
+  /** What the person who closed it wrote (the closure note); absent while open. */
+  closeNote?: string
   /** The organization's sub-status inside the status; absent: the status itself. */
   subStatusId?: string
   /** Longest risk acceptance for this finding's priority, in days (server rule). */

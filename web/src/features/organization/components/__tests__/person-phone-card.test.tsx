@@ -65,4 +65,13 @@ describe('PersonPhoneCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
     expect(onOpen).toHaveBeenCalledTimes(1)
   })
+
+  it('ends in a chevron when it opens on a tap but has no menu', () => {
+    const { rerender } = render(<PersonPhoneCard title="Viewer" onOpen={vi.fn()} />)
+    expect(document.querySelector('[data-slot=person-card-chevron]')).not.toBeNull()
+    rerender(<PersonPhoneCard title="Viewer" onOpen={vi.fn()} menu={<button>m</button>} />)
+    expect(document.querySelector('[data-slot=person-card-chevron]')).toBeNull()
+    rerender(<PersonPhoneCard title="Viewer" />)
+    expect(document.querySelector('[data-slot=person-card-chevron]')).toBeNull()
+  })
 })

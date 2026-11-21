@@ -9,9 +9,18 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { OrganizationsHub } from '@/features/account/components/organizations-hub'
+import { readWelcomeNotice } from '@/lib/auth/refresh-failure'
 import { env } from '@/lib/env'
 
-export default async function OrganizationsPage() {
+type SearchParams = Record<string, string | string[] | undefined>
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+
+export default async function OrganizationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>
+}) {
   const jar = await cookies()
   const hasAccess = !!jar.get(env.auth.cookieName)?.value
   if (!hasAccess && !jar.get(env.auth.refreshCookieName)?.value) {
@@ -22,5 +31,8 @@ export default async function OrganizationsPage() {
   // session here. An organization session is never replaced by it.
   const needsSession =
     !jar.get(env.cookies.accountOnly)?.value && !jar.get(env.cookies.tenant)?.value
-  return <OrganizationsHub needsSession={needsSession} />
+  // Why the account space opened (a refused refresh): a known value only.
+  const sp = await searchParams
+  const notice = readWelcomeNotice(first(sp.notice), first(sp.org))
+  return <OrganizationsHub needsSession={needsSession} notice={notice} />
 }

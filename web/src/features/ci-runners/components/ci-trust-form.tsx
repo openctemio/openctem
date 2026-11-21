@@ -50,6 +50,8 @@ import {
 import { issuerHost, normaliseIssuer, type RefusalFix } from '../lib/connect'
 import type { CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 import { CITrustPreview } from './ci-trust-preview'
+import { CITrustSigningKeys, signingKeysReady } from './ci-trust-signing-keys'
+import type { KeySource } from '../lib/signing-keys'
 import { manageScopeSupported } from './ci-trust-scope'
 import { CIPipelineDefinitions } from './ci-pipeline-definitions'
 import { fixLabel } from './ci-refusals'
@@ -125,7 +127,14 @@ export function TrustConfigForm({
   // On by default for someone who may change scope; the API refuses it for
   // anyone else.
   const [manageScope, setManageScope] = useState(config?.manage_scope ?? canScope)
+  const [keySource, setKeySource] = useState<KeySource>(
+    config?.key_source === 'pasted' ? 'pasted' : 'fetch'
+  )
+  const [signingKeys, setSigningKeys] = useState(config?.signing_keys ?? '')
   const traits = PROVIDER_TRAITS[provider]
+  // Every list field is parsed by parseList: commas or new lines separate values.
+  const withSeveral = (hint: string) =>
+    `${hint} ${t('scans.ci.trust.listSeveral', 'Several values: separate them with commas.')}`
 
   const chooseProvider = (p: CIProvider) => {
     setProvider(p)
@@ -153,6 +162,9 @@ export function TrustConfigForm({
     default_branch: defaultBranch.trim() || undefined,
     enabled,
     manage_scope: manageScopeSupported(provider) && canScope ? manageScope : undefined,
+    key_source: keySource,
+    // Fetch mode keeps no pasted keys.
+    signing_keys: keySource === 'pasted' ? signingKeys.trim() : '',
     rules: {
       owners: parseList(owners),
       repositories: parseList(repositories),
@@ -169,6 +181,7 @@ export function TrustConfigForm({
   const noScope = parseList(owners).length === 0 && parseList(repositories).length === 0
   const needsIssuer =
     traits.issuerInput !== 'fixed' && provider !== 'gitlab' && !organization.trim()
+  const keysReady = signingKeysReady(keySource, signingKeys)
   const submit = async () => {
     if (!name.trim()) return toast.error(t('scans.ci.trust.nameRequired', 'Name is required'))
     if (noScope)
@@ -341,15 +354,23 @@ export function TrustConfigForm({
         id="ci-owners"
         hint={
           provider === 'gitlab'
-            ? t('scans.ci.trust.ownersGitlab', 'Top-level groups.')
+            ? t(
+                'scans.ci.trust.ownersGitlab',
+                'Top-level groups. One configuration can hold many groups: separate them with commas.'
+              )
             : provider === 'bitbucket'
-              ? t('scans.ci.trust.ownersBitbucket', 'The workspace.')
-              : t('scans.ci.trust.ownersHint', 'Organizations or users that own the repositories.')
+              ? withSeveral(t('scans.ci.trust.ownersBitbucket', 'The workspace.'))
+              : withSeveral(
+                  t(
+                    'scans.ci.trust.ownersHint',
+                    'Organizations or users that own the repositories.'
+                  )
+                )
         }
       >
         <Input
           id="ci-owners"
-          placeholder={t('scans.ci.trust.ownersPlaceholder', 'acme')}
+          placeholder={t('scans.ci.trust.ownersPlaceholder', 'acme, acme-labs')}
           value={owners}
           onChange={(e) => setOwners(e.target.value)}
         />
@@ -357,20 +378,23 @@ export function TrustConfigForm({
       <Field
         label={t('scans.ci.trust.repositories', 'Repositories')}
         id="ci-repos"
-        hint={
+        hint={withSeveral(
           traits.repositoriesById
             ? t(
                 'scans.ci.trust.repositoriesById',
                 'Repository UUIDs: the token signs the id, never the name.'
               )
             : t('scans.ci.trust.repositoriesHint', 'owner/name, owner/* or owner/**.')
-        }
+        )}
       >
         <Input
           id="ci-repos"
           placeholder={
             traits.repositoriesById
-              ? t('scans.ci.trust.repositoryUuidPlaceholder', '{repository uuid}')
+              ? t(
+                  'scans.ci.trust.repositoryUuidPlaceholder',
+                  '{repository uuid}, {repository uuid}'
+                )
               : 'acme/api, acme/web'
           }
           value={repositories}
@@ -380,9 +404,11 @@ export function TrustConfigForm({
       <Field
         label={t('scans.ci.trust.refs', 'Branches and tags')}
         id="ci-refs"
-        hint={t(
-          'scans.ci.trust.refsHint',
-          'Empty admits every ref. For a pull request, its source branch.'
+        hint={withSeveral(
+          t(
+            'scans.ci.trust.refsHint',
+            'Empty admits every ref. For a pull request, its source branch.'
+          )
         )}
       >
         <Input
@@ -447,7 +473,7 @@ export function TrustConfigForm({
             <Field
               label={t('scans.ci.trust.environments', 'Environments')}
               id="ci-envs"
-              hint={
+              hint={withSeveral(
                 provider === 'bitbucket'
                   ? t(
                       'scans.ci.trust.environmentsBitbucket',
@@ -457,10 +483,18 @@ export function TrustConfigForm({
                       'scans.ci.trust.environmentsHint',
                       'Optional: require a deployment environment.'
                     )
-              }
+              )}
             >
               <Input
                 id="ci-envs"
+                placeholder={
+                  provider === 'bitbucket'
+                    ? t(
+                        'scans.ci.trust.environmentUuidPlaceholder',
+                        '{environment uuid}, {environment uuid}'
+                      )
+                    : t('scans.ci.trust.environmentsPlaceholder', 'production, staging')
+                }
                 value={environments}
                 onChange={(e) => setEnvironments(e.target.value)}
               />
@@ -470,12 +504,19 @@ export function TrustConfigForm({
             <Field
               label={t('scans.ci.trust.events', 'Events')}
               id="ci-events"
-              hint={t(
-                'scans.ci.trust.eventsHint',
-                'Optional: push, pull_request, merge_request_event, schedule...'
+              hint={withSeveral(
+                t(
+                  'scans.ci.trust.eventsHint',
+                  'Optional: push, pull_request, merge_request_event, schedule...'
+                )
               )}
             >
-              <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
+              <Input
+                id="ci-events"
+                placeholder={t('scans.ci.trust.eventsPlaceholder', 'push, pull_request')}
+                value={events}
+                onChange={(e) => setEvents(e.target.value)}
+              />
             </Field>
           )}
           {traits.fixedAudience ? (
@@ -577,7 +618,15 @@ export function TrustConfigForm({
         checked={enabled}
         onChange={setEnabled}
       />
-      {!needsIssuer && (
+      <CITrustSigningKeys
+        provider={provider}
+        source={keySource}
+        keys={signingKeys}
+        onSourceChange={setKeySource}
+        onKeysChange={setSigningKeys}
+        saved={config}
+      />
+      {!needsIssuer && keysReady && (
         <CITrustPreview
           provider={provider}
           draft={body}
@@ -595,7 +644,10 @@ export function TrustConfigForm({
       <Button variant="outline" onClick={onClose}>
         {t('common.cancel', 'Cancel')}
       </Button>
-      <Button onClick={submit} disabled={isMutating || noScope || needsIssuer || !name.trim()}>
+      <Button
+        onClick={submit}
+        disabled={isMutating || noScope || needsIssuer || !keysReady || !name.trim()}
+      >
         {config ? t('common.save', 'Save') : t('scans.ci.add', 'Add')}
       </Button>
     </>

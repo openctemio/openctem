@@ -1253,11 +1253,17 @@ describe('ApprovalsPage gates', () => {
     expect(cols[cols.length - 1].id).toBe('actions')
   })
 
-  it('the phone card carries the same decision controls and the four-eyes reason in words', () => {
+  it('the phone card has one main action, Reject first in More, and the four-eyes reason', () => {
     page()
     const other = render(<div>{captured.mobileRow?.(otherRow)}</div>).container
     expect(within(other).getByRole('button', { name: /^approve /i })).toBeInTheDocument()
-    expect(within(other).getByRole('button', { name: /^reject /i })).toBeInTheDocument()
+    expect(within(other).queryByRole('button', { name: /^reject /i })).toBeNull()
+    expect(other.querySelector('[data-menu-item="queue-reject"]')).toHaveTextContent('Reject')
+    // The decision ends the facts line; the title line ends with the state.
+    expect(
+      other.querySelector('[data-slot="queue-card-line"] [data-slot="queue-approve"]')
+    ).not.toBeNull()
+    expect(other.querySelector('[data-slot="queue-card-state"]')).not.toBeNull()
     const own = render(<div>{captured.mobileRow?.(ownRow)}</div>).container
     expect(within(own).queryByRole('button', { name: /^approve /i })).toBeNull()
     expect(own.querySelector('[data-slot="queue-own-request"]')).toHaveTextContent(

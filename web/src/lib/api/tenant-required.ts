@@ -24,7 +24,10 @@ let routing = false
  * pages call only allow-listed routes, so a refusal there is a bug to show,
  * not a loop to enter).
  */
-export function routeToWelcomeOnce(location: Pick<Location, 'pathname' | 'assign'>): boolean {
+export function routeToWelcomeOnce(
+  location: Pick<Location, 'pathname' | 'assign'>,
+  target: string = ACCOUNT_HOME_PATH
+): boolean {
   if (routing) return false
   const path = location.pathname
   if (
@@ -35,7 +38,7 @@ export function routeToWelcomeOnce(location: Pick<Location, 'pathname' | 'assign
     return false
   }
   routing = true
-  location.assign(ACCOUNT_HOME_PATH)
+  location.assign(target)
   return true
 }
 

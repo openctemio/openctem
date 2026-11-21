@@ -1372,6 +1372,21 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		))
 		args = append(args, searchPattern, searchPattern, *filter.Search)
 		argIndex += 3
+		// An address finds the names that resolve or resolved to it
+		// (research/531: shared provider addresses are recorded only on the
+		// names), from the tenant's own set elements.
+		// The tenant is bound, not correlated, so the subquery runs once
+		// (a hashed subplan over idx_asset_set_elements_tenant_address)
+		// instead of once per asset row.
+		if addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(*filter.Search), "[]")); err == nil && addr.Zone() == "" &&
+			filter.TenantID != nil && *filter.TenantID != "" {
+			last := len(conditions) - 1
+			conditions[last] = strings.TrimSuffix(conditions[last], ")") + fmt.Sprintf(
+				" OR a.id IN (SELECT se.asset_id FROM asset_attribute_set_elements se WHERE se.tenant_id = $%d::uuid"+
+					" AND se.attribute = 'ip_addresses' AND se.element = $%d))", argIndex, argIndex+1)
+			args = append(args, *filter.TenantID, addr.Unmap().String())
+			argIndex += 2
+		}
 	}
 
 	// Risk score range filters
@@ -2525,13 +2540,24 @@ func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) 
 		for i, st := range af.States {
 			states[i] = string(st)
 		}
+		// research/531 D6: the provider addresses leave the population. The
+		// test rides on the same per-row probe (an asset with no record is
+		// never one), so it adds no scan.
+		notProvider := ""
+		if af.NoProviderAddresses {
+			notProvider = " AND NOT " + attribution.ProviderAddressSQL("aat")
+		}
 		parts = append(parts, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
-			argIndex))
+			"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d)%s)",
+			argIndex, notProvider))
 		args = append(args, pq.Array(states))
 	}
 	if af.Unrecorded {
 		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+	}
+	if af.ProviderAddresses {
+		parts = append(parts, "EXISTS (SELECT 1 FROM asset_attributions apa WHERE apa.asset_id = a.id AND apa.tenant_id = a.tenant_id AND "+
+			attribution.ProviderAddressSQL("apa")+")")
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "FALSE")
@@ -2897,7 +2923,7 @@ WITH scoped AS (
   SELECT a.id, a.asset_type, COALESCE(a.sub_type, '') AS sub_type, COALESCE(a.asset_lens, '') AS lens,
          a.risk_score, a.first_seen,
          NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = a.id AND iv.tenant_id = a.tenant_id
-                     AND iv.state IN ('needs_review', 'candidate', 'rejected')) AS in_inventory,
+                     AND (iv.state IN ('needs_review', 'candidate', 'rejected') OR ` + attribution.ProviderAddressSQL("iv") + `)) AS in_inventory,
          EXISTS (SELECT 1 FROM asset_attributions rq WHERE rq.asset_id = a.id AND rq.tenant_id = a.tenant_id
                  AND rq.state IN ('needs_review', 'candidate')) AS in_review,
          EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id

@@ -148,7 +148,7 @@ export function ReadyToCloseList({
 
   // The row's decision controls; the table cell and the phone card share them.
   const actionsCell = useCallback(
-    (row: ClosureProposal, layout: 'row' | 'card' = 'row') => (
+    (row: ClosureProposal, layout: 'row' | 'compact' = 'row') => (
       <QueueDecisionActions
         name={rowName(row)}
         itemId={row.id}
@@ -260,13 +260,7 @@ export function ReadyToCloseList({
               )}
             />
           }
-        >
-          <RefreshButton
-            onClick={() => void mutate()}
-            loading={isValidating}
-            label={t('findings.closureReview.refresh', 'Refresh')}
-          />
-        </ListTitleRow>
+        />
         {noAccess ? (
           <NoAccessState
             title={t('findings.closureReview.errorName', 'Ready to close')}
@@ -293,6 +287,14 @@ export function ReadyToCloseList({
             paginationNoun={t('findings.closureReview.paginationNoun', 'findings')}
             getRowId={(r) => r.id}
             pinActions
+            // Refresh ends the toolbar: never an icon alone on the title row.
+            toolbarEnd={
+              <RefreshButton
+                onClick={() => void mutate()}
+                loading={isValidating}
+                label={t('findings.closureReview.refresh', 'Refresh')}
+              />
+            }
             bulk={bulk}
             resetSelectionKey={resetKey}
             showSelectionCount={false}
@@ -309,23 +311,14 @@ export function ReadyToCloseList({
             mobileRow={(row) => (
               <QueueCard
                 data-testid="closure-phone-card"
+                href={`/findings/${encodeURIComponent(row.finding_id)}`}
                 title={
                   <ApprovalFindingLink
                     findingId={row.finding_id}
                     findingTitle={row.finding_title}
                   />
                 }
-                marks={
-                  <>
-                    <SeverityBadge severity={row.severity} />
-                    {criticalPill(row)}
-                  </>
-                }
-                meta={
-                  row.asset_name ? (
-                    <span dir="auto">{toDisplayText(row.asset_name, 120)}</span>
-                  ) : undefined
-                }
+                state={<SeverityBadge severity={row.severity} />}
                 reason={
                   <ClosureEvidence
                     method={row.method}
@@ -333,7 +326,15 @@ export function ReadyToCloseList({
                     at={row.evidence_at}
                   />
                 }
-                actions={actionsCell(row, 'card')}
+                meta={[
+                  criticalPill(row),
+                  row.asset_name ? (
+                    <span key="asset" dir="auto">
+                      {toDisplayText(row.asset_name, 120)}
+                    </span>
+                  ) : null,
+                ]}
+                actions={actionsCell(row, 'compact')}
               />
             )}
           />

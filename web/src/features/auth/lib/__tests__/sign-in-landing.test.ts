@@ -45,6 +45,28 @@ describe('landingHref', () => {
     expect(landingHref({ kind: 'account' }, '/account/security/')).toBe('/account/security/')
     expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/account/organizations')
   })
+  it('refused by its one organization: the account space names the reason and the organization', () => {
+    expect(
+      landingHref({ kind: 'account', refusal: { code: 'SSO_REQUIRED', slug: 'acme' } }, '/')
+    ).toBe('/account/organizations?notice=sso_required&org=acme')
+    expect(
+      landingHref(
+        { kind: 'account', refusal: { code: 'OWN_SIGN_IN_REQUIRED', slug: 'acme' } },
+        '/findings'
+      )
+    ).toBe('/account/organizations?notice=own_sign_in_required&org=acme')
+    // An unknown code: the plain account space; the page asked for still wins
+    // when an account session may open it.
+    expect(landingHref({ kind: 'account', refusal: { code: 'NEW', slug: 'acme' } }, '/')).toBe(
+      '/account/organizations'
+    )
+    expect(
+      landingHref(
+        { kind: 'account', refusal: { code: 'SSO_REQUIRED', slug: 'acme' } },
+        '/account/security'
+      )
+    ).toBe('/account/security')
+  })
   it('an organization that requires 2FA opens its setup, then the organization', () => {
     expect(landingHref({ kind: 'two_factor', tenantId: ORG }, '/findings')).toBe(
       `/two-factor-setup?next=%2Ffindings&org=${ORG}`
@@ -58,7 +80,7 @@ describe('landingHref', () => {
   it('several organizations: the picker', () => {
     expect(landingHref({ kind: 'choose' }, '/')).toBe('/select-tenant')
   })
-  it('a session that could not start: the account page says so instead of looping', () => {
+  it('a session that could not start: /account/organizations says so instead of looping', () => {
     expect(landingHref({ kind: 'unavailable' }, '/')).toBe('/account/organizations?start_failed=1')
   })
   it('a dead session: sign in', () => {

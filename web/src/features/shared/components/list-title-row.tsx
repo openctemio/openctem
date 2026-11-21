@@ -217,6 +217,16 @@ export function ListTitleRow({
   ref?: React.Ref<HTMLDivElement>
   'data-testid'?: string
 }) {
+  // Nothing to draw (a hidden name, no count, nothing after it, no actions):
+  // the heading stays for assistive technology and the row takes no room, so
+  // the page never shows an empty line.
+  if (titleHidden && !count && !start && !children) {
+    return (
+      <h2 data-slot="list-title-row" data-testid={titleTestId} className="sr-only">
+        {title}
+      </h2>
+    )
+  }
   return (
     <div
       ref={ref}
