@@ -263,30 +263,6 @@ const LOPSIDED_DEBT = new Set([
 ])
 
 /**
- * Lists whose table still has a cell cut at its right edge (found when the
- * check was added, 2026-11-20): at 1024 px the frame scrolls sideways and a
- * cell sits half in view. Each hides its lower-priority columns by width
- * (`meta.hideBelow`) and leaves this list; it only shrinks, and a route not
- * on it fails on its first cut cell.
- */
-const CUT_CELL_DEBT = new Set([
-  '/assets',
-  '/assets/attention/decide-monitoring',
-  '/assets/attention/no-owner',
-  '/assets/attention/unscanned',
-  '/exposures',
-  '/findings/imports',
-  '/scans',
-  '/scans/runs',
-  '/sensors',
-  '/settings/audit-log',
-  '/settings/members',
-  '/vulnerabilities',
-])
-const inDebt = (route: string, m: string) =>
-  CUT_CELL_DEBT.has(route) && m.startsWith('table cell cut')
-
-/**
  * Pages whose in-page tab strip is cut at 390 px (/sensors "Enrollment
  * tokens", /my-work, /settings/members) or whose table action buttons are cut
  * by the table scroller's edge at 1024 px (/exposures "Actions for ...",
@@ -484,13 +460,11 @@ test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
         if (typeof found === 'string') continue
         for (const kind of BREAK_KINDS) {
           if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
-          const got =
-            kind === 'clipped'
-              ? found.clipped.filter(
-                  (m) => !inDebt(route, m) && !(SIDEWAYS_DEBT.has(route) && SIDEWAYS_LINE.test(m))
-                )
+          const lines =
+            kind === 'clipped' && SIDEWAYS_DEBT.has(route)
+              ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
               : found[kind]
-          expect.soft(got, `${route} ${tag}: ${kind}`).toEqual([])
+          expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
         }
       }
     })

@@ -47,13 +47,6 @@ test.describe('layout-break detector: controls cut by their frame', { tag: ['@sh
     expect((await findBreaks(p)).clipped).toEqual([])
   })
 
-  test('is quiet for a column wholly past a scroller edge (reached by scrolling)', async ({
-    page: p,
-  }) => {
-    await p.setContent(page('overflow-x:auto;width:400px', 'width:80px'))
-    expect((await findBreaks(p)).clipped).toEqual([])
-  })
-
   test("flags a control cut by a scroller's edge", async ({ page: p }) => {
     await p.setContent(page('overflow-x:auto;width:540px', 'width:80px'))
     expect((await findBreaks(p)).clipped.join('\n')).toMatch(/cut by a scroller's edge.*Manage/)

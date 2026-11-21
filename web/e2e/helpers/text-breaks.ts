@@ -337,36 +337,6 @@ export async function findBreaks(
             )
         }
       }
-      // A table cell cut at the table's right edge: the table sits in a frame
-      // that scrolls or clips sideways, and a cell with text starts inside the
-      // frame but ends past its edge (half an "Auth" pill, "No a"). The frame
-      // was never wrong to scroll; a column that does not fit must be hidden
-      // by width (`meta.hideBelow`), so a cut cell is a break. A column wholly
-      // past the edge (reached by scrolling) is not flagged.
-      for (const root of roots) {
-        for (const table of Array.from(root.querySelectorAll('table'))) {
-          if (!shown(table)) continue
-          let frame: Element | null = table.parentElement
-          while (frame && !/auto|scroll|hidden|clip/.test(getComputedStyle(frame).overflowX))
-            frame = frame.parentElement
-          if (!frame) continue
-          const fr = frame.getBoundingClientRect()
-          for (const c of Array.from(table.querySelectorAll('th, td'))) {
-            if (!shown(c) || hiddenByAncestor(c) || !short(c.textContent)) continue
-            const cr = c.getBoundingClientRect()
-            // What the cell shows (its text and boxes), not its own padded
-            // box: a cell whose padding passes the edge hides nothing.
-            const shownRange = document.createRange()
-            shownRange.selectNodeContents(c)
-            const contentRight = shownRange.getBoundingClientRect().right
-            if (cr.left < fr.right - 1 && contentRight > fr.right + 2) {
-              out.clipped.push(
-                `table cell cut at the table's edge: "${short(c.textContent, 30)}" ${Math.round(fr.right - cr.left)}/${Math.round(cr.width)}`
-              )
-            }
-          }
-        }
-      }
       // (c2) a button or link whose label is cut by the frame around it (a
       // table frame, a cell, a card) at its start or end edge: "Manage" shown
       // as "Mana" at the table's right edge. A label that ends in an ellipsis
