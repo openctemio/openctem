@@ -214,6 +214,13 @@ findings=$({
     printf '{"type":"vulnerability","title":"E2E triage %02d","severity":"high","rule_id":"e2e-tri-%02d","asset_ref":"a1","description":"e2e triage"}\n' \
       "$i" "$i"
   done
+  # Four for the seeded remediation tasks (the tasks and campaigns lists, 14
+  # and 75): a finding belongs to one task, so the specs that create a task
+  # from the "E2E finding" rows (21) never meet these.
+  for i in $(seq 1 4); do
+    printf '{"type":"vulnerability","title":"E2E remediation %02d","severity":"high","rule_id":"e2e-rem-%02d","asset_ref":"a1","description":"e2e remediation"}\n' \
+      "$i" "$i"
+  done
   # One web finding with the proof nuclei sends (an HTTP exchange, then its
   # curl item) for the drawer evidence spec (31-finding-drawer-evidence). The
   # Authorization value must arrive masked; no other spec reads it.
@@ -285,15 +292,16 @@ for _ in $(seq 1 30); do
   call GET "/api/v1/findings?per_page=50"
   n=$(jq -r '[.data[]? | select(.title|startswith("E2E finding"))] | length' <<<"$BODY")
   nt=$(jq -r '[.data[]? | select(.title|startswith("E2E triage"))] | length' <<<"$BODY")
-  [[ "$n" -ge 15 && "$nt" -ge 10 ]] && break
+  nr=$(jq -r '[.data[]? | select(.title|startswith("E2E remediation"))] | length' <<<"$BODY")
+  [[ "$n" -ge 15 && "$nt" -ge 10 && "$nr" -ge 4 ]] && break
   sleep 1
 done
-[[ "$n" -ge 15 && "$nt" -ge 10 ]] || { log "only $n of 15 findings and $nt of 10 triage findings visible"; exit 1; }
+[[ "$n" -ge 15 && "$nt" -ge 10 && "$nr" -ge 4 ]] || { log "only $n of 15 findings, $nt of 10 triage and $nr of 4 remediation findings visible"; exit 1; }
 
 log "remediation tasks (the tasks and campaigns lists)"
-# Two tasks of the seed findings, one in the campaign with a due date, so the
+# Two tasks of the four remediation findings, one in the campaign with a due date, so the
 # lists show progress, owners, deadlines and a campaign with tasks.
-FIDS=$(jq -c '[.data[]? | select(.title|startswith("E2E finding")) | .id]' <<<"$BODY")
+FIDS=$(jq -c '[.data[]? | select(.title|startswith("E2E remediation")) | .id]' <<<"$BODY")
 call GET "/api/v1/remediation/campaigns?per_page=5"
 CAMPAIGN_ID=$(jq -r '[.data[]? | select(.name=="E2E remediation campaign")][0].id // empty' <<<"$BODY")
 DUE=$(date -u -d '+5 days' +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -v+5d +%Y-%m-%dT00:00:00Z)

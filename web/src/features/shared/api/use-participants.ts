@@ -66,17 +66,19 @@ export function participantsKey(kind: WorkItemKind, id: string): string {
 export interface UseParticipantsOptions {
   /** The toast when a write fails without a message from the API (translated by the caller). */
   errorMessage?: string
+  /** false: nothing is read until it turns true (a control that loads on first use). */
+  enabled?: boolean
 }
 
 /** A null id disables the request. */
 export function useParticipants(
   kind: WorkItemKind,
   id: string | null | undefined,
-  { errorMessage = 'Could not update watchers' }: UseParticipantsOptions = {}
+  { errorMessage = 'Could not update watchers', enabled = true }: UseParticipantsOptions = {}
 ) {
   const { currentTenant } = useTenant()
   const [busy, setBusy] = useState(false)
-  const key = currentTenant && id ? participantsKey(kind, id) : null
+  const key = enabled && currentTenant && id ? participantsKey(kind, id) : null
   const { data, isLoading, mutate } = useSWR<Participants>(
     key,
     (url: string) => get<Participants>(url),

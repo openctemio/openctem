@@ -74,6 +74,7 @@
   "remediationHub.detail.doneRule": "Hoàn tất khi mọi phát hiện đã đóng và ít nhất một đã được xác minh đã sửa.",
   "remediationHub.detail.drag": "Kéo {title}",
   "remediationHub.detail.dropHint": "Kéo phát hiện vào một công việc để di chuyển.",
+  "remediationHub.detail.dropNone": "Không có công việc mở nào khác cho cách sửa này.",
   "remediationHub.detail.dropTargets": "Công việc cùng bản sửa",
   "remediationHub.detail.findings": "Phát hiện ({n})",
   "remediationHub.detail.findingsList": "Phát hiện theo tài sản",

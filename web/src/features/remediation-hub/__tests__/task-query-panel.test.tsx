@@ -13,7 +13,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../api/use-owner-names', () => ({
-  useOwnerNames: () => ({
+  useOwnerLabels: () => ({
     users: [],
     groups: [],
     user: (id?: string) => (id === 'u-1' ? 'Sam' : undefined),

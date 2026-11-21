@@ -48,6 +48,7 @@ export function TaskPeople({ taskId, owner }: TaskPeopleProps) {
         <PropertyRow label={t('remediationHub.people.owner', 'Owner')}>{owner}</PropertyRow>
         <WatchersControl
           kind="task"
+          deferred
           itemId={taskId}
           canAdd={canManage && hasPermission(Permission.MembersRead)}
           canRemoveOthers={canManage}

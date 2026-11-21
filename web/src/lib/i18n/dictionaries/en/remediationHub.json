@@ -74,6 +74,7 @@
   "remediationHub.detail.doneRule": "Done when every finding is closed and at least one is verified fixed.",
   "remediationHub.detail.drag": "Drag {title}",
   "remediationHub.detail.dropHint": "Drag findings onto a task to move them.",
+  "remediationHub.detail.dropNone": "No other open task for this fix.",
   "remediationHub.detail.dropTargets": "Tasks of the same fix",
   "remediationHub.detail.findings": "Findings ({n})",
   "remediationHub.detail.findingsList": "Findings by asset",

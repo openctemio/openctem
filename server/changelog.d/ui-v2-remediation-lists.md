@@ -12,4 +12,7 @@
   progress and the deadline.
 - Permissions are unchanged: creating a task from a query still needs remediation write and findings read, and
   "New campaign" needs remediation write.
+- A task's page loads less at first: the watchers, the query it was created from, the timeline and the
+  other tasks of the same fix are read when the person opens or reaches them, and an owner's name is looked
+  up by id instead of loading the member list.
 - Docs: none (the redesigned console is documented when it ships)
