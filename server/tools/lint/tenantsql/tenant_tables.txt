@@ -158,6 +158,7 @@ failure_breakers
 finding_activities
 finding_approval_digest_sent
 finding_branch_occurrences
+finding_bulk_dismissals
 finding_closure_proposals
 finding_comments
 finding_correlations
