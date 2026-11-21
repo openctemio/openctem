@@ -440,7 +440,7 @@ function NodeRow({
         )}
       />
       <span
-        className={cn('min-w-0 truncate', icon !== 'root' && 'font-mono text-[13px]')}
+        className={cn('min-w-0 truncate', icon !== 'root' && 'font-mono text-dense')}
         title={name}
       >
         {icon === 'param' ? (
