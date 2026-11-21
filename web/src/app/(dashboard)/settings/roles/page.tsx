@@ -247,7 +247,7 @@ export default function RolesPage() {
     },
     {
       accessorKey: 'hierarchy_level',
-      meta: { kind: 'number', hideBelow: 900, label: levelLabel },
+      meta: { kind: 'number', hideBelow: 1000, label: levelLabel },
       header: ({ column }) => <DataTableColumnHeader column={column} title={levelLabel} />,
       cell: ({ row }) => <span className="tabular-nums">{row.original.hierarchy_level}</span>,
     },
