@@ -64,7 +64,7 @@ export const TAB_CLASS =
   // which made every strip 1px taller than its box: on iOS that let the strip
   // scroll vertically and the tabs wobbled under a finger. shrink-0 keeps
   // labels whole; the strip scrolls sideways instead.
-  'inline-flex shrink-0 snap-start items-center justify-center gap-1.5 whitespace-nowrap px-0.5 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--foreground)] aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-2px_0_var(--foreground)] [&_svg]:size-4 [&_svg]:shrink-0'
+  'inline-flex shrink-0 snap-start items-center justify-center gap-1.5 whitespace-nowrap px-0.5 text-sm font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_var(--foreground)] aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_0_-2px_0_var(--foreground)] [&_svg]:size-4 [&_svg]:shrink-0' // design-ok: existing underline shadow and text size, moved only by snap-start
 
 /**
  * Keeps a horizontally scrolling tab strip usable on narrow screens: marks
