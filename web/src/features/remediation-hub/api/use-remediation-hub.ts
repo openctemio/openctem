@@ -100,8 +100,11 @@ export function useTaskMembers(
   )
 }
 
-export function useTaskTimeline(taskId: string | undefined) {
-  return useSWR<Page<TaskEvent>>(taskId ? `${TASKS}/${taskId}/timeline?per_page=50` : null, get)
+export function useTaskTimeline(taskId: string | undefined, enabled = true) {
+  return useSWR<Page<TaskEvent>>(
+    taskId && enabled ? `${TASKS}/${taskId}/timeline?per_page=50` : null,
+    get
+  )
 }
 
 export interface SuggestionFilters {
