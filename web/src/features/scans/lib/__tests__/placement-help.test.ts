@@ -99,7 +99,13 @@ describe('every outcome reason the API keeps has words', () => {
   it('coverage-gap reasons (label and why)', () => {
     const reasons = goConsts('pkg/domain/scanrun/coverage_gaps.go', 'GapReason')
     expect(reasons).toEqual(
-      expect.arrayContaining(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'])
+      expect.arrayContaining([
+        'breaker_open',
+        'rate_floor',
+        'blocked',
+        'proxy_unavailable',
+        'slots_full',
+      ])
     )
     for (const r of [...reasons, 'other']) {
       for (const d of [en, vi]) {
@@ -268,5 +274,6 @@ describe('gapReasonHelp', () => {
       /TLS handshake failed/
     )
     expect(gapLabel({ reason: 'rate_floor' })).toBe('kept rate-limiting the scan')
+    expect(gapLabel({ reason: 'slots_full' })).toBe('sensor connection limit was full')
   })
 })

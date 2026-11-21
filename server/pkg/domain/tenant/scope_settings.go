@@ -104,6 +104,12 @@ type ScopeSettings struct {
 	// inactive until a verified pipeline run under them (opt-in governance,
 	// default off: a trust's entries are in effect at once).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof,omitempty"`
+	// HoldProviderEntries keeps the scope entries that name a provider's
+	// shared addresses (scope.SharedProviderEntry) from authorizing active
+	// checks until a person answers them on the Scope page: moved out of
+	// scope, or kept (research/531 D3, owner decision 2026-11-19). Nil is
+	// the default: on. False lets such entries authorize as any other.
+	HoldProviderEntries *bool `json:"hold_provider_entries,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
@@ -140,6 +146,12 @@ const (
 	DefaultRangePrefix = 16
 )
 
+// HoldsProviderEntries reports whether unanswered scope entries on a
+// provider's shared addresses are held (default on).
+func (s ScopeSettings) HoldsProviderEntries() bool {
+	return s.HoldProviderEntries == nil || *s.HoldProviderEntries
+}
+
 // RangePrefix returns the widest range prefix with its default (/16).
 func (s ScopeSettings) RangePrefix() int {
 	if s.MaxRangePrefix <= 0 {
@@ -157,6 +169,13 @@ func (s ScopeSettings) RangeHostBits() int { return 32 - s.RangePrefix() }
 // narrows and needs nothing more.
 func RangeWidened(before, after ScopeSettings) bool {
 	return after.RangePrefix() < before.RangePrefix()
+}
+
+// ProviderHoldLifted reports whether a scope settings change turned the hold
+// on provider shared addresses from on to off. That lifts every hold of the
+// organization at once, so it is as strong as Keep scanning.
+func ProviderHoldLifted(before, after ScopeSettings) bool {
+	return before.HoldsProviderEntries() && !after.HoldsProviderEntries()
 }
 
 // Attestation bounds (RFC-054 §12.5).

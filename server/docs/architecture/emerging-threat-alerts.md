@@ -83,14 +83,44 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-  B["Score: (exploitation + severity + exposure + freshness) x confidence<br/>confidence 1.0 confirmed, 0.8 likely, 0.5 possible, max 100"] --> I{"Total >= immediate_threshold (70)<br/>and Exploitation >= 20 (KEV, or EPSS >= 0.5)?"}
+  B["Score: (exploitation + severity + exposure + freshness) x confidence<br/>confidence 1.0 confirmed, 0.8 likely, 0.5 possible, max 100<br/>exploitation: KEV or card vendor-confirmed / in the wild 40, card weaponised 30,<br/>card public PoC or EPSS >= 0.5 20, EPSS >= 0.1 10"] --> I{"Total >= immediate_threshold (70)<br/>and Exploitation >= 20?"}
   I -- yes --> T{"tier confirmed, or include_possible_in_immediate,<br/>or KEV on an internet-facing possible asset?"}
   T -- yes --> IM["immediate"]
-  T -- no --> D
-  I -- no --> D{"Total >= digest_threshold (35)<br/>or minimum severity passes the matching policy?"}
+  T -- no --> C
+  I -- no --> C{"CheckNeeded: possible tier, critical, public exploit<br/>(KEV or card), internet-facing crown-jewel possible asset?"}
+  C -- yes --> IM
+  C -- no --> D{"Total >= digest_threshold (35)<br/>or minimum severity passes the matching policy?"}
   D -- yes --> DG["digest"]
   D -- no --> L["listed"]
 ```
+
+## Advisory cards (shipped)
+
+Cards arrive as the `cards` stream of the signed intel side manifest
+(`intel-cards.jsonl.gz`, format `openctem.advisory-card/v1`), next to KEV and
+EPSS. RFC-117 §3.5 has the rules; the path:
+
+```mermaid
+flowchart LR
+  M["intel.manifest.dsse.json<br/>VerifyIntelManifest (pinned root, sequence)"] --> W{"cards file SHA-256 differs from the last applied?"}
+  W -- no --> S["skip (nothing to download)"]
+  W -- yes --> P["ParseIntelCards: size, SHA-256, format v1,<br/>advisory.Decode + Validate per card, ids ascending"]
+  P --> A["AdvisoryCardRepository.Apply (one tx):<br/>higher revision, or a same-revision withdrawal, replaces; every revision body kept,<br/>vuln_events card_published / card_updated / card_withdrawn"]
+  A --> F["planner fan-out: CardsGrouping maps the card's CVEs to the card id"]
+  F --> PL["plan(card): cardVuln (card facts + strongest KEV/EPSS/CVSS of its CVEs),<br/>AffectedAssets (findings, version-less, card ranges),<br/>GroupedTriage, ResolveGrouped (grouped_into_card, note kept)"]
+```
+
+Tables (platform-wide, public facts, no tenant column): `advisory_cards`
+(current revision, `body` is the validated card), `advisory_card_revisions`,
+`advisory_card_vulns` (grouped ids), `advisory_card_products` (catalog keys,
+joined to `software_products` at read time), `advisory_card_stream` (the last
+cards file applied: SHA-256, sequence, data date). `threat_alerts.grouped_into_card`
+holds the card a vulnerability's alert was grouped into. A `reported` card
+(fast lane) alerts only: no exploitation score, no grouping (RFC-117 §3.5).
+
+The importer's status metadata reports a refused cards stream in
+`intel_error` (`cards: ...`); a platform without a card store lists it in
+`intel_skipped`.
 
 ## Vulnerability event log (shipped)
 
@@ -315,3 +345,6 @@ only: likely (a version match below 80% confidence) is its own number.
 | `internal/infra/postgres/threat_alert_repository.go`, `threat_alert_read.go` | persistence, scope-filtered reads |
 | `internal/infra/http/handler/emerging_threat_handler.go`, `routes/emerging_threats.go` | API |
 | `pkg/domain/tenant/emerging_threat_settings.go` | settings |
+| `pkg/domain/advisory/card.go` | advisory card format, validation, version placement, `Exploitation` |
+| `pkg/vulnbundle/cards.go`, `internal/app/vulnfeed/intel.go` | cards stream parsing and import |
+| `internal/infra/postgres/advisory_card_repository.go`, `threat_alert_cards.go` | card storage, card-keyed alert reads |

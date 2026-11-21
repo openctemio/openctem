@@ -109,6 +109,10 @@ func registerThreatIntelRoutes(
 		// nor toggle them, so there is no write route here. Operators use
 		// /api/v1/admin/threat-intel.
 
+		// Freshness of the platform's vulnerability data: any signed-in user
+		// (the banner and "data as of"); no organization data.
+		r.GET("/freshness", h.GetFreshness)
+
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
 		r.POST("/enrich", h.EnrichCVEs, middleware.Require(permission.VulnerabilitiesRead))

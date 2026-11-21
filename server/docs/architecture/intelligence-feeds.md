@@ -8,32 +8,23 @@ This page describes what the platform admin console and the organization routes 
 
 Verified against `develop` (2026-11-05); unchanged since v0.19.1.
 
-### Which path supplies KEV and EPSS
+### Where KEV and EPSS come from
+
+The platform makes no outbound call for them: they arrive only in the signed vulnerability release, fetched from the
+feed origin or through a relay sensor. The controllers `kev-refresh` (hourly) and `threat-intel-refresh` (daily) fetch
+nothing; they run the findings sweep below when it is due.
 
 ```mermaid
 flowchart TD
-  subgraph direct["Direct fetch: controllers kev-refresh (hourly) and threat-intel-refresh (daily), exclusive"]
-    T["ThreatIntelRefreshController.Reconcile"] --> SD{"IntelService.ShouldFetchDirect<br/>(setting threat_intel.source)"}
-    SD -- "DirectAllowed false (also relay mode)" --> SK["skip, ReasonDirectOff"]
-    SD -- "PreferBundle false (default)" --> FX
-    SD -- "PreferBundle, bundle_fetched_at older than<br/>6 h (KEV) or 48 h (EPSS), or unset" --> FX["SyncKEV (If-None-Match, If-Modified-Since)<br/>or SyncEPSS, after TryStart"]
-    SD -- "PreferBundle, bundle copy fresh" --> SK2["skip, ReasonBundleFresh"]
-    FX --> G1{"guard: 200 with entries,<br/>at least 90 % of the stored count"}
-    G1 -- no --> RF1["failed or refused, data kept"]
-    G1 -- yes --> UP1["UpsertBatch, KEV prune guard 25 / 2 %,<br/>markDirect (delivered_via direct)"]
-  end
-  subgraph bundle["Bundle side manifest: vulnfeed.Importer.syncIntel, after each corpus run"]
-    IM["intel.manifest.dsse.json"] --> VI{"VerifyKeySet(pinned root, min version),<br/>VerifyIntelManifest(sequence = applied)"}
-    VI -- no --> RB["RecordBundleRefused, bundle_error"]
-    VI -- yes --> BW{"BundleWanted: newerData(as_of, intel_as_of)<br/>KEV by time, EPSS by day"}
-    BW -- no --> SEEN["RecordBundleSeen: bundle_fetched_at only"]
-    BW -- yes --> PE["fetch entries, SHA-256 and size,<br/>ParseIntelKEV or ParseIntelEPSS"]
-    PE --> AB{"ApplyBundleKEV or ApplyBundleEPSS:<br/>newer again, at least 90 % (bundleShrinkFloor)"}
-    AB -- no --> RB
-    AB -- yes --> UP2["UpsertBatch, delivered_via bundle,<br/>afterBundle callback"]
-  end
-  UP1 --> SW["controller.IntelSweeper.Run(feed, changed, synced)"]
-  UP2 --> SW
+  IM["intel.manifest.dsse.json (vulnfeed.Importer.syncIntel, after each corpus run)"] --> VI{"VerifyKeySet(pinned root, min version),<br/>VerifyIntelManifest(sequence = applied)"}
+  VI -- no --> RB["RecordBundleRefused: bundle_error, feed failed with the refusal code"]
+  VI -- yes --> BW{"BundleWanted: newerData(as_of, intel_as_of)<br/>KEV by time, EPSS by day"}
+  BW -- no --> SEEN["RecordBundleSeen: bundle_fetched_at;<br/>success if the collector read the source within the stale limit,<br/>else failed (source_stale)"]
+  BW -- yes --> PE["fetch entries, SHA-256 and size,<br/>ParseIntelKEV or ParseIntelEPSS"]
+  PE --> AB{"ApplyBundleKEV or ApplyBundleEPSS:<br/>newer again, at least 90 % (bundleShrinkFloor),<br/>KEV prune guard 25 / 2 %"}
+  AB -- no --> RB
+  AB -- yes --> UP2["UpsertBatch, delivered_via bundle,<br/>afterBundle callback"]
+  UP2 --> SW["controller.IntelSweeper.Run(feed, changed, synced)"]
 ```
 
 ### After a change: `IntelSweeper.Run`
@@ -92,9 +83,40 @@ The success time, the failure start and the error code live in the row's `metada
 
 The success time above is also exported for alerting: `openctem_feed_last_success_timestamp_seconds{source}` and
 `openctem_feed_failing{source}` (enabled feeds only, read from the status rows by the operator metrics collector, `internal/infra/opsmetrics`).
-The `FeedStale` Prometheus rule fires when a feed's last success is older than its window (bundle 36 hours, KEV 12 hours, EPSS 72 hours); see
+The `FeedStale` Prometheus rule fires when a feed's last success is older than its window (bundle 36 hours, KEV 12 hours, EPSS 72 hours: these track the import itself; the age of the data is the freshness watch's, below); see
 [monitoring](../operations/monitoring.md#feedstale). The bundle import controller judges staleness by the last successful import, not by whether the
 current run was clean, and returns an import failure so the controller error counter counts it. Shipped.
+
+### Freshness: alarms in every mode and the all-user banner
+
+The freshness watch (`internal/app/feedwatch`, controller `feed-freshness`, every 10 minutes, one replica) checks the
+platform's vulnerability data whatever the delivery mode (direct or relay):
+
+| Condition | When | Banner |
+|---|---|---|
+| `data_stale:<feed>` | the data a feed holds is older than its limit: bundle 12 hours (the applied bundle's creation time), KEV 6 hours and EPSS 36 hours (the last successful check); or a feed never loaded data 2 hours after the watch first ran | yes |
+| `import_refused:<feed>` | the last import was refused (expired, bad signature, rollback, guard): at once, even while the data is still current | no |
+| `import_failing:<feed>` | imports have failed for two runs (at least 30 minutes) | no |
+| `newest_record_old` | the newest published CVE in the corpus is older than 12 hours (about 280 CVEs are published a day) | yes |
+| `volume_low` | the CVEs published in the last 24 hours are under 30% of the daily average of the 30 days before (only on a corpus averaging 50 a day or more) | no |
+
+The two corpus checks run only once a bundle was applied, and catch an import that "succeeds" on old data. A feed an
+administrator switched off is not checked. The open conditions are stored in the platform setting `feed_freshness.state`
+(one alert per condition across restarts and lease moves). The platform administrators get one message when conditions
+open and one when they clear (e-mail and the alert webhook); the operator metrics export
+`openctem_feed_freshness_alerts{code}` and the `FeedFreshness` Prometheus rule fires on it
+([monitoring](../operations/monitoring.md#feedfreshness)).
+
+While a banner condition holds, every signed-in user sees a banner under the header that cannot be dismissed:
+vulnerability data is out of date, new vulnerabilities may not be shown, the administrators have been told. It reads
+`GET /api/v1/threat-intel/freshness` (any signed-in user, no permission: platform-wide state only, no organization data,
+answered from the stored state with no feed or corpus query per request). The emerging-threat list and detail pages show
+"Data as of <time>" from the same answer. The platform console shows its own banner with each condition's explanation
+and a link to this status (`GET /api/v1/admin/threat-intel/freshness`, any admin). If the watch itself has not run for 30
+minutes, the banner says so (`check_not_running`) rather than staying quiet.
+
+In relay mode the relay alerts only on what is its own (no relay sensor online, a failed round); the age of the data is
+the watch's. Shipped.
 
 ### States
 
@@ -102,10 +124,10 @@ current run was clean, and returns an import failure so the controller error cou
 |---|---|
 | `off` | scheduled sync is switched off |
 | `running` | the row says running and was updated within the hour (a longer "running" is an interrupted run) |
-| `waiting_for_publisher` | the key set or pointer answered 404 and no bundle was ever applied; turns `stale` after 3 days |
+| `waiting_for_publisher` | the key set or pointer answered 404 and no bundle was ever applied; turns `stale` after 12 hours |
 | `refused` | a signature, key set, sequence, expiry or size guard refused what was offered |
 | `failing` | the last attempt failed and the data is not yet stale |
-| `stale` | data older than the threshold: bundle 3 days, KEV 6 hours, EPSS 48 hours |
+| `stale` | data older than the threshold: bundle 12 hours, KEV 6 hours, EPSS 36 hours |
 | `up_to_date` | none of the above |
 
 ### Error codes
@@ -136,9 +158,7 @@ queue the priority recompute, reconcile the KEV flags, emit events), not only th
 
 ## Fetch rules
 
-- A KEV 304 keeps the stored count (and fills a count an earlier run left at zero).
-- A 200 with no entries (an empty or renamed `vulnerabilities` array, an empty EPSS file) is a failure and
-  its cache validators are not stored.
 - KEV and EPSS refuse a snapshot under 90% of the stored catalog.
+- A release's copy the collector read longer ago than the feed's stale limit is a failed check (`source_stale`).
 
-Shipped: all of the above, including KEV and EPSS carried by the bundle with the direct fetch as a fallback (see the flow above and [feed-transfer.md](feed-transfer.md), "KEV and EPSS").
+Shipped: KEV and EPSS only from the signed release (see the flow above and [feed-transfer.md](feed-transfer.md), "KEV and EPSS"); the platform no longer fetches them itself.

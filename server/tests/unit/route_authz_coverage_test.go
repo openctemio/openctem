@@ -88,6 +88,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/sensors/install/seccomp-profile", "public static file: the open-source sensor release's seccomp profile, the same for every organization, no tenant data; rate limited per IP"},
 	{"/api/v1/sensors/platform-ca", "public static file: the platform's CA certificates (PLATFORM_CA_CERT_FILE, certificates only, never a key), the same for every organization, no tenant data; rate limited per IP; 404 when not configured"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},
+	{"/api/v1/threat-intel/freshness", "auth-only, platform-wide state: whether the platform's vulnerability data is current and since when (the stale-data banner every signed-in user sees); no organization data, answered from one cached platform setting"},
 	{"/api/v1/validation/evidence", "sensor API-key auth"},
 	{"/health", "public liveness"},
 	{"/ready", "public readiness"},

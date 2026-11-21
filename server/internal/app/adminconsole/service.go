@@ -709,6 +709,9 @@ type ProvisionInput struct {
 	// admin approved this change). While they are, a super admin is invited by
 	// e-mail only.
 	ApprovalsActive bool
+	// Reason is the provisioner's reason (trimmed, may be empty); the audit
+	// row keeps it.
+	Reason string
 }
 
 // Provision makes a new platform administrator by invitation (super admin
@@ -794,6 +797,7 @@ func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in Prov
 			meta["break_glass"] = true
 			b = b.High()
 		}
+		addReason(meta, in.Reason)
 		entry := b.Request("", "", meta).Build()
 		if err := s.audit.Create(ctx, entry); err != nil {
 			s.log.Warn("audit admin provisioning", "error", err)
@@ -810,8 +814,9 @@ func (s *Service) Provision(ctx context.Context, actor *admin.AdminUser, in Prov
 // ResetCredentials removes another administrator's second factor and ends
 // their console sessions (for a lost authenticator); they enroll a new one the
 // next time they open the console. Their password is their user account's and
-// is reset through the normal forgot-password flow. actor is the super admin.
-func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, client ClientInfo) error {
+// is reset through the normal forgot-password flow. actor is the super admin;
+// reason (may be empty) is kept in the audit row.
+func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, targetID shared.ID, reason string, client ClientInfo) error {
 	target, err := s.admins.GetByID(ctx, targetID)
 	if err != nil {
 		return err
@@ -832,6 +837,7 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 		entry := admin.NewAuditLogBuilder(actor, ActionCredentialsReset).
 			Resource("admin_user", ptr(target.ID()), target.Email()).
 			Context(client.IP, client.UserAgent).
+			Request("", "", addReason(nil, reason)).
 			Build()
 		if err := s.audit.Create(ctx, entry); err != nil {
 			s.log.Warn("audit console credentials reset", "error", err)
@@ -917,6 +923,19 @@ func (s *Service) writeAudit(ctx context.Context, action string, entry *admin.Au
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// addReason adds an administrator's reason for an action to an audit body
+// (creating the body when needed). An empty reason leaves the body as it is.
+func addReason(body map[string]interface{}, reason string) map[string]interface{} {
+	if reason = strings.TrimSpace(reason); reason == "" {
+		return body
+	}
+	if body == nil {
+		body = map[string]interface{}{}
+	}
+	body["reason"] = reason
+	return body
+}
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

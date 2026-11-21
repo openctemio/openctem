@@ -210,8 +210,9 @@ func TestAcceptInvitationToken(t *testing.T) {
 		w := httptest.NewRecorder()
 		// bob (invited to B) presents A's token: he must not join A.
 		newInvBodyHandler(repo).AcceptInvitationToken(w, withUser(t, postJSON(tokenBody(invTokenA)), "bob@b.test"))
-		if w.Code != http.StatusBadRequest || len(repo.memberships) != 0 {
-			t.Fatalf("foreign accept = %d (memberships %d), want 400 and none", w.Code, len(repo.memberships))
+		// Refused with its own code, so the page can say "sign in with that account".
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "INVITATION_FOR_ANOTHER_ADDRESS") || len(repo.memberships) != 0 {
+			t.Fatalf("foreign accept = %d %s (memberships %d), want 403 INVITATION_FOR_ANOTHER_ADDRESS and none", w.Code, w.Body.String(), len(repo.memberships))
 		}
 	})
 	t.Run("the invited email joins the invitation's organization", func(t *testing.T) {

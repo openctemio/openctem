@@ -1,53 +1,18 @@
 package threat
 
 import (
-	"compress/gzip"
 	"context"
-	"encoding/csv"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/server/pkg/httpsec"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const (
-	// EPSS data source URL (gzipped CSV)
-	epssURL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
-
-	// KEV catalog URL (JSON)
-	kevURL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-
-	// KEV fallback mirror — the official CISA GitHub org (cisagov) publishes the
-	// same catalog JSON (identical schema). cisa.gov fronts the primary feed with
-	// a WAF that 403s some data-center egress IPs; when that happens we fall back
-	// to the mirror so the KEV signal — a top exploit input to prioritization —
-	// does not silently go stale.
-	kevMirrorURL = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
-
-	// HTTP client timeout
-	httpTimeout = 5 * time.Minute
-
-	// maxCompressedFeedBytes bounds the raw (still-compressed) response read
-	// from a feed before it is handed to a decompressor — a guard against an
-	// upstream/MITM serving an oversized body.
-	maxCompressedFeedBytes = 256 << 20 // 256 MiB
-
-	// maxDecompressedFeedBytes bounds the decompressed stream so a malicious
-	// gzip (decompression bomb) cannot exhaust memory. The real EPSS feed is
-	// well under this; the bound is defense in depth.
-	maxDecompressedFeedBytes = 1 << 30 // 1 GiB
-
 	// epssHighThreshold is the EPSS probability at or above which a CVE is
 	// treated as "high" exploitation risk (10% chance of exploitation in the
 	// next 30 days). Long-standing "elevated attention" line.
@@ -89,11 +54,13 @@ type kevCatalogCounts struct {
 	fetchedAt  time.Time
 }
 
-// IntelService handles threat intelligence operations.
+// IntelService handles threat intelligence operations. It makes no outbound
+// call: KEV and EPSS arrive only in the signed vulnerability release, fetched
+// from the feed origin or through a relay sensor (intel_bundle.go); the
+// platform talks only to its own sensors and its configured feed origin.
 type IntelService struct {
-	repo       threatintel.ThreatIntelRepository
-	httpClient *http.Client
-	logger     *logger.Logger
+	repo   threatintel.ThreatIntelRepository
+	logger *logger.Logger
 
 	// countsMu guards counts. Only global catalog figures are cached here;
 	// tenant-scoped counts are always read fresh.
@@ -105,8 +72,6 @@ type IntelService struct {
 	// afterBundle runs after KEV or EPSS was applied from a release (nil:
 	// nothing), see intel_bundle.go.
 	afterBundle func(ctx context.Context, source string)
-	// policy is the platform setting for the source of KEV and EPSS.
-	policy SourcePolicy
 }
 
 // NewIntelService creates a new IntelService.
@@ -115,17 +80,9 @@ func NewIntelService(
 	log *logger.Logger,
 ) *IntelService {
 	return &IntelService{
-		repo: repo,
-		// SSRF hygiene: EPSS / CISA KEV URLs are hardcoded public
-		// endpoints, so a classic SSRF is not reachable via config.
-		// SafeHTTPClient still helps: if DNS or upstream CDN ever
-		// resolves an EPSS/KEV hostname into RFC1918 / link-local
-		// (DNS rebinding, hijacked cache), the dialer refuses to
-		// complete the connection rather than silently hitting a
-		// metadata service.
-		httpClient: httpsec.FeedHTTPClient(httpTimeout),
-		logger:     log.With("service", "threat_intel"),
-		now:        time.Now,
+		repo:   repo,
+		logger: log.With("service", "threat_intel"),
+		now:    time.Now,
 	}
 }
 
@@ -218,132 +175,6 @@ type KEVEscalator interface {
 	EscalateKEVFindings(ctx context.Context) (KEVEscalationResult, error)
 }
 
-// IntelSyncResult contains the result of a sync operation.
-type IntelSyncResult struct {
-	Source        string
-	RecordsSynced int
-	DurationMs    int64
-	// NotModified: the source answered 304 to the conditional request, so
-	// nothing was rewritten.
-	NotModified bool
-	// Skipped: no direct fetch ran. Either the platform setting leaves the
-	// feed to the signed release (SkipReason is the code of FetchDecision), or
-	// another run of the same feed holds it (Error is ErrSyncAlreadyRunning,
-	// which is not a failure of the feed).
-	Skipped    bool
-	SkipReason string
-	Error      error
-}
-
-// SyncAll syncs all enabled threat intel sources.
-func (s *IntelService) SyncAll(ctx context.Context) []IntelSyncResult {
-	results := make([]IntelSyncResult, 0, 2)
-
-	// Sync EPSS
-	epssResult := s.SyncEPSS(ctx)
-	results = append(results, epssResult)
-
-	// Sync KEV
-	kevResult := s.SyncKEV(ctx)
-	results = append(results, kevResult)
-
-	return results
-}
-
-// SyncEPSS syncs EPSS scores from FIRST.org.
-func (s *IntelService) SyncEPSS(ctx context.Context) IntelSyncResult {
-	result := IntelSyncResult{Source: "epss"}
-	startTime := time.Now()
-
-	if !s.sourcePolicy(ctx).DirectAllowed {
-		result.Error = ErrDirectFetchOff
-		return result
-	}
-
-	// Get sync status
-	status, err := s.repo.SyncStatus().GetBySource(ctx, "epss")
-	if err != nil {
-		result.Error = fmt.Errorf("failed to get sync status: %w", err)
-		return result
-	}
-
-	if !status.IsEnabled() {
-		result.Error = threatintel.ErrSyncDisabled
-		return result
-	}
-
-	// Claim the run: one at a time per feed, across replicas and between the
-	// scheduled run and an operator's request.
-	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "epss", feedstatus.RunningTimeout); cerr != nil {
-		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
-		return result
-	} else if !ok {
-		result.Skipped = true
-		result.Error = threatintel.ErrSyncAlreadyRunning
-		return result
-	}
-	status.MarkSyncStarted()
-
-	s.logger.Info("starting EPSS sync")
-
-	// Fetch and parse EPSS data
-	scores, err := s.fetchEPSSData(ctx)
-	if err != nil {
-		result.Error = err
-		markFailed(status, err)
-		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-			s.logger.Error("failed to update sync status after error", "error", updateErr)
-		}
-		return result
-	}
-
-	if gerr := s.guardEPSSShrink(ctx, len(scores)); gerr != nil {
-		result.Error = gerr
-		markFailed(status, gerr)
-		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-			s.logger.Error("failed to update sync status after error", "error", updateErr)
-		}
-		return result
-	}
-
-	// Batch upsert scores
-	if err := s.repo.EPSS().UpsertBatch(ctx, scores); err != nil {
-		result.Error = fmt.Errorf("failed to upsert EPSS scores: %w", err)
-		markFailed(status, err)
-		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-			s.logger.Error("failed to update sync status after error", "error", updateErr)
-		}
-		return result
-	}
-
-	duration := time.Since(startTime)
-	result.RecordsSynced = len(scores)
-	result.DurationMs = duration.Milliseconds()
-
-	// Mark sync as successful
-	if len(scores) > 0 {
-		meta := status.Metadata()
-		markDirect(meta, scores[0].ScoreDate())
-		// The date of the data the feed holds.
-		meta[feedstatus.MetaDataAsOf] = scores[0].ScoreDate().UTC().Format("2006-01-02")
-		status.SetMetadata(meta)
-	}
-	status.MarkSyncSuccess(len(scores), int(duration.Milliseconds()))
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
-	}
-
-	s.invalidateCatalogCounts()
-	s.propagateToCatalog(ctx, "epss")
-
-	s.logger.Info("EPSS sync completed",
-		"records", len(scores),
-		"duration_ms", duration.Milliseconds(),
-	)
-
-	return result
-}
-
 // propagateToCatalog makes the shared vulnerabilities catalog agree with the
 // feeds just synced. A failure is logged, not returned: the feed itself was
 // stored, and the next sync propagates again.
@@ -356,168 +187,11 @@ func (s *IntelService) propagateToCatalog(ctx context.Context, source string) {
 	s.logger.Info("vulnerability catalog updated from threat intel", "source", source, "rows", n)
 }
 
-// SyncKEV syncs KEV catalog from CISA.
-func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
-	result := IntelSyncResult{Source: "kev"}
-	startTime := time.Now()
-
-	if !s.sourcePolicy(ctx).DirectAllowed {
-		result.Error = ErrDirectFetchOff
-		return result
-	}
-
-	// Get sync status
-	status, err := s.repo.SyncStatus().GetBySource(ctx, "kev")
-	if err != nil {
-		result.Error = fmt.Errorf("failed to get sync status: %w", err)
-		return result
-	}
-
-	if !status.IsEnabled() {
-		result.Error = threatintel.ErrSyncDisabled
-		return result
-	}
-
-	// Claim the run: one at a time per feed, across replicas and between the
-	// scheduled run and an operator's request.
-	if ok, cerr := s.repo.SyncStatus().TryStart(ctx, "kev", feedstatus.RunningTimeout); cerr != nil {
-		result.Error = fmt.Errorf("failed to start sync: %w", cerr)
-		return result
-	} else if !ok {
-		result.Skipped = true
-		result.Error = threatintel.ErrSyncAlreadyRunning
-		return result
-	}
-	status.MarkSyncStarted()
-
-	s.logger.Info("starting KEV sync")
-
-	// Fetch and parse KEV data. The request is conditional (the hourly
-	// refresh downloads the catalog only when it changed).
-	meta := status.Metadata()
-	entries, validators, err := s.fetchKEVData(ctx, readKEVValidators(meta))
-	if errors.Is(err, errKEVNotModified) {
-		result.NotModified = true
-		result.DurationMs = time.Since(startTime).Milliseconds()
-		stored, cerr := s.repo.KEV().Count(ctx)
-		if cerr != nil {
-			stored = 0
-		}
-		status.MarkSyncUnchanged(int(result.DurationMs), int(stored))
-		if uerr := s.repo.SyncStatus().Update(ctx, status); uerr != nil {
-			s.logger.Error("failed to update sync status", "error", uerr)
-		}
-		return result
-	}
-	if err != nil {
-		result.Error = err
-		markFailed(status, err)
-		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-			s.logger.Error("failed to update sync status after error", "error", updateErr)
-		}
-		return result
-	}
-
-	if gerr := s.guardKEVShrink(ctx, len(entries)); gerr != nil {
-		result.Error = gerr
-		markFailed(status, gerr)
-		if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-			s.logger.Error("failed to update sync status after error", "error", updateErr)
-		}
-		return result
-	}
-
-	// Batch upsert in chunks to avoid memory issues
-	chunkSize := 100
-	for i := 0; i < len(entries); i += chunkSize {
-		end := i + chunkSize
-		if end > len(entries) {
-			end = len(entries)
-		}
-		chunk := entries[i:end]
-		if err := s.repo.KEV().UpsertBatch(ctx, chunk); err != nil {
-			result.Error = fmt.Errorf("failed to upsert KEV entries: %w", err)
-			markFailed(status, err)
-			if updateErr := s.repo.SyncStatus().Update(ctx, status); updateErr != nil {
-				s.logger.Error("failed to update sync status after error", "error", updateErr)
-			}
-			return result
-		}
-	}
-
-	s.pruneRemovedKEV(ctx, entries)
-
-	duration := time.Since(startTime)
-	result.RecordsSynced = len(entries)
-	result.DurationMs = duration.Milliseconds()
-
-	// Mark sync as successful; keep the validators for the next request.
-	meta[kevValidatorsKey] = validators
-	var released time.Time
-	for _, v := range validators {
-		if t, err := time.Parse(time.RFC3339Nano, v.Released); err == nil {
-			released = t
-		}
-	}
-	markDirect(meta, released)
-	status.SetMetadata(meta)
-	status.MarkSyncSuccess(len(entries), int(duration.Milliseconds()))
-	if err := s.repo.SyncStatus().Update(ctx, status); err != nil {
-		s.logger.Error("failed to update sync status", "error", err)
-	}
-
-	s.invalidateCatalogCounts()
-	s.propagateToCatalog(ctx, "kev")
-
-	s.logger.Info("KEV sync completed",
-		"records", len(entries),
-		"duration_ms", duration.Milliseconds(),
-	)
-
-	return result
-}
-
-// minSnapshotShare: a snapshot smaller than this share of the stored
-// catalog is refused (a truncated or wrong download, not a real change).
-const minSnapshotShare = 0.9
-
-// The feed errors, classified for display by package feedstatus.
-var (
-	ErrFeedEmpty  = feedstatus.ErrFeedEmpty
-	ErrFeedShrunk = feedstatus.ErrFeedShrunk
-)
-
 // markFailed records a failed sync with its classification. The stored text
 // is shown on the platform admin route: URL credentials are removed first.
 func markFailed(status *threatintel.SyncStatus, err error) {
 	c := feedstatus.Classify(err)
 	status.MarkSyncFailedWith(logger.RedactURLs(err.Error()), c.Code, c.Params)
-}
-
-func shrinkGuard(source string, got int, stored int64) error {
-	if min := int64(minSnapshotShare * float64(stored)); stored > 0 && int64(got) < min {
-		return &feedstatus.GuardError{
-			Base: ErrFeedShrunk, Kind: feedstatus.GuardSnapshot, N: int64(got), Limit: min,
-			Msg: fmt.Sprintf("%s (%s: %d entries, %d stored, minimum %d)", ErrFeedShrunk, source, got, stored, min),
-		}
-	}
-	return nil
-}
-
-func (s *IntelService) guardKEVShrink(ctx context.Context, got int) error {
-	stored, err := s.repo.KEV().Count(ctx)
-	if err != nil {
-		return fmt.Errorf("kev count: %w", err)
-	}
-	return shrinkGuard("kev", got, stored)
-}
-
-func (s *IntelService) guardEPSSShrink(ctx context.Context, got int) error {
-	stored, err := s.repo.EPSS().Count(ctx)
-	if err != nil {
-		return fmt.Errorf("epss count: %w", err)
-	}
-	return shrinkGuard("epss", got, stored)
 }
 
 // maxKEVRemovalsPerSync bounds how many CVEs one sync may remove from the KEV
@@ -574,289 +248,6 @@ func (s *IntelService) pruneRemovedKEV(ctx context.Context, entries []*threatint
 	if n > 0 {
 		s.logger.Info("removed CVEs that left the KEV catalog", "removed", n)
 	}
-}
-
-// fetchEPSSData fetches and parses EPSS data from FIRST.org.
-func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSScore, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, epssURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "OpenCTEM/1.0 (https://github.com/openctemio)")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch EPSS data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, &feedstatus.HTTPError{Op: "epss fetch", Host: req.URL.Host, Status: resp.StatusCode}
-	}
-
-	// Decompress gzip. Bound both the compressed input and the decompressed
-	// output to defend against an oversized body / decompression bomb.
-	gzReader, err := gzip.NewReader(httpsec.NewLimitedReader(resp.Body, maxCompressedFeedBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
-	}
-	defer gzReader.Close()
-
-	// The scores CSV is parsed by a pure helper so the format handling is
-	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-	scores, err := parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
-	if err != nil {
-		return nil, err
-	}
-	if len(scores) == 0 {
-		return nil, fmt.Errorf("epss %w", ErrFeedEmpty)
-	}
-	return scores, nil
-}
-
-// parseEPSSScoreDate reads the feed's score date: FIRST publishes a full
-// timestamp ("2026-10-26T12:03:22Z"); older files carry a plain date. Zero
-// when neither parses.
-func parseEPSSScoreDate(v string) time.Time {
-	v = strings.TrimSpace(v)
-	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-		if t, err := time.Parse(layout, v); err == nil {
-			return t.UTC()
-		}
-	}
-	return time.Time{}
-}
-
-// parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
-// with a metadata comment line (#model_version:...,score_date:...) whose comma
-// count (2) differs from the 3-column data header; encoding/csv locks
-// FieldsPerRecord to the first record it reads, so -1 disables the per-record
-// field-count check to let the comment line and data rows coexist — otherwise
-// the real header on line 2 is rejected with "wrong number of fields" and the
-// whole sync fails.
-func parseEPSSCSV(r io.Reader) ([]*threatintel.EPSSScore, error) {
-	csvReader := csv.NewReader(r)
-	csvReader.FieldsPerRecord = -1
-
-	// First line is like: #model_version:v2023.03.01,score_date:2024-01-15
-	firstLine, err := csvReader.Read()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read first line: %w", err)
-	}
-
-	var modelVersion string
-	var scoreDate time.Time
-	if len(firstLine) > 0 && strings.HasPrefix(firstLine[0], "#") {
-		// The csv reader already split the comment line at its comma:
-		// score_date is in the second field, so the fields are joined back.
-		metadata := strings.TrimPrefix(strings.Join(firstLine, ","), "#")
-		for part := range strings.SplitSeq(metadata, ",") {
-			kv := strings.SplitN(part, ":", 2)
-			if len(kv) == 2 {
-				switch kv[0] {
-				case "model_version":
-					modelVersion = kv[1]
-				case "score_date":
-					scoreDate = parseEPSSScoreDate(kv[1])
-				}
-			}
-		}
-	}
-	if scoreDate.IsZero() {
-		scoreDate = time.Now().UTC()
-	}
-
-	// Skip the actual header row (cve,epss,percentile).
-	if _, err = csvReader.Read(); err != nil {
-		return nil, fmt.Errorf("failed to read header: %w", err)
-	}
-
-	var scores []*threatintel.EPSSScore
-	for {
-		record, err := csvReader.Read()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read record: %w", err)
-		}
-		if len(record) < 3 {
-			continue
-		}
-		cveID := record[0]
-		if !strings.HasPrefix(cveID, "CVE-") {
-			continue
-		}
-		epssScore, err := strconv.ParseFloat(record[1], 64)
-		if err != nil {
-			continue
-		}
-		percentile, err := strconv.ParseFloat(record[2], 64)
-		if err != nil {
-			percentile = 0
-		}
-		// EPSS percentile is 0-1, convert to 0-100
-		percentile *= 100
-		scores = append(scores, threatintel.NewEPSSScore(
-			cveID,
-			epssScore,
-			percentile,
-			modelVersion,
-			scoreDate,
-		))
-	}
-
-	return scores, nil
-}
-
-// fetchKEVData fetches and parses the CISA KEV catalog. It tries the primary
-// cisa.gov feed first and falls back to the official cisagov GitHub mirror when
-// the primary is unreachable (e.g. the cisa.gov WAF 403s the egress IP) so the
-// KEV signal — a top exploit input to prioritization — stays fresh. Both
-// endpoints serve identical schema.
-func (s *IntelService) fetchKEVData(ctx context.Context, prev map[string]kevValidator) ([]*threatintel.KEVEntry, map[string]kevValidator, error) {
-	var lastErr error
-	for _, u := range []string{kevURL, kevMirrorURL} {
-		entries, v, err := s.fetchKEVFrom(ctx, u, prev[u])
-		if errors.Is(err, errKEVNotModified) {
-			return nil, prev, err
-		}
-		if err != nil {
-			lastErr = err
-			s.logger.Warn("KEV source unreachable; trying fallback", "url", u, "error", err)
-			continue
-		}
-		next := map[string]kevValidator{u: v}
-		return entries, next, nil
-	}
-	return nil, prev, lastErr
-}
-
-// errKEVNotModified: the KEV source answered 304 to a conditional request.
-var errKEVNotModified = errors.New("kev catalog not modified")
-
-// kevValidatorsKey is the sync status metadata key holding the validators
-// of the last KEV response, per URL.
-const kevValidatorsKey = "validators"
-
-// kevValidator is what a conditional request repeats: the response's
-// ETag and Last-Modified.
-type kevValidator struct {
-	ETag         string `json:"etag,omitempty"`
-	LastModified string `json:"modified,omitempty"`
-	// Released is the catalog's own release time (dateReleased): the data
-	// date of what this response carried.
-	Released string `json:"released,omitempty"`
-}
-
-// readKEVValidators reads the stored validators (any shape a JSON round
-// trip produces); unknown or oversized values are ignored.
-func readKEVValidators(meta map[string]any) map[string]kevValidator {
-	out := map[string]kevValidator{}
-	var raw map[string]any
-	switch v := meta[kevValidatorsKey].(type) {
-	case map[string]any:
-		raw = v
-	case map[string]kevValidator:
-		return v
-	}
-	for u, x := range raw {
-		m, ok := x.(map[string]any)
-		if !ok || (u != kevURL && u != kevMirrorURL) {
-			continue
-		}
-		et, _ := m["etag"].(string)
-		lm, _ := m["modified"].(string)
-		if len(et) > 256 || len(lm) > 64 {
-			continue
-		}
-		rel, _ := m["released"].(string)
-		out[u] = kevValidator{ETag: et, LastModified: lm, Released: rel}
-	}
-	return out
-}
-
-// fetchKEVFrom fetches and parses the KEV catalog JSON from a single URL,
-// conditionally when validators of an earlier response are known.
-func (s *IntelService) fetchKEVFrom(ctx context.Context, url string, prev kevValidator) ([]*threatintel.KEVEntry, kevValidator, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, prev, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "OpenCTEM/1.0 (https://github.com/openctemio)")
-	if prev.ETag != "" {
-		req.Header.Set("If-None-Match", prev.ETag)
-	}
-	if prev.LastModified != "" {
-		req.Header.Set("If-Modified-Since", prev.LastModified)
-	}
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, prev, fmt.Errorf("failed to fetch KEV data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotModified && (prev.ETag != "" || prev.LastModified != "") {
-		return nil, prev, errKEVNotModified
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, prev, &feedstatus.HTTPError{Op: "kev fetch", Host: req.URL.Host, Status: resp.StatusCode}
-	}
-
-	// Parse JSON (bounded to guard against an oversized upstream body)
-	var kevCatalog kevCatalogResponse
-	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
-		return nil, prev, fmt.Errorf("failed to parse KEV JSON: %w", err)
-	}
-	// A 200 without entries (a renamed or empty "vulnerabilities" array) is a
-	// failed fetch: its validators are not stored, so the next run fetches
-	// again instead of getting a 304 for the bad copy.
-	if len(kevCatalog.Vulnerabilities) == 0 {
-		return nil, prev, fmt.Errorf("kev %w", ErrFeedEmpty)
-	}
-	next := kevValidator{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified"),
-		Released: kevCatalog.releasedAt()}
-	if len(next.ETag) > 256 {
-		next.ETag = ""
-	}
-	if len(next.LastModified) > 64 {
-		next.LastModified = ""
-	}
-	return kevEntriesFromCatalog(kevCatalog), next, nil
-}
-
-// kevEntriesFromCatalog converts a decoded KEV catalog into domain entities.
-// Pure (no I/O) so the schema handling — notably the CWEs array — is
-// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-func kevEntriesFromCatalog(kevCatalog kevCatalogResponse) []*threatintel.KEVEntry {
-	entries := make([]*threatintel.KEVEntry, 0, len(kevCatalog.Vulnerabilities))
-	for _, v := range kevCatalog.Vulnerabilities {
-		dateAdded, _ := time.Parse("2006-01-02", v.DateAdded)
-		dueDate, _ := time.Parse("2006-01-02", v.DueDate)
-
-		// Keep the concrete CWE ids the feed lists, dropping placeholders.
-		cwes := make([]string, 0, len(v.CWEs))
-		for _, c := range v.CWEs {
-			if c != "" && c != "NVD-CWE-noinfo" {
-				cwes = append(cwes, c)
-			}
-		}
-
-		entries = append(entries, threatintel.NewKEVEntry(
-			v.CVEID,
-			v.VendorProject,
-			v.Product,
-			v.VulnerabilityName,
-			v.ShortDescription,
-			dateAdded,
-			dueDate,
-			v.KnownRansomwareCampaignUse,
-			v.Notes,
-			cwes,
-		))
-	}
-	return entries
 }
 
 // GetSyncStatuses returns all sync statuses.
@@ -1122,42 +513,6 @@ type ThreatIntelSyncDTO struct {
 	LastSyncStatus string  `json:"last_sync_status"`
 	RecordsSynced  int     `json:"records_synced"`
 	NextSyncAt     *string `json:"next_sync_at,omitempty"`
-}
-
-// kevCatalogResponse represents the CISA KEV JSON response.
-type kevCatalogResponse struct {
-	Title           string             `json:"title"`
-	CatalogVersion  string             `json:"catalogVersion"`
-	DateReleased    string             `json:"dateReleased"`
-	Count           int                `json:"count"`
-	Vulnerabilities []kevVulnerability `json:"vulnerabilities"`
-}
-
-// releasedAt is the catalog's release time as RFC 3339 ("" when absent or
-// unparseable).
-func (c kevCatalogResponse) releasedAt() string {
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02"} {
-		if t, err := time.Parse(layout, c.DateReleased); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return ""
-}
-
-type kevVulnerability struct {
-	CVEID                      string `json:"cveID"`
-	VendorProject              string `json:"vendorProject"`
-	Product                    string `json:"product"`
-	VulnerabilityName          string `json:"vulnerabilityName"`
-	ShortDescription           string `json:"shortDescription"`
-	DateAdded                  string `json:"dateAdded"`
-	DueDate                    string `json:"dueDate"`
-	KnownRansomwareCampaignUse string `json:"knownRansomwareCampaignUse"`
-	Notes                      string `json:"notes"`
-	// The KEV feed carries CWEs as a JSON array (e.g. ["CWE-79"]); an earlier
-	// `string` typing here silently worked only while the feed fetch was failing
-	// upstream, then broke the moment the fetch was repaired.
-	CWEs []string `json:"cwes,omitempty"`
 }
 
 // FeedEnabled reports whether a feed's scheduled sync is on

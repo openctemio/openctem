@@ -18,7 +18,6 @@ import (
 
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
 	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
 	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
@@ -1122,22 +1121,3 @@ func TestDoneSanitizesTheReport(t *testing.T) {
 		t.Fatalf("%+v", out)
 	}
 }
-
-// ZERO EGRESS: in relay mode the KEV/EPSS policy never allows the direct
-// fetch, whatever the stored threat intel source says.
-func TestThreatSourcePolicyInRelayMode(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	p := ThreatSourcePolicy{Inner: staticPolicy{threatsource.Policy{DirectAllowed: true}}, Relay: f.svc}
-	if got, _ := p.Policy(ctx); !got.DirectAllowed {
-		t.Fatal("direct mode must keep the stored policy")
-	}
-	f.relayOn(t)
-	if got, _ := p.Policy(ctx); got.DirectAllowed || !got.PreferBundle {
-		t.Fatalf("relay mode: %+v", got)
-	}
-}
-
-type staticPolicy struct{ p threatsource.Policy }
-
-func (s staticPolicy) Policy(context.Context) (threatsource.Policy, error) { return s.p, nil }

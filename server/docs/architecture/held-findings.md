@@ -27,8 +27,8 @@ that filter.
 
 A scan command's result lists coverage gaps per host (`pkg/domain/scanrun/coverage_gaps.go`). The reasons
 `throttled`, `blocked`, `edge_protected`, `rate_floor` and `catch_all` hold findings
-(`vulnerability.HoldGapReasons`); `breaker_open` and `proxy_unavailable` do not (the host did not answer, or the
-sensor's path failed: nothing was matched on them).
+(`vulnerability.HoldGapReasons`); `breaker_open`, `proxy_unavailable` and `slots_full` do not (the host did not answer, the
+sensor's path failed, or the sensor's own per-host connection limit stayed full: nothing was matched on them).
 
 ## When a finding is held
 
