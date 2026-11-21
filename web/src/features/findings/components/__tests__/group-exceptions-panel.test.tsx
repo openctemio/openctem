@@ -12,7 +12,13 @@ import { toast } from 'sonner'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { GroupExceptionSheet } from '../group-exceptions-panel'
 
-const api = vi.hoisted(() => ({ approve: vi.fn(), reject: vi.fn(), cancel: vi.fn() }))
+const api = vi.hoisted(() => ({
+  approve: vi.fn(),
+  reject: vi.fn(),
+  cancel: vi.fn(),
+  leaveOut: vi.fn(),
+  selfApprove: vi.fn(),
+}))
 const state = vi.hoisted(() => ({ batch: null as Record<string, unknown> | null }))
 const mockMutate = vi.fn()
 vi.mock('../../api/use-approval-batches', () => ({
@@ -29,6 +35,14 @@ vi.mock('../../api/use-approval-batches', () => ({
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
   Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
+  usePermissions: () => ({ can: () => true }),
+}))
+
+// The self-approval dialog asks for an authenticator code; here only that it opens.
+vi.mock('../finding-self-approve-dialog', () => ({
+  FindingSelfApproveDialog: ({ batch }: { batch: { id: string } }) => (
+    <div role="dialog">self-approve group {batch.id}</div>
+  ),
 }))
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -230,5 +244,71 @@ describe('GroupExceptionSheet', () => {
     renderSheet()
     expect(screen.queryByRole('button', { name: 'Add my approval' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
+  })
+
+  describe('leave out one member', () => {
+    it('rejects one member with a reason and keeps the rest waiting', async () => {
+      const user = userEvent.setup()
+      api.leaveOut.mockResolvedValue({ ...pendingBatch, status: 'pending' })
+      const { onDecided } = renderSheet()
+      await user.click(screen.getByRole('button', { name: 'Leave out OpenSSL CVE on edge-1' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Leave this finding out?' })
+      const confirm = within(dialog).getByRole('button', { name: 'Leave out' })
+      expect(confirm).toBeDisabled()
+      await user.type(within(dialog).getByRole('textbox'), 'Fixed already')
+      await user.click(confirm)
+      await waitFor(() => expect(api.leaveOut).toHaveBeenCalledWith('b-1', 'f-1', 'Fixed already'))
+      expect(toast.success).toHaveBeenCalledWith('Left out of the group', {
+        description:
+          'The requester sees your reason. The rest of the group still waits for a decision.',
+      })
+      await waitFor(() => expect(onDecided).toHaveBeenCalled())
+    })
+
+    it('says the group closed when the last member was left out', async () => {
+      const user = userEvent.setup()
+      api.leaveOut.mockResolvedValue({ ...pendingBatch, status: 'rejected' })
+      renderSheet()
+      await user.click(screen.getByRole('button', { name: 'Leave out OpenSSL CVE on edge-2' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Leave this finding out?' })
+      await user.type(within(dialog).getByRole('textbox'), 'Not ours')
+      await user.click(within(dialog).getByRole('button', { name: 'Leave out' }))
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Left out of the group', {
+          description: 'No finding is left waiting, so the group is closed as rejected.',
+        })
+      )
+    })
+
+    it('is not offered to the group requester, nor on a member already left out', () => {
+      renderSheet('requester-1')
+      expect(screen.queryAllByTestId('batch-member-leave-out')).toHaveLength(0)
+    })
+
+    it('is offered only on members still waiting', () => {
+      state.batch = {
+        ...pendingBatch,
+        members: [{ ...pendingBatch.members[0], status: 'rejected' }, pendingBatch.members[1]],
+      }
+      renderSheet()
+      expect(screen.getAllByTestId('batch-member-leave-out')).toHaveLength(1)
+    })
+  })
+
+  describe('Approve myself (sole member)', () => {
+    it('is offered to the sole owner on their own group, beside Cancel', async () => {
+      const user = userEvent.setup()
+      state.batch = { ...pendingBatch, self_approval_available: true }
+      renderSheet('requester-1')
+      expect(screen.getByRole('button', { name: 'Cancel request' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Approve myself' }))
+      expect(screen.getByText('self-approve group b-1')).toBeInTheDocument()
+    })
+
+    it('is not offered to a requester who is not the sole owner', () => {
+      state.batch = { ...pendingBatch, self_approval_available: false }
+      renderSheet('requester-1')
+      expect(screen.queryByRole('button', { name: 'Approve myself' })).toBeNull()
+    })
   })
 })

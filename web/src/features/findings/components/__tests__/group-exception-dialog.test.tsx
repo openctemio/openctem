@@ -126,7 +126,7 @@ describe('GroupExceptionDialog', () => {
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
 
-    const note = screen.getByLabelText('Justification')
+    const note = screen.getByLabelText('Note')
     await user.type(note, 'too short')
     expect(screen.getByRole('alert')).toHaveTextContent('Write at least 20 characters')
     expect(screen.getByRole('button', { name: 'Request exception' })).toBeDisabled()
@@ -142,10 +142,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(
-      screen.getByLabelText('Justification'),
-      '  No maintenance window until December  '
-    )
+    await user.type(screen.getByLabelText('Note'), '  No maintenance window until December  ')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1))
@@ -164,7 +161,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(screen.getByLabelText('Justification'), 'A long enough justification here')
+    await user.type(screen.getByLabelText('Note'), 'A long enough justification here')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     await waitFor(() =>
@@ -183,7 +180,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(screen.getByLabelText('Justification'), 'A long enough justification here')
+    await user.type(screen.getByLabelText('Note'), 'A long enough justification here')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     expect(await screen.findByTestId('group-exception-bulk-confirm')).toBeInTheDocument()

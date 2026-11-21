@@ -41,19 +41,17 @@ import { formatNumber } from '@/lib/app-locale'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { PERSON_CLOSURE_REASONS, closureReasonLabel } from '../lib/closure'
+import { noteMinLength, readLastReason, writeLastReason } from '../lib/approval-note'
 import {
   BULK_DISMISS_MAX,
   applyBulkDismiss,
   dismissBody,
-  dismissNoteMinLength,
   errorCode,
   errorCount,
   idempotencyKeyFor,
   previewBulkDismiss,
   previewLines,
   previewReason,
-  readLastReason,
-  writeLastReason,
   type DismissResult,
   type DismissSelection,
   type DismissStatus,
@@ -223,7 +221,7 @@ export function BulkDismissDialog({
 
   const ready =
     preview.kind === 'ready' && preview.key === previewBodyText ? preview.data : undefined
-  const minNote = dismissNoteMinLength(preview.kind === 'failed' ? null : ready)
+  const minNote = noteMinLength(preview.kind === 'failed' ? null : ready)
   const noteLength = note.trim().length
   const noteMissing = noteLength < minNote
   const actionable = ready ? ready.counts.decided + ready.counts.grouped : 0
