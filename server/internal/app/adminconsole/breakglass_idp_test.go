@@ -420,7 +420,7 @@ func TestConfirmBreakGlassTest(t *testing.T) {
 	bg, bgRefresh := b.addAdmin(t, "bg@acme.io", admin.AdminRoleSuperAdmin, true)
 	ctx := context.Background()
 
-	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, bg.ID(), client); !errors.Is(err, admin.ErrNoBreakGlassSignIn) {
+	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, bg.ID(), "", client); !errors.Is(err, admin.ErrNoBreakGlassSignIn) {
 		t.Fatalf("no sign-in yet: got %v", err)
 	}
 	if _, err := b.signIn(t, bgRefresh); err != nil {
@@ -432,13 +432,13 @@ func TestConfirmBreakGlassTest(t *testing.T) {
 		WithSignInState(bg.SignInState())
 	_ = b.admins.Update(ctx, bg)
 
-	if _, err := b.svc.ConfirmBreakGlassTest(ctx, bg, bg.ID(), client); !errors.Is(err, admin.ErrCannotModifySelfBreakGlassTest) {
+	if _, err := b.svc.ConfirmBreakGlassTest(ctx, bg, bg.ID(), "", client); !errors.Is(err, admin.ErrCannotModifySelfBreakGlassTest) {
 		t.Fatalf("self-confirmation must be refused, got %v", err)
 	}
-	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, b.admin.ID(), client); err == nil {
+	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, b.admin.ID(), "", client); err == nil {
 		t.Fatal("confirming yourself must be refused")
 	}
-	got, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, bg.ID(), client)
+	got, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, bg.ID(), "", client)
 	if err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestConfirmBreakGlassTest(t *testing.T) {
 	}
 
 	other, _ := b.addAdmin(t, "plain@acme.io", admin.AdminRoleSuperAdmin, false)
-	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, other.ID(), client); !errors.Is(err, admin.ErrNotBreakGlass) {
+	if _, err := b.svc.ConfirmBreakGlassTest(ctx, b.admin, other.ID(), "", client); !errors.Is(err, admin.ErrNotBreakGlass) {
 		t.Fatalf("not break-glass: got %v", err)
 	}
 }

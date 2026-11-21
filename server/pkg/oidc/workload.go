@@ -42,6 +42,11 @@ type WorkloadExpectations struct {
 	// shows an administrator whether a sample token verifies; never for an
 	// exchange.
 	IgnoreTimes bool
+	// Keys, when set, are the administrator's pasted signing keys: the
+	// token is verified with them only, and neither the discovery document
+	// nor the JWKS is fetched. A token naming another key fails with
+	// ErrPastedKeyUnknown.
+	Keys *StaticKeySet
 }
 
 // TokenHashJTIPrefix starts the replay key of a token that carries no jti.
@@ -55,6 +60,9 @@ type WorkloadToken struct {
 	JTI       string
 	IssuedAt  time.Time
 	ExpiresAt time.Time
+	// KeyID is the kid of the key that verified the token (empty when the
+	// token named none).
+	KeyID string
 }
 
 // UnverifiedIssuer reads the iss claim of a token without verifying it, to
@@ -76,6 +84,27 @@ func UnverifiedIssuer(raw string) (string, error) {
 		return "", errors.New("token has no readable issuer")
 	}
 	return claims.Iss, nil
+}
+
+// UnverifiedKeyID reads the kid of a token's header without verifying the
+// token, to tell an administrator which key a refused token named. Never use
+// it to choose or trust a key.
+func UnverifiedKeyID(raw string) string {
+	if raw == "" || len(raw) > MaxTokenSize {
+		return ""
+	}
+	header, _, ok := strings.Cut(raw, ".")
+	if !ok {
+		return ""
+	}
+	var h struct {
+		Kid string `json:"kid"`
+	}
+	b, err := jwtv5.NewParser().DecodeSegment(header)
+	if err != nil || json.Unmarshal(b, &h) != nil {
+		return ""
+	}
+	return h.Kid
 }
 
 // UnverifiedClaims decodes a token's payload without verifying it, for a
@@ -175,7 +204,7 @@ func (c *Client) staleDiscovery(d *discoveredJWKS, err error) (string, error) {
 	if d.uri != "" && c.now().Sub(d.fetchedAt) < jwksMaxStale {
 		return d.uri, nil
 	}
-	return "", fmt.Errorf("%w: discovery: %v", ErrJWKSUnavailable, err)
+	return "", fmt.Errorf("%w: discovery: %w", ErrJWKSUnavailable, err)
 }
 
 func (c *Client) fetchDiscovery(ctx context.Context, issuer string) (string, error) {
@@ -191,7 +220,7 @@ func (c *Client) fetchDiscovery(ctx context.Context, issuer string) (string, err
 		return "", errors.New("invalid document")
 	}
 	if doc.Issuer != issuer {
-		return "", fmt.Errorf("issuer %q does not match %q", doc.Issuer, issuer)
+		return "", fmt.Errorf("%w: %q does not match %q", ErrIssuerMismatch, doc.Issuer, issuer)
 	}
 	if err := requireHTTPS(doc.JWKSURI, true); err != nil {
 		return "", fmt.Errorf("jwks_uri %w", err)
@@ -217,17 +246,24 @@ func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp Worklo
 	if exp.Issuer == "" || exp.Audience == "" {
 		return nil, errors.New("incomplete expectations")
 	}
-	jwksURI, err := c.workloadJWKSURI(ctx, exp.Issuer)
-	if err != nil {
-		return nil, err
+	var jwksURI string
+	if exp.Keys == nil {
+		uri, err := c.workloadJWKSURI(ctx, exp.Issuer)
+		if err != nil {
+			return nil, err
+		}
+		jwksURI = uri
 	}
 	claims := jwtv5.MapClaims{}
+	var keyID string
 	if err := c.VerifyJWT(ctx, raw, claims, TokenPolicy{
 		JWKSURI:     jwksURI,
+		Keys:        exp.Keys,
 		Issuer:      exp.Issuer,
 		Audience:    exp.Audience,
 		Leeway:      workloadLeeway,
 		IgnoreTimes: exp.IgnoreTimes,
+		usedKey:     func(kid string) { keyID = kid },
 	}); err != nil {
 		return nil, fmt.Errorf("token: %w", err)
 	}
@@ -255,5 +291,5 @@ func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp Worklo
 		return nil, errors.New("token: jti is too long")
 	}
 	return &WorkloadToken{Claims: map[string]any(claims), Issuer: exp.Issuer, Subject: sub, JTI: jti,
-		IssuedAt: iat.Time, ExpiresAt: expAt.Time}, nil
+		IssuedAt: iat.Time, ExpiresAt: expAt.Time, KeyID: keyID}, nil
 }

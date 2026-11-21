@@ -132,7 +132,7 @@ test(
     const popover = page.locator('[data-slot="popover-content"]')
     await expect(popover).toBeVisible()
     await expect(popover.getByText('Moved Permanently')).toBeVisible()
-    await expect(popover.getByText('Behind Cloudflare')).toBeVisible()
+    await expect(popover.getByText('Served by Cloudflare')).toBeVisible()
     await expect(popover.getByText('162.159.140.229')).toBeVisible()
     await expect(popover.getByText('172.66.0.227')).toBeVisible()
     await expect(popover.getByText('nginx', { exact: false })).toBeVisible()

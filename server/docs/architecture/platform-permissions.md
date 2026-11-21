@@ -47,6 +47,7 @@ elevation is required, the default).
 | `platform.settings.legal.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.limits.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.mfa` |  | yes |  |  |  |  |  |  |
+| `platform.settings.network` |  | yes |  |  |  |  |  |  |
 | `platform.settings.read` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `platform.settings.scope_guardrails` |  | yes |  |  |  |  |  |  |
 | `platform.settings.signup.write` |  | yes |  |  |  |  |  |  |
@@ -92,6 +93,7 @@ elevation is required, the default).
 | `platform.settings.legal.write` | Legal pages |
 | `platform.settings.limits.write` | Default limits of self-service organizations |
 | `platform.settings.mfa` | The platform two-factor floor every organization is held to |
+| `platform.settings.network` | The private network destinations the platform may reach (open to every organization), and the destination test |
 | `platform.settings.read` | Read every platform setting, announcements, content packs, catalog, target mappings, feeds and AI clients |
 | `platform.settings.scope_guardrails` | The blocked target names policy and the organizations' exceptions to the government and military rule |
 | `platform.settings.signup.write` | Sign-up policy, sign-up alert thresholds and the social-login providers |
@@ -234,6 +236,9 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/settings/limits/` | `platform.settings.limits.write` |
 | `GET /api/v1/admin/settings/platform-sensor-proof/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/platform-sensor-proof/` | `platform.sensors.manage` |
+| `GET /api/v1/admin/settings/private-destinations/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/private-destinations/` | `platform.settings.network` |
+| `POST /api/v1/admin/settings/private-destinations/test` | `platform.settings.network` |
 | `GET /api/v1/admin/settings/region/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/region/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/scan-approval-policy/` | `platform.settings.read` |
@@ -263,8 +268,6 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/social-login-providers/{provider}/test` | `platform.settings.signup.write` |
 | `GET /api/v1/admin/settings/storage-quota/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/storage-quota/` | `platform.settings.general.write` |
-| `GET /api/v1/admin/settings/threat-intel-source/` | `platform.settings.read` |
-| `PUT /api/v1/admin/settings/threat-intel-source/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/shared-sensors/` | `platform.sensors.read` |
 | `POST /api/v1/admin/shared-sensors/enrollment-tokens` | `platform.sensors.manage` |
 | `GET /api/v1/admin/shared-sensors/jobs` | `platform.sensors.read` |
@@ -336,6 +339,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/tenants/{tenantId}/unsuspend` | `platform.tenants.lifecycle` |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | `platform.tenants.read` |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | `platform.tenants.owner_bootstrap` |
+| `GET /api/v1/admin/threat-intel/freshness` | `platform.settings.read` |
 | `GET /api/v1/admin/threat-intel/sync` | `platform.settings.read` |
 | `POST /api/v1/admin/threat-intel/sync` | `platform.feeds.manage` |
 | `PATCH /api/v1/admin/threat-intel/sync/{source}` | `platform.feeds.manage` |

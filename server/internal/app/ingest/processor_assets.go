@@ -18,6 +18,7 @@ import (
 
 	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/validator"
@@ -51,6 +52,9 @@ type AssetProcessor struct {
 	// are reconciled per source (attribute_sets.go), so a merge leaves the
 	// sets of an existing asset to that reconciliation.
 	trackSets bool
+	// providerRevive revives an address the provider-address move archived
+	// when a report names it directly (nil = disabled).
+	providerRevive ProviderAddressReviver
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -346,7 +350,12 @@ func (p *AssetProcessor) ProcessBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig, // nil = use system defaults
 ) (map[string]shared.ID, error) {
-	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false, fullScope())
+	m, err := p.processBatch(ctx, tenantID, report, output, tenantCfg, false, fullScope())
+	// No set write follows on this path: deferred provider answers take the
+	// normal path, never dropped.
+	p.materializeProviderAnswers(ctx, tenantID, output.providerAnswers, output)
+	output.providerAnswers = nil
+	return m, err
 }
 
 // processBatch is ProcessBatch; noAutoAsset (protocol v2,
@@ -551,6 +560,9 @@ func (p *AssetProcessor) processBatch(
 			}
 			held = append(held, existing)
 			alterable := isNew[id] || scope.mayAlter(existing)
+			if alterable && !isNew[id] {
+				p.reviveProviderAddress(ctx, tenantID, existing)
+			}
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
 				classifyReportedService(existing, ctisAsset, kindEvidence)
@@ -1259,6 +1271,16 @@ func (p *AssetProcessor) createSubdomainRelationships(
 // ip_addresses property is the summary, the edges (first seen = created_at,
 // last seen = last_verified) are the record. An edge changes its domain, so
 // a report that may not change the domain (RFC-040 §5.3) adds none.
+//
+// An address inside a range a provider publishes for infrastructure many
+// organizations share (edgeaddr SharedFrontEnd: published range only, any
+// doubt is "may be dedicated") is the provider's: it gets no address asset
+// and no edge. It is recorded on the name instead, per source with first
+// and last seen (the name's ip_addresses set elements, recordSets), and the
+// receipt counts it (AddressesOnName) once that write succeeded; otherwise
+// it takes the normal path after all (materializeProviderAnswers). An
+// address a scan reports results on itself is an asset of the report and
+// keeps the normal path.
 func (p *AssetProcessor) createDNSResolvesToRelationships(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1270,10 +1292,6 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	mayChange func(shared.ID) bool,
 ) {
 	// Collect domain→IP mappings from report assets
-	type dnsMapping struct {
-		domainName string
-		ip         string
-	}
 	mappings := make([]dnsMapping, 0)
 	ipSet := make(map[string]bool)
 
@@ -1298,11 +1316,74 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 
 		// ip_addresses and every synonym of it (resolved_ips, ip, ...).
 		for _, ip := range asset.IPAddresses(ctisAsset.Properties) {
+			if p.trackSets {
+				if _, provider := edgeaddr.Default().SharedFrontEnd(ip); provider {
+					// Recorded on the name's address set (recordSets); counted
+					// once that write succeeded, else materialized after all
+					// (Service.settleProviderAnswers): never dropped.
+					output.providerAnswers = append(output.providerAnswers, providerAnswer{name: stored, ip: ip, excl: excl})
+					continue
+				}
+			}
 			mappings = append(mappings, dnsMapping{domainName: domainName, ip: ip})
 			ipSet[ip] = true
 		}
 	}
+	p.linkResolvedAddresses(ctx, tenantID, mappings, ipSet, existingMap, output, discovered, excl)
+}
 
+// dnsMapping is one address a name's DNS answer holds.
+type dnsMapping struct {
+	domainName string
+	ip         string
+}
+
+// providerAnswer is a name's DNS answer inside a shared provider range,
+// waiting for the name's address set to be written.
+type providerAnswer struct {
+	name *asset.Asset
+	ip   string
+	excl *scopeapp.ExclusionMatcher
+}
+
+// materializeProviderAnswers takes today's path for provider answers whose
+// name record was not written (the report may not change the name's set,
+// the observation cap, a failed write): an address asset and the edge, so
+// the answer is never lost. The new addresses are returned for attribution
+// (a fresh shared address is recorded as the provider's, a dependency).
+func (p *AssetProcessor) materializeProviderAnswers(ctx context.Context, tenantID shared.ID, answers []providerAnswer, output *Output) []*asset.Asset {
+	if len(answers) == 0 || p.relRepo == nil {
+		return nil
+	}
+	existing := map[string]*asset.Asset{}
+	ipSet := map[string]bool{}
+	mappings := make([]dnsMapping, 0, len(answers))
+	var excl *scopeapp.ExclusionMatcher
+	for _, a := range answers {
+		existing[a.name.Name()] = a.name
+		mappings = append(mappings, dnsMapping{domainName: a.name.Name(), ip: a.ip})
+		ipSet[a.ip] = true
+		if a.excl != nil {
+			excl = a.excl
+		}
+	}
+	var created []*asset.Asset
+	p.linkResolvedAddresses(ctx, tenantID, mappings, ipSet, existing, output, &created, excl)
+	return created
+}
+
+// linkResolvedAddresses creates the address assets of mappings that do not
+// exist yet and the name→address resolves_to edges.
+func (p *AssetProcessor) linkResolvedAddresses(
+	ctx context.Context,
+	tenantID shared.ID,
+	mappings []dnsMapping,
+	ipSet map[string]bool,
+	existingMap map[string]*asset.Asset,
+	output *Output,
+	discovered *[]*asset.Asset,
+	excl *scopeapp.ExclusionMatcher,
+) {
 	if len(mappings) == 0 {
 		return
 	}

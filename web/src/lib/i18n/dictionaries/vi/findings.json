@@ -1608,6 +1608,7 @@
   "findings.receipts.kindUpload": "Nhập tệp",
   "findings.receipts.lastSeenIn": "Thấy lần cuối trong",
   "findings.receipts.noFindingsYet": "Chưa có phát hiện nào",
+  "findings.receipts.onName": "{count, plural, other {# địa chỉ nhà cung cấp được ghi trên tên}}",
   "findings.receipts.outcome.compliance_passed": "Kiểm tra tuân thủ đạt",
   "findings.receipts.outcome.compliance_state": "Kiểm tra tuân thủ không áp dụng hoặc không chạy được, lưu thành trạng thái kiểm soát",
   "findings.receipts.outcome.exposure": "Ghi thành điểm phơi nhiễm",

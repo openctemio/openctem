@@ -133,6 +133,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...autoCoverageOf(s),
     ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
+    hold_provider_entries: (s as { hold_provider_entries?: boolean }).hold_provider_entries ?? true,
     max_range_prefix: s.max_range_prefix || 16,
   }
 }
@@ -244,6 +245,10 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
     ci_scope_requires_proof: t(
       'scope.settings.ciScopeRequiresProof',
       'Require proof for CI scopes'
+    ),
+    hold_provider_entries: t(
+      'scope.settings.holdProviderEntries',
+      'Hold shared provider addresses until answered'
     ),
   }
   const changes = (Object.keys(LABEL) as FieldKey[])
@@ -418,6 +423,18 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
       )}
       checked={form.ci_scope_requires_proof ?? false}
       onCheckedChange={(v) => setForm({ ...form, ci_scope_requires_proof: v })}
+      disabled={disabled}
+    />,
+    <SettingsSwitchRow
+      key="holdproviders"
+      id={`${id}-holdproviders`}
+      label={LABEL.hold_provider_entries as string}
+      hint={t(
+        'scope.settings.holdProviderEntriesHint',
+        "On (default): until someone answers them on the Scope page, scans skip the scope entries on a provider's shared addresses. Names that point at them are still scanned. Off: such entries are scanned like any other entry."
+      )}
+      checked={form.hold_provider_entries ?? true}
+      onCheckedChange={(v) => setForm({ ...form, hold_provider_entries: v })}
       disabled={disabled}
     />
   )

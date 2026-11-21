@@ -1,0 +1,100 @@
+name: API Sign-in Scenarios
+
+# The sign-in scenario suite (server/tests/authscenarios): every (membership,
+# sign-in method, organization rule) scenario and the events while signed in,
+# against a scratch stack (Postgres and Redis from
+# server/tests/authscenarios/ci/compose.yml, the API built from this commit).
+# Expected outcomes are in server/tests/authscenarios/model_test.go; scenarios that
+# fail on the current code are listed in known-failures.txt and reported, not
+# failed (a listed scenario that passes fails the job until its line goes).
+# Design: server/docs/development/auth-scenarios.md.
+#
+# Runs on pull requests that touch the sign-in code or the suite, on develop,
+# nightly and on demand. It needs no secrets.
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'server/internal/app/auth/**'
+      - 'server/internal/app/tenant/**'
+      - 'server/internal/infra/http/handler/local_auth*'
+      - 'server/internal/infra/http/handler/tenant_handler.go'
+      - 'server/internal/infra/http/middleware/**'
+      - 'server/internal/infra/http/routes/auth.go'
+      - 'server/internal/infra/http/routes/tenant.go'
+      - 'server/pkg/domain/session/**'
+      - 'server/pkg/domain/tenant/**'
+      - 'server/tests/authscenarios/**'
+      - '.github/workflows/api-auth-scenarios.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'server/internal/app/auth/**'
+      - 'server/internal/infra/http/**'
+      - 'server/tests/authscenarios/**'
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The scratch stack pulls the CI image mirror (ghcr.io/openctemio/mirror).
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenarios:
+    name: Sign-in scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOWORK: 'off'
+      PG_IMAGE: ghcr.io/openctemio/mirror/postgres:17-alpine
+      REDIS_IMAGE: ghcr.io/openctemio/mirror/redis:7-alpine
+      AUTHSCEN_REPORT: ${{ github.workspace }}/auth-scenarios/report.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A schedule runs the default branch's (main's) copy of this file:
+          # test develop, where changes land first.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - name: Registry login (GHCR mirror)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache: true
+          cache-dependency-path: server/go.sum
+      - name: Test build seam (social providers at a stand-in)
+        working-directory: server
+        run: GOWORK=off go test -tags authtestseam -count=1 -run 'TestProviderTestSeam' ./internal/app/auth/
+      - name: Run the scenarios
+        run: |
+          mkdir -p "$(dirname "$AUTHSCEN_REPORT")"
+          set -o pipefail
+          make -C server auth-scenarios 2>&1 | tee auth-scenarios/run.log
+      - name: Known failures
+        if: always()
+        run: |
+          {
+            echo '### Sign-in scenarios listed as known failures'
+            echo
+            echo 'Each still runs; see server/tests/authscenarios/known-failures.txt.'
+            echo
+            grep -v '^#' server/tests/authscenarios/known-failures.txt | sed '/^\s*$/d; s/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: auth-scenarios-report
+          path: auth-scenarios/
+          retention-days: 7
+          if-no-files-found: ignore

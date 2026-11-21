@@ -1007,6 +1007,17 @@ describe('Every rule (the full form, from Connect a CI provider)', () => {
     expect(await screen.findByTestId('ci-snippet')).toHaveTextContent('tenant-id: t-123')
   })
 
+  it('every list field says it takes several values', async () => {
+    await openEveryRule()
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
+    const several = 'Several values: separate them with commas.'
+    for (const label of ['Owners', 'Repositories', 'Branches and tags', 'Environments', 'Events']) {
+      const hint = screen.getByLabelText(label).parentElement?.querySelector('p')
+      expect(hint?.textContent, label).toContain(several)
+    }
+    expect(screen.getByLabelText('Owners')).toHaveAttribute('placeholder', 'acme, acme-labs')
+  })
+
   it('warns before admitting fork pull requests', async () => {
     await openEveryRule()
     await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
@@ -1028,6 +1039,65 @@ describe('Every rule (the full form, from Connect a CI provider)', () => {
       id: undefined,
       body: expect.objectContaining({ issuer: 'https://github.example.com/_services/token' }),
     })
+  })
+
+  it('saves pasted signing keys, and refuses to save a document with a private key', async () => {
+    await openEveryRule()
+    await userEvent.type(screen.getByLabelText('Name'), 'Self-managed')
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    const add = screen.getByRole('button', { name: /^add$/i })
+    await userEvent.click(screen.getByRole('radio', { name: 'Use keys I paste' }))
+    // Pasted mode without keys cannot be saved.
+    expect(add).toBeDisabled()
+    const key = {
+      kty: 'EC',
+      kid: 'gitlab-k1',
+      crv: 'P-256',
+      x: 'f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU',
+      y: 'x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0',
+    }
+    const box = screen.getByLabelText('Keys (JWKS document)')
+    await userEvent.click(box)
+    await userEvent.paste(JSON.stringify({ keys: [{ ...key, d: 'c2VjcmV0' }] }))
+    expect(screen.getByTestId('ci-signing-keys-error')).toBeInTheDocument()
+    expect(add).toBeDisabled()
+    await userEvent.clear(box)
+    const pasted = JSON.stringify({ keys: [key] })
+    await userEvent.click(box)
+    await userEvent.paste(pasted)
+    expect(add).toBeEnabled()
+    mockSaveTrust.mockResolvedValue({
+      id: 'c10',
+      name: 'Self-managed',
+      provider: 'github',
+      audience: 'openctem:tenant:t-123',
+    })
+    await userEvent.click(add)
+    expect(mockSaveTrust).toHaveBeenCalledWith({
+      id: undefined,
+      body: expect.objectContaining({ key_source: 'pasted', signing_keys: pasted }),
+    })
+  })
+
+  it('shows the pasted kids and the last used key on the connection health', async () => {
+    trust = [
+      {
+        id: 'c11',
+        name: 'Self-managed',
+        provider: 'gitlab',
+        enabled: true,
+        rules: { owners: ['acme'] },
+        key_source: 'pasted',
+        signing_key_list: [{ kid: 'gitlab-k1', alg: 'RS256' }],
+        signing_keys_updated_at: new Date().toISOString(),
+        last_key_id: 'gitlab-k1',
+      },
+    ]
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /Self-managed/ }))
+    const summary = screen.getByTestId('ci-signing-keys-summary')
+    expect(summary).toHaveTextContent('gitlab-k1 (RS256)')
+    expect(summary).toHaveTextContent('Last used key gitlab-k1')
   })
 
   it('admits only the central workflow when pipeline definitions are listed', async () => {

@@ -46,6 +46,7 @@ asset_risk_requests
 asset_services
 asset_software
 asset_software_edges
+asset_software_versionless_backfill
 asset_state_history
 asset_technologies
 asset_technology_backfill
@@ -91,7 +92,9 @@ ci_run_findings
 ci_run_tokens
 ci_runs
 ci_trust_configs
+ci_trust_new_repositories
 ci_trust_owner_pins
+ci_unverified_refusals
 code_scan_settings
 collector_assets
 command_events
@@ -231,8 +234,11 @@ pentest_report_files
 pentest_report_templates
 pentest_reports
 pentest_retests
+personal_organizations
 priority_class_audit_log
 priority_override_rules
+provider_address_move_items
+provider_address_moves
 proxy_command_egress
 proxy_echo_observations
 proxy_endpoint_exits
@@ -279,6 +285,7 @@ scm_app_installations
 scm_gitlab_connections
 scope_exclusions
 scope_name_exceptions
+scope_provider_keeps
 scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts
