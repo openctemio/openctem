@@ -73,15 +73,21 @@ func (r *WebEndpointRepository) OriginEndpoints(ctx context.Context, tenantID, a
 // never input.
 //
 //nolint:gosec // G202: fixed SQL fragments of the domain, no input
-var openOnAsset = `tenant_id = $1 AND asset_id = $2 AND NOT branch_only AND ` +
-	vulnerability.OpenStatusSQL("status") + ` AND ` + vulnerability.NotHeldSQL("verification_state")
+var openOnAsset = `f.tenant_id = $1 AND f.asset_id = $2 AND NOT f.branch_only AND ` +
+	vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state")
 
 // openFindingsByLocation groups the open findings of one asset by location
 // key and severity (idx_findings_tenant_asset_status).
 //
 //nolint:gosec // G202: fixed SQL fragments and numbered placeholders only
-var openFindingsByLocation = `SELECT COALESCE(location_key, ''), severity, COUNT(*) FROM findings WHERE ` +
-	openOnAsset + ` GROUP BY 1, 2 LIMIT $3`
+var openFindingsByLocation = `SELECT COALESCE(f.location_key, ''), f.severity, COUNT(*), COALESCE(e.path_template, ''), COALESCE(e.method, '')
+	FROM findings f` + findingEndpointJoin + ` WHERE ` + openOnAsset + ` GROUP BY 1, 2, 4, 5 LIMIT $3`
+
+// findingEndpointJoin links a finding to the endpoint of its web location,
+// when the endpoint belongs to the same tenant and the same origin asset
+// (finding_web_locations, PK tenant_id + finding_id).
+const findingEndpointJoin = ` LEFT JOIN finding_web_locations w ON w.tenant_id = f.tenant_id AND w.finding_id = f.id
+	LEFT JOIN web_endpoints e ON e.tenant_id = w.tenant_id AND e.id = w.endpoint_id AND e.origin_asset_id = f.asset_id`
 
 // OriginOpenFindings groups the origin asset's open findings by location key
 // and severity.
@@ -99,7 +105,7 @@ func (r *WebEndpointRepository) OriginOpenFindings(ctx context.Context, tenantID
 	out := make([]webendpoint.PathFinding, 0, 32)
 	for rows.Next() {
 		var f webendpoint.PathFinding
-		if err := rows.Scan(&f.LocationKey, &f.Severity, &f.Count); err != nil {
+		if err := rows.Scan(&f.LocationKey, &f.Severity, &f.Count, &f.Template, &f.Method); err != nil {
 			return nil, fmt.Errorf("scan origin finding: %w", err)
 		}
 		out = append(out, f)
@@ -113,11 +119,13 @@ func (r *WebEndpointRepository) OriginOpenFindings(ctx context.Context, tenantID
 	return out, nil
 }
 
-// openURLFindings lists the asset's open findings with a URL location.
+// openURLFindings lists the asset's open findings with a URL location or a
+// link to an endpoint.
 //
 //nolint:gosec // G202: fixed SQL fragments and numbered placeholders only
-var openURLFindings = `SELECT id::text, COALESCE(NULLIF(title, ''), message), severity, status, location_key FROM findings WHERE ` +
-	openOnAsset + ` AND location_key LIKE 'url:%' ORDER BY id LIMIT $3`
+var openURLFindings = `SELECT f.id::text, COALESCE(NULLIF(f.title, ''), f.message), f.severity, f.status, COALESCE(f.location_key, ''),
+	COALESCE(e.path_template, ''), COALESCE(e.method, '') FROM findings f` + findingEndpointJoin + ` WHERE ` +
+	openOnAsset + ` AND (f.location_key LIKE 'url:%' OR e.id IS NOT NULL) ORDER BY f.id LIMIT $3`
 
 // OriginURLFindings returns the origin asset's open findings with a URL
 // location (titles bounded by the column), at most MaxPathFindingRows.
@@ -135,7 +143,7 @@ func (r *WebEndpointRepository) OriginURLFindings(ctx context.Context, tenantID,
 	out := make([]webendpoint.FindingRow, 0, 16)
 	for rows.Next() {
 		var f webendpoint.FindingRow
-		if err := rows.Scan(&f.ID, &f.Title, &f.Severity, &f.Status, &f.LocationKey); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Severity, &f.Status, &f.LocationKey, &f.Template, &f.Method); err != nil {
 			return nil, fmt.Errorf("scan node finding: %w", err)
 		}
 		out = append(out, f)

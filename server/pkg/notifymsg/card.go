@@ -81,6 +81,10 @@ type Card struct {
 	// important first; More counts the ones not listed.
 	Items []string
 	More  int
+	// Sections list the objects of a grouped message by asset: a heading
+	// line per asset, then one line per object (BuildGroup). At most
+	// MaxGroupLines object lines in all; More counts the rest.
+	Sections []Section
 	// Custom holds the lines of the channel's template, already rendered;
 	// nil means the default layout (Lines).
 	Custom []string
@@ -88,6 +92,15 @@ type Card struct {
 
 // MaxItems caps the objects one message lists.
 const MaxItems = 5
+
+// LineSection is the Key of a grouped message's asset heading line.
+const LineSection = "section"
+
+// Section is one asset of a grouped message and its objects.
+type Section struct {
+	Title string
+	Items []string
+}
 
 // Subject is the asset the event is about.
 type Subject struct {
@@ -153,8 +166,20 @@ func (c Card) Lines() []Line {
 	return c.appendItems(out)
 }
 
-// appendItems adds one "- item" line per listed object and "+N more".
+// appendItems adds one "- item" line per listed object, the sections of a
+// grouped message (a heading line per asset, then its objects) and "+N
+// more".
 func (c Card) appendItems(out []Line) []Line {
+	for _, sec := range c.Sections {
+		if strings.TrimSpace(sec.Title) != "" {
+			out = append(out, Line{Key: LineSection, Value: sec.Title})
+		}
+		for _, it := range sec.Items {
+			if strings.TrimSpace(it) != "" {
+				out = append(out, Line{Key: "item", Value: "- " + it})
+			}
+		}
+	}
 	for _, it := range c.Items {
 		if strings.TrimSpace(it) != "" {
 			out = append(out, Line{Key: "item", Value: "- " + it})
@@ -207,6 +232,16 @@ func (c Card) Map(f func(string) string) Card {
 			items[i] = f(it)
 		}
 		c.Items = items
+	}
+	if c.Sections != nil {
+		secs := make([]Section, len(c.Sections))
+		for i, sec := range c.Sections {
+			secs[i] = Section{Title: f(sec.Title), Items: make([]string, len(sec.Items))}
+			for j, it := range sec.Items {
+				secs[i].Items[j] = f(it)
+			}
+		}
+		c.Sections = secs
 	}
 	if c.Custom != nil {
 		custom := make([]string, len(c.Custom))

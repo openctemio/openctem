@@ -123,6 +123,10 @@ func (m *mockSLARepo) ListByTenant(_ context.Context, tenantID shared.ID) ([]*sl
 	return result, nil
 }
 
+func (m *mockSLARepo) PreviewDefault(context.Context, shared.ID, string, []sladom.PreviewWindow, int) (sladom.DefaultPreview, error) {
+	return sladom.DefaultPreview{}, nil
+}
+
 func (m *mockSLARepo) UpdateMakingDefault(_ context.Context, policy *sladom.Policy) error {
 	if m.updateErr != nil {
 		return m.updateErr

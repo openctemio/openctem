@@ -43,6 +43,17 @@ type ServiceAccount struct {
 	CreatedAt   time.Time
 	APIKeys     int  // active keys
 	AIAgent     bool // the account is an AI agent (no keys; managed as an AI agent)
+	// Roles are the roles assigned to the account directly (never owner or
+	// administrator); the roles a team gives it come with Teams.
+	Roles []Ref
+	// Teams are the active teams the account is a member of.
+	Teams []Ref
+}
+
+// Ref names a role or a team.
+type Ref struct {
+	ID   shared.ID
+	Name string
 }
 
 // Email returns the synthetic, undeliverable address of an account id.

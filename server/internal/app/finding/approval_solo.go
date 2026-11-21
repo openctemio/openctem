@@ -27,12 +27,14 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/server/internal/app/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/server/pkg/domain/integration"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
@@ -247,7 +249,13 @@ func (s *VulnerabilityService) SelfApproveSolo(ctx context.Context, in SelfAppro
 // (else vulnerability.ErrSoloApprovalFalsePositiveOnly). Any other status is
 // refused.
 func (s *VulnerabilityService) soloMayAccept(ctx context.Context, tid shared.ID, a *vulnerability.Approval) (bool, error) {
-	switch vulnerability.FindingStatus(a.RequestedStatus) {
+	return s.soloMayAcceptStatus(ctx, tid, vulnerability.FindingStatus(a.RequestedStatus))
+}
+
+// soloMayAcceptStatus is soloMayAccept for a requested status (a request or
+// a group exception).
+func (s *VulnerabilityService) soloMayAcceptStatus(ctx context.Context, tid shared.ID, status vulnerability.FindingStatus) (bool, error) {
+	switch status {
 	case vulnerability.FindingStatusFalsePositive:
 		return false, nil
 	case vulnerability.FindingStatusAccepted:
@@ -271,15 +279,34 @@ func (s *VulnerabilityService) soloMayAccept(ctx context.Context, tid shared.ID,
 // channels and emails the backup contact (best effort; the decision is
 // saved and audited already).
 func (s *VulnerabilityService) announceSelfApproval(ctx context.Context, a *vulnerability.Approval, findingTitle, reason string) {
-	title := "Finding request approved by its own requester (no other member)"
-	summary := approvalSummary(a, findingTitle)
+	s.announceSolo(ctx, a.TenantID, a.ID, "approval", "Finding request approved by its own requester (no other member)",
+		approvalSummary(a, findingTitle), reason)
+}
+
+// announceSelfApprovedBatch is announceSelfApproval for a group exception:
+// the count of findings it applied and its source label, never the note.
+func (s *VulnerabilityService) announceSelfApprovedBatch(ctx context.Context, b *vulnerability.ApprovalBatch, applied int, reason string) {
+	summary := fmt.Sprintf("%s for %d finding(s)", statusLabel(string(b.RequestedStatus)), applied)
+	label := b.SourceLabel
+	if label == "" {
+		label = b.SourceTitle
+	}
+	if l := oneLineTitle(label); l != "" {
+		summary += " (" + l + ")"
+	}
+	s.announceSolo(ctx, b.TenantID, b.ID, "approval_batch", "Group request approved by its own requester (no other member)", summary, reason)
+}
+
+// announceSolo puts a sole member's own approval on the organization's
+// channels (security alert, high) and emails the backup contact.
+func (s *VulnerabilityService) announceSolo(ctx context.Context, tenantID, aggregateID shared.ID, aggregateType, title, summary, reason string) {
 	if s.notificationService != nil {
 		var agg *uuid.UUID
-		if id, err := uuid.Parse(a.ID.String()); err == nil {
+		if id, err := uuid.Parse(aggregateID.String()); err == nil {
 			agg = &id
 		}
 		if err := s.notificationService.Enqueue(ctx, outbox.EnqueueParams{
-			TenantID: a.TenantID, EventType: string(integration.EventTypeSecurityAlert), AggregateType: "approval",
+			TenantID: tenantID, EventType: string(integration.EventTypeSecurityAlert), AggregateType: aggregateType,
 			AggregateID: agg, Title: title, Body: summary, Severity: "high", URL: approvalInboxURL,
 		}); err != nil {
 			s.logger.Warn("self-approval notice: enqueue", "error", logger.SanitizeError(err))
@@ -288,7 +315,7 @@ func (s *VulnerabilityService) announceSelfApproval(ctx context.Context, a *vuln
 	if s.approvalSettings == nil || s.approvalMail == nil {
 		return
 	}
-	settings, err := s.approvalSettings.GetFindingApprovalSettings(ctx, a.TenantID.String())
+	settings, err := s.approvalSettings.GetFindingApprovalSettings(ctx, tenantID.String())
 	if err != nil {
 		if !errors.Is(err, shared.ErrNotFound) {
 			s.logger.Warn("self-approval notice: settings", "error", logger.SanitizeError(err))
@@ -303,7 +330,7 @@ func (s *VulnerabilityService) announceSelfApproval(ctx context.Context, a *vuln
 <p>Reason given: %s</p>
 <p>This was confirmed with a code from the member's authenticator app and is recorded in the organization's audit log.</p>`,
 		html.EscapeString(summary), html.EscapeString(oneLineTitle(reason)))
-	s.approvalMail.SendFindingApprovalMail(ctx, a.TenantID.String(), []string{settings.BackupContactEmail}, "[Findings] "+title, body)
+	s.approvalMail.SendFindingApprovalMail(ctx, tenantID.String(), []string{settings.BackupContactEmail}, "[Findings] "+title, body)
 }
 
 // checkSoleMember is the membership rule of a sole member's own approval:
@@ -330,4 +357,149 @@ func (s *VulnerabilityService) checkSoleMember(ctx context.Context, tid shared.I
 				removed.Add(SoloAfterRemovalWait).UTC().Format("2006-01-02 15:04 UTC")), shared.ErrForbidden)
 	}
 	return nil
+}
+
+// SelfApproveBatchInput is a sole member's approval of their own group
+// exception.
+type SelfApproveBatchInput struct {
+	TenantID shared.ID
+	BatchID  shared.ID
+	UserID   shared.ID
+	Reason   string
+	Code     string
+}
+
+// SelfApproveSoloBatch applies the caller's own pending group exception
+// under the same rules as SelfApproveSolo: the requester, the organization's
+// only active person and its owner (no member suspended or removed in the
+// last SoloAfterRemovalWait), not an AI application's request, the group
+// pending and not overdue, every member in the caller's data scope, an
+// accepted risk only when the risk acceptance level allows it, a reason and a
+// fresh authenticator code. Every pending member is applied in one
+// transaction, each marked self-approved with its own timeline entry; an
+// accepted risk ends no later than its member's SoloAcceptanceLimit. The route
+// requires findings:approve.
+func (s *VulnerabilityService) SelfApproveSoloBatch(ctx context.Context, in SelfApproveBatchInput) (*GroupExceptionDecision, error) {
+	store, err := s.batches()
+	if err != nil {
+		return nil, err
+	}
+	b, findings, acceptAlone, reason, err := s.soloBatchAllowed(ctx, store, in)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	byFinding := make(map[shared.ID]*vulnerability.Finding, len(findings))
+	for _, f := range findings {
+		byFinding[f.ID()] = f
+	}
+	accepted := b.RequestedStatus == vulnerability.FindingStatusAccepted
+	shortened := 0
+	finish := func(a *vulnerability.Approval) (*vulnerability.FindingActivity, bool, error) {
+		// Every member is the requester's own request; an AI application's
+		// proposal is never decided by the person it acted for.
+		if a.RequestedBy != in.UserID || a.IsAIApplicationRequest() {
+			return nil, false, vulnerability.ErrSoloApprovalNotAllowed
+		}
+		f, ok := byFinding[a.FindingID]
+		if !ok {
+			return nil, false, nil
+		}
+		if d := vulnerability.EvaluateTransition(transitionFactsOf(f), personActor(in.UserID, TransitionPermissions{Write: true}),
+			b.RequestedStatus); d.Mode != vulnerability.TransitionRequest || !d.Allowed {
+			return nil, false, nil
+		}
+		if accepted {
+			limit := now.Add(vulnerability.SoloAcceptanceLimit(f))
+			switch {
+			case a.ExpiresAt == nil:
+				a.ExpiresAt = &limit
+			case a.ExpiresAt.After(limit):
+				a.ExpiresAt = &limit
+				shortened++
+			}
+			if !a.ExpiresAt.After(now) {
+				return nil, false, nil
+			}
+		}
+		if err := a.SelfApprove(in.UserID, reason, acceptAlone); err != nil {
+			return nil, false, err
+		}
+		changes := map[string]any{
+			"approval_id": a.ID.String(), "batch_id": b.ID.String(), "requested_status": a.RequestedStatus,
+			"approved_by": in.UserID.String(), "self_approved": true, "reason": reason,
+		}
+		if a.ExpiresAt != nil {
+			changes["acceptance_end"] = a.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		entry, err := vulnerability.NewFindingActivity(a.TenantID, a.FindingID, vulnerability.ActivityApprovalApproved,
+			&in.UserID, vulnerability.ActorTypeUser, changes, vulnerability.SourceAPI, nil)
+		return entry, err == nil, err
+	}
+	rec := SignoffRecord{UserID: in.UserID}
+	out, applied, canceled, err := store.SignOffBatch(s.ticketSyncCtx(ctx, in.TenantID, findings), in.TenantID, in.BatchID, in.UserID, rec,
+		func([]approvalpolicy.Signoff) (bool, error) { return true, nil }, finish)
+	if err != nil {
+		return nil, err
+	}
+	if applied > 0 {
+		moved := make([]*vulnerability.Finding, 0, len(findings))
+		for _, f := range findings {
+			if !slices.Contains(canceled, f.ID()) {
+				moved = append(moved, f)
+			}
+		}
+		s.afterApplied(ctx, in.TenantID, in.UserID.String(), moved, b.RequestedStatus)
+	}
+	s.announceSelfApprovedBatch(ctx, b, applied, reason)
+	s.logger.Warn("group request self-approved by the sole member", "batch_id", b.ID.String(), "applied", applied)
+	return &GroupExceptionDecision{Batch: out, Applied: applied, Canceled: canceled, Shortened: shortened}, nil
+}
+
+// soloBatchAllowed checks every condition of a sole member's own approval of
+// a group, in an order that spends the authenticator code last: the group
+// (its scope first, so a group the caller cannot see answers like a missing
+// one), its state and requester, the risk acceptance level, the membership
+// rule, the reason, then the code. It answers the group, its pending member
+// findings, whether an accepted risk may be approved alone and the reason.
+func (s *VulnerabilityService) soloBatchAllowed(ctx context.Context, store batchStore, in SelfApproveBatchInput) (
+	*vulnerability.ApprovalBatch, []*vulnerability.Finding, bool, string, error,
+) {
+	b, err := store.GetBatch(ctx, in.TenantID, in.BatchID)
+	if err != nil {
+		return nil, nil, false, "", err
+	}
+	findings, err := s.batchMembersInScope(ctx, store, b)
+	if err != nil {
+		return nil, nil, false, "", err
+	}
+	switch {
+	case b.Status != vulnerability.ApprovalStatusPending:
+		return nil, nil, false, "", vulnerability.ErrBatchNotPending
+	case !b.DecideBy.After(time.Now()):
+		return nil, nil, false, "", vulnerability.ErrDecisionOverdue
+	case in.UserID.IsZero() || b.RequestedBy.IsZero() || b.RequestedBy != in.UserID:
+		return nil, nil, false, "", vulnerability.ErrSoloApprovalNotAllowed
+	}
+	acceptAlone, err := s.soloMayAcceptStatus(ctx, in.TenantID, b.RequestedStatus)
+	if err != nil {
+		return nil, nil, false, "", err
+	}
+	if err := s.checkSoleMember(ctx, in.TenantID, in.UserID.String()); err != nil {
+		return nil, nil, false, "", err
+	}
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" || len(reason) > vulnerability.MaxSelfApprovalReasonLength {
+		return nil, nil, false, "", vulnerability.ErrSoloApprovalNeedsReason
+	}
+	if s.approvalTOTP == nil {
+		return nil, nil, false, "", vulnerability.ErrSoloApprovalNeedsTOTP
+	}
+	if strings.TrimSpace(in.Code) == "" {
+		return nil, nil, false, "", vulnerability.ErrSoloApprovalBadCode
+	}
+	if err := s.approvalTOTP.VerifyFreshTOTP(ctx, in.UserID.String(), strings.TrimSpace(in.Code)); err != nil {
+		return nil, nil, false, "", err
+	}
+	return b, findings, acceptAlone, reason, nil
 }

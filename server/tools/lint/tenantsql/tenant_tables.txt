@@ -186,6 +186,7 @@ finding_sightings
 finding_source_records
 finding_status_approvals
 finding_verification_checklists
+finding_web_locations
 findings
 group_asset_scope_rules
 group_role_bindings
@@ -216,6 +217,8 @@ mcp_oauth_requests
 name_resolutions
 nav_pins
 notification_events
+notification_group_items
+notification_groups
 notification_outbox
 notification_preferences
 notification_state
@@ -225,6 +228,7 @@ organization_join_requests
 organization_owner_invitations
 pentest_campaign_checklist_items
 pentest_campaign_checklists
+pentest_campaign_group_grants
 pentest_campaign_members
 pentest_campaign_secrets
 pentest_campaign_signoffs

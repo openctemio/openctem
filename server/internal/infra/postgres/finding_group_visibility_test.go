@@ -20,7 +20,7 @@ func TestBuildFilterWhere_VisibilityRules(t *testing.T) {
 	where, args := buildFilterWhere(f, 2)
 	for _, want := range []string{
 		"f.cve_id = ANY($2)",
-		"f.pentest_campaign_id IN (\n\t\t\tSELECT campaign_id FROM pentest_campaign_members WHERE user_id = $3 AND tenant_id = $4",
+		"f.pentest_campaign_id = ANY(ARRAY(SELECT pca.campaign_id FROM pentest_campaign_access pca WHERE pca.tenant_id = $4 AND pca.user_id = $3 AND pca.role <> 'client'))",
 		"f.asset_id = ANY (ARRAY(SELECT uaa.asset_id FROM user_accessible_assets uaa WHERE uaa.user_id = $5 AND uaa.tenant_id = $6)) OR f.assigned_to = $5",
 	} {
 		if !strings.Contains(where, want) {
