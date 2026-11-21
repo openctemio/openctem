@@ -55,24 +55,29 @@ beforeEach(() => {
 })
 
 describe('EASMChanges', () => {
-  it('lists changes with the count of each kind', async () => {
+  it('lists changes and shows the count of each kind in the Kind menu', async () => {
     wrap(<EASMChanges />)
     expect(await screen.findByText('old.example.com')).toBeInTheDocument()
     expect(screen.getByText('new.example.com')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /New host\s*2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Dangling DNS\s*1/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'new.example.com' })).toHaveAttribute(
       'href',
       '/assets/0198f0e2-0000-7000-8000-0000000000a2'
     )
+    await userEvent.click(screen.getByRole('button', { name: /Change kinds/ }))
+    expect(await screen.findByRole('menuitemradio', { name: /New host\s*2/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /Dangling DNS\s*1/ })).toBeInTheDocument()
   })
 
-  it('filters by kind through the API', async () => {
+  it('filters by kind through the API and shows the kind as a removable chip', async () => {
     wrap(<EASMChanges />)
     await screen.findByText('old.example.com')
-    await userEvent.click(screen.getByRole('button', { name: /Dangling DNS/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Change kinds/ }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: /Dangling DNS/ }))
     const last = api.get.mock.calls.at(-1)?.[0] as string
     expect(new URL(last, 'http://x').searchParams.get('kind')).toBe('dns_dangling')
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove filter Dangling DNS' }))
+    const after = api.get.mock.calls.at(-1)?.[0] as string
+    expect(new URL(after, 'http://x').searchParams.get('kind')).toBeNull()
   })
 
   it('uses the digest window from the link', async () => {
@@ -119,15 +124,5 @@ describe('EASMChanges', () => {
     const link = await screen.findByRole('link', { name: 'Dangling CNAME' })
     expect(link).toHaveAttribute('href', '/exposures?state=all&q=Dangling%20CNAME')
     expect(screen.getByText('Medium')).toBeInTheDocument()
-  })
-
-  it('marks a selected kind without the primary button style, and has no duplicate description', async () => {
-    wrap(<EASMChanges />)
-    await screen.findByText('old.example.com')
-    const chip = screen.getByRole('button', { name: /Dangling DNS/ })
-    await userEvent.click(chip)
-    expect(chip).toHaveAttribute('aria-pressed', 'true')
-    expect(chip.className).not.toContain('bg-primary')
-    expect(screen.queryByText(/Only assets you can see are listed/)).not.toBeInTheDocument()
   })
 })
