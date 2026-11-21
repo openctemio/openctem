@@ -51,7 +51,7 @@ import {
   type CertificateStatus,
 } from '../lib/certificates'
 
-const PAGE_SIZES = [20, 50, 100]
+const PAGE_SIZES = [25, 50, 100]
 
 /** The full sha256 fingerprint, shortened for the cell and copyable. */
 export function CopyableFingerprint({ value }: { value: string }) {
@@ -109,12 +109,48 @@ export function CertificateStatusPill({ row }: { row: CertificateRow }) {
   )
 }
 
+/**
+ * A certificate on a phone. Fixed slots, one fact per line: the subject (the
+ * asset link), its kind, the issuer, the expiry date with its status, and the
+ * fingerprint with its copy button.
+ */
+export function CertificatePhoneCard({ row }: { row: CertificateRow }) {
+  const { t } = useTranslation()
+  const kind = row.is_self_signed
+    ? t('attackSurface.certificates.selfSigned', 'Self-signed')
+    : row.is_wildcard
+      ? t('attackSurface.certificates.wildcard', 'Wildcard')
+      : undefined
+  const issuer = [row.issuer_cn, row.issuer_org].filter(Boolean).join(', ') || '-'
+  return (
+    <div data-slot="certificate-card" className="min-w-0 space-y-1 px-3 py-3">
+      <div className="break-words font-medium">
+        <AssetPeekLink assetId={row.asset_id}>{row.subject_cn || row.name}</AssetPeekLink>
+      </div>
+      {kind && <p className="text-meta">{kind}</p>}
+      <p className="line-clamp-2 text-meta" title={issuer}>
+        {t('attackSurface.certificates.card.issuer', 'Issuer {issuer}', { issuer })}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span className="text-meta">
+          {t('attackSurface.certificates.card.expires', 'Expires on {date}', {
+            date: formatDateSafe(row.not_after),
+          })}
+        </span>
+        <CertificateStatusPill row={row} />
+      </div>
+      <CopyableFingerprint value={row.fingerprint_sha256} />
+    </div>
+  )
+}
+
 function useColumns(): ColumnDef<CertificateRow>[] {
   const { t } = useTranslation()
   return useMemo<ColumnDef<CertificateRow>[]>(
     () => [
       {
         id: 'subject_cn',
+        meta: { kind: 'name' },
         header: t('attackSurface.certificates.col.issuedTo', 'Issued to'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -138,12 +174,14 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'fingerprint',
+        meta: { kind: 'id', width: 184 },
         header: t('attackSurface.certificates.col.fingerprint', 'Fingerprint (SHA-256)'),
         enableSorting: false,
         cell: ({ row }) => <CopyableFingerprint value={row.original.fingerprint_sha256} />,
       },
       {
         id: 'issuer',
+        meta: { kind: 'text' },
         header: t('attackSurface.certificates.col.issuer', 'Issuer'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -157,12 +195,14 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'not_before',
+        meta: { kind: 'date', width: 144 },
         header: t('attackSurface.certificates.col.issuedOn', 'Issued on'),
         enableSorting: false,
         cell: ({ row }) => formatDateSafe(row.original.not_before),
       },
       {
         id: 'not_after',
+        meta: { kind: 'date', width: 160 },
         header: t('attackSurface.certificates.col.expiresOn', 'Expires on'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -174,6 +214,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'first_seen',
+        meta: { kind: 'datetime-recent' },
         header: t('attackSurface.certificates.col.detected', 'Detected'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.first_seen} />,
@@ -338,6 +379,7 @@ export function EASMCertificates() {
           ),
         }}
         showColumnToggle={false}
+        mobileRow={(row) => <CertificatePhoneCard row={row} />}
         toolbarStart={
           <FilterSelect<CertificateStatus>
             label={t('attackSurface.certificates.filter.status', 'Status')}
