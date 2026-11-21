@@ -6395,7 +6395,11 @@ fixture) and every test in that worker reuses the saved session through
 `storageState`. Signing in per test hit the API's sign-in limit (5 a minute
 per address). One session per worker, not one shared by all workers, keeps
 refresh-token rotation inside one process. A refused sign-in waits for the
-limit window and retries.
+limit window and retries. The saved session is signed in again when a test
+starts and it is more than 8 minutes old: the API's access token lasts 15
+minutes and spends the refresh token on its first renewal, so a saved session
+that outlived its access token ended with "the same sign-in was used from two
+places" on the first test that started after the 30 second rotation grace.
 
 ## Running
 
@@ -6535,7 +6539,7 @@ picked up by this config or `ci/select.mjs`.
 merge queue when `web/` (or a shared file) changed — the routing is
 `.github/scripts/changed.sh`, so an API-only change does not start it. A pull
 request or queue group runs the specs its changed files map to (plus the
-`@smoke` set), split into 1 to 4 shards; a push to `develop` and the nightly run
+`@smoke` set), split into 1 to 5 shards; a push to `develop` and the nightly run
 run all of them. See [E2E impact selection](../../server/docs/development/ci-cd.md#e2e-impact-selection).
 
 The job builds the production images (API, web) with the Actions
