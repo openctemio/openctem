@@ -141,6 +141,8 @@ RUN npm run build:console
 
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS console
 
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+RUN apk upgrade --no-cache libssl3 libcrypto3
 RUN apk add --no-cache libstdc++ libgcc libatomic
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
 RUN node --version
@@ -195,6 +197,8 @@ CMD ["node", "console/server.js"]
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS production
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+RUN apk upgrade --no-cache libssl3 libcrypto3
 RUN apk add --no-cache libstdc++ libgcc libatomic && apk upgrade --no-cache zlib
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
 RUN node --version
