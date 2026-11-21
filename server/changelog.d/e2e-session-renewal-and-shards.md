@@ -1,0 +1,5 @@
+### Fixed: the end-to-end run no longer loses a test to its own spent sign-in, and its shards keep clear of the job timeout
+
+- Each e2e worker signed in once and every test started from that saved session. The API spends a refresh token the first time it is used and gives the access token 15 minutes, so the first test after those 15 minutes renewed the session, the saved file kept the spent token, and a later test that started more than 30 seconds after that renewal was sent to the sign-in page ("the same sign-in was used from two places"). The worker restarted, signed in afresh and the retry passed: one red test about every 15 minutes of a shard, 1.5 minutes lost each time, which pushed the heaviest shard past its 25 minute timeout. A test that starts when the saved session is 8 minutes old now signs in again first.
+- The full suite is split into up to 5 shards instead of 4 (about 17 minutes of recorded tests each, instead of 21), so the stack start and a retry fit the job timeout with room to spare.
+- Docs: CI guide and the e2e README name the new shard limit and the session renewal; the user docs do not change (test tooling only).
