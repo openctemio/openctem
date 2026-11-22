@@ -1,40 +1,47 @@
 /**
- * The fix plan strip is honest: each tile counts on the server with the filters
- * of the list it opens, a number that has not arrived is a dash and a failure
- * is an error with a retry, never zeros. Suggestion rows open that suggestion.
+ * The fix plan is a ranked, server-paged table of open tasks. Its tiles count
+ * on the server and filter the table; the running share of the list's risk
+ * is shown only when it is exact (every task on screen, risk order), and is
+ * otherwise a running total in points or nothing; a number that has not
+ * arrived is a dash, never a 0.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 type Q = { data?: unknown; error?: unknown; isLoading?: boolean; mutate: () => void }
-const mutate = vi.fn()
-const taskCalls: Record<string, unknown>[] = []
-const results: { open: Q; mine: Q; sugg: Q; stats: Q } = {
-  open: { mutate },
-  mine: { mutate },
-  sugg: { mutate },
-  stats: { mutate },
-}
+const s = vi.hoisted(() => ({
+  calls: [] as Record<string, unknown>[],
+  list: { mutate: () => {} } as Q,
+  overdue: { mutate: () => {} } as Q,
+  mine: { mutate: () => {} } as Q,
+  open: { mutate: () => {} } as Q,
+  push: vi.fn(),
+}))
 
-vi.mock('@/components/link', () => ({
-  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  ),
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: s.push, replace: vi.fn() }),
+  usePathname: () => '/remediation',
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}))
+vi.mock('../api/use-owner-names', () => ({
+  useOwnerLabels: () => ({
+    user: (id?: string) => (id ? 'Sam' : undefined),
+    group: (id?: string) => (id ? 'Ops' : undefined),
+  }),
+}))
+vi.mock('@/features/remediation/api/use-remediation-campaigns', () => ({
+  useRemediationCampaigns: () => ({ data: undefined, isLoading: false, mutate: vi.fn() }),
 }))
 vi.mock('../api/use-remediation-hub', () => ({
-  useTasks: (f: Record<string, unknown>) => {
-    taskCalls.push(f)
-    if (f.mine) return results.mine
-    return results.open
+  useTasks: (f: Record<string, unknown>, enabled = true) => {
+    if (enabled) s.calls.push(f)
+    if (f.perPage === 1) return f.overdue ? s.overdue : f.mine ? s.mine : s.open
+    return s.list
   },
-  useSuggestions: () => results.sugg,
-  useSuggestionStats: () => results.stats,
 }))
 
-import { FixPlan } from '../components/fix-plan'
+import { FixPlan, planRows } from '../components/fix-plan'
 import { VIEW_FILTERS } from '../components/task-views'
 
 const counts = (total: number, risk: number) => ({
@@ -47,14 +54,15 @@ const counts = (total: number, risk: number) => ({
   related: 0,
   risk_points: risk,
 })
-const task = (id: string, total: number, risk: number) => ({
+const task = (id: string, risk: number, extra: Record<string, unknown> = {}) => ({
   id,
   title: `Task ${id}`,
   action_title: 'Upgrade',
   state: 'open',
   deadline: '2099-01-01T00:00:00Z',
   deadline_source: 'member',
-  counts: counts(total, risk),
+  counts: counts(2, risk),
+  ...extra,
 })
 const page = (rows: unknown[], total = rows.length) => ({
   data: rows,
@@ -63,88 +71,92 @@ const page = (rows: unknown[], total = rows.length) => ({
   per_page: 25,
 })
 
-function ready() {
-  results.open.data = page([task('a', 1, 4), task('b', 5, 20)], 60)
-  results.mine.data = page([], 2)
-  results.sugg.data = page([
-    { id: 's1', kind: 'new_group', title: 'Rotate keys', risk_points: 12, member_count: 3 },
-  ])
-  results.stats.data = { proposed: 9 }
-  for (const q of Object.values(results)) {
-    q.error = undefined
-    q.isLoading = false
-  }
+const value = (label: string) => {
+  const el = screen.getByText(label, { selector: '[data-slot="metric-label"]' })
+  return (el.parentElement as HTMLElement).querySelector('[data-slot="metric-value"]')!.textContent
 }
 
-const value = (label: string) => {
-  const dt = screen.getByText(label, { selector: '[data-slot="metric-label"]' })
-  return (dt.parentElement as HTMLElement).querySelector('[data-slot="metric-value"]')!.textContent
-}
+beforeEach(() => {
+  window.history.replaceState(null, '', '/remediation')
+  s.calls.length = 0
+  s.push.mockReset()
+  s.list = { mutate: vi.fn(), data: page([task('a', 30), task('b', 20), task('c', 10)]) }
+  s.overdue = { mutate: vi.fn(), data: page([], 2) }
+  s.mine = { mutate: vi.fn(), data: page([], 4) }
+  s.open = { mutate: vi.fn(), data: page([], 99) }
+})
+
+describe('planRows', () => {
+  it('ranks from the page offset and keeps a running total only from rank 1', () => {
+    const rows = [task('a', 5), task('b', 3)] as never[]
+    expect(
+      planRows(rows, { ranked: true, offset: 0 }).rows.map((r) => [r.rank, r.running])
+    ).toEqual([
+      [1, 5],
+      [2, 8],
+    ])
+    expect(
+      planRows(rows, { ranked: true, offset: 25 }).rows.map((r) => [r.rank, r.running])
+    ).toEqual([
+      [26, undefined],
+      [27, undefined],
+    ])
+    expect(planRows(rows, { ranked: false, offset: 0 }).rows[0].rank).toBeUndefined()
+  })
+})
 
 describe('fix plan', () => {
-  beforeEach(() => {
-    taskCalls.length = 0
-    mutate.mockClear()
-    ready()
+  it('sends the open tasks in risk order and counts the tiles on the server', () => {
+    render(<FixPlan />)
+    const table = s.calls.find((f) => f.perPage === 25)!
+    expect(table.sort).toBe('risk')
+    expect(table.states).toEqual(VIEW_FILTERS.open.states)
+    // The open count is the table's own total while it shows the open tasks.
+    expect(value('Open tasks')).toBe('3')
+    expect(s.calls.some((f) => f.perPage === 1 && !f.overdue && !f.mine)).toBe(false)
+    expect(value('Overdue')).toBe('2')
+    expect(value('My tasks')).toBe('4')
   })
 
-  it('counts open and own tasks on the server, not from the rows on screen', () => {
+  it('shows the exact share when every task is on screen', () => {
     render(<FixPlan />)
-    expect(taskCalls.some((f) => f.mine === true && f.perPage === 1)).toBe(true)
-    expect(value('Open tasks')).toBe('60')
-    expect(value('Suggestions to review')).toBe('9')
-    expect(value('My tasks')).toBe('2')
+    // 30 + 20 of 60 risk points.
+    expect(screen.getAllByRole('meter', { name: /top 2 remove 83%/i }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('meter', { name: /top 3 remove 100%/i }).length).toBeGreaterThan(0)
   })
 
-  it('every tile opens the list it counts, with the same filters', () => {
+  it('shows the running points, not a guessed share, when the list has more pages', () => {
+    s.list.data = page([task('a', 30), task('b', 20)], 60)
     render(<FixPlan />)
-    const href = (label: string) =>
-      (
-        screen
-          .getByText(label, { selector: '[data-slot="metric-label"]' })
-          .closest('a') as HTMLAnchorElement
-      ).getAttribute('href')
-    expect(href('Open tasks')).toBe('/remediation/tasks?view=open')
-    expect(href('Suggestions to review')).toBe('/remediation/suggestions')
-    expect(href('My tasks')).toBe('/remediation/tasks?view=mine')
-    expect(screen.queryByText('Overdue', { selector: '[data-slot="metric-label"]' })).toBeNull()
-    expect(taskCalls.find((f) => f.mine === true)?.states).toEqual(VIEW_FILTERS.mine.states)
-    expect(taskCalls.find((f) => !f.mine)?.states).toEqual(VIEW_FILTERS.open.states)
+    expect(screen.queryAllByRole('meter')).toHaveLength(0)
+    expect(screen.getAllByText('50 points').length).toBeGreaterThan(0)
   })
 
-  it('shows dashes, not zeros, until the numbers arrive', () => {
-    results.open.data = undefined
-    results.open.isLoading = true
+  it('a tile filters the table instead of leaving the page', () => {
     render(<FixPlan />)
-    expect(screen.queryByText('0')).toBeNull()
+    fireEvent.click(screen.getByText('Overdue', { selector: '[data-slot="metric-label"]' }))
+    expect(window.location.search).toContain('overdue=1')
+    expect(s.calls.some((f) => f.perPage === 25 && f.overdue === true)).toBe(true)
+    // Off the default view, the open count is its own request.
+    expect(s.calls.some((f) => f.perPage === 1 && !f.overdue && !f.mine)).toBe(true)
+    expect(value('Open tasks')).toBe('99')
   })
 
-  it('a failed read is an error with retry, not zeros', () => {
-    results.mine.data = undefined
-    results.mine.error = new Error('boom')
+  it('shows a dash, not a zero, until a count arrives', () => {
+    s.overdue = { mutate: vi.fn(), isLoading: true }
     render(<FixPlan />)
-    expect(screen.getByText(/Couldn't load the fix plan/)).toBeTruthy()
-    expect(screen.queryByText('0')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /retry|try again/i }))
-    expect(mutate).toHaveBeenCalled()
+    expect(value('Overdue')).not.toBe('0')
   })
 
-  it('a suggestion row opens that suggestion; a task row opens the task', () => {
+  it('marks a passed deadline with the compact overdue mark', () => {
+    s.list.data = page([task('late', 5, { deadline: '2020-01-01T00:00:00Z' })])
     render(<FixPlan />)
-    const items = screen.getAllByRole('listitem')
-    const sugg = items.find((li) => within(li).queryByText('Rotate keys'))!
-    expect(within(sugg).getByRole('link').getAttribute('href')).toBe(
-      '/remediation/suggestions?suggestion=s1'
-    )
-    const t = items.find((li) => within(li).queryByText('Task a'))!
-    expect(within(t).getByRole('link').getAttribute('href')).toBe('/remediation/tasks/a')
+    expect(document.querySelector('[data-slot="sla-countdown"]')?.textContent).toMatch(/overdue/)
   })
 
-  it('uses singular and plural units', () => {
+  it('a row opens its task', () => {
     render(<FixPlan />)
-    const one = screen.getAllByRole('listitem').find((li) => within(li).queryByText('Task a'))!
-    expect(one.textContent).toContain('1 finding, 4 risk points')
-    const many = screen.getAllByRole('listitem').find((li) => within(li).queryByText('Task b'))!
-    expect(many.textContent).toContain('5 findings, 20 risk points')
+    fireEvent.click(screen.getAllByText('Task b')[0])
+    expect(s.push).toHaveBeenCalledWith('/remediation/tasks/b')
   })
 })
