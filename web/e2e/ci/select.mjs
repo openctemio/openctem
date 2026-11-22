@@ -2,7 +2,7 @@
 // Test-impact selection for the Playwright suite (research/295).
 //
 //   node web/e2e/ci/select.mjs plan --changed <file|-> [--event E] [--full] [--impact]
-//        [--timings f.json] [--target-seconds 240] [--max-shards 5]
+//        [--timings f.json] [--target-seconds 600] [--max-shards 7]
 //        prints the plan as JSON: which specs run and how they are sharded
 //   node web/e2e/ci/select.mjs timings <report.json>
 //        prints { "<spec file>": seconds } from a merged Playwright JSON report
@@ -65,6 +65,18 @@ export function parseMap(text) {
     }
   }
   return out
+}
+
+// Estimates for specs the recorded durations do not know yet (a new or split
+// spec): measured once, used until a green run records the spec's own time,
+// which always wins. Without one a spec costs the heaviest recorded spec.
+export const ESTIMATES_FILE = path.join(here, 'spec-estimates.json')
+export function loadEstimates(file = ESTIMATES_FILE) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return {}
+  }
 }
 
 export function loadMap(file = MAP_FILE) {
@@ -237,14 +249,19 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-// Greedy longest-first: each spec goes to the lightest shard so far.
+// Greedy longest-first: each spec goes to the lightest shard so far. A spec
+// without a recorded duration costs the heaviest recorded one.
 export function shard(
   files,
   timings,
-  { targetSeconds = 240, maxShards = 5, fallbackSeconds = 60 } = {}
+  { targetSeconds = 600, maxShards = 7, fallbackSeconds = 60 } = {}
 ) {
   const known = files.map((f) => timings[f]).filter((v) => Number.isFinite(v) && v > 0)
-  const dflt = median(known) || fallbackSeconds
+  // A spec with no recorded duration is new or has grown since the last green
+  // run: cost it as the heaviest known spec, never as the median, so a spec the
+  // history knows nothing about cannot be packed with others into one shard
+  // past its timeout (one spec did with the layout check, 2026-11).
+  const dflt = known.length ? Math.max(...known) : fallbackSeconds
   const cost = (f) => (Number.isFinite(timings[f]) && timings[f] > 0 ? timings[f] : dflt)
   const total = files.reduce((n, f) => n + cost(f), 0)
   const count = files.length
@@ -414,6 +431,7 @@ function main(argv) {
         console.error('select: no usable timings, using the default duration')
       }
     }
+    timings = { ...loadEstimates(), ...timings }
     const specs = listSpecs()
     let result
     try {
@@ -422,8 +440,8 @@ function main(argv) {
         event,
         full,
         impact,
-        targetSeconds: Number(arg(argv, '--target-seconds', 240)),
-        maxShards: Number(arg(argv, '--max-shards', 5)),
+        targetSeconds: Number(arg(argv, '--target-seconds', 600)),
+        maxShards: Number(arg(argv, '--max-shards', 7)),
       })
     } catch (e) {
       console.error(`select: ${e.message}; running everything`)

@@ -777,4 +777,12 @@ export async function richData(page: Page, scen: Scenario = 'rich') {
     if ('has_more' in body) out.has_more = pg * per < total
     return route.fulfill({ response: res, json: out })
   })
+  // The banner's request is not what a layout check looks at, and a slow or
+  // never-finishing answer to it (an API image without the route, whose 404
+  // body the web proxy keeps open) held every page "loading" for the 20 s
+  // network-idle limit per view, so a sweep ran out of time. Answered here, the
+  // later route wins over the catch-all above.
+  await page.route('**/api/v1/threat-intel/freshness', (route: Route) =>
+    route.fulfill({ json: { stale: false, reasons: [] } })
+  )
 }
