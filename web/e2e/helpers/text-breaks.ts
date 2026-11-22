@@ -711,7 +711,8 @@ function richWidget(w: Record<string, unknown>): Record<string, unknown> {
   const big = (v: unknown, unit?: unknown) =>
     typeof v === 'number' && v > 0 && unit !== 'percent' ? v * 1000 + 840 : v
   const scalar = o.scalar as Record<string, unknown> | undefined
-  if (scalar) o.scalar = {
+  if (scalar)
+    o.scalar = {
       ...scalar,
       value: big(scalar.value, scalar.unit),
       previous: big(scalar.previous, scalar.unit),
@@ -742,7 +743,10 @@ function richWidget(w: Record<string, unknown>): Record<string, unknown> {
   }
   const stages = o.stages as { stages?: Record<string, unknown>[] } | undefined
   if (stages?.stages?.length) {
-    o.stages = { ...stages, stages: stages.stages.map((x) => ({ ...x, value: big(x.value, x.unit) })) }
+    o.stages = {
+      ...stages,
+      stages: stages.stages.map((x) => ({ ...x, value: big(x.value, x.unit) })),
+    }
   }
   return o
 }
