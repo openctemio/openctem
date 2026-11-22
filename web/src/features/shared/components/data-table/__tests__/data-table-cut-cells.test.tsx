@@ -50,4 +50,23 @@ describe('DataTable cut cells', () => {
     const cell = screen.getAllByText('alpha')[0].closest('td')!
     expect(cell.className).not.toContain('text-ellipsis')
   })
+
+  it('leaves a pinned cell unclipped so its edge shadow stays visible', () => {
+    const pinned: ColumnDef<Row>[] = [
+      { accessorKey: 'name', header: 'Name', meta: { kind: 'asset', pin: 'start', label: 'Name' } },
+      ...columns.slice(1),
+    ]
+    render(
+      <DataTable
+        columns={pinned}
+        data={rows}
+        getRowId={(r) => r.id}
+        pagination={{ pageIndex: 0, pageSize: 25 }}
+        onPaginationChange={() => {}}
+      />
+    )
+    const cell = screen.getAllByText('alpha')[0].closest('td')!
+    expect(cell.className).toContain('sticky')
+    expect(cell.className).not.toContain('overflow-hidden')
+  })
 })

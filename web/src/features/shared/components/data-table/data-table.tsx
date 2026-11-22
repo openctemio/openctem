@@ -1618,7 +1618,10 @@ export function DataTable<TData, TValue>({
         (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
         // A cell still too wide for its column ends in an ellipsis (its full
         // text in the title, set below), never a hard clip.
-        layout.kind !== 'name' &&
+        // A pinned cell is left alone: its edge shadow (`after:-end-3`) sits
+        // outside the cell, and a clip would hide it.
+        !pin.className &&
+          layout.kind !== 'name' &&
           layout.kind !== 'select' &&
           layout.kind !== 'actions' &&
           layout.kind !== 'decisions' &&
@@ -1638,7 +1641,7 @@ export function DataTable<TData, TValue>({
   React.useLayoutEffect(() => {
     const cells = tableWrapRef.current?.querySelectorAll<HTMLElement>('tbody td')
     cells?.forEach((td) => {
-      const cut = td.scrollWidth > td.clientWidth + 1
+      const cut = td.classList.contains('overflow-hidden') && td.scrollWidth > td.clientWidth + 1
       if (cut && !td.title) {
         td.title = td.textContent?.trim() ?? ''
         td.dataset.autoTitle = ''

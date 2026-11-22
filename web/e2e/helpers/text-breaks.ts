@@ -331,7 +331,7 @@ export async function findBreaks(
             if (ellipsisBox) {
               let inline = true
               for (let p: Element | null = n.parentElement; p && p !== e; p = p.parentElement) {
-                if (getComputedStyle(p).display !== 'inline') inline = false
+                if (!/^(inline|contents)$/.test(getComputedStyle(p).display)) inline = false
               }
               if (inline) continue
             }
