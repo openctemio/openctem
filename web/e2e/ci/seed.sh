@@ -599,7 +599,7 @@ docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-p
 INSERT INTO finding_closure_proposals (tenant_id, finding_id, method, evidence_at)
 SELECT :'tid'::uuid, f::uuid,
        (ARRAY['covered_scan','obsolete_asset','retest_verified','claimed_fix_scan','source_reported'])[1 + (row_number() OVER ())::int % 5],
-       now() - interval '2 hours'
+       now() + interval '1 day'
   FROM unnest(string_to_array(:'ids', ',')) AS f
 ON CONFLICT DO NOTHING;
 SQL
