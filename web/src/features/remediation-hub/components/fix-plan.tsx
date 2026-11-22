@@ -280,7 +280,7 @@ export function FixPlan() {
       {
         id: 'deadline',
         header: t('remediationHub.tasks.columns.deadline'),
-        meta: { kind: 'due', label: t('remediationHub.tasks.columns.deadline'), width: 168 },
+        meta: { kind: 'due', label: t('remediationHub.tasks.columns.deadline'), width: 212 },
         cell: ({ row }) => <PlanDeadline task={row.original.task} />,
       },
       {
