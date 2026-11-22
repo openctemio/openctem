@@ -10,6 +10,17 @@ import {
   type Breaks,
   type Scenario,
 } from '../helpers/text-breaks'
+import {
+  AUTH_ROUTES,
+  findMatrixBreaks,
+  matrixWidths,
+  MATRIX_KINDS,
+  OVERLAY_WIDTHS,
+  resolveRoute,
+  routeSlug,
+  SIDEBAR_WIDTHS,
+  type MatrixBreaks,
+} from './layout-matrix'
 
 /**
  * No text overlaps, no word broken inside, nothing cut without an ellipsis,
@@ -45,6 +56,8 @@ type Variant = {
   theme: 'light' | 'dark'
   scen: Scenario
   overlay?: Overlay
+  /** The app sidebar's state (cookie `sidebar_state`); the default is open. */
+  sidebar?: 'open' | 'closed'
 }
 type Overlay = 'rowmenu' | 'filters' | 'detail' | 'dialog'
 
@@ -402,6 +415,94 @@ function fixPlanTasks(scen: Scenario) {
   return { data, total, page: 1, per_page: 25 }
 }
 
+/** Campaigns with every column hard on the layout: a late due date, overdue and hidden tasks, a long name and owner. */
+function campaignPage(scen: Scenario) {
+  const day = 86_400_000
+  const mk = (i: number, status: string, dueDays: number, over: Record<string, unknown> = {}) => ({
+    id: `00000000-0000-4000-8000-00000000c0${i}`,
+    name: [
+      'Secrets Rotation',
+      'Fix Critical CVEs Q2 for the payment gateways and the regional card schemes',
+      'Network Segmentation',
+      'SSL/TLS Hardening',
+    ][i % 4],
+    description: ['Rotate credentials', 'Remediate critical CVEs', 'Micro-segmentation', ''][i % 4],
+    status,
+    priority: 'high',
+    due_date: new Date(Date.now() + dueDays * day).toISOString(),
+    tags: [],
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+    version: 1,
+    is_overdue: dueDays < 0 && status === 'active',
+    can_edit: true,
+    summary: {
+      tasks: i === 0 ? 2 : i === 1 ? 1204 : 0,
+      live_tasks: 2,
+      done_tasks: 0,
+      overdue_tasks: i === 0 ? 2 : 0,
+      hidden_tasks: i === 1 ? 3 : 0,
+      findings: i === 0 ? 2 : 0,
+      closed_findings: 0,
+      verified_findings: 0,
+      progress: 0,
+    },
+    ...over,
+  })
+  const all = [
+    mk(0, 'active', -23),
+    mk(1, 'active', -208),
+    mk(2, 'active', 12),
+    mk(3, 'completed', 90),
+  ]
+  const data = scen === 'empty' ? [] : scen === 'one' ? all.slice(0, 1) : all
+  return {
+    data,
+    total: data.length,
+    page: 1,
+    per_page: 25,
+    status_counts: { draft: 0, active: data.length, completed: 0, canceled: 0 },
+  }
+}
+
+/** Tasks with a late deadline, a long title and a long owner. */
+function taskPage(scen: Scenario) {
+  const day = 86_400_000
+  const mk = (i: number, deadlineDays: number) => ({
+    id: `00000000-0000-4000-8000-00000000d0${i}`,
+    action_id: `00000000-0000-4000-8000-00000000e0${i}`,
+    action_key: `k${i}`,
+    action_kind: 'upgrade',
+    action_title: 'Upgrade the TLS libraries on the payment gateways',
+    title: [
+      'Rotate the shared service credentials',
+      'Patch critical CVEs on the regional card scheme gateways',
+      'Segment the office network',
+    ][i % 3],
+    description: '',
+    state: 'open',
+    deadline: new Date(Date.now() + deadlineDays * day).toISOString(),
+    deadline_source: 'manual',
+    counts: {
+      total: 6,
+      open: 3,
+      in_progress: 1,
+      fix_applied: 0,
+      closed: 1,
+      verified: 1,
+      related: 0,
+      risk_points: 120 + i,
+    },
+    hidden_members: 0,
+    version: 1,
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+  })
+  const all = [mk(0, -23), mk(1, -208), mk(2, 12)]
+  const data = scen === 'empty' ? [] : scen === 'one' ? all.slice(0, 1) : all
+  return { data, total: data.length, page: 1, per_page: 25 }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
@@ -422,6 +523,8 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
   ],
   '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
   '/remediation': [{ url: '**/api/v1/remediation/tasks?*', body: fixPlanTasks }],
+  '/remediation/campaigns': [{ url: '**/api/v1/remediation/campaigns?*', body: campaignPage }],
+  '/remediation/tasks': [{ url: '**/api/v1/remediation/tasks?*', body: taskPage }],
 }
 
 /**
@@ -474,6 +577,8 @@ async function sideScrolling(page: Page): Promise<string[]> {
 }
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
+/** `v2` (full MVP matrix) or `ci` (reduced): only the matrix (spec 75e) runs. */
+const MATRIX = process.env.LAYOUT_MATRIX
 const OUT = process.env.LAYOUT_SWEEP_OUT
 const SWEEP_ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
   ? (
@@ -520,6 +625,41 @@ function variants(): Variant[] {
       })
     }
   }
+  // LAYOUT_SWEEP_MATRIX=1: the tablet and laptop widths of the acceptance
+  // standard, each with the sidebar open and closed, in both languages and themes.
+  if (process.env.LAYOUT_SWEEP_MATRIX) {
+    for (const [w, h] of [
+      [768, 1180],
+      [820, 1180],
+      [1024, 820],
+      [1180, 820],
+      [1280, 900],
+    ]) {
+      for (const sidebar of ['open', 'closed'] as const) {
+        for (const lang of ['en', 'vi'] as const) {
+          for (const theme of ['light', 'dark'] as const) {
+            v.push({
+              tag: `m${w}-${sidebar}-${lang}-${theme}`,
+              width: w,
+              height: h,
+              lang,
+              theme,
+              scen: 'rich',
+              sidebar,
+            })
+          }
+        }
+      }
+    }
+    v.push({
+      tag: 'm1440-light-en',
+      width: 1440,
+      height: 900,
+      lang: 'en',
+      theme: 'light',
+      scen: 'rich',
+    })
+  }
   // LAYOUT_SWEEP_ONLY=d-en,l-en,t-en runs just those variants (desktop widths of every route).
   const only = process.env.LAYOUT_SWEEP_ONLY?.split(',').filter(Boolean)
   return only ? v.filter((x) => only.includes(x.tag)) : v
@@ -532,6 +672,7 @@ async function prepare(page: Page, v: Variant, baseURL: string) {
   await page.context().addCookies([
     { name: 'locale', value: v.lang, url: baseURL },
     { name: 'theme', value: v.theme, url: baseURL },
+    { name: 'sidebar_state', value: v.sidebar === 'closed' ? 'false' : 'true', url: baseURL },
   ])
   await page.emulateMedia({ colorScheme: v.theme, reducedMotion: 'reduce' })
   await page.addInitScript((t) => {
@@ -604,7 +745,13 @@ export function layoutRoutes(
   { sweepOwner = false } = {}
 ) {
   // A sweep names its own routes: only the lists spec runs them, once.
-  const list = process.env.LAYOUT_SWEEP_ROUTES ? (sweepOwner ? SWEEP_ROUTES : []) : routes
+  const list = MATRIX
+    ? []
+    : process.env.LAYOUT_SWEEP_ROUTES
+      ? sweepOwner
+        ? SWEEP_ROUTES
+        : []
+      : routes
   if (!list.length) return
   test.describe(title, options, () => {
     test.describe.configure({ mode: 'parallel' })
@@ -749,6 +896,7 @@ const PATHS_VARIANTS = () =>
  */
 
 export function webOriginPaths(options: Options) {
+  if (MATRIX) return
   test.describe('Layout breaks: web origin Paths', options, () => {
     test.describe.configure({ mode: 'parallel' })
     for (const v of PATHS_VARIANTS()) {
@@ -1059,10 +1207,86 @@ export function detailPages(options: Options) {
 }
 
 /** Entry pages a person opens signed out. */
+/**
+ * The finding page's facts rail (owner report 2026-11-22, 2000 px, dark): the
+ * Watchers row showed a chevron and then a bell button past the rail's right
+ * edge. At every width and language, no control of any rail row may sit past
+ * the row's value column, and no row may scroll sideways.
+ */
+export function findingRail(options: Options) {
+  test.describe('Layout breaks: finding rail', options, () => {
+    const RAIL_WIDTHS = [390, 1024, 1280, 1440, 2000]
+    test('/findings/[id] rail rows stay inside the rail', async ({ page, baseURL }, testInfo) => {
+      test.setTimeout(240_000)
+      const res = page.waitForResponse((r) => /\/api\/v1\/findings\?/.test(r.url()) && r.ok(), {
+        timeout: 60_000,
+      })
+      await page.goto('/findings')
+      const list = (await (await res).json()) as { data?: { id: string }[] }
+      const id = list.data?.[0]?.id
+      test.skip(!id, 'Needs a finding')
+      const report: Record<string, string[]> = {}
+      for (const width of RAIL_WIDTHS) {
+        for (const lang of ['en', 'vi'] as const) {
+          for (const theme of ['light', 'dark'] as const) {
+            if (width !== 2000 && width !== 390 && (lang === 'vi' || theme === 'dark')) continue
+            await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
+            await page.context().addCookies([
+              { name: 'locale', value: lang, url: baseURL! },
+              { name: 'theme', value: theme, url: baseURL! },
+            ])
+            await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' })
+            await page.goto(`/findings/${id}`, { timeout: 60_000 })
+            await page
+              .getByTestId('watchers-summary')
+              .waitFor({ timeout: 45_000 })
+              .catch(() => {})
+            await settle(page)
+            // Phone folds the rows after the first group: open the fold.
+            const fold = page.locator('[data-slot="property-fold"][aria-expanded="false"]')
+            if (
+              await fold
+                .first()
+                .isVisible()
+                .catch(() => false)
+            )
+              await fold.first().click()
+            const bad = await page.evaluate(() => {
+              const out: string[] = []
+              const rows = document.querySelectorAll('main [data-slot="property-row"]')
+              for (const row of rows) {
+                const dd = row.querySelector('dd')
+                const box = (dd ?? row).getBoundingClientRect()
+                const label = row.querySelector('dt')?.textContent?.trim() ?? '?'
+                if (row.scrollWidth > row.clientWidth + 1)
+                  out.push(`${label}: row scrolls sideways`)
+                for (const el of row.querySelectorAll('button, a, input, [role=button]')) {
+                  const r = el.getBoundingClientRect()
+                  if (r.width === 0) continue
+                  if (r.right > box.right + 1 || r.right > window.innerWidth)
+                    out.push(
+                      `${label}: ${el.tagName.toLowerCase()} ends at ${Math.round(r.right)} past ${Math.round(Math.min(box.right, window.innerWidth))}`
+                    )
+                }
+              }
+              return out
+            })
+            const tag = `${width}-${lang}-${theme}`
+            report[tag] = bad
+            await keep(testInfo, `finding-rail__${tag}.png`, await page.screenshot())
+          }
+        }
+      }
+      await keep(testInfo, 'finding-rail.json', JSON.stringify(report, null, 1))
+      for (const [tag, bad] of Object.entries(report)) expect.soft(bad, `rail ${tag}`).toEqual([])
+    })
+  })
+}
+
 export function layoutSignedOut(options: Options, routes: string[]) {
   test.describe('Layout breaks, signed out', options, () => {
     test.describe.configure({ mode: 'parallel' })
-    for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : routes) {
+    for (const route of process.env.LAYOUT_SWEEP_ROUTES || MATRIX ? [] : routes) {
       test(`${route}`, async ({ browser, baseURL }, testInfo) => {
         test.setTimeout(120_000)
         const report: Record<string, Breaks> = {}
@@ -1084,6 +1308,117 @@ export function layoutSignedOut(options: Options, routes: string[]) {
             expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
       })
+    }
+  })
+}
+
+/**
+ * MVP acceptance v2 matrix (agent-ops/ui-v2/MVP-ACCEPTANCE.md, helpers/layout-matrix.ts):
+ *   LAYOUT_MATRIX=v2 LAYOUT_ROUTES=/my-work,/findings/[id] [LAYOUT_WIDTHS=1024,1920] [LAYOUT_SWEEP_OUT=<dir>]
+ * One test per route and width. Each width runs light and dark in en and vi;
+ * from 1024 to 1280 px with the sidebar expanded and collapsed (the stored
+ * preference); at 390 and 1440 px also empty and one-row data and the main
+ * overlays. `[id]` takes the first row of the matching list. Every variant is
+ * screenshotted to <dir>/<route-slug>/<tag>.png, and the findings of the
+ * spec-75 detectors and the v2 detectors go to <dir>/<route-slug>/w<width>.json.
+ * LAYOUT_MATRIX=ci runs the reduced widths 390, 1024, 1440 and 1920.
+ */
+export function layoutMatrix(options: Options) {
+  if (!MATRIX) return
+  test.describe('Layout matrix', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    const routes = (process.env.LAYOUT_ROUTES ?? '').split(',').filter(Boolean)
+    for (const route of routes) {
+      for (const size of matrixWidths(MATRIX)) {
+        test(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
+          test.setTimeout(900_000)
+          const signedOut = AUTH_ROUTES.includes(route)
+          const ctx = signedOut ? await browser.newContext({ baseURL }) : null
+          const page = ctx ? await ctx.newPage() : signedIn
+          const url = signedOut ? route : await resolveRoute(page, route)
+          test.skip(!url, `no row to open for ${route}`)
+          const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
+          for (const theme of ['light', 'dark'] as const)
+            for (const lang of ['en', 'vi'] as const)
+              for (const sidebar of SIDEBAR_WIDTHS.includes(size.width)
+                ? (['open', 'closed'] as const)
+                : [undefined])
+                vs.push({
+                  tag: `w${size.width}-${theme}-${lang}${sidebar ? `-sb-${sidebar}` : ''}`,
+                  ...size,
+                  lang,
+                  theme,
+                  scen: 'rich',
+                  sidebar,
+                })
+          if (OVERLAY_WIDTHS.includes(size.width)) {
+            for (const scen of ['empty', 'one'] as const)
+              vs.push({
+                tag: `w${size.width}-light-en-${scen}`,
+                ...size,
+                lang: 'en',
+                theme: 'light',
+                scen,
+              })
+            for (const overlay of Object.keys(OVERLAYS) as Overlay[])
+              vs.push({
+                tag: `w${size.width}-light-en-ov-${overlay}`,
+                ...size,
+                lang: 'en',
+                theme: 'light',
+                scen: 'rich',
+                overlay,
+              })
+          }
+          const dir = routeSlug(route)
+          const report: Record<string, (Breaks & MatrixBreaks) | string> = {}
+          for (const v of vs) {
+            await page.unrouteAll({ behavior: 'ignoreErrors' })
+            await prepare(page, v, baseURL!)
+            if (v.sidebar)
+              await page
+                .context()
+                .addCookies([
+                  { name: 'sidebar_state', value: String(v.sidebar === 'open'), url: baseURL! },
+                ])
+            for (const extra of ROUTE_DATA[route] ?? []) {
+              await page.route(extra.url, (r) =>
+                r.request().method() === 'GET'
+                  ? r.fulfill({ json: extra.body(v.scen) })
+                  : r.fallback()
+              )
+            }
+            await page.goto(url!, { timeout: 60_000 }).catch(() => {})
+            await settle(page)
+            let scope = 'main'
+            if (v.overlay) {
+              const layer = await openOverlay(page, v.overlay)
+              if (!layer) {
+                report[v.tag] = 'no such overlay'
+                continue
+              }
+              scope = layer
+            }
+            report[v.tag] = {
+              ...(await findBreaks(page, { scope, vi: v.lang === 'vi' })),
+              ...(await findMatrixBreaks(page, { scope })),
+            }
+            await keep(
+              testInfo,
+              `${dir}/${v.tag}.png`,
+              await page.screenshot({ fullPage: !v.overlay, timeout: 30_000 })
+            )
+            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+          }
+          await keep(testInfo, `${dir}/w${size.width}.json`, JSON.stringify(report, null, 1))
+          await ctx?.close()
+          for (const [tag, found] of Object.entries(report)) {
+            if (typeof found === 'string') continue
+            for (const kind of [...BREAK_KINDS, ...MATRIX_KINDS])
+              expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+          }
+        })
+      }
     }
   })
 }

@@ -311,7 +311,10 @@ export async function findBreaks(
           // -webkit-box: a select value with `line-clamp-1` and `flex` showed
           // "Các mục một lần đư" with nothing to say it was cut.
           const flexOrGrid = /flex|grid/.test(cs.display)
-          if (cs.textOverflow === 'ellipsis' && !flexOrGrid) continue
+          // The mark covers text that flows inline inside the box; text inside a
+          // nested inline-block or flex box (a chip in a table cell) is cut
+          // with no mark, however the cell is styled.
+          const ellipsisBox = cs.textOverflow === 'ellipsis' && !flexOrGrid
           if (/\d/.test(cs.webkitLineClamp) && /-webkit-(inline-)?box/.test(cs.display)) continue
           // Only text cut: a child box (an icon, a chip row) wider than its frame
           // whose text still fits is the frame's own decision.
@@ -325,6 +328,13 @@ export async function findBreaks(
               hiddenByAncestor(n.parentElement)
             )
               continue
+            if (ellipsisBox) {
+              let inline = true
+              for (let p: Element | null = n.parentElement; p && p !== e; p = p.parentElement) {
+                if (!/^(inline|contents)$/.test(getComputedStyle(p).display)) inline = false
+              }
+              if (inline) continue
+            }
             const rg = document.createRange()
             rg.selectNodeContents(n)
             cut = Array.from(rg.getClientRects()).some(
@@ -637,6 +647,7 @@ const NAMEY =
 const OPTIONAL =
   /^(description|error_message|message|owner|owner_name|owner_email|notes|reason|assignee|assignee_name|group_name|triggered_by_name)$/
 const COUNTY = /(_count|^count)$/
+const DUE = /^(due_date|due_at|deadline|target_date|sla_due_at)$/
 const SKIP =
   /\/(me|auth|permissions|modules|tenants|preferences|features|license|nav|nav-pins|saved-views|notifications\/unread|settings|i18n|session|sessions\/current|users\/me|health|dashboard)(\/|\?|$)/
 
@@ -657,6 +668,23 @@ function vary(row: unknown, i: number, depth = 0): unknown {
     if (OPTIONAL.test(k) && (typeof v === 'string' || v === null || v === undefined)) {
       if (i % 4 === 3) o[k] = null
       else if (i % 4 === 1) o[k] = LONG_TEXT
+    }
+  }
+  // Due dates the seed leaves empty: overdue on some rows, ahead on others
+  // ("Apr 29, 2026, overdue" was cut at 1024 px with the sidebar expanded,
+  // owner report 2026-11-22). Matrix runs only until the lists that show one
+  // are checked with it in CI.
+  if (depth === 0 && process.env.LAYOUT_MATRIX) {
+    // The API leaves an empty due date out: a named row with a status gets one
+    // (lists that show no due date ignore the extra field).
+    if (!Object.keys(o).some((k) => DUE.test(k)) && 'status' in o && ('name' in o || 'title' in o))
+      o.due_date = null
+    for (const k of Object.keys(o)) {
+      if (DUE.test(k) && o[k] == null && i % 3 !== 2) {
+        o[k] = new Date(Date.now() + (i % 3 === 0 ? -1 : 1) * 23 * 86_400_000).toISOString()
+        // The server's own late flag goes with a past date.
+        if (i % 3 === 0 && 'is_overdue' in o) o.is_overdue = true
+      }
     }
   }
   // A description the API leaves out when empty: present on some rows.

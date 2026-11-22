@@ -121,25 +121,25 @@ export function WatchersControl({
       <PropertyRow label={t('findings.people.watchers', 'Watchers')}>
         {/* One line: the summary truncates, the toggle is an icon button named
             by its action (pressed while you watch). */}
-        <span className="flex min-w-0 items-center gap-2 max-md:justify-end">
+        <span className="flex w-full min-w-0 items-center gap-1 max-md:justify-end">
           <Button
             ref={summaryRef}
             type="button"
             variant="ghost"
-            className="-ms-2 min-w-0 font-normal"
+            className="-ms-2 max-w-full min-w-0 shrink justify-start overflow-hidden px-2 font-normal"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
+            title={summary}
             data-testid="watchers-summary"
           >
-            <UserAvatarStack names={names} />
-            <span className="truncate">
+            <UserAvatarStack names={names} max={1} />
+            <span className="min-w-0 truncate">
               {summary}
               <span className="sr-only">
                 {', '}
                 {t('findings.people.manage', 'Manage watchers')}
               </span>
             </span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           </Button>
           <Button
             type="button"
