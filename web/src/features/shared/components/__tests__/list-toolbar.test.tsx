@@ -688,3 +688,11 @@ describe('LockedChip', () => {
     expect(onShow).toHaveBeenCalledOnce()
   })
 })
+
+describe('ListToolbar fold', () => {
+  it('asks the search for less room once the toolbar folds, so a token stays on its line', () => {
+    const { container } = render(<Search />)
+    const field = container.querySelector('[data-slot="list-search"]') as HTMLElement
+    expect(field.className).toContain('group-data-[fold=true]/toolbar:basis-48')
+  })
+})

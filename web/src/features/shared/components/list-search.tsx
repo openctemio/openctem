@@ -166,7 +166,7 @@ export function ListSearch({
         // Grows into the start group's free width, never below 12rem and never
         // wider than 28rem, so the field sits at the same place and size on
         // every list and the end group keeps its room.
-        'flex min-w-48 flex-[1_1_16rem] items-start sm:max-w-md',
+        'flex min-w-48 flex-[1_1_16rem] items-start group-data-[fold=true]/toolbar:basis-48 sm:max-w-md',
         // With the mode switch beside it the field asks for 11rem before it
         // grows (a line breaks on that ask, never below the floor), so the
         // switch, the field and the filter tokens (each of a fixed width)
