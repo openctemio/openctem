@@ -136,6 +136,7 @@ export function AutoClosedList({
             errorTitle={errorTitle}
             manualPagination
             showSearch={false}
+            showColumnToggle={false}
             pageCount={data?.total_pages ?? 0}
             rowCount={total}
             pagination={pagination}

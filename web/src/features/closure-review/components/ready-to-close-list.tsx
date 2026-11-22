@@ -265,6 +265,7 @@ export function ReadyToCloseList({
             errorTitle={t('findings.closureReview.errorName', 'Ready to close')}
             manualPagination
             showSearch={false}
+            showColumnToggle={false}
             pageCount={data?.total_pages ?? 0}
             rowCount={total}
             pagination={pagination}
