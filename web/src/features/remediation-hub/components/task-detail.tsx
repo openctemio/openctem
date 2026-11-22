@@ -728,17 +728,17 @@ function MemberRow({
     >
       {selectable && m.role === 'primary' && (
         <>
-          <button
+          <Button
             type="button"
-            // Full row height, like the open button: only the status control
-            // has a control's height in the row.
-            className="text-muted-foreground flex cursor-grab items-center self-stretch"
+            variant="ghost"
+            size="icon"
+            className="cursor-grab"
             aria-label={t('remediationHub.detail.drag', undefined, { title: m.title })}
             {...listeners}
             {...attributes}
           >
-            <GripVertical className="size-4" aria-hidden />
-          </button>
+            <GripVertical aria-hidden />
+          </Button>
           <Checkbox
             checked={selected}
             onCheckedChange={(v) => onSelect(v === true)}
