@@ -17,7 +17,11 @@ const columns: ColumnDef<Row>[] = [
 describe('DataTable name column', () => {
   it('is sized by its floor even without meta.minWidth', () => {
     const { container } = render(
-      <DataTable columns={columns} data={[{ id: '1', name: 'x'.repeat(200) }]} getRowId={(r) => r.id} />
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'x'.repeat(200) }]}
+        getRowId={(r) => r.id}
+      />
     )
     const cell = container.querySelector('tbody td') as HTMLElement
     expect(cell.className).toContain('[contain:inline-size]')
