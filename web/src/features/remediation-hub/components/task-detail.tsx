@@ -68,6 +68,9 @@ import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { cn } from '@/lib/utils'
+import { formatNumber } from '@/lib/app-locale'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { requestOwnerAccess } from '../api/use-owner-access'
 import {
   TERMINAL_TASK_STATES,
   type Page,
@@ -112,6 +115,10 @@ const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
 const MAIN = 'flex min-w-0 flex-col gap-page max-xl:contents xl:col-start-1 xl:row-start-2'
 // Two lines: the title and the target under it (FindingTitleCell).
 const ROW_HEIGHT = 52
+// A phone: two title lines and the target, then the severity and status
+// (py-2 + 2 x 20 + 16 + gap 4 + a 36 px control).
+const PHONE_ROW_HEIGHT = 112
+const GROUP_HEIGHT = 40
 
 type Row =
   | { kind: 'group'; key: string; label: string; count: number }
@@ -139,6 +146,12 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const [splitOpen, setSplitOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useDetailTab<TaskTab>('tab', TASK_TABS)
+  const phone = useIsMobile()
+  const rowHeight = useCallback(
+    (r: Row) => (r.kind === 'group' ? GROUP_HEIGHT : phone ? PHONE_ROW_HEIGHT : ROW_HEIGHT),
+    [phone]
+  )
+  const canComment = hasPermission(Permission.FindingsComment)
 
   // The finding open in the side drawer lives in the URL (?finding=), so it
   // can be shared; opening pushes (Back closes it), moving inside it replaces.
@@ -419,6 +432,20 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         primary={actions.primary}
         secondary={exception.action}
         menu={menu}
+        facts={
+          <dl className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <div className="flex min-w-0 items-center gap-1">
+              <dt className="after:content-[':']">{t('remediationHub.detail.facts.owner')}</dt>
+              <dd className="text-foreground min-w-0 truncate">{owner}</dd>
+            </div>
+            <div className="flex items-center gap-1">
+              <dt className="after:content-[':']">{t('remediationHub.detail.deadline')}</dt>
+              <dd>
+                <DeadlinePill task={task} />
+              </dd>
+            </div>
+          </dl>
+        }
       />
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
@@ -427,26 +454,23 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
               <PropertyList label={t('remediationHub.detail.details')}>
                 <PropertyGroup>
-                  <PropertyRow label={t('remediationHub.detail.deadline')}>
-                    <DeadlinePill task={task} />
-                  </PropertyRow>
                   <PropertyRow label={t('remediationHub.detail.riskLeft')}>
                     <span title={t('remediationHub.risk.explain')}>
                       {t('remediationHub.risk.points', undefined, { n: task.counts.risk_points })}
                     </span>
                   </PropertyRow>
-                  <PropertyRow label={t('remediationHub.detail.progress')} top>
-                    <div className="flex w-full min-w-0 flex-col gap-1.5 py-1.5">
+                  <PropertyRow label={t('remediationHub.detail.progress')}>
+                    <div
+                      className="w-full min-w-0"
+                      title={t('remediationHub.progress.summary', undefined, {
+                        verified: task.counts.verified,
+                        closed: task.counts.closed,
+                        claimed: task.counts.fix_applied,
+                        open: task.counts.open + task.counts.in_progress,
+                        total: task.counts.total,
+                      })}
+                    >
                       <TaskProgress task={task} />
-                      <span className="text-muted-foreground text-xs">
-                        {t('remediationHub.progress.summary', undefined, {
-                          verified: task.counts.verified,
-                          closed: task.counts.closed,
-                          claimed: task.counts.fix_applied,
-                          open: task.counts.open + task.counts.in_progress,
-                          total: task.counts.total,
-                        })}
-                      </span>
                     </div>
                   </PropertyRow>
                 </PropertyGroup>
@@ -506,6 +530,27 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                   tone="warning"
                   icon={EyeOff}
                   title={t('remediationHub.detail.hidden', undefined, { n: task.hidden_members })}
+                  actions={
+                    canComment && loaded[0] ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          requestOwnerAccess(
+                            loaded[0].finding_id,
+                            t('remediationHub.detail.hiddenRequest', undefined, {
+                              n: task.hidden_members,
+                              title: task.title,
+                            })
+                          ).then(
+                            () => toast.success(t('remediationHub.ownerAccess.requested')),
+                            () => toast.error(t('remediationHub.ownerAccess.requestFailed'))
+                          )
+                        }}
+                      >
+                        {t('remediationHub.ownerAccess.request')}
+                      </Button>
+                    ) : undefined
+                  }
                 />
               )}
               {(task.state_note || task.archived_note || task.regression_of) && (
@@ -534,7 +579,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                   onPointerDownCapture={() => writable && setWantTargets(true)}
                 >
                   <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
-                    <label className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1.5 text-xs">
+                    <StatusCounts task={task} />
+                    <label className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
                       <Checkbox
                         checked={autoNext}
                         onCheckedChange={(v) => {
@@ -591,7 +637,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                   ) : (
                     <VirtualRows
                       rows={rows}
-                      rowHeight={ROW_HEIGHT}
+                      rowHeight={rowHeight}
                       height={480}
                       label={t('remediationHub.detail.findingsList')}
                       scrollToIndex={
@@ -621,6 +667,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                             statusMenu={!TERMINAL_TASK_STATES.has(task.state)}
                             onOpen={() => showFinding(r.member.finding_id, 'push')}
                             onStatus={onFindingStatus}
+                            phone={phone}
                             onSelect={(v) =>
                               setSelected((cur) => {
                                 const n = new Set(cur)
@@ -698,6 +745,7 @@ function MemberRow({
   statusMenu,
   onOpen,
   onStatus,
+  phone,
 }: {
   member: TaskMember
   selectable: boolean
@@ -707,6 +755,7 @@ function MemberRow({
   statusMenu: boolean
   onOpen: () => void
   onStatus: (findingId: string, status: FindingStatus) => void
+  phone: boolean
 }) {
   const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -716,54 +765,31 @@ function MemberRow({
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
+  const title = (
+    <button
+      type="button"
+      onClick={onOpen}
       className={cn(
-        'flex h-full items-center gap-2 border-b px-3 text-sm',
-        isDragging && 'bg-muted opacity-70',
-        active && 'bg-primary/5 ring-primary/50 ring-1 ring-inset'
+        'flex min-w-0 flex-1 text-start hover:[&_p]:underline',
+        phone ? 'w-full items-start' : 'items-center self-stretch'
       )}
+      aria-label={t('remediationHub.detail.openFinding', undefined, {
+        title: [m.title, m.asset_name].filter(Boolean).join(', '),
+      })}
     >
-      {selectable && m.role === 'primary' && (
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="cursor-grab"
-            aria-label={t('remediationHub.detail.drag', undefined, { title: m.title })}
-            {...listeners}
-            {...attributes}
-          >
-            <GripVertical aria-hidden />
-          </Button>
-          <Checkbox
-            checked={selected}
-            onCheckedChange={(v) => onSelect(v === true)}
-            aria-label={t('remediationHub.detail.selectFinding', undefined, { title: m.title })}
-          />
-        </>
-      )}
-      <SeverityBadge severity={m.severity as Severity} />
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center self-stretch text-start hover:[&_p]:underline"
-        aria-label={t('remediationHub.detail.openFinding', undefined, {
-          title: [m.title, m.asset_name].filter(Boolean).join(', '),
-        })}
-      >
-        <FindingTitleCell title={m.title} target={m.asset_name} />
-      </button>
+      <FindingTitleCell title={m.title} target={m.asset_name} titleLines={phone ? 2 : 1} />
+    </button>
+  )
+  const severity = <SeverityBadge severity={m.severity as Severity} />
+  const facts = (
+    <>
       {m.role === 'related' && (
         <span className="text-muted-foreground text-xs">{t('remediationHub.detail.related')}</span>
       )}
       {statusMenu && m.role === 'primary' ? (
         <TaskRowStatus member={m} onChanged={onStatus} />
       ) : (
-        <span className="text-muted-foreground hidden text-xs sm:inline">
+        <span className="text-muted-foreground text-xs">
           {t(`remediationHub.findingStatus.${m.status}`, m.status)}
         </span>
       )}
@@ -773,7 +799,87 @@ function MemberRow({
           aria-label={t('remediationHub.detail.verified')}
         />
       )}
+    </>
+  )
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'flex h-full gap-2 border-b px-3 text-sm',
+        phone ? 'items-start py-2' : 'items-center',
+        isDragging && 'bg-muted opacity-70',
+        active && 'bg-primary/5 ring-primary/50 ring-1 ring-inset'
+      )}
+    >
+      {selectable && m.role === 'primary' && (
+        <>
+          {/* Drop targets are listed in the rail, from 1280 px only. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="cursor-grab max-xl:hidden"
+            aria-label={t('remediationHub.detail.drag', undefined, { title: m.title })}
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical aria-hidden />
+          </Button>
+          <Checkbox
+            className={cn(phone && 'mt-0.5')}
+            checked={selected}
+            onCheckedChange={(v) => onSelect(v === true)}
+            aria-label={t('remediationHub.detail.selectFinding', undefined, { title: m.title })}
+          />
+        </>
+      )}
+      {phone ? (
+        // A phone gives the title the whole row: two lines and the target,
+        // then the severity and the status under it.
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {title}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {severity}
+            {facts}
+          </div>
+        </div>
+      ) : (
+        <>
+          {severity}
+          {title}
+          <div className="flex shrink-0 items-center gap-2">{facts}</div>
+        </>
+      )}
     </div>
+  )
+}
+
+/** The board's count strip: how many findings of the task are at each step. */
+function StatusCounts({ task }: { task: RemediationTask }) {
+  const { t } = useTranslation()
+  const c = task.counts
+  const parts: [string, number][] = [
+    ['open', c.open],
+    ['inProgress', c.in_progress],
+    ['fixApplied', c.fix_applied],
+    ['verified', c.verified],
+    ['closed', c.closed],
+  ]
+  return (
+    <dl
+      aria-label={t('remediationHub.detail.counts.label')}
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs"
+    >
+      {parts.map(([key, n]) => (
+        <div key={key} className="flex items-center gap-1">
+          <dt className="text-muted-foreground">{t(`remediationHub.detail.counts.${key}`)}</dt>
+          <dd className={cn('font-medium tabular-nums', n === 0 && 'text-muted-foreground')}>
+            {formatNumber(n)}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
