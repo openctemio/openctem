@@ -13,16 +13,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
-  CheckCheck,
   ClipboardList,
   ExternalLink,
   EyeOff,
   Lock,
   MoreHorizontal,
   Pencil,
-  Play,
   Plus,
-  RotateCcw,
   Trash2,
   XCircle,
 } from 'lucide-react'
@@ -36,7 +33,6 @@ import { Permission } from '@/lib/permissions'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
@@ -53,6 +49,7 @@ import {
 } from '../api/use-remediation-campaigns'
 import { CampaignDue, FindingsProgress } from './campaign-bits'
 import { CampaignFormDialog } from './campaign-form-dialog'
+import { CampaignStatusAction } from './campaign-status-action'
 import { AddTasksDialog } from './add-tasks-dialog'
 import { CreateJiraEpicDialog } from './create-jira-epic-dialog'
 
@@ -144,13 +141,6 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       .filter(Boolean)
       .join(', ') || t('remediationCampaigns.owner.unassigned')
 
-  const completeBlocked = s.live_tasks > 0
-  const completeReason = t(
-    `remediationCampaigns.detail.completeBlocked.${s.live_tasks === 1 ? 'one' : 'other'}`,
-    undefined,
-    { count: s.live_tasks }
-  )
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start gap-3">
@@ -221,49 +211,11 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
               <Pencil className="size-4" aria-hidden />
               {t('remediationCampaigns.actions.edit')}
             </Button>
-            {c.status === 'draft' && (
-              <Button
-                disabled={busy}
-                onClick={() => void setStatus('active', t('remediationCampaigns.toast.started'))}
-              >
-                <Play className="size-4" aria-hidden />
-                {t('remediationCampaigns.actions.start')}
-              </Button>
-            )}
-            {c.status === 'active' &&
-              (completeBlocked ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0} aria-describedby="complete-blocked-reason">
-                      <Button disabled aria-disabled>
-                        <CheckCheck className="size-4" aria-hidden />
-                        {t('remediationCampaigns.actions.complete')}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent id="complete-blocked-reason">{completeReason}</TooltipContent>
-                </Tooltip>
-              ) : (
-                <Button
-                  disabled={busy}
-                  onClick={() =>
-                    void setStatus('completed', t('remediationCampaigns.toast.completed'))
-                  }
-                >
-                  <CheckCheck className="size-4" aria-hidden />
-                  {t('remediationCampaigns.actions.complete')}
-                </Button>
-              ))}
-            {c.status === 'completed' && (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => void setStatus('active', t('remediationCampaigns.toast.reopened'))}
-              >
-                <RotateCcw className="size-4" aria-hidden />
-                {t('remediationCampaigns.actions.reopen')}
-              </Button>
-            )}
+            <CampaignStatusAction
+              campaign={c}
+              busy={busy}
+              onSetStatus={(status, success) => void setStatus(status, success)}
+            />
             <ActionMenu
               title={c.name}
               label={t('remediationCampaigns.actions.more')}

@@ -1439,3 +1439,76 @@ export function joinedFilterControl(options: Options) {
     }
   })
 }
+
+/**
+ * The quick-view sheet of a task and of a campaign, opened by the `?task=` and
+ * `?campaign=` links with the list mocks of the lists above: side sheet from
+ * md, bottom sheet on a phone. 390 px (en and vi), 1024 and 1440 px (en).
+ */
+export function remediationSheets(options: Options) {
+  const cases = [
+    {
+      route: '/remediation/tasks',
+      param: 'task',
+      id: '00000000-0000-4000-8000-00000000d00',
+      one: 'tasks',
+    },
+    {
+      route: '/remediation/campaigns',
+      param: 'campaign',
+      id: '00000000-0000-4000-8000-00000000c00',
+      one: 'campaigns',
+    },
+  ]
+  test.describe('Layout breaks: remediation sheets', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const c of process.env.LAYOUT_SWEEP_ROUTES ? [] : cases) {
+      test(`${c.route} sheet`, async ({ page, baseURL }, testInfo) => {
+        test.setTimeout(240_000)
+        const report: Record<string, Breaks | string> = {}
+        const sheets = ['p-en', 'p-vi', 'd-en', 't-en']
+        for (const v of variants().filter((x) => sheets.includes(x.tag))) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          const list = (ROUTE_DATA[c.route] ?? [])[0]
+          const body = list.body(v.scen) as { data: { id: string }[] }
+          const detail = body.data.find((x) => x.id === c.id)
+          const members = { data: [], total: 0, page: 1, per_page: 8 }
+          for (const [url, json] of [
+            [list.url, body],
+            [`**/api/v1/remediation/${c.one}/${c.id}`, detail],
+            [`**/api/v1/remediation/${c.one}/${c.id}/members?*`, members],
+          ] as const) {
+            await page.route(url, (r) =>
+              r.request().method() === 'GET' ? r.fulfill({ json }) : r.fallback()
+            )
+          }
+          await page.goto(`${c.route}?${c.param}=${c.id}`, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          const scope = '[role=dialog]'
+          const open = await page
+            .locator('[role=dialog]:visible')
+            .first()
+            .waitFor({ timeout: 10_000 })
+            .then(() => true)
+            .catch(() => false)
+          if (!open)
+            await keep(testInfo, `sheet-${c.param}__${v.tag}-closed.png`, await page.screenshot())
+          expect(open, `${c.route} ${v.tag}: the sheet opens from the link`).toBe(true)
+          await page.waitForTimeout(500)
+          const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+          report[v.tag] = found
+          if (OUT || formatBreaks(found).length) {
+            await keep(testInfo, `sheet-${c.param}__${v.tag}.png`, await page.screenshot())
+          }
+        }
+        await keep(testInfo, `sheet-${c.param}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          if (typeof found === 'string') continue
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `${c.param} sheet ${tag}: ${kind}`).toEqual([])
+        }
+      })
+    }
+  })
+}
