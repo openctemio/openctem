@@ -386,6 +386,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             <span className="text-muted-foreground" title={t('remediationHub.risk.explain')}>
               {t('remediationHub.detail.risk', undefined, { risk: task.counts.risk_points })}
             </span>
+            {task.campaign_id && <TaskCampaignLink campaignId={task.campaign_id} inline />}
           </div>
           {task.state_note && (
             <p className="text-muted-foreground mt-1 text-xs">{task.state_note}</p>
@@ -400,7 +401,6 @@ export function TaskDetail({ taskId }: { taskId: string }) {
               </Link>
             </p>
           )}
-          {task.campaign_id && <TaskCampaignLink campaignId={task.campaign_id} />}
         </div>
         {writable && (
           <div className="flex flex-wrap items-center gap-2">
@@ -435,7 +435,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </p>
       )}
 
-      <section className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <section className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="space-y-2 rounded-lg border p-4">
           <h2 className="text-sm font-semibold">{t('remediationHub.detail.fix')}</h2>
           <FixStepsBlock steps={steps} />

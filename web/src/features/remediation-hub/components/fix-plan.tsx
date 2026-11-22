@@ -13,7 +13,6 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { ListChecks } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
@@ -37,6 +36,7 @@ import {
 import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import { useRemediationCampaigns } from '@/features/remediation/api/use-remediation-campaigns'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useSheetListNav, useSheetParam } from '@/hooks/use-sheet-param'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { formatDate } from '@/lib/app-locale'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,8 @@ import type { RemediationTask } from '../api/types'
 import { type TaskListFilters, useTasks } from '../api/use-remediation-hub'
 import { useOwnerLabels } from '../api/use-owner-names'
 import { deadlineStatus } from '../lib/hub'
-import { TaskProgress, TaskStatePill } from './task-bits'
+import { TaskProgressCell, TaskStatePill } from './task-bits'
+import { TaskSheet } from './task-sheet'
 import { VIEW_FILTERS, type TaskView } from './task-views'
 
 /** The task states the State filter offers ("My tasks" is the Mine toggle). */
@@ -95,8 +96,9 @@ export function planRows(
 
 export function FixPlan() {
   const { t } = useTranslation()
-  const router = useRouter()
 
+  // A row opens the task's quick view (?task=<id>); the full page stays a link.
+  const sheet = useSheetParam('task')
   const [state, setState] = useUrlFilter('state', 'open')
   const [campaign, setCampaign] = useUrlFilter('campaign', '')
   const [mineParam, setMine] = useUrlFilter('mine', '')
@@ -167,10 +169,9 @@ export function FixPlan() {
             .join(', '),
     [owners, t]
   )
-  const openTask = useCallback(
-    (task: RemediationTask) => router.push(`/remediation/tasks/${encodeURIComponent(task.id)}`),
-    [router]
-  )
+  const openTask = useCallback((task: RemediationTask) => sheet.open(task.id), [sheet])
+  const taskIds = useMemo(() => tasks.map((x) => x.id), [tasks])
+  useSheetListNav({ ids: taskIds, currentId: sheet.id, onMove: sheet.move })
 
   const columns = useMemo<ColumnDef<PlanRow>[]>(() => {
     const cols: ColumnDef<PlanRow>[] = []
@@ -293,7 +294,7 @@ export function FixPlan() {
           width: 128,
           hideBelow: PLAN_HIDE_BELOW.progress,
         },
-        cell: ({ row }) => <PlanProgress task={row.original.task} />,
+        cell: ({ row }) => <TaskProgressCell task={row.original.task} />,
       }
     )
     return cols
@@ -476,6 +477,21 @@ export function FixPlan() {
         paginationNoun={t('remediationHub.tasks.noun')}
         mobileRow={(r) => <PlanPhoneCard row={r} onOpen={() => openTask(r.task)} />}
       />
+      <TaskSheet
+        taskId={sheet.id}
+        onClose={sheet.close}
+        position={
+          sheet.id && taskIds.includes(sheet.id)
+            ? {
+                index: taskIds.indexOf(sheet.id) + 1 + pagination.pageIndex * pagination.pageSize,
+                total,
+                prevId: taskIds[taskIds.indexOf(sheet.id) - 1],
+                nextId: taskIds[taskIds.indexOf(sheet.id) + 1],
+                onGo: sheet.move,
+              }
+            : undefined
+        }
+      />
     </>
   )
 }
@@ -615,22 +631,6 @@ export function PlanPhoneCard({ row, onOpen }: { row: PlanRow; onOpen: () => voi
           <TaskStatePill state={task.state} className="ms-auto shrink-0" />
         </div>
       </div>
-    </div>
-  )
-}
-
-/** TEMP until the shared progress cell lands: the count over the task's bar. */
-function PlanProgress({ task }: { task: RemediationTask }) {
-  const { t } = useTranslation()
-  return (
-    <div className="flex w-full min-w-0 flex-col justify-center gap-1">
-      <span className="text-muted-foreground truncate text-xs leading-4 tabular-nums">
-        {t('remediationHub.tasks.verifiedOf', undefined, {
-          verified: task.counts.verified,
-          total: task.counts.total,
-        })}
-      </span>
-      <TaskProgress task={task} />
     </div>
   )
 }

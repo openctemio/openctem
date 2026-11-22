@@ -132,16 +132,23 @@ export function TaskProgressCell({
 }
 
 /** The campaign a task belongs to, as a link (its name once it loads). */
-export function TaskCampaignLink({ campaignId }: { campaignId: string }) {
+export function TaskCampaignLink({
+  campaignId,
+  inline,
+}: {
+  campaignId: string
+  /** In a row of facts (the page header) rather than a line of its own. */
+  inline?: boolean
+}) {
   const { t } = useTranslation()
   const { data } = useRemediationCampaign(campaignId)
-  return (
-    <p className="mt-1 text-xs">
-      <Link href={`/remediation/campaigns/${campaignId}`} className="underline">
-        {data?.name
-          ? t('remediationCampaigns.taskLink.named', undefined, { name: data.name })
-          : t('remediationCampaigns.taskLink.unnamed')}
-      </Link>
-    </p>
+  const link = (
+    <Link href={`/remediation/campaigns/${campaignId}`} className="underline">
+      {data?.name
+        ? t('remediationCampaigns.taskLink.named', undefined, { name: data.name })
+        : t('remediationCampaigns.taskLink.unnamed')}
+    </Link>
   )
+  if (inline) return <span className="min-w-0 text-sm">{link}</span>
+  return <p className="mt-1 text-xs">{link}</p>
 }

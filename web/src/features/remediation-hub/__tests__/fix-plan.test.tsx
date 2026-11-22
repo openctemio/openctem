@@ -19,6 +19,10 @@ const s = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
+vi.mock('../components/task-sheet', () => ({
+  TaskSheet: ({ taskId }: { taskId: string | null }) =>
+    taskId ? <div data-testid="task-sheet">{taskId}</div> : null,
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: s.push, replace: vi.fn() }),
   usePathname: () => '/remediation',
@@ -154,9 +158,24 @@ describe('fix plan', () => {
     expect(document.querySelector('[data-slot="sla-countdown"]')?.textContent).toMatch(/overdue/)
   })
 
-  it('a row opens its task', () => {
+  it('a row opens the task quick view, not the page', () => {
     render(<FixPlan />)
     fireEvent.click(screen.getAllByText('Task b')[0])
-    expect(s.push).toHaveBeenCalledWith('/remediation/tasks/b')
+    expect(s.push).not.toHaveBeenCalled()
+    expect(window.location.search).toContain('task=b')
+    expect(screen.getByTestId('task-sheet').textContent).toBe('b')
+  })
+
+  it('a ctrl click on the title keeps the full page link', () => {
+    render(<FixPlan />)
+    const link = screen.getAllByText('Task b')[0].closest('a')!
+    expect(link.getAttribute('href')).toBe('/remediation/tasks/b')
+    fireEvent.click(link, { ctrlKey: true })
+    expect(window.location.search).not.toContain('task=')
+  })
+
+  it('progress uses the shared cell', () => {
+    render(<FixPlan />)
+    expect(document.querySelector('[data-slot="progress-cell"]')).not.toBeNull()
   })
 })

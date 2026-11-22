@@ -242,7 +242,7 @@ describe('CampaignDetail', () => {
       },
     ]
     renderDetail(campaign())
-    const list = screen.getByRole('list', { name: 'Tasks of this campaign' })
+    const list = screen.getByRole('table')
     expect(within(list).getByText('Upgrade openssl')).toBeInTheDocument()
     expect(within(list).getByText('Verifying')).toBeInTheDocument()
     expect(
