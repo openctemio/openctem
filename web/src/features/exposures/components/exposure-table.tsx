@@ -113,12 +113,25 @@ export interface ExposureColumnHandlers {
   canApprove?: boolean
 }
 
+/** Column widths (px) the room sums below are made of. */
+const WIDTH = { select: 40, title: 150, severity: 120, state: 148, age: 112, actions: 48 } as const
+
+/** The room of a frame showing only the always-on columns. */
+const BASE_ROOM =
+  WIDTH.select + WIDTH.title + WIDTH.severity + WIDTH.state + WIDTH.age + WIDTH.actions
+
 /**
  * The table-frame width (px) under which a column steps aside (it stays
  * under Display > Columns): the source first, then the signals, then the
  * summary. The exposure, its severity, its state and its age always show.
+ * Each value is the running sum of the widths shown at it plus a margin, so
+ * a frame never scrolls sideways with the row menu cut.
  */
-const EXPOSURE_HIDE_BELOW = { source: 1100, signals: 980, summary: 860 } as const
+const EXPOSURE_HIDE_BELOW = {
+  summary: BASE_ROOM + 200 + 8,
+  signals: BASE_ROOM + 200 + 176 + 8,
+  source: BASE_ROOM + 200 + 176 + 120 + 8,
+} as const
 
 /**
  * Columns for the exposure list, rendered by the shared DataTable (the
@@ -141,7 +154,7 @@ export function getExposureColumns(
       meta: {
         kind: 'name',
         pin: 'start',
-        minWidth: 220,
+        minWidth: WIDTH.title,
         label: t('exposures.table.exposure', 'Exposure'),
       },
       enableSorting: false,
@@ -197,14 +210,14 @@ export function getExposureColumns(
     {
       accessorKey: 'severity',
       header: t('exposures.table.severity', 'Severity'),
-      meta: { kind: 'severity', width: 128, label: t('exposures.table.severity', 'Severity') },
+      meta: { kind: 'severity', width: WIDTH.severity, label: t('exposures.table.severity', 'Severity') },
       enableSorting: false,
       cell: ({ row }) => <ExposureSeverityCell exposure={row.original} inline />,
     },
     {
       accessorKey: 'state',
       header: t('exposures.table.state', 'State'),
-      meta: { kind: 'status', width: 168, label: t('exposures.table.state', 'State') },
+      meta: { kind: 'status', width: WIDTH.state, label: t('exposures.table.state', 'State') },
       enableSorting: false,
       cell: ({ row }) => {
         return (
@@ -236,7 +249,7 @@ export function getExposureColumns(
       header: t('exposures.table.firstSeen', 'First seen'),
       meta: {
         kind: 'datetime-recent',
-        width: 112,
+        width: WIDTH.age,
         label: t('exposures.table.firstSeen', 'First seen'),
       },
       enableSorting: false,

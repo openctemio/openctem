@@ -1425,6 +1425,9 @@ export function layoutMatrix(options: Options) {
                 width: v.width,
                 height: Math.min(v.height + tall, 12_000),
               })
+            // Charts animate in (and again after the resize above): wait for
+            // them to settle so the picture is the finished chart, not a frame.
+            if (await page.locator('main .recharts-surface').count()) await page.waitForTimeout(2000)
             await keep(
               testInfo,
               `${dir}/${v.tag}.png`,
