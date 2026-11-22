@@ -229,10 +229,23 @@ describe('My Work page', () => {
   })
 
   it('shows the priority class alone in the table, so the Status column is never cut at tablet width', () => {
-    const empty = { data: { data: [] as unknown[], total: 0 }, error: undefined, isLoading: false, mutate: vi.fn() }
+    const empty = {
+      data: { data: [] as unknown[], total: 0 },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    }
     findingQueue.mockReturnValue({
       data: {
-        data: [{ id: 'f1', title: 'Open redirect', priority_class: 'P2', severity: 'high', status: 'new' }],
+        data: [
+          {
+            id: 'f1',
+            title: 'Open redirect',
+            priority_class: 'P2',
+            severity: 'high',
+            status: 'new',
+          },
+        ],
         total: 1,
       },
       error: undefined,
