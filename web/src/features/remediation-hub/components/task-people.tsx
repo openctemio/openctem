@@ -13,7 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useCanMutate, Permission } from '@/lib/permissions'
 import { usePermissions } from '@/context/permission-provider'
-import { PropertyRow } from '@/features/shared/components/detail'
+import { PropertyGroup, PropertyRow } from '@/features/shared/components/detail'
 import { WatchersControl } from '@/features/shared/components/watchers/watchers-control'
 import { useMembers } from '@/features/organization/api/use-members'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -38,31 +38,24 @@ export function TaskPeople({ taskId, owner }: TaskPeopleProps) {
   })
 
   return (
-    <div
-      role="group"
-      aria-label={t('remediationHub.people.title', 'People')}
-      className="space-y-2 rounded-lg border p-4"
-    >
-      <h2 className="text-sm font-semibold">{t('remediationHub.people.title', 'People')}</h2>
-      <dl className="space-y-1">
-        <PropertyRow label={t('remediationHub.people.owner', 'Owner')}>{owner}</PropertyRow>
-        <WatchersControl
-          kind="task"
-          deferred
-          itemId={taskId}
-          canAdd={canManage && hasPermission(Permission.MembersRead)}
-          canRemoveOthers={canManage}
-          picker={{
-            candidates: members.map((m) => ({
-              id: m.user_id,
-              name: m.name || m.email || m.user_id,
-            })),
-            isLoading,
-            onSearch: setSearch,
-            onOpenChange: setOpen,
-          }}
-        />
-      </dl>
-    </div>
+    <PropertyGroup caption={t('remediationHub.people.title', 'People')}>
+      <PropertyRow label={t('remediationHub.people.owner', 'Owner')}>{owner}</PropertyRow>
+      <WatchersControl
+        kind="task"
+        deferred
+        itemId={taskId}
+        canAdd={canManage && hasPermission(Permission.MembersRead)}
+        canRemoveOthers={canManage}
+        picker={{
+          candidates: members.map((m) => ({
+            id: m.user_id,
+            name: m.name || m.email || m.user_id,
+          })),
+          isLoading,
+          onSearch: setSearch,
+          onOpenChange: setOpen,
+        }}
+      />
+    </PropertyGroup>
   )
 }
