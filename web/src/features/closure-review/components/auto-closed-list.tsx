@@ -9,11 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { RefreshButton } from '@/components/list-page-parts'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { ClosureCaption } from './closure-caption'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { QueueCard, QueueEmpty, useQueueAnnouncer } from '@/features/shared/components/queue'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
@@ -122,26 +121,6 @@ export function AutoClosedList({
   return (
     <>
       <PageStack>
-        <ListTitleRow
-          title={viewTitle}
-          count={
-            <ListCount
-              total={total}
-              loading={(isLoading && !data) || noAccess}
-              label={t(
-                'findings.closureReview.total',
-                '{count, plural, one {# finding} other {# findings}}',
-                { count: total }
-              )}
-            />
-          }
-        >
-          <RefreshButton
-            onClick={() => void mutate()}
-            loading={isValidating}
-            label={t('findings.closureReview.refresh', 'Refresh')}
-          />
-        </ListTitleRow>
         {noAccess ? (
           <NoAccessState title={errorTitle} permission={Permission.FindingsRead} />
         ) : (
@@ -157,6 +136,7 @@ export function AutoClosedList({
             errorTitle={errorTitle}
             manualPagination
             showSearch={false}
+            showColumnToggle={false}
             pageCount={data?.total_pages ?? 0}
             rowCount={total}
             pagination={pagination}
@@ -207,6 +187,12 @@ export function AutoClosedList({
             )}
           />
         )}
+        <ClosureCaption
+          total={total}
+          loading={(isLoading && !data) || noAccess}
+          refreshing={isValidating}
+          onRefresh={() => void mutate()}
+        />
       </PageStack>
       {announcer.region}
       <ConfirmDialog
