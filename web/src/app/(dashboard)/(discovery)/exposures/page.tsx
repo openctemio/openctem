@@ -103,6 +103,7 @@ import {
   PendingDispositionBadge,
   PendingDispositionPanel,
   ExposureDetailsView,
+  exposureEventTypeLabel,
 } from '@/features/exposures/components'
 import { runPool, summarizeBulk } from '@/features/exposures/lib/bulk'
 import {
@@ -956,12 +957,10 @@ function EventTypeDistribution({ byEventType }: EventTypeDistributionProps) {
     <div className="space-y-2">
       {entries.slice(0, 10).map(([type, count]) => {
         const percentage = ((count / total) * 100).toFixed(1)
-        const label = type.replace(/_/g, ' ')
+        const label = exposureEventTypeLabel(t, type)
         return (
           <div key={type} className="flex items-center gap-3">
-            <div className="w-40 truncate text-sm">
-              {label.charAt(0).toUpperCase() + label.slice(1)}
-            </div>
+            <div className="w-40 truncate text-sm">{label}</div>
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-primary transition-all"
