@@ -215,7 +215,11 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       id: 'owner',
       header: t('remediationHub.tasks.columns.owner'),
       enableSorting: false,
-      meta: { kind: 'owner', label: t('remediationHub.tasks.columns.owner'), hideBelow: HIDE_BELOW.owner },
+      meta: {
+        kind: 'owner',
+        label: t('remediationHub.tasks.columns.owner'),
+        hideBelow: HIDE_BELOW.owner,
+      },
       cell: ({ row }) => (
         <span className="block truncate text-sm" title={ownerOf(row.original)}>
           {ownerOf(row.original)}
