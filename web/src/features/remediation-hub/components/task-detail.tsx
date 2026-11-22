@@ -461,7 +461,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                   </PropertyRow>
                   <PropertyRow label={t('remediationHub.detail.progress')}>
                     <div
-                      className="w-full min-w-0"
+                      className="flex w-full min-w-0 items-center gap-2"
                       title={t('remediationHub.progress.summary', undefined, {
                         verified: task.counts.verified,
                         closed: task.counts.closed,
@@ -470,7 +470,13 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                         total: task.counts.total,
                       })}
                     >
-                      <TaskProgress task={task} />
+                      <div className="min-w-0 flex-1">
+                        <TaskProgress task={task} />
+                      </div>
+                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                        {formatNumber(task.counts.verified + task.counts.closed)}/
+                        {formatNumber(task.counts.total)}
+                      </span>
                     </div>
                   </PropertyRow>
                 </PropertyGroup>
@@ -869,7 +875,7 @@ function StatusCounts({ task }: { task: RemediationTask }) {
   return (
     <dl
       aria-label={t('remediationHub.detail.counts.label')}
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs max-md:basis-full"
     >
       {parts.map(([key, n]) => (
         <div key={key} className="flex items-center gap-1">
