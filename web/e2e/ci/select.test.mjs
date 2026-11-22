@@ -180,22 +180,24 @@ test('mode none gives an empty matrix', () => {
   assert.deepEqual(r.matrix.include, [])
 })
 
-test('shards: count follows total duration, clamped to 1..4', () => {
+test('shards: count follows total duration, clamped to 1..7', () => {
   const fs = Array.from({ length: 10 }, (_, i) => `f${i}`)
   const t = (s) => Object.fromEntries(fs.map((f) => [f, s]))
   assert.equal(shard(fs, t(10)).length, 1) // 100 s
-  assert.equal(shard(fs, t(60)).length, 3) // 600 s / 240 s
-  assert.equal(shard(fs, t(600)).length, 5) // clamped
+  assert.equal(shard(fs, t(120)).length, 2) // 1200 s / 600 s
+  assert.equal(shard(fs, t(600)).length, 7) // clamped
   assert.equal(shard([], {}).length, 0)
 })
 
 test('shards: the full suite leaves a shard well inside its 25 minute job timeout', () => {
   // The recorded durations of the full suite (about 5300 s) plus a stack start
   // of a few minutes and a retry or two must not reach the timeout.
+  // The shard job has 25 minutes, of which the stack start takes about 3: a
+  // shard must hold well under 17 minutes of tests, not nearly all of them.
   const specs = Array.from({ length: 127 }, (_, i) => `s${i}`)
   const bins = shard(specs, Object.fromEntries(specs.map((f) => [f, 5300 / 127])))
-  assert.equal(bins.length, 5)
-  assert.ok(Math.max(...bins.map((b) => b.seconds)) <= 19 * 60)
+  assert.equal(bins.length, 7)
+  assert.ok(Math.max(...bins.map((b) => b.seconds)) <= 14 * 60)
 })
 
 test('shards: longest first keeps the heaviest shard near the mean', () => {
@@ -206,10 +208,21 @@ test('shards: longest first keeps the heaviest shard near the mean', () => {
   assert.equal(bins.flatMap((b) => b.files).length, 6)
 })
 
-test('shards: a spec without a recorded duration costs the median', () => {
+test('shards: a spec without a recorded duration costs the heaviest recorded one', () => {
   const bins = shard(['a', 'b', 'c', 'new'], { a: 100, b: 200, c: 300 }, { targetSeconds: 10_000 })
-  assert.equal(bins[0].seconds, 100 + 200 + 300 + 200)
+  assert.equal(bins[0].seconds, 100 + 200 + 300 + 300)
   assert.equal(shard(['x'], {}, { targetSeconds: 10_000 })[0].seconds, 60)
+})
+
+test('shards: unrecorded specs are spread, not packed into one shard', () => {
+  // Four specs the history does not know, next to fast known ones: the old
+  // median cost put them all on one shard.
+  const known = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, 30]))
+  known.big = 400
+  const files = [...Object.keys(known), 'n1', 'n2', 'n3', 'n4']
+  const bins = shard(files, known, { targetSeconds: 400, maxShards: 5 })
+  const holding = bins.filter((b) => b.files.some((f) => f.startsWith('n')))
+  assert.ok(holding.length >= 3, `new specs share ${holding.length} shard(s)`)
 })
 
 test('every spec lands in exactly one shard', () => {
@@ -355,4 +368,12 @@ test('a spec without a duration takes its part of a helper filed under the helpe
       (b) => !(b.files.includes('e2e/specs/62.spec.ts') && b.files.includes('e2e/specs/35.spec.ts'))
     )
   )
+})
+
+test('estimates name only specs that exist', async () => {
+  const { loadEstimates, listSpecs } = await import('./select.mjs')
+  const files = new Set(listSpecs().map((s) => s.file))
+  const est = loadEstimates()
+  assert.ok(Object.keys(est).length > 0)
+  for (const f of Object.keys(est)) assert.ok(files.has(f), `${f} is not a spec`)
 })
