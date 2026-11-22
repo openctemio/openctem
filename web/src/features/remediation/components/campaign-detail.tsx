@@ -332,16 +332,18 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                   {t('remediationCampaigns.actions.addTasks')}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                <Pencil className="size-4" aria-hidden />
-                {t('remediationCampaigns.actions.edit')}
-              </Button>
             </>
           ) : undefined
         }
         menu={
           writable
             ? [
+                {
+                  id: 'edit',
+                  label: t('remediationCampaigns.actions.edit'),
+                  icon: Pencil,
+                  onSelect: () => setEditOpen(true),
+                },
                 ...(!c.ticket
                   ? [
                       {
