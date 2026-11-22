@@ -41,6 +41,7 @@ layoutRoutes(
     '/sensors',
     '/attack-surface/exposures',
     '/attack-surface/technologies',
+    '/remediation',
     '/remediation/tasks',
     '/remediation/campaigns',
     '/attack-surface/discovery',
