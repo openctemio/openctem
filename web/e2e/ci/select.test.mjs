@@ -206,10 +206,21 @@ test('shards: longest first keeps the heaviest shard near the mean', () => {
   assert.equal(bins.flatMap((b) => b.files).length, 6)
 })
 
-test('shards: a spec without a recorded duration costs the median', () => {
+test('shards: a spec without a recorded duration costs the heaviest recorded one', () => {
   const bins = shard(['a', 'b', 'c', 'new'], { a: 100, b: 200, c: 300 }, { targetSeconds: 10_000 })
-  assert.equal(bins[0].seconds, 100 + 200 + 300 + 200)
+  assert.equal(bins[0].seconds, 100 + 200 + 300 + 300)
   assert.equal(shard(['x'], {}, { targetSeconds: 10_000 })[0].seconds, 60)
+})
+
+test('shards: unrecorded specs are spread, not packed into one shard', () => {
+  // Four specs the history does not know, next to fast known ones: the old
+  // median cost put them all on one shard.
+  const known = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, 30]))
+  known.big = 400
+  const files = [...Object.keys(known), 'n1', 'n2', 'n3', 'n4']
+  const bins = shard(files, known, { targetSeconds: 400, maxShards: 5 })
+  const holding = bins.filter((b) => b.files.some((f) => f.startsWith('n')))
+  assert.ok(holding.length >= 3, `new specs share ${holding.length} shard(s)`)
 })
 
 test('every spec lands in exactly one shard', () => {

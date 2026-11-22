@@ -237,14 +237,19 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-// Greedy longest-first: each spec goes to the lightest shard so far.
+// Greedy longest-first: each spec goes to the lightest shard so far. A spec
+// without a recorded duration costs the heaviest recorded one.
 export function shard(
   files,
   timings,
   { targetSeconds = 240, maxShards = 5, fallbackSeconds = 60 } = {}
 ) {
   const known = files.map((f) => timings[f]).filter((v) => Number.isFinite(v) && v > 0)
-  const dflt = median(known) || fallbackSeconds
+  // A spec with no recorded duration is new or has grown since the last green
+  // run: cost it as the heaviest known spec, never as the median, so a spec the
+  // history knows nothing about cannot be packed with others into one shard
+  // past its timeout (one spec did with the layout check, 2026-11).
+  const dflt = known.length ? Math.max(...known) : fallbackSeconds
   const cost = (f) => (Number.isFinite(timings[f]) && timings[f] > 0 ? timings[f] : dflt)
   const total = files.reduce((n, f) => n + cost(f), 0)
   const count = files.length

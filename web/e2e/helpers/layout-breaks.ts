@@ -28,7 +28,11 @@ import {
  * 390 en; at 390 en the row menu, the filters sheet, the detail sheet and the
  * page's main dialog when the page has them.
  *
- * The full sweep (every route, dark theme, screenshots) runs the same spec:
+ * The checks are shared here; the specs 75a-75d (specs/75a-layout-breaks-lists.spec.ts and
+ * its siblings) each register one family of routes so the planner can put them on
+ * different shards.
+ *
+ * The full sweep (every route, dark theme, screenshots) runs the lists spec only:
  *   LAYOUT_SWEEP_ROUTES=<routes.json> LAYOUT_SWEEP_OUT=<dir> LAYOUT_SWEEP_FULL=1
  * routes.json: [{ "path": "/assets" }, ...]; findings land in <dir>/<slug>.json.
  */
@@ -48,75 +52,6 @@ const PHONE = { width: 390, height: 844 }
 const DESKTOP = { width: 1440, height: 900 }
 const TABLET = { width: 1024, height: 768 }
 const LAPTOP = { width: 1280, height: 800 }
-
-/** Lists and pages with phone cards, sheets and long names. */
-const CI_ROUTES = [
-  // The home: its dashboard snapshot gets long titles and big figures (richData).
-  '/',
-  '/assets',
-  '/assets/groups',
-  '/assets/changes',
-  '/assets/duplicates',
-  '/assets/suggestions',
-  '/assets/attention/no-owner',
-  '/assets/attention/unscanned',
-  '/assets/attention/decide-monitoring',
-  '/findings',
-  '/findings/approvals',
-  '/findings/ready-to-close',
-  '/findings/imports',
-  '/exceptions',
-  '/exposures/vulnerabilities',
-  '/exposures/vulnerabilities?tab=catalog',
-  '/attack-surface/certificates',
-  '/attack-surface/changes',
-  '/vulnerabilities',
-  '/components',
-  '/exposures',
-  '/scans',
-  '/scans/runs',
-  '/scans/workflows',
-  '/scans/approvals',
-  '/sensors',
-  '/my-work',
-  '/settings/service-accounts',
-  '/attack-surface/exposures',
-  '/attack-surface/technologies',
-  '/remediation/tasks',
-  '/remediation/campaigns',
-  '/scope',
-  '/settings/general',
-  '/settings/members',
-  '/settings/roles',
-  '/settings/audit-log',
-  '/settings/api-keys',
-  '/settings/security',
-  '/settings/scope',
-  '/settings/integrations',
-  '/settings/risk-scoring',
-  '/attack-surface/discovery',
-  '/settings/scanning/scan-approval',
-  '/settings/sla-policies',
-  '/settings/scanning/tool-sources',
-  '/settings/teams',
-  '/notifications',
-  '/oauth/device',
-]
-
-/**
- * Entry pages a person opens signed out (their own browser context, no
- * session): the form and the link-from-an-e-mail states the scratch stack can
- * reach without mail. Same checks, no list data or overlays.
- */
-const SIGNED_OUT_ROUTES = [
-  '/forgot-password',
-  '/reset-password',
-  '/reset-password#token=synthetic-reset-token',
-  '/set-password#token=synthetic-setup-token',
-  '/verify-email',
-  '/request-access',
-  '/request-access/confirm',
-]
 
 /**
  * Settings answers richData leaves alone (it skips /settings): the pages that
@@ -487,11 +422,11 @@ async function sideScrolling(page: Page): Promise<string[]> {
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
-const ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
+const SWEEP_ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
   ? (
       JSON.parse(fs.readFileSync(process.env.LAYOUT_SWEEP_ROUTES, 'utf8')) as { path: string }[]
     ).map((r) => r.path)
-  : CI_ROUTES
+  : []
 
 const OVERLAYS: Record<Overlay, string> = {
   rowmenu:
@@ -606,56 +541,71 @@ async function keep(testInfo: TestInfo, name: string, body: string | Buffer) {
   if (!OUT) await testInfo.attach(name, { path: file })
 }
 
-test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
-  test.describe.configure({ mode: 'parallel' })
-  for (const route of ROUTES) {
-    test(`${route}`, async ({ page, baseURL }, testInfo) => {
-      test.setTimeout(FULL ? 600_000 : 240_000)
-      const report: Record<string, Breaks | string> = {}
-      for (const v of variants()) {
-        await page.unrouteAll({ behavior: 'ignoreErrors' })
-        await prepare(page, v, baseURL!)
-        for (const extra of ROUTE_DATA[route] ?? []) {
-          await page.route(extra.url, (r) =>
-            r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
-          )
-        }
-        await page.goto(route, { timeout: 60_000 }).catch(() => {})
-        await settle(page)
-        let scope = 'main'
-        if (v.overlay) {
-          const layer = await openOverlay(page, v.overlay)
-          if (!layer) {
-            report[v.tag] = 'no such overlay'
-            continue
+type Options = { tag: string[] }
+
+/** Signed-in routes: the checks of every variant, one test per route. */
+export function layoutRoutes(
+  title: string,
+  options: Options,
+  routes: string[],
+  { sweepOwner = false } = {}
+) {
+  // A sweep names its own routes: only the lists spec runs them, once.
+  const list = process.env.LAYOUT_SWEEP_ROUTES ? (sweepOwner ? SWEEP_ROUTES : []) : routes
+  if (!list.length) return
+  test.describe(title, options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const route of list) {
+      test(`${route}`, async ({ page, baseURL }, testInfo) => {
+        test.setTimeout(FULL ? 600_000 : 240_000)
+        const report: Record<string, Breaks | string> = {}
+        for (const v of variants()) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          for (const extra of ROUTE_DATA[route] ?? []) {
+            await page.route(extra.url, (r) =>
+              r.request().method() === 'GET'
+                ? r.fulfill({ json: extra.body(v.scen) })
+                : r.fallback()
+            )
           }
-          scope = layer
+          await page.goto(route, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          let scope = 'main'
+          if (v.overlay) {
+            const layer = await openOverlay(page, v.overlay)
+            if (!layer) {
+              report[v.tag] = 'no such overlay'
+              continue
+            }
+            scope = layer
+          }
+          const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+          if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
+            expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+          }
+          report[v.tag] = found
+          if (OUT || formatBreaks(found).length) {
+            await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
+          }
+          if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
         }
-        const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
-        if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
-          expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+        await keep(testInfo, `${slug(route)}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          if (typeof found === 'string') continue
+          for (const kind of BREAK_KINDS) {
+            if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
+            const lines =
+              kind === 'clipped' && SIDEWAYS_DEBT.has(route)
+                ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
+                : found[kind]
+            expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
+          }
         }
-        report[v.tag] = found
-        if (OUT || formatBreaks(found).length) {
-          await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
-        }
-        if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
-      }
-      await keep(testInfo, `${slug(route)}.json`, JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        if (typeof found === 'string') continue
-        for (const kind of BREAK_KINDS) {
-          if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
-          const lines =
-            kind === 'clipped' && SIDEWAYS_DEBT.has(route)
-              ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
-              : found[kind]
-          expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
-        }
-      }
-    })
-  }
-})
+      })
+    }
+  })
+}
 
 /**
  * A web origin's Paths tab (the tree from 1024 px, the drill-down list on a
@@ -744,10 +694,9 @@ const PATHS_VARIANTS = () =>
  * that walked all twelve views took four minutes on a loaded box and ran into
  * its timeout. The origin is created once per test through the API.
  */
-test.describe(
-  'Layout breaks: web origin Paths',
-  { tag: ['@assets', '@attack-surface', '@phone'] },
-  () => {
+
+export function webOriginPaths(options: Options) {
+  test.describe('Layout breaks: web origin Paths', options, () => {
     test.describe.configure({ mode: 'parallel' })
     for (const v of PATHS_VARIANTS()) {
       for (const name of ['root', 'level'] as const) {
@@ -826,32 +775,35 @@ test.describe(
         })
       }
     }
-  }
-)
+  })
+}
 
-test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
-  test.describe.configure({ mode: 'parallel' })
-  for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
-    test(`${route}`, async ({ browser, baseURL }, testInfo) => {
-      test.setTimeout(120_000)
-      const report: Record<string, Breaks> = {}
-      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
-        const context = await browser.newContext({ baseURL })
-        const page = await context.newPage()
-        await prepare(page, v, baseURL!)
-        await page.goto(route, { timeout: 60_000 }).catch(() => {})
-        await settle(page)
-        report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
-        if (OUT || formatBreaks(report[v.tag]).length) {
-          await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+/** Entry pages a person opens signed out. */
+export function layoutSignedOut(options: Options, routes: string[]) {
+  test.describe('Layout breaks, signed out', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : routes) {
+      test(`${route}`, async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(120_000)
+        const report: Record<string, Breaks> = {}
+        for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+          const context = await browser.newContext({ baseURL })
+          const page = await context.newPage()
+          await prepare(page, v, baseURL!)
+          await page.goto(route, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
+          if (OUT || formatBreaks(report[v.tag]).length) {
+            await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+          }
+          await context.close()
         }
-        await context.close()
-      }
-      await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        for (const kind of BREAK_KINDS)
-          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
-      }
-    })
-  }
-})
+        await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+        }
+      })
+    }
+  })
+}
