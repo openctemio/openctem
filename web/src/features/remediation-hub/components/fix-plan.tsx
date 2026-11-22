@@ -61,7 +61,7 @@ type PlanSort = 'risk' | 'deadline'
  */
 export const PLAN_HIDE_BELOW = {
   findings: 720,
-  share: 830,
+  share: 1000,
   progress: 960,
   owner: 1110,
 } as const
