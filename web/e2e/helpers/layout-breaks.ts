@@ -45,6 +45,8 @@ type Variant = {
   theme: 'light' | 'dark'
   scen: Scenario
   overlay?: Overlay
+  /** The app sidebar's state (cookie `sidebar_state`); the default is open. */
+  sidebar?: 'open' | 'closed'
 }
 type Overlay = 'rowmenu' | 'filters' | 'detail' | 'dialog'
 
@@ -350,6 +352,94 @@ function easmChanges(scen: Scenario) {
   }
 }
 
+/** Campaigns with every column hard on the layout: a late due date, overdue and hidden tasks, a long name and owner. */
+function campaignPage(scen: Scenario) {
+  const day = 86_400_000
+  const mk = (i: number, status: string, dueDays: number, over: Record<string, unknown> = {}) => ({
+    id: `00000000-0000-4000-8000-00000000c0${i}`,
+    name: [
+      'Secrets Rotation',
+      'Fix Critical CVEs Q2 for the payment gateways and the regional card schemes',
+      'Network Segmentation',
+      'SSL/TLS Hardening',
+    ][i % 4],
+    description: ['Rotate credentials', 'Remediate critical CVEs', 'Micro-segmentation', ''][i % 4],
+    status,
+    priority: 'high',
+    due_date: new Date(Date.now() + dueDays * day).toISOString(),
+    tags: [],
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+    version: 1,
+    is_overdue: dueDays < 0 && status === 'active',
+    can_edit: true,
+    summary: {
+      tasks: i === 0 ? 2 : i === 1 ? 1204 : 0,
+      live_tasks: 2,
+      done_tasks: 0,
+      overdue_tasks: i === 0 ? 2 : 0,
+      hidden_tasks: i === 1 ? 3 : 0,
+      findings: i === 0 ? 2 : 0,
+      closed_findings: 0,
+      verified_findings: 0,
+      progress: 0,
+    },
+    ...over,
+  })
+  const all = [
+    mk(0, 'active', -23),
+    mk(1, 'active', -208),
+    mk(2, 'active', 12),
+    mk(3, 'completed', 90),
+  ]
+  const data = scen === 'empty' ? [] : scen === 'one' ? all.slice(0, 1) : all
+  return {
+    data,
+    total: data.length,
+    page: 1,
+    per_page: 25,
+    status_counts: { draft: 0, active: data.length, completed: 0, canceled: 0 },
+  }
+}
+
+/** Tasks with a late deadline, a long title and a long owner. */
+function taskPage(scen: Scenario) {
+  const day = 86_400_000
+  const mk = (i: number, deadlineDays: number) => ({
+    id: `00000000-0000-4000-8000-00000000d0${i}`,
+    action_id: `00000000-0000-4000-8000-00000000e0${i}`,
+    action_key: `k${i}`,
+    action_kind: 'upgrade',
+    action_title: 'Upgrade the TLS libraries on the payment gateways',
+    title: [
+      'Rotate the shared service credentials',
+      'Patch critical CVEs on the regional card scheme gateways',
+      'Segment the office network',
+    ][i % 3],
+    description: '',
+    state: 'open',
+    deadline: new Date(Date.now() + deadlineDays * day).toISOString(),
+    deadline_source: 'manual',
+    counts: {
+      total: 6,
+      open: 3,
+      in_progress: 1,
+      fix_applied: 0,
+      closed: 1,
+      verified: 1,
+      related: 0,
+      risk_points: 120 + i,
+    },
+    hidden_members: 0,
+    version: 1,
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+  })
+  const all = [mk(0, -23), mk(1, -208), mk(2, 12)]
+  const data = scen === 'empty' ? [] : scen === 'one' ? all.slice(0, 1) : all
+  return { data, total: data.length, page: 1, per_page: 25 }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
@@ -369,6 +459,8 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
     { url: '**/api/v1/attack-surface/certificates/stats*', body: certificateStats },
   ],
   '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
+  '/remediation/campaigns': [{ url: '**/api/v1/remediation/campaigns?*', body: campaignPage }],
+  '/remediation/tasks': [{ url: '**/api/v1/remediation/tasks?*', body: taskPage }],
 }
 
 /**
@@ -467,6 +559,41 @@ function variants(): Variant[] {
       })
     }
   }
+  // LAYOUT_SWEEP_MATRIX=1: the tablet and laptop widths of the acceptance
+  // standard, each with the sidebar open and closed, in both languages and themes.
+  if (process.env.LAYOUT_SWEEP_MATRIX) {
+    for (const [w, h] of [
+      [768, 1180],
+      [820, 1180],
+      [1024, 820],
+      [1180, 820],
+      [1280, 900],
+    ]) {
+      for (const sidebar of ['open', 'closed'] as const) {
+        for (const lang of ['en', 'vi'] as const) {
+          for (const theme of ['light', 'dark'] as const) {
+            v.push({
+              tag: `m${w}-${sidebar}-${lang}-${theme}`,
+              width: w,
+              height: h,
+              lang,
+              theme,
+              scen: 'rich',
+              sidebar,
+            })
+          }
+        }
+      }
+    }
+    v.push({
+      tag: 'm1440-light-en',
+      width: 1440,
+      height: 900,
+      lang: 'en',
+      theme: 'light',
+      scen: 'rich',
+    })
+  }
   // LAYOUT_SWEEP_ONLY=d-en,l-en,t-en runs just those variants (desktop widths of every route).
   const only = process.env.LAYOUT_SWEEP_ONLY?.split(',').filter(Boolean)
   return only ? v.filter((x) => only.includes(x.tag)) : v
@@ -479,6 +606,7 @@ async function prepare(page: Page, v: Variant, baseURL: string) {
   await page.context().addCookies([
     { name: 'locale', value: v.lang, url: baseURL },
     { name: 'theme', value: v.theme, url: baseURL },
+    { name: 'sidebar_state', value: v.sidebar === 'closed' ? 'false' : 'true', url: baseURL },
   ])
   await page.emulateMedia({ colorScheme: v.theme, reducedMotion: 'reduce' })
   await page.addInitScript((t) => {
