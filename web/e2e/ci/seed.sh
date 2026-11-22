@@ -588,7 +588,7 @@ SELECT :'tid'::uuid, v.name, v.descr, v.typ, v.st, v.rid, v.tool, v.path,
     ('Test fixtures in the checkout service', 'Fixtures never ship', 'false_positive', 'pending', 'e2e.sql-injection', 'semgrep', 'tests/**', interval '1 day', interval '60 days'),
     ('Legacy report generator with a very long rule name that keeps going to test how the name column copes with it', 'Replaced next quarter', 'accepted_risk', 'pending', 'e2e.weak-hash', 'opengrep', 'legacy/reports/**', interval '2 days', interval '30 days'),
     ('Vendored JavaScript bundle', 'Third-party code', 'false_positive', 'approved', 'e2e.xss', 'semgrep', 'vendor/**', interval '20 days', interval '180 days'),
-    ('Internal admin tool, no end date', 'Owned by platform team', 'wont_fix', 'approved', 'e2e.csrf', 'opengrep', 'tools/admin/**', interval '40 days', NULL::interval),
+    ('Internal admin tool, long exception', 'Owned by platform team', 'wont_fix', 'approved', 'e2e.csrf', 'opengrep', 'tools/admin/**', interval '40 days', interval '800 days'),
     ('Staging TLS certificate', 'Rotated in the next sprint', 'accepted_risk', 'approved', 'e2e.tls-expiry', 'nuclei', NULL, interval '10 days', interval '5 days'),
     ('Generated protobuf code', 'Not editable by hand', 'false_positive', 'rejected', 'e2e.hardcoded-secret', 'betterleaks', 'gen/**', interval '15 days', interval '90 days'),
     ('Old load-test credentials', 'Environment removed', 'false_positive', 'expired', 'e2e.default-credentials', 'betterleaks', 'loadtest/**', interval '120 days', interval '-30 days')

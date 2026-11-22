@@ -62,6 +62,7 @@
   "exceptions.page.chipEnds": "Ends",
   "exceptions.page.chipEndsValue": "within {count, plural, one {# day} other {# days}}",
   "exceptions.page.colApprovers": "Approved by",
+  "exceptions.page.colCreated": "Created",
   "exceptions.page.colExpires": "Expires",
   "exceptions.page.colName": "Name",
   "exceptions.page.colRequestedBy": "Requested by",
