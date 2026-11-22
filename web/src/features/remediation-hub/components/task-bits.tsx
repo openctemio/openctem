@@ -5,6 +5,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { StatusChip } from '@/features/shared/components/status-chip'
+import { ProgressCell } from '@/features/shared/components/progress-cell'
 import Link from '@/components/link'
 import { cn } from '@/lib/utils'
 import { useRemediationCampaign } from '@/features/remediation/api/use-remediation-campaigns'
@@ -93,6 +94,40 @@ export function TaskProgress({
         <span className="bg-info" style={{ width: pct(p.claimed) }} />
       </div>
     </div>
+  )
+}
+
+/** A task's progress in a list or a sheet: "3 of 8 verified" over the stacked bar. */
+export function TaskProgressCell({
+  task,
+  className,
+}: {
+  task: Pick<RemediationTask, 'counts'>
+  className?: string
+}) {
+  const { t } = useTranslation()
+  const p = progressParts(task)
+  return (
+    <ProgressCell
+      className={className}
+      max={p.total}
+      parts={[
+        { value: p.verified, tone: 'success' },
+        { value: p.closed, tone: 'muted' },
+        { value: p.claimed, tone: 'info' },
+      ]}
+      caption={t('remediationHub.tasks.verifiedOf', undefined, {
+        verified: task.counts.verified,
+        total: task.counts.total,
+      })}
+      label={t('remediationHub.progress.summary', undefined, {
+        verified: p.verified,
+        closed: p.closed,
+        claimed: p.claimed,
+        open: p.open,
+        total: p.total,
+      })}
+    />
   )
 }
 

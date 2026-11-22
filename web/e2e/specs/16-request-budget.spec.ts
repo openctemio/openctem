@@ -328,3 +328,33 @@ test('findings: Refresh sends each request once', { tag: ['@budget'] }, async ({
   for (const r of seen) counts.set(r, (counts.get(r) ?? 0) + 1)
   expect([...counts].filter(([, n]) => n > 1)).toEqual([])
 })
+
+/**
+ * A list's quick-view sheet opened from its link (`/remediation/tasks?task=<id>`):
+ * the list and the sheet together stay within the entry's budget, and the
+ * sheet's slow panels (a task's timeline and query) wait until expanded.
+ */
+const sheetBudgets = (budget as { sheetRoutes?: Record<string, DynamicBudget> }).sheetRoutes ?? {}
+
+test(
+  'every list quick-view sheet stays within its request budget',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    test.setTimeout(4 * 60_000)
+    const routes = Object.keys(sheetBudgets)
+    test.skip(routes.length === 0, 'no sheet budget listed')
+    await apiRequestsOfLoad(page, '/')
+    const problems: string[] = []
+    for (const route of routes) {
+      const url = await sampleRoute(page, route, sheetBudgets[route])
+      if (!url) continue
+      const requests = await apiRequestsOfLoad(page, url)
+      if (process.env.E2E_BUDGET_REPORT) console.log(`budget ${route} ${requests.length}`)
+      checkLoad(route, sheetBudgets[route].max, requests, problems)
+      for (const r of requests)
+        if (/\/tasks\/[^/?]+\/(timeline|query)/.test(r))
+          problems.push(`${route}: ${r} loads before it is expanded`)
+    }
+    expect(problems, problems.join('\n')).toEqual([])
+  }
+)
