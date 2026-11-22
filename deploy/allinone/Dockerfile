@@ -75,12 +75,18 @@ RUN printf '%s\n' 'package main' \
 # binaries. Every file is copied in with its final owner: no `cp -a` or
 # `chown -R` afterwards, which stored the whole web and API a second (and
 # third) time in new layers.
-FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS final
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+# The upgrade runs in its own stage and the patched root filesystem is copied
+# into one layer: a RUN on top of the base would keep the old OpenSSL in the
+# base layer and add the new one beside it (+12 MB per image).
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS alpine-patched
+RUN apk upgrade --no-cache libssl3 libcrypto3
+
+FROM scratch AS final
+COPY --from=alpine-patched / /
 # One user per process (supervise.sh starts each child under its own uid):
 # nextjs = web, openctem-api, openctem-console, openctem-gateway,
 # openctem-signer (the job signer: the only user that can read its key).
-# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
-RUN apk upgrade --no-cache libssl3 libcrypto3
 RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client setpriv \
       libstdc++ libgcc libatomic \
  && addgroup -S -g 1001 nodejs \
