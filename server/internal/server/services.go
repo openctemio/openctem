@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
 	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/server/internal/app/query"
@@ -50,6 +51,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/server/internal/app/module"
 	"github.com/openctemio/openctem/server/internal/app/orgrelay"
+	"github.com/openctemio/openctem/server/internal/app/privatedestinations"
 	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
@@ -141,7 +143,6 @@ import (
 	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
 	"github.com/openctemio/openctem/server/internal/app/tenantai"
 	"github.com/openctemio/openctem/server/internal/app/threatmodel"
-	"github.com/openctemio/openctem/server/internal/app/threatsource"
 	"github.com/openctemio/openctem/server/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/server/internal/app/ticketmap"
 	toolsourceapp "github.com/openctemio/openctem/server/internal/app/toolsource"
@@ -888,7 +889,7 @@ type Services struct {
 	// role / status / membership rows change.
 	MembershipCache *accesscontrol.MembershipCacheService
 
-	// Module Service (OSS - all modules enabled, UI metadata only)
+	// Module Service (all modules enabled, UI metadata only)
 	Module *module.ModuleService
 
 	// SLA
@@ -1026,6 +1027,9 @@ type Services struct {
 	// Social OAuth login (Google / GitHub / Microsoft). nil when no provider
 	// is configured, which keeps the OAuth routes unregistered.
 	OAuth *auth.OAuthService
+	// PersonalOrgs makes the personal organization at sign-up (the sign-up
+	// policy switch).
+	PersonalOrgs *auth.PersonalOrganizations
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
@@ -1059,10 +1063,12 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
-	ThreatSource        *threatsource.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
+	// FeedWatch alerts and raises the all-user banner when vulnerability
+	// data goes stale, in every feed mode; nil without platform settings.
+	FeedWatch *feedwatch.Service
 	// LookupJobs asks the platform's instance-scope sensors passive
 	// questions for an organization (lookup.ct@1).
 	LookupJobs    *lookupjobapp.Service
@@ -1073,7 +1079,9 @@ type Services struct {
 	// LeakedSecretPolicy is the platform default of whether imported leaked
 	// secret values are kept (organizations may override it).
 	LeakedSecretPolicy *leakedsecretpolicy.Service
-	PlatformMFA        *platformmfa.Service
+	// PrivateDestinations: the console's private ranges for outbound requests.
+	PrivateDestinations *privatedestinations.Service
+	PlatformMFA         *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1176,7 +1184,7 @@ type ServiceDeps struct {
 	RedisClient *redis.Client
 	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
 	IngestDB *postgres.DB
-	// Extensions are the build's extensions (nil or empty: Community).
+	// Extensions are the build's extensions (nil or empty: the default build).
 	Extensions *extensionhost.Set
 }
 
@@ -1217,7 +1225,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	// Grants (off unless granted) come only from an extension of the
-	// build; the Community build has none.
+	// build; the default build has none.
 	s.ExtensionHost = extensionhost.Host{
 		DB: deps.DB, Log: log, Production: cfg.IsProduction(), ManagedService: cfg.App.ManagedService,
 		Entitlements: extensionEntitlements{s.Entitlement},
@@ -1233,6 +1241,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
 		s.LeakedSecretPolicy = leakedsecretpolicy.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, log)
+		s.PrivateDestinations = privatedestinations.NewService(repos.PlatformSetting, s.SettingRecorder, log)
+		s.PrivateDestinations.SetSignupOpen(cfg.Auth.SignupMode == config.SignupModeOpen)
+		// Every replica applies the console ranges now and keeps them current.
+		s.PrivateDestinations.Start(context.Background())
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -1265,6 +1277,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
+	// A suspended organization takes no new member: accepting its invitation
+	// is refused before anything changes.
+	s.Tenant.SetOrganizationGate(s.OrganizationGate)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1349,6 +1364,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
 	s.Scope.SetCITrustLinks(postgres.NewScopeCITrustLinkRepository(&postgres.DB{DB: deps.DB})) // CI trusts manage repository entries
 	s.Scope.SetExclusionMatches(scopeCoverage)                                                 // bulk exclusion preview (research/124)
+	// The Scope page's provider addresses card (research/531): decisions,
+	// the move out of scope, the person-confirmed addresses.
+	s.Scope.SetProviderAddresses(postgres.NewScopeProviderRepository(&postgres.DB{DB: deps.DB}))
 	// Out of scope for good closes the findings, back in scope reopens
 	// them (research/320); every exclusion change kicks a pass.
 	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
@@ -1471,7 +1489,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			Registry:   vulnerability.FindingFields,
 			Permission: permission.FindingsRead.String(),
 			GroupBy:    vulnerability.FindingGroupDimensions(),
-			Extra:      []string{"branch_status"},
+			Extra:      []string{"branch_status", savedviewapp.ModeParam},
+			Params:     savedviewapp.ListModeParams,
 		},
 		// The vulnerabilities list: the findings filter plus the list's own
 		// params (kev, epss_gte, q, sort...). The /views routes need
@@ -1487,7 +1506,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		savedview.PageAssets: {
 			Registry:   assetlist.Fields,
 			Permission: permission.AssetsRead.String(),
-			Extra:      []string{"properties", "with_triage"},
+			Extra:      []string{"properties", "with_triage", savedviewapp.ModeParam},
+			Params:     savedviewapp.ListModeParams,
 		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)
@@ -1517,6 +1537,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Vulnerability.SetBranchLookup(repos.Branch)          // a finding branch must belong to its asset
 	// Bulk changes by filter run as operations the caller reads back.
 	s.Vulnerability.SetOperationStore(postgres.NewOperationRepository(&postgres.DB{DB: deps.DB}))
+	// Bulk dismiss of findings: idempotency, the daily budget and undo.
+	s.Vulnerability.SetBulkDismissStore(postgres.NewFindingBulkDismissRepository(&postgres.DB{DB: deps.DB}))
 	s.FindingActivity = activity.NewFindingActivityService(repos.FindingActivity, repos.Finding, log)
 	s.FindingActivity.SetUserRepo(repos.User) // Wire user lookup for activity broadcasts
 	// Note: WebSocket broadcaster is wired later after WebSocketHub is initialized
@@ -1565,19 +1587,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	if repos.PlatformSetting != nil {
-		// Where KEV and EPSS come from (console setting, default: the
-		// platform's own fetch).
-		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
-		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
-	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
-	// relayed release; the platform never calls CISA or FIRST.
+	// Feed relay (RFC-142): the signed releases (vulnerability data with
+	// KEV and EPSS, release notices) through a platform relay sensor.
 	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
-	if s.FeedRelay != nil && s.ThreatSource != nil {
-		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
-	}
+	s.FeedWatch = newFeedWatch(repos, s, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,
@@ -1821,6 +1837,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetCampaignGroupGrantRepository(repos.PentestCampaignGroups)
 	s.Pentest.SetCampaignSignoffRepository(repos.PentestSignoff)
 	s.Pentest.SetAttachmentLookup(repos.Attachment) // authorization letter must be a file of the campaign
 	s.Pentest.SetCampaignSecrets(repos.PentestSecret, s.Encryptor)
@@ -2325,6 +2342,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Channel messages name the asset, what it is and why it matters, read
 	// at send time inside the event's tenant (notification-system.md).
 	s.Outbox.SetFactsSource(postgres.NewNotificationFactsRepository(&postgres.DB{DB: deps.DB}))
+	// Grouped alerts: similar finding events reach a channel as one message
+	// (docs/architecture/notification-system.md, "Grouped alerts").
+	s.Outbox.SetGroupRepository(postgres.NewNotificationGroupRepository(&postgres.DB{DB: deps.DB}))
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)
@@ -2819,6 +2839,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// serial, MAC, SCM repository ID) before name and IP; conflicts go to
 	// the same review queue.
 	s.Ingest.SetIdentityStore(repos.AssetIdentifier, repos.AssetDedup)
+	// An address the provider-address move archived comes back on a direct result.
+	s.Ingest.SetProviderAddressReviver(postgres.NewProviderAddressMoveRepository(&postgres.DB{DB: deps.DB}))
 	// Result binding (RFC-040 §5.3): reports name the command they belong
 	// to; reports without one are applied with limits, or quarantined per the
 	// tenant's policy.
@@ -3704,6 +3726,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		s.Signup.SetStartLimitsCheck(s.Entitlement.StartLimitsConfigured)
 	}
 	s.Signup.SetCeiling(signupdom.Ceiling(cfg.Auth.SignupMode))
+	s.Signup.SetPersonalOrganizationSeed(cfg.Auth.SignupPersonalOrganization)
 	if err := s.Signup.Seed(context.Background()); err != nil {
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
@@ -3880,6 +3903,18 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)
 
+	// The personal organization at sign-up: a self-service sign-up with no
+	// other way in gets its own organization once its address is verified
+	// (the sign-up policy switch, off by default).
+	s.PersonalOrgs = auth.NewPersonalOrganizations(repos.Tenant, s.Signup, log)
+	s.PersonalOrgs.SetDomainPolicy(s.DomainVerify)
+	s.PersonalOrgs.SetInvitationLookup(repos.Tenant)
+	s.PersonalOrgs.SetAuditService(s.Audit)
+	if s.Entitlement != nil {
+		s.PersonalOrgs.SetLimits(s.Entitlement)
+	}
+	s.Auth.SetPersonalOrganizations(s.PersonalOrgs)
+
 	// Trusted organizations (RFC-058): home-realm sign-in for external
 	// members, the role ceiling, proposed end of access and API keys.
 	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
@@ -3915,6 +3950,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		if s.PlatformSocialLogin != nil {
 			s.OAuth.SetProviderSource(s.PlatformSocialLogin)
 		}
+		if auth.TestSeamActive() {
+			log.Warn("TEST BUILD: social sign-in providers are reached at a stand-in (build tag authtestseam); never run this binary in production")
+		}
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
@@ -3930,6 +3968,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 			}
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
+		s.OAuth.SetPersonalOrganizations(s.PersonalOrgs)
 		if s.DomainVerify != nil {
 			s.OAuth.SetClaimGuard(repos.Tenant, s.DomainVerify)
 		}

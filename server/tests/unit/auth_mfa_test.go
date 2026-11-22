@@ -296,6 +296,7 @@ func (c *capturingAuditRepo) has(a audit.Action) bool {
 type fakeNotifier struct {
 	mu                       sync.Mutex
 	mfaDisabled, recoveryUse int
+	mfaEnabled, mfaReplaced  int
 	passwordChanged          int
 	lastRemaining            int
 }
@@ -303,6 +304,18 @@ type fakeNotifier struct {
 func (n *fakeNotifier) NotifyMFADisabled(context.Context, string, string, string) {
 	n.mu.Lock()
 	n.mfaDisabled++
+	n.mu.Unlock()
+}
+
+func (n *fakeNotifier) NotifyMFAEnabled(context.Context, string, string, string) {
+	n.mu.Lock()
+	n.mfaEnabled++
+	n.mu.Unlock()
+}
+
+func (n *fakeNotifier) NotifyMFAReplaced(context.Context, string, string, string) {
+	n.mu.Lock()
+	n.mfaReplaced++
 	n.mu.Unlock()
 }
 
@@ -462,6 +475,9 @@ func TestMFA_Enrollment(t *testing.T) {
 		}
 		if !h.audits.has(audit.ActionAuthMFAEnabled) {
 			t.Error("auth.mfa_enabled was not audited")
+		}
+		if h.notifier.mfaEnabled != 1 {
+			t.Errorf("self-service enable sent %d notices, want 1", h.notifier.mfaEnabled)
 		}
 	})
 
@@ -1239,4 +1255,156 @@ func TestMFA_CheckEntryAppliesURLOrganizationRule(t *testing.T) {
 	if err := h.svc.CheckEntry(ctx, shared.NewID().String(), uid.String(), tn.ID().String()); !errors.As(err, &ref) || ref.Status != 401 {
 		t.Fatalf("unknown session: %v", err)
 	}
+}
+
+// A second factor turned on through the sign-in (or invitation) enrollment
+// challenge ends every older session of the user, exactly as turning it on
+// from My account does: a password session opened before the factor existed
+// never went through the second step, and must not pass an organization's
+// 2FA requirement afterwards.
+func TestMFA_ChallengeEnrollmentEndsOlderSessions(t *testing.T) {
+	setup := func(t *testing.T) (*mfaHarness, *tenant.Tenant, *tenant.Tenant, *auth.LoginResult) {
+		t.Helper()
+		h := newMFAHarness(t)
+		req := newPolicyTenant(t, h.tenants, "req-later", false)
+		pre := req.TypedSettings()
+		pre.Security.MFARequiredForAdmins = false
+		_ = req.UpdateSettings(pre)
+		other := newPolicyTenant(t, h.tenants, "no-rule", false)
+		po := other.TypedSettings()
+		po.Security.MFARequiredForAdmins = false
+		_ = other.UpdateSettings(po)
+		h.tenants.userMemberships = []tenant.UserMembership{
+			{TenantID: req.ID().String(), TenantSlug: req.Slug(), TenantName: "Acme", Role: "member"},
+			{TenantID: other.ID().String(), TenantSlug: other.Slug(), TenantName: "Other", Role: "member"},
+		}
+		h.seedUser(t, "old@example.com")
+		// The older password session, opened while no rule applied (the
+		// one a stolen cookie or a shared machine would still hold).
+		old := h.login(t, "old@example.com")
+		if old.RefreshToken == "" {
+			t.Fatal("expected a plain session before the rule")
+		}
+		st := req.TypedSettings()
+		st.Security.MFARequired = true
+		_ = req.UpdateSettings(st)
+		return h, req, other, old
+	}
+	assertOldRefused := func(t *testing.T, h *mfaHarness, req, other *tenant.Tenant, old *auth.LoginResult) {
+		t.Helper()
+		if h.sessions.sessions[old.SessionID].IsActive() {
+			t.Error("the older session survived the enrollment")
+		}
+		if !h.revocations.has(old.SessionID) {
+			t.Error("the older session was not recorded for immediate access-token rejection")
+		}
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: old.RefreshToken, TenantID: req.ID().String()}); err == nil {
+			t.Error("the older session got a token for the 2FA-required organization")
+		}
+		// Not only the organization that required it: the session is gone.
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: old.RefreshToken, TenantID: other.ID().String()}); err == nil {
+			t.Error("the older session got a token for another organization")
+		}
+		if !h.audits.has(audit.ActionAuthMFAEnabled) {
+			t.Error("enabling was not audited")
+		}
+		if h.notifier.mfaEnabled != 1 {
+			t.Errorf("turning 2FA on sent %d notices, want exactly 1", h.notifier.mfaEnabled)
+		}
+		var ended bool
+		for _, l := range h.audits.logs {
+			if l.Action() == audit.ActionAuthMFAEnabled && l.Metadata()["other_sessions_ended"] == true {
+				ended = true
+			}
+		}
+		if !ended {
+			t.Error("the audit record does not say the other sessions were signed out")
+		}
+	}
+
+	t.Run("sign-in enrollment", func(t *testing.T) {
+		h, req, other, old := setup(t)
+		res := h.login(t, "old@example.com")
+		if res.MFAChallenge == nil || res.MFAChallenge.Purpose != mfa.PurposeEnroll {
+			t.Fatalf("expected an enrollment challenge, got %+v", res)
+		}
+		s, err := h.svc.BeginMFAEnrollmentFromChallenge(context.Background(), res.MFAChallenge.Token)
+		if err != nil {
+			t.Fatalf("BeginMFAEnrollmentFromChallenge: %v", err)
+		}
+		done, _, err := h.svc.CompleteMFAEnrollmentFromChallenge(context.Background(), auth.CompleteMFAEnrollmentInput{Token: res.MFAChallenge.Token, Code: currentCode(t, s.Secret)})
+		if err != nil {
+			t.Fatalf("CompleteMFAEnrollmentFromChallenge: %v", err)
+		}
+		assertOldRefused(t, h, req, other, old)
+		// The session the enrollment opened is the one that keeps working.
+		if !h.sessions.sessions[done.SessionID].IsActive() || h.revocations.has(done.SessionID) {
+			t.Fatal("the new session was revoked")
+		}
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: done.RefreshToken, TenantID: req.ID().String()}); err != nil {
+			t.Fatalf("the new session must pass the rule: %v", err)
+		}
+		// Replay: the challenge is spent.
+		h.forgetLastStep(h.sessions.sessions[done.SessionID].UserID())
+		if _, _, err := h.svc.CompleteMFAEnrollmentFromChallenge(context.Background(), auth.CompleteMFAEnrollmentInput{Token: res.MFAChallenge.Token, Code: currentCode(t, s.Secret)}); err == nil {
+			t.Fatal("a spent enrollment challenge was accepted again")
+		}
+	})
+
+	t.Run("enrollment from a fresh session (invitation)", func(t *testing.T) {
+		h, req, other, old := setup(t)
+		// A fresh session that predates the rule asks for the challenge in
+		// place (the invitation flow); it is replaced by the new session too.
+		st := req.TypedSettings()
+		st.Security.MFARequired = false
+		_ = req.UpdateSettings(st)
+		fresh := h.login(t, "old@example.com")
+		st.Security.MFARequired = true
+		_ = req.UpdateSettings(st)
+		info, err := h.svc.SessionMFAChallenge(context.Background(), fresh.RefreshToken, "", "")
+		if err != nil || info.Purpose != mfa.PurposeEnroll {
+			t.Fatalf("SessionMFAChallenge: %+v %v", info, err)
+		}
+		s, err := h.svc.BeginMFAEnrollmentFromChallenge(context.Background(), info.Token)
+		if err != nil {
+			t.Fatalf("BeginMFAEnrollmentFromChallenge: %v", err)
+		}
+		done, _, err := h.svc.CompleteMFAEnrollmentFromChallenge(context.Background(), auth.CompleteMFAEnrollmentInput{Token: info.Token, Code: currentCode(t, s.Secret)})
+		if err != nil {
+			t.Fatalf("CompleteMFAEnrollmentFromChallenge: %v", err)
+		}
+		assertOldRefused(t, h, req, other, old)
+		if h.sessions.sessions[fresh.SessionID].IsActive() {
+			t.Error("the session that asked for the challenge predates the factor and must be replaced")
+		}
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: done.RefreshToken, TenantID: req.ID().String()}); err != nil {
+			t.Fatalf("the new session must pass the rule: %v", err)
+		}
+	})
+
+	t.Run("another user's sessions are untouched", func(t *testing.T) {
+		h := newMFAHarness(t)
+		req := newPolicyTenant(t, h.tenants, "req-other-user", false)
+		pre := req.TypedSettings()
+		pre.Security.MFARequiredForAdmins = false
+		_ = req.UpdateSettings(pre)
+		h.tenants.userMemberships = []tenant.UserMembership{{TenantID: req.ID().String(), TenantSlug: req.Slug(), TenantName: "Acme", Role: "member"}}
+		h.seedUser(t, "enrolls@example.com")
+		h.seedUser(t, "bystander@example.com")
+		bystander := h.login(t, "bystander@example.com")
+		st := req.TypedSettings()
+		st.Security.MFARequired = true
+		_ = req.UpdateSettings(st)
+		res := h.login(t, "enrolls@example.com")
+		s, err := h.svc.BeginMFAEnrollmentFromChallenge(context.Background(), res.MFAChallenge.Token)
+		if err != nil {
+			t.Fatalf("BeginMFAEnrollmentFromChallenge: %v", err)
+		}
+		if _, _, err := h.svc.CompleteMFAEnrollmentFromChallenge(context.Background(), auth.CompleteMFAEnrollmentInput{Token: res.MFAChallenge.Token, Code: currentCode(t, s.Secret)}); err != nil {
+			t.Fatalf("CompleteMFAEnrollmentFromChallenge: %v", err)
+		}
+		if !h.sessions.sessions[bystander.SessionID].IsActive() || h.revocations.has(bystander.SessionID) {
+			t.Fatal("another user's session was revoked")
+		}
+	})
 }

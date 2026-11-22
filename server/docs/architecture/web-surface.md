@@ -108,10 +108,100 @@ origin with excluded paths is not read as "safe".
 | `GET /api/v1/web-endpoints/{id}/parameters` | `assets:read` | names, locations, risk hints; never a value |
 | `PATCH /api/v1/web-endpoints/{id}` | `assets:write` | `state` (active, ignored) and `labels`; audit-logged on the origin asset |
 | `GET /api/v1/assets/{id}/web-endpoints` | `assets:read` | one origin's endpoints; the `/assets/{id}` data-scope guard applies |
+| `GET /api/v1/assets/{id}/web-paths` | `assets:read` | one level of the origin's path tree (below); 404 for another tenant's asset and one outside the caller's data scope |
 
 The list compiles through `pkg/filterspec` with the caller as the actor, so
 the tenant predicate and the caller's data scope (on `origin_asset_id`) are
 always in the WHERE, for the list and the stats alike.
+
+## Path tree
+
+`GET /api/v1/assets/{id}/web-paths?path=` serves the console's Paths tab: the
+origin's endpoints folded by path segment, one level per request.
+
+- **Nodes.** `path` is a node: `/` or a path template without a trailing
+  slash. A node holds the endpoints of its own template and of every template
+  below it, so `/api/users` is both an endpoint and the parent of
+  `/api/users/{int}`. A variable segment (`{int}`, `{uuid}`, ...) is a node
+  marked `param`. A level lists at most 500 child nodes, sorted by name with
+  variable segments last (`folders_truncated` says when more exist).
+- **Counts per node:** endpoints, out-of-scope endpoints (under a path
+  exclusion: shown, never hidden), open findings and the worst severity among
+  them. `endpoints` is one page (`per_page` 0 to 100; 0 returns the nodes only)
+  of everything under `path`, or only the node's own template with `here`.
+  `totals.recorded` counts the origin's rows before any filter (0: never
+  crawled), `totals.hidden` what the filters hide, so nothing disappears
+  silently.
+- **Filters:** `hide_static` (style sheets, images, fonts, media and archives,
+  by content type or extension; scripts and source maps stay, they are attack
+  surface), `hide_4xx`, `with_findings`, `include_gone` (gone rows are hidden
+  by default), `scope=in|out`, `method` (comma list) and `q` (the template
+  contains it, any case). The query is strict: an unknown or repeated
+  parameter is 400.
+- **Findings per path.** The origin asset's open findings are grouped by
+  `location_key` and by the endpoint they are linked to
+  ([Findings on a path](#findings-on-a-path)). A finding **linked to an
+  endpoint** counts at that endpoint, its template **and method**: exact. A
+  finding with no link falls back to its key `url:<origin><path>` (ctis
+  `LocationKey`: scheme, host, port and escaped path, no query), templated with
+  the same `weburl` templating the endpoints use, so `/api/users/42` lands on
+  `/api/users/{int}`: exact on the path template, **method-blind**, so it
+  shows at every method of the template. A finding at a path no endpoint
+  records keeps a node of its own (`unrecorded_findings`; a scanner can hit a
+  path a crawl never listed). A finding with no URL, or with a URL of another
+  origin, counts as `origin_findings` at the root. A finding stored on another
+  asset (a host) is not part of this origin's tree. A node's own findings
+  (`findings=true`) carry the `method` of their endpoint when linked.
+- **Cost.** One request reads the origin's rows (at most 20,000, the active
+  cap with room for gone and ignored rows; `totals.capped` says when more
+  exist) on `idx_web_endpoints_origin` and the open findings on
+  `idx_findings_tenant_asset_status`, and builds the level in memory: about
+  5 ms for 20,000 rows. The response carries one level and one page, not the
+  endpoint list.
+- **Access.** `assets:read`; the service checks that the asset is a live asset
+  of the caller's tenant and in the caller's data scope (`AssertAssetRef`)
+  before any read, and answers 404 otherwise. Every statement carries the
+  tenant. Parameter values are never stored, so none can be returned.
+
+## Findings on a path
+
+A CTIS finding's `web` location (`url`, `method`, `endpoint_ref`, `parameter`,
+`status_code`) is kept in `finding_web_locations`, one row per finding
+(`tenant_id`, `finding_id`; row-level security like the finding):
+
+| Column | From | Notes |
+| --- | --- | --- |
+| `method` | `web.method` | an HTTP method; anything else is not stored |
+| `param_location`, `param_name` | `web.parameter` | the name only, cut at `=`, at most 128 characters; **never a value** |
+| `status_code` | `web.status_code` | 100 to 599 |
+| `endpoint_id` | `web.endpoint_ref`, else method and URL | the `web_endpoints` row the finding belongs to, `NULL` when none matches |
+
+The method and the parameter name already take part in the DAST identity, so
+storing them changes no fingerprint. Written by ingest after the findings and
+endpoints of the report are stored (step 7e of `ProcessBatch`, best effort: a
+failure is logged and never fails the ingest).
+
+**Linking.** `planEndpoints` remembers each report endpoint's `id`, its origin
+ref and its dedup key (`weburl.PathHash` of method and template). After
+`recordEndpoints` has persisted the origin assets, a finding's `endpoint_ref`
+resolves to *(origin asset id, key)*; the ids the report carries are never
+used. With no resolvable ref, the finding's method and the template of its URL
+name the key, on the origin this report stored for that URL's origin, else on
+the finding's own asset; an endpoint under method `ANY` matches when none
+exists for the method. The statement reads `web_endpoints` with the ingest's
+tenant id and a foreign key `(tenant_id, endpoint_id)` guards the row, so a ref
+or a key never links across tenants. A re-sighting keeps a stored method,
+parameter and link where the new report brings none; the status is the latest.
+
+**Path tree.** `OriginOpenFindings` joins the link and returns the endpoint's
+template and method with each group; the join also requires the endpoint's
+origin to be the finding's asset. Findings stored before this table existed
+have no row and keep the approximate mapping until their next sighting.
+
+**Importers.** Which tools fill `web.method` and `web.endpoint_ref` is a
+property of the producer (the sensor tool parsers, the CTIS importers); the
+platform stores whatever the report says. A producer that sends only a URL is
+still linked by method and template when it names the method.
 
 ## Sensitive paths, patterns, origins and the change feed
 

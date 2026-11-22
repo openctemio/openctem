@@ -11,6 +11,9 @@ var (
 	ErrComponentNotFound      = fmt.Errorf("component %w", shared.ErrNotFound)
 	ErrComponentAlreadyExists = fmt.Errorf("component %w", shared.ErrAlreadyExists)
 	ErrDependencyNotFound     = fmt.Errorf("dependency %w", shared.ErrNotFound)
+	// ErrQueryTimeout: a components list, facets or summary read ran past
+	// its statement timeout (503 QUERY_TIMEOUT; narrow the filter).
+	ErrQueryTimeout = fmt.Errorf("%w: the components query took too long", shared.ErrQueryTimeout)
 )
 
 // NotFoundError returns a not found error with the component ID.

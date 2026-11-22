@@ -287,7 +287,7 @@ Details: [api-keys.md](./api-keys.md).
 
 | Endpoint | Permission Required |
 |----------|---------------------|
-| `GET /api/v1/assets` | `assets:read` |
+| `GET /api/v1/assets` | `assets:read`; the open-findings numbers of each asset (list, detail, quick view), the `has_findings` and `finding_count` filters and the sort on the count follow the findings list's pentest member rule: a member counts a pentest finding only when on its campaign (no draft or in-review one for its client role), so neither the number, a filter nor the order reveals one; an administrator counts every finding |
 | `GET /api/v1/assets/{id}` | `assets:read` |
 | `POST /api/v1/assets` | `assets:write`. A name (or correlated address) that already exists in the organization is a 409 and changes nothing; `details.existing_asset_id` is set only when that asset is in the caller's data scope, otherwise the conflict is generic. Another organization's assets never match. Ingest keeps its own merge path. |
 | `PUT /api/v1/assets/{id}` | `assets:write`. Lowering exposure or criticality is decided under the organization's approval policy when it would drop an open P0/P1 finding on the asset (202, the lowered fields wait; [asset risk governance](asset-risk-governance.md)) |
@@ -364,6 +364,9 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/status` | `findings:bulk_update` **and** `findings:status` (the bulk permission widens the reach of a move; it does not replace the right to make it) |
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
+| `POST /api/v1/approvals/bulk/approve` and `/bulk/reject` (at most 100 requests and groups, and at most 1,000 findings counting those inside groups) | `findings:approve`; approve also step-up for the call. Each id goes through its single path (policy, four-eyes, step-up per tier, data scope per item); another organization's or an out-of-scope id is reported `skipped`/`not_found`; reject needs a reason |
+| `POST /api/v1/approvals/batches/{id}/self-approve` (sole member's own group exception) | `findings:approve`; the requester, the organization's only active person and an owner, no member removed in 7 days, a fresh authenticator code and a reason, every member in the caller's data scope; audited `finding_approval.batch_self_approved` (high) |
+| `POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject` (leave one member out) | `findings:approve`, every member in the caller's data scope, never the group's requester; audited `finding_approval.batch_member_rejected` |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
 | `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high; critical with metadata `loosened` when a lowering is scheduled), approvers told (owners and administrators included; title "Finding approvals lowered") |
 | `GET`/`PUT /api/v1/organization/settings/ai/auto-triage` | owner or administrator **and** `settings:read` / `settings:write`; the organization comes from the token, never the body. Turning automatic AI triage on, or adding a severity while on, needs a recent sign-in (service-level, `403 STEP_UP_REQUIRED`), is audited high and every owner and administrator is told; turning it off, fewer severities and the delay need no step-up |
@@ -869,7 +872,7 @@ caller); the CVE ids and the filter only narrow that set. Audited.
 | `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception` | `vulnerabilities:read` + `findings:read` + `findings:write`; at most 500 findings; decided by the organization's approval policy (one or two approvers) |
 | `POST /api/v1/vulnerability-exposures/retests` | `vulnerabilities:read` + `findings:read` + `findings:verify`; at most 50 findings per request, the per-finding cooldown and in-flight caps apply |
 | `GET /api/v1/vulnerability-exposures/export` | `vulnerabilities:read` + `findings:read` + `findings:export`; one export per user at a time, the findings export allowlist |
-| `POST /api/v1/views` with `page=vulnerabilities` | `findings:read` (route) + `vulnerabilities:read` (page); `share_with_org` needs `findings:views:share` (owner and administrator by default) |
+| `GET/POST /api/v1/views`, `GET/PUT/DELETE /api/v1/views/{id}` | Route: the read permission of at least one list that has views. Then the read permission of the list the view's page key names, from the page registry ([saved views](saved-views.md)): `vulnerabilities:read` for `page=vulnerabilities`, `scans:read` for `page=scans`, and so on. An unknown key is 400; without the permission a key is 403 and a view by id is 404. `share_with_org` needs `findings:views:share` (owner and administrator by default) |
 
 #### Dashboard (`/api/v1/dashboard`)
 
@@ -1212,10 +1215,10 @@ empty `owner_emails`. Every member-list view is audited
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
 | `GET /api/v1/admin/auth/idp` | public (enabled + display name of the platform IdP, nothing else) |
 | `POST /api/v1/admin/auth/idp/start`, `/idp/callback` | public (token-exchange rate limit, 20/min; state bound to the `admin_idp` cookie, single use) |
-| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited; `break_glass` audited high). Invitation by e-mail, no password returned; a new super admin also needs a second super admin's approval and, while approvals are on, working platform e-mail |
-| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** (audited; not self) |
-| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited; not the break-glass account itself) |
-| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high) |
+| `POST /api/v1/admin/administrators` | **super_admin** + **step-up** (audited with the optional reason; `break_glass` audited high). Invitation by e-mail, no password returned; a new super admin also needs a second super admin's approval and, while approvals are on, working platform e-mail |
+| `POST /api/v1/admin/users/{id}/reset-credentials` | **super_admin** + **step-up** + a second super admin's approval (audited with the optional reason; not self) |
+| `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** + **step-up** (audited with the optional reason; not the break-glass account itself) |
+| `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** + **step-up** (audited high with the optional reason) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin**; writes + a **fresh** authenticator code (never the step-up window); switching it off, no longer requiring it, a new issuer or client, or a newly trusted ACR/AMR value also need a second super admin; audited **critical** with the previous configuration; secret never returned |
 | `GET /api/v1/admin/access-requests` | any admin; a **read-only** administrator gets each requester's address masked (`j***@example.com`) and no note, `redacted: true` |
 | `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner and takes **step-up** |
@@ -1234,7 +1237,7 @@ empty `owner_emails`. Every member-list view is audited
 | `PUT /api/v1/admin/settings/signup-alerts` | **super_admin** + reason + a fresh authenticator code; optimistic version (409); audited **critical**; administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
-| `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
+| `PATCH /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited with the optional reason; making or unmaking an active super admin needs a second super admin's approval) |
 | `DELETE /api/v1/admin/users/{id}` | **super_admin** + **step-up** (audited) |
 | `GET /api/v1/admin/audit-logs` (+ `/stats`, `/{id}`) | any admin (readonly ok); the network address, user agent and request body of a row only for **ops_admin+** (by the administrator's own role), a read-only administrator reads action, actor, time and result |
 | `GET /api/v1/admin/audit-logs/chain` | any admin (readonly ok); the administrators' audit chain state: row positions and ids that do not verify, no row content |
@@ -1493,7 +1496,14 @@ Inside the pentest module, campaign membership decides who sees a campaign
 `/pentest/campaigns/{id}/*` route first finds the campaign in the caller's
 organization: another organization's campaign, an unknown id or a malformed
 id answers 404 for everyone, organization owners and admins included, never
-an empty list or zero counts. Each member has one role:
+an empty list or zero counts. Each member has one role. The team is the
+people added by name plus the current members of user groups added to the
+campaign (a group holds any role but lead); a person on the team more than
+once gets the highest role, and every reader resolves the team through the
+`pentest_campaign_access` view
+([pentest-campaign-team.md](pentest-campaign-team.md)). Adding, changing or
+removing a group needs what adding a person needs (`pentest:campaigns:write`
+and the lead role):
 
 | Role | Reads | Writes |
 |---|---|---|

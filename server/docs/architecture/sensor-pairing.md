@@ -383,9 +383,16 @@ the same ranges (Kubernetes reads the policy file). A pin is refused with
 validation is `sensorapp.InstallIntent.Apply`; nothing is rendered for a
 refused intent. Shared and platform sensors never install from this route.
 
-A start with a code uses it as the request's own code (attached, or a
-tenantless request under the same code when nothing expects it), and every
-start without a token answers a `user_code` and, when `APP_URL` is set, the
+A start with a code attaches to the open expectation of the organization
+that made the code (one compare-and-set on the row: open, unexpired, no other
+key). Any other code (expired, used, cancelled, held by another sensor, or
+never made) is never used: the request opens bound to no organization under
+a new code that the sensor prints with its link, the old code finds nothing
+in any organization, and the organization that made the code gets
+`sensor.pairing_code_refused` (medium) with the key fingerprint and source
+address. Install snippets keep their code after it is spent, so a code that
+outlived its expectation must never become a code any organization can look
+up. Every start without a token answers a `user_code` and, when `APP_URL` is set, the
 links `verification_uri` and `verification_uri_complete`
 (`<APP_URL>/activate?code=…`). The web page `/activate`
 (`features/sensors/components/activate-sensor.tsx`, `sensors:pair`) reads

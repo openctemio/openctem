@@ -51,8 +51,8 @@ type ListAssetsFilter struct {
 
 // AssetService defines the interface for asset operations.
 // Implementations:
-//   - OSS: internal/app/asset.AssetService (direct)
-//   - Enterprise: enterprise/app.AssetServiceWithRBAC (wrapped)
+//   - core: internal/app/asset.AssetService (direct)
+//   - a custom build may wrap it
 type AssetService interface {
 	// Create creates a new asset.
 	Create(ctx context.Context, input CreateAssetInput) (*asset.Asset, error)

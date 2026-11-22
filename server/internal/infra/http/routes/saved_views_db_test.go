@@ -10,6 +10,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -157,7 +158,7 @@ func TestSavedViews_VisibilityOwnershipAndRunAsViewer(t *testing.T) {
 	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "bad", "query": "severity=urgent"}); status != http.StatusBadRequest || !strings.Contains(raw, "INVALID_FILTER") {
 		t.Errorf("invalid filter saved: %d %s", status, raw)
 	}
-	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "assets", "name": "x"}); status != http.StatusNotFound {
+	if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "no-such-page", "name": "x"}); status != http.StatusBadRequest {
 		t.Errorf("unknown page: %d %s", status, raw)
 	}
 	h.exec(`UPDATE saved_views SET filter = '{"filter":{"field":"retired_field","op":"in","value":["x"]}}' WHERE id = $1`, personal.ID)
@@ -202,4 +203,74 @@ func runView(t *testing.T, h *gsHarness, id string) (string, int) {
 	t.Helper()
 	status, _, body := h.listFindingsPath(t, flCaller{"memberA", h.memberA, false}, "/api/v1/findings?view="+id)
 	return body, status
+}
+
+// The search field's mode rides beside the filter as a page param: stored,
+// returned, kept by a duplicate and an update, re-validated on every run;
+// any other value or too many params are refused.
+func TestSavedViews_SearchModePageParam(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	mode := func(raw string) string {
+		var v struct {
+			PageParams map[string]string `json:"page_params"`
+		}
+		_ = json.Unmarshal([]byte(raw), &v)
+		return v.PageParams["mode"]
+	}
+	doc := map[string]any{"v": 1, "filter": map[string]any{"source": []string{"sast"}}}
+
+	status, v, raw := h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "Query view",
+		"filter": doc, "page_params": map[string]string{"mode": "query"}})
+	if status != http.StatusCreated || mode(raw) != "query" {
+		t.Fatalf("create with a document and mode: %d %s", status, raw)
+	}
+	status, _, raw = h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "Basic view",
+		"query": "source=sast", "page_params": map[string]string{"mode": "basic"}})
+	if status != http.StatusCreated || mode(raw) != "basic" {
+		t.Errorf("create with a query and mode: %d %s", status, raw)
+	}
+	// A query that carries the mode itself (an older page) keeps it as a page param, not a filter.
+	status, _, raw = h.createView(t, h.memberA, map[string]any{"page": "findings", "name": "Old link",
+		"query": "source=sast&mode=query"})
+	if status != http.StatusCreated || mode(raw) != "query" {
+		t.Errorf("create with mode in the query: %d %s", status, raw)
+	}
+
+	for name, params := range map[string]map[string]string{
+		"unknown mode": {"mode": "<script>"},
+		"too many":     manyParams(savedviewapp.MaxPageParams + 1),
+	} {
+		if status, _, raw := h.createView(t, h.memberA, map[string]any{"page": "findings", "name": name,
+			"query": "source=sast", "page_params": params}); status != http.StatusBadRequest {
+			t.Errorf("%s accepted: %d %s", name, status, raw)
+		}
+	}
+
+	// It runs (the stored mode is re-validated), an update switches it, a duplicate keeps it.
+	if _, status := runView(t, h, v.ID); status != http.StatusOK {
+		t.Errorf("a view with a mode did not run: %d", status)
+	}
+	status, raw = h.do(h.memberA, false, http.MethodPut, "/api/v1/views/"+v.ID, map[string]any{"name": "Query view",
+		"filter": doc, "page_params": map[string]string{"mode": "basic"}})
+	if status != http.StatusOK || mode(raw) != "basic" {
+		t.Errorf("update the mode: %d %s", status, raw)
+	}
+	h.do(h.memberA, false, http.MethodPut, "/api/v1/views/"+v.ID, map[string]any{"name": "Query view",
+		"filter": doc, "page_params": map[string]string{"mode": "query"}})
+	status, raw = h.do(h.memberA, false, http.MethodPost, "/api/v1/views", map[string]any{"from_view_id": v.ID})
+	if status != http.StatusCreated || mode(raw) != "query" {
+		t.Errorf("duplicate dropped the mode: %d %s", status, raw)
+	}
+	// Another user of the tenant who cannot see the view learns nothing of it.
+	if status, raw := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/views/"+v.ID, nil); status != http.StatusNotFound || strings.Contains(raw, "mode") {
+		t.Errorf("another user read the view: %d %s", status, raw)
+	}
+}
+
+func manyParams(n int) map[string]string {
+	out := map[string]string{"mode": "query"}
+	for i := 0; len(out) < n; i++ {
+		out[fmt.Sprintf("p%d", i)] = "x"
+	}
+	return out
 }

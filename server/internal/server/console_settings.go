@@ -97,11 +97,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h := handler.NewAdminPlatformSettingsHandler(repos.Admin, log).WithApprovals(approvals)
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
-	h.ThreatSource = svc.ThreatSource
 	h.ScanIdentity = svc.ScanIdentity
-	if svc.ThreatIntel != nil {
-		h.ThreatReadiness = svc.ThreatIntel
-	}
 	h.MFA = svc.PlatformMFA
 	h.SocialLogin = svc.PlatformSocialLogin
 	if svc.Signup != nil {
@@ -110,6 +106,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.EmailRelay = svc.OrgRelay
 	h.LeakedSecretStorage = svc.LeakedSecretPolicy
 	h.ScopeNames = svc.ScopeNames
+	h.PrivateDestinations = svc.PrivateDestinations
 	return h
 }
 

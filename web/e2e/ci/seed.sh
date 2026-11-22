@@ -36,8 +36,18 @@ call() {
     -H 'Content-Type: application/json')
   [[ -n "${ACCESS_TOKEN:-}" ]] && args+=(-H "Authorization: Bearer $ACCESS_TOKEN")
   [[ -n "$csrf" ]] && args+=(-H "X-CSRF-Token: $csrf")
+  # A distinct client address (the stack trusts its own networks as
+  # proxies), so a step does not share the per-address limits of the others.
+  [[ -n "${XFF:-}" ]] && args+=(-H "X-Forwarded-For: $XFF")
   [[ -n "$data" ]] && args+=(-d "$data")
   code=$(curl "${args[@]}")
+  # Sign-in routes allow a few calls a minute per address: wait and retry.
+  local tries=0
+  while [[ "$code" == 429 && $tries -lt 8 ]]; do
+    tries=$((tries + 1))
+    sleep 10
+    code=$(curl "${args[@]}")
+  done
   BODY=$(cat "$WORK/body")
   if [[ ! "$code" =~ ^2 ]]; then
     log "$method $path -> $code: $(head -c 300 <<<"$BODY")"
@@ -332,6 +342,12 @@ INVITEE_NEW_EMAIL="e2e-invitee-new-$RUN@openctem-test.local"
 INVITEE_NEW_PASSWORD="$(openssl rand -hex 10)N$(openssl rand -hex 3)"
 call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_NEW_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
 INVITEE_NEW_TOKEN=$(jq -r .token <<<"$BODY")
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  # 66-first-sign-in: a pending invitation into organization B for an address
+  # that signs in with Google for the first time (closed sign-up admits it).
+  SOCIAL_INVITED_EMAIL="e2e-social-invited-$RUN@openctem-test.local"
+  call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$SOCIAL_INVITED_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+fi
 call POST /api/v1/auth/logout '{}'
 
 log "invitees (E2E_INVITEE_*)"
@@ -362,6 +378,88 @@ call POST /api/v1/auth/reset-password "{\"token\":\"$INVITEE_SET_TOKEN\",\"new_p
 JAR="$WORK/invitee-new-cookies"
 call POST /api/v1/auth/register "{\"email\":\"$INVITEE_NEW_EMAIL\",\"password\":\"$INVITEE_NEW_PASSWORD\",\"name\":\"E2E Invitee\",\"invitation_token\":\"$INVITEE_NEW_TOKEN\"}"
 
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  log "an organization that requires two-factor authentication (E2E_MFA_ORG*)"
+  # 66-first-sign-in: invitations into it for a first Google sign-in and for a
+  # new password account; the requirement is turned on after the owner has
+  # sent them (an owner without 2FA could not open it afterwards).
+  MFA_OWNER_EMAIL="e2e-2fa-owner-$RUN@openctem-test.local"
+  MFA_OWNER_PASSWORD="$(openssl rand -hex 10)M$(openssl rand -hex 3)"
+  out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+    --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+    -print-secrets \
+    -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+    -org-name="E2E 2FA $RUN" -org-slug="$SLUG-2fa" -org-owner-email="$MFA_OWNER_EMAIL" 2>&1) || {
+    log "bootstrap-admin (2fa) failed:"
+    echo "$out" >&2
+    exit 1
+  }
+  MFA_SET_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+  [[ -n "$MFA_SET_TOKEN" ]] || { log "no set-password link for $MFA_OWNER_EMAIL"; exit 1; }
+  docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG-2fa" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+  ACCESS_TOKEN=
+  JAR="$WORK/mfa-owner-cookies"
+  call POST /api/v1/auth/reset-password "{\"token\":\"$MFA_SET_TOKEN\",\"new_password\":\"$MFA_OWNER_PASSWORD\"}"
+  call POST /api/v1/auth/login "{\"email\":\"$MFA_OWNER_EMAIL\",\"password\":\"$MFA_OWNER_PASSWORD\"}"
+  MFA_TENANT_ID=$(jq -r --arg s "$SLUG-2fa" '(.tenants // [])[] | select(.slug==$s) | .id' <<<"$BODY")
+  call POST /api/v1/auth/token "{\"tenant_id\":\"$MFA_TENANT_ID\"}"
+  ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+  call GET /api/v1/roles
+  MFA_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "member")][0].id' <<<"$BODY")
+  SOCIAL_MFA_EMAIL="e2e-social-2fa-$RUN@openctem-test.local"
+  call POST "/api/v1/tenants/$SLUG-2fa/invitations" "{\"email\":\"$SOCIAL_MFA_EMAIL\",\"role_ids\":[\"$MFA_ROLE_ID\"]}"
+  PASSWORD_MFA_EMAIL="e2e-password-2fa-$RUN@openctem-test.local"
+  PASSWORD_MFA_PASSWORD="$(openssl rand -hex 10)P$(openssl rand -hex 3)"
+  call POST "/api/v1/tenants/$SLUG-2fa/invitations" "{\"email\":\"$PASSWORD_MFA_EMAIL\",\"role_ids\":[\"$MFA_ROLE_ID\"]}"
+  PASSWORD_MFA_TOKEN=$(jq -r .token <<<"$BODY")
+  call POST /api/v1/auth/logout '{}'
+  ACCESS_TOKEN=
+  JAR="$WORK/password-2fa-cookies"
+  call POST /api/v1/auth/register "{\"email\":\"$PASSWORD_MFA_EMAIL\",\"password\":\"$PASSWORD_MFA_PASSWORD\",\"name\":\"E2E Password 2FA\",\"invitation_token\":\"$PASSWORD_MFA_TOKEN\"}"
+  docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG-2fa" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required": true}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+fi
+log "sign-in journeys organization (E2E_JOURNEY_*)"
+# 58-sign-in-journeys: one organization whose rules the spec switches per
+# journey (open, two-factor required, identity provider required). Its owner
+# signs in with a password; the spec seeds people and their sessions itself.
+JOURNEY_SLUG="$SLUG-journeys"
+JOURNEY_OWNER_EMAIL="e2e-journeys-owner-$RUN@openctem-test.local"
+out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+  --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+  -print-secrets \
+  -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+  -org-name="E2E Journeys $RUN" -org-slug="$JOURNEY_SLUG" -org-owner-email="$JOURNEY_OWNER_EMAIL" 2>&1) || {
+  log "bootstrap-admin (journeys) failed:"
+  echo "$out" >&2
+  exit 1
+}
+JOURNEY_SET_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+[[ -n "$JOURNEY_SET_TOKEN" ]] || { log "no set-password link for $JOURNEY_OWNER_EMAIL:"; echo "$out" >&2; exit 1; }
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$JOURNEY_SLUG" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+ACCESS_TOKEN=
+JAR="$WORK/journeys-cookies"
+XFF=198.18.250.1
+call POST /api/v1/auth/reset-password "{\"token\":\"$JOURNEY_SET_TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
+XFF=
+
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
@@ -381,3 +479,17 @@ echo "E2E_INVITEE_HOME_ORG=E2E Invitee Home $RUN"
 echo "E2E_INVITEE_NEW_EMAIL=$INVITEE_NEW_EMAIL"
 echo "E2E_INVITEE_NEW_PASSWORD=$INVITEE_NEW_PASSWORD"
 echo "E2E_INVITEE_NEW_TOKEN=$INVITEE_NEW_TOKEN"
+if [[ -n "${E2E_FAKE_GOOGLE:-}" ]]; then
+  echo "E2E_FAKE_GOOGLE=1"
+  echo "E2E_SOCIAL_NEW_EMAIL=e2e-social-new-$RUN@openctem-test.local"
+  echo "E2E_SOCIAL_INVITED_EMAIL=$SOCIAL_INVITED_EMAIL"
+  echo "E2E_SOCIAL_MFA_EMAIL=$SOCIAL_MFA_EMAIL"
+  echo "E2E_PASSWORD_MFA_EMAIL=$PASSWORD_MFA_EMAIL"
+  echo "E2E_PASSWORD_MFA_PASSWORD=$PASSWORD_MFA_PASSWORD"
+  echo "E2E_MFA_ORG=E2E 2FA $RUN"
+  echo "E2E_MFA_ORG_SLUG=$SLUG-2fa"
+fi
+echo "E2E_JOURNEY_SLUG=$JOURNEY_SLUG"
+echo "E2E_JOURNEY_OWNER_EMAIL=$JOURNEY_OWNER_EMAIL"
+echo "E2E_JOURNEY_OWNER_PASSWORD=$OWNER_PASSWORD"
+echo "E2E_JOURNEY_NETWORK=$NETWORK"

@@ -154,7 +154,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 		t.Fatalf("baseline alert: %v %v", alertA, err)
 	}
 	if alertA.Level != threatalert.LevelImmediate || alertA.Tier != threatalert.TierConfirmed || !alertA.Baseline ||
-		alertA.Confirmed != 2 || alertA.InternetFacing != 1 || alertA.ETS < 90 {
+		alertA.Confirmed != 1 || alertA.Likely != 1 || alertA.InternetFacing != 1 || alertA.ETS < 90 {
 		t.Fatalf("baseline alert = %+v", alertA)
 	}
 	if st, _ := repo.TenantState(ctx, A); st.BaselineAt == nil || st.LastDigestOn == "" {
@@ -274,7 +274,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 		user.String(), A.String(), a2.String())
 	scope := &shared.DataScope{TenantID: A, UserID: user}
 	items, total, sum, err := svc.List(ctx, A, scope, threatalert.ListFilter{Page: 1, PerPage: 50})
-	if err != nil || total != 1 || items[0].VulnID != "CVE-2098-0001" || items[0].Confirmed != 1 || items[0].InternetFacing != 0 || sum.InternetFacing != 0 {
+	if err != nil || total != 1 || items[0].VulnID != "CVE-2098-0001" || items[0].Confirmed != 0 || items[0].Likely != 1 || items[0].InternetFacing != 0 || sum.InternetFacing != 0 {
 		t.Fatalf("scoped list: %d %+v %+v %v", total, items, sum, err)
 	}
 	// The crown jewel (a1, critical) is outside the member's scope: they see
@@ -311,7 +311,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 		}
 	}
 	d, err := svc.Get(ctx, A, scope, alertA.ID)
-	if err != nil || len(d.Assets) != 1 || d.Assets[0].AssetID != a2 || d.AllInScope {
+	if err != nil || len(d.Assets) != 1 || d.Assets[0].AssetID != a2 || d.Assets[0].TenantID != A || d.AllInScope {
 		t.Fatalf("scoped detail: %+v %v", d, err)
 	}
 	if _, err := svc.ChangeState(ctx, A, scope, alertA.ID, threatalertapp.StateChange{State: threatalert.StateNotAffected, Reason: threatalert.ReasonWrongProduct, Actor: user}, auditapp.AuditContext{}); !errors.Is(err, threatalert.ErrOutOfScope) {
@@ -409,7 +409,7 @@ func TestThreatAlerts_DB(t *testing.T) {
 	for _, it := range dg.Top {
 		if it.VulnID == "CVE-2098-0001" {
 			found = true
-			if it.Confirmed != 1 || it.InternetFacing != 0 {
+			if it.Confirmed != 0 || it.Likely != 1 || it.InternetFacing != 0 {
 				t.Fatalf("scoped digest counts assets out of scope: %+v", it)
 			}
 		}

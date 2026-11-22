@@ -114,6 +114,9 @@ type FPPolicyDecision struct {
 	PendingAt    *time.Time
 	// SecondLookPercent is the organization's second-look share.
 	SecondLookPercent int
+	// SecondLookRaised, when set, is set to true once a second look was
+	// raised for the decision (a bulk uses it to guarantee at least one).
+	SecondLookRaised *bool
 }
 
 // FalsePositivePolicy answers how a false positive on the finding would be
@@ -167,7 +170,9 @@ func (s *VulnerabilityService) falsePositivePolicy(ctx context.Context, tid, fid
 // at once: the request row (approved, single_person), the finding's status
 // (and acceptance end) and the timeline entry in one transaction; then, for
 // a false positive and by the organization's share, a second-look flag.
-func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnerability.Approval, d FPPolicyDecision) (*vulnerability.Approval, error) {
+// extras are added to the timeline entry's changes (a bulk dismiss adds its
+// bulk_id); they never replace the decision's own keys.
+func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnerability.Approval, d FPPolicyDecision, extras ...map[string]any) (*vulnerability.Approval, error) {
 	store, ok := s.approvalRepo.(singlePersonStore)
 	if !ok {
 		return nil, fmt.Errorf("%w: single-person decisions are not available", shared.ErrNotImplemented)
@@ -191,6 +196,13 @@ func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnera
 	} else {
 		changes["fp_approval"] = d.Level
 	}
+	for _, extra := range extras {
+		for k, v := range extra {
+			if _, own := changes[k]; !own {
+				changes[k] = v
+			}
+		}
+	}
 	entry, err := vulnerability.NewFindingActivity(a.TenantID, a.FindingID, vulnerability.ActivityApprovalApproved,
 		&by, vulnerability.ActorTypeUser, changes, vulnerability.SourceAPI, nil)
 	if err != nil {
@@ -204,6 +216,8 @@ func (s *VulnerabilityService) applySinglePerson(ctx context.Context, a *vulnera
 			if _, err := raiser.RaiseDecisionReview(ctx, a.TenantID, a.FindingID, DecisionReviewSecondLook,
 				map[string]any{"approval_id": a.ID.String(), "second_look_percent": d.SecondLookPercent}); err != nil {
 				s.logger.Warn("second look: raise review", "error", logger.SanitizeError(err))
+			} else if d.SecondLookRaised != nil {
+				*d.SecondLookRaised = true
 			}
 		}
 	}

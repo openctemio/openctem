@@ -30,16 +30,39 @@ const (
 // before their own escaping.
 func chatValue(s string) string { return safetext.Defang(s) }
 
-// telegramCard renders card as Telegram HTML text.
+// telegramMaxText is Telegram's limit on one message's text, counted in
+// characters after entity parsing; the rendered HTML is kept under it
+// (markup included), so the limit holds whatever the parser counts.
+const telegramMaxText = 4096
+
+// telegramCard renders card as Telegram HTML text, at most telegramMaxText
+// characters: lines that do not fit are left out whole (never cut inside a
+// tag or an escape) and an ellipsis line says so.
 func telegramCard(card notifymsg.Card) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s <b>%s</b>", GetSeverityEmoji(card.Severity), telegramText(card.Headline))
+	fmt.Fprintf(&b, "%s <b>%s</b>", GetSeverityEmoji(card.Severity), telegramText(safetext.Truncate(card.Headline, 200)))
+	const ellipsis = "\n…"
+	budget := telegramMaxText - len([]rune(ellipsis))
+	used := len([]rune(b.String()))
 	for _, l := range card.Lines() {
-		b.WriteByte('\n')
-		if l.Label != "" {
-			fmt.Fprintf(&b, "<b>%s:</b> ", telegramText(l.Label))
+		var line strings.Builder
+		line.WriteByte('\n')
+		switch {
+		case l.Label != "":
+			fmt.Fprintf(&line, "<b>%s:</b> ", telegramText(l.Label))
+			line.WriteString(telegramText(l.Value))
+		case l.Key == notifymsg.LineSection:
+			fmt.Fprintf(&line, "<b>%s</b>", telegramText(l.Value))
+		default:
+			line.WriteString(telegramText(l.Value))
 		}
-		b.WriteString(telegramText(l.Value))
+		n := len([]rune(line.String()))
+		if used+n > budget {
+			b.WriteString(ellipsis)
+			break
+		}
+		b.WriteString(line.String())
+		used += n
 	}
 	return b.String()
 }
@@ -63,8 +86,11 @@ func slackCardBlocks(card notifymsg.Card) []slackBlock {
 			continue
 		}
 		v := slackEscape(chatValue(l.Value))
-		if l.Label != "" {
+		switch {
+		case l.Label != "":
 			v = "*" + slackEscape(l.Label) + ":* " + v
+		case l.Key == notifymsg.LineSection:
+			v = "*" + v + "*"
 		}
 		lines = append(lines, v)
 	}
@@ -106,7 +132,11 @@ func teamsCardBody(card notifymsg.Card, style string) []teamsBody {
 	var texts []teamsBody
 	for _, l := range lines {
 		if l.Label == "" {
-			texts = append(texts, teamsBody{Type: teamsTextBlock, Text: teamsEscape(chatValue(l.Value)), Wrap: true})
+			tb := teamsBody{Type: teamsTextBlock, Text: teamsEscape(chatValue(l.Value)), Wrap: true}
+			if l.Key == notifymsg.LineSection {
+				tb.Weight = "Bolder"
+			}
+			texts = append(texts, tb)
 			continue
 		}
 		facts = append(facts, teamsFact{Title: teamsEscape(l.Label), Value: teamsEscape(chatValue(l.Value))})
@@ -133,9 +163,16 @@ type cardNotification struct {
 	NextStep     string            `json:"next_step,omitempty"`
 	Description  string            `json:"description,omitempty"`
 	Items        []string          `json:"items,omitempty"`
+	Sections     []cardSection     `json:"sections,omitempty"`
 	More         int               `json:"more,omitempty"`
 	Text         string            `json:"text"`
 	Action       *cardNotifyAction `json:"action,omitempty"`
+}
+
+// cardSection is one asset of a grouped message and its listed objects.
+type cardSection struct {
+	Title string   `json:"title"`
+	Items []string `json:"items"`
 }
 
 type cardSubject struct {
@@ -169,6 +206,9 @@ func newCardNotification(card *notifymsg.Card) *cardNotification {
 		Items:        card.Items,
 		More:         card.More,
 		Text:         card.Text(),
+	}
+	for _, sec := range card.Sections {
+		n.Sections = append(n.Sections, cardSection{Title: sec.Title, Items: sec.Items})
 	}
 	if card.Subject.Name != "" {
 		n.Subject = &cardSubject{Name: card.Subject.Name, Type: card.Subject.Type}

@@ -19,6 +19,7 @@ import { PlatformAnnouncementBanner } from '@/features/announcements/components/
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
 import { LazyAccountShell, LazyPendingLinkPrompt } from '@/components/layout/lazy-shell-branches'
 import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
+import { FeedFreshnessBanner } from '@/features/threat-intel/components/feed-freshness-banner'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 import { OwnershipInvitationBanner } from '@/features/account/components/ownership-invitation-banner'
 import { env } from '@/lib/env'
@@ -74,6 +75,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                     <ShellBannerSlot>
                       {/* The platform operator's notices (maintenance, warnings). */}
                       <PlatformAnnouncementBanner />
+                      {/* The platform's vulnerability data is out of date: every user is told. */}
+                      <FeedFreshnessBanner />
                       {/* Platform support can read this organization's data now (RFC-063). */}
                       <SupportAccessBanner />
                       {/* An organization created for this account waits for it to accept ownership. */}

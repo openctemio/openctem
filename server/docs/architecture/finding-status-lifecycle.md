@@ -442,7 +442,7 @@ The engine decides:
 | Target | Rule | Mode | Needs |
 |---|---|---|---|
 | any | an edge of `ValidStatusTransitions`; a pentest finding belongs to the pentest module | | |
-| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, note (and the acceptance end) |
+| `false_positive`, `accepted` | `findings:write`; four-eyes approval | `request` | `closure_reason`, a note unless decided alone on a finding that is not serious (see "When a note is required"), and the acceptance end |
 | `duplicate` | `findings:triage`; the canonical picker (`/duplicates`, `CheckMarkDuplicate`; never carries a decision across findings) | `duplicate_picker` | `duplicate_of` |
 | `resolved` | `findings:verify`, from every status | `direct` | a note unless the checklist is complete |
 | `fix_applied` | `findings:fix_apply`, a person, whose finding it is (assignee, assigned group, asset owner) | `direct` | a note |
@@ -704,6 +704,63 @@ instead).
   (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
+- **Sole member, group exception.** The same owner may approve their own
+  pending group exception in one call
+  (`POST /api/v1/approvals/batches/{id}/self-approve`, `findings:approve`,
+  body `{code, reason}`; `SelfApproveSoloBatch`) under the same rules: the
+  requester, the only active person and an owner, no member removed or
+  demoted in the last 7 days, not an AI application's request, the group
+  pending and not overdue, every member in the caller's data scope, a reason
+  and one fresh authenticator code. An accepted-risk group follows the risk
+  acceptance level as above, and each member's end is cut to its own
+  `SoloAcceptanceLimit`. Every pending member is applied in one transaction,
+  each marked `self_approved` with its own timeline entry (`batch_id`); the
+  audit row is `finding_approval.batch_self_approved` (high), the channels get
+  a security alert and the backup contact an email with the number of
+  findings and the group's source label (never the note). A single member of a
+  group is still never self-approved alone (409 `BATCH_MEMBER`). The list and
+  the read of groups carry `self_approval_available` for the requester.
+- **What the card shows.** `policy_reasons` and `eligible_approver_count` are
+  visible to anyone who can read the finding (in their organization and data
+  scope), for example that the requester owns the asset.
+- **Deciding many at once.** In Findings > Approvals an approver selects
+  requests and groups: `POST /api/v1/approvals/bulk/approve` (body
+  `{approval_ids, batch_ids}`, together at most 100 and, for approve, at most
+  1,000 findings counting those inside groups; `findings:approve` and one
+  step-up for the call) and `POST /api/v1/approvals/bulk/reject` (same ids and
+  a `reason`, required, at most 2000 characters; `findings:approve`). Each id
+  goes through its single path (`ApproveStatus` / `ApproveGroupException`,
+  `RejectApproval` / `RejectGroupException`), so the policy, four-eyes,
+  eligibility, step-up per tier and data scope are judged per item exactly as
+  for one call, and each decided item gets the audit row of its single call
+  (metadata `bulk: true`). The answer lists every id with an `outcome`
+  (`approved`, `signed`, `rejected`, `skipped`, `failed`) and a stable `code`
+  (`not_found`, `not_pending`, `batch_member`, `own_request`, `overdue`,
+  `approver_not_eligible`, `no_eligible_approver`, `step_up_required`,
+  `forbidden`, `cannot_decide`, `error`), plus counts. An item that fails never
+  stops the rest. An id of another organization or outside the caller's data
+  scope is `skipped`/`not_found`, exactly like a missing one. A decided item
+  answers `skipped`/`not_pending`, so a replay is safe by state and no
+  idempotency record is kept (`internal/app/finding/approval_bulk.go`).
+- **Leaving one member out.** An approver rejects one pending member of a
+  group with a reason
+  (`POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject`,
+  `findings:approve`, body `{reason}`; `LeaveOutGroupMember`) while the rest
+  stays pending and is decided later as usual. Every member must be in the
+  caller's data scope, as for rejecting the whole group; the group's
+  requester is refused (they cancel the group instead). The member request
+  becomes `rejected` with the reason, its finding gets a timeline entry
+  (`left_out`, `batch_id`), the requester is told, and the audit row is
+  `finding_approval.batch_member_rejected`. `member_count` keeps the number
+  the group was asked for; the read of the group shows each member's status.
+  When no pending member is left the group closes as `rejected`.
+- **Why a request waits.** Every request row (`GET /api/v1/findings/{id}/approvals`,
+  `GET /api/v1/approvals`) carries `policy_reasons` (the stable reason codes of
+  the evaluation stored on the request, for example `fp_level`; empty when
+  none), `eligible_approver_count` (how many people could sign it off when it
+  was made; null on a request made before the count was kept) and
+  `self_approval_available` (a pending request the caller made, not part of a
+  group, while the caller is the organization's sole member and owner).
 
 - **Daily digest.** The hourly `approval-digest` controller sends each
   approver, at most once per 23 hours and organization
@@ -835,10 +892,30 @@ facts with the finding locked), audited `finding_approval.single_person_decided`
 A member without `findings:approve` still files a pending request, and so does
 a delegated credential (an API key or an MCP access token) whatever its
 permissions: the one person who decides is a person in their own session. Only a
-person's own request on one finding decides alone: suppression rules, group
-exceptions on remediation tasks, bulk status moves, imports and requests made
-by automation (AI triage, VEX, ticket integrations) keep a second person
-whatever the level. An organization cell above the platform default still
+person's own request on one finding, or each finding of that person's bulk
+dismiss (`POST /findings/bulk-dismissals`, evaluated finding by finding exactly
+like that request; [findings-bulk-by-filter.md](findings-bulk-by-filter.md#bulk-dismiss)),
+decides alone: suppression rules, group exceptions on remediation tasks, bulk
+status moves, imports and requests made by automation (AI triage, VEX, ticket
+integrations) keep a second person whatever the level.
+
+#### When a note is required
+
+The reason code (`closure_reason`) is always required. The free-text note
+(`justification` on a request, `note` on a bulk dismiss) is **optional only
+when the requester decides alone** (the decision is applied at once, never an
+automation's request) **on a finding that is not serious**; "serious" is the
+classifier of the `high_and_above` level (`approvalpolicy.MaterialForFalsePositive`:
+critical or high, KEV, P0/P1, EPSS at or above the threshold, a validated
+exploit, a crown-jewel or internet-exposed asset). Whenever a second person
+approves (every pending request and every group exception) or the finding is
+serious, the note is required with the tier's minimum length (1, or 20 for the
+`security` and `dual` tiers). One helper decides it (`noteRequired`,
+`internal/app/finding/approval_note.go`). A request that raced with a raised
+level and now waits for a second person is refused (400) when it has no note,
+rather than saved without one. This replaces the earlier rule that a
+single-person false positive always carried a note (research/533 D4, approved
+2026-11-19). An organization cell above the platform default still
 applies under a relaxing risk acceptance level.
 
 Safeguards: a later severity rise, KEV listing or new evidence on a false

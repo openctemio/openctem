@@ -777,6 +777,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "asset-technology-backfill"), cfg.Worker.AssetTechnologyBackfillReportOnly),
 	))
 
+	// Version-hidden technologies of curated public products: link the ones
+	// stored before ingest linked them, so the matcher sees them.
+	w.ControllerManager.Register(controller.NewAssetSoftwareLinkBackfillController(
+		assettechapp.NewSoftwareLinkBackfill(repos.AssetTechnologyBackfill, repos.Software, softwareChangeSink(svc),
+			log.With("controller", "asset-software-link-backfill")),
+	))
+
 	w.ControllerManager.Register(controller.NewScopeReconciliationController(
 		repos.AccessControl,
 		svc.ScopeRule,
@@ -826,6 +833,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// administrators' channel (e-mail and the alert webhook).
 		svc.FeedRelay.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
 		w.ControllerManager.Register(controller.NewFeedRelayController(svc.FeedRelay))
+	}
+
+	// Freshness watch, every mode: stale data, failing or refused imports,
+	// the newest record's age and the daily CVE count alert the
+	// administrators and raise the banner every user sees.
+	if svc.FeedWatch != nil {
+		svc.FeedWatch.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
+		w.ControllerManager.Register(svc.FeedWatch)
 	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
@@ -1355,7 +1370,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		)
 	}
 
-	// Controllers of the build's extensions (none in the Community build).
+	// Controllers of the build's extensions (none in the default build).
 	// One an extension cannot start fails the boot, like a core
 	// controller's bad configuration.
 	extCtrls, err := buildExtensions.Controllers(context.Background(), deps.Services.ExtensionHost)
@@ -1759,4 +1774,13 @@ func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
 		return nil
 	}
 	return s
+}
+
+// softwareChangeSink is the matcher's queue of changed assets, nil (not a
+// nil pointer in an interface) when matching is not wired.
+func softwareChangeSink(svc *Services) assettechapp.SoftwareChangeSink {
+	if svc == nil || svc.VulnMatch == nil {
+		return nil
+	}
+	return svc.VulnMatch
 }

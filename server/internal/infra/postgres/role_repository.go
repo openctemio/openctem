@@ -204,17 +204,101 @@ func (r *RoleRepository) GetBySlug(ctx context.Context, tenantID *role.ID, slug 
 // teams manage for themselves (managed roles are shown on the team).
 // OPTIMIZED: Uses batch permission loading to avoid N+1 queries.
 func (r *RoleRepository) ListForTenant(ctx context.Context, tenantID role.ID) ([]*role.Role, error) {
+	return r.queryRoles(ctx, `
+		WHERE (tenant_id IS NULL OR tenant_id = $1)
+		  AND managed_group_id IS NULL
+		ORDER BY hierarchy_level DESC, name ASC
+	`, tenantID.String())
+}
+
+// ListByIDs returns the given roles that are visible to the tenant (its own
+// and the built-in ones), managed roles included, with their permissions in
+// one batch. Ids of another tenant's roles are not returned.
+func (r *RoleRepository) ListByIDs(ctx context.Context, tenantID role.ID, ids []role.ID) ([]*role.Role, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = id.String()
+	}
+	return r.queryRoles(ctx, `
+		WHERE (tenant_id IS NULL OR tenant_id = $1) AND id = ANY($2::uuid[])
+		ORDER BY hierarchy_level DESC, name ASC
+	`, tenantID.String(), pq.Array(strs))
+}
+
+// ListTeamRoles returns, for each of the given teams of the tenant, the roles
+// bound to it (managed presets and hand-bound roles), in three queries
+// whatever the number of teams.
+func (r *RoleRepository) ListTeamRoles(ctx context.Context, tenantID role.ID, groupIDs []role.ID) (map[role.ID][]*role.Role, error) {
+	out := make(map[role.ID][]*role.Role)
+	if len(groupIDs) == 0 {
+		return out, nil
+	}
+	gs := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		gs[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT group_id, role_id FROM group_role_bindings
+		  WHERE tenant_id = $1 AND group_id = ANY($2::uuid[])`, tenantID.String(), pq.Array(gs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list team role bindings: %w", err)
+	}
+	defer rows.Close()
+	type pair struct{ g, r role.ID }
+	var pairs []pair
+	seen := make(map[role.ID]bool)
+	var roleIDs []role.ID
+	for rows.Next() {
+		var gstr, rstr string
+		if err := rows.Scan(&gstr, &rstr); err != nil {
+			return nil, fmt.Errorf("failed to scan team role binding: %w", err)
+		}
+		g, err := role.ParseID(gstr)
+		if err != nil {
+			return nil, err
+		}
+		rid, err := role.ParseID(rstr)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, pair{g, rid})
+		if !seen[rid] {
+			seen[rid] = true
+			roleIDs = append(roleIDs, rid)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	roles, err := r.ListByIDs(ctx, tenantID, roleIDs)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[role.ID]*role.Role, len(roles))
+	for _, ro := range roles {
+		byID[ro.ID()] = ro
+	}
+	for _, p := range pairs {
+		if ro, ok := byID[p.r]; ok {
+			out[p.g] = append(out[p.g], ro)
+		}
+	}
+	return out, nil
+}
+
+// queryRoles runs the role select with the given WHERE/ORDER clause and
+// loads every permission in one batch (no per-role query).
+func (r *RoleRepository) queryRoles(ctx context.Context, clause string, args ...any) ([]*role.Role, error) {
 	query := `
 		SELECT id, tenant_id, slug, name, description, is_system,
 		       hierarchy_level, has_full_data_access, created_at, updated_at, created_by,
 		       template_id, template_version, template_permissions, managed_group_id
-		FROM roles
-		WHERE (tenant_id IS NULL OR tenant_id = $1)
-		  AND managed_group_id IS NULL
-		ORDER BY hierarchy_level DESC, name ASC
-	`
+		FROM roles ` + clause
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
@@ -914,6 +998,49 @@ func (r *RoleRepository) CountUsersWithRole(ctx context.Context, roleID role.ID)
 	}
 
 	return count, nil
+}
+
+// CountHoldersByRole counts the distinct users holding each role in the tenant
+// (direct assignments and team bindings, v_user_role_grants), one GROUP BY for
+// every role of the list.
+func (r *RoleRepository) CountHoldersByRole(ctx context.Context, tenantID role.ID) (map[role.ID]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT role_id, COUNT(DISTINCT user_id)
+		   FROM v_user_role_grants
+		  WHERE tenant_id = $1
+		  GROUP BY role_id`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to count role holders: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[role.ID]int)
+	for rows.Next() {
+		var s string
+		var n int
+		if err := rows.Scan(&s, &n); err != nil {
+			return nil, fmt.Errorf("failed to scan role holder count: %w", err)
+		}
+		id, err := role.ParseID(s)
+		if err != nil {
+			return nil, fmt.Errorf("role id: %w", err)
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// CountPendingApprovals counts the tenant's finding approval requests that are
+// pending and not expired.
+func (r *RoleRepository) CountPendingApprovals(ctx context.Context, tenantID role.ID) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM finding_status_approvals
+		  WHERE tenant_id = $1 AND status = 'pending'
+		    AND (expires_at IS NULL OR expires_at > now())`, tenantID.String()).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count pending approvals: %w", err)
+	}
+	return n, nil
 }
 
 // Helper methods
