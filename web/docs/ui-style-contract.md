@@ -822,7 +822,7 @@ and no page rebuilds:
   - The title row of a queue whose tab already shows its name and count passes `titleHidden` and no count;
     with nothing else to draw it takes no room (the heading stays for assistive technology), and Refresh goes
     to the toolbar's end (`toolbarEnd`), never a line of its own.
-  - `e2e/specs/75-layout-breaks.spec.ts` (`lopsided`) fails a phone card whose content stops short of its end
+  - `e2e/specs/75a-layout-breaks-lists.spec.ts` and its siblings 75b-75d (`lopsided`) fails a phone card whose content stops short of its end
     and a title row line whose start is empty.
 - A column whose value is the same on every row of the current lens (Status under Pending) is left out on
   that lens. Anything an AI proposed keeps its AI mark in the row, on the card and in the dialogs.
@@ -1389,7 +1389,7 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   page-level horizontal scroll (a wide table scrolls inside its own frame).
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
-- `e2e/specs/75-layout-breaks.spec.ts` checks the lists and their overlays at
+- `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at
   390, 1024, 1280 and 1440 px with long English and Vietnamese data: no text over
   text or a control, no word broken inside, nothing cut without an ellipsis,
   no button or link whose label a frame cuts ("Manage" shown as "Mana"),
