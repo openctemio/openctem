@@ -52,4 +52,10 @@ describe('ScannerSelect with a scanner no sensor can run', () => {
       'No sensor has checkov. The scan is saved; starting it is refused until a sensor that may run it is online.'
     )
   })
+
+  it('shows only the scanner name in the field, the reason stays in the note', () => {
+    render(<ScannerSelect value="checkov" onChange={vi.fn()} />)
+    const field = screen.getByRole('combobox', { name: 'Scanner' })
+    expect(field.textContent).toBe('Checkov')
+  })
 })

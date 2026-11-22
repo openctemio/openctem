@@ -141,7 +141,11 @@ export function ScannerSelect({
           aria-invalid={invalid}
           aria-required={required}
         >
-          <SelectValue placeholder={placeholder} />
+          {/* The field shows the scanner's name only; the reason a sensor
+              cannot run it is in the list and in the note below the field. */}
+          <SelectValue placeholder={placeholder}>
+            {selected ? selected.display_name || selected.name : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {value && !known && (
