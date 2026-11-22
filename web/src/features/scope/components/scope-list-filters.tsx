@@ -18,8 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
-import { FilterButton } from '@/features/shared/components/filter-button'
-import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
+import { FilterPopover } from '@/features/shared/components/filter-button'
 import { ScopeTargetTypeSelect } from './scope-target-type'
 import type { ScopeKind } from './scope-target-type'
 
@@ -52,13 +51,13 @@ export function ScopeListFilters({
   const [open, setOpen] = useState(false)
   const count = scopeFilterCount(kind, status)
   return (
-    <ResponsivePopover
+    <FilterPopover
       open={open}
       onOpenChange={setOpen}
       title={t('common.filters', 'Filters')}
-      align="start"
       className="md:w-72"
-      trigger={<FilterButton activeCount={count} data-testid="scope-filters" />}
+      activeCount={count}
+      data-testid="scope-filters"
     >
       <div className="flex flex-col gap-3 p-3">
         <div className="flex flex-col gap-1.5">
@@ -103,6 +102,6 @@ export function ScopeListFilters({
           </div>
         )}
       </div>
-    </ResponsivePopover>
+    </FilterPopover>
   )
 }

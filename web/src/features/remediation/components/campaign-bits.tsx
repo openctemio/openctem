@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 import { ProgressCell } from '@/features/shared/components/progress-cell'
 import type { CampaignSummary, RemediationCampaign } from '../api/use-remediation-campaigns'
 import { formatDate } from '@/lib/app-locale'
+import { slaCountdown, slaCountLabel } from '@/features/sla/lib/sla'
+import { slaStateClass } from '@/lib/sla-colors'
 
 /** "Sam · Ops", or "Unassigned". */
 export function useCampaignOwner() {
@@ -40,7 +42,13 @@ export function formatDay(iso: string, _locale: string) {
   })
 }
 
-/** The due date; late shows in the danger tone with the word "overdue", not colour alone. */
+/**
+ * The due date. In a list (no `relative`): the short date ("Apr 29", with the
+ * year only when it is not this one) and, when late, a small "23 d overdue"
+ * pill in the danger tone, so the cell stays within its column and the full
+ * date sits in the title. On a detail page (`relative`): the long date with
+ * "in 12 days" / "3 days ago" and the word "overdue".
+ */
 export function CampaignDue({
   campaign,
   relative,
@@ -55,8 +63,43 @@ export function CampaignDue({
   }
   const late = isLate(campaign)
   const days = daysUntil(campaign.due_date)
+  if (!relative) {
+    const due = new Date(campaign.due_date)
+    const sameYear = due.getFullYear() === new Date().getFullYear()
+    const short = formatDate(due, {
+      day: 'numeric',
+      month: 'short',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    })
+    const c = late ? slaCountdown(campaign.due_date) : null
+    const mark = c
+      ? t(`remediationCampaigns.due.overdue${c.unit === 'hours' ? 'Hours' : 'Days'}`, undefined, {
+          count: slaCountLabel(c.count),
+        })
+      : null
+    const full = formatDay(campaign.due_date, locale)
+    return (
+      <span
+        data-slot="campaign-due"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap"
+        title={mark ? `${full}, ${mark}` : full}
+      >
+        <span>{short}</span>
+        {mark && (
+          <span
+            className={cn(
+              'shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums',
+              slaStateClass('overdue')
+            )}
+          >
+            {mark}
+          </span>
+        )}
+      </span>
+    )
+  }
   let rel = ''
-  if (relative && (campaign.status === 'draft' || campaign.status === 'active')) {
+  if (campaign.status === 'draft' || campaign.status === 'active') {
     if (days > 0)
       rel = t(`remediationCampaigns.due.inDays.${days === 1 ? 'one' : 'other'}`, undefined, {
         count: days,
@@ -109,28 +152,56 @@ export function FindingsProgress({
   )
 }
 
-/** "6 tasks · 1 overdue · 2 hidden", or "none yet". */
-export function CampaignTasksCell({ summary }: { summary: CampaignSummary }) {
+/**
+ * "6 tasks" with "1 overdue, 2 hidden" under it, or "none yet". In a phone
+ * card (`inline`) it is one line.
+ */
+export function CampaignTasksCell({
+  summary,
+  inline,
+}: {
+  summary: CampaignSummary
+  inline?: boolean
+}) {
   const { t } = useTranslation()
   const n = summary.tasks
   if (n === 0 && summary.hidden_tasks === 0) {
     return <span className="text-muted-foreground">{t('remediationCampaigns.tasks.noneYet')}</span>
   }
+  const count = t(`remediationCampaigns.tasks.count.${n === 1 ? 'one' : 'other'}`, undefined, {
+    count: n,
+  })
+  const overdue =
+    summary.overdue_tasks > 0
+      ? t('remediationCampaigns.tasks.overdue', undefined, { count: summary.overdue_tasks })
+      : null
+  const hidden =
+    summary.hidden_tasks > 0
+      ? t('remediationCampaigns.tasks.hidden', undefined, { count: summary.hidden_tasks })
+      : null
+  const extras = (
+    <>
+      {overdue && <span className="text-destructive">{overdue}</span>}
+      {overdue && hidden && ', '}
+      {hidden && <span className="text-muted-foreground">{hidden}</span>}
+    </>
+  )
+  if (inline) {
+    return (
+      <span className="whitespace-nowrap text-sm">
+        {count}
+        {(overdue || hidden) && ', '}
+        {extras}
+      </span>
+    )
+  }
   return (
-    <span className="whitespace-nowrap text-sm">
-      {t(`remediationCampaigns.tasks.count.${n === 1 ? 'one' : 'other'}`, undefined, { count: n })}
-      {summary.overdue_tasks > 0 && (
-        <span className="text-destructive">
-          {', '}
-          {t('remediationCampaigns.tasks.overdue', undefined, { count: summary.overdue_tasks })}
-        </span>
-      )}
-      {summary.hidden_tasks > 0 && (
-        <span className="text-muted-foreground">
-          {', '}
-          {t('remediationCampaigns.tasks.hidden', undefined, { count: summary.hidden_tasks })}
-        </span>
-      )}
+    <span
+      className="block min-w-0 text-sm"
+      title={[count, overdue, hidden].filter(Boolean).join(', ')}
+    >
+      <span className="block truncate">{count}</span>
+      {(overdue || hidden) && <span className="block truncate text-xs">{extras}</span>}
     </span>
   )
 }

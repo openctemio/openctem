@@ -77,6 +77,8 @@
   "remediationCampaigns.due.inDays.other": "còn {count} ngày",
   "remediationCampaigns.due.none": "Không có hạn chót",
   "remediationCampaigns.due.overdue": "quá hạn",
+  "remediationCampaigns.due.overdueDays": "Trễ {count} ngày",
+  "remediationCampaigns.due.overdueHours": "Trễ {count} giờ",
   "remediationCampaigns.due.today": "đến hạn hôm nay",
   "remediationCampaigns.empty.description": "Tạo chiến dịch để đưa một nhóm tác vụ khắc phục về cùng một hạn chót, với một người phụ trách.",
   "remediationCampaigns.empty.filtered": "Không có chiến dịch khớp bộ lọc",
