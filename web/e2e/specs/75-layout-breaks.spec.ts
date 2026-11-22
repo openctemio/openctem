@@ -891,7 +891,7 @@ function cveExposure() {
       },
     ],
     sources: [
-      { name: 'Vulnerability scan', source: 'scan', assets: 11 },
+      { name: 'Weekly scanner run', source: 'scan', assets: 11 },
       { name: `Component inventory of ${LONG}`, source: 'sbom', assets: 6 },
     ],
     single_source_assets: 4,
