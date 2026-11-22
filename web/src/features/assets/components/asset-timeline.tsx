@@ -153,14 +153,18 @@ function Filters({
   const { t } = useTranslation()
   const l = useLabels()
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {leading}
+    // Phone: the two selects share one row, equal width; from sm they keep their own widths.
+    <div
+      className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap"
+      data-testid="timeline-filters"
+    >
+      {leading && <div className="col-span-2 sm:contents">{leading}</div>}
       <Select
         value={filters.attribute || ALL}
         onValueChange={(v) => onChange({ ...filters, attribute: v === ALL ? undefined : v })}
       >
         <SelectTrigger
-          className="w-48"
+          className="w-full sm:w-48"
           aria-label={t('assetTimeline.filterAttribute', 'Attribute')}
         >
           <SelectValue />
@@ -178,7 +182,10 @@ function Filters({
         value={filters.sourceKind || ALL}
         onValueChange={(v) => onChange({ ...filters, sourceKind: v === ALL ? undefined : v })}
       >
-        <SelectTrigger className="w-44" aria-label={t('assetTimeline.filterSource', 'Source')}>
+        <SelectTrigger
+          className="w-full sm:w-44"
+          aria-label={t('assetTimeline.filterSource', 'Source')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -192,7 +199,7 @@ function Filters({
       </Select>
       {withTag && (
         <Input
-          className="w-48"
+          className="col-span-2 sm:col-span-1 sm:w-48"
           value={filters.tag ?? ''}
           maxLength={100}
           onChange={(e) => onChange({ ...filters, tag: e.target.value })}
