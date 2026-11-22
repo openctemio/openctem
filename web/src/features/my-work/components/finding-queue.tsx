@@ -69,7 +69,6 @@ export function FindingQueue({
           <PriorityClassBadge
             priorityClass={row.original.priority_class}
             assetId={row.original.asset?.id}
-            showWord
           />
         ),
       },

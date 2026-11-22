@@ -12,7 +12,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, CheckCircle2, Info, ListChecks, MoreHorizontal, Timer } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { useIsMobile } from '@/hooks/use-mobile'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -235,11 +234,8 @@ export function MyWorkPage() {
         onRetry={refresh}
         // The queue's one filter token (due in 72 hours) is the toolbar's
         // start: a toggle at the row's control height (the kit button,
-        // pressed while the queue shows only what falls due). On a phone it
-        // is the timer and the count, named in full, so the toolbar's start
-        // and end share one line without cutting it. (Page workaround: the
-        // kit's phone toolbar cuts its start instead of wrapping; when the
-        // kit handles that, the isPhone branch here can go.)
+        // pressed while the queue shows only what falls due). Named in full
+        // everywhere, also inside the phone Filters sheet, where it has room.
         toolbarStart={
           <>
             {which === 'assigned' && dueSoonCount !== undefined ? (
@@ -247,20 +243,11 @@ export function MyWorkPage() {
                 size="sm"
                 variant={dueSoon ? 'secondary' : 'outline'}
                 aria-pressed={dueSoon}
-                aria-label={
-                  isPhone
-                    ? t('myWork.chip.dueSoonNamed', 'SLA due in 72 hours: {count}', {
-                        count: dueSoonCount,
-                      })
-                    : undefined
-                }
                 onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
               >
                 <Timer className="me-2 size-4" aria-hidden="true" />
-                {!isPhone && t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                <span className={isPhone ? 'tabular-nums' : 'ms-2 tabular-nums'}>
-                  {dueSoonCount}
-                </span>
+                {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
               </Button>
             ) : null}
             {tabHint}
@@ -403,7 +390,6 @@ export function MyWorkPage() {
 
   const asOf = views.data?.as_of
   const explain = t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])
-  const isPhone = useIsMobile()
   // What the tab holds, behind an info mark at the toolbar's start: the
   // sentence is not a row of its own.
   const tabHint = (
