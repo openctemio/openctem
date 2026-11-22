@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { act, fireEvent, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -147,12 +148,10 @@ describe('focus return and title links', () => {
 
   it('a plain click on a title opens the sheet; a ctrl-click stays a link', () => {
     const open = vi.fn()
-    // A plain anchor stands in for the row's Link (same click event).
     const { getByRole } = render(
-      // eslint-disable-next-line @next/next/no-html-link-for-pages
-      <a href="/remediation/tasks/t1" onClick={(e) => opensSheet(e, open)}>
+      <Link href="/remediation/tasks/t1" onClick={(e) => opensSheet(e, open)}>
         T1
-      </a>
+      </Link>
     )
     const link = getByRole('link')
     fireEvent.click(link, { ctrlKey: true })
