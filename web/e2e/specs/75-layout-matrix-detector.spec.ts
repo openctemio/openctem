@@ -1,0 +1,265 @@
+import { test, expect, type Page } from '@playwright/test'
+import { findMatrixBreaks } from '../helpers/layout-matrix'
+
+/**
+ * Self-test of the MVP acceptance v2 detectors (helpers/layout-matrix.ts):
+ * each must flag the defect it was written for and stay quiet for the layout
+ * that is right.
+ *   - a control past its rail column (the finding watchers control near 2000 px);
+ *   - text cut at a table scroller's edge with no ellipsis (/remediation/campaigns
+ *     Due column at 1024 px, sidebar expanded);
+ *   - a row of its own holding only "Updated ..." or one small control above the
+ *     first data row (/my-work at iPad width);
+ *   - two primary buttons for one job;
+ *   - a stretched field, text line or far rail on a 1920 px screen.
+ */
+
+const doc = (body: string) =>
+  `<!doctype html><html><body style="margin:0;font:14px sans-serif">${body}</body></html>`
+
+async function at(p: Page, width: number, body: string) {
+  await p.setViewportSize({ width, height: 900 })
+  await p.setContent(doc(body))
+  return findMatrixBreaks(p)
+}
+
+const rail = (control: string) => `<main style="width:900px">
+  <div style="display:grid;grid-template-columns:600px 280px;gap:20px">
+    <section><p>Panel</p></section>
+    <div><div style="display:flex;gap:8px"><span>Watchers</span>${control}</div></div>
+  </div></main>`
+
+test.describe('layout matrix detector: control past its column', { tag: ['@shell'] }, () => {
+  test('flags a control that runs past its rail column', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      rail('<button style="flex:none;width:320px;white-space:nowrap">Manage watchers</button>')
+    )
+    expect(found.pastPanel.join('\n')).toMatch(/control past its column.*Manage watchers/)
+  })
+
+  test('is quiet when the control fits its column', async ({ page }) => {
+    const found = await at(page, 1440, rail('<button style="min-width:0">Manage watchers</button>'))
+    expect(found.pastPanel).toEqual([])
+  })
+
+  test('allows a ghost button pulled to its text by a small start margin', async ({ page }) => {
+    const found = await at(page, 1440, rail('<button style="margin-left:-8px">Manage</button>'))
+    expect(found.pastPanel).toEqual([])
+  })
+})
+
+const table = (cell: string) => `<main style="width:700px">
+  <div style="overflow-x:auto;width:500px"><table style="border-collapse:collapse"><tbody><tr>
+    <td style="width:420px;min-width:420px">Quarterly patch campaign</td>
+    <td style="white-space:nowrap">${cell}</td>
+  </tr></tbody></table></div></main>`
+
+test.describe('layout matrix detector: text cut at a frame edge', { tag: ['@shell'] }, () => {
+  test('flags a cell cut by the table scroller with no ellipsis', async ({ page }) => {
+    const found = await at(page, 1024, table('Apr 29, 2026, overdue'))
+    expect(found.cutText.join('\n')).toMatch(/text cut at a frame edge.*overdue/)
+  })
+
+  test('is quiet for a cell that ends in an ellipsis', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      table(
+        '<span style="display:block;width:60px;overflow:hidden;text-overflow:ellipsis">Apr 29, 2026, overdue</span>'
+      )
+    )
+    expect(found.cutText).toEqual([])
+  })
+
+  test('is quiet for a column wholly past the scroller edge', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      table('<span style="padding-left:120px">Apr 29</span>').replace(
+        '420px;min-width:420px',
+        '480px;min-width:480px'
+      )
+    )
+    expect(found.cutText).toEqual([])
+  })
+})
+
+const list = (toolbar: string) => `<main style="width:1000px">
+  <div role="tablist"><button role="tab">Assigned</button><button role="tab">Watching</button></div>
+  ${toolbar}
+  <table style="width:100%"><tbody><tr><td>Finding one</td><td>High</td></tr></tbody></table>
+</main>`
+const SEARCH =
+  '<div style="display:flex;gap:8px"><input style="width:600px" placeholder="Search"><button>Filters</button></div>'
+
+test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
+  test('flags a row holding only "Updated ..."', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      list(`<div><span>Updated 2 minutes ago</span></div>${SEARCH}`)
+    )
+    expect(found.wastedRow.join('\n')).toMatch(/row of its own.*Updated 2 minutes ago/)
+  })
+
+  test('flags a row holding only "Top 5 of 40"', async ({ page }) => {
+    const found = await at(page, 1024, list(`${SEARCH}<p>Top 5 of 40</p>`))
+    expect(found.wastedRow.join('\n')).toMatch(/Top 5 of 40/)
+  })
+
+  test('flags a row holding one small control', async ({ page }) => {
+    const found = await at(page, 1024, list(`${SEARCH}<div><button>Refresh</button></div>`))
+    expect(found.wastedRow.join('\n')).toMatch(/Refresh/)
+  })
+
+  test('flags a caption with a lone Refresh button above an empty state', async ({ page }) => {
+    const found = await at(
+      page,
+      820,
+      `<main style="width:700px">
+        <div role="tablist"><button role="tab">Assigned to me</button></div>
+        <div style="display:flex;justify-content:space-between"><p>Open findings assigned to you, the nearest deadline first.</p><button aria-label="Refresh">R</button></div>
+        <div style="display:flex;justify-content:space-between"><button>SLA due in 72 hours</button><button aria-label="Filters">F</button></div>
+        <div style="height:280px;border:1px solid">Nothing is assigned to you</div>
+      </main>`
+    )
+    expect(found.wastedRow.join('\n')).toMatch(/Open findings assigned to you.*Refresh/)
+    expect(found.wastedRow.join('\n')).not.toMatch(/SLA due/)
+  })
+
+  test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      list(
+        '<div style="display:flex;justify-content:space-between"><input style="width:600px" placeholder="Search"><span>Updated 2 minutes ago</span></div>'
+      )
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+})
+
+const primary = (name: string, href?: string) =>
+  href
+    ? `<a data-slot="button" data-variant="default" href="${href}">${name}</a>`
+    : `<button data-slot="button" data-variant="default">${name}</button>`
+
+test.describe('layout matrix detector: duplicate main action', { tag: ['@shell'] }, () => {
+  test('flags two primary buttons with one name', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main>${primary('Add asset')}<div>${primary('Add asset')}</div></main>`
+    )
+    expect(found.duplicateAction.join('\n')).toMatch(/2 primary buttons "add asset"/)
+  })
+
+  test('flags two primary links to one target', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main>${primary('New scan', '/scans/new')}${primary('Start scanning', '/scans/new')}</main>`
+    )
+    expect(found.duplicateAction.join('\n')).toMatch(/to \/scans\/new/)
+  })
+
+  test('is quiet for one primary and a secondary with the same name', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main>${primary('Add asset')}<button data-slot="button" data-variant="outline">Add asset</button></main>`
+    )
+    expect(found.duplicateAction).toEqual([])
+  })
+})
+
+test.describe('layout matrix detector: wide-screen stretch', { tag: ['@shell'] }, () => {
+  const wide = `<main style="width:1800px">
+    <input style="width:100%" placeholder="Search everything">
+    <p>${'A long description that keeps going across the screen. '.repeat(12)}</p>
+    <div style="display:grid;grid-template-columns:1fr 300px">
+      <section><span>Short content</span></section><aside><button>Watch</button></aside>
+    </div></main>`
+
+  test('flags a stretched field, a long text line and a far rail at 1920 px', async ({ page }) => {
+    const found = await at(page, 1920, wide)
+    const lines = found.wideStretch.join('\n')
+    expect(lines).toMatch(/field \d+px wide: "Search everything"/)
+    expect(lines).toMatch(/text line \d+px wide/)
+    expect(lines).toMatch(/rail \d+px from its content/)
+  })
+
+  test('is quiet on a 1440 px screen', async ({ page }) => {
+    expect((await at(page, 1440, wide)).wideStretch).toEqual([])
+  })
+
+  test('is quiet for a capped layout at 1920 px', async ({ page }) => {
+    const found = await at(
+      page,
+      1920,
+      `<main style="max-width:900px;margin:auto"><input style="width:100%" placeholder="Search">
+       <div style="display:grid;grid-template-columns:1fr 300px"><section><p>${'Content text '.repeat(40)}</p></section><aside><button>Watch</button></aside></div></main>`
+    )
+    expect(found.wideStretch).toEqual([])
+  })
+})
+
+const toolbar = (gap: number) => `<main style="width:600px">
+  <div style="display:flex;gap:${gap}px">
+    <button aria-label="Filters" style="width:36px;height:36px">F</button>
+    <div style="border:1px solid;flex:1;display:flex"><input placeholder="Search entries" style="border:0;flex:1"></div>
+  </div></main>`
+
+test.describe('layout matrix detector: joined controls', { tag: ['@shell'] }, () => {
+  test('flags a button joined to the search box', async ({ page }) => {
+    const found = await at(page, 390, toolbar(4))
+    expect(found.joined.join('\n')).toMatch(
+      /button 4px from a field: "Filters" \| "Search entries"/
+    )
+  })
+
+  test('is quiet at the kit gap', async ({ page }) => {
+    expect((await at(page, 390, toolbar(8))).joined).toEqual([])
+  })
+
+  test('flags two framed controls pressed together in a frameless group', async ({ page }) => {
+    const found = await at(
+      page,
+      390,
+      toolbar(0).replace(
+        '<div style="display:flex;gap:0px">',
+        '<div data-slot="search-group" style="display:flex;gap:0px">'
+      )
+    )
+    expect(found.joined.join('\n')).toMatch(/button 0px from a field/)
+  })
+
+  test('is quiet inside one segmented group', async ({ page }) => {
+    const found = await at(
+      page,
+      390,
+      toolbar(0)
+        .replace(
+          '<div style="display:flex;gap:0px">',
+          '<div role="group" style="display:flex;gap:0px;border:1px solid">'
+        )
+        .replace(
+          '<div style="border:1px solid;flex:1;display:flex">',
+          '<div style="flex:1;display:flex">'
+        )
+    )
+    expect(found.joined).toEqual([])
+  })
+})
+
+test('a display:contents wrapper is not a column', { tag: ['@shell'] }, async ({ page }) => {
+  const found = await at(
+    page,
+    390,
+    `<main style="width:360px"><div style="display:grid;grid-template-columns:1fr 1fr">
+      <div style="display:contents"><button style="width:120px">Filters</button></div><span>x</span></div></main>`
+  )
+  expect(found.pastPanel).toEqual([])
+})
