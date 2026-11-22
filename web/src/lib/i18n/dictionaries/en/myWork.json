@@ -12,7 +12,6 @@
   "myWork.changedSince": "Changed since the request: {changes}",
   "myWork.chip.asset": "Asset",
   "myWork.chip.dueSoon": "SLA due in 72 hours",
-  "myWork.chip.dueSoonNamed": "SLA due in 72 hours: {count}",
   "myWork.chip.signoffs": "{collected} of {required, plural, one {# approval} other {# approvals}}",
   "myWork.columns.acceptanceEnds": "Acceptance ends",
   "myWork.columns.finding": "Finding",

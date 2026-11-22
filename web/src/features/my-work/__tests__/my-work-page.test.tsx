@@ -18,6 +18,7 @@ const replace = vi.fn()
 const push = vi.fn()
 const perms = new Set<string>()
 let locale = 'en'
+let phone = false
 
 const VIEWS = [
   { key: 'needs_triage', count: 9, params: 'status=new&informational=false' },
@@ -89,6 +90,7 @@ vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => perms.has(p) }),
 }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't' } }) }))
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => phone }))
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'me' }) }))
 vi.mock('@/hooks/use-dynamic-badges', () => ({ refreshPendingApprovalCount: vi.fn() }))
 vi.mock('@/features/findings/api/use-quick-views', () => ({
@@ -117,9 +119,13 @@ vi.mock('@/features/remediation-hub/components/my-tasks-queue', () => ({
   useMyTaskCount: (enabled: boolean) => (enabled ? 5 : undefined),
 }))
 vi.mock('@/features/findings/components/priority-class-badge', () => ({
-  PriorityClassBadge: ({ priorityClass }: { priorityClass: string }) => (
-    <span>{priorityClass}</span>
-  ),
+  PriorityClassBadge: ({
+    priorityClass,
+    showWord,
+  }: {
+    priorityClass: string
+    showWord?: boolean
+  }) => <span data-testid="priority">{showWord ? `${priorityClass} word` : priorityClass}</span>,
 }))
 vi.mock('@/features/findings/components/approval-finding-summary', () => ({
   ApprovalFindingSummary: ({ findingTitle }: { findingTitle?: string }) => <p>{findingTitle}</p>,
@@ -209,6 +215,38 @@ describe('My Work page', () => {
     renderPage()
     const [params] = findingQueue.mock.calls.at(-1)!
     expect(params).toBe('state=open&related_to=me&sla_deadline_lte=P3D&informational=false')
+  })
+
+  it('names the due-soon filter in full on a phone too, not as a bare timer and count', () => {
+    phone = true
+    try {
+      renderPage()
+      const chip = screen.getByRole('button', { name: /SLA due in 72 hours\s*4/ })
+      expect(chip.textContent).toContain('SLA due in 72 hours')
+    } finally {
+      phone = false
+    }
+  })
+
+  it('shows the priority class alone in the table, so the Status column is never cut at tablet width', () => {
+    const empty = { data: { data: [] as unknown[], total: 0 }, error: undefined, isLoading: false, mutate: vi.fn() }
+    findingQueue.mockReturnValue({
+      data: {
+        data: [{ id: 'f1', title: 'Open redirect', priority_class: 'P2', severity: 'high', status: 'new' }],
+        total: 1,
+      },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    })
+    try {
+      renderPage()
+      const cells = screen.queryAllByTestId('priority')
+      expect(cells.length).toBeGreaterThan(0)
+      expect(cells.every((c) => c.textContent === 'P2')).toBe(true)
+    } finally {
+      findingQueue.mockReturnValue(empty)
+    }
   })
 
   it('opens My team with its own view and links View all to the same list', async () => {
