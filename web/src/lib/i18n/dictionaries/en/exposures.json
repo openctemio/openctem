@@ -66,6 +66,7 @@
   "exposures.category.web_application": "Web application security",
   "exposures.category.web_interfaces": "Exposed web interfaces",
   "exposures.category.withCount": "{name} ({count})",
+  "exposures.chart.findings": "Findings",
   "exposures.chart.noData": "No data yet",
   "exposures.chart.noSeverity": "No severity data yet",
   "exposures.chart.noStatus": "No status data yet",

@@ -66,6 +66,7 @@
   "exposures.category.web_application": "Bảo mật ứng dụng web",
   "exposures.category.web_interfaces": "Giao diện web lộ ra ngoài",
   "exposures.category.withCount": "{name} ({count})",
+  "exposures.chart.findings": "Phát hiện",
   "exposures.chart.noData": "Chưa có dữ liệu",
   "exposures.chart.noSeverity": "Chưa có dữ liệu mức độ",
   "exposures.chart.noStatus": "Chưa có dữ liệu trạng thái",
