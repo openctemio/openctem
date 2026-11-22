@@ -11,7 +11,11 @@ type Row = { id: string; name: string; due: string; owner: string }
 const columns: ColumnDef<Row>[] = [
   { accessorKey: 'name', header: 'Name', meta: { kind: 'name', label: 'Name' } },
   { accessorKey: 'due', header: 'Due', meta: { kind: 'due', label: 'Due' } },
-  { accessorKey: 'owner', header: 'Owner', meta: { kind: 'owner', label: 'Owner', hideBelow: 5000 } },
+  {
+    accessorKey: 'owner',
+    header: 'Owner',
+    meta: { kind: 'owner', label: 'Owner', hideBelow: 5000 },
+  },
 ]
 const rows: Row[] = [{ id: '1', name: 'alpha', due: 'Apr 29, 2026, 23 d overdue', owner: 'Sam' }]
 
