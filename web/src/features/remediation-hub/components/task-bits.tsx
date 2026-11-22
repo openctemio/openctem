@@ -142,14 +142,13 @@ export function TaskCampaignLink({
 }) {
   const { t } = useTranslation()
   const { data } = useRemediationCampaign(campaignId)
-  const Wrap = inline ? 'span' : 'p'
-  return (
-    <Wrap className={inline ? 'min-w-0 text-sm' : 'mt-1 text-xs'}>
-      <Link href={`/remediation/campaigns/${campaignId}`} className="underline">
-        {data?.name
-          ? t('remediationCampaigns.taskLink.named', undefined, { name: data.name })
-          : t('remediationCampaigns.taskLink.unnamed')}
-      </Link>
-    </Wrap>
+  const link = (
+    <Link href={`/remediation/campaigns/${campaignId}`} className="underline">
+      {data?.name
+        ? t('remediationCampaigns.taskLink.named', undefined, { name: data.name })
+        : t('remediationCampaigns.taskLink.unnamed')}
+    </Link>
   )
+  if (inline) return <span className="min-w-0 text-sm">{link}</span>
+  return <p className="mt-1 text-xs">{link}</p>
 }

@@ -147,6 +147,41 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       .filter(Boolean)
       .join(', ') || t('remediationCampaigns.owner.unassigned')
 
+  const removeColumn: ColumnDef<RemediationTask> = {
+    id: 'actions',
+    header: '',
+    enableSorting: false,
+    meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
+    cell: ({ row }: { row: { original: RemediationTask } }) => (
+      <ActionMenu
+        title={row.original.title}
+        label={t('remediationCampaigns.detail.taskMenu', undefined, {
+          task: row.original.title,
+        })}
+        items={[
+          {
+            id: 'remove-task',
+            label: t('remediationCampaigns.actions.removeTask'),
+            icon: XCircle,
+            destructive: true,
+            onSelect: () => setRemoveTask(row.original),
+          },
+        ]}
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
+              task: row.original.title,
+            })}
+          >
+            <MoreHorizontal className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+    ),
+  }
+
   const taskColumns: ColumnDef<RemediationTask>[] = [
     {
       id: 'title',
@@ -201,44 +236,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       meta: { kind: 'due', label: t('remediationHub.tasks.columns.deadline') },
       cell: ({ row }) => <DeadlinePill task={row.original} />,
     },
-    ...(writable
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            enableSorting: false,
-            meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
-            cell: ({ row }: { row: { original: RemediationTask } }) => (
-              <ActionMenu
-                title={row.original.title}
-                label={t('remediationCampaigns.detail.taskMenu', undefined, {
-                  task: row.original.title,
-                })}
-                items={[
-                  {
-                    id: 'remove-task',
-                    label: t('remediationCampaigns.actions.removeTask'),
-                    icon: XCircle,
-                    destructive: true,
-                    onSelect: () => setRemoveTask(row.original),
-                  },
-                ]}
-                trigger={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
-                      task: row.original.title,
-                    })}
-                  >
-                    <MoreHorizontal className="size-4" aria-hidden />
-                  </Button>
-                }
-              />
-            ),
-          } as ColumnDef<RemediationTask>,
-        ]
-      : []),
+    ...(writable ? [removeColumn] : []),
   ]
 
   return (
@@ -467,6 +465,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
             caption={t('remediationCampaigns.detail.taskList')}
             isLoading={tasksLoading}
             manualPagination
+            showSearch={false}
             rowCount={taskTotal}
             pageCount={pages}
             pagination={{ pageIndex: page - 1, pageSize: TASK_PAGE }}
