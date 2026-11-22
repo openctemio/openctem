@@ -38,7 +38,7 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 type StatusFilter = CampaignStatus | 'all'
 
 /** Table frame widths (px) under which a column folds away; the name and the status stay. */
-export const CAMPAIGN_HIDE_BELOW = { owner: 560, tasks: 700, progress: 840 } as const
+export const CAMPAIGN_HIDE_BELOW = { owner: 780, tasks: 620, progress: 960 } as const
 
 export function CampaignList() {
   const { t } = useTranslation()
@@ -83,11 +83,18 @@ export function CampaignList() {
             >
               {row.original.name}
             </Link>
-            {row.original.description && (
-              <div className="text-muted-foreground truncate text-xs">
-                {row.original.description}
-              </div>
-            )}
+            {/* The owner folds into this line while the Owner column is dropped. */}
+            <div className="text-muted-foreground flex min-w-0 gap-1.5 text-xs">
+              <span
+                className="text-foreground hidden shrink-0 [[data-auto-hidden~=owner]_&]:inline"
+                data-slot="campaign-owner-fold"
+              >
+                {ownerOf(row.original)}
+              </span>
+              {row.original.description && (
+                <span className="truncate">{row.original.description}</span>
+              )}
+            </div>
           </div>
         ),
       },
@@ -117,7 +124,7 @@ export function CampaignList() {
         meta: {
           kind: 'text',
           label: t('remediationCampaigns.columns.tasks'),
-          width: 128,
+          width: 136,
           hideBelow: CAMPAIGN_HIDE_BELOW.tasks,
         },
         cell: ({ row }) => <CampaignTasksCell summary={row.original.summary} />,
@@ -136,7 +143,7 @@ export function CampaignList() {
       {
         accessorKey: 'due_date',
         header: t('remediationCampaigns.columns.due'),
-        meta: { kind: 'due', label: t('remediationCampaigns.columns.due') },
+        meta: { kind: 'due', label: t('remediationCampaigns.columns.due'), width: 208 },
         cell: ({ row }) => (
           <span className="text-sm">
             <CampaignDue campaign={row.original} />
@@ -247,7 +254,7 @@ export function CampaignList() {
               <p className="text-meta truncate">{ownerOf(c)}</p>
               <MetaLine
                 items={[
-                  <CampaignTasksCell key="tasks" summary={c.summary} />,
+                  <CampaignTasksCell key="tasks" summary={c.summary} inline />,
                   <CampaignDue key="due" campaign={c} />,
                 ]}
               />

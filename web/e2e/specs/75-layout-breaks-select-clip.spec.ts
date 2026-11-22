@@ -25,6 +25,8 @@ const field = (value: string) => `<!doctype html><html><body>
 const CLAMPED_FLEX = `<span style="display:flex;align-items:center;gap:8px;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:1">${LONG}</span>`
 const ELLIPSIS_FLEX = `<span style="display:flex;min-width:0;overflow:hidden;text-overflow:ellipsis">${LONG}</span>`
 const KIT = `<span style="display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${LONG}</span></span>`
+const CONTENTS = `<span style="display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="display:contents">${LONG}</span></span>`
+const CHIP = `<span style="display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="display:inline-flex;align-items:center">${LONG}</span></span>`
 const BLOCK = `<span style="display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${LONG}</span>`
 
 test.describe(
@@ -51,6 +53,18 @@ test.describe(
     test('is quiet for a block box that ends in an ellipsis', async ({ page }) => {
       await page.setContent(field(BLOCK))
       expect((await findBreaks(page)).clipped).toEqual([])
+    })
+
+    // A `display: contents` span (a phone card's value wrapper) flows inline
+    // inside the ellipsis box: the mark is drawn.
+    test('is quiet for text in a display: contents wrapper under an ellipsis', async ({ page }) => {
+      await page.setContent(field(CONTENTS))
+      expect((await findBreaks(page)).clipped).toEqual([])
+    })
+
+    test('flags a chip (inline-flex) cut inside an ellipsis box', async ({ page }) => {
+      await page.setContent(field(CHIP))
+      expect((await findBreaks(page)).clipped.join('\n')).toMatch(/cut, no ellipsis: "Các mục/)
     })
   }
 )

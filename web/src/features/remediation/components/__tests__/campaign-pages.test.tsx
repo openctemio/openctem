@@ -128,6 +128,13 @@ describe('CampaignList', () => {
     ).toBeGreaterThan(0)
     expect(screen.getAllByText(/overdue/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/2 hidden/).length).toBeGreaterThan(0)
+    // The due date is the short date and a small mark, never one long "date, overdue" string.
+    const due = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="campaign-due"]')
+    ).find((el) => /overdue/.test(el.textContent ?? ''))!
+    expect(due).toBeDefined()
+    expect(due.textContent).toMatch(/^Jan 1, 2020\d+\+? d overdue$/)
+    expect(due.title).toMatch(/^Jan 1, 2020, \d+\+? d overdue$/)
     expect(screen.getAllByText('Sam, Ops').length).toBeGreaterThan(0)
     // The status is a filter token (no second tab row); its counts come from
     // the server, not from the page.

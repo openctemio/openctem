@@ -1616,7 +1616,16 @@ export function DataTable<TData, TValue>({
         layout.kind === 'name' && NAME_SIZED_BY_FLOOR,
         // A date is one line: it never breaks between day, month and year.
         (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
-        layout.kind === 'datetime-recent' && 'overflow-hidden text-ellipsis',
+        // A cell still too wide for its column ends in an ellipsis (its full
+        // text in the title, set below), never a hard clip.
+        // A pinned cell is left alone: its edge shadow (`after:-end-3`) sits
+        // outside the cell, and a clip would hide it.
+        !pin.className &&
+          layout.kind !== 'name' &&
+          layout.kind !== 'select' &&
+          layout.kind !== 'actions' &&
+          layout.kind !== 'decisions' &&
+          'overflow-hidden text-ellipsis',
         head && stickyHeader && STICKY_HEAD_CLASS,
         head && stickyHeader && pin.className && STICKY_HEAD_PINNED_CLASS,
         // The page's scroller is <main>, under the app header: top 0 sticks the
@@ -1626,6 +1635,22 @@ export function DataTable<TData, TValue>({
       style: style || pin.style ? { ...style, ...pin.style } : undefined,
     }
   }
+
+  // A cell that is cut gets its full text as the title (a pointer or a long
+  // press shows it); a cell that fits again loses the title it was given.
+  React.useLayoutEffect(() => {
+    const cells = tableWrapRef.current?.querySelectorAll<HTMLElement>('tbody td')
+    cells?.forEach((td) => {
+      const cut = td.classList.contains('overflow-hidden') && td.scrollWidth > td.clientWidth + 1
+      if (cut && !td.title) {
+        td.title = td.textContent?.trim() ?? ''
+        td.dataset.autoTitle = ''
+      } else if (!cut && td.dataset.autoTitle !== undefined) {
+        td.removeAttribute('title')
+        delete td.dataset.autoTitle
+      }
+    })
+  })
 
   // One polite live region per table: sort, page and refresh results.
   const sortKey = sorting.map((s) => `${s.id}:${s.desc ? 'd' : 'a'}`).join(',')
@@ -1997,6 +2022,7 @@ export function DataTable<TData, TValue>({
           phoneCards && 'hidden'
         )}
         data-density={density}
+        data-auto-hidden={autoHidden.size ? [...autoHidden].join(' ') : undefined}
         data-scroll-mode={scrollMode}
         data-hidden-start={hiddenEdges.start}
         data-hidden-end={hiddenEdges.end}
