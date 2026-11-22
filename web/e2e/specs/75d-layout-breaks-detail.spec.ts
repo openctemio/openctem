@@ -1,4 +1,4 @@
-import { detailPages, webOriginPaths } from '../helpers/layout-breaks'
+import { detailPages, findingRail, webOriginPaths } from '../helpers/layout-breaks'
 
 /**
  * Layout breaks on the detail pages: a web origin's Paths tab (the tree from
@@ -7,6 +7,7 @@ import { detailPages, webOriginPaths } from '../helpers/layout-breaks'
  * helpers/layout-breaks.ts; see 75a-layout-breaks-lists.spec.ts for the split.
  */
 webOriginPaths({ tag: ['@assets', '@attack-surface', '@phone'] })
+findingRail({ tag: ['@findings', '@phone'] })
 
 /**
  * A pentest campaign and a vulnerability on the shared detail kit: header,

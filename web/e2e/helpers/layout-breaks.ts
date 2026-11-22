@@ -1006,6 +1006,82 @@ export function detailPages(options: Options) {
 }
 
 /** Entry pages a person opens signed out. */
+/**
+ * The finding page's facts rail (owner report 2026-11-22, 2000 px, dark): the
+ * Watchers row showed a chevron and then a bell button past the rail's right
+ * edge. At every width and language, no control of any rail row may sit past
+ * the row's value column, and no row may scroll sideways.
+ */
+export function findingRail(options: Options) {
+  test.describe('Layout breaks: finding rail', options, () => {
+    const RAIL_WIDTHS = [390, 1024, 1280, 1440, 2000]
+    test('/findings/[id] rail rows stay inside the rail', async ({ page, baseURL }, testInfo) => {
+      test.setTimeout(240_000)
+      const res = page.waitForResponse((r) => /\/api\/v1\/findings\?/.test(r.url()) && r.ok(), {
+        timeout: 60_000,
+      })
+      await page.goto('/findings')
+      const list = (await (await res).json()) as { data?: { id: string }[] }
+      const id = list.data?.[0]?.id
+      test.skip(!id, 'Needs a finding')
+      const report: Record<string, string[]> = {}
+      for (const width of RAIL_WIDTHS) {
+        for (const lang of ['en', 'vi'] as const) {
+          for (const theme of ['light', 'dark'] as const) {
+            if (width !== 2000 && width !== 390 && (lang === 'vi' || theme === 'dark')) continue
+            await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 })
+            await page.context().addCookies([
+              { name: 'locale', value: lang, url: baseURL! },
+              { name: 'theme', value: theme, url: baseURL! },
+            ])
+            await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' })
+            await page.goto(`/findings/${id}`, { timeout: 60_000 })
+            await page
+              .getByTestId('watchers-summary')
+              .waitFor({ timeout: 45_000 })
+              .catch(() => {})
+            await settle(page)
+            // Phone folds the rows after the first group: open the fold.
+            const fold = page.locator('[data-slot="property-fold"][aria-expanded="false"]')
+            if (
+              await fold
+                .first()
+                .isVisible()
+                .catch(() => false)
+            )
+              await fold.first().click()
+            const bad = await page.evaluate(() => {
+              const out: string[] = []
+              const rows = document.querySelectorAll('main [data-slot="property-row"]')
+              for (const row of rows) {
+                const dd = row.querySelector('dd')
+                const box = (dd ?? row).getBoundingClientRect()
+                const label = row.querySelector('dt')?.textContent?.trim() ?? '?'
+                if (row.scrollWidth > row.clientWidth + 1)
+                  out.push(`${label}: row scrolls sideways`)
+                for (const el of row.querySelectorAll('button, a, input, [role=button]')) {
+                  const r = el.getBoundingClientRect()
+                  if (r.width === 0) continue
+                  if (r.right > box.right + 1 || r.right > window.innerWidth)
+                    out.push(
+                      `${label}: ${el.tagName.toLowerCase()} ends at ${Math.round(r.right)} past ${Math.round(Math.min(box.right, window.innerWidth))}`
+                    )
+                }
+              }
+              return out
+            })
+            const tag = `${width}-${lang}-${theme}`
+            report[tag] = bad
+            await keep(testInfo, `finding-rail__${tag}.png`, await page.screenshot())
+          }
+        }
+      }
+      await keep(testInfo, 'finding-rail.json', JSON.stringify(report, null, 1))
+      for (const [tag, bad] of Object.entries(report)) expect.soft(bad, `rail ${tag}`).toEqual([])
+    })
+  })
+}
+
 export function layoutSignedOut(options: Options, routes: string[]) {
   test.describe('Layout breaks, signed out', options, () => {
     test.describe.configure({ mode: 'parallel' })
