@@ -33,6 +33,8 @@ import {
 } from '../api/use-remediation-campaigns'
 import { CampaignDue, CampaignTasksCell, FindingsProgress, useCampaignOwner } from './campaign-bits'
 import { CampaignFormDialog } from './campaign-form-dialog'
+import { opensSheet, useSheetListNav, useSheetParam } from '@/hooks/use-sheet-param'
+import { CampaignSheet } from './campaign-sheet'
 import { useSearchQuery } from '@/hooks/use-search-query'
 
 type StatusFilter = CampaignStatus | 'all'
@@ -65,6 +67,12 @@ export function CampaignList() {
   })
   const counts = useCampaignStatusCounts(data)
   const rows = useMemo(() => data?.data ?? [], [data])
+  // A row opens the campaign's quick view (?campaign=<id>); the full page stays a link.
+  const sheet = useSheetParam('campaign')
+  const rowIds = useMemo(() => rows.map((r) => r.id), [rows])
+  useSheetListNav({ ids: rowIds, currentId: sheet.id, onMove: sheet.move })
+  const openSheet = sheet.open
+  const at = sheet.id ? rowIds.indexOf(sheet.id) : -1
 
   // Board order: the campaign, its status, who owns it, its tasks, the
   // findings it closed, then the due date. Widths come from the column kinds.
@@ -78,6 +86,7 @@ export function CampaignList() {
           <div className="min-w-0">
             <Link
               href={`/remediation/campaigns/${row.original.id}`}
+              onClick={(e) => opensSheet(e, () => openSheet(row.original.id))}
               className="block truncate font-medium hover:underline"
               title={row.original.name}
             >
@@ -144,7 +153,7 @@ export function CampaignList() {
         ),
       },
     ],
-    [ownerOf, t]
+    [openSheet, ownerOf, t]
   )
 
   const filtered = status !== 'all' || search.trim() !== ''
@@ -230,13 +239,14 @@ export function CampaignList() {
           pagination={pagination}
           onPaginationChange={setPagination}
           getRowId={(r) => r.id}
-          onRowClick={(r) => router.push(`/remediation/campaigns/${r.id}`)}
+          onRowClick={(r) => sheet.open(r.id)}
           paginationNoun={t('remediationCampaigns.noun')}
           mobileRow={(c) => (
             <div data-slot="campaign-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
               <div className="flex min-w-0 items-center justify-between gap-3">
                 <Link
                   href={`/remediation/campaigns/${c.id}`}
+                  onClick={(e) => opensSheet(e, () => openSheet(c.id))}
                   className="min-w-0 truncate font-medium hover:underline"
                   title={c.name}
                 >
@@ -257,6 +267,21 @@ export function CampaignList() {
         />
       </PageStack>
 
+      <CampaignSheet
+        campaignId={sheet.id}
+        onClose={sheet.close}
+        position={
+          at >= 0
+            ? {
+                index: at + 1 + pagination.pageIndex * pagination.pageSize,
+                total: data?.total ?? rows.length,
+                prevId: rowIds[at - 1],
+                nextId: rowIds[at + 1],
+                onGo: sheet.move,
+              }
+            : undefined
+        }
+      />
       <CampaignFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

@@ -58,9 +58,11 @@ import {
 import { useOwnerNames } from '../api/use-owner-names'
 import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
-import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { DeadlinePill, TaskProgressCell, TaskStatePill } from './task-bits'
+import { TaskSheet } from './task-sheet'
 import { VIEW_FILTERS, type TaskView } from './task-views'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { opensSheet, useSheetListNav, useSheetParam } from '@/hooks/use-sheet-param'
 
 export type { TaskView }
 
@@ -102,6 +104,11 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   }
   const { data, error, isLoading, mutate } = useTasks(filters)
   const tasks = useMemo(() => data?.data ?? [], [data])
+  // A row opens the task's quick view (?task=<id>); the full page stays a link.
+  const sheet = useSheetParam('task')
+  const taskIds = useMemo(() => tasks.map((x) => x.id), [tasks])
+  useSheetListNav({ ids: taskIds, currentId: sheet.id, onMove: sheet.move })
+  const openSheet = sheet.open
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -133,6 +140,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           <div className="min-w-0">
             <Link
               href={`/remediation/tasks/${row.original.id}`}
+              onClick={(e) => opensSheet(e, () => openSheet(row.original.id))}
               className="block truncate font-medium hover:underline"
               title={row.original.title}
             >
@@ -175,17 +183,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           width: 160,
           hideBelow: TASK_HIDE_BELOW.progress,
         },
-        cell: ({ row }) => (
-          <div className="w-full min-w-0">
-            <TaskProgress task={row.original} />
-            <div className="text-muted-foreground mt-1 truncate text-xs">
-              {t('remediationHub.tasks.verifiedOf', undefined, {
-                verified: row.original.counts.verified,
-                total: row.original.counts.total,
-              })}
-            </div>
-          </div>
-        ),
+        cell: ({ row }) => <TaskProgressCell task={row.original} />,
       },
       {
         id: 'risk',
@@ -197,7 +195,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           hideBelow: TASK_HIDE_BELOW.risk,
         },
         cell: ({ row }) => (
-          <span className="font-mono text-sm tabular-nums">{row.original.counts.risk_points}</span>
+          <span className="text-sm tabular-nums">{row.original.counts.risk_points}</span>
         ),
       },
       {
@@ -207,7 +205,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         cell: ({ row }) => <DeadlinePill task={row.original} />,
       },
     ],
-    [ownerOf, t]
+    [openSheet, ownerOf, t]
   )
 
   const sensors = useSensors(
@@ -359,9 +357,11 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           pagination={pagination}
           onPaginationChange={setPagination}
           getRowId={(r) => r.id}
-          onRowClick={(r) => router.push(`/remediation/tasks/${r.id}`)}
+          onRowClick={(r) => sheet.open(r.id)}
           paginationNoun={t('remediationHub.tasks.noun')}
-          mobileRow={(r) => <TaskPhoneCard task={r} owner={ownerOf(r)} />}
+          mobileRow={(r) => (
+            <TaskPhoneCard task={r} owner={ownerOf(r)} onOpen={() => openSheet(r.id)} />
+          )}
         />
       ) : (
         <>
@@ -395,6 +395,21 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
           )}
         </>
       )}
+      <TaskSheet
+        taskId={sheet.id}
+        onClose={sheet.close}
+        position={
+          sheet.id && taskIds.includes(sheet.id)
+            ? {
+                index: taskIds.indexOf(sheet.id) + 1 + pagination.pageIndex * pagination.pageSize,
+                total: data?.total ?? tasks.length,
+                prevId: taskIds[taskIds.indexOf(sheet.id) - 1],
+                nextId: taskIds[taskIds.indexOf(sheet.id) + 1],
+                onGo: sheet.move,
+              }
+            : undefined
+        }
+      />
       <ConfirmDialog
         open={pendingHold !== null}
         onOpenChange={(open) => {
@@ -501,7 +516,6 @@ export function TaskCard({
   owner: string
   className?: string
 }) {
-  const { t } = useTranslation()
   return (
     <div className={cn('bg-card rounded-md border p-3 text-sm', className)}>
       <Link href={`/remediation/tasks/${task.id}`} className="font-medium hover:underline">
@@ -512,13 +526,7 @@ export function TaskCard({
         <TaskStatePill state={task.state} />
         <DeadlinePill task={task} />
       </div>
-      <TaskProgress task={task} className="mt-2" />
-      <div className="text-muted-foreground mt-1 text-xs">
-        {t('remediationHub.tasks.verifiedOf', undefined, {
-          verified: task.counts.verified,
-          total: task.counts.total,
-        })}
-      </div>
+      <TaskProgressCell task={task} className="mt-2" />
     </div>
   )
 }
@@ -530,13 +538,23 @@ export function TaskCard({
  *   14 of 31 findings resolved   2 d overdue
  * A tap opens the task.
  */
-export function TaskPhoneCard({ task, owner }: { task: RemediationTask; owner: string }) {
+export function TaskPhoneCard({
+  task,
+  owner,
+  onOpen,
+}: {
+  task: RemediationTask
+  owner: string
+  /** Opens the quick view instead of the page on a plain tap. */
+  onOpen?: () => void
+}) {
   const { t } = useTranslation()
   return (
     <div data-slot="task-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <Link
           href={`/remediation/tasks/${task.id}`}
+          onClick={onOpen ? (e) => opensSheet(e, onOpen) : undefined}
           className="min-w-0 truncate font-medium hover:underline"
           title={task.title}
         >

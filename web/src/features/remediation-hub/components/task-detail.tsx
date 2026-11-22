@@ -30,10 +30,7 @@ import {
   GripVertical,
   MoreHorizontal,
   MoveRight,
-  PauseCircle,
-  PlayCircle,
   Scissors,
-  XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
@@ -52,7 +49,6 @@ import type { Severity } from '@/features/shared'
 import { cn } from '@/lib/utils'
 import {
   TERMINAL_TASK_STATES,
-  type MarkFixedResult,
   type Page,
   type RemediationTask,
   type TaskMember,
@@ -70,7 +66,8 @@ import { fixSteps, groupByAsset, isTypingTarget } from '../lib/hub'
 import { FixStepsBlock } from './fix-steps'
 import { MovePalette, type MoveTarget } from './move-palette'
 import { apiMessage } from './suggestions-inbox'
-import { CancelTaskDialog, MarkFixedDialog, SplitDialog } from './task-dialogs'
+import { SplitDialog } from './task-dialogs'
+import { useTaskActions } from './use-task-actions'
 import { DeadlinePill, TaskCampaignLink, TaskProgress, TaskStatePill } from './task-bits'
 import { useTaskException } from './task-exception'
 import { TaskHistory } from './task-history'
@@ -92,7 +89,6 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.RemediationWrite)
-  const canFix = canWrite && hasPermission(Permission.FindingsFixApply)
   const revalidate = useRevalidateHub()
   const { data: task, error, isLoading, mutate } = useTask(taskId)
   // The owner's name by id: the first view never loads the member list.
@@ -109,9 +105,6 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const [moveOpen, setMoveOpen] = useState(false)
   const [dropTarget, setDropTarget] = useState<RemediationTask | null>(null)
   const [splitOpen, setSplitOpen] = useState(false)
-  const [fixOpen, setFixOpen] = useState(false)
-  const [fixResult, setFixResult] = useState<MarkFixedResult | null>(null)
-  const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
   // The finding open in the side drawer lives in the URL (?finding=), so it
@@ -194,8 +187,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     [autoNext, findingId, loaded, members, order, revalidate, showFinding]
   )
 
-  const writable =
-    !!task && canWrite && !TERMINAL_TASK_STATES.has(task.state) && task.hidden_members === 0
+  const actions = useTaskActions(task, refresh)
+  const { writable, canFix } = actions
   const exception = useTaskException(taskId, task?.version ?? 0, writable)
 
   const doMove = useCallback(
@@ -279,59 +272,12 @@ export function TaskDetail({ taskId }: { taskId: string }) {
     [refresh, selected, t, task]
   )
 
-  const doMarkFixed = useCallback(
-    async (note: string) => {
-      if (!task) return
-      setBusy(true)
-      try {
-        const res = await hubApi.resolveTask(task.id, { version: task.version, note })
-        setFixResult(res)
-        await refresh()
-      } catch (err) {
-        toast.error(apiMessage(err, t('remediationHub.toast.failed')))
-      } finally {
-        setBusy(false)
-      }
-    },
-    [refresh, t, task]
-  )
-
-  const setHold = useCallback(
-    async (hold: boolean | null, note?: string) => {
-      if (!task) return
-      setBusy(true)
-      try {
-        await hubApi.updateTask(
-          task.id,
-          hold === null
-            ? { version: task.version, cancel: true, note }
-            : { version: task.version, hold }
-        )
-        setCancelOpen(false)
-        await refresh()
-        toast.success(
-          hold === null
-            ? t('remediationHub.toast.canceled')
-            : hold
-              ? t('remediationHub.toast.held')
-              : t('remediationHub.toast.resumed')
-        )
-      } catch (err) {
-        toast.error(apiMessage(err, t('remediationHub.toast.failed')))
-      } finally {
-        setBusy(false)
-      }
-    },
-    [refresh, t, task]
-  )
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (
         moveOpen ||
         splitOpen ||
-        fixOpen ||
-        cancelOpen ||
+        actions.dialogOpen ||
         exception.open ||
         e.metaKey ||
         e.ctrlKey ||
@@ -357,10 +303,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         selected.size < (task?.counts.total ?? 0)
       )
         setSplitOpen(true)
-      else if (e.key === 'f' && writable && canFix) {
-        setFixResult(null)
-        setFixOpen(true)
-      } else return
+      else if (e.key === 'f' && writable && canFix) actions.openFix()
+      else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
@@ -368,8 +312,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   }, [
     moveOpen,
     splitOpen,
-    fixOpen,
-    cancelOpen,
+    actions,
     exception.open,
     writable,
     canFix,
@@ -462,43 +405,17 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         {writable && (
           <div className="flex flex-wrap items-center gap-2">
             {exception.action}
-            {canFix && (
-              <Button
-                onClick={() => {
-                  setFixResult(null)
-                  setFixOpen(true)
-                }}
-                aria-keyshortcuts="f"
-              >
-                <CheckCheck className="size-4" aria-hidden />
-                {t('remediationHub.detail.markFixed')}
-              </Button>
-            )}
+            {actions.primary}
             <ActionMenu
               title={task.title}
               label={t('remediationHub.detail.more')}
-              items={[
-                task.state === 'on_hold'
-                  ? {
-                      id: 'resume',
-                      label: t('remediationHub.detail.resume'),
-                      icon: PlayCircle,
-                      onSelect: () => void setHold(false),
-                    }
-                  : {
-                      id: 'hold',
-                      label: t('remediationHub.detail.hold'),
-                      icon: PauseCircle,
-                      onSelect: () => void setHold(true),
-                    },
-                {
-                  id: 'cancel',
-                  label: t('remediationHub.detail.cancel'),
-                  icon: XCircle,
-                  destructive: true,
-                  onSelect: () => setCancelOpen(true),
-                },
-              ]}
+              items={actions.menu.map((m, i) => ({
+                id: `task-action-${i}`,
+                label: m.label,
+                icon: m.icon,
+                destructive: m.destructive,
+                onSelect: m.onSelect,
+              }))}
               trigger={
                 <Button variant="outline" size="icon" aria-label={t('remediationHub.detail.more')}>
                   <MoreHorizontal className="size-4" aria-hidden />
@@ -689,14 +606,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         onConfirm={(body) => void doSplit(body)}
         busy={busy}
       />
-      <MarkFixedDialog
-        task={task}
-        open={fixOpen}
-        onOpenChange={setFixOpen}
-        onConfirm={(note) => void doMarkFixed(note)}
-        busy={busy}
-        result={fixResult}
-      />
+      {actions.dialogs}
       {exception.dialog}
       <TaskFindingDrawer
         taskId={taskId}
@@ -705,12 +615,6 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         onClose={() => showFinding(null, 'replace')}
         onGo={(id) => showFinding(id, 'replace')}
         onStatusChange={onFindingStatus}
-      />
-      <CancelTaskDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        onConfirm={(note) => void setHold(null, note)}
-        busy={busy}
       />
     </PageStack>
   )

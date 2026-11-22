@@ -24,6 +24,9 @@ export interface DetailPositionProps {
   listLabel?: string
   prevHref?: string
   nextHref?: string
+  /** Button mode (a quick-view sheet moves in place): used when there is no href. */
+  onPrev?: () => void
+  onNext?: () => void
   /** Accessible names, with the key in them, e.g. "Previous finding (k)". */
   prevLabel: string
   nextLabel: string
@@ -32,10 +35,12 @@ export interface DetailPositionProps {
 
 function Step({
   href,
+  onClick,
   label,
   children,
 }: {
   href?: string
+  onClick?: () => void
   label: string
   children: React.ReactNode
 }) {
@@ -44,7 +49,8 @@ function Step({
       asChild={!!href}
       variant="ghost"
       size="icon"
-      disabled={!href}
+      disabled={!href && !onClick}
+      onClick={href ? undefined : onClick}
       aria-label={label}
       title={label}
     >
@@ -59,13 +65,15 @@ export function DetailPosition({
   listLabel,
   prevHref,
   nextHref,
+  onPrev,
+  onNext,
   prevLabel,
   nextLabel,
   className,
 }: DetailPositionProps) {
   return (
     <div data-slot="detail-position" className={cn('flex shrink-0 items-center gap-1', className)}>
-      <Step href={safeHref(prevHref)} label={prevLabel}>
+      <Step href={safeHref(prevHref)} onClick={onPrev} label={prevLabel}>
         <ChevronLeft className="rtl:rotate-180" aria-hidden />
       </Step>
       <span className="px-1 text-dense tabular-nums whitespace-nowrap" aria-live="polite">
@@ -77,7 +85,7 @@ export function DetailPosition({
           <span className="text-muted-foreground">{label}</span>
         )}
       </span>
-      <Step href={safeHref(nextHref)} label={nextLabel}>
+      <Step href={safeHref(nextHref)} onClick={onNext} label={nextLabel}>
         <ChevronRight className="rtl:rotate-180" aria-hidden />
       </Step>
     </div>

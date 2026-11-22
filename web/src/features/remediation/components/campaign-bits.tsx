@@ -6,6 +6,7 @@ import { useCallback } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useOwnerNames } from '@/features/remediation-hub/api/use-owner-names'
 import { cn } from '@/lib/utils'
+import { ProgressCell } from '@/features/shared/components/progress-cell'
 import type { CampaignSummary, RemediationCampaign } from '../api/use-remediation-campaigns'
 import { formatDate } from '@/lib/app-locale'
 
@@ -91,30 +92,20 @@ export function FindingsProgress({
       </span>
     )
   }
-  const pct = Math.min(100, Math.round((summary.closed_findings / summary.findings) * 100))
-  const label = t('remediationCampaigns.progress.label', undefined, {
-    closed: summary.closed_findings,
-    total: summary.findings,
-  })
   return (
-    <div className={cn('flex min-w-0 items-center gap-2', className)}>
-      <div
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        className="bg-muted h-2 w-16 shrink-0 overflow-hidden rounded-full"
-      >
-        <span className="bg-success block h-full" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-muted-foreground whitespace-nowrap text-xs">
-        {t('remediationCampaigns.progress.short', undefined, {
-          closed: summary.closed_findings,
-          total: summary.findings,
-        })}
-      </span>
-    </div>
+    <ProgressCell
+      className={className}
+      max={summary.findings}
+      parts={[{ value: summary.closed_findings, tone: 'success' }]}
+      caption={t('remediationCampaigns.progress.short', undefined, {
+        closed: summary.closed_findings,
+        total: summary.findings,
+      })}
+      label={t('remediationCampaigns.progress.label', undefined, {
+        closed: summary.closed_findings,
+        total: summary.findings,
+      })}
+    />
   )
 }
 

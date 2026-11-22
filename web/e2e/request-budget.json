@@ -115,5 +115,16 @@
       "from": "/vulnerabilities",
       "max": 5
     }
+  },
+  "$comment_sheetRoutes": "A list with its quick-view sheet open from the link (?task=, ?campaign=): the list, the record and its first rows. The sheet reads its timeline and query only when expanded. Measured with E2E_BUDGET_REPORT.",
+  "sheetRoutes": {
+    "/remediation/tasks?task=[id]": {
+      "sample": "/api/v1/remediation/tasks?per_page=1",
+      "max": 6
+    },
+    "/remediation/campaigns?campaign=[id]": {
+      "sample": "/api/v1/remediation/campaigns?per_page=1",
+      "max": 6
+    }
   }
 }
