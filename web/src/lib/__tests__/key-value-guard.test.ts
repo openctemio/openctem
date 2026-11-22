@@ -53,7 +53,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/programs/components/program-source.tsx',
   'features/remediation/components/campaign-detail.tsx',
   'features/remediation-hub/components/query-preview-panel.tsx',
-  'features/remediation-hub/components/task-detail.tsx',
   'features/scans/components/new-scan/review-step.tsx',
   'features/scans/components/run-task-logs-dialog.tsx',
   'features/sensors/components/edit-sensor-dialog.tsx',
