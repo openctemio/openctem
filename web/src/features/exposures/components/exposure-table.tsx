@@ -139,6 +139,17 @@ const EXPOSURE_HIDE_BELOW = {
  * column is sortable (a header that reordered only the rows on screen would
  * mislead).
  */
+/**
+ * The plain-words name of an event type in the reader's language. A type this
+ * build does not know yet (the server may add one) falls back to its id with
+ * the underscores read as spaces.
+ */
+export function exposureEventTypeLabel(t: Translate, type: string): string {
+  const known = (EXPOSURE_EVENT_TYPE_LABELS as Record<string, string | undefined>)[type]
+  const fallback = known ?? type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+  return t(`exposures.eventType.${type}`, fallback)
+}
+
 export function getExposureColumns(
   handlers: ExposureColumnHandlers,
   t: Translate

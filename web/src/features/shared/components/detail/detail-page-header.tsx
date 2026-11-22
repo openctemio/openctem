@@ -147,10 +147,11 @@ export function DetailPageHeader({
             )}
             {secondary}
             {primary && (
-              // Phone: the main action leads the row and takes the free width.
+              // Phone: the main action leads the row and takes the free width;
+              // it never shrinks below its label (the row wraps instead).
               <div
                 data-slot="detail-primary"
-                className="flex max-md:order-first max-md:min-w-0 max-md:flex-1 max-md:[&>*]:w-full"
+                className="flex max-md:order-first max-md:min-w-fit max-md:flex-1 max-md:[&>*]:w-full"
               >
                 {primary}
               </div>
