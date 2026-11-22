@@ -380,6 +380,7 @@ Planned pages that do not exist today start inside the budget.
 | Remediation campaign (/remediation/campaigns/[id]) | (see screen description) | `GET /api/v1/remediation/campaigns/{id}` | first view or on open |  |  | shipped |
 | SLA (/sla) | (see screen description) | `GET /api/v1/sla/summary` | first view or on open |  |  | shipped |
 |  | (see screen description) | `GET /api/v1/sla-policies` | first view or on open |  |  | shipped |
+|  | Make default preview (counts of open findings with an earlier or overdue deadline) | `GET /api/v1/sla-policies/{id}/default-preview` | on open of the confirmation | working | settings:sla:write | shipped |
 |  | (see screen description) | `GET /api/v1/sla/escalations` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/sla/escalations/remind` | action |  |  | planned (new) |
 | Exceptions (/exceptions) | (see screen description) | `GET /api/v1/suppressions` | first view or on open |  |  | shipped |
@@ -499,10 +500,10 @@ Planned pages that do not exist today start inside the budget.
 | Roles | (see screen description) | `GET /api/v1/roles/{roleId}/members` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/roles/{roleId}/members/bulk` | action |  |  | shipped |
 |  | (see screen description) | `GET /api/v1/roles/{roleId}/impact` | first view or on open |  |  | shipped |
-| Service accounts | Service accounts list | GET /api/v1/service-accounts | first view | working | members:read | shipped |
+| Service accounts | Service accounts list (per account: roles assigned directly, active teams, AI agent mark, active unexpired key count; two grouped queries for the whole list) | GET /api/v1/service-accounts | first view | working | members:read | shipped |
 |  | Keys of one account | GET /api/v1/service-accounts/{id}/api-keys | on open | working | members:read + api-keys:read | shipped |
 |  | Max key lifetime | GET /api/v1/organization/settings/api-keys | first view | reference | api-keys:read/write, settings:read | shipped |
-|  | Keys list (status, owner filters, export) | GET /api/v1/api-keys | first view | working | api-keys:read | shipped |
+|  | Keys list (status with derived expired, owner name and kind, `?owner=me\|service_accounts`, export) | GET /api/v1/api-keys | first view | working | api-keys:read | shipped |
 | AI assistants | (see screen description) | `PUT /api/v1/mcp-access/settings` | action |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/mcp-access/clients` | action |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/api-keys` | action |  |  | shipped |
@@ -568,6 +569,18 @@ Planned pages that do not exist today start inside the budget.
 |  | Queue (outbox) + stats | GET /api/v1/notification-outbox, `/stats` | tab open | working | notifications:read + integrations:manage | shipped |
 |  | Signing secret (webhook) | GET /api/v1/integrations/{id}/signing-secret | on open | working | integrations:manage | shipped |
 
+### Settings lists: usage and access fields
+
+The roles and teams lists carry the numbers their pages show, so a page makes no call per row. Every count is
+computed for the caller's tenant only, in a constant number of grouped queries, whatever the number of rows.
+
+| List | Field | Meaning |
+|---|---|---|
+| `GET /api/v1/roles` (roles:read) | `members_count` | Distinct users, people and service accounts, who hold the role in this tenant, directly (`user_roles`) or through a team (`v_user_role_grants`). A person holding it both ways counts once. One `GROUP BY role_id` for all roles. Present on the list only, absent on `GET /roles/{roleId}`. |
+| | `pending_approvals` | Finding approval requests of this tenant that are pending and not past their expiry, for a role whose holders may decide them (the role holds `findings:approve`); `0` for any other role. It is the tenant's waiting count, not a share of it: two approver roles both show the same number. Present on the list only. |
+| `GET /api/v1/groups` (team:groups:read) | `access` | The team's access summary, the same shape as `GET /groups/{groupId}/access`: `scope_mode` (`specific` or `all_assets`), `presets` (template id, name, version state), `privileged` and `other_roles` (roles bound by hand). Loaded for the page of teams with one query on `group_role_bindings` and one batch of roles with their permissions. Present on the list only. |
+| | `asset_count` (existing) | Assets the team owns (asset owners), not deleted, limited to the assets the caller may see. A team whose `access.scope_mode` is `all_assets` sees every asset of the tenant whatever this number says; the console reads the two together. |
+
 ## Platform admin console
 
 | Screen | Block | Endpoint | Loaded | Freshness | Permission and scope | State |
@@ -579,7 +592,7 @@ Planned pages that do not exist today start inside the budget.
 | Console overview | "Needs you" attention queue (orgs without owner, break-glass sign-ins 7d, failed admin actions 24h, break-glass tests overdue, offline platform sensors, access requests pending, schema drift, stuck commands, scan runs past deadline, failed/dead outbox) | GET /api/v1/admin/overview | first view | snapshot | any admin role | shipped, change planned |
 |  | Recent administrator activity | GET /api/v1/admin/audit-logs?kind=changes&per_page=8 | first view | working | audit reader | shipped |
 |  | Banner: security release | GET /api/v1/admin/version-check | first view / shell) | snapshot | any admin | shipped |
-| Software updates and licences | (see screen description) | `GET /api/v1/admin/edition` | first view or on open |  |  | shipped |
+| Software updates | (see screen description) | `GET /api/v1/admin/version-check` | first view or on open |  |  | shipped |
 |  | (see screen description) | `POST /api/v1/admin/version-check/import` | action |  |  | shipped |
 |  | (see screen description) | `PUT /api/v1/admin/version-check/enabled` | action |  |  | shipped |
 | Admin activity | List (administrator, action, resource, result, IP; filters admin, action, resource type, success, from/to, search, `kind=changes`) | GET /api/v1/admin/audit-logs | first view | working |  | shipped, change planned |

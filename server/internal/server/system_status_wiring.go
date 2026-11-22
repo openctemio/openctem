@@ -17,9 +17,10 @@ import (
 	"github.com/openctemio/openctem/server/pkg/version"
 )
 
-// newSystemCollector wires the System page (RFC-114) to the API's own reads.
-// pingRedis may be nil.
-func newSystemCollector(cfg *config.Config, db *sql.DB, pingRedis func(ctx context.Context) error, vc *versioncheck.Service) *systemstatus.Collector {
+// systemCollectorConfig is what the System page and the doctor command check
+// on this host: the data paths, the backup status file, the certificate files
+// and the two health URLs, all from the operator's settings.
+func systemCollectorConfig(cfg *config.Config) systemstatus.Config {
 	paths := systemstatus.ParseNamed(cfg.System.StoragePaths)
 	if cfg.System.StoragePaths == "" {
 		if cfg.Storage.Provider == "local" && cfg.Storage.LocalPath != "" {
@@ -33,6 +34,16 @@ func newSystemCollector(cfg *config.Config, db *sql.DB, pingRedis func(ctx conte
 	if caFile == "" && cfg.SensorConfig.TransportV3.CADir != "" {
 		caFile = filepath.Join(cfg.SensorConfig.TransportV3.CADir, "sensor-ca.pem")
 	}
+	return systemstatus.Config{
+		StoragePaths: paths, BackupStatusFile: cfg.System.BackupStatusFile,
+		TLSCertFiles: systemstatus.ParseNamed(cfg.System.TLSCertFiles), SensorCAFile: caFile,
+		WebHealthURL: cfg.System.WebHealthURL, GatewayHealthURL: cfg.System.GatewayHealthURL,
+	}
+}
+
+// newSystemCollector wires the System page (RFC-114) to the API's own reads.
+// pingRedis may be nil.
+func newSystemCollector(cfg *config.Config, db *sql.DB, pingRedis func(ctx context.Context) error, vc *versioncheck.Service) *systemstatus.Collector {
 	d := systemstatus.Deps{
 		PingDB: db.PingContext,
 		DatabaseSize: func(ctx context.Context) (int64, error) {
@@ -74,11 +85,7 @@ func newSystemCollector(cfg *config.Config, db *sql.DB, pingRedis func(ctx conte
 			}, nil
 		}
 	}
-	return systemstatus.New(systemstatus.Config{
-		StoragePaths: paths, BackupStatusFile: cfg.System.BackupStatusFile,
-		TLSCertFiles: systemstatus.ParseNamed(cfg.System.TLSCertFiles), SensorCAFile: caFile,
-		WebHealthURL: cfg.System.WebHealthURL, GatewayHealthURL: cfg.System.GatewayHealthURL,
-	}, d)
+	return systemstatus.New(systemCollectorConfig(cfg), d)
 }
 
 // systemMailer emails the active platform administrators about a degraded

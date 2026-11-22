@@ -25,7 +25,7 @@ type ListAuditLogsFilter struct {
 }
 
 // AuditService defines the interface for audit logging operations.
-// This is a base interface - Enterprise extends with advanced features.
+// This is a base interface; a custom build may extend it.
 type AuditService interface {
 	// Log creates an audit log entry.
 	Log(ctx context.Context, log *audit.AuditLog) error

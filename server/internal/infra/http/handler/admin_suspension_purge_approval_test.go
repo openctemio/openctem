@@ -22,7 +22,7 @@ type refusingGate struct {
 	target string
 }
 
-func (g *refusingGate) Require(_ context.Context, _ *admin.AdminUser, a admin.ApprovalAction, target string, _ adminconsole.ClientInfo) (*adminapproval.Grant, error) {
+func (g *refusingGate) Require(_ context.Context, _ *admin.AdminUser, a admin.ApprovalAction, target, _ string, _ adminconsole.ClientInfo) (*adminapproval.Grant, error) {
 	g.action, g.target = a, target
 	return nil, &admin.ApprovalRequiredError{Action: a, Target: target}
 }

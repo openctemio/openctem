@@ -42,6 +42,7 @@ func (Disabled) CVE(context.Context, string) (CVERecord, error) { return CVEReco
 func (Disabled) CanonicalVulnID(context.Context, string) (string, error) { return "", ErrUnavailable }
 
 // KEVSet fails with ErrUnavailable.
+func (Disabled) KEVs(context.Context, []string) ([]KEV, error)  { return nil, ErrUnavailable }
 func (Disabled) KEVSet(context.Context) (map[string]KEV, error) { return nil, ErrUnavailable }
 
 // EPSS fails with ErrUnavailable.

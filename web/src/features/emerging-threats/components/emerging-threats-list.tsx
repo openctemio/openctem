@@ -326,10 +326,11 @@ export function EmergingThreatsList() {
         header: t('emergingThreats.col.affected'),
         cell: ({ row }) => (
           <AffectedCell
-            confirmed={row.original.confirmed_assets}
-            possible={row.original.possible_assets}
-            internet={row.original.internet_facing_assets}
-            critical={row.original.critical_assets ?? 0}
+            confirmed={row.original.confirmed_hosts}
+            likely={row.original.likely_hosts ?? 0}
+            possible={row.original.possible_hosts}
+            internet={row.original.internet_facing_hosts}
+            critical={row.original.critical_hosts ?? 0}
           />
         ),
       },

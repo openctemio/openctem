@@ -47,6 +47,11 @@ TARGET_OS="${TARGET_OS:-linux}"
 TARGET_ARCH="${TARGET_ARCH:-$(go env GOARCH 2>/dev/null || uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct)}"
+# Release binaries never take build tags from the environment: GOFLAGS=-tags=...
+# (for example the sign-in test seam's authtestseam) would compile test-only code in.
+case "${GOFLAGS:-}" in
+*-tags*) echo "build-dist: GOFLAGS must not set -tags for a release build (got: $GOFLAGS)" >&2; exit 64 ;;
+esac
 export SOURCE_DATE_EPOCH GOWORK=off GOFLAGS="${GOFLAGS:-} -mod=readonly"
 BUILD_TIME="$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -86,7 +91,13 @@ GO_LDFLAGS="-s -w \
 gobuild() { # gobuild <out> <pkg>... (in server/)
 	local out="$1"; shift
 	(cd "$ROOT/server" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
-		go build -trimpath -ldflags="$GO_LDFLAGS" -o "$out" "$@")
+		go build -trimpath -ldflags="$GO_LDFLAGS" -o "$out" "$@") || return 1
+	# A release binary carries no build tag from the sign-in test suites.
+	local f
+	for f in "$out"*; do
+		[ -f "$f" ] || continue
+		bash "$ROOT/.github/scripts/release/check-no-test-seam.sh" "$f" || die "refusing a release binary with the sign-in test seam"
+	done
 }
 
 common_files() { # common_files <dir>
@@ -105,7 +116,7 @@ build_server() {
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
 	# The operator commands: links to the server binary (server/internal/server/tools.go).
-	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute; do
+	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute provider-addresses; do
 		ln -s openctem-server "$d/bin/$t"
 	done
 	# The migration runner (server/cmd/openctem-migrate), as in the migrations image.

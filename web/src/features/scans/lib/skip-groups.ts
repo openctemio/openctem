@@ -19,6 +19,7 @@ export const SKIP_REASONS = [
   'out_of_scope',
   'ownership_unconfirmed',
   'wildcard_only',
+  'provider_address',
   'tier_exceeded',
   'internal_outside_zones',
   'outside_zones',

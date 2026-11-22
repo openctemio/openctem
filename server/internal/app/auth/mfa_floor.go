@@ -6,8 +6,12 @@ package auth
 //
 // A member needs 2FA in an organization when the organization requires it
 // for them (everyone, or administrators) or the platform floor covers them.
-// "Administrator" is effective privilege: the owner or admin role, or a
-// privileged role granted to the member directly or through a team.
+// "Administrator" is effective privilege above the built-in member role
+// (permission.IsAboveMember): the owner or admin role, full data access (or a
+// permission that counts as such), or a privileged permission the member role
+// does not carry, granted directly or through a team. The member role's own
+// permissions never make someone an administrator: if they did, "2FA for
+// administrators" would gate every member and mean "2FA for everyone".
 
 import (
 	"context"
@@ -114,8 +118,11 @@ func (s *AuthService) mfaFloorPolicy(ctx context.Context) (platformmfa.Policy, e
 	return p, nil
 }
 
-// hasPrivilegedGrant reports whether the member holds a privileged role
-// through any grant in the organization.
+// hasPrivilegedGrant reports whether the member's effective grants in the
+// organization are above the built-in member role (permission.IsAboveMember).
+// Testing them with IsPrivilegedRole counted the member role itself as
+// privileged (it carries a privileged permission of its own), so a plain
+// member of an organization with "2FA for administrators" was gated.
 func (s *AuthService) hasPrivilegedGrant(ctx context.Context, tid, userID shared.ID) (bool, error) {
 	// Effective grants in the role service (direct roles and team bindings).
 	above, err := s.holdsAboveMember(ctx, tid, userID)
@@ -133,7 +140,7 @@ func (s *AuthService) hasPrivilegedGrant(ctx context.Context, tid, userID shared
 	if err != nil {
 		return false, fmt.Errorf("failed to load data access for 2FA policy: %w", err)
 	}
-	return permission.IsPrivilegedRole(perms, full), nil
+	return permission.IsAboveMember(perms, full), nil
 }
 
 // CheckCredentialFactor gates creating a credential (API key, sensor

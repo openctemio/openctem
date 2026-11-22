@@ -148,6 +148,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  notification_group_id  query  []string  false  "notification group id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
 // @Param  retired_source_only  query  boolean  false  "retired source only equals"
@@ -229,6 +230,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param        per_page  query  int     false  "Groups per page"  default(50)
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  apierror.Response
+// @Failure      503  {object}  apierror.Response  "QUERY_TIMEOUT: the grouping ran out of time; narrow the search or filters"
 // @Router       /findings/groups [get]
 func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http.Request) {
 	groupBy := r.URL.Query().Get("group_by")
@@ -348,6 +350,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  notification_group_id  query  []string  false  "notification group id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
 // @Param  retired_source_only  query  boolean  false  "retired source only equals"
@@ -425,6 +428,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param        q      query  string  false  "Matches title, file path, rule id, CVE id (exact) and asset name"
 // @Success      200  {object}  map[string]interface{}
 // @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER"
+// @Failure      503  {object}  apierror.Response  "QUERY_TIMEOUT: the read ran out of time; narrow the filters"
 // @Router       /findings/related-cves/{cveId} [get]
 func (h *FindingActionsHandler) GetRelatedCVEs(w http.ResponseWriter, r *http.Request) {
 	cveID := chi.URLParam(r, "cveId")
@@ -767,6 +771,10 @@ func (h *FindingActionsHandler) AssignToOwners(w http.ResponseWriter, r *http.Re
 
 func (h *FindingActionsHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, shared.ErrQueryTimeout):
+		// Counted and logged by the repository (by read name, no values).
+		apierror.QueryTimeout("The findings query took too long; narrow the search or the filters").WriteJSON(w)
+		return
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return

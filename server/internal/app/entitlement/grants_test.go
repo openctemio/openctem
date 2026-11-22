@@ -43,7 +43,7 @@ func TestAddonStates(t *testing.T) {
 		unavailable bool
 		code        string
 	}{
-		{"no provider: Community, nothing granted", nil, testKey, limits.GrantNone, false, limits.CodeAddonNotLicensed},
+		{"no provider: default build, nothing granted", nil, testKey, limits.GrantNone, false, limits.CodeAddonNotLicensed},
 		{"active", provider(limits.GrantActive), testKey, limits.GrantActive, false, ""},
 		{"expiring still grants", provider(limits.GrantExpiring), testKey, limits.GrantExpiring, false, ""},
 		{"grace still grants", provider(limits.GrantGrace), testKey, limits.GrantGrace, false, ""},
@@ -97,7 +97,7 @@ func TestNotices(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(&memRepo{}, nil, nil)
 	if n := svc.Notices(ctx); n != nil {
-		t.Fatalf("Community notices = %v, want none", n)
+		t.Fatalf("default build notices = %v, want none", n)
 	}
 	want := []limits.Notice{{Code: "LICENSE_EXPIRING", Level: limits.NoticeWarning, Until: time.Now()}}
 	svc.SetGrantProvider(&fixedProvider{notices: want})
@@ -110,9 +110,9 @@ func TestNotices(t *testing.T) {
 	}
 }
 
-// Grants never touch Community: with a provider that expires or fails every
+// Grants never touch the default build: with a provider that expires or fails every
 // grant, every feature that is not a grant stays allowed.
-func TestGrantsNeverDenyCommunityFeatures(t *testing.T) {
+func TestGrantsNeverDenyDefaultBuildFeatures(t *testing.T) {
 	ctx, tenant := context.Background(), shared.NewID()
 	for _, p := range []limits.GrantProvider{provider(limits.GrantExpired), &fixedProvider{err: errors.New("down")}} {
 		svc := NewService(&memRepo{}, nil, nil)

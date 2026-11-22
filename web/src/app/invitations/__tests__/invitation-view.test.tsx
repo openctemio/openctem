@@ -15,9 +15,11 @@ vi.mock('@/lib/session-navigation', () => ({
 
 const startSessionMfaAction = vi.fn()
 const selectTenantAction = vi.fn()
+const localLogoutAction = vi.fn()
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
   startSessionMfaAction: (...a: unknown[]) => startSessionMfaAction(...a),
   selectTenantAction: (...a: unknown[]) => selectTenantAction(...a),
+  localLogoutAction: (...a: unknown[]) => localLogoutAction(...a),
 }))
 // The real step is covered by its own tests; here only its wiring matters.
 vi.mock('@/features/auth/components/mfa-step', () => ({
@@ -277,6 +279,83 @@ describe('InvitationView', () => {
     expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
   })
 
+  // A refusal only another sign-in can fix shows that one step: never Accept
+  // or Open again (each would be refused the same way).
+  describe('a refusal that needs another sign-in shows its one next step', () => {
+    function refusedWith(code: string, where: '/accept-with-refresh' | '/accept') {
+      fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+        if (url.endsWith(where)) {
+          return new Response(JSON.stringify({ code, message: 'SERVER SENTENCE' }), { status: 403 })
+        }
+        return new Response(JSON.stringify({ code: 'UNAUTHORIZED' }), { status: 401 })
+      })
+      vi.stubGlobal('fetch', fetchFn)
+    }
+
+    beforeEach(() => {
+      localLogoutAction.mockReset()
+      localLogoutAction.mockResolvedValue(undefined)
+    })
+
+    it.each([
+      [
+        'SSO_REQUIRED',
+        'Acme signs in through its identity provider',
+        /continue with acme's identity provider/i,
+        '/login?org=acme',
+      ],
+      [
+        'MFA_IDP_EVIDENCE_REQUIRED',
+        'Acme signs in through its identity provider',
+        /continue with acme's identity provider/i,
+        '/login?org=acme',
+      ],
+      [
+        'OWN_SIGN_IN_REQUIRED',
+        'Use your own account for Acme',
+        /sign in with your own account/i,
+        '/login?returnTo=%2Finvitations&email=new.person%40co.com',
+      ],
+      [
+        'INVITATION_FOR_ANOTHER_ADDRESS',
+        'This invitation is for new.person@co.com',
+        /sign in as new.person@co.com/i,
+        '/login?returnTo=%2Finvitations&email=new.person%40co.com',
+      ],
+    ])('%s at acceptance: the step, signed out first', async (code, title, action, href) => {
+      refusedWith(code, '/accept-with-refresh')
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText(title)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /accept invitation/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
+      expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: action }))
+      await waitFor(() => expect(localLogoutAction).toHaveBeenCalledWith(href))
+      expectTokenNeverInAUrl(fetchFn)
+    })
+
+    it('the same step when opening the joined organization is refused', async () => {
+      refusedWith('none', '/accept')
+      fetchFn.mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+        return new Response(JSON.stringify({ role: 'member' }), { status: 200 })
+      })
+      selectTenantAction.mockResolvedValue({ success: false, code: 'OWN_SIGN_IN_REQUIRED' })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText('Use your own account for Acme')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
+      expect(navigate).not.toHaveBeenCalled()
+    })
+  })
+
   describe('organization requires two-factor authentication after joining', () => {
     function mfaRefused() {
       fetchFn = vi.fn(async (input: RequestInfo | URL) => {
@@ -421,6 +500,54 @@ describe('InvitationView', () => {
       await clickOpenAcme()
       await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
       expect(selectTenantAction).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([
+      [
+        '429 with Retry-After',
+        { status: 429, retryAfter: '30' },
+        /Too many requests.*Try again in 30 seconds/,
+      ],
+      ['a server failure', { status: 503 }, /did not answer.*Try again in 2 seconds/],
+      ['no answer', { status: 0 }, /did not answer.*Try again in 2 seconds/],
+    ])(
+      'opening refused for now (%s): says why and holds Open until the wait is over',
+      async (_name, refusal, message) => {
+        answers({
+          '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+        })
+        selectTenantAction.mockResolvedValue({ success: false, error: 'x', ...refusal })
+        render(<InvitationView hasSession />)
+        fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+        expect(await screen.findByText(message)).toBeInTheDocument()
+        // Never a silent "Open": the button names the wait and cannot be used.
+        expect(screen.queryByRole('button', { name: 'Open Acme' })).toBeNull()
+        expect(screen.getByRole('button', { name: /^Try again in \d+ s$/ })).toBeDisabled()
+        expect(selectTenantAction).toHaveBeenCalledTimes(1)
+        expect(navigate).not.toHaveBeenCalled()
+      }
+    )
+
+    it('offers Open again once the wait is over, and it opens the organization', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      selectTenantAction.mockResolvedValueOnce({
+        success: false,
+        error: 'x',
+        status: 429,
+        retryAfter: '1',
+      })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+      expect(await screen.findByText(/Too many requests/)).toBeInTheDocument()
+
+      const open = await screen.findByRole('button', { name: 'Open Acme' }, { timeout: 4000 })
+      await waitFor(() => expect(open).toBeEnabled())
+      selectTenantAction.mockResolvedValue({ success: true })
+      fireEvent.click(open)
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
     })
 
     it('session gone at selection: sign in again (the membership exists)', async () => {

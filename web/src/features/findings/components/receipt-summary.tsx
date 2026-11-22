@@ -82,6 +82,8 @@ export function ReceiptSummary({
   const received = receipt.received ?? 0
   const assetsCreated = receipt.assets?.created ?? 0
   const assetsUpdated = receipt.assets?.updated ?? 0
+  // DNS answers inside a shared provider range, recorded on the name (research/531).
+  const onName = receipt.assets?.recorded_on_name ?? 0
   const unaccounted = unaccountedFindings(
     received,
     {
@@ -103,6 +105,15 @@ export function ReceiptSummary({
             'findings.receipts.activity',
             '{reports} reports and {received} findings received, {assetsCreated} assets created, {assetsUpdated} assets updated',
             { reports, received, assetsCreated, assetsUpdated }
+          )}
+        </p>
+      ) : null}
+      {onName > 0 ? (
+        <p className="text-muted-foreground text-xs tabular-nums" data-testid="receipt-on-name">
+          {t(
+            'findings.receipts.onName',
+            '{count, plural, one {# provider address recorded on its name} other {# provider addresses recorded on their names}}',
+            { count: onName }
           )}
         </p>
       ) : null}

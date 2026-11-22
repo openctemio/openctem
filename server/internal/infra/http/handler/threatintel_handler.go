@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/datascope"
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 	"github.com/openctemio/openctem/server/internal/app/feedsync"
+	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 	"github.com/openctemio/openctem/server/internal/app/threat"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 
@@ -32,6 +33,8 @@ type ThreatIntelHandler struct {
 	runner    FeedRunner
 	// bundlesConfigured: VULNFEED_ROOT_KEY_ID is set.
 	bundlesConfigured bool
+	// freshness is the freshness watch (nil: not wired).
+	freshness *feedwatch.Service
 }
 
 // FeedRunner starts a feed's sync in the background (*feedsync.Runner).
@@ -142,7 +145,7 @@ func (h *ThreatIntelHandler) getSyncStatus(w http.ResponseWriter, r *http.Reques
 // TriggerSync starts a sync of one feed or all feeds in the background.
 // POST /api/v1/admin/threat-intel/sync
 // @Summary      Start a threat-intelligence feed sync (platform admin)
-// @Description  Queues a background sync of the EPSS, CISA KEV and/or vulnerability bundle feed and returns at once (202); the outcome shows in the feed status. One run per feed at a time; a feed that is switched off or not configured is not started. ops_admin or super_admin; audited.
+// @Description  Queues a background import of the newest signed vulnerability release, which carries the CVE records, CISA KEV and EPSS (the platform fetches none of them itself), and returns at once (202); the outcome shows in the feed status. "epss", "kev", "vulnfeed" and "all" all start that import. One run per feed at a time; a feed that is switched off or not configured is not started. ops_admin or super_admin; audited.
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
@@ -175,10 +178,10 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 	all := req.Source == "" || req.Source == "all"
 	var sources []string
 	if all {
-		for _, s := range []string{feedstatus.SourceVulnfeed, feedstatus.SourceEPSS, feedstatus.SourceKEV} {
-			if h.runner.Has(s) {
-				sources = append(sources, s)
-			}
+		// One import brings all three: KEV and EPSS ride the vulnerability
+		// release.
+		if h.runner.Has(feedstatus.SourceVulnfeed) {
+			sources = append(sources, feedstatus.SourceVulnfeed)
 		}
 	} else {
 		if !h.runner.Has(req.Source) {
@@ -229,7 +232,8 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 // cannotRun says why a feed is not started ("" when it can be): scheduled
 // sync switched off, or the bundle import not configured.
 func (h *ThreatIntelHandler) cannotRun(ctx context.Context, source string) string {
-	if source == feedstatus.SourceVulnfeed && !h.bundlesConfigured {
+	// KEV and EPSS arrive only in the vulnerability release.
+	if !h.bundlesConfigured {
 		return feedstatus.CodeNotConfigured
 	}
 	enabled, err := h.service.FeedEnabled(ctx, source)

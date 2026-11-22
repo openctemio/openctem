@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import { EmergingThreatsList } from '../components/emerging-threats-list'
 import { listUrl } from '../api'
-import { asset, detail, summary } from './fixtures'
+import { detail, host, service, summary } from './fixtures'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
@@ -38,10 +38,11 @@ const page = {
       in_kev: false,
       kev_ransomware: false,
       epss: 0.006,
-      confirmed_assets: 0,
-      possible_assets: 4,
-      internet_facing_assets: 0,
-      critical_assets: 0,
+      confirmed_hosts: 0,
+      likely_hosts: 0,
+      possible_hosts: 4,
+      internet_facing_hosts: 0,
+      critical_hosts: 0,
       state: 'acknowledged',
     }),
   ],
@@ -145,15 +146,18 @@ describe('EmergingThreatsList', () => {
     expect(screen.getByText('Exploit chance 0.6%')).toBeInTheDocument()
   })
 
-  it('affected assets are compact tokens with zeros left out', async () => {
+  it('the affected column counts hosts in words, likely on its own, zeros left out', async () => {
     renderList()
     await screen.findByText('CVE-2026-1000')
     const cells = document.querySelectorAll('[data-slot="affected-cell"]')
     expect(cells).toHaveLength(2)
-    expect(cells[0].textContent).toBe('3+211')
+    // 3 confirmed, 1 likely, 2 possible, 1 internet-facing, 1 crown jewel.
+    expect(cells[0].textContent).toBe('3 hosts confirmed+1 likely+2 possibly affected11')
     // The second row: 0 confirmed, 4 possible, nothing else.
-    expect(cells[1].textContent).toBe('4 possible')
-    expect(cells[1].getAttribute('aria-label')).toContain('0 confirmed')
+    expect(cells[1].textContent).toBe('4 hosts possibly affected')
+    const label = cells[1].getAttribute('aria-label') ?? ''
+    expect(label).toContain('Affected hosts: 0 confirmed, 0 likely, 4 possibly affected')
+    expect(label).not.toMatch(/assets/i)
   })
 
   it('the strip is five filter tiles: act now, untriaged, this week, known exploited, internet-facing', async () => {
@@ -226,20 +230,47 @@ describe('EmergingThreatsList', () => {
       Promise.resolve(
         url.startsWith('/api/v1/emerging-threats/a1')
           ? detail({
-              assets: [
-                asset(),
-                asset({
-                  asset_id: 'as2',
-                  asset_name: 'web-02',
-                  version_seen: '1.2.3',
-                  criticality: 'critical',
-                }),
-                asset({
-                  asset_id: 'as3',
-                  asset_name: 'web-03',
-                  version_seen: '',
+              confirmed_hosts: 2,
+              likely_hosts: 1,
+              possible_hosts: 1,
+              asset_groups: [
+                {
+                  tier: 'confirmed',
+                  hosts: [
+                    // One host on two ports: one row, one host for its version.
+                    host('192.0.2.20', [
+                      service('http', { asset_id: 'as1', asset_name: 'http://192.0.2.20' }),
+                      service('https', { asset_id: 'as4', asset_name: 'https://192.0.2.20' }),
+                    ]),
+                    host(
+                      'web-02',
+                      [
+                        service('', {
+                          asset_id: 'as2',
+                          asset_name: 'web-02',
+                          criticality: 'critical',
+                        }),
+                      ],
+                      { asset_id: 'as2', criticality: 'critical' }
+                    ),
+                  ],
+                },
+                {
+                  tier: 'likely',
+                  hosts: [
+                    host('192.0.2.30', [service('https', { asset_id: 'as5', tier: 'likely' })]),
+                  ],
+                },
+                {
                   tier: 'possible',
-                }),
+                  hosts: [
+                    host(
+                      'web-03',
+                      [service('', { asset_id: 'as3', version_seen: '', tier: 'possible' })],
+                      { asset_id: 'as3' }
+                    ),
+                  ],
+                },
               ],
             })
           : page
@@ -256,13 +287,31 @@ describe('EmergingThreatsList', () => {
     expect(within(sheet).getByText('Exploitation')).toBeInTheDocument()
     const products = within(sheet).getByTestId('et-products')
     expect(products.textContent).toContain('1.2.3')
-    expect(products.textContent).toContain('Assets: 2')
+    // Three hosts run 1.2.3 (four services), one an unknown version.
+    expect(products.textContent).toContain('Hosts: 3')
     expect(products.textContent).toContain('Version unknown')
-    // Crown jewels first among the assets.
-    const names = within(sheet)
-      .getAllByRole('link')
-      .map((a) => a.textContent)
-    expect(names.indexOf('web-02')).toBeLessThan(names.indexOf('web-01'))
+    expect(products.textContent).not.toMatch(/Assets/)
+    // The tile says confirmed hosts only; likely and possible beside it.
+    expect(within(sheet).getByText('Hosts confirmed')).toBeInTheDocument()
+    expect(within(sheet).getByText('+1 likely, +1 possibly affected')).toBeInTheDocument()
+    // One row per host, crown jewels first; the two-port host is one row
+    // that lists both services.
+    const rows = within(within(sheet).getByTestId('et-top-hosts')).getAllByRole('listitem')
+    const top = rows.filter(
+      (li) => li.parentElement?.getAttribute('data-testid') === 'et-top-hosts'
+    )
+    expect(top).toHaveLength(4)
+    expect(top[0].textContent).toContain('web-02')
+    const twoPorts = top.find((li) => li.textContent?.includes('192.0.2.20')) as HTMLElement
+    expect(within(twoPorts).getByRole('link', { name: 'http' })).toHaveAttribute(
+      'href',
+      '/assets/as1'
+    )
+    expect(within(twoPorts).getByRole('link', { name: 'https' })).toHaveAttribute(
+      'href',
+      '/assets/as4'
+    )
+    expect(within(sheet).getByText('Most important affected hosts')).toBeInTheDocument()
   })
 
   it('shows the API error', async () => {

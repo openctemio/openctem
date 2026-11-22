@@ -140,6 +140,13 @@ func (r *ScopeExclusionRepository) SetTesting(ctx context.Context, tenantID, id 
 
 // Create persists a new scope exclusion.
 func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.Exclusion) error {
+	return insertScopeExclusion(ctx, r.db, exclusion)
+}
+
+// insertScopeExclusion writes one scope exclusion through exec (the pool or
+// a transaction: the provider addresses move writes exclusions and entries
+// in one transaction).
+func insertScopeExclusion(ctx context.Context, exec sqlExecer, exclusion *scope.Exclusion) error {
 	query := `
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
@@ -156,7 +163,7 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		}
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := exec.ExecContext(ctx, query,
 		exclusion.ID().String(),
 		exclusion.TenantID().String(),
 		exclusion.ExclusionType().String(),

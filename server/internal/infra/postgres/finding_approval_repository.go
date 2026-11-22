@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/campaignaccess"
 
 	"fmt"
 	"time"
@@ -119,10 +120,8 @@ func approvalListWhere(tenantID shared.ID, filter vulnerability.ApprovalFilter, 
 		// A pentest finding's approval (its reason, the finding title) is
 		// shown only to its campaign team, a client once published.
 		args = append(args, filter.PentestViewerID.String())
-		where += fmt.Sprintf(` AND a.finding_id IN (SELECT f.id FROM findings f WHERE f.tenant_id = $1 AND (f.source <> 'pentest' OR f.pentest_campaign_id IN (
-			SELECT m.campaign_id FROM pentest_campaign_members m
-			WHERE m.tenant_id = $1 AND m.user_id = $%d
-			  AND (m.role <> 'client' OR f.status NOT IN ('draft', 'in_review')))))`, len(args))
+		where += ` AND a.finding_id IN (SELECT f.id FROM findings f WHERE f.tenant_id = $1 AND (f.source <> 'pentest' OR ` +
+			campaignaccess.FindingVisibleSQL("f.pentest_campaign_id", "f.status", "$1", fmt.Sprintf("$%d", len(args))) + `))`
 	}
 	return where, args
 }

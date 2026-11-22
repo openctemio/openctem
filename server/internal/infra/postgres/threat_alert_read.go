@@ -3,7 +3,7 @@ package postgres
 // Reads and triage writes of emerging-threat alerts for the API
 // (docs/rfcs/RFC-117-emerging-threat-alerts.md §4). A viewer sees an alert
 // only when at least one of its assets is in their data scope, and only the
-// assets, counts and findings in scope.
+// assets, host counts and findings in scope.
 
 import (
 	"context"
@@ -21,17 +21,28 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
 )
 
-// viewerCountsSQL counts the alert's assets in scope (alias vc); cond is
-// the scope predicate on taa.asset_id. Besides the counts it names the
-// product of the best in-scope match (pr) and how many distinct products
-// match (pc), so a scoped viewer never reads the product of an asset outside
-// their scope.
+// alertHostKeySQL is the host an alert asset belongs to: the key the planner
+// stored with it (threatalert.HostKey), or the asset itself for a row written
+// before keys were stored (until the start-up backfill reaches it, such a row
+// counts as a host of its own).
+const alertHostKeySQL = `COALESCE(NULLIF(taa.host_key, ''), 'a:' || taa.asset_id::text)`
+
+// viewerCountsSQL counts the alert's hosts in scope (alias vc); cond is the
+// scope predicate on taa.asset_id. c, l and p are the host rows of the
+// confirmed, likely and possible tiers (a host that serves several ports is
+// one; threatalert.HostCounts), i and k the hosts with an internet-facing or a
+// critical asset, n the assets in scope. Besides the counts it names the
+// product of the best in-scope match (pr) and how many distinct products match
+// (pc), so a scoped viewer never reads the product of an asset outside their
+// scope.
 func viewerCountsSQL(cond string) string {
 	return `LEFT JOIN LATERAL (
-		SELECT count(*) FILTER (WHERE taa.match_kind <> 'possible') AS c,
-			count(*) FILTER (WHERE taa.match_kind = 'possible') AS p,
-			count(*) FILTER (WHERE taa.internet_facing) AS i,
-			count(*) FILTER (WHERE taa.criticality = 'critical') AS k,
+		SELECT count(DISTINCT ` + alertHostKeySQL + `) FILTER (WHERE taa.match_kind = 'confirmed') AS c,
+			count(DISTINCT ` + alertHostKeySQL + `) FILTER (WHERE taa.match_kind = 'likely') AS l,
+			count(DISTINCT ` + alertHostKeySQL + `) FILTER (WHERE taa.match_kind = 'possible') AS p,
+			count(DISTINCT ` + alertHostKeySQL + `) FILTER (WHERE taa.internet_facing) AS i,
+			count(DISTINCT ` + alertHostKeySQL + `) FILTER (WHERE taa.criticality = 'critical') AS k,
+			count(*) AS n,
 			COALESCE((array_agg(taa.product ORDER BY CASE taa.match_kind WHEN 'confirmed' THEN 0 WHEN 'likely' THEN 1 ELSE 2 END,
 				taa.confidence DESC, taa.product) FILTER (WHERE taa.product <> ''))[1], '') AS pr,
 			count(DISTINCT taa.product) FILTER (WHERE taa.product <> '') AS pc
@@ -40,12 +51,29 @@ func viewerCountsSQL(cond string) string {
 	) vc ON true`
 }
 
+// viewerCountColumns is the select list of vc that scanViewerCounts reads.
+const viewerCountColumns = `vc.c, vc.l, vc.p, vc.i, vc.k, vc.pr, vc.pc`
+
+// viewerCounts is one alert's counts and product within a viewer's scope.
+type viewerCounts struct {
+	c, l, p, i, k, pc int
+	pr                string
+}
+
+func (v *viewerCounts) dest() []any { return []any{&v.c, &v.l, &v.p, &v.i, &v.k, &v.pr, &v.pc} }
+
+// apply replaces the alert's organization-wide counts with the viewer's.
+func (v *viewerCounts) apply(a *threatalert.Alert) {
+	a.Confirmed, a.Likely, a.Possible, a.InternetFacing = v.c, v.l, v.p, v.i
+	a.Critical, a.Product, a.ProductCount = v.k, v.pr, v.pc
+}
+
 // alertsInScope is the FROM clause of every alert list read: the tenant's
 // alerts with at least one asset in the viewer's data scope ($1 is the
 // tenant, the scope's arguments start at $2), the in-scope counts as vc.
 func alertsInScope(scope *shared.DataScope) (string, []any) {
 	cond, args := inScopeAsset(scope, 2)
-	return ` FROM threat_alerts a ` + viewerCountsSQL(cond) + ` WHERE a.tenant_id = $1 AND (vc.c + vc.p) > 0`, args
+	return ` FROM threat_alerts a ` + viewerCountsSQL(cond) + ` WHERE a.tenant_id = $1 AND vc.n > 0`, args
 }
 
 // alertCounts is the open-alert summary of a viewer and how many alerts
@@ -124,7 +152,7 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 	per := max(1, min(f.PerPage, 200))
 	page := max(1, f.Page)
 	args = append(args, per, (page-1)*per)
-	q := `SELECT ` + alertColumns + `, vc.c, vc.p, vc.i, vc.k, vc.pr, vc.pc` + from + where + `
+	q := `SELECT ` + alertColumns + `, ` + viewerCountColumns + from + where + `
 		ORDER BY CASE a.level WHEN 'immediate' THEN 0 WHEN 'digest' THEN 1 ELSE 2 END, a.ets DESC, a.updated_at DESC, a.id
 		LIMIT $` + strconv.Itoa(len(args)-1) + ` OFFSET $` + strconv.Itoa(len(args))
 	rows, err := r.db.QueryContext(ctx, q, args...)
@@ -134,14 +162,12 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 	defer rows.Close()
 	out := make([]threatalert.Alert, 0)
 	for rows.Next() {
-		var c, p, i, k, pc int
-		var pr string
-		a, err := scanAlert(rows, &c, &p, &i, &k, &pr, &pc)
+		var vc viewerCounts
+		a, err := scanAlert(rows, vc.dest()...)
 		if err != nil {
 			return nil, 0, sum, fmt.Errorf("list alerts: %w", err)
 		}
-		a.Confirmed, a.Possible, a.InternetFacing = c, p, i
-		a.Critical, a.Product, a.ProductCount = k, pr, pc
+		vc.apply(a)
 		out = append(out, *a)
 	}
 	return out, total, sum, rows.Err()
@@ -152,21 +178,20 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, id shared.ID) (*threatalert.Detail, error) {
 	cond, sargs := inScopeAsset(scope, 3)
 	args := append([]any{tenantID.String(), id.String()}, sargs...)
-	var c, p, i, k, pc, total int
-	var pr string
-	a, err := scanAlert(r.db.QueryRowContext(ctx, `SELECT `+alertColumns+`, vc.c, vc.p, vc.i, vc.k, vc.pr, vc.pc,
+	var vc viewerCounts
+	var inScope, total int
+	a, err := scanAlert(r.db.QueryRowContext(ctx, `SELECT `+alertColumns+`, `+viewerCountColumns+`, vc.n,
 			(SELECT count(*) FROM threat_alert_assets t WHERE t.tenant_id = a.tenant_id AND t.alert_id = a.id)
 		FROM threat_alerts a `+viewerCountsSQL(cond)+`
-		WHERE a.tenant_id = $1 AND a.id = $2 AND (vc.c + vc.p) > 0`, args...), &c, &p, &i, &k, &pr, &pc, &total)
+		WHERE a.tenant_id = $1 AND a.id = $2 AND vc.n > 0`, args...), append(vc.dest(), &inScope, &total)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, threatalert.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get alert: %w", err)
 	}
-	a.Confirmed, a.Possible, a.InternetFacing = c, p, i
-	a.Critical, a.Product, a.ProductCount = k, pr, pc
-	d := &threatalert.Detail{Alert: *a, AllInScope: c+p == total}
+	vc.apply(a)
+	d := &threatalert.Detail{Alert: *a, AllInScope: inScope == total}
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT taa.asset_id, a.name, a.asset_type, taa.match_kind, taa.confidence, taa.internet_facing, taa.criticality,
@@ -191,7 +216,7 @@ func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, sco
 			&v.Product, &v.Version, &finding, &v.FindingStatus, &task); err != nil {
 			return nil, fmt.Errorf("alert assets: %w", err)
 		}
-		v.Kind = threatalert.MatchKind(kind)
+		v.Kind, v.TenantID = threatalert.MatchKind(kind), tenantID
 		if finding.Valid {
 			if fid, err := shared.IDFromString(finding.String); err == nil {
 				v.FindingID = &fid
@@ -215,8 +240,16 @@ func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, sco
 	if vuln != nil {
 		d.Vuln = *vuln
 	}
+	// A card's timeline holds its own events and those of the
+	// vulnerabilities it groups.
+	keys := append([]string{a.VulnID}, d.Vuln.Grouped...)
+	if d.Vuln.CardID != "" {
+		if d.Card, err = loadCard(ctx, r.db, d.Vuln.CardID); err != nil {
+			return nil, err
+		}
+	}
 	trows, err := r.db.QueryContext(ctx, `
-		SELECT kind, at, source_at, detail FROM vuln_events WHERE vuln_id = $1 ORDER BY at DESC, id DESC LIMIT 50`, a.VulnID)
+		SELECT kind, at, source_at, detail FROM vuln_events WHERE vuln_id = ANY($1::text[]) ORDER BY at DESC, id DESC LIMIT 50`, pq.Array(keys))
 	if err != nil {
 		return nil, fmt.Errorf("alert timeline: %w", err)
 	}

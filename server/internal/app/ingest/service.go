@@ -664,7 +664,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// prioritized on the assets' criticality and exposure.
 	src := attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}
 	s.recordAttributes(ctx, tenantID, scope, src, observedAt, report, assetMap)
-	s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
+	written := s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
+	s.settleProviderAnswers(ctx, tenantID, scope, written, output)
 	// What each asset was fingerprinted with (RFC-112), after the sets
 	// decided which technologies the asset shows.
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
@@ -710,6 +711,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 1c: the web endpoints, under their persisted origin assets.
 	s.recordEndpoints(ctx, agt, tenantID, binding, scope, endpoints, assetMap, report, output)
+	// The findings' web locations name their endpoints through this.
+	ctx = withWebRefs(ctx, endpoints.resolveRefs(assetMap))
 
 	// Step 1d: the software the assets run (RFC-066). Best-effort.
 	s.recordSoftware(ctx, tenantID, scope, report, assetMap)

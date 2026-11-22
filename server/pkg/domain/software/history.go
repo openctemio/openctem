@@ -202,20 +202,28 @@ func applyAt(rows *[]HistoryRow, batch []Sighting) bool {
 	at := batch[0].At
 	merged := mergeSightings(batch)
 	latest := latestSeen(*rows)
+	// est holds the established versions that are known; an established
+	// row without a usable version (the product seen with its version
+	// hidden) is blind: it holds the place until any version is read.
 	var est []HistoryRow
+	blind := 0
 	for _, r := range *rows {
 		if r.Current() {
+			if r.Normalized == "" {
+				blind++
+				continue
+			}
 			est = append(est, r)
 		}
 	}
 
 	reading := readingOf(merged, est)
-	prevLast := recordSightings(rows, merged, at)
+	prevLast := recordSightings(rows, merged, at, len(est) > 0)
 
 	if len(reading) == 0 {
 		// Nothing decisive. With nothing established, a lone sighting
 		// (no version, say) is the version.
-		if len(est) == 0 && len(merged) == 1 {
+		if len(est) == 0 && blind == 0 && len(merged) == 1 {
 			i := indexOf(*rows, merged[0].VersionID)
 			if !(*rows)[i].Superseded {
 				bumpStreak(&(*rows)[i], at, prevLast)
@@ -257,6 +265,17 @@ func applyAt(rows *[]HistoryRow, batch []Sighting) bool {
 			if !(*rows)[i].Superseded {
 				(*rows)[i].State, (*rows)[i].Dirty = VersionEstablished, true
 				changed = true
+			}
+		}
+		if changed && blind > 0 {
+			// A version is now known where only the product was: it replaces
+			// the version-less row at once (nothing known is displaced; the
+			// row keeps its history).
+			for k := range *rows {
+				r := &(*rows)[k]
+				if r.Current() && r.Normalized == "" {
+					r.Superseded, r.SupersededAt, r.Dirty = true, at, true
+				}
 			}
 		}
 		return changed
@@ -325,7 +344,10 @@ func promoteReading(rows []HistoryRow, reading []shared.ID, est []HistoryRow, fr
 
 // recordSightings adds the sightings to the history and returns each
 // existing row's last reading before them.
-func recordSightings(rows *[]HistoryRow, merged []Sighting, at time.Time) map[shared.ID]time.Time {
+// A version-less sighting of a row a known version superseded only adds
+// history while a known version is established (known): hiding the version
+// later says nothing against the version read before.
+func recordSightings(rows *[]HistoryRow, merged []Sighting, at time.Time, known bool) map[shared.ID]time.Time {
 	prevLast := map[shared.ID]time.Time{}
 	for _, s := range merged {
 		i := indexOf(*rows, s.VersionID)
@@ -358,7 +380,7 @@ func recordSightings(rows *[]HistoryRow, merged []Sighting, at time.Time) map[sh
 		}
 		// A superseded version seen again after it was superseded is a
 		// candidate again (a rollback); an older reading only adds history.
-		if r.Superseded && at.After(r.SupersededAt) {
+		if r.Superseded && at.After(r.SupersededAt) && (!known || s.Normalized != "") {
 			r.Superseded, r.SupersededAt = false, time.Time{}
 			r.State, r.Streak, r.StreakSince = VersionCandidate, 0, time.Time{}
 		}

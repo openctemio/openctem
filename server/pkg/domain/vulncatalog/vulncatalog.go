@@ -153,7 +153,12 @@ type Reader interface {
 	CanonicalVulnID(ctx context.Context, id string) (string, error)
 	// KEVSet returns the whole known-exploited set, keyed by CVE id.
 	KEVSet(ctx context.Context) (map[string]KEV, error)
-	// EPSS returns the scores of the CVEs that have one (at most MaxBatch).
+	// KEVs returns the known-exploited listings of the given ids (at most
+	// MaxBatch), whether or not the catalog holds a record for the CVE: a
+	// CVE can be listed before its record arrives.
+	KEVs(ctx context.Context, cveIDs []string) ([]KEV, error)
+	// EPSS returns the scores of the CVEs that have one (at most MaxBatch),
+	// whether or not the catalog holds a record for the CVE.
 	EPSS(ctx context.Context, cveIDs []string) ([]EPSS, error)
 }
 

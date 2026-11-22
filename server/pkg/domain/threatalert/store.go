@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/server/pkg/domain/advisory"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnevent"
 )
@@ -29,15 +30,22 @@ type TenantState struct {
 
 // DigestItem is one alert named in a digest.
 type DigestItem struct {
-	ID             shared.ID
-	VulnID         string
-	Title          string
-	Level          Level
-	ETS            int
-	InKEV          bool
+	ID     shared.ID
+	VulnID string
+	Title  string
+	Level  Level
+	ETS    int
+	InKEV  bool
+	// Host counts within the reader's scope (HostCounts).
 	Confirmed      int
+	Likely         int
 	Possible       int
 	InternetFacing int
+}
+
+// HostCounts is the item's counts as one value.
+func (it DigestItem) HostCounts() HostCounts {
+	return HostCounts{Confirmed: it.Confirmed, Likely: it.Likely, Possible: it.Possible, InternetFacing: it.InternetFacing}
 }
 
 // Digest summarizes what changed since the last digest.
@@ -88,6 +96,10 @@ type PlannerStore interface {
 	// running a product the vulnerability names whose version is unknown
 	// (possible).
 	AffectedAssets(ctx context.Context, tenantID shared.ID, vulnID string) ([]Asset, error)
+	// PlannedAssets lists the assets the alert held when it was last
+	// planned (id, name and match kind), so the planner can tell a new host
+	// from one more service of a known host.
+	PlannedAssets(ctx context.Context, tenantID, alertID shared.ID) ([]Asset, error)
 	// AlertByVuln returns the organization's alert for the vulnerability
 	// (nil when none).
 	AlertByVuln(ctx context.Context, tenantID shared.ID, vulnID string) (*Alert, error)
@@ -97,6 +109,22 @@ type PlannerStore interface {
 	// it has not changed since (its updated_at); otherwise ErrStale, so a
 	// triage decision made meanwhile is never overwritten.
 	SaveAlert(ctx context.Context, a *Alert, assets []Asset) error
+	// CardsGrouping maps each of the vulnerability ids that a reviewed
+	// advisory card groups to that card's id (the alert key).
+	CardsGrouping(ctx context.Context, vulnIDs []string) (map[string]string, error)
+	// ResolveGrouped resolves the organization's open alerts of the
+	// vulnerabilities a card groups (ReasonGroupedIntoCard, the card id in
+	// grouped_into_card; the person's note and the actor are kept, and the
+	// change is marked for the digest) and reports how many.
+	ResolveGrouped(ctx context.Context, tenantID shared.ID, cardID string, vulnIDs []string, at time.Time) (int, error)
+	// GroupedInto lists the organizations' vulnerabilities whose alerts were
+	// resolved as grouped into the card (to plan them on their own again
+	// when the card is withdrawn).
+	GroupedInto(ctx context.Context, cardID string) ([]QueueItem, error)
+	// GroupedTriage is the strongest open triage state (acknowledged or
+	// remediating; new when none) of the organization's alerts of the
+	// vulnerabilities a card groups: the card's alert carries it on.
+	GroupedTriage(ctx context.Context, tenantID shared.ID, vulnIDs []string) (State, error)
 	// ResolveVuln resolves every open alert of a vulnerability (a rejection
 	// upstream) and reports how many.
 	ResolveVuln(ctx context.Context, vulnID, reason string, at time.Time) (int, error)
@@ -160,6 +188,8 @@ type Summary struct {
 // AssetView is one affected asset as a viewer sees it.
 type AssetView struct {
 	Asset
+	// TenantID is the organization the asset belongs to.
+	TenantID      shared.ID
 	FindingStatus string
 	TaskID        *shared.ID
 }
@@ -174,7 +204,9 @@ type TimelineEntry struct {
 
 // Detail is an alert with what a viewer may see of it.
 type Detail struct {
-	Alert    Alert
+	Alert Alert
+	// Card is the advisory card when the alert is keyed by one.
+	Card     *advisory.Card
 	Vuln     Vuln
 	Assets   []AssetView
 	Timeline []TimelineEntry
