@@ -123,8 +123,6 @@ const RAW_SEARCH_ALLOWED: Record<string, string> = {
 const TRIGGER_ALLOWED: Record<string, string> = {
   'src/features/shared/components/filter-button.tsx': 'defines it',
   'src/features/shared/components/list-toolbar.tsx': 'renders filterToggle',
-  'src/features/scope/components/scope-list-filters.tsx':
-    "the Scope lists' Filters popover; the tables pass it as the toolbar filter",
 }
 
 /** Each `<Input ...>` element's props, up to its end. */
