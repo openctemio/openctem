@@ -44,6 +44,8 @@ export interface DetailPageHeaderProps {
   parent: DetailPageParent
   /** Type, identifiers and state marks above the title (tags, links, badges). */
   chips?: ReactNode
+  /** A line of facts under the title (owner, due date, a short description). */
+  facts?: ReactNode
   /** A `DetailPosition`: previous, "n of N", next. */
   position?: ReactNode
   /** The one main action for the record's current state (a default `Button`). */
@@ -60,6 +62,7 @@ export function DetailPageHeader({
   parent,
   chips,
   position,
+  facts,
   primary,
   secondary,
   menu,
@@ -159,6 +162,11 @@ export function DetailPageHeader({
           </div>
         )}
       </div>
+      {facts && (
+        <div data-slot="detail-facts" className="flex min-w-0 flex-col gap-1">
+          {facts}
+        </div>
+      )}
     </header>
   )
 }
