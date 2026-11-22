@@ -61,6 +61,7 @@ export function FindingQueue({
     const cols: ColumnDef<ApiFinding>[] = [
       {
         accessorKey: 'priority_class',
+        meta: { kind: 'priority' },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.priority')} />
@@ -97,6 +98,7 @@ export function FindingQueue({
       },
       {
         accessorKey: 'severity',
+        meta: { kind: 'severity' },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.severity')} />
@@ -121,6 +123,7 @@ export function FindingQueue({
       cols.push(
         {
           id: 'sla',
+          meta: { kind: 'due' },
           enableSorting: false,
           header: ({ column }) => (
             <DataTableColumnHeader column={column} title={t('myWork.columns.sla')} />
@@ -135,6 +138,9 @@ export function FindingQueue({
         },
         {
           accessorKey: 'status',
+          // Whole or not at all: below a 700 px frame (a tablet) the column
+          // leaves (the finding's page and the phone card show the status).
+          meta: { kind: 'status', hideBelow: 700 },
           enableSorting: false,
           header: ({ column }) => (
             <DataTableColumnHeader column={column} title={t('myWork.columns.status')} />
