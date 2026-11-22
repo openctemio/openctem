@@ -109,9 +109,10 @@ export function TriageStatusLine({
   const pending = '…'
   return (
     <div className="space-y-2" data-testid="triage-top-bar">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm max-sm:text-xs">
         <p className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate font-medium">{queueLabel}</span>
+          {/* A phone keeps the position and the counts on one line: the queue's name is the page's own. */}
+          <span className="truncate font-medium max-sm:hidden">{queueLabel}</span>
           <span
             data-testid="triage-position"
             className="text-muted-foreground tabular-nums"
@@ -130,17 +131,34 @@ export function TriageStatusLine({
           </span>
         </p>
         <p className="text-muted-foreground tabular-nums" data-testid="triage-counts">
-          {progress
-            ? t(
-                'findings.triageMode.counts',
-                '{decided} decided, {sent} sent for approval, {skipped} skipped',
-                {
-                  decided: progress.decided,
-                  sent: progress.sentForApproval,
-                  skipped: progress.skipped,
-                }
-              )
-            : pending}
+          {progress ? (
+            <>
+              <span className="max-sm:hidden">
+                {t(
+                  'findings.triageMode.counts',
+                  '{decided} decided, {sent} sent for approval, {skipped} skipped',
+                  {
+                    decided: progress.decided,
+                    sent: progress.sentForApproval,
+                    skipped: progress.skipped,
+                  }
+                )}
+              </span>
+              <span className="sm:hidden" data-testid="triage-counts-short">
+                {t(
+                  'findings.triageMode.countsShort',
+                  '{decided} decided, {sent} sent, {skipped} skipped',
+                  {
+                    decided: progress.decided,
+                    sent: progress.sentForApproval,
+                    skipped: progress.skipped,
+                  }
+                )}
+              </span>
+            </>
+          ) : (
+            pending
+          )}
         </p>
       </div>
       <div
