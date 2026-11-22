@@ -116,9 +116,8 @@ export interface ExposureColumnHandlers {
 /** Column widths (px) the room sums below are made of. */
 const WIDTH = { select: 40, title: 150, severity: 120, state: 148, age: 112, actions: 48 } as const
 
-/** The room of a frame showing only the always-on columns. */
-const BASE_ROOM =
-  WIDTH.select + WIDTH.title + WIDTH.severity + WIDTH.state + WIDTH.age + WIDTH.actions
+/** The room of a frame showing only the always-on columns, the title at 240 px so it stays readable when a column joins. */
+const BASE_ROOM = WIDTH.select + 240 + WIDTH.severity + WIDTH.state + WIDTH.age + WIDTH.actions
 
 /**
  * The table-frame width (px) under which a column steps aside (it stays
@@ -210,7 +209,11 @@ export function getExposureColumns(
     {
       accessorKey: 'severity',
       header: t('exposures.table.severity', 'Severity'),
-      meta: { kind: 'severity', width: WIDTH.severity, label: t('exposures.table.severity', 'Severity') },
+      meta: {
+        kind: 'severity',
+        width: WIDTH.severity,
+        label: t('exposures.table.severity', 'Severity'),
+      },
       enableSorting: false,
       cell: ({ row }) => <ExposureSeverityCell exposure={row.original} inline />,
     },

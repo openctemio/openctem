@@ -118,7 +118,9 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
             count: formatNumber(total),
           })}
         </CardTitle>
-        <CardDescription>{t('vulnPage.status.hint', 'Each segment opens its list')}</CardDescription>
+        <CardDescription>
+          {t('vulnPage.status.hint', 'Each segment opens its list')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
