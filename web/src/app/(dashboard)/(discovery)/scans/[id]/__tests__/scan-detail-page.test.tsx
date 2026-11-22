@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { post } from '@/lib/api/client'
+import { del, post } from '@/lib/api/client'
 
 import ScanDetailPage from '../page'
 
@@ -56,6 +56,7 @@ vi.mock('@/features/scans/components/run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
 }))
+const deniedPermissions = new Set<string>()
 const breadcrumbTitles = vi.hoisted(() => [] as (string | null | undefined)[])
 // The page loads these on first open (features/scans/components/lazy-dialogs).
 vi.mock('@/features/scans/components/edit-scan-dialog', () => ({
@@ -72,7 +73,11 @@ vi.mock('@/components/layout', () => ({
 }))
 vi.mock('@/lib/permissions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/permissions')>()
-  return { ...actual, Can: ({ children }: { children: React.ReactNode }) => <>{children}</> }
+  return {
+    ...actual,
+    Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    usePermissions: () => ({ can: (p: string) => !deniedPermissions.has(p) }),
+  }
 })
 const urlState: Record<string, string> = {}
 // A URL-backed store that re-renders its readers, as the real hooks do.
@@ -142,6 +147,7 @@ const run = (id: string, over: Record<string, unknown> = {}) => ({
 describe('Scan page', () => {
   beforeEach(() => {
     runCalls.length = 0
+    deniedPermissions.clear()
     configError = undefined
     refetchConfig.mockClear()
     mutateSpy.mockClear()
@@ -229,9 +235,49 @@ describe('Scan page', () => {
     expect(refetchConfig).toHaveBeenCalled()
   })
 
-  it('has no back link that repeats the breadcrumb', () => {
+  // The way back is the kit's phone row only (the breadcrumb says it from
+  // 768 px): never a second back link in the page.
+  it('has one way back to the scans, in the phone back row', () => {
     render(<ScanDetailPage />)
-    expect(screen.queryByRole('link', { name: 'Scans' })).toBeNull()
+    const back = screen.getAllByRole('link', { name: 'Scans' })
+    expect(back).toHaveLength(1)
+    expect(back[0]).toHaveAttribute('data-slot', 'detail-back')
+    expect(back[0]).toHaveAttribute('href', '/scans')
+  })
+
+  it('puts Run now first, Edit and the schedule switch beside it, the rest in More', async () => {
+    render(<ScanDetailPage />)
+    const header = screen
+      .getByRole('heading', { level: 1 })
+      .closest('[data-slot="page-header"]') as HTMLElement
+    expect(within(header).getByRole('button', { name: /Run now/ })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(within(header).getByRole('button', { name: /Schedule (on|off)/ })).toBeInTheDocument()
+    await userEvent.click(within(header).getByRole('button', { name: 'More actions' }))
+    for (const name of ['Clone', 'Copy link', 'Copy scan ID', 'Delete scan']) {
+      expect(await screen.findByRole('menuitem', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('asks for the scan name before deleting it', async () => {
+    vi.mocked(del).mockClear()
+    render(<ScanDetailPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete scan' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete scan "Nightly recon"?')
+    expect(del).not.toHaveBeenCalled()
+  })
+
+  it('offers no Edit, Clone or Delete without the permissions', async () => {
+    deniedPermissions.add('scans:write')
+    deniedPermissions.add('scans:delete')
+    render(<ScanDetailPage />)
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: 'Copy scan ID' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Clone' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Delete scan' })).toBeNull()
   })
 
   it('names the scan in the header breadcrumb', () => {
@@ -257,7 +303,9 @@ describe('Scan page', () => {
 
   it('says n/a, not 0 %, before any run settled', () => {
     render(<ScanDetailPage />)
-    expect(screen.getByText(/Success rate:\s*n\/a/)).toBeInTheDocument()
+    const facts = screen.getByRole('region', { name: 'Scan facts' })
+    expect(within(facts).getByText('n/a')).toBeInTheDocument()
+    expect(within(facts).queryByText(/0\s*%/)).toBeNull()
   })
 
   it("links every strip tile to this scan's runs with the matching status", () => {
@@ -269,9 +317,10 @@ describe('Scan page', () => {
           (a) => name.test(a.textContent ?? '') && a.getAttribute('href')?.includes('/scans/runs')
         )
         ?.getAttribute('href')
-    expect(hrefOf(/Successful/)).toMatch(/\/scans\/runs\?scan_id=.+&status=completed$/)
-    expect(hrefOf(/Partial/)).toMatch(/&status=partial$/)
-    expect(hrefOf(/Failed/)).toMatch(/&status=failed$/)
+    expect(hrefOf(/successful/)).toMatch(/\/scans\/runs\?scan_id=.+&status=completed$/)
+    expect(hrefOf(/partly done/)).toMatch(/&status=partial$/)
+    expect(hrefOf(/failed/)).toMatch(/&status=failed$/)
+    expect(hrefOf(/^60$/)).toBe('/scans/runs?scan_id=s1')
   })
 
   it('shows asset groups by name and targets as escaped text', async () => {
@@ -281,7 +330,7 @@ describe('Scan page', () => {
     expect(screen.getByLabelText('Target: evil.com\\u{202E}moc.knab')).toBeInTheDocument()
   })
 
-  it('marks a run in progress next to the title and opens it', async () => {
+  it('says a run is in progress above the tabs and opens it', async () => {
     runsByPage = () => ({
       data: [run('live', { status: 'running', completed_at: undefined })],
       total: 1,
@@ -290,7 +339,8 @@ describe('Scan page', () => {
       total_pages: 1,
     })
     render(<ScanDetailPage />)
-    await userEvent.click(screen.getByRole('button', { name: /A run is in progress/ }))
+    expect(screen.getByText('A run is in progress')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open run' }))
     expect(screen.getByTestId('run-sheet')).toHaveTextContent('live')
   })
 
@@ -342,7 +392,8 @@ describe('Scan page', () => {
 
   it('clones the scan from its page', async () => {
     render(<ScanDetailPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Clone' }))
     expect(await screen.findByRole('dialog')).toHaveTextContent('Cloning Nightly recon')
   })
 
@@ -406,7 +457,8 @@ describe('Scan page', () => {
     it("shows the System badge and clones as the caller's own scan", async () => {
       render(<ScanDetailPage />)
       expect(screen.getByText('System')).toBeInTheDocument()
-      await userEvent.click(screen.getByRole('button', { name: 'Clone as my scan' }))
+      await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+      await userEvent.click(await screen.findByRole('menuitem', { name: 'Clone as my scan' }))
       expect(await screen.findByRole('dialog')).toHaveTextContent(
         'Cloning Continuous coverage: probe.http'
       )

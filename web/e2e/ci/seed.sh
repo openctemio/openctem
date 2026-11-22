@@ -5,7 +5,7 @@
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
 #     (enough for the findings picker to scroll; two name CVE-2099-0101) and 10 for the triage
-#     spec, a scan with a run in progress, a remediation task
+#     spec, a scan with a run in progress, a scan that never ran, a remediation task
 #   - an account that owns two organizations, A with 50 findings and B with 3
 #     (the organization switch spec)
 #
@@ -278,6 +278,9 @@ call POST /api/v1/credentials/import "{\"credentials\":[
   {\"identifier\":\"e2e-a-very-long-service-account-name-for-the-reporting-pipeline@example.com\",\"credential_type\":\"refresh_token\",\"severity\":\"low\",\"source\":{\"type\":\"paste_site\"},\"dedup_key\":{\"paste_id\":\"e2e-paste-1\"}},
   {\"identifier\":\"e2e-bob\",\"credential_type\":\"password\",\"severity\":\"info\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e old breach\"},\"dedup_key\":{\"breach_name\":\"e2e old breach\",\"breach_date\":\"2019-07-15\"},\"context\":{\"username\":\"e2e-bob\"}}
 ]}"
+
+log "a scan that never ran (the request budget loads its page: a run in progress polls every 10 s)"
+call POST /api/v1/scans/ '{"name":"E2E scan never run","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'

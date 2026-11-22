@@ -126,7 +126,7 @@ export function WatchersControl({
             ref={summaryRef}
             type="button"
             variant="ghost"
-            className="-ms-2 max-w-full min-w-0 shrink justify-start overflow-hidden px-2 font-normal"
+            className="-ms-3 max-w-full min-w-0 shrink justify-start overflow-hidden font-normal max-md:-ms-2.5"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
             title={summary}
