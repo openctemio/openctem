@@ -7,6 +7,18 @@
  * (palette or drag onto a task of the same fix), split them off, or mark the
  * task fixed. Every change names the version it was based on; a move can be
  * undone from its toast.
+ *
+ * On the shared detail kit, like the finding page (board P2-RemediationTask):
+ *
+ *   header: state, campaign, title, [More] [Request exception] [Mark fixed]
+ *   tabs:   Findings N | Fix steps | Timeline
+ *   ┌──────────────────────────────────────┬────────────────┐
+ *   │ bands (exception, hidden findings)   │ Details        │
+ *   │ the tab's panel                      │ (sticky rail)  │
+ *   └──────────────────────────────────────┴────────────────┘
+ *
+ * Only the open tab loads: the timeline and the query wait for their tab,
+ * the watchers for a click, the tasks of the same fix for a selection.
  */
 
 import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
@@ -24,13 +36,14 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import {
-  ArrowLeft,
   CheckCheck,
   EyeOff,
   GripVertical,
-  MoreHorizontal,
+  History,
+  ListChecks,
   MoveRight,
   Scissors,
+  Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
@@ -41,9 +54,17 @@ import { Permission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ActionMenu } from '@/components/ui/action-menu'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { PageStack } from '@/features/shared/components/page-stack'
+import {
+  DetailPageHeader,
+  PropertyGroup,
+  PropertyList,
+  PropertyRow,
+} from '@/features/shared/components/detail'
+import { DetailCallout } from '@/features/shared/components/detail-sheet'
+import { useDetailTab } from '@/features/shared/components/detail-sheet-layout'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { cn } from '@/lib/utils'
@@ -78,6 +99,17 @@ import { nextWorkFinding, positionOf, stepFinding } from '../lib/task-nav'
 import type { FindingStatus } from '@/features/findings/types'
 
 const MEMBER_PAGE = 200
+
+const TASK_TABS = ['findings', 'fix', 'timeline'] as const
+type TaskTab = (typeof TASK_TABS)[number]
+
+// The finding page's grid (web/src/app/(dashboard)/findings/[id]/page.tsx):
+// from 1280 px the details are a sticky rail beside the tab's panel; below,
+// the bands come first, then the details, then the tabs and the panel.
+const GRID = 'grid min-w-0 xl:grid-cols-[minmax(0,1fr)_19rem]'
+const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
+const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
+const MAIN = 'flex min-w-0 flex-col gap-page max-xl:contents xl:col-start-1 xl:row-start-2'
 // Two lines: the title and the target under it (FindingTitleCell).
 const ROW_HEIGHT = 52
 
@@ -106,6 +138,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const [dropTarget, setDropTarget] = useState<RemediationTask | null>(null)
   const [splitOpen, setSplitOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useDetailTab<TaskTab>('tab', TASK_TABS)
 
   // The finding open in the side drawer lives in the URL (?finding=), so it
   // can be shared; opening pushes (Back closes it), moving inside it replaces.
@@ -362,229 +395,265 @@ export function TaskDetail({ taskId }: { taskId: string }) {
       .join(', ') || t('remediationHub.owner.unassigned')
   const steps = fixSteps(undefined, task.action_key)
   const targets = (siblings?.data ?? []).filter((x) => x.id !== task.id)
+  const menu = writable
+    ? actions.menu.map((m, i) => ({
+        id: `task-action-${i}`,
+        label: m.label,
+        icon: m.icon,
+        destructive: m.destructive,
+        onSelect: m.onSelect,
+      }))
+    : undefined
 
   return (
     <PageStack>
-      <div className="flex flex-wrap items-start gap-3">
-        <Button asChild variant="ghost" size="icon" aria-label={t('remediationHub.detail.back')}>
-          <Link href="/remediation/tasks">
-            <ArrowLeft className="size-4" aria-hidden />
-          </Link>
-        </Button>
-        <div className="min-w-0 flex-1 basis-64">
-          <h1 className="text-page tracking-tight break-words">{task.title}</h1>
-          {/* A task named after its fix action would repeat the title. */}
-          {task.action_title && task.action_title.trim() !== task.title.trim() && (
-            <p className="text-muted-foreground text-sm break-words">{task.action_title}</p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+      <DetailPageHeader
+        title={task.title}
+        parent={{ href: '/remediation/tasks', label: t('remediationHub.tasks.title') }}
+        chips={
+          <>
             <TaskStatePill state={task.state} />
-            <DeadlinePill task={task} />
-            <span className="text-muted-foreground">
-              {t('remediationHub.detail.owner', undefined, { owner })}
-            </span>
-            <span className="text-muted-foreground" title={t('remediationHub.risk.explain')}>
-              {t('remediationHub.detail.risk', undefined, { risk: task.counts.risk_points })}
-            </span>
             {task.campaign_id && <TaskCampaignLink campaignId={task.campaign_id} inline />}
-          </div>
-          {task.state_note && (
-            <p className="text-muted-foreground mt-1 text-xs">{task.state_note}</p>
-          )}
-          {task.archived_note && (
-            <p className="text-muted-foreground mt-1 text-xs">{task.archived_note}</p>
-          )}
-          {task.regression_of && (
-            <p className="mt-1 text-xs">
-              <Link href={`/remediation/tasks/${task.regression_of}`} className="underline">
-                {t('remediationHub.detail.regressionOf')}
-              </Link>
-            </p>
-          )}
-        </div>
-        {writable && (
-          <div className="flex flex-wrap items-center gap-2">
-            {exception.action}
-            {actions.primary}
-            <ActionMenu
-              title={task.title}
-              label={t('remediationHub.detail.more')}
-              items={actions.menu.map((m, i) => ({
-                id: `task-action-${i}`,
-                label: m.label,
-                icon: m.icon,
-                destructive: m.destructive,
-                onSelect: m.onSelect,
-              }))}
-              trigger={
-                <Button variant="outline" size="icon" aria-label={t('remediationHub.detail.more')}>
-                  <MoreHorizontal className="size-4" aria-hidden />
-                </Button>
-              }
-            />
-          </div>
-        )}
-      </div>
-
-      {exception.banner}
-
-      {task.hidden_members > 0 && (
-        <p className="flex items-center gap-2 text-sm text-warning">
-          <EyeOff className="size-4" aria-hidden />
-          {t('remediationHub.detail.hidden', undefined, { n: task.hidden_members })}
-        </p>
-      )}
-
-      <section className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
-        <div className="space-y-2 rounded-lg border p-4">
-          <h2 className="text-sm font-semibold">{t('remediationHub.detail.fix')}</h2>
-          <FixStepsBlock steps={steps} />
-        </div>
-        <div className="space-y-4">
-          <div className="space-y-2 rounded-lg border p-4">
-            <h2 className="text-sm font-semibold">{t('remediationHub.detail.progress')}</h2>
-            <TaskProgress task={task} />
-            <dl className="grid grid-cols-2 gap-1 text-sm">
-              {(['verified', 'closed', 'fix_applied', 'in_progress', 'open'] as const).map((k) => (
-                <div key={k} className="contents">
-                  <dt className="text-muted-foreground">{t(`remediationHub.detail.count.${k}`)}</dt>
-                  <dd className="text-end font-mono">{task.counts[k]}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="text-muted-foreground text-xs">{t('remediationHub.detail.doneRule')}</p>
-          </div>
-          <TaskPeople taskId={task.id} owner={owner} />
-        </div>
-      </section>
+          </>
+        }
+        primary={actions.primary}
+        secondary={exception.action}
+        menu={menu}
+      />
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <section
-          className="grid gap-4 lg:grid-cols-[1fr_16rem]"
-          onPointerDownCapture={() => writable && setWantTargets(true)}
-        >
-          <div className="rounded-lg border">
-            <div className="flex flex-wrap items-center gap-2 border-b p-3">
-              <h2 className="text-sm font-semibold">
-                {t('remediationHub.detail.findings', undefined, { n: totalMembers })}
-              </h2>
-              <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                <Checkbox
-                  checked={autoNext}
-                  onCheckedChange={(v) => {
-                    setAutoNext(v === true)
-                    try {
-                      window.localStorage.setItem('remediationHub.autoNext', v === true ? '1' : '0')
-                    } catch {
-                      // not stored: applies to this visit
-                    }
-                  }}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TaskTab)} className={GRID}>
+          <aside aria-label={t('remediationHub.detail.details')} className={RAIL}>
+            <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
+              <PropertyList label={t('remediationHub.detail.details')}>
+                <PropertyGroup>
+                  <PropertyRow label={t('remediationHub.detail.deadline')}>
+                    <DeadlinePill task={task} />
+                  </PropertyRow>
+                  <PropertyRow label={t('remediationHub.detail.riskLeft')}>
+                    <span title={t('remediationHub.risk.explain')}>
+                      {t('remediationHub.risk.points', undefined, { n: task.counts.risk_points })}
+                    </span>
+                  </PropertyRow>
+                  <PropertyRow label={t('remediationHub.detail.progress')} top>
+                    <div className="flex w-full min-w-0 flex-col gap-1.5 py-1.5">
+                      <TaskProgress task={task} />
+                      <span className="text-muted-foreground text-xs">
+                        {t('remediationHub.progress.summary', undefined, {
+                          verified: task.counts.verified,
+                          closed: task.counts.closed,
+                          claimed: task.counts.fix_applied,
+                          open: task.counts.open + task.counts.in_progress,
+                          total: task.counts.total,
+                        })}
+                      </span>
+                    </div>
+                  </PropertyRow>
+                </PropertyGroup>
+                <TaskPeople taskId={task.id} owner={owner} />
+              </PropertyList>
+            </div>
+            {writable && tab === 'findings' && (wantTargets || selected.size > 0) && (
+              <section
+                className="mt-4 space-y-2 max-xl:hidden"
+                aria-label={t('remediationHub.detail.dropTargets')}
+              >
+                <h2 className="text-cap-m text-muted-foreground">
+                  {t('remediationHub.detail.dropTargets')}
+                </h2>
+                <p className="text-muted-foreground text-xs">
+                  {t('remediationHub.detail.dropHint')}
+                </p>
+                {targetsLoading && <Skeleton className="h-16 w-full" />}
+                {siblings && targets.length === 0 && (
+                  <p className="text-muted-foreground text-xs">
+                    {t('remediationHub.detail.dropNone')}
+                  </p>
+                )}
+                {targets.map((x) => (
+                  <DropTask key={x.id} task={x} />
+                ))}
+              </section>
+            )}
+          </aside>
+
+          <div className={STRIP}>
+            <TabsList>
+              <TabsTrigger value="findings">
+                <ListChecks aria-hidden />
+                {t('remediationHub.detail.tab.findings')}
+                <TabsCount value={task.counts.total} />
+              </TabsTrigger>
+              <TabsTrigger value="fix">
+                <Wrench aria-hidden />
+                {t('remediationHub.detail.tab.fix')}
+              </TabsTrigger>
+              <TabsTrigger value="timeline">
+                <History aria-hidden />
+                {t('remediationHub.detail.tab.timeline')}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <div className={MAIN}>
+            <div
+              data-slot="task-bands"
+              className="flex min-w-0 flex-col gap-3 empty:hidden max-xl:order-1"
+            >
+              {exception.banner}
+              {task.hidden_members > 0 && (
+                <DetailCallout
+                  tone="warning"
+                  icon={EyeOff}
+                  title={t('remediationHub.detail.hidden', undefined, { n: task.hidden_members })}
                 />
-                {t('remediationHub.detail.autoNext')}
-              </label>
-              {writable && selected.size > 0 && (
-                <div className="ms-auto flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground text-xs">
-                    {t('remediationHub.detail.selected', undefined, { n: selected.size })}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setMoveOpen(true)}
-                    aria-keyshortcuts="m"
-                  >
-                    <MoveRight className="size-4" aria-hidden />
-                    {t('remediationHub.detail.moveTo')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSplitOpen(true)}
-                    disabled={selected.size >= task.counts.total}
-                    aria-keyshortcuts="s"
-                  >
-                    <Scissors className="size-4" aria-hidden />
-                    {t('remediationHub.detail.split')}
-                  </Button>
+              )}
+              {(task.state_note || task.archived_note || task.regression_of) && (
+                <div className="text-muted-foreground space-y-1 text-sm">
+                  {task.state_note && <p>{task.state_note}</p>}
+                  {task.archived_note && <p>{task.archived_note}</p>}
+                  {task.regression_of && (
+                    <p>
+                      <Link
+                        href={`/remediation/tasks/${task.regression_of}`}
+                        className="text-foreground underline"
+                      >
+                        {t('remediationHub.detail.regressionOf')}
+                      </Link>
+                    </p>
+                  )}
                 </div>
               )}
             </div>
-            {members.error ? (
-              <ErrorState
-                title={t('remediationHub.detail.membersError')}
-                error={members.error}
-                onRetry={() => void members.mutate()}
-              />
-            ) : !members.data ? (
-              <Skeleton className="m-3 h-40" />
-            ) : rows.length === 0 ? (
-              <p className="text-muted-foreground p-4 text-sm">
-                {t('remediationHub.detail.noFindings')}
-              </p>
-            ) : (
-              <VirtualRows
-                rows={rows}
-                rowHeight={ROW_HEIGHT}
-                height={480}
-                label={t('remediationHub.detail.findingsList')}
-                scrollToIndex={
-                  activeId
-                    ? rows.findIndex((r) => r.kind === 'member' && r.member.finding_id === activeId)
-                    : null
-                }
-                rowKey={(r) => (r.kind === 'group' ? `g:${r.key}` : r.member.finding_id)}
-                onEndReached={() => {
-                  if (loaded.length < totalMembers && !members.isValidating)
-                    void members.setSize(members.size + 1)
-                }}
-                renderRow={(r) =>
-                  r.kind === 'group' ? (
-                    <div className="bg-muted/50 flex h-full items-center justify-between px-3 text-xs font-medium">
-                      <span className="truncate">{r.label}</span>
-                      <span className="text-muted-foreground">{r.count}</span>
-                    </div>
+
+            <div data-slot="task-panel" className="min-w-0 max-xl:order-4">
+              <TabsContent value="findings">
+                <section
+                  className="min-w-0 rounded-lg border"
+                  aria-label={t('remediationHub.detail.findingsList')}
+                  onPointerDownCapture={() => writable && setWantTargets(true)}
+                >
+                  <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
+                    <label className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1.5 text-xs">
+                      <Checkbox
+                        checked={autoNext}
+                        onCheckedChange={(v) => {
+                          setAutoNext(v === true)
+                          try {
+                            window.localStorage.setItem(
+                              'remediationHub.autoNext',
+                              v === true ? '1' : '0'
+                            )
+                          } catch {
+                            // not stored: applies to this visit
+                          }
+                        }}
+                      />
+                      {t('remediationHub.detail.autoNext')}
+                    </label>
+                    {writable && selected.size > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground text-xs">
+                          {t('remediationHub.detail.selected', undefined, { n: selected.size })}
+                        </span>
+                        <Button
+                          variant="outline"
+                          onClick={() => setMoveOpen(true)}
+                          aria-keyshortcuts="m"
+                        >
+                          <MoveRight aria-hidden />
+                          {t('remediationHub.detail.moveTo')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setSplitOpen(true)}
+                          disabled={selected.size >= task.counts.total}
+                          aria-keyshortcuts="s"
+                        >
+                          <Scissors aria-hidden />
+                          {t('remediationHub.detail.split')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  {members.error ? (
+                    <ErrorState
+                      title={t('remediationHub.detail.membersError')}
+                      error={members.error}
+                      onRetry={() => void members.mutate()}
+                    />
+                  ) : !members.data ? (
+                    <Skeleton className="m-3 h-40" />
+                  ) : rows.length === 0 ? (
+                    <p className="text-muted-foreground p-4 text-sm">
+                      {t('remediationHub.detail.noFindings')}
+                    </p>
                   ) : (
-                    <MemberRow
-                      member={r.member}
-                      selectable={writable}
-                      selected={selected.has(r.member.finding_id)}
-                      active={activeId === r.member.finding_id}
-                      statusMenu={!TERMINAL_TASK_STATES.has(task.state)}
-                      onOpen={() => showFinding(r.member.finding_id, 'push')}
-                      onStatus={onFindingStatus}
-                      onSelect={(v) =>
-                        setSelected((cur) => {
-                          const n = new Set(cur)
-                          if (v) n.add(r.member.finding_id)
-                          else n.delete(r.member.finding_id)
-                          return n
-                        })
+                    <VirtualRows
+                      rows={rows}
+                      rowHeight={ROW_HEIGHT}
+                      height={480}
+                      label={t('remediationHub.detail.findingsList')}
+                      scrollToIndex={
+                        activeId
+                          ? rows.findIndex(
+                              (r) => r.kind === 'member' && r.member.finding_id === activeId
+                            )
+                          : null
+                      }
+                      rowKey={(r) => (r.kind === 'group' ? `g:${r.key}` : r.member.finding_id)}
+                      onEndReached={() => {
+                        if (loaded.length < totalMembers && !members.isValidating)
+                          void members.setSize(members.size + 1)
+                      }}
+                      renderRow={(r) =>
+                        r.kind === 'group' ? (
+                          <div className="bg-muted/50 flex h-full items-center justify-between gap-2 px-3 text-xs font-medium">
+                            <span className="min-w-0 truncate">{r.label}</span>
+                            <span className="text-muted-foreground">{r.count}</span>
+                          </div>
+                        ) : (
+                          <MemberRow
+                            member={r.member}
+                            selectable={writable}
+                            selected={selected.has(r.member.finding_id)}
+                            active={activeId === r.member.finding_id}
+                            statusMenu={!TERMINAL_TASK_STATES.has(task.state)}
+                            onOpen={() => showFinding(r.member.finding_id, 'push')}
+                            onStatus={onFindingStatus}
+                            onSelect={(v) =>
+                              setSelected((cur) => {
+                                const n = new Set(cur)
+                                if (v) n.add(r.member.finding_id)
+                                else n.delete(r.member.finding_id)
+                                return n
+                              })
+                            }
+                          />
+                        )
                       }
                     />
-                  )
-                }
-              />
-            )}
+                  )}
+                </section>
+              </TabsContent>
+              <TabsContent value="fix">
+                <section className="min-w-0 space-y-3 rounded-lg border p-4">
+                  <h2 className="text-sm font-semibold break-words">
+                    {task.action_title?.trim() || t('remediationHub.detail.tab.fix')}
+                  </h2>
+                  <FixStepsBlock steps={steps} />
+                  <p className="text-muted-foreground text-xs">
+                    {t('remediationHub.detail.doneRule')}
+                  </p>
+                </section>
+              </TabsContent>
+              <TabsContent value="timeline">
+                <TaskHistory task={task} writable={writable} onChanged={() => void mutate()} />
+              </TabsContent>
+            </div>
           </div>
-          {writable && (
-            <aside className="space-y-2" aria-label={t('remediationHub.detail.dropTargets')}>
-              <h2 className="text-sm font-semibold">{t('remediationHub.detail.dropTargets')}</h2>
-              <p className="text-muted-foreground text-xs">{t('remediationHub.detail.dropHint')}</p>
-              {targetsLoading && <Skeleton className="h-16 w-full" />}
-              {siblings && targets.length === 0 && (
-                <p className="text-muted-foreground text-xs">
-                  {t('remediationHub.detail.dropNone')}
-                </p>
-              )}
-              {targets.map((x) => (
-                <DropTask key={x.id} task={x} />
-              ))}
-            </aside>
-          )}
-        </section>
+        </Tabs>
       </DndContext>
-
-      <TaskHistory task={task} writable={writable} onChanged={() => void mutate()} />
 
       <MovePalette
         open={moveOpen}
@@ -661,7 +730,9 @@ function MemberRow({
         <>
           <button
             type="button"
-            className="text-muted-foreground cursor-grab"
+            // Full row height, like the open button: only the status control
+            // has a control's height in the row.
+            className="text-muted-foreground flex cursor-grab items-center self-stretch"
             aria-label={t('remediationHub.detail.drag', undefined, { title: m.title })}
             {...listeners}
             {...attributes}
@@ -679,7 +750,7 @@ function MemberRow({
       <button
         type="button"
         onClick={onOpen}
-        className="min-w-0 flex-1 text-start hover:[&_p]:underline"
+        className="flex min-w-0 flex-1 items-center self-stretch text-start hover:[&_p]:underline"
         aria-label={t('remediationHub.detail.openFinding', undefined, {
           title: [m.title, m.asset_name].filter(Boolean).join(', '),
         })}

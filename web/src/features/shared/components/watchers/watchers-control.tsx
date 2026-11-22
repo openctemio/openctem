@@ -67,7 +67,8 @@ export function WatchersControl({
         <Button
           type="button"
           variant="ghost"
-          className="-ms-2 min-w-0 font-normal"
+          className="-ms-3 max-w-full min-w-0 shrink justify-start overflow-hidden font-normal max-md:-ms-2.5"
+          title={t('findings.people.manage', 'Manage watchers')}
           disabled={requested}
           onClick={() => {
             setRequested(true)
