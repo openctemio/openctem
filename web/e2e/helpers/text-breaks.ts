@@ -796,6 +796,16 @@ export async function richData(page: Page, scen: Scenario = 'rich') {
     } catch {
       return route.fulfill({ response: res })
     }
+    // A campaign's own summary counts its tasks: keep it in step with the
+    // task list this function widens, so the page does not contradict itself.
+    const summary = body?.summary as Record<string, number> | undefined
+    if (/\/remediation\/campaigns\/[^/]+$/.test(url.pathname) && summary?.tasks !== undefined) {
+      const n = scen === 'empty' ? 0 : scen === 'one' ? 1 : 200
+      return route.fulfill({
+        response: res,
+        json: { ...body, summary: { ...summary, tasks: n, live_tasks: n, done_tasks: 0 } },
+      })
+    }
     const key = LIST_KEYS.find((k) => Array.isArray(body?.[k])) ?? null
     const rows = key ? (body[key] as unknown[]) : []
     if (!key || !rows.length || typeof rows[0] !== 'object')

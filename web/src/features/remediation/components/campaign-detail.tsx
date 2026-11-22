@@ -269,6 +269,10 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
             <span className="text-meta text-muted-foreground">
               {t(`remediationCampaigns.priority.${c.priority}`)}
             </span>
+          </>
+        }
+        facts={
+          <>
             {c.description && (
               <p className="text-muted-foreground basis-full text-sm break-words whitespace-pre-line">
                 {c.description}
@@ -322,7 +326,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         secondary={
           writable ? (
             <>
-              {open && (
+              {open && tasks.length > 0 && (
                 <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
                   <Plus className="size-4" aria-hidden />
                   {t('remediationCampaigns.actions.addTasks')}
