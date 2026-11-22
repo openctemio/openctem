@@ -86,6 +86,7 @@
   "myWork.title": "My work",
   "myWork.topOf": "Top {shown} of {total}",
   "myWork.triage": "Triage",
+  "myWork.triageNew": "Triage {count, plural, one {# new finding} other {# new findings}}",
   "myWork.triageThese": "Triage these",
   "myWork.untitled": "Untitled finding",
   "myWork.updated": "Updated",
