@@ -62,6 +62,7 @@
   "exceptions.page.chipEnds": "Hết hạn",
   "exceptions.page.chipEndsValue": "trong {count} ngày",
   "exceptions.page.colApprovers": "Người phê duyệt",
+  "exceptions.page.colCreated": "Ngày tạo",
   "exceptions.page.colExpires": "Hết hạn",
   "exceptions.page.colName": "Tên",
   "exceptions.page.colRequestedBy": "Người yêu cầu",
