@@ -8,6 +8,520 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.24.0 (2026-11-22)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: the admin roster actions keep the reason in the audit record**: the reason is optional in this release because the console released with it does not send it yet. The redesigned console sends it with every one of these actions; once that console ships the reason becomes required.
+- **Security: only the schema owner's retention and rebaseline functions can remove or rewrite audit history**: re-run `deploy/postgres/least-privilege-roles.sql` after upgrading (it now revokes the same privileges and checks them). An installation whose API connects as the schema owner keeps working, but the database cannot then protect audit history from the API's credentials; the API logs a warning at start-up. During a rolling upgrade an API of the previous release cannot prune or rebaseline until it is replaced (retention retries on its next run).
+- **Security: the grouped findings view and the components list stop after 5 seconds**: on a very large organization an unfiltered grouping can now answer `QUERY_TIMEOUT`; narrow the filter (severity, status, a search).
+- **Security: the SAML audience and service-provider URLs come from APP_URL only**: a production server with SAML sign-in enabled for at least one organization and no `APP_URL` no longer starts; the error names `APP_URL` and the number of organizations. Set `APP_URL` to the public origin of the API (the value the identity provider already has in the service-provider metadata) before upgrading. Deployments that set `APP_URL` are unchanged.
+- **Behaviour change: scope entries on provider shared addresses are paused until answered**: after the upgrade, review the Scope page of each organization that has such entries; until answered, active checks of those addresses stop.
+- **Removed: the platform no longer fetches CISA KEV or EPSS itself**: an installation that has no vulnerability bundle import configured (`VULNFEED_ROOT_KEY_ID` empty) no longer receives KEV or EPSS. Configure the bundle import (default origin, a mirror, a bundle directory, or the feed relay). Firewalls may drop the egress rules for www.cisa.gov, raw.githubusercontent.com and epss.empiricalsecurity.com.
+- **Added: one-time move of provider shared addresses into their names' history**: nothing runs by itself. After the upgrade, run `provider-addresses` (dry run) in the API container, read the report, then `provider-addresses -tenant <id> -apply` one organization at a time. Runbook: `server/docs/operations/provider-address-move.md`.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: an emerging-threat alert counts hosts everywhere, and likely is its own number (`emerging-threat-host-counts.md`)
+- Behaviour change: the note is optional when you decide alone on a finding that is not serious (`findings-bulk-dismiss.md`)
+- Behaviour change: social sign-in accounts can satisfy an organization's two-factor requirement (`first-sign-in-never-signs-out.md`)
+- Behaviour change: provider addresses a name resolves to are recorded on the name (`provider-addresses-on-name.md`)
+- Behaviour change: scope entries on provider shared addresses are paused until answered (`provider-scope-card.md`)
+- Behaviour change: saved views answer by page key (`saved-views-page-registry.md`)
+- Removed: the platform no longer fetches CISA KEV or EPSS itself (`kev-epss-bundle-only.md`)
+
+### Security: the admin roster actions keep the reason in the audit record
+
+- `PATCH /api/v1/admin/users/{id}` (role change, including making or unmaking a super admin, activate and deactivate), `POST /api/v1/admin/administrators`, `POST /api/v1/admin/users/{id}/reset-credentials`, `POST /api/v1/admin/users/{id}/break-glass-test` and `DELETE /api/v1/admin/users/{id}/idp-binding` accept an optional `reason` (1 to 1000 characters after trimming; a longer one is refused with 400 and nothing changes). It is kept in the action's admin audit row and, for an action that needs a second super admin, in the gate's `approval.used` or `approval.single_admin` row next to the reason of the approval request. The last three take it as a JSON body `{"reason": "..."}`; no body still works.
+- Step-up, second approval and permissions are unchanged. The request field is additive (contract v1).
+- **Upgrade note:** the reason is optional in this release because the console released with it does not send it yet. The redesigned console sends it with every one of these actions; once that console ships the reason becomes required.
+- Docs: server/docs/architecture/platform-console.md, server/docs/architecture/authorization-matrix.md
+
+### Security: the Alpine-based images carry OpenSSL 3.5.9-r1
+
+- The web, console, gateway, all-in-one, migrations and seed images upgrade `libssl3` and `libcrypto3` to 3.5.9-r1 when they are built, which fixes the medium CVEs the image scan reported against 3.5.9-r0 in the pinned Alpine digest.
+- Docs: none (image build only, no behaviour change)
+
+### Security: asset finding counts follow the pentest member rule
+
+- An asset's open-findings numbers (list, detail and quick view), the `has_findings` and `finding_count` filters, the sort on the count and `finding_count` in the query language counted pentest findings of campaigns the reader is not on, so a member could learn that unpublished-to-them pentest results existed on an asset in their scope and how severe they were. They now count exactly the findings the reader's findings list shows: a pentest finding only for members of its campaign (and no draft or in-review one for its client role); administrators count every finding.
+- Docs: server/docs/architecture/authorization-matrix.md
+
+### Security: only the schema owner's retention and rebaseline functions can remove or rewrite audit history
+
+- The API's database role kept `DELETE` on the organization audit log, its hash chain and the chain evidence tables, and the chain's update guard trusted a session setting any role can set. Someone holding the API's database credentials could therefore remove audit rows and re-hash the chain without verification noticing.
+- Migration `20261116155411_audit_chain_owner_only`: retention (`audit_chain_prune_prefix`) and rebaseline (`audit_chain_rebaseline_apply`) are now `SECURITY DEFINER` functions owned by the schema owner. Retention deletes only the oldest prefix of a chain, only rows older than 365 days by the database clock, and always records an anchor. A rebaseline is archived, a version 2 entry only gets the hash the database computes, and every rewritten entry must link. Triggers refuse `DELETE`, `UPDATE` and `TRUNCATE` outside those functions. The API role loses `UPDATE`/`DELETE`/`TRUNCATE` on `audit_logs` and `audit_log_chain` and every write on `audit_chain_anchors`, `audit_chain_rebaselines` and `audit_chain_rebaseline_entries`; roles that append audit rows get `EXECUTE` on the two functions. Reversible (`down` restores the previous grants and guard). No row is changed.
+- Deleting an organization or a user is unchanged: the audit tables have no foreign key to either, so the delete does not touch them, and the organization's audit history stays (verifiable, in its chain) until retention ages it out. No function can erase the history of an organization that still exists.
+- The migration replaces triggers in place (`CREATE OR REPLACE TRIGGER`, PostgreSQL 14 or later): a brief `SHARE ROW EXCLUSIVE` lock on each audit table (writes wait, reads do not), no row read or rewritten.
+- Existing chain breaks are left as they are; the admin console rebaseline works as before through the new function.
+- **Upgrade note:** re-run `deploy/postgres/least-privilege-roles.sql` after upgrading (it now revokes the same privileges and checks them). An installation whose API connects as the schema owner keeps working, but the database cannot then protect audit history from the API's credentials; the API logs a warning at start-up. During a rolling upgrade an API of the previous release cannot prune or rebaseline until it is replaced (retention retries on its next run).
+- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/deployment/database-roles.md
+
+### Security: the commands list no longer shows a finding's content outside the caller's data scope
+
+- `GET /api/v1/commands` returned every command's payload and result to any member with `commands:read` (the Viewer role included). An AI analysis job carries the analysed finding's text in its payload and the worker's answer in its result, so a member could read findings they may not open, which the AI run routes refuse.
+- A command about a finding (an `analyze` job, through its run; a retest's check or reach command; a `validate` job) is now listed without its payload and result unless the caller holds `findings:read` and the finding is in their data scope. An analysis job whose run cannot be found is shown to nobody. Its logs (`GET /api/v1/commands/{id}/logs`) follow the same rule, now for analysis jobs too (404). Commands about no finding are unchanged; the targets of scan commands stay under the existing scan-read data-scope work.
+- Migration `20261116162542_ai_runs_command_index`: a partial index on `ai_runs (command_id)`, built concurrently, for that lookup. No data change.
+- Docs: server/docs/architecture/ai-analysis.md
+
+### Security: opening a private range is the platform owner's, with a fresh code and a reason
+
+- New platform permission `platform.settings.network` (platform owner only, migration `20261118072557_platform_settings_network_permission`) for changing the list and running the destination test. A change needs a fresh step-up code and a reason, is a critical admin audit row with the previous and new lists, and every administrator is told. Organization sessions never reach these routes.
+- Docs: server/docs/architecture/outbound-requests.md#private-network-destinations
+
+### Security: the grouped findings view and the components list stop after 5 seconds
+
+- `GET /api/v1/findings/groups` (every `group_by`), `GET /api/v1/findings/related-cves/{cveId}` and the components list, facets and summary (`GET /api/v1/components`, `GET /api/v1/components/summary`) ran on the shared database pool with no statement timeout of their own, so a broad grouping on a large organization could hold a connection for as long as the database role allowed (or without limit on an install without the least-privilege roles). They now run in a read-only transaction with a 5 s statement timeout, like the findings list.
+- A read that runs out of time answers `503 QUERY_TIMEOUT` ("narrow the search or the filters") instead of a 500, is counted in the new metric `openctem_db_read_timeouts_total{read}` and is logged once by name, never with its values.
+- Every interactive list, count, stats, facet and group read now opens its transaction through one helper, so the bound cannot be forgotten on a new read.
+- **Upgrade note:** on a very large organization an unfiltered grouping can now answer `QUERY_TIMEOUT`; narrow the filter (severity, status, a search).
+- Docs: server/docs/architecture/list-query-contract.md
+
+### Security: a finding refused before ingest is masked on the import receipt
+
+- A protocol v2 finding that names no asset of its segment is refused before ingest and booked on the run's receipt as a rejected item. Its title was stored as the tool sent it, so a secret scanner's raw match or a full e-mail address in the title was kept in plain text and shown at `GET /api/v1/findings/imports/{id}/items?disposition=rejected` to any member with `findings:read`, outside the reveal permission, its step-up and its audit record. The item key was a hash of that raw title.
+- The refused findings are now masked the way an ingested report is (secret values and the local part of e-mail addresses) before the item is built, so the stored title and the item key hold the masked text. Items written before this change are not rewritten; they expire with the receipt's retention.
+- Docs: server/docs/architecture/ingest-receipts.md
+
+### Security: turning on two-factor at sign-in signs out the older sessions
+
+- Setting up two-factor authentication when the sign-in or an invitation asks for it now signs out every earlier session of the person and opens a new one, as turning it on from My account already did. Before, a password session opened before the factor existed stayed signed in and then passed an organization's "2FA required" rule. The audit record of the change says the other sessions were ended.
+- Docs: server/docs/architecture/user-two-factor-authentication.md
+
+### Security: a task's query text is masked for readers outside its author's scope
+
+- The text of the query a remediation task was created from could name assets, addresses or people outside the data scope of a member who sees the task through one finding. `GET /api/v1/remediation/tasks/{task_id}/query`, the re-run preview, the auto-include state answer, the task timeline and the re-run audit entry now give the full text only to the query's owner, administrators and full-data roles; other readers get the query with its names, addresses, ids and free text masked as `"***"` (fields, operators, numbers, relative dates and enum values stay), and `query_redacted: true`.
+- Docs: server/docs/rfcs/RFC-098-remediation-tasks.md
+
+### Security: the SAML audience and service-provider URLs come from APP_URL only
+
+- With `APP_URL` unset, the SAML entity ID, the assertion consumer service URL and the audience, recipient and destination an assertion must carry were built from the request (`Host`, or `X-Forwarded-Host` from a trusted proxy). A sender who chose that header chose the audience the server checked, so an assertion the identity provider issued to another service provider could be accepted. They are now built on the origin of `APP_URL` and nothing of a request takes part.
+- Without `APP_URL`, production refuses SAML: sign-in and the assertion consumer service redirect to the sign-in page with `saml_failed`, and `GET /api/v1/auth/saml/{org}/metadata` answers 409 `SAML_PUBLIC_URL_UNSET`. Outside production SAML uses `http://localhost:<SERVER_PORT>` and logs a warning.
+- **Upgrade note:** a production server with SAML sign-in enabled for at least one organization and no `APP_URL` no longer starts; the error names `APP_URL` and the number of organizations. Set `APP_URL` to the public origin of the API (the value the identity provider already has in the service-provider metadata) before upgrading. Deployments that set `APP_URL` are unchanged.
+- Docs: https://docs.openctem.io/identity/sso-saml/
+
+### Security: a pairing code pairs only into the organization that made it
+
+- A sensor that starts with a pairing code that no longer pairs (expired, used, cancelled, held by another sensor, or never made) now pairs under a new code that it prints with its approval link, and the old code finds nothing in any organization. Before, such a start kept the old code as a request of no organization, so anyone holding a leaked install snippet could look the sensor up and approve it into their own organization. The organization that made the code gets a `sensor.pairing_code_refused` audit record with the key fingerprint and source address. A code that is still open attaches to its organization exactly as before.
+- Docs: server/docs/architecture/sensor-pairing.md
+
+### Security: search suggestions follow a removed access at once
+
+- Value completion in the search boxes (`GET /api/v1/query/values`) kept each answer for 60 seconds per user, so for up to a minute after a person lost a group, a grant, a campaign or a role, repeating the same request returned values and counts from their former access. Answers are no longer kept between requests: every call runs as the caller with their current access. The 1 s budget and the per-user, per-organization and per-process limits bound the cost.
+- Docs: server/docs/architecture/query-language.md
+
+### Behaviour change: an emerging-threat alert counts hosts everywhere, and likely is its own number
+
+- Every number of an alert now counts hosts, the rows of the alert page: a host that serves ports 80 and 443
+  (two service assets, `http://host` and `https://host`) is one affected host in the list, the drawer, the
+  stored counters, immediate messages, digests and digest e-mails. Before, each service counted.
+- "Confirmed" means confirmed only. Likely matches (a version match below 80% confidence) were counted as
+  confirmed; they are now their own number: "3 hosts confirmed, 1 likely, 2 possibly affected, 2
+  internet-facing", in the same words in the console and in messages. With asset names turned on, a message
+  names each host once.
+- An alert that was already announced is announced again only for a host it did not hold or a host in a
+  stronger tier (possible to likely or confirmed, likely to confirmed). One more port of a known host no
+  longer puts the alert back into the digest.
+- The Emerging Threat Score is unchanged: exposure points are the best single affected asset, never a sum,
+  so duplicate services never raised a score. No alert changes its score or its level.
+- API: `GET /api/v1/emerging-threats` and `/{id}` return `confirmed_hosts`, `likely_hosts`, `possible_hosts`,
+  `internet_facing_hosts` and `critical_hosts` instead of `confirmed_assets`, `possible_assets`,
+  `internet_facing_assets` and `critical_assets` (counted in the caller's data scope, as before). The outbox
+  metadata of an alert message keeps `confirmed`, `possible` and `internet_facing`, now host counts, and adds
+  `likely`.
+- Migration `20261117053810_threat_alert_host_counts` (additive): `threat_alerts.likely_assets` and
+  `threat_alert_assets.host_key`. At start the API fills the keys of existing alerts and recomputes their
+  stored counters in short batches (100 alerts per transaction, 30 s statement limit, one replica at a
+  time). Nothing is sent again; until an alert is filled its rows count as before. No operator step.
+- Docs: server/docs/architecture/emerging-threat-alerts.md ("Counting hosts"); user guide
+  user-guide/emerging-threats.md, "How an alert counts" (openctemio/docs#309)
+
+### Behaviour change: the note is optional when you decide alone on a finding that is not serious
+
+- A false positive or accepted risk that you decide alone under the organization's approval level, on a
+  finding that is not serious (not critical or high, KEV, P0/P1, a validated exploit, a crown-jewel or
+  internet-exposed asset), no longer needs a note: the reason code is enough. A request that waits for another
+  person, every group exception, and any serious finding still need a note of the tier's length. The reason
+  code is always required. Applies to `POST /api/v1/findings/{id}/approvals` and bulk dismiss.
+- Docs: server/docs/architecture/finding-status-lifecycle.md (When a note is required)
+
+### Behaviour change: social sign-in accounts can satisfy an organization's two-factor requirement
+
+- An account that signs in only with Google, GitHub or Microsoft and is invited into an
+  organization that requires two-factor authentication could never get in: the organization
+  refused the social session, the account token was refused because the person now had an
+  organization, and the in-place setup refused social sessions. Now the social sign-in counts as
+  the first factor: the session step (`POST /auth/mfa/enroll/session`, within 15 minutes of
+  signing in) enrolls or verifies our authenticator code in place, and every later social
+  sign-in of an account with a factor, or of a member of an organization that requires one, asks
+  for the code before any session is issued. A session issued by an organization's own identity
+  provider still cannot start that step (that provider owns the factor). Account > Security
+  offers the setup to such accounts (turning it off needs a password and is not offered).
+- `POST /auth/account-token` now answers `200` for any signed-in account, member of an
+  organization or not (it answered `409` for members). The token reaches only the account routes,
+  so it skips none of an organization's rules; those apply when the session asks for that
+  organization's token. Both tokens are bound to the same session. `GET /me/sso-links` and the
+  organization sign-in link routes are on the account allow-list.
+- Docs: server/docs/architecture/user-two-factor-authentication.md, server/docs/rfcs/RFC-141-tenantless-account-space.md
+
+### Behaviour change: provider addresses a name resolves to are recorded on the name
+
+- An address inside a range a provider publishes for infrastructure many organizations share is recorded on the name that resolves to it (with first and last seen, per source), not as an address asset of the organization. Addresses a scan reports results on are still recorded, as the provider's. Unknown and dedicated addresses are unchanged.
+- The asset list hides provider addresses by default behind a "Provider addresses (N)" filter, and they leave the inventory totals, the dashboard figures and the posture surface.
+- A name's detail page shows its addresses grouped by provider ("Served by ...") with their history; `GET /api/v1/assets/{id}/addresses` returns them.
+- Searching the inventory for an address finds the names that resolve or resolved to it.
+- The ingest receipt counts these answers (`assets.recorded_on_name`); migrations `receipt_addresses_on_name` and `asset_set_elements_address_index` (built concurrently).
+- Docs: server/docs/architecture/easm.md (section 4m2)
+
+### Behaviour change: scope entries on provider shared addresses are paused until answered
+
+- An address, CIDR or range scope entry lying wholly inside a range a provider publishes for infrastructure many organizations share no longer authorizes active checks until someone answers it on the Scope page. Scans skip those addresses with the reason `provider_address`; names that point at them are still scanned, and nothing is deleted. The Scope page explains the pause in a banner, and **Keep scanning** resumes active scanning in one step.
+- Organization scope setting **Hold shared provider addresses until answered** (`hold_provider_entries`, on by default): an organization that turns it off gets the previous behaviour. Turning it off needs a recent re-authentication, is audited at high severity and notifies the administrators.
+- **Upgrade note:** after the upgrade, review the Scope page of each organization that has such entries; until answered, active checks of those addresses stop.
+
+### Behaviour change: saved views answer by page key
+
+- `GET /api/v1/views?page=<key>` and `POST /api/v1/views` answer `400` for a page key that is not registered (was `404`) and `403` naming the missing permission when the caller may not read that page's list (was `404`). A view read by id that the caller may not use stays `404`.
+- The `/api/v1/views` routes no longer require `findings:read` or `assets:read` first: a request needs the read permission of the list its page key names (the route accepts the read permission of any list that has views, the service then checks the page's own).
+- Docs: server/docs/architecture/saved-views.md
+
+### Removed: the platform no longer fetches CISA KEV or EPSS itself
+
+- KEV and EPSS now arrive only in the signed vulnerability release (fetched from the feed origin, or through a relay sensor in relay mode). The hourly call to www.cisa.gov (with its fallback to raw.githubusercontent.com) and the daily call to epss.empiricalsecurity.com are gone, together with the console setting System > Threat intelligence > "Where KEV and EPSS come from" (`threat_intel.source`, `GET/PUT /api/v1/admin/settings/threat-intel-source`). A stored value of that setting is ignored.
+- Each release that carries KEV or EPSS counts as a check of that feed: the feed shows up to date when the collector read the source recently, and fails with the new code `source_stale` when the release carries a copy older than the feed's stale limit (the console's stale threshold of that feed), or with the refusal code when a stream is refused. "Sync now" for KEV or EPSS imports the newest release.
+- The `kev-refresh` (hourly) and `threat-intel-refresh` (daily) controllers no longer fetch; they keep comparing open findings with the catalogs.
+- **Upgrade note:** an installation that has no vulnerability bundle import configured (`VULNFEED_ROOT_KEY_ID` empty) no longer receives KEV or EPSS. Configure the bundle import (default origin, a mirror, a bundle directory, or the feed relay). Firewalls may drop the egress rules for www.cisa.gov, raw.githubusercontent.com and epss.empiricalsecurity.com.
+- Docs: server/docs/architecture/feed-transfer.md ("No direct fetch"), server/docs/architecture/intelligence-feeds.md, server/docs/deployment/air-gapped.md
+
+### Added: the account's memberships say what each organization needs, and a member can leave one it cannot open
+
+- `GET /users/me/tenants` gives each organization an `admission`: `open`, or the code its token
+  request would refuse this session with (`MFA_ENROLLMENT_REQUIRED`, `SSO_REQUIRED`,
+  `OWN_SIGN_IN_REQUIRED`, `MFA_IDP_EVIDENCE_REQUIRED`, `EMAIL_NOT_VERIFIED`,
+  `ORGANIZATION_SUSPENDED`), from the same rules as the token request, so the account space shows
+  the one next step. Each also carries `requires` (`two_factor`, `identity_provider`): what the
+  organization asks of every sign-in of this member, shown before opening it.
+- `POST /api/v1/me/memberships/{id}/leave` (account route, step-up, audited) leaves an
+  organization from the account space, including one that does not admit the session.
+- Listing the memberships (`GET /users/me/tenants`) no longer records an owner break-glass
+  sign-in or notifies administrators: only a token that is minted does. The per-organization
+  `admission` is computed for an account token only. Two owners leaving an organization at the
+  same moment can no longer leave it without an owner (the owner rows are locked inside the
+  offboarding transaction). A member removed from the organization in the tenant cookie is sent
+  to the account space and only that cookie is cleared.
+- Docs: server/docs/architecture/tenantless-account-space.md
+
+### Added: advisory cards and exploitation evidence in emerging-threat alerts
+
+- The vulnerability bundle importer reads the optional `cards` stream of the signed intel side manifest: reviewed, product-level advisory cards that can exist before a CVE record or CPE, with affected and fixed versions per branch, required configuration, exploitation status, proof-of-concept link metadata, workarounds, detection ideas and a cited source for every fact. The stream is applied whenever its file changes (never by data date). Every revision body is kept; at an equal revision only a withdrawal applies. Cards in the `reported` state (fast lane, not yet reviewed, every fact from a vendor, CNA or CERT source) alert only: no score from their exploitation, no grouping, no finding, no scan. Migrations `advisory_cards` and `advisory_cards_validate`.
+- An organization gets one emerging-threat alert per card, with the card's vulnerabilities grouped inside it; their own open alerts are resolved with the reason `grouped_into_card` (the card id in its own column; the person's note and actor are kept, the change goes to the digest, nothing is deleted). The card's alert starts with the strongest open triage of the alerts it groups, and its severity is never lower than a grouped vulnerability's. A withdrawn card, or a revision that drops a vulnerability, plans those vulnerabilities on their own again.
+- The Emerging Threat Score counts exploitation stated by a reviewed card: vendor-confirmed or exploited in the wild 40, weaponised 30, public proof of concept 20. The breakdown names the evidence (`exploitation_basis`).
+- A critical vulnerability with a public exploit on a possibly affected, internet-facing asset of critical business criticality sends one immediate "check needed" alert.
+- `GET /api/v1/emerging-threats/{id}` adds `card`, `exploitation` and `exploitation_sources`.
+- Docs: server/docs/rfcs/RFC-117-emerging-threat-alerts.md (§3.2, §3.5), server/docs/architecture/emerging-threat-alerts.md
+
+### Added: decide many approval requests at once, approve your own group as the sole member, leave one finding out of a group
+
+- `POST /api/v1/approvals/bulk/approve` and `POST /api/v1/approvals/bulk/reject` decide up to 100 finding requests and group exceptions in one call, bounded also by 1,000 findings in total for approve (a group counts every finding in it; `findings:approve`; approve asks for one recent re-authentication for the whole call, reject for one reason). Each id goes through the path of a single decision, so the approval policy, four-eyes, step-up per tier and the data scope still apply per item; the answer reports every id (`approved`, `signed`, `rejected`, `skipped`, `failed` with a stable code). Another organization's or an out-of-scope id is reported as not found.
+- `POST /api/v1/approvals/batches/{id}/self-approve`: the only active person of an organization, its owner, approves their own group exception with one authenticator code and a reason, under the same rules as their own single request (no member removed in the last 7 days, accepted risk only when the risk acceptance level allows it, ends cut to the self-approval limit). Each finding is marked self-approved; the audit row (`finding_approval.batch_self_approved`) is high severity and the backup contact is emailed the number of findings.
+- `POST /api/v1/approvals/batches/{id}/items/{finding_id}/reject` leaves one finding out of a pending group with a reason; the rest stays pending. The group's requester cannot do it (they cancel the group). Audited `finding_approval.batch_member_rejected`.
+- Request rows (`GET /api/v1/findings/{id}/approvals`, `GET /api/v1/approvals`) now carry `policy_reasons`, `eligible_approver_count` and `self_approval_available`; group exceptions carry `self_approval_available`. No migration.
+- Docs: server/docs/architecture/finding-status-lifecycle.md (Approvals)
+
+### Added: a CI trust configuration can use pasted signing keys instead of fetching them
+
+- A CI trust configuration has a **Signing keys** choice: **Fetch from the provider** (the default, unchanged) or **Use keys I paste**. With pasted keys, CI job tokens are verified with the provider's public key document (JWKS) an administrator pasted, and the platform never contacts the provider. This serves a self-managed GitLab the platform cannot reach, or a platform that must make no outbound connections.
+- The document is checked when saved: at most 64 KiB and 10 keys, RSA (RS256, at least 2048 bits) or EC P-256 (ES256), a unique `kid` each; a key carrying private parameters is refused. The trust shows the key ids, their algorithm, when they were pasted and the last key that verified a token. Changes are audited with the old and new key ids.
+- After a provider rotates its keys, a token signed with a key that is not pasted is refused with `401 CI_TOKEN_UNKNOWN_KEY` (not the retryable `503 CI_ISSUER_UNAVAILABLE`), and the organization's administrators get an audit entry and an alert at most once an hour per trust.
+- API: `key_source` and `signing_keys` on `POST`/`PUT /api/v1/ci/trust-configs` and the preview; the answer adds `signing_key_list`, `signing_keys_updated_at` and `last_key_id`. Migration `20261118063549_ci_trust_signing_keys` (additive columns with defaults; existing trusts keep fetching).
+- Docs: server/docs/how-to/connect-ci-pipelines.md
+
+### Added: why a CI token was refused, where the organization's administrators work
+
+- A verified token from a self-managed issuer that no trust rule admits now tells the job the rule in plain words and its own value that did not match, for example the exact pipeline file (`gitlab.example.com/grp/proj//.gitlab-ci.yml@refs/heads/main`) or branch, with the rule codes in `details.reasons`. The configuration's name and listed values are never shown to the job. The response code stays `CI_TOKEN_NOT_TRUSTED`. On a hosted issuer (GitHub, gitlab.com and other shared services, where anyone can mint a verified token) the job gets the generic message only.
+- The refusal audit records keep the token's issuer, owner, environment and pipeline definition, and which configuration refused with which code; `GET /api/v1/ci/trust-refusals` returns them.
+- `POST /api/v1/ci/trust-configs/{id}/allow` with a `refusal_id` adds the pipeline file or branch that configuration refused to it in one step (the value is read from the refusal record, only for `workflow_not_allowed` and `ref_not_allowed`) (CI write permission, recent sign-in, audited like any change of the configuration).
+- Tokens refused before verification (no configuration for the issuer, issuer keys unavailable, a token that did not verify) still never reach the audit log; a bounded record per issuer (issuer, reason, cause, first and last time, count; no token contents; at most 20 per organization, recent ones never pushed out, only for organizations with a trust configuration; an issuer not close to a configured one is recorded as another issuer) is listed by `GET /api/v1/ci/trust-refusals/unverified`, with the nearest configured issuer and how it differs (for example a trailing slash). Migration `20261118075036_ci_unverified_refusals`.
+- `503 CI_ISSUER_UNAVAILABLE` for a self-managed issuer now names the cause class in its message and `details.cause` (blocked private address, DNS, TLS, timeout, issuer mismatch, HTTP status, key rotation, unreachable), never an address.
+- Docs: server/docs/how-to/connect-ci-pipelines.md#troubleshooting
+- Refusals before verification: an issuer a token claims is kept under its own name only when it is on the same host as a configured issuer; the keys_unavailable and not_verified records of a real issuer are no longer limited by the 20-record bound or the hourly budget (only caller-chosen issuers are). Adding a refused ref or pipeline file from a refusal is refused for a project an all-projects configuration has not approved. Slash variants of a configured issuer are one record.
+
+### Added: a CI trust configuration for every project of a self-managed GitLab
+
+- `rules.all_repositories` ("Every project on this GitLab") accepts CI results from any project of a self-managed GitLab without naming its top-level groups. It is refused for gitlab.com and every other shared issuer, where it would admit anyone's projects.
+- A project seen for the first time is a new repository: listed by top-level group and, by default, refused with `CI_TOKEN_REPOSITORY_PENDING_APPROVAL` until an administrator approves the project or its whole group (the group then joins the configuration's owners, so its future projects need no approval). Blocking a project or group refuses it with `CI_TOKEN_REPOSITORY_BLOCKED`, reversibly. Optional `admit_new_repositories` imports a new project's results while it waits. Only approved projects reach scope.
+- New configurations of this kind start with protected branches and tags only and a notice when a new group asks (in the app and on channels subscribed to the new event `ci.new_repository_group`).
+- API: `GET /api/v1/ci/trust-configs/{id}/new-repositories` and `POST /api/v1/ci/trust-configs/{id}/new-repositories/decisions` (CI write permission; decisions need a recent sign-in and are audited). Migration `20261118080035_ci_trust_new_repositories`.
+- Docs: server/docs/how-to/gitlab-ci.md#every-project-on-this-gitlab
+- Approving a project binds it to the project and namespace ids it was seen with. A group holds at most 25 pending projects and a configuration 500; the list names full groups (`full_groups`, `list_full`). New-group notices are limited to 10 per configuration and hour.
+- jihulab.com, gitlab.cn and `*.ghe.com` count as shared issuers, so they cannot have an all-projects configuration.
+- Changing a trust configuration's owners or repositories now keeps the owner pins of the names still listed (before, every pin was dropped).
+- Approving a whole GitLab group trusts its name (a GitLab token carries no top-level group id); approve single projects when the group's owners can change. Documented in the CI docs and RFC-051.
+
+### Added: private network destinations in the platform console
+
+- Console System > Private networks lists the private ranges (inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7) the platform's outbound requests may reach, so a self-managed GitLab, Jira or mail relay on a private address can be opened without editing the server's environment and restarting it. Ranges set in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` are shown read only ("Set on the server"); the guard allows both lists.
+- A change applies at once on the server that saved it and within 15 seconds on the others. At most 32 ranges; an IPv6 range must be /48 or narrower; loopback, link-local and cloud metadata addresses are never opened; nothing is opened while `SIGNUP_MODE=open`.
+- "Test a destination" resolves a host name and reports, per address, whether it is reachable, which range opens it, the range that would open a blocked one, or why it is never reachable. It never connects to the host and is limited to 10 tests a minute per administrator.
+- Docs: server/docs/deployment/docker.md#services-on-private-addresses-gitlab-jira-mail-relay
+
+### Added: `server doctor` and `server support-bundle`
+
+- `server doctor` checks an installation and prints a table of checks (pass, warn, fail), each with one
+  sentence and the fix: configuration, public URL, key settings (presence and shape only), database
+  reachability, the privileges of the database role, migrations, clock skew against the database server,
+  Redis, certificate expiry, free disk space, backup age, queue backlog and stuck jobs, sensor heartbeats
+  and versions (counts), and the known link breaks of the audit chain (reported, not judged). Exit code 0
+  only when nothing fails; `--json` for scripts.
+- `server support-bundle` writes one archive that is safe to send to someone with no access to the
+  installation: the doctor's result, build information, every setting as set / not set (values only for
+  settings that cannot hold a secret, a name or an address), database statistics from the catalog and
+  statistics views, queue statistics, and the logs of the period with e-mail addresses, IP addresses, host
+  names, tokens, cookies, authorization headers, bodies and evidence masked. It holds no database row, no
+  finding, no asset, user or organization name and no key. Options: `--since`, `--max-size`, `--output`,
+  `--logs`.
+- Both commands only read: every SQL statement runs in a read-only transaction with a statement timeout.
+  There is no HTTP route; whoever can start a process in the server's container can run them.
+- Docker Compose: `./support.sh doctor` and `./support.sh bundle` in `server/deploy` (also in the Compose
+  bundle). Kubernetes and the Ansible kit: one `exec` line each, in the guide.
+- Docs: server/docs/operations/diagnose-and-get-support.md
+
+### Added: vulnerability data that stops arriving is an alarm in every mode, with a banner for every user
+
+- A freshness watch checks every 10 minutes, in direct and relay mode alike: the age of each feed's data (bundle 12 hours, CISA KEV 6 hours, EPSS 36 hours), refused imports (at once), failing imports (after two runs), the age of the newest published CVE in the corpus (12 hours) and the number of CVEs published in the last 24 hours against the 30 days before. The platform administrators get one message when conditions open and one when they clear (e-mail and the alert webhook).
+- While vulnerability data is out of date, every signed-in user sees a banner that cannot be dismissed, and the platform console shows each cause. The emerging-threat pages show "Data as of" the vulnerability data's publication time. New route `GET /api/v1/threat-intel/freshness` (any signed-in user; platform-wide state only) and `GET /api/v1/admin/threat-intel/freshness` (any admin).
+- New gauge `openctem_feed_freshness_alerts{code}` and Prometheus rule `FeedFreshness`. Operators with their own rules file: copy the rule from `deploy/observability/prometheus/rules/openctem.yml`.
+- Migration `20261118175634_cve_records_published_index` adds an index on `cve_records (published_at)`, built concurrently (no write lock).
+- Docs: server/docs/architecture/intelligence-feeds.md (Freshness), server/docs/operations/monitoring.md (FeedFreshness)
+
+### Added: a finding keeps its web location and its endpoint
+
+- Ingest now stores the CTIS `web` location of a finding: its HTTP method, the parameter's location and name (never a value), the response status, and a link to the stored web endpoint. The link is set when the report's `endpoint_ref` resolves, or when the finding's method and URL template match an endpoint of the same origin and organization; an endpoint of another organization is never linked.
+- The path tree counts a linked finding at its own endpoint and method. A finding with no link keeps the template mapping, which shows at every method of the template.
+- A new table `finding_web_locations` (additive migration); findings stored before it keep the template mapping until their next sighting.
+- Docs: server/docs/architecture/web-surface.md
+
+### Added: dismiss findings in bulk, with a preview and undo
+
+- `POST /api/v1/findings/bulk-dismissals/preview`, `POST /api/v1/findings/bulk-dismissals` and
+  `POST /api/v1/findings/bulk-dismissals/{id}/reopen` (`findings:bulk_update` and `findings:write`): mark up to
+  500 selected findings (by ids, or by the list's filter with the confirmed count) a false positive or accept
+  their risk. Each finding follows the same approval policy as a single request: the ones the person may decide
+  alone are applied now (each with its own timeline entry and audit row), the rest becomes one approval group
+  (source type `selection`), and the skipped ones say why.
+- Guardrails: more than 25 decided alone, in one call or across the calls of the last hour, needs a recent re-authentication; at most 1,000 decided alone per
+  person per 24 hours (the rest goes to approval); a bulk audit event (`finding.bulk_dismissed`, high severity
+  and an immediate notice to the owners above 100 decided alone); a retry with the same idempotency key returns
+  the first result. Undo by its creator within 24 hours reopens the findings it decided alone and cancels its
+  pending group; nothing is deleted.
+- New error code: `BULK_DISMISS_TOO_LARGE` (400, with the count). A key reused with another request answers
+  the existing `IDEMPOTENCY_KEY_REUSED` (422), as bulk-by-filter does.
+- Second look: a bulk that decides 10 or more findings alone, with the organization's second-look share above
+  0, always gets at least one second look (one decided finding chosen at random when the per-finding sampling
+  raised none).
+- The audit rows of a bulk are written even when the client disconnects during the apply; an undo while the apply is still running answers 409 (retry it); the requester is recorded by the same identity the approve paths compare with.
+- Known limit: undo reopens every finding to `confirmed`, whatever status it had before the dismissal.
+- Known limit: an apply of 500 decided alone takes about 17 seconds (the findings are written one at a time).
+  A batched write path is a planned follow-up.
+- Migration 20261119095221 (`finding_bulk_dismissals`, and `selection` added to the approval group source
+  types). Its down migration stops while a `selection` group exists, so no decision record is deleted.
+- Docs: server/docs/architecture/findings-bulk-by-filter.md#bulk-dismiss
+
+### Added: coverage-gap reason `slots_full`
+
+- A sensor can report the coverage-gap reason `slots_full`: its own per-host connection limit was full, so part of the host was not scanned (a connection found no free slot for the whole wait, or a connection whose answer may still have been arriving was closed to free its slot). The run ends partial and the host is not covered, but the reason says nothing about the target: it never holds findings, never counts against a proxy, and the console shows it as a sensor-side limit. The target keeps the outcome its tool gave it, so no follow-up command scans the host again at once; the next run scans it again. (`host_busy` stays the placement reason for a task waiting on a host another task holds.)
+- Docs: server/docs/architecture/asset-coverage.md, server/docs/architecture/held-findings.md
+
+### Added: similar alerts reach a channel as one message
+
+- A burst of finding alerts of the same kind (for example many "Finding priority raised" after an EPSS, KEV or reachability re-score) no longer sends one chat message per finding. Within a window (2 minutes by default) they are sent as one message: the count in the title ("6 findings raised to High"), the findings listed by asset (at most 10 lines, then "+N more") and one button to the findings list of exactly those findings (`/findings?notification_group_id=...`). A burst of thousands is at most two messages.
+- New per-channel settings, on by default for new and existing channels: "Group similar alerts" with its wait (1 to 60 minutes), and "Send urgent alerts at once" (a critical or known exploited finding is sent on its own right away, up to 5 per wait). API fields `group_similar`, `group_window_minutes`, `urgent_at_once` on the notification channel endpoints; the console's channel dialogs replace the "Rate Limiting" slider, which never limited anything, with them.
+- Nothing is dropped: every event keeps its own outbox entry and history record (send result `grouped` with the group id); a finding raised again within the window is one line in its final state; a raise undone before the send is left out. Messages stay within each provider's length limit (Telegram 4,096 characters).
+- Migration `notification_grouping`: three columns with defaults on `integration_notification_extensions`, two new tables (`notification_groups`, `notification_group_items`). No table rewrite.
+- Docs: server/docs/architecture/notification-system.md
+
+### Added: user groups on a pentest campaign team
+
+- A campaign lead can add a user group to the team, not only people: "Add team member" now offers People or Group. The group's current members get the chosen role (tester, reviewer, observer or client; a group is never the lead), and the team follows the group as people join or leave it or their membership reaches its end date.
+- A person on the team both by name and through groups gets the highest of those roles. The team list shows each group with its role and member count (members on demand) and marks people who are there through a group.
+- Every place that reads campaign membership (the campaign role check, finding visibility in lists, groups, stats, exports and dashboards, approvals, assignee checks, notifications) resolves the team in one database view, so a group grant counts wherever a person's membership does.
+- Adding, changing and removing a group is audited (`campaign.group_added`, `campaign.group_role_changed`, `campaign.group_removed`); newly covered members are notified once.
+- A large group does not swell responses or requests: the campaign list returns `team_count`, the first 8 team members and the caller's own `current_user_role` per campaign (not the whole team: 20 campaigns with a 5,000-member group were 21 MB of rows), the detail returns the first 100, and the full team is read from the paged `GET /pentest/campaigns/{id}/members?page=&per_page=` (`X-Total-Count`). A campaign client no longer receives team e-mail addresses. Group add/remove and phase-change notifications reach at most 50 people from the request; the audit event records the full count.
+- The team screen shows when a group lifts a person added as client to a higher role.
+- Faster: the pentest member visibility rule no longer re-runs the team lookup for every finding (a member's findings count on 600k findings: about 0.3 s instead of 3 s).
+- Docs: server/docs/architecture/pentest-campaign-team.md, server/docs/architecture/authorization-matrix.md
+
+### Added: one-time move of provider shared addresses into their names' history
+
+- An address inside a range a provider publishes for infrastructure many organizations share is recorded on the name that resolves to it (with first and last seen), not as an address asset of the organization. Addresses a scan reports results on are still recorded.
+- New operator command `provider-addresses` (a link to the server binary, like `refingerprint`) cleans up what the old behaviour left: it folds existing name-to-address links into the names' address history, moves services named by a host name (and certificates that cover the name) from the address to that name, and archives the provider addresses that carry nothing else. Addresses with their own services, a scope entry, a person's decision, a tag or any other reference are kept as they are. Findings are never changed, and scope entries and exclusions are never written.
+- It is a dry run by default (counts only, nothing changed). `-tenant <id> -apply` runs it for one organization in short batches: resumable, idempotent, one audit entry, one dashboard refresh and a one-time notice per organization. `-tenant <id> -restore` puts back what it changed, except addresses changed since.
+- An address the command archived comes back (active, still a dependency) when a scan reports a result on the address itself.
+- Migration `20261119023455_provider_address_moves` adds the journal tables `provider_address_moves` and `provider_address_move_items` (new, empty; no existing table is locked).
+- **Upgrade note:** nothing runs by itself. After the upgrade, run `provider-addresses` (dry run) in the API container, read the report, then `provider-addresses -tenant <id> -apply` one organization at a time. Runbook: `server/docs/operations/provider-address-move.md`.
+- Docs: server/docs/operations/provider-address-move.md, server/docs/architecture/provider-address-move.md
+
+### Added: answer scope entries on provider shared addresses in one place
+
+- The Scope page shows a card, only when there is something to decide, for scope entries that are addresses (or ranges wholly inside a range) a provider publishes for infrastructure many organizations share, such as Microsoft 365 mail front ends or Amazon CloudFront and Cloudflare edges. One row per provider: **Move to out of scope** (recommended; previewed, then each entry becomes a do_not_scan exclusion of the same address with its origin kept, and the entry is turned off, in one transaction) or **Keep scanning** (re-authentication required). Names that point at those addresses stay in scope. Addresses a person confirmed as the organization's inside such a range are listed under their provider to keep or move.
+- New endpoints: `GET /api/v1/scope/provider-addresses` (scope read), `POST /api/v1/scope/provider-addresses/move` (scope write, `preview` first; no re-authentication, it only narrows) and `POST /api/v1/scope/provider-addresses/keep` (scope write and re-authentication). Audited: each exclusion and entry, plus `scope_target.provider_moved` and `scope_target.provider_kept` (high) with the counts and ids.
+- A review rule never adds an entry on a provider's shared addresses (`PROVIDER_SHARED_RANGE`).
+- The provider range list is refreshed (version 2026-11-19.1), and a unit test now fails once it is more than 30 days old.
+- Migration `20261119023815_scope_provider_keeps` (a new table, nothing populated is locked).
+- Docs: server/docs/architecture/provider-shared-addresses.md
+
+### Added: saved views for every list page
+
+- The saved views API (`/api/v1/views`) accepts a page key for every list page of the console (scans, runs, workflows, sensors, components, exposures, emerging threats, certificates, technologies, credentials, remediation tasks and campaigns, the approval queues, members and the other settings lists), not only `findings`, `vulnerabilities` and `assets`. The keys, with the permission that reads each list, are one registry in the server; a new list registers with one line and no migration.
+- A page without filter fields of its own keeps its list state (filters, sort, search) in `page_params`: at most 32 params, 1024 bytes a value, 3072 bytes together, stored as text and never run by the server. `page_params` can now be sent in the request body.
+- A member keeps at most 50 views on one page (and, as before, 100 in an organization).
+- Migration `20261117053831_saved_views_page_registry`: `saved_views.page` grows to 64 characters and its check becomes a shape check. No data changes; rolling it back removes the views of the newly accepted pages.
+- Docs: server/docs/architecture/saved-views.md
+
+### Added: excluded and not-covered inventory counts in the scope summary
+
+- `GET /api/v1/scope/stats` adds `inventory_excluded` (internet-facing assets an active exclusion removes) and `inventory_not_covered` (internet-facing assets no active entry covers and no exclusion removes). Both come from the existing coverage count (one query, no new request), tenant-scoped and narrowed to the caller's data scope like the other inventory counts.
+- Docs: server/docs/rfcs/RFC-054-scope-model.md (§6 scope summary)
+
+### Added: API keys show an expired state, owner and owner filter; service accounts list roles, teams and the AI agent mark
+
+- `GET /api/v1/api-keys`: an active key past its expiry reads `expired` (derived at read time, rows are not rewritten, the `status` filter follows it); each key carries `owner_name` and `owner_kind`; `?owner=me|service_accounts` narrows the list. The `api_keys` count of a service account no longer includes expired keys.
+- `GET /api/v1/service-accounts`: each account carries `roles`, `teams` and `ai_agent`. Tenant-scoped, two grouped queries for the whole list. No migration, no permission change.
+- Docs: server/docs/architecture/api-keys.md, server/docs/architecture/console-api-screens.md
+
+### Added: roles and teams lists carry member counts, pending approvals and a team access summary
+
+- `GET /api/v1/roles` returns `members_count` (distinct holders, direct or through a team) and `pending_approvals` (pending finding approval requests the role's holders may decide) per role; `GET /api/v1/groups` returns an `access` summary (scope mode, presets, privileged, hand-bound roles) per team. Both are tenant-scoped, computed with grouped queries and add no request per row. No migration, no permission change.
+- Docs: server/docs/architecture/console-api-screens.md
+
+### Added: create a personal organization on sign-up
+
+- The sign-up policy has a new switch, "Create a personal organization on sign-up" (Console > System > Sign-up, `personal_organization` on `GET/PUT /api/v1/admin/settings/signup`, plus `effective_personal_organization` on `GET`). It is off by default and needs organization self-service. When it is on, a person who signs up by themselves (e-mail and password, or a first Google, Microsoft or GitHub sign-in) and has no other way in gets their own organization, with them as owner, at their first sign-in after their address is verified.
+- Nobody else gets one: not an invited person (invitation or ownership invitation), not an address whose domain an organization verified (joinable, SSO required or closed), not someone admitted by an organization's SSO, not a disposable address, and not an account created by an administrator. Made at most once per account (one transaction under a row lock), at most 5 per network prefix and 50 per e-mail domain per hour; any refusal leaves the normal "create your organization" step.
+- The organization is named "<Display name>'s organization", gets a random address, the self-service starting limits and every module, and is recorded as `tenant.created` (`via: personal_organization`) and as a "Created at sign-up" event in Console > Sign-ups.
+- New environment variable `SIGNUP_PERSONAL_ORGANIZATION` (default `false`): the switch's value in the policy stored at the first start under `SIGNUP_MODE=open`.
+- Migration `20261118094017_personal_organizations` adds an empty table; no backfill.
+- Docs: server/docs/architecture/user-onboarding.md, server/docs/configuration/environment-variables.md
+
+### Added: preview what "Make default" would do to open findings
+
+- `GET /api/v1/sla-policies/{id}/default-preview` (`settings:sla:write`, read-only) returns `governed`, `earlier`, `become_overdue` and `later` counts for the open findings the default governs, so the console can show the effect before the switch. Tenant-scoped, one aggregate query; nothing is written. No migration.
+- Docs: server/docs/architecture/sla-escalation.md, server/docs/architecture/console-api-screens.md
+
+### Added: products seen with their version hidden join the software inventory
+
+- A technology detection or an HTTP `Server` header that names a curated public application (nginx, Apache HTTP Server, IIS and the rest of the curated list) without a version now becomes a software link with an empty version. Any other version-less name (a private product, a CDN, a security header) stays a technology only, so it never becomes a catalog row.
+- The emerging-threat alert's "possibly affected" tier and the vulnerability page's "Possible" bucket now list those assets. Only established links count there: an asset whose version is known is no longer listed as possibly affected through an older version-less row.
+- A version read later (any source) replaces the version-less link at once; hiding the version again does not bring the version-less link back.
+- The new `asset-software-link-backfill` controller links the version-less technologies stored before this release: tenant by tenant, in batches of 500, resumable from its saved position (table `asset_software_versionless_backfill`, migration `20261118175210`; a new table, nothing populated is locked), and idempotent. It queues the linked assets for matching.
+- Docs: server/docs/architecture/vulnerability-matching.md, server/docs/architecture/asset-technologies.md, server/docs/architecture/software-version-history.md
+
+### Added: the path tree of a web origin
+
+- `GET /api/v1/assets/{id}/web-paths` returns one level of a web origin's path tree: its child paths with the
+  endpoints, out-of-scope endpoints and open findings under each (and the worst severity), and one page of the
+  endpoints under the requested path. Filters hide static files, 4xx answers and endpoints not seen for 30 days,
+  keep endpoints with findings, in or out of scope, or of some methods, and search the path. Findings are matched
+  to endpoints by the link they carry or, without one, by path template whatever the method; a finding at a path no crawl recorded keeps its own node.
+- Needs `assets:read`; an asset of another organization or outside the caller's data scope answers 404.
+- Docs: server/docs/architecture/web-surface.md
+
+### Changed: the developer pages on extensions are reorganised
+
+- Where extension code goes, extension points, grants and the core boundary check are described in `server/docs/development/extensions.md`; RFC-145 is filed under its title (`RFC-145-grants-and-grant-providers.md`). Links are updated. Documentation only, no behaviour change.
+- Docs: server/docs/development/extensions.md, server/docs/development/extension-api.md
+
+### Changed: tighter stale limits for the vulnerability bundle and EPSS; the relay no longer sends its own stale alert
+
+- The console marks the bundle feed stale after 12 hours (was 72) and EPSS after 36 hours (was 48); KEV stays at 6 hours.
+- In relay mode the "feed is out of date" relay alert (48 hours) is replaced by the freshness watch, which covers every mode; relay offline and failed rounds still alert as before.
+- Docs: server/docs/architecture/intelligence-feeds.md
+
+### Changed: a social sign-up makes its personal organization under any two-factor floor
+
+- A new account that signed up through a social provider now gets its personal organization at that sign-in even when the platform two-factor floor covers owners. The organization asks for a second factor as before (`MFA_ENROLLMENT_REQUIRED`, the session stays); the person enrols one in place within 15 minutes of the sign-in and then opens the organization. Before, the organization was held back (mark pending) until the person had a password and a factor.
+- Docs: server/docs/architecture/user-onboarding.md
+
+### Changed: threat-alert criticality and severity names are named constants
+
+- Internal tidy-up of the threat-alert package (goconst); behaviour is unchanged. A table test now covers the criticality ranking.
+- Docs: none (internal constants, no behaviour change)
+
+### Fixed: sign-in dead ends found by the sign-in scenario suite
+
+- "2FA for administrators" (and the platform floor `admins`) no longer gates a plain member: administrator now means grants above the built-in member role (`permission.IsAboveMember`); the member role's own permissions never count.
+- Accepting an invitation of a suspended organization is refused with 403 `ORGANIZATION_SUSPENDED` before anything changes (no membership, the invitation stays pending), and the session is kept: the invitation acceptance no longer spends the refresh token before its access token is minted.
+- `/auth/token` has the same refresh-token rotation grace as `/auth/refresh`: two tabs opening two organizations at once, or a tab that missed a rotation by seconds, keep the session. A token re-presented after the grace, from a client whose User-Agent differs (the console now forwards the browser's on both calls; a User-Agent is not a secret, so this stops another kind of client, not a copy of it), or after its successor rotated still ends the session and is audited.
+- A request refused per organization because single sign-on became required answers `SSO_REQUIRED` (was `FORBIDDEN`), and one refused for the identity provider's second-factor proof answers `MFA_IDP_EVIDENCE_REQUIRED`, as at token issuance.
+- A token request refused because the organization does not accept personal accounts answers 403 `PERSONAL_ACCOUNTS_BLOCKED` (was a 500).
+- Accepting an invitation sent to another address answers 403 `INVITATION_FOR_ANOTHER_ADDRESS`; the invitation page then says to sign in with that account. After a refusal only another sign-in can fix (the organization's identity provider required, another organization's provider, another address), the invitation page shows that one step instead of offering Accept or Open again.
+- A session ended because its organization is suspended says so on the sign-in page instead of showing a bare form.
+- Test builds only: the build tag `authtestseam` lets the sign-in test suites reach the social providers at a stand-in; release builds never carry it.
+- Docs: server/docs/architecture/two-factor-floor.md, server/docs/architecture/session-refresh.md, server/docs/architecture/organization-suspension.md, server/docs/development/auth-scenarios.md
+- A hand-out inside the rotation grace is audited (`auth.refresh_grace`, low severity).
+- `/auth/refresh` checks the membership before whether the organization is suspended, so a session cannot learn whether an organization it is not in is suspended.
+- The sign-in test seam is honoured only in a binary built with the `authtestseam` tag and with `APP_ENV` set to `test` or `e2e`. The release build script refuses build tags in `GOFLAGS` and fails a binary that carries the tag.
+
+### Fixed: CI trust list fields say they take several values
+
+- The owners, repositories, branches, environments, events and pipeline definitions fields of a CI trust configuration (and the owners field of the setup wizard) now say that several values are separated by commas, and their examples show two values. One configuration can hold many GitLab groups; nobody needs one configuration per group.
+- Docs: none (hint text only, no behaviour change)
+
+### Fixed: an emerging-threat alert lists its affected assets per host, under honest group names
+
+- The alert page showed likely matches under "Confirmed affected" and counted them there. It now has three
+  groups, each shown only when it has a row: Confirmed affected, Likely affected, Possibly affected (version
+  unknown).
+- A host that serves several ports has one service asset per port (`http://host`, `https://host`). These are
+  different assets and stay so, but the page listed them as separate rows that read as duplicates. They now
+  share one row per host: the host as the title, each service as a link to its own asset, internet-facing if
+  any service is, the highest criticality, the distinct products and versions, and the finding and task links
+  of every service. A group's count is its number of rows.
+- `GET /api/v1/emerging-threats/{id}` adds `asset_groups` (tier, hosts, services); `assets` is unchanged.
+  The list, the drawer, messages and the stored counters count hosts the same way (see "an emerging-threat
+  alert counts hosts everywhere").
+- On a phone the affected assets are cards under the same group headers instead of a table cut at the
+  screen edge.
+- Docs: server/docs/architecture/emerging-threat-alerts.md
+
+### Fixed: a first sign-in with Google, GitHub or Microsoft no longer ends back on the sign-in page
+
+- A person signing in with a social provider for the first time (no organization yet) was signed
+  out at once: the web landed them on the dashboard with a token that has no organization, its
+  first organization request answered `401 TENANT_REQUIRED`, the refresh had no organization to
+  renew, and the client took that as a dead session. The web now decides the landing from the
+  person's memberships (`/auth/continue`): no organization opens the account space (`/welcome`,
+  or the invitation they came from), one opens it, several open the picker.
+- The browser signs a person out only when the session itself is gone (the refresh is refused
+  with 401, or the session came from another organization's identity provider). A route that
+  needs an organization, an organization that requires two-factor authentication, a suspended
+  organization, or a server error never signs anybody out.
+- Turning two-factor authentication on, or moving it to a new authenticator, now sends the person an
+  e-mail (`notice.mfaOn`, `notice.mfaReplaced`, en and vi) from every path, so a hijacked session
+  that binds its own authenticator is noticed. A social sign-in is refused when the second-factor
+  gate is not wired (fail closed), and the in-place enrolment step is for social-provider
+  accounts only.
+- Docs: server/docs/architecture/tenantless-account-space.md
+
+### Fixed: the invitation page says why Open failed and when to retry
+
+- When opening an accepted invitation's organization is refused for now (too many token requests from one address, a server failure, or no answer), the invitation page shows the reason and a "Try again in N s" wait taken from the server's `Retry-After`, then offers Open again. It no longer shows the same Open button with no reason.
+- Added `RATE_LIMIT_TOKEN_EXCHANGE_PER_MIN` (default 20, per address). Only a test stack where every simulated browser shares one address raises it; production refuses a value above 20.
+- Docs: server/docs/configuration/environment-variables.md
+
+### Fixed: a hotfix of an older release line no longer becomes the latest release
+
+- Publishing a hotfix tag of an older line (for example v0.21.1 after v0.23.0) moved the `latest` image tag of every image, GitHub's "Latest" release and the release feed back to that hotfix. The publish now adds `latest`, marks the release as Latest and uploads the release feed only when the tag is the newest `vX.Y.Z` release tag; when the tags cannot be listed the job fails instead of guessing.
+- Docs: none (release pipeline only; no change for installs)
+
+### Fixed: a refresh refused by an organization names the reason and its next step
+
+- When an organization stops admitting a signed-in session (single sign-on or its identity provider's second-factor proof now required, a verified address or a work account needed, the organization suspended), the console opens the account space with the reason and its one next step instead of retrying or showing a bare sign-in page. The session stays for the person's other organizations.
+- The same applies right after a sign-in: a returning member whose one organization refuses the new session (its identity provider required, or the account's own sign-in when the session came from another organization's identity provider) lands in the account space with the reason and its one next step, instead of a plain account space or a page that never loads. A page opened with a session but no organization selected goes through the sign-in landing first.
+- Docs: server/docs/architecture/session-refresh.md (refresh refusals are classified by web/src/lib/auth/refresh-failure.ts)
+
 ## v0.23.0 (2026-11-15)
 
 ### Upgrade notes
