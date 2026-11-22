@@ -12,7 +12,6 @@
   "myWork.changedSince": "Đã thay đổi kể từ khi yêu cầu: {changes}",
   "myWork.chip.asset": "Tài sản",
   "myWork.chip.dueSoon": "Hạn SLA trong 72 giờ",
-  "myWork.chip.dueSoonNamed": "Hạn SLA trong 72 giờ: {count}",
   "myWork.chip.signoffs": "{collected} trên {required} phê duyệt",
   "myWork.columns.acceptanceEnds": "Chấp nhận kết thúc",
   "myWork.columns.finding": "Phát hiện",
