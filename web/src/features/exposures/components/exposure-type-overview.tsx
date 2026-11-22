@@ -177,7 +177,10 @@ export function ChartEmpty({
   return <EmptyState card={false} icon={icon} title={title} description={description} />
 }
 
-export function severityRows(bySeverity: Record<string, number>, label: (s: SeverityLevel) => string) {
+export function severityRows(
+  bySeverity: Record<string, number>,
+  label: (s: SeverityLevel) => string
+) {
   return SEVERITY_ORDER.map((severity) => ({
     severity,
     name: label(severity),
@@ -229,7 +232,12 @@ export function SeverityBars({ bySeverity }: { bySeverity: Record<string, number
         <XAxis dataKey="name" {...CHART_AXIS} />
         <YAxis {...CHART_AXIS} allowDecimals={false} />
         <Tooltip {...CHART_TOOLTIP_PROPS} />
-        <Bar dataKey="value" name={t('exposures.chart.findings', 'Findings')} radius={[4, 4, 0, 0]} barSize={40}>
+        <Bar
+          dataKey="value"
+          name={t('exposures.chart.findings', 'Findings')}
+          radius={[4, 4, 0, 0]}
+          barSize={40}
+        >
           {data.map((entry) => (
             <Cell key={entry.severity} fill={entry.color} />
           ))}
