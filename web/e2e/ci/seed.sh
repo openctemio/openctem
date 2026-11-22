@@ -568,6 +568,42 @@ for fid in $(jq -r '.[0:2][]' <<<"$MINE"); do
 done
 call POST /api/v1/auth/logout '{}'
 
+log "approval requests and closes waiting for a person (queue pages)"
+# /findings/approvals needs requests from another person (the administrator
+# who watches above asks for false positives) and one of the owner's own;
+# /findings/ready-to-close needs pending close proposals. Findings from the
+# middle of the list, so the first rows (My work, the detail checks) and the
+# last ones (spec 45 takes them from the end) stay free.
+ACCESS_TOKEN=
+JAR="$WORK/watcher-again-cookies"
+XFF=198.18.250.30
+call POST /api/v1/auth/login "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\"}"
+call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
+ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+XFF=
+call GET "/api/v1/findings?per_page=50"
+QIDS=$(jq -c '[.data[]?.id]' <<<"$BODY")
+n=0
+for fid in $(jq -r '.[8:13][]' <<<"$QIDS"); do
+  n=$((n + 1))
+  call POST "/api/v1/findings/$fid/approvals/" "{\"requested_status\":\"false_positive\",\"closure_reason\":\"detection_error\",\"justification\":\"Seeded request $n: the rule matched a test banner, not a flaw.\"}"
+done
+call POST /api/v1/auth/logout '{}'
+owner_session 3
+OWN=$(jq -r '.[13]' <<<"$QIDS")
+call POST "/api/v1/findings/$OWN/approvals/" '{"requested_status":"false_positive","closure_reason":"detection_error","justification":"Seeded request from the owner."}'
+call POST /api/v1/auth/logout '{}'
+PROPOSED=$(jq -r '.[14:19][]' <<<"$QIDS" | paste -sd, -)
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v tid="$TENANT_ID" -v ids="$PROPOSED" >/dev/null <<'SQL'
+INSERT INTO finding_closure_proposals (tenant_id, finding_id, method, evidence_at)
+SELECT :'tid'::uuid, f::uuid,
+       (ARRAY['covered_scan','obsolete_asset','retest_verified','claimed_fix_scan','source_reported'])[1 + (row_number() OVER ())::int % 5],
+       now() - interval '2 hours'
+  FROM unnest(string_to_array(:'ids', ',')) AS f
+ON CONFLICT DO NOTHING;
+SQL
+
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
