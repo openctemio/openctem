@@ -1034,3 +1034,50 @@ export function layoutSignedOut(options: Options, routes: string[]) {
     }
   })
 }
+
+/**
+ * The Filters button and the search field are one joined control on every list
+ * (owner report 2026-11-22, /scope, 390 px, dark): the button is found by its
+ * own slot inside the field, its outer corners are round and its inner ones
+ * square, the field's start is square, both are one height and the two
+ * borders meet in one line. A Radix trigger around the button once replaced
+ * its slot, so /scope kept four round corners and a doubled seam.
+ */
+export function joinedFilterControl(options: Options) {
+  test.describe('Layout breaks: joined filter control', options, () => {
+    for (const route of ['/scope', '/findings']) {
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        // /findings has the facet panel toggle from lg: no joined button there.
+        if (v.width > 400 && route === '/findings') continue
+        test(`${route} ${v.tag}`, async ({ page, baseURL }) => {
+          test.setTimeout(90_000)
+          await prepare(page, v, baseURL!)
+          await page.goto(route, { timeout: 60_000 })
+          await settle(page)
+          const joined = await page.evaluate(() => {
+            const root = document.querySelector('[data-slot="list-search"]')
+            const btn = root?.querySelector<HTMLElement>(':scope > [data-slot="filter-button"]')
+            const inp = root?.querySelector<HTMLElement>('[data-slot="list-search-input"]')
+            if (!btn || !inp) return null
+            const b = btn.getBoundingClientRect()
+            const i = inp.getBoundingClientRect()
+            const bs = getComputedStyle(btn)
+            const is = getComputedStyle(inp)
+            return {
+              height: [b.height, i.height],
+              seam: i.left - b.right,
+              btnRadius: [bs.borderTopRightRadius, bs.borderBottomRightRadius],
+              inpRadius: [is.borderTopLeftRadius, is.borderBottomLeftRadius],
+            }
+          })
+          expect(joined, 'the filter button sits inside the search field').not.toBeNull()
+          expect(joined!.height[0]).toBe(joined!.height[1])
+          expect(joined!.btnRadius).toEqual(['0px', '0px'])
+          expect(joined!.inpRadius).toEqual(['0px', '0px'])
+          // One shared border line: the field overlaps the button by its 1px border.
+          expect(joined!.seam).toBe(-1)
+        })
+      }
+    }
+  })
+}
