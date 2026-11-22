@@ -688,3 +688,58 @@ describe('LockedChip', () => {
     expect(onShow).toHaveBeenCalledOnce()
   })
 })
+
+describe('ListToolbar fold', () => {
+  it('asks the search for less room once the toolbar folds, so a token stays on its line', () => {
+    const { container } = render(<Search />)
+    const field = container.querySelector('[data-slot="list-search"]') as HTMLElement
+    expect(field.className).toContain('group-data-[fold=true]/toolbar:basis-48')
+  })
+})
+
+describe('ListToolbar overflow', () => {
+  it('moves the tokens behind the Filters button when the folded toolbar still wraps', () => {
+    const origRO = globalThis.ResizeObserver
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    globalThis.ResizeObserver = class {
+      constructor(private cb: () => void) {}
+      observe() {
+        this.cb()
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get: () => 10,
+    })
+    // The status token always sits a row below the search: wrapped at any fold.
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const top = this.textContent === 'Status: Online' ? 40 : 0
+      return {
+        top,
+        width: 700,
+        height: 32,
+        left: 0,
+        right: 700,
+        bottom: top + 32,
+        x: 0,
+        y: top,
+      } as DOMRect
+    }
+    try {
+      const { container } = render(<Search />)
+      const region = container.querySelector('[data-slot="list-toolbar-region"]') as HTMLElement
+      expect(region.dataset.overflow).toBe('true')
+      const tokens = container.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+      expect(tokens.className).toContain('hidden')
+      const trigger = container.querySelector('[data-phone-filters]') as HTMLElement
+      expect(trigger.className).not.toContain('@md/toolbar:hidden')
+    } finally {
+      globalThis.ResizeObserver = origRO
+      HTMLElement.prototype.getBoundingClientRect = rect
+      if (offset) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', offset)
+    }
+  })
+})
