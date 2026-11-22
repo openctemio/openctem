@@ -288,7 +288,11 @@ export async function findMatrixBreaks(
     for (const root of roots) {
       const rr = root.getBoundingClientRect()
       const anchorsAll = Array.from(
-        root.querySelectorAll('[role=tablist], [data-slot="page-header"], h1')
+        // An overlay's title block (title and its one-line description) is
+        // its header, not a wasted row.
+        root.querySelectorAll(
+          '[role=tablist], [data-slot="page-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+        )
       ).filter(shown)
       let first: Element | undefined = Array.from(
         root.querySelectorAll(
@@ -298,6 +302,13 @@ export async function findMatrixBreaks(
       let list: Element | null = first
         ? (first.closest('table, [role=table], [role=grid], ul, ol') ?? first.parentElement)
         : null
+      // An overlay without a list is a form: its labels and notes are not
+      // rows of a list's toolbar.
+      if (
+        !first &&
+        root.closest('[role=dialog], [data-slot="sheet-content"], [data-slot="drawer-content"]')
+      )
+        continue
       if (!first) {
         const below = anchorsAll.length
           ? Math.max(...anchorsAll.map((a) => a.getBoundingClientRect().bottom))
@@ -321,7 +332,13 @@ export async function findMatrixBreaks(
       type Item = { r: DOMRect; control: boolean; field: boolean; heading: boolean; text: string }
       const items: Item[] = []
       for (const el of Array.from(root.querySelectorAll('*'))) {
-        if (list.contains(el) || el.closest('[role=tablist], [data-slot="page-header"]')) continue
+        if (
+          list.contains(el) ||
+          el.closest(
+            '[role=tablist], [data-slot="page-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+          )
+        )
+          continue
         const control = el.matches(CONTROL)
         const ownText = Array.from(el.childNodes).some(
           (k) => k.nodeType === 3 && (k.textContent ?? '').trim()
@@ -445,6 +462,21 @@ export async function findMatrixBreaks(
             const b = c.getBoundingClientRect()
             edge = side === 'right' ? Math.max(edge, b.right) : Math.min(edge, b.left)
           }
+          // Drawn content counts too: a chart, an image or a filled bar (the
+          // dashboard's category bars run from the label to the value).
+          for (const c of [col, ...Array.from(col.querySelectorAll('*'))]) {
+            if (!shown(c)) continue
+            const painted =
+              c.matches('svg, img, canvas, [role=img], [role=progressbar], [role=meter]') ||
+              // a filled leaf or a bar track (24 px high at most), not a card
+              // or panel around other content
+              ((c.children.length === 0 || c.getBoundingClientRect().height <= 24) &&
+                !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(getComputedStyle(c).backgroundColor))
+            if (!painted) continue
+            const b = c.getBoundingClientRect()
+            if (b.width < 8 || b.height < 2) continue
+            edge = side === 'right' ? Math.max(edge, b.right) : Math.min(edge, b.left)
+          }
           return edge
         }
         for (const grid of Array.from(root.querySelectorAll('*'))) {
@@ -453,22 +485,29 @@ export async function findMatrixBreaks(
           for (const rail of kids) {
             const rr = rail.getBoundingClientRect()
             if (rr.width > 480) continue
+            // The nearest content on either side, from every column beside
+            // the rail (a bar between a label and its value is content), and
+            // only when one of them is the wide content column.
+            let wide = false
+            let left = -Infinity
+            let right = Infinity
             for (const other of kids) {
               if (other === rail) continue
               const or = other.getBoundingClientRect()
-              if (or.width < rr.width * 1.5) continue
               if (or.bottom <= rr.top || or.top >= rr.bottom) continue
-              const gap =
-                or.right <= rr.left
-                  ? rr.left - contentEdge(other, 'right')
-                  : or.left >= rr.right
-                    ? contentEdge(other, 'left') - rr.right
-                    : 0
-              if (Number.isFinite(gap) && gap > 400)
-                out.wideStretch.push(
-                  `rail ${Math.round(gap)}px from its content: "${short(rail.textContent, 30)}"`
-                )
+              if (or.width >= rr.width * 1.5) wide = true
+              if (or.right <= rr.left) left = Math.max(left, contentEdge(other, 'right'))
+              else if (or.left >= rr.right) right = Math.min(right, contentEdge(other, 'left'))
             }
+            if (!wide) continue
+            const gap = Math.min(
+              Number.isFinite(left) ? rr.left - left : Infinity,
+              Number.isFinite(right) ? right - rr.right : Infinity
+            )
+            if (Number.isFinite(gap) && gap > 400)
+              out.wideStretch.push(
+                `rail ${Math.round(gap)}px from its content: "${short(rail.textContent, 30)}"`
+              )
           }
         }
       }

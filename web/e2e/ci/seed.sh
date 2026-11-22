@@ -519,6 +519,52 @@ XFF=198.18.250.1
 call POST /api/v1/auth/reset-password "{\"token\":\"$JOURNEY_SET_TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
 XFF=
 
+log "work assigned to the owner and two watchers (My work and the finding rail)"
+# /my-work lists the owner's assigned findings, and the finding rail reads
+# "2 watching" with two real people: both were measured only empty before.
+# The first rows of the default findings list (the ones a detail check opens)
+# go to the owner; the owner and an administrator watch them (a watcher must
+# be able to read the finding, and the plain member's data scope is empty).
+owner_session() {
+  ACCESS_TOKEN=
+  JAR="$WORK/owner-again-cookies-$1"
+  XFF="198.18.250.$((10 + $1))"
+  call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$OWNER_PASSWORD\"}"
+  call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
+  ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+  XFF=
+}
+owner_session 1
+call GET /api/v1/roles
+ADMIN_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "admin")][0].id' <<<"$BODY")
+[[ -n "$ADMIN_ROLE_ID" && "$ADMIN_ROLE_ID" != null ]] || { log "no admin role"; exit 1; }
+WATCHER_EMAIL="e2e-watcher-$RUN@openctem-test.local"
+WATCHER_PASSWORD="$(openssl rand -hex 10)W$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$WATCHER_EMAIL\",\"role_ids\":[\"$ADMIN_ROLE_ID\"]}"
+WATCHER_TOKEN=$(jq -r .token <<<"$BODY")
+call POST /api/v1/auth/logout '{}'
+ACCESS_TOKEN=
+JAR="$WORK/watcher-cookies"
+XFF=198.18.250.20
+call POST /api/v1/auth/register "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\",\"name\":\"E2E Watcher\",\"invitation_token\":\"$WATCHER_TOKEN\"}"
+call POST /api/v1/auth/login "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\"}"
+call POST /api/v1/invitations/accept-with-refresh "{\"token\":\"$WATCHER_TOKEN\",\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
+call POST /api/v1/auth/logout '{}'
+XFF=
+owner_session 2
+call GET "/api/v1/tenants/$SLUG/members?include=user&per_page=50"
+MEMBERS=$(jq -c '[(.data // .members // .)[]? | {u: (.user_id // .user.id), e: (.email // .user.email // "")}]' <<<"$BODY")
+OWNER_ID=$(jq -r --arg e "$EMAIL" '[.[] | select(.e == $e)][0].u // empty' <<<"$MEMBERS")
+WATCHER_ID=$(jq -r --arg e "$WATCHER_EMAIL" '[.[] | select(.e == $e)][0].u // empty' <<<"$MEMBERS")
+[[ -n "$OWNER_ID" && -n "$WATCHER_ID" ]] || { log "owner or watcher missing from the member list"; exit 1; }
+call GET "/api/v1/findings?per_page=6"
+MINE=$(jq -c '[.data[]?.id]' <<<"$BODY")
+call POST /api/v1/findings/bulk/assign "{\"finding_ids\":$MINE,\"user_id\":\"$OWNER_ID\"}"
+for fid in $(jq -r '.[0:2][]' <<<"$MINE"); do
+  call POST "/api/v1/findings/$fid/watchers" "{\"user_ids\":[\"$OWNER_ID\",\"$WATCHER_ID\"]}"
+done
+call POST /api/v1/auth/logout '{}'
+
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"

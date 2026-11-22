@@ -162,180 +162,191 @@ export function MetricStrip({
   const detailed = items.some(
     (item) => (item.detail != null && item.detail !== false) || item.delta != null
   )
+  // One row only when the strip itself is wide enough (a container query, not
+  // the window): at 1024 px with the sidebar open a dashboard widget is about
+  // 690 px wide, and five tiles in one row cut "Time to fix, median" to
+  // "Time to fix, medi…". Below 768 px of strip the tablet rows apply.
   return (
     <div
-      data-slot="metric-strip"
-      data-detailed={detailed || undefined}
-      className={cn(
-        'grid grid-cols-6 overflow-hidden',
-        embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
-        listFirst && 'max-md:order-last',
-        'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
-        className
-      )}
-      style={
-        {
-          '--metric-cols': items.length,
-          '--metric-cols-sm': smColumns(items.length),
-        } as React.CSSProperties
-      }
+      data-slot="metric-strip-frame"
+      className={cn('@container min-w-0', listFirst && 'max-md:order-last', className)}
     >
-      {items.map((item, index) => {
-        const span = phoneSpan(items.length, index, detailed)
-        const numeric = typeof item.value === 'number'
-        const zero = numeric && item.value === 0
-        const positive = numeric && (item.value as number) > 0
-        const alarming = item.tone === 'danger' && positive
-        const warning = item.tone === 'warning' && positive
-        const body = (
-          <>
-            <span
-              data-slot="metric-label"
-              className={cn(
-                'line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate',
-                // In a third, a label may wrap: every third keeps two lines
-                // so the values of a row stay on one baseline.
-                span === 2 && 'min-h-8 sm:min-h-0'
-              )}
-            >
-              {item.label}
-            </span>
-            <span
-              data-slot="metric-value"
-              className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5"
-            >
-              {loading ? (
-                // The value's own line height (text-lg 28px, text-kpi 32px), so
-                // the tile keeps its height when the number arrives.
-                <span className="flex h-7 items-center sm:h-8">
-                  <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
-                </span>
-              ) : error ? (
-                <span
-                  className="text-lg font-semibold tabular-nums tracking-tight text-muted-foreground sm:text-kpi"
-                  title={error}
-                >
-                  —
-                </span>
-              ) : (
-                <span
-                  className={cn(
-                    'text-lg font-semibold tabular-nums tracking-tight sm:text-kpi',
-                    zero && 'text-muted-foreground',
-                    alarming && 'text-destructive',
-                    warning && 'text-warning'
-                  )}
-                >
-                  {numeric ? formatNumber(item.value as number) : item.value}
-                </span>
-              )}
-              {item.hint && !loading && !error ? (
-                // A compact phone tile has no room for a caption: it moves to
-                // the tile's tooltip there. A detailed strip's tiles are wide
-                // enough to keep it.
-                <span
-                  className={cn(
-                    // Its own flex item: a caption that does not fit beside
-                    // the value moves under it whole, never split mid-phrase.
-                    'text-xs text-muted-foreground',
-                    detailed ? 'inline' : 'hidden sm:inline'
-                  )}
-                >
-                  {item.hint}
-                </span>
+      <div
+        data-slot="metric-strip"
+        data-detailed={detailed || undefined}
+        className={cn(
+          'grid grid-cols-6 overflow-hidden',
+          embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
+          'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] @3xl:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]'
+        )}
+        style={
+          {
+            '--metric-cols': items.length,
+            '--metric-cols-sm': smColumns(items.length),
+          } as React.CSSProperties
+        }
+      >
+        {items.map((item, index) => {
+          const span = phoneSpan(items.length, index, detailed)
+          const numeric = typeof item.value === 'number'
+          const zero = numeric && item.value === 0
+          const positive = numeric && (item.value as number) > 0
+          const alarming = item.tone === 'danger' && positive
+          const warning = item.tone === 'warning' && positive
+          const body = (
+            <>
+              <span
+                data-slot="metric-label"
+                className={cn(
+                  'line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate',
+                  // In a third, a label may wrap: every third keeps two lines
+                  // so the values of a row stay on one baseline.
+                  span === 2 && 'min-h-8 sm:min-h-0'
+                )}
+              >
+                {item.label}
+              </span>
+              <span
+                data-slot="metric-value"
+                className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5"
+              >
+                {loading ? (
+                  // The value's own line height (text-lg 28px, text-kpi 32px), so
+                  // the tile keeps its height when the number arrives.
+                  <span className="flex h-7 items-center sm:h-8">
+                    <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
+                  </span>
+                ) : error ? (
+                  <span
+                    className="text-lg font-semibold tabular-nums tracking-tight text-muted-foreground sm:text-kpi"
+                    title={error}
+                  >
+                    —
+                  </span>
+                ) : (
+                  <span
+                    className={cn(
+                      'text-lg font-semibold tabular-nums tracking-tight sm:text-kpi',
+                      zero && 'text-muted-foreground',
+                      alarming && 'text-destructive',
+                      warning && 'text-warning'
+                    )}
+                  >
+                    {numeric ? formatNumber(item.value as number) : item.value}
+                  </span>
+                )}
+                {item.hint && !loading && !error ? (
+                  // A compact phone tile has no room for a caption: it moves to
+                  // the tile's tooltip there. A detailed strip's tiles are wide
+                  // enough to keep it.
+                  <span
+                    className={cn(
+                      // Its own flex item: a caption that does not fit beside
+                      // the value moves under it whole, never split mid-phrase.
+                      'text-xs text-muted-foreground',
+                      detailed ? 'inline' : 'hidden sm:inline'
+                    )}
+                  >
+                    {item.hint}
+                  </span>
+                ) : null}
+              </span>
+              {item.delta && !loading && !error ? (
+                <Delta
+                  className="mt-1"
+                  delta={item.delta.value}
+                  text={item.delta.text}
+                  tone={item.delta.tone}
+                  against={item.delta.against}
+                  verdict={item.delta.verdict}
+                />
               ) : null}
-            </span>
-            {item.delta && !loading && !error ? (
-              <Delta
-                className="mt-1"
-                delta={item.delta.value}
-                text={item.delta.text}
-                tone={item.delta.tone}
-                against={item.delta.against}
-                verdict={item.delta.verdict}
-              />
-            ) : null}
-            {item.spark && !loading && !error ? (
-              <Sparkline
-                values={item.spark.values}
-                summary={item.spark.summary}
-                height={24}
-                className="mt-1 h-6 w-full"
-              />
-            ) : null}
-            {item.detail && !error ? (
-              loading && item.detailLoading ? (
-                <span data-slot="metric-detail" className="mt-1 block min-w-0 text-xs" aria-hidden>
-                  {item.detailLoading}
-                </span>
-              ) : loading ? (
-                // Holds the detail line's place (12px text, 16px line).
-                <span data-slot="metric-detail" className="mt-1 flex h-4 items-center">
-                  <Skeleton className="h-3 w-24" />
-                </span>
-              ) : (
-                <span
-                  data-slot="metric-detail"
-                  className="mt-1 block min-w-0 text-xs text-muted-foreground"
-                >
-                  {item.detail}
-                </span>
-              )
-            ) : null}
-          </>
-        )
-        const cellClass = cn(
-          'flex min-w-0 flex-col items-stretch justify-start -ms-px -mt-px border-s border-t px-3 text-start sm:col-span-1 sm:px-4',
-          embedded ? 'py-1.5 sm:py-2' : 'py-2 sm:py-2.5',
-          PHONE_SPAN_CLASS[span],
-          item.active && 'bg-accent'
-        )
-        const interactive =
-          'transition-colors hover:bg-accent/60 focus-visible:relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
-        // Pages pass their own routes, but the strip treats the value like any
-        // href: an unsafe one renders the tile without a link.
-        const href = item.href ? safeHref(item.href) : undefined
-        if (href) {
+              {item.spark && !loading && !error ? (
+                <Sparkline
+                  values={item.spark.values}
+                  summary={item.spark.summary}
+                  height={24}
+                  className="mt-1 h-6 w-full"
+                />
+              ) : null}
+              {item.detail && !error ? (
+                loading && item.detailLoading ? (
+                  <span
+                    data-slot="metric-detail"
+                    className="mt-1 block min-w-0 text-xs"
+                    aria-hidden
+                  >
+                    {item.detailLoading}
+                  </span>
+                ) : loading ? (
+                  // Holds the detail line's place (12px text, 16px line).
+                  <span data-slot="metric-detail" className="mt-1 flex h-4 items-center">
+                    <Skeleton className="h-3 w-24" />
+                  </span>
+                ) : (
+                  <span
+                    data-slot="metric-detail"
+                    className="mt-1 block min-w-0 text-xs text-muted-foreground"
+                  >
+                    {item.detail}
+                  </span>
+                )
+              ) : null}
+            </>
+          )
+          const cellClass = cn(
+            'flex min-w-0 flex-col items-stretch justify-start -ms-px -mt-px border-s border-t px-3 text-start sm:col-span-1 sm:px-4',
+            embedded ? 'py-1.5 sm:py-2' : 'py-2 sm:py-2.5',
+            PHONE_SPAN_CLASS[span],
+            item.active && 'bg-accent'
+          )
+          const interactive =
+            'transition-colors hover:bg-accent/60 focus-visible:relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
+          // Pages pass their own routes, but the strip treats the value like any
+          // href: an unsafe one renders the tile without a link.
+          const href = item.href ? safeHref(item.href) : undefined
+          if (href) {
+            return (
+              <Link
+                key={item.key}
+                href={href}
+                aria-current={item.active ? 'page' : undefined}
+                title={item.description ?? item.hint}
+                data-slot="metric-tile"
+                className={cn(cellClass, interactive)}
+              >
+                {body}
+              </Link>
+            )
+          }
+          if (item.onClick) {
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={item.onClick}
+                aria-pressed={item.active ?? false}
+                title={item.description ?? item.hint}
+                data-slot="metric-tile"
+                className={cn(cellClass, interactive)}
+              >
+                {body}
+              </button>
+            )
+          }
           return (
-            <Link
+            <div
               key={item.key}
-              href={href}
-              aria-current={item.active ? 'page' : undefined}
+              className={cellClass}
               title={item.description ?? item.hint}
               data-slot="metric-tile"
-              className={cn(cellClass, interactive)}
+              data-state={item.notMeasured ? 'not-measured' : undefined}
             >
               {body}
-            </Link>
+            </div>
           )
-        }
-        if (item.onClick) {
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={item.onClick}
-              aria-pressed={item.active ?? false}
-              title={item.description ?? item.hint}
-              data-slot="metric-tile"
-              className={cn(cellClass, interactive)}
-            >
-              {body}
-            </button>
-          )
-        }
-        return (
-          <div
-            key={item.key}
-            className={cellClass}
-            title={item.description ?? item.hint}
-            data-slot="metric-tile"
-            data-state={item.notMeasured ? 'not-measured' : undefined}
-          >
-            {body}
-          </div>
-        )
-      })}
+        })}
+      </div>
     </div>
   )
 }

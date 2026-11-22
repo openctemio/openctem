@@ -70,10 +70,13 @@ describe('FindingsBaseChips', () => {
         onLensChange={() => {}}
       />
     )
-    expect(document.querySelector('[data-slot="filter-select"]')).toHaveClass('max-md:hidden')
+    expect(document.querySelector('[data-slot="filter-select"]')).toHaveClass(
+      'max-md:hidden',
+      '@max-[42rem]/toolbar:hidden'
+    )
     unmount()
     setup({ inSheet: true })
-    expect(screen.getByTestId('findings-base-chips-sheet')).toHaveClass('md:hidden')
+    expect(screen.getByTestId('findings-base-chips-sheet')).toHaveClass('lg:hidden')
     expect(document.querySelector('[data-slot="filter-select"]')).not.toHaveClass('max-md:hidden')
   })
 })
