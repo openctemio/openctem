@@ -48,6 +48,15 @@ describe('DetailPageHeader', () => {
     expect(names).toEqual(['More actions', 'Retest', 'Add to task'])
   })
 
+  it('never lets the main action shrink below its label on a phone (the row wraps)', () => {
+    render(
+      <DetailPageHeader title="A record" parent={parent} primary={<Button>Create task</Button>} />
+    )
+    const primary = document.querySelector('[data-slot="detail-primary"]') as HTMLElement
+    expect(primary.className).toContain('max-md:min-w-fit')
+    expect(primary.className).not.toContain('max-md:min-w-0')
+  })
+
   it('keeps a lone More on the title line on a phone; buttons take their own row', () => {
     const menu = [
       { id: 'a', label: 'Copy link', onSelect: () => {} },
