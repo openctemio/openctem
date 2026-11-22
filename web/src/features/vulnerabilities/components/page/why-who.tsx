@@ -2,7 +2,7 @@
 
 import { ArrowUpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -149,11 +149,7 @@ export function WhoCard({ exposure }: { exposure: CveExposure }) {
     <Card data-slot="who-card" className="min-w-0">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">{t('vulnPage.who.title', 'Who found it')}</CardTitle>
-        <CardAction className="self-center">
-          <span className="text-xs text-muted-foreground">
-            {t('vulnPage.who.hint', 'Source coverage')}
-          </span>
-        </CardAction>
+        <CardDescription>{t('vulnPage.who.hint', 'Source coverage')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         {sources.length === 0 ? (
