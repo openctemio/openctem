@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 
 vi.mock('../../asset-detail-sheet', () => ({ AssetDetailSheet: () => null }))
@@ -71,6 +71,28 @@ function renderTable(assets: Asset[]) {
 function row(name: string) {
   return screen.getAllByRole('row').find((r) => r.textContent?.includes(name)) as HTMLElement
 }
+
+describe('InventoryTable on a tablet frame', () => {
+  const real = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+  const frame = (px: number) =>
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: px })
+  afterEach(() => {
+    if (real) Object.defineProperty(HTMLElement.prototype, 'clientWidth', real)
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth
+  })
+
+  it('drops Service facts instead of scrolling the table with cut chips', () => {
+    frame(700)
+    renderTable([http])
+    expect(screen.queryByRole('columnheader', { name: /Service facts/ })).toBeNull()
+  })
+
+  it('keeps Service facts on a desktop frame', () => {
+    frame(1400)
+    renderTable([http])
+    expect(screen.getByRole('columnheader', { name: /Service facts/ })).toBeInTheDocument()
+  })
+})
 
 describe('InventoryTable row anatomy (research/266)', () => {
   it('Last seen shows a time, not the lifecycle state of an active asset', () => {
