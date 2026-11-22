@@ -707,9 +707,16 @@ const DASHBOARD_DATA = /\/api\/v1\/(me|organization)\/dashboards\/(home|[^/]+\/d
 function richWidget(w: Record<string, unknown>): Record<string, unknown> {
   if (w.state !== 'ready') return w
   const o: Record<string, unknown> = { ...w }
-  const big = (v: unknown) => (typeof v === 'number' && v > 0 ? v * 1000 + 840 : v)
+  // A percentage stays a percentage ("100,840%" is no figure a page can show).
+  const big = (v: unknown, unit?: unknown) =>
+    typeof v === 'number' && v > 0 && unit !== 'percent' ? v * 1000 + 840 : v
   const scalar = o.scalar as Record<string, unknown> | undefined
-  if (scalar) o.scalar = { ...scalar, value: big(scalar.value), previous: big(scalar.previous) }
+  if (scalar)
+    o.scalar = {
+      ...scalar,
+      value: big(scalar.value, scalar.unit),
+      previous: big(scalar.previous, scalar.unit),
+    }
   const items = o.items as { rows?: Record<string, unknown>[]; total?: number } | undefined
   if (items?.rows?.length) {
     const rows = Array.from({ length: 10 }, (_, i) => {
@@ -736,7 +743,10 @@ function richWidget(w: Record<string, unknown>): Record<string, unknown> {
   }
   const stages = o.stages as { stages?: Record<string, unknown>[] } | undefined
   if (stages?.stages?.length) {
-    o.stages = { ...stages, stages: stages.stages.map((x) => ({ ...x, value: big(x.value) })) }
+    o.stages = {
+      ...stages,
+      stages: stages.stages.map((x) => ({ ...x, value: big(x.value, x.unit) })),
+    }
   }
   return o
 }

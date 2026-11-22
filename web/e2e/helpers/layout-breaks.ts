@@ -1403,11 +1403,34 @@ export function layoutMatrix(options: Options) {
               ...(await findBreaks(page, { scope, vi: v.lang === 'vi' })),
               ...(await findMatrixBreaks(page, { scope })),
             }
+            // The shell scrolls inside its content column, not the document, so
+            // a full-page screenshot stopped at the window. The window grows
+            // to the tallest scroller for the picture (the checks above ran
+            // at the real height), up to 12000 px.
+            const tall = v.overlay
+              ? 0
+              : await page.evaluate(() =>
+                  Math.max(
+                    0,
+                    ...Array.from(document.querySelectorAll<HTMLElement>('body, body *'))
+                      .filter((e) => {
+                        const o = getComputedStyle(e).overflowY
+                        return (o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight
+                      })
+                      .map((e) => e.scrollHeight - e.clientHeight)
+                  )
+                )
+            if (tall > 0)
+              await page.setViewportSize({
+                width: v.width,
+                height: Math.min(v.height + tall, 12_000),
+              })
             await keep(
               testInfo,
               `${dir}/${v.tag}.png`,
               await page.screenshot({ fullPage: !v.overlay, timeout: 30_000 })
             )
+            if (tall > 0) await page.setViewportSize({ width: v.width, height: v.height })
             if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
           }
           await keep(testInfo, `${dir}/w${size.width}.json`, JSON.stringify(report, null, 1))
