@@ -63,7 +63,9 @@ export function ExposurePhoneCard({
       )}
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 items-start gap-2">
-          <p className="line-clamp-2 min-w-0 flex-1 text-body font-medium">{exposure.title}</p>
+          <p className="line-clamp-2 min-w-0 flex-1 text-body font-medium [overflow-wrap:anywhere]">
+            {exposure.title}
+          </p>
           <span data-slot="exposure-card-state" className="shrink-0 text-sm text-muted-foreground">
             {pending
               ? t('exposures.card.pending', 'Awaiting approval')

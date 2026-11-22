@@ -2,7 +2,7 @@
 
 import { safeInternalHref } from '@/lib/safe-href'
 import Link from '@/components/link'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
@@ -118,11 +118,9 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
             count: formatNumber(total),
           })}
         </CardTitle>
-        <CardAction className="self-center">
-          <span className="text-xs text-muted-foreground">
-            {t('vulnPage.status.hint', 'Each segment opens its list')}
-          </span>
-        </CardAction>
+        <CardDescription>
+          {t('vulnPage.status.hint', 'Each segment opens its list')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
