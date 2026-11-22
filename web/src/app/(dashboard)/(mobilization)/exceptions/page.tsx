@@ -84,6 +84,7 @@ type EndsWindow = (typeof ENDS_WINDOWS)[number]
 const EXCEPTION_HIDE_BELOW = {
   type: 560,
   expires: 680,
+  created: 960,
   approvers: 860,
   requestedBy: 1040,
 } as const
@@ -400,6 +401,18 @@ export default function ExceptionsPage() {
               ? relative(row.original.expires_at, locale)
               : t('exceptions.page.never', 'Never')}
           </span>
+        ),
+      },
+      {
+        accessorKey: 'created_at',
+        header: t('exceptions.page.colCreated', 'Created'),
+        meta: {
+          kind: 'due',
+          label: t('exceptions.page.colCreated', 'Created'),
+          hideBelow: EXCEPTION_HIDE_BELOW.created,
+        },
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap">{relative(row.original.created_at, locale)}</span>
         ),
       },
       {
