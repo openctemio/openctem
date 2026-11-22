@@ -92,7 +92,7 @@
       "max": 6
     },
     "/scans/[id]": {
-      "sample": "/api/v1/scans?per_page=1",
+      "sample": "/api/v1/scans?per_page=1&name=E2E%20scan%20never%20run",
       "max": 5
     },
     "/scans/workflows/[id]": {
