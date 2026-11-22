@@ -7,6 +7,7 @@ import {
   AddFilterButton,
   FilterButton,
   FilterPanelToggle,
+  FilterPopover,
   ShowFilterPanelButton,
   useAddFilterShortcut,
 } from '../filter-button'
@@ -20,6 +21,31 @@ globalThis.ResizeObserver ??= class {
 }
 
 describe('FilterButton', () => {
+  it('keeps its own slot under a Radix trigger, so the search joins it', () => {
+    render(
+      <Popover>
+        <PopoverTrigger asChild>
+          <FilterButton />
+        </PopoverTrigger>
+        <PopoverContent>x</PopoverContent>
+      </Popover>
+    )
+    expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
+      'data-slot',
+      'filter-button'
+    )
+  })
+
+  it('FilterPopover is the one trigger of a list with a few filter fields', () => {
+    render(
+      <FilterPopover open={false} onOpenChange={() => {}} activeCount={2} title="Filters">
+        <p>fields</p>
+      </FilterPopover>
+    )
+    const btn = screen.getByRole('button', { name: 'Filters, 2 active' })
+    expect(btn).toHaveAttribute('data-slot', 'filter-button')
+  })
+
   it('is an icon-only button named "Filters" with no visible text', () => {
     render(<FilterButton />)
     const btn = screen.getByRole('button', { name: 'Filters' })

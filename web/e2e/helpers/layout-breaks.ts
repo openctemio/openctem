@@ -28,7 +28,11 @@ import {
  * 390 en; at 390 en the row menu, the filters sheet, the detail sheet and the
  * page's main dialog when the page has them.
  *
- * The full sweep (every route, dark theme, screenshots) runs the same spec:
+ * The checks are shared here; the specs 75a-75d (specs/75a-layout-breaks-lists.spec.ts and
+ * its siblings) each register one family of routes so the planner can put them on
+ * different shards.
+ *
+ * The full sweep (every route, dark theme, screenshots) runs the lists spec only:
  *   LAYOUT_SWEEP_ROUTES=<routes.json> LAYOUT_SWEEP_OUT=<dir> LAYOUT_SWEEP_FULL=1
  * routes.json: [{ "path": "/assets" }, ...]; findings land in <dir>/<slug>.json.
  */
@@ -48,76 +52,6 @@ const PHONE = { width: 390, height: 844 }
 const DESKTOP = { width: 1440, height: 900 }
 const TABLET = { width: 1024, height: 768 }
 const LAPTOP = { width: 1280, height: 800 }
-
-/** Lists and pages with phone cards, sheets and long names. */
-const CI_ROUTES = [
-  // The home: its dashboard snapshot gets long titles and big figures (richData).
-  '/',
-  '/assets',
-  '/assets/groups',
-  '/assets/changes',
-  '/assets/duplicates',
-  '/assets/suggestions',
-  '/assets/attention/no-owner',
-  '/assets/attention/unscanned',
-  '/assets/attention/decide-monitoring',
-  '/findings',
-  '/findings/approvals',
-  '/findings/ready-to-close',
-  '/findings/imports',
-  '/exceptions',
-  '/exposures/vulnerabilities',
-  '/exposures/vulnerabilities?tab=catalog',
-  '/attack-surface/certificates',
-  '/attack-surface/changes',
-  '/vulnerabilities',
-  '/components',
-  '/exposures',
-  '/scans',
-  '/scans/runs',
-  '/scans/workflows',
-  '/scans/approvals',
-  '/sensors',
-  '/my-work',
-  '/settings/service-accounts',
-  '/attack-surface/exposures',
-  '/attack-surface/technologies',
-  '/remediation',
-  '/remediation/tasks',
-  '/remediation/campaigns',
-  '/scope',
-  '/settings/general',
-  '/settings/members',
-  '/settings/roles',
-  '/settings/audit-log',
-  '/settings/api-keys',
-  '/settings/security',
-  '/settings/scope',
-  '/settings/integrations',
-  '/settings/risk-scoring',
-  '/attack-surface/discovery',
-  '/settings/scanning/scan-approval',
-  '/settings/sla-policies',
-  '/settings/scanning/tool-sources',
-  '/settings/teams',
-  '/notifications',
-  '/oauth/device',
-]
-
-/**
- * Entry pages a person opens signed out (their own browser context, no
- * session): the form and the link-from-an-e-mail states the scratch stack can
- * reach without mail. Same checks, no list data or overlays.
- */
-const SIGNED_OUT_ROUTES = [
-  '/forgot-password',
-  '/reset-password',
-  '/reset-password#token=synthetic-reset-token',
-  '/set-password#token=synthetic-setup-token',
-  '/verify-email',
-  '/request-access',
-  '/request-access/confirm',
-]
 
 /**
  * Settings answers richData leaves alone (it skips /settings): the pages that
@@ -541,11 +475,11 @@ async function sideScrolling(page: Page): Promise<string[]> {
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
 const OUT = process.env.LAYOUT_SWEEP_OUT
-const ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
+const SWEEP_ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
   ? (
       JSON.parse(fs.readFileSync(process.env.LAYOUT_SWEEP_ROUTES, 'utf8')) as { path: string }[]
     ).map((r) => r.path)
-  : CI_ROUTES
+  : []
 
 const OVERLAYS: Record<Overlay, string> = {
   rowmenu:
@@ -660,56 +594,71 @@ async function keep(testInfo: TestInfo, name: string, body: string | Buffer) {
   if (!OUT) await testInfo.attach(name, { path: file })
 }
 
-test.describe('Layout breaks', { tag: ['@phone', '@shell'] }, () => {
-  test.describe.configure({ mode: 'parallel' })
-  for (const route of ROUTES) {
-    test(`${route}`, async ({ page, baseURL }, testInfo) => {
-      test.setTimeout(FULL ? 600_000 : 240_000)
-      const report: Record<string, Breaks | string> = {}
-      for (const v of variants()) {
-        await page.unrouteAll({ behavior: 'ignoreErrors' })
-        await prepare(page, v, baseURL!)
-        for (const extra of ROUTE_DATA[route] ?? []) {
-          await page.route(extra.url, (r) =>
-            r.request().method() === 'GET' ? r.fulfill({ json: extra.body(v.scen) }) : r.fallback()
-          )
-        }
-        await page.goto(route, { timeout: 60_000 }).catch(() => {})
-        await settle(page)
-        let scope = 'main'
-        if (v.overlay) {
-          const layer = await openOverlay(page, v.overlay)
-          if (!layer) {
-            report[v.tag] = 'no such overlay'
-            continue
+type Options = { tag: string[] }
+
+/** Signed-in routes: the checks of every variant, one test per route. */
+export function layoutRoutes(
+  title: string,
+  options: Options,
+  routes: string[],
+  { sweepOwner = false } = {}
+) {
+  // A sweep names its own routes: only the lists spec runs them, once.
+  const list = process.env.LAYOUT_SWEEP_ROUTES ? (sweepOwner ? SWEEP_ROUTES : []) : routes
+  if (!list.length) return
+  test.describe(title, options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const route of list) {
+      test(`${route}`, async ({ page, baseURL }, testInfo) => {
+        test.setTimeout(FULL ? 600_000 : 240_000)
+        const report: Record<string, Breaks | string> = {}
+        for (const v of variants()) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          for (const extra of ROUTE_DATA[route] ?? []) {
+            await page.route(extra.url, (r) =>
+              r.request().method() === 'GET'
+                ? r.fulfill({ json: extra.body(v.scen) })
+                : r.fallback()
+            )
           }
-          scope = layer
+          await page.goto(route, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          let scope = 'main'
+          if (v.overlay) {
+            const layer = await openOverlay(page, v.overlay)
+            if (!layer) {
+              report[v.tag] = 'no such overlay'
+              continue
+            }
+            scope = layer
+          }
+          const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+          if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
+            expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+          }
+          report[v.tag] = found
+          if (OUT || formatBreaks(found).length) {
+            await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
+          }
+          if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
         }
-        const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
-        if (NO_SIDE_SCROLL.has(route) && !v.overlay) {
-          expect.soft(await sideScrolling(page), `${route} ${v.tag}: side scroll`).toEqual([])
+        await keep(testInfo, `${slug(route)}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          if (typeof found === 'string') continue
+          for (const kind of BREAK_KINDS) {
+            if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
+            const lines =
+              kind === 'clipped' && SIDEWAYS_DEBT.has(route)
+                ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
+                : found[kind]
+            expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
+          }
         }
-        report[v.tag] = found
-        if (OUT || formatBreaks(found).length) {
-          await keep(testInfo, `${slug(route)}__${v.tag}.png`, await page.screenshot())
-        }
-        if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
-      }
-      await keep(testInfo, `${slug(route)}.json`, JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        if (typeof found === 'string') continue
-        for (const kind of BREAK_KINDS) {
-          if (kind === 'lopsided' && LOPSIDED_DEBT.has(route)) continue
-          const lines =
-            kind === 'clipped' && SIDEWAYS_DEBT.has(route)
-              ? found[kind].filter((l) => !SIDEWAYS_LINE.test(l))
-              : found[kind]
-          expect.soft(lines, `${route} ${tag}: ${kind}`).toEqual([])
-        }
-      }
-    })
-  }
-})
+      })
+    }
+  })
+}
 
 /**
  * A web origin's Paths tab (the tree from 1024 px, the drill-down list on a
@@ -789,41 +738,46 @@ function pathsLevel(path: string) {
   }
 }
 
-test.describe(
-  'Layout breaks: web origin Paths',
-  { tag: ['@assets', '@attack-surface', '@phone'] },
-  () => {
-    test('/assets/[id]?tab=paths', async ({ page, baseURL }, testInfo) => {
-      test.setTimeout(240_000)
-      await page.goto('/assets', { timeout: 60_000 })
-      const created = await page.evaluate(async () => {
-        const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
-        const res = await fetch('/api/v1/assets', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
-          body: JSON.stringify({
-            name: `https://layout-${Date.now()}.example.com`,
-            type: 'service',
-            sub_type: 'http',
-            criticality: 'medium',
-          }),
-        })
-        return { status: res.status, body: await res.json().catch(() => null) }
-      })
-      const id = (created.body as { id?: string } | null)?.id
-      test.skip(!id, `could not create a web origin: ${created.status}`)
-      const report: Record<string, Breaks | string> = {}
-      const route = `/assets/${id}?tab=paths`
-      const paths: [string, string][] = [
-        ['root', route],
-        ['level', `${route}&path=${encodeURIComponent('/api/{int}')}`],
-      ]
-      for (const v of variants().filter(
-        (x) => x.scen === 'rich' && (!x.overlay || x.overlay === 'detail')
-      )) {
-        for (const [name, url] of paths) {
-          await page.unrouteAll({ behavior: 'ignoreErrors' })
+/** What the Paths views are checked at: every width and language, and the sheet. */
+const PATHS_VARIANTS = () =>
+  variants().filter((x) => x.scen === 'rich' && (!x.overlay || x.overlay === 'detail'))
+
+/**
+ * One test per view (variant and level), each a few seconds: a single test
+ * that walked all twelve views took four minutes on a loaded box and ran into
+ * its timeout. The origin is created once per test through the API.
+ */
+
+export function webOriginPaths(options: Options) {
+  test.describe('Layout breaks: web origin Paths', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const v of PATHS_VARIANTS()) {
+      for (const name of ['root', 'level'] as const) {
+        test(`/assets/[id]?tab=paths ${name} ${v.tag}`, async ({ page, baseURL }, testInfo) => {
+          test.setTimeout(90_000)
+          await page.goto('/assets', { timeout: 60_000 })
+          const created = await page.evaluate(async () => {
+            const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+            const res = await fetch('/api/v1/assets', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': decodeURIComponent(csrf),
+              },
+              body: JSON.stringify({
+                name: `https://layout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.example.com`,
+                type: 'service',
+                sub_type: 'http',
+                criticality: 'medium',
+              }),
+            })
+            return { status: res.status, body: await res.json().catch(() => null) }
+          })
+          const id = (created.body as { id?: string } | null)?.id
+          test.skip(!id, `could not create a web origin: ${created.status}`)
+          const route = `/assets/${id}?tab=paths`
+          const url = name === 'root' ? route : `${route}&path=${encodeURIComponent('/api/{int}')}`
           await prepare(page, v, baseURL!)
           await page.route('**/api/v1/assets/*/web-paths**', (r) =>
             r.fulfill({
@@ -854,10 +808,7 @@ test.describe(
           if (v.overlay) {
             // The endpoint sheet: a phone list row, or a table row.
             const row = page.locator('main [data-testid=path-drill] button, main tbody tr').first()
-            if (!(await row.count())) {
-              report[`${name}-${v.tag}`] = 'no such overlay'
-              continue
-            }
+            test.skip(!(await row.count()), 'no such overlay')
             await row.click().catch(() => {})
             await page
               .locator('[role=dialog]:visible')
@@ -868,46 +819,318 @@ test.describe(
             scope = '[role=dialog]'
           }
           const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
-          report[`${name}-${v.tag}`] = found
           if (OUT || formatBreaks(found).length) {
             await keep(testInfo, `asset-paths-${name}__${v.tag}.png`, await page.screenshot())
           }
-          if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
-        }
+          await keep(testInfo, `asset-paths-${name}__${v.tag}.json`, JSON.stringify(found, null, 1))
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `paths ${name}-${v.tag}: ${kind}`).toEqual([])
+        })
       }
-      await keep(testInfo, 'asset-paths.json', JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        if (typeof found === 'string') continue
-        for (const kind of BREAK_KINDS)
-          expect.soft(found[kind], `paths ${tag}: ${kind}`).toEqual([])
-      }
-    })
-  }
-)
+    }
+  })
+}
 
-test.describe('Layout breaks, signed out', { tag: ['@phone', '@auth'] }, () => {
-  test.describe.configure({ mode: 'parallel' })
-  for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : SIGNED_OUT_ROUTES) {
-    test(`${route}`, async ({ browser, baseURL }, testInfo) => {
-      test.setTimeout(120_000)
-      const report: Record<string, Breaks> = {}
-      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
-        const context = await browser.newContext({ baseURL })
-        const page = await context.newPage()
-        await prepare(page, v, baseURL!)
-        await page.goto(route, { timeout: 60_000 }).catch(() => {})
-        await settle(page)
-        report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
-        if (OUT || formatBreaks(report[v.tag]).length) {
-          await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
-        }
-        await context.close()
-      }
-      await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
-      for (const [tag, found] of Object.entries(report)) {
-        for (const kind of BREAK_KINDS)
-          expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
-      }
-    })
+/**
+ * Detail pages on the shared detail kit (header, page tabs, overlays): a
+ * record made through the API, or served by route mocks with long names, at
+ * 390 px (light, dark, en, vi), 1024 and 1440 px, plus the header's More menu
+ * on a phone.
+ */
+const DETAIL_VARIANTS: Variant[] = [
+  { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'p-en-dark', ...PHONE, lang: 'en', theme: 'dark', scen: 'rich' },
+  { tag: 't-en', ...TABLET, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 't-vi', ...TABLET, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'd-en', ...DESKTOP, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'd-vi', ...DESKTOP, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'p-ov-more', ...PHONE, lang: 'en', theme: 'light', scen: 'rich', overlay: 'rowmenu' },
+]
+const DETAIL_MORE = 'main [data-slot="detail-more"] button:visible'
+
+const SYNTH_CVE = 'CVE-2024-3094'
+function cveExposure() {
+  return {
+    cve_id: SYNTH_CVE,
+    in_catalog: true,
+    verdict: 'confirmed',
+    findings: {
+      total: 31,
+      active: 27,
+      by_status: { new: 9, confirmed: 10, in_progress: 8, resolved: 4 },
+      by_priority: { P0: 3, P1: 8, P2: 16 },
+      worst_priority: 'P0',
+      in_task: 18,
+      not_in_task: 9,
+    },
+    assets: { impacted: 14, crown_jewels: 1, internet_facing: 3, with_findings: 14 },
+    possible: { assets: 5, products: [`xz-utils-${LONG}`] },
+    not_affected: { assets: 22, products: ['xz-utils'] },
+    components: [
+      {
+        product_id: 'p1',
+        name: `xz-utils-${LONG}`,
+        purl: `pkg:deb/debian/xz-utils-${LONG}@5.6.0`,
+        version: '5.6.0',
+        fixed_versions: ['5.6.2'],
+        recommended_fix: '5.6.2',
+        assets: 12,
+        active_findings: 23,
+      },
+    ],
+    upgrades: [
+      {
+        product_id: 'p1',
+        name: `xz-utils-${LONG}`,
+        target: '5.6.2',
+        major_change: false,
+        fixes_findings: 23,
+        on_assets: 12,
+        no_fix_findings: 0,
+      },
+    ],
+    sources: [
+      { name: 'Weekly scanner run', source: 'scan', assets: 11 },
+      { name: `Component inventory of ${LONG}`, source: 'sbom', assets: 6 },
+    ],
+    single_source_assets: 4,
+    timeline: {
+      first_seen_at: '2026-10-02T08:00:00Z',
+      last_seen_at: '2026-11-18T08:00:00Z',
+      last_fixed_at: '2026-11-06T08:00:00Z',
+      fixed: 41,
+      reopened: 2,
+      last_reopened_at: '2026-11-02T08:00:00Z',
+    },
+    intel: {
+      aliases: [{ id: 'GHSA-rxwq-x6h5-x525', source: 'ghsa', synced_at: '2026-11-18T08:00:00Z' }],
+      cwes: ['CWE-506'],
+      feeds: [{ source: 'kev', last_sync_at: '2026-11-20T08:00:00Z', status: 'ok' }],
+    },
+    epss_trend: [
+      { date: '2026-11-01', score: 0.7 },
+      { date: '2026-11-15', score: 0.84 },
+    ],
   }
-})
+}
+function cveCatalog() {
+  return {
+    id: '00000000-0000-4000-8000-0000000000c1',
+    cve_id: SYNTH_CVE,
+    title: `Malicious code in the release archives of a compression library used by ${LONG}`,
+    description: `The upstream release archives carry code that changes the build of ${LONG}.`,
+    severity: 'critical',
+    cvss_score: 10,
+    epss_score: 0.84,
+    exploit_available: true,
+    exploit_maturity: 'functional',
+    fixed_versions: ['5.6.2'],
+    published_at: '2024-03-29T00:00:00Z',
+    status: 'open',
+    risk_score: 95,
+  }
+}
+function cveAssets() {
+  return {
+    data: Array.from({ length: 3 }, (_, i) => ({
+      asset_id: `00000000-0000-4000-8000-00000000a00${i}`,
+      name: `build-${i}.${LONG}.example.com`,
+      asset_type: 'host',
+      criticality: 'high',
+      crown_jewel: i === 0,
+      internet_facing: i < 2,
+      owner: 'Platform team',
+      open_findings: 3,
+      total_findings: 4,
+      worst_priority: 'P0',
+      worst_severity: 'critical',
+      last_seen_at: '2026-11-18T08:00:00Z',
+    })),
+    total: 3,
+    page: 1,
+    per_page: 20,
+    total_pages: 1,
+  }
+}
+
+interface DetailCase {
+  name: string
+  tabs: string[]
+  /** The page's URL, made in the browser (an API create) or a fixed one; null skips. */
+  url: (page: Page) => Promise<string | null>
+  mocks?: { url: string; body: () => unknown }[]
+}
+
+const DETAIL_CASES: DetailCase[] = [
+  {
+    name: 'pentest-campaign',
+    tabs: ['overview', 'findings', 'scope', 'team'],
+    url: async (page) => {
+      await page.goto('/pentest/campaigns', { timeout: 60_000 })
+      const id = await page.evaluate(async (long) => {
+        const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+        const res = await fetch('/api/v1/pentest/campaigns', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
+          body: JSON.stringify({
+            name: `Payments API of ${long}, fourth quarter retest`,
+            client_name: `Example Holdings, the regional payments unit of ${long}`,
+            methodology: 'OWASP testing guide',
+            objectives: ['Reach card data', 'Bypass authorization'],
+            tags: ['pci', 'api'],
+            targets: ['web_app', 'api'],
+          }),
+        })
+        const body = (await res.json().catch(() => null)) as { id?: string } | null
+        return body?.id ?? null
+      }, LONG)
+      return id ? `/pentest/campaigns/${id}` : null
+    },
+  },
+  {
+    name: 'vulnerability',
+    tabs: ['summary', 'where', 'remediation', 'intel', 'timeline'],
+    url: async () => `/vulnerabilities/${SYNTH_CVE}`,
+    mocks: [
+      { url: `**/api/v1/vulnerability-exposures/${SYNTH_CVE}/assets**`, body: cveAssets },
+      { url: `**/api/v1/vulnerability-exposures/${SYNTH_CVE}`, body: cveExposure },
+      { url: `**/api/v1/vulnerabilities/cve/${SYNTH_CVE}`, body: cveCatalog },
+    ],
+  },
+]
+
+export function detailPages(options: Options) {
+  test.describe('Layout breaks: detail pages', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const c of process.env.LAYOUT_SWEEP_ROUTES ? [] : DETAIL_CASES) {
+      test(`detail ${c.name}`, async ({ page, baseURL }, testInfo) => {
+        test.setTimeout(FULL ? 600_000 : 300_000)
+        const route = await c.url(page)
+        test.skip(!route, `could not make a ${c.name} record`)
+        const report: Record<string, Breaks | string> = {}
+        for (const v of DETAIL_VARIANTS) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          for (const m of c.mocks ?? []) {
+            await page.route(m.url, (r) =>
+              r.request().method() === 'GET' ? r.fulfill({ json: m.body() }) : r.fallback()
+            )
+          }
+          // Every tab at the phone widths in en; the first tab elsewhere.
+          const tabs = v.tag === 'p-en' || v.tag === 'p-en-dark' ? c.tabs : c.tabs.slice(0, 1)
+          for (const tab of tabs) {
+            const key = c.name === 'pentest-campaign' ? 'view' : 'tab'
+            await page.goto(`${route}?${key}=${tab}`, { timeout: 60_000 }).catch(() => {})
+            await settle(page)
+            let scope = 'main'
+            if (v.overlay) {
+              const more = page.locator(DETAIL_MORE).first()
+              if (!(await more.count())) {
+                report[`${tab}-${v.tag}`] = 'no such overlay'
+                continue
+              }
+              await more.click().catch(() => {})
+              await page.waitForTimeout(400)
+              scope = '[role=dialog], [role=menu], [data-slot="drawer-content"]'
+            }
+            const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+            report[`${tab}-${v.tag}`] = found
+            if (OUT || formatBreaks(found).length) {
+              await keep(
+                testInfo,
+                `detail-${c.name}-${tab}__${v.tag}.png`,
+                await page.screenshot({ fullPage: !v.overlay })
+              )
+            }
+            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+          }
+        }
+        await keep(testInfo, `detail-${c.name}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          if (typeof found === 'string') continue
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `${c.name} ${tag}: ${kind}`).toEqual([])
+        }
+      })
+    }
+  })
+}
+
+/** Entry pages a person opens signed out. */
+export function layoutSignedOut(options: Options, routes: string[]) {
+  test.describe('Layout breaks, signed out', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : routes) {
+      test(`${route}`, async ({ browser, baseURL }, testInfo) => {
+        test.setTimeout(120_000)
+        const report: Record<string, Breaks> = {}
+        for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+          const context = await browser.newContext({ baseURL })
+          const page = await context.newPage()
+          await prepare(page, v, baseURL!)
+          await page.goto(route, { timeout: 60_000 }).catch(() => {})
+          await settle(page)
+          report[v.tag] = await findBreaks(page, { scope: 'main', vi: v.lang === 'vi' })
+          if (OUT || formatBreaks(report[v.tag]).length) {
+            await keep(testInfo, `signed-out-${slug(route)}__${v.tag}.png`, await page.screenshot())
+          }
+          await context.close()
+        }
+        await keep(testInfo, `signed-out-${slug(route)}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+        }
+      })
+    }
+  })
+}
+
+/**
+ * The Filters button and the search field are one joined control on every list
+ * (owner report 2026-11-22, /scope, 390 px, dark): the button is found by its
+ * own slot inside the field, its outer corners are round and its inner ones
+ * square, the field's start is square, both are one height and the two
+ * borders meet in one line. A Radix trigger around the button once replaced
+ * its slot, so /scope kept four round corners and a doubled seam.
+ */
+export function joinedFilterControl(options: Options) {
+  test.describe('Layout breaks: joined filter control', options, () => {
+    for (const route of ['/scope', '/findings']) {
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        // /findings has the facet panel toggle from lg: no joined button there.
+        if (v.width > 400 && route === '/findings') continue
+        test(`${route} ${v.tag}`, async ({ page, baseURL }) => {
+          test.setTimeout(90_000)
+          await prepare(page, v, baseURL!)
+          await page.goto(route, { timeout: 60_000 })
+          await settle(page)
+          const joined = await page.evaluate(() => {
+            const root = document.querySelector('[data-slot="list-search"]')
+            const btn = root?.querySelector<HTMLElement>(':scope > [data-slot="filter-button"]')
+            const inp = root?.querySelector<HTMLElement>('[data-slot="list-search-input"]')
+            if (!btn || !inp) return null
+            const b = btn.getBoundingClientRect()
+            const i = inp.getBoundingClientRect()
+            const bs = getComputedStyle(btn)
+            const is = getComputedStyle(inp)
+            return {
+              height: [b.height, i.height],
+              seam: i.left - b.right,
+              btnRadius: [bs.borderTopRightRadius, bs.borderBottomRightRadius],
+              inpRadius: [is.borderTopLeftRadius, is.borderBottomLeftRadius],
+            }
+          })
+          expect(joined, 'the filter button sits inside the search field').not.toBeNull()
+          expect(joined!.height[0]).toBe(joined!.height[1])
+          expect(joined!.btnRadius).toEqual(['0px', '0px'])
+          expect(joined!.inpRadius).toEqual(['0px', '0px'])
+          // One shared border line: the field overlaps the button by its 1px border.
+          expect(joined!.seam).toBe(-1)
+        })
+      }
+    }
+  })
+}

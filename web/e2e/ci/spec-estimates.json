@@ -1,0 +1,6 @@
+{
+  "e2e/specs/75a-layout-breaks-lists.spec.ts": 750,
+  "e2e/specs/75b-layout-breaks-settings.spec.ts": 350,
+  "e2e/specs/75c-layout-breaks-shell.spec.ts": 160,
+  "e2e/specs/75d-layout-breaks-detail.spec.ts": 45
+}
