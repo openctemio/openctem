@@ -42,6 +42,8 @@ FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5
 # mailcap: /etc/mime.types for file responses, as in the Caddy image.
 # The gateway runs as uid/gid 1000 (as in the Helm chart). /data and /config
 # belong to it, so a new named volume mounted there starts with that owner.
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+RUN apk upgrade --no-cache libssl3 libcrypto3
 RUN apk add --no-cache ca-certificates mailcap \
  && addgroup -S -g 1000 caddy && adduser -S -D -H -u 1000 -G caddy -h /data caddy \
  && mkdir -p /config/caddy /data/caddy /etc/caddy /usr/share/caddy /srv \
