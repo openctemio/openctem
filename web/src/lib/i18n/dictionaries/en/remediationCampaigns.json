@@ -77,6 +77,8 @@
   "remediationCampaigns.due.inDays.other": "in {count, plural, one {# day} other {# days}}",
   "remediationCampaigns.due.none": "No due date",
   "remediationCampaigns.due.overdue": "overdue",
+  "remediationCampaigns.due.overdueDays": "{count} d overdue",
+  "remediationCampaigns.due.overdueHours": "{count} h overdue",
   "remediationCampaigns.due.today": "due today",
   "remediationCampaigns.empty.description": "Create a campaign to drive a set of remediation tasks to one due date, with one owner.",
   "remediationCampaigns.empty.filtered": "No campaigns match these filters",

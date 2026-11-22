@@ -311,7 +311,10 @@ export async function findBreaks(
           // -webkit-box: a select value with `line-clamp-1` and `flex` showed
           // "Các mục một lần đư" with nothing to say it was cut.
           const flexOrGrid = /flex|grid/.test(cs.display)
-          if (cs.textOverflow === 'ellipsis' && !flexOrGrid) continue
+          // The mark covers text that flows inline inside the box; text inside a
+          // nested inline-block or flex box (a chip in a table cell) is cut
+          // with no mark, however the cell is styled.
+          const ellipsisBox = cs.textOverflow === 'ellipsis' && !flexOrGrid
           if (/\d/.test(cs.webkitLineClamp) && /-webkit-(inline-)?box/.test(cs.display)) continue
           // Only text cut: a child box (an icon, a chip row) wider than its frame
           // whose text still fits is the frame's own decision.
@@ -325,6 +328,13 @@ export async function findBreaks(
               hiddenByAncestor(n.parentElement)
             )
               continue
+            if (ellipsisBox) {
+              let inline = true
+              for (let p: Element | null = n.parentElement; p && p !== e; p = p.parentElement) {
+                if (!/^(inline|contents)$/.test(getComputedStyle(p).display)) inline = false
+              }
+              if (inline) continue
+            }
             const rg = document.createRange()
             rg.selectNodeContents(n)
             cut = Array.from(rg.getClientRects()).some(

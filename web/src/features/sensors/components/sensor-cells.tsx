@@ -170,18 +170,22 @@ export function SensorNameCell({
   const fallback = isOneShotSensor(sensor) ? t('sensors.cells.oneShot') : t('sensors.cells.noHost')
   if (inline) {
     return (
-      <span className="flex min-w-0 items-center gap-1.5" data-slot="sensor-name-cell">
+      // One line high; a mark that does not fit beside the name's 4rem wraps
+      // under it and is clipped away whole (it is whole in the sensor's drawer),
+      // never a chip cut at the cell's edge.
+      <span
+        className="flex h-5 min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden"
+        data-slot="sensor-name-cell"
+      >
         <span
           dir="auto"
-          className="min-w-16 truncate font-medium [unicode-bidi:isolate]"
+          className="min-w-16 flex-1 basis-16 truncate font-medium [unicode-bidi:isolate]"
           data-slot="sensor-name"
           title={sensor.name}
         >
           {sensor.name}
         </span>
-        {/* The marks give way with the name; one that does not fit is cut at
-            the cell's edge and is whole in the sensor's drawer. */}
-        <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden empty:hidden">
+        <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
           <ProtocolTag sensor={sensor} />
           <ConfigHealthTag health={sensor.config_health} />
           <SensorPostureTag sensor={sensor} />
