@@ -67,6 +67,18 @@ export function parseMap(text) {
   return out
 }
 
+// Estimates for specs the recorded durations do not know yet (a new or split
+// spec): measured once, used until a green run records the spec's own time,
+// which always wins. Without one a spec costs the heaviest recorded spec.
+export const ESTIMATES_FILE = path.join(here, 'spec-estimates.json')
+export function loadEstimates(file = ESTIMATES_FILE) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
 export function loadMap(file = MAP_FILE) {
   return parseMap(readFileSync(file, 'utf8'))
 }
@@ -419,6 +431,7 @@ function main(argv) {
         console.error('select: no usable timings, using the default duration')
       }
     }
+    timings = { ...loadEstimates(), ...timings }
     const specs = listSpecs()
     let result
     try {

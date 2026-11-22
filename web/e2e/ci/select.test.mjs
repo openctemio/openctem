@@ -367,3 +367,11 @@ test('a spec without a duration takes its part of a helper filed under the helpe
     )
   )
 })
+
+test('estimates name only specs that exist', async () => {
+  const { loadEstimates, listSpecs } = await import('./select.mjs')
+  const files = new Set(listSpecs().map((s) => s.file))
+  const est = loadEstimates()
+  assert.ok(Object.keys(est).length > 0)
+  for (const f of Object.keys(est)) assert.ok(files.has(f), `${f} is not a spec`)
+})
