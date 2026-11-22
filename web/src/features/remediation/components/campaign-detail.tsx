@@ -13,7 +13,6 @@ import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
   ClipboardList,
   ExternalLink,
   EyeOff,
@@ -25,7 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import Link from '@/components/link'
+import { DetailPageHeader } from '@/features/shared/components/detail'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -53,13 +52,26 @@ import {
   useRemediationCampaign,
   useRevalidateCampaigns,
 } from '../api/use-remediation-campaigns'
-import { CampaignDue, FindingsProgress } from './campaign-bits'
+import { CampaignDue } from './campaign-bits'
 import { CampaignFormDialog } from './campaign-form-dialog'
 import { CampaignStatusAction } from './campaign-status-action'
 import { AddTasksDialog } from './add-tasks-dialog'
 import { CreateJiraEpicDialog } from './create-jira-epic-dialog'
 
 const TASK_PAGE = 25
+
+/** Column widths (px) the room sums below are made of. */
+const COL = { title: 220, state: 144, due: 144, actions: 48, progress: 160, owner: 150 } as const
+const BASE_ROOM = COL.title + COL.state + COL.due + COL.actions
+/**
+ * The table-frame width (px) under which a column steps aside: the progress
+ * first, then the owner. The running sum of the widths shown plus a margin,
+ * so the row menu is never cut by the frame's scroller.
+ */
+const HIDE_BELOW = {
+  progress: BASE_ROOM + COL.progress + 8,
+  owner: BASE_ROOM + COL.progress + COL.owner + 8,
+} as const
 
 function errMessage(err: unknown, fallback: string) {
   return err instanceof ApiClientError && err.message ? err.message : fallback
@@ -151,7 +163,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
     id: 'actions',
     header: '',
     enableSorting: false,
-    meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
+    meta: { kind: 'actions', width: COL.actions, label: t('components.col.actions', 'Actions') },
     cell: ({ row }: { row: { original: RemediationTask } }) => (
       <ActionMenu
         title={row.original.title}
@@ -203,7 +215,11 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       id: 'owner',
       header: t('remediationHub.tasks.columns.owner'),
       enableSorting: false,
-      meta: { kind: 'owner', label: t('remediationHub.tasks.columns.owner'), hideBelow: 780 },
+      meta: {
+        kind: 'owner',
+        label: t('remediationHub.tasks.columns.owner'),
+        hideBelow: HIDE_BELOW.owner,
+      },
       cell: ({ row }) => (
         <span className="block truncate text-sm" title={ownerOf(row.original)}>
           {ownerOf(row.original)}
@@ -224,8 +240,8 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       meta: {
         kind: 'text',
         label: t('remediationHub.tasks.columns.progress'),
-        width: 160,
-        hideBelow: 640,
+        width: COL.progress,
+        hideBelow: HIDE_BELOW.progress,
       },
       cell: ({ row }) => <TaskProgressCell task={row.original} />,
     },
@@ -241,83 +257,93 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start gap-3">
-        <Button
-          asChild
-          variant="ghost"
-          size="icon"
-          aria-label={t('remediationCampaigns.detail.back')}
-        >
-          <Link href="/remediation/campaigns">
-            <ArrowLeft className="size-4" aria-hidden />
-          </Link>
-        </Button>
-        <div className="min-w-0 flex-1 basis-64">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-page tracking-tight break-words">{c.name}</h1>
+      <DetailPageHeader
+        title={c.name}
+        parent={{
+          href: '/remediation/campaigns',
+          label: t('remediationCampaigns.detail.back'),
+        }}
+        chips={
+          <>
             <StatusChip domain="remediationCampaign" value={c.status} />
-          </div>
-          {c.description && (
-            <p className="text-muted-foreground mt-1 text-sm break-words whitespace-pre-line">
-              {c.description}
-            </p>
-          )}
-          <dl className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <div className="flex gap-1">
-              <dt className="after:content-[':']">{t('remediationCampaigns.detail.owner')}</dt>
-              <dd className="text-foreground">
-                {ownerName ?? t('remediationCampaigns.owner.unassigned')}
-              </dd>
-            </div>
-            {teamName && (
-              <div className="flex gap-1">
-                <dt className="after:content-[':']">{t('remediationCampaigns.detail.team')}</dt>
-                <dd className="text-foreground">{teamName}</dd>
-              </div>
+            <span className="text-meta text-muted-foreground">
+              {t(`remediationCampaigns.priority.${c.priority}`)}
+            </span>
+          </>
+        }
+        facts={
+          <>
+            {c.description && (
+              <p className="text-muted-foreground basis-full text-sm break-words whitespace-pre-line">
+                {c.description}
+              </p>
             )}
-            <div className="flex gap-1">
-              <dt className="after:content-[':']">{t('remediationCampaigns.detail.due')}</dt>
-              <dd className="text-foreground">
-                <CampaignDue campaign={c} relative />
-              </dd>
-            </div>
-            <div className="flex gap-1">
-              <dt className="after:content-[':']">{t('remediationCampaigns.detail.priority')}</dt>
-              <dd className="text-foreground">
-                {t(`remediationCampaigns.priority.${c.priority}`)}
-              </dd>
-            </div>
-            {c.ticket && (
+            <dl className="text-muted-foreground flex basis-full flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               <div className="flex gap-1">
-                <dt className="after:content-[':']">{t('remediationCampaigns.detail.jira')}</dt>
-                <dd>
-                  <SafeExternalLink
-                    href={c.ticket.issue_url}
-                    className="text-foreground inline-flex items-center gap-1 underline"
-                  >
-                    {c.ticket.issue_key}
-                    <ExternalLink className="size-3" aria-hidden />
-                  </SafeExternalLink>
+                <dt className="after:content-[':']">{t('remediationCampaigns.detail.owner')}</dt>
+                <dd className="text-foreground">
+                  {ownerName ?? t('remediationCampaigns.owner.unassigned')}
                 </dd>
               </div>
-            )}
-          </dl>
-        </div>
-        {writable && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil className="size-4" aria-hidden />
-              {t('remediationCampaigns.actions.edit')}
-            </Button>
+              {teamName && (
+                <div className="flex gap-1">
+                  <dt className="after:content-[':']">{t('remediationCampaigns.detail.team')}</dt>
+                  <dd className="text-foreground">{teamName}</dd>
+                </div>
+              )}
+              <div className="flex gap-1">
+                <dt className="after:content-[':']">{t('remediationCampaigns.detail.due')}</dt>
+                <dd className="text-foreground">
+                  <CampaignDue campaign={c} relative />
+                </dd>
+              </div>
+              {c.ticket && (
+                <div className="flex gap-1">
+                  <dt className="after:content-[':']">{t('remediationCampaigns.detail.jira')}</dt>
+                  <dd>
+                    <SafeExternalLink
+                      href={c.ticket.issue_url}
+                      className="text-foreground inline-flex items-center gap-1 underline"
+                    >
+                      {c.ticket.issue_key}
+                      <ExternalLink className="size-3" aria-hidden />
+                    </SafeExternalLink>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </>
+        }
+        primary={
+          writable ? (
             <CampaignStatusAction
               campaign={c}
               busy={busy}
               onSetStatus={(status, success) => void setStatus(status, success)}
             />
-            <ActionMenu
-              title={c.name}
-              label={t('remediationCampaigns.actions.more')}
-              items={[
+          ) : undefined
+        }
+        secondary={
+          writable ? (
+            <>
+              {open && tasks.length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+                  <Plus className="size-4" aria-hidden />
+                  {t('remediationCampaigns.actions.addTasks')}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+        menu={
+          writable
+            ? [
+                {
+                  id: 'edit',
+                  label: t('remediationCampaigns.actions.edit'),
+                  icon: Pencil,
+                  onSelect: () => setEditOpen(true),
+                },
                 ...(!c.ticket
                   ? [
                       {
@@ -345,21 +371,10 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                   destructive: true,
                   onSelect: () => setConfirm('delete'),
                 },
-              ]}
-              trigger={
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={t('remediationCampaigns.actions.more')}
-                >
-                  <MoreHorizontal className="size-4" aria-hidden />
-                </Button>
-              }
-            />
-          </div>
-        )}
-      </div>
-
+              ]
+            : undefined
+        }
+      />
       {canWrite && !c.can_edit && (
         <p
           className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -371,20 +386,14 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       )}
 
       <section className="space-y-3 rounded-lg border p-4" aria-labelledby="campaign-progress">
-        <h2 id="campaign-progress" className="text-sm font-semibold">
-          {t('remediationCampaigns.detail.progress')}
-        </h2>
-        {s.tasks === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            {t('remediationCampaigns.detail.noProgress')}
-          </p>
-        ) : (
-          <>
-            <FindingsProgress
-              summary={s}
-              className="[&>div[role=progressbar]]:w-full [&>div[role=progressbar]]:max-w-md"
-            />
-            <p className="text-sm">
+        <h2 className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm font-semibold">
+          <span id="campaign-progress">{t('remediationCampaigns.detail.progress')}</span>
+          {s.tasks === 0 ? (
+            <span className="text-muted-foreground text-sm font-normal">
+              {t('remediationCampaigns.detail.noProgress')}
+            </span>
+          ) : (
+            <span className="text-sm font-normal">
               {s.findings > 0 &&
                 t('remediationCampaigns.detail.findingsLine', undefined, {
                   closed: s.closed_findings,
@@ -408,8 +417,26 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                   {t('remediationCampaigns.tasks.overdue', undefined, { count: s.overdue_tasks })}
                 </span>
               )}
-            </p>
-          </>
+            </span>
+          )}
+        </h2>
+        {s.tasks > 0 && s.findings > 0 && (
+          <div
+            role="progressbar"
+            aria-label={t('remediationCampaigns.progress.label', undefined, {
+              closed: s.closed_findings,
+              total: s.findings,
+            })}
+            aria-valuemin={0}
+            aria-valuemax={s.findings}
+            aria-valuenow={Math.min(s.findings, s.closed_findings)}
+            className="bg-muted flex h-1 w-full max-w-md overflow-hidden rounded-full"
+          >
+            <div
+              className="bg-success h-full"
+              style={{ width: `${Math.min(100, (s.closed_findings / s.findings) * 100)}%` }}
+            />
+          </div>
         )}
         {s.hidden_tasks > 0 && (
           <p
@@ -431,17 +458,6 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
           <h2 id="campaign-tasks" className="text-sm font-semibold">
             {t('remediationCampaigns.detail.tasks', undefined, { count: taskTotal })}
           </h2>
-          {writable && open && tasks.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="ms-auto"
-              onClick={() => setAddOpen(true)}
-            >
-              <Plus className="size-4" aria-hidden />
-              {t('remediationCampaigns.actions.addTasks')}
-            </Button>
-          )}
         </div>
         {!tasksLoading && tasks.length === 0 ? (
           <EmptyState
@@ -466,6 +482,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
             isLoading={tasksLoading}
             manualPagination
             showSearch={false}
+            showToolbar={false}
             rowCount={taskTotal}
             pageCount={pages}
             pagination={{ pageIndex: page - 1, pageSize: TASK_PAGE }}
