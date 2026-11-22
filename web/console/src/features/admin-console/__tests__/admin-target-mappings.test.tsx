@@ -285,7 +285,9 @@ describe('TargetMappingsPage', () => {
   it('puts the status strip after the list on a phone, so the first card comes up', () => {
     asRole('readonly')
     render(<TargetMappingsPage />)
-    expect(document.querySelector('[data-slot="metric-strip"]')).toHaveClass('max-md:order-last')
+    expect(document.querySelector('[data-slot="metric-strip-frame"]')).toHaveClass(
+      'max-md:order-last'
+    )
   })
 
   it('draws the built-in pairs only once the list is known', () => {

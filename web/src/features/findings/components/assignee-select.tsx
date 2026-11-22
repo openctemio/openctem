@@ -215,8 +215,8 @@ export function AssigneeSelect({
             // Show assignee info - if name is empty (not enriched), show "Assigned" with user icon
             value.name ? (
               <>
-                <Avatar className="h-4 w-4">
-                  <AvatarFallback className="text-[8px]">{getInitials(value.name)}</AvatarFallback>
+                <Avatar className="h-5 w-5">
+                  <AvatarFallback className="text-xs">{getInitials(value.name)}</AvatarFallback>
                 </Avatar>
                 <span
                   className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}

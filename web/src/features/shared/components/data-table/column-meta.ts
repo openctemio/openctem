@@ -53,7 +53,11 @@ export interface DataTableColumnMeta {
   sortFirst?: 'asc' | 'desc'
   /** An info popover after the header label (legend, unit, scope). */
   headerHint?: ReactNode
-  /** The row's name when it is not the first column (gets the name floor). */
+  /**
+   * The row's name when it is not the first column: gets the name floor and,
+   * with no `kind` of its own, the name kind (sized by the room left, a long
+   * title cut by its ellipsis instead of widening the table).
+   */
   primary?: boolean
   /**
    * A key figure of the list although its kind is not one (e.g. a last-seen
@@ -78,7 +82,8 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   priority: { align: 'start', width: 72, sortFirst: 'desc' },
   // The risk badge's longest text whole: "Not yet scored" ("Chưa được chấm điểm").
   risk: { align: 'start', width: 148, sortFirst: 'desc' },
-  severity: { align: 'start', width: 96, sortFirst: 'desc' },
+  // The severity mark and its longest word whole: "Nghiêm trọng" (vi Critical).
+  severity: { align: 'start', width: 128, sortFirst: 'desc' },
   status: { align: 'start', width: 128, sortFirst: 'asc' },
   'status-edit': { align: 'start', width: 140, sortFirst: 'asc' },
   asset: { align: 'start', minWidth: 200, maxWidth: 280, sortFirst: 'asc' },
@@ -103,9 +108,10 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   text: { align: 'start', sortFirst: 'asc' },
 }
 
-/** The kind of a column: its meta, else `select` / `actions` by id, else text. */
+/** The kind of a column: its meta, a primary column `name`, else `select` / `actions` by id, else text. */
 export function columnKind(id: string, meta: DataTableColumnMeta | undefined): ColumnKind {
   if (meta?.kind) return meta.kind
+  if (meta?.primary) return 'name'
   if (id === 'select') return 'select'
   if (id === 'actions') return 'actions'
   return 'text'
