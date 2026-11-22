@@ -144,6 +144,12 @@ export function CertificatePhoneCard({ row }: { row: CertificateRow }) {
   )
 }
 
+/**
+ * Table frame widths (px) under which a column folds away, so the table fits
+ * its frame (about 700 px at 1024 px: Issued to, Issuer and Expires on stay).
+ */
+export const CERTIFICATE_HIDE_BELOW = { issuedOn: 780, fingerprint: 900, detected: 1100 } as const
+
 function useColumns(): ColumnDef<CertificateRow>[] {
   const { t } = useTranslation()
   return useMemo<ColumnDef<CertificateRow>[]>(
@@ -174,7 +180,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'fingerprint',
-        meta: { kind: 'id', width: 184 },
+        meta: { kind: 'id', width: 184, hideBelow: CERTIFICATE_HIDE_BELOW.fingerprint },
         header: t('attackSurface.certificates.col.fingerprint', 'Fingerprint (SHA-256)'),
         enableSorting: false,
         cell: ({ row }) => <CopyableFingerprint value={row.original.fingerprint_sha256} />,
@@ -195,7 +201,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'not_before',
-        meta: { kind: 'date', width: 144 },
+        meta: { kind: 'date', width: 144, hideBelow: CERTIFICATE_HIDE_BELOW.issuedOn },
         header: t('attackSurface.certificates.col.issuedOn', 'Issued on'),
         enableSorting: false,
         cell: ({ row }) => formatDateSafe(row.original.not_before),
@@ -206,7 +212,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
         header: t('attackSurface.certificates.col.expiresOn', 'Expires on'),
         enableSorting: false,
         cell: ({ row }) => (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col items-end gap-1">
             <span>{formatDateSafe(row.original.not_after)}</span>
             <CertificateStatusPill row={row.original} />
           </div>
@@ -214,7 +220,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'first_seen',
-        meta: { kind: 'datetime-recent' },
+        meta: { kind: 'datetime-recent', hideBelow: CERTIFICATE_HIDE_BELOW.detected },
         header: t('attackSurface.certificates.col.detected', 'Detected'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.first_seen} />,

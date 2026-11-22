@@ -86,26 +86,39 @@ export function PageHeader({
           </div>
         )}
       </div>
-      {viewSwitcher && (
-        <div data-slot="page-header-view-switcher" className="order-2 shrink-0 sm:order-3">
-          {viewSwitcher}
-        </div>
-      )}
-      {children && (
-        // Pages often wrap their buttons in their own <div className="flex gap-2">,
-        // which does not wrap and pushed the last button off-screen on narrow
-        // widths. Direct child groups wrap too, so the actions always fit.
-        <div
-          className={cn(
-            'flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap',
-            // With a switcher: full row under the title on a phone, left of it from sm.
-            viewSwitcher && 'order-3 basis-full sm:order-2 sm:basis-auto',
-            actionsClassName
-          )}
-        >
-          {children}
-        </div>
-      )}
+      {/* With both a switcher and actions, from sm they travel as one group: when
+          the row runs out the group wraps whole and stays at the far right, so the
+          switcher is never left alone on a row. On a phone the group dissolves
+          (`contents`): the switcher sits beside the title, the actions under it. */}
+      <div
+        data-slot="page-header-end"
+        className={cn(
+          viewSwitcher && children
+            ? 'max-sm:contents sm:order-3 sm:ml-auto sm:flex sm:shrink-0 sm:items-center sm:gap-2'
+            : 'contents'
+        )}
+      >
+        {viewSwitcher && (
+          <div data-slot="page-header-view-switcher" className="order-2 shrink-0 sm:order-3">
+            {viewSwitcher}
+          </div>
+        )}
+        {children && (
+          // Pages often wrap their buttons in their own <div className="flex gap-2">,
+          // which does not wrap and pushed the last button off-screen on narrow
+          // widths. Direct child groups wrap too, so the actions always fit.
+          <div
+            className={cn(
+              'flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap',
+              // With a switcher: full row under the title on a phone, left of it from sm.
+              viewSwitcher && 'order-3 basis-full sm:order-2 sm:basis-auto',
+              actionsClassName
+            )}
+          >
+            {children}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
