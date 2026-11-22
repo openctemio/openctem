@@ -86,6 +86,7 @@
   "myWork.title": "Việc của tôi",
   "myWork.topOf": "{shown} đầu tiên trong {total}",
   "myWork.triage": "Phân loại",
+  "myWork.triageNew": "Phân loại {count} phát hiện mới",
   "myWork.triageThese": "Phân loại các mục này",
   "myWork.untitled": "Phát hiện chưa có tên",
   "myWork.updated": "Cập nhật",

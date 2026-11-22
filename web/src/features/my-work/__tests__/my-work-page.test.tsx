@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import en from '@/lib/i18n/dictionaries/en/myWork.json'
 import enFindings from '@/lib/i18n/dictionaries/en/findings.json'
@@ -210,7 +211,7 @@ describe('My Work page', () => {
     expect(params).toBe('state=open&related_to=me&sla_deadline_lte=P3D&informational=false')
   })
 
-  it('opens My team with its own view and links View all to the same list', () => {
+  it('opens My team with its own view and links View all to the same list', async () => {
     search.value = 'tab=team'
     findingQueue.mockReturnValue({
       data: {
@@ -227,21 +228,24 @@ describe('My Work page', () => {
     )
     // View all is the queue's one secondary action: a named icon button at
     // the toolbar's end (the More menu with its only item).
-    fireEvent.click(screen.getByRole('button', { name: 'View all' }))
-    expect(push).toHaveBeenCalledWith('/findings?state=open&related_to=my_team')
-    expect(screen.getByText('Top 1 of 23')).toBeInTheDocument()
-    // The count shows once, on the selected tab: the title row names the
-    // queue for assistive technology only, shows no count, and holds what the
-    // list holds and Refresh. No chip repeats the tab's scope.
-    const titleRow = screen.getByTestId('my-work-title-row')
-    expect(within(titleRow).getByRole('heading', { name: 'My team' })).toHaveClass('sr-only')
-    expect(titleRow.querySelector('[data-slot="list-count"]')).toBeNull()
-    expect(titleRow).not.toHaveTextContent('23')
+    await userEvent.click(screen.getByRole('button', { name: 'More for this queue' }))
+    const viewAll = await screen.findByRole('menuitem', { name: 'View all' })
+    await userEvent.click(viewAll)
+    const href = viewAll.getAttribute('href')
+    if (href) expect(href).toBe('/findings?state=open&related_to=my_team')
+    else expect(push).toHaveBeenCalledWith('/findings?state=open&related_to=my_team')
+    // The count shows once, on the selected tab. Nothing sits on a title row
+    // of its own: the hint is an info mark in the toolbar, and Refresh with
+    // the read time is the caption under the list.
+    expect(screen.queryByTestId('my-work-title-row')).toBeNull()
+    expect(document.querySelector('[data-slot="list-count"]')).toBeNull()
     expect(screen.getByRole('tab', { name: /My team/ })).toHaveTextContent('My team23')
     expect(screen.queryByText('My groups')).toBeNull()
     expect(document.querySelector('[data-slot="locked-chip"]')).toBeNull()
-    expect(within(titleRow).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
-    expect(within(titleRow).getByRole('button', { name: 'About this list' })).toBeInTheDocument()
+    const caption = screen.getByTestId('my-work-caption')
+    expect(within(caption).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(within(caption).getByText('Top 1 of 23')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'About this list' })).toBeInTheDocument()
   })
 
   it('lists requests awaiting my review with what changed, decided in place', async () => {
@@ -330,23 +334,23 @@ describe('My Work page', () => {
     expect(replace).toHaveBeenCalledWith('/my-work?due=72h', { scroll: false })
   })
 
-  it('enters triage mode on the Needs triage view', () => {
+  it('enters triage mode on the Needs triage view', async () => {
     renderPage()
-    // One main action per screen: the queue's Triage these is filled, the
-    // page's Triage (everything new) is a secondary, outline control.
+    // One main action per screen: the queue's Triage these is filled; there is no page-level Triage.
     expect(screen.getByRole('button', { name: 'Triage these' })).toHaveAttribute(
       'data-variant',
       'default'
     )
-    const triage = screen.getByRole('button', { name: /^Triage\s*9$/ })
-    expect(triage).toHaveAttribute('data-variant', 'outline')
+    // The page has no second triage button: everything new is under More.
+    expect(screen.queryByRole('button', { name: /^Triage\s*9$/ })).toBeNull()
     expect(
       screen
         .getAllByRole('button')
         .filter((b) => b.getAttribute('data-variant') === 'default')
         .map((b) => b.textContent)
     ).toEqual(['Triage these'])
-    fireEvent.click(triage)
+    await userEvent.click(screen.getByRole('button', { name: 'More for this queue' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Triage 9 new findings' }))
     expect(startSession).toHaveBeenCalledWith(
       'status=new&informational=false',
       '/findings?status=new&state=all',
@@ -365,8 +369,6 @@ describe('My Work page', () => {
         'Assigned to me…'
       )
       expect(screen.getByRole('tab', { name: /My tasks/ })).toHaveTextContent('My tasks5')
-      // Triage is drawn, disabled, until it knows what waits.
-      expect(screen.getByRole('button', { name: /^Triage$/ })).toBeDisabled()
       expect(screen.getByRole('button', { name: 'More for this queue' })).toBeDisabled()
     } finally {
       quickViews.data = loaded

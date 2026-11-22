@@ -9,21 +9,18 @@
 
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowRight, CheckCircle2, Info, MoreHorizontal, Timer } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Info, ListChecks, MoreHorizontal, Timer } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
-import { RefreshButton } from '@/components/list-page-parts'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageHeader, PageStack } from '@/features/shared'
-import { ListTitleRow } from '@/features/shared/components/list-title-row'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
-import { FilterChipsRow, LockedChip } from '@/features/shared/components/filter-chips-row'
-import { RelativeTime } from '@/features/shared/components/relative-time'
+import { LockedChip } from '@/features/shared/components/filter-chips-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
@@ -38,7 +35,6 @@ import {
   FINDING_QUEUE_VIEW,
   MY_WORK_TABS,
   NEEDS_TRIAGE_VIEW,
-  QUEUE_SIZE,
   isApprovalQueueTab,
   isFindingQueueTab,
   parseTab,
@@ -46,6 +42,7 @@ import {
   type MyWorkTab,
 } from '../lib/queues'
 import { FindingQueue } from './finding-queue'
+import { QueueCaption } from './queue-caption'
 import { ReviewQueue } from './review-queue'
 import { RequestedQueue } from './requested-queue'
 
@@ -244,44 +241,30 @@ export function MyWorkPage() {
         // kit's phone toolbar cuts its start instead of wrapping; when the
         // kit handles that, the isPhone branch here can go.)
         toolbarStart={
-          which === 'assigned' && dueSoonCount !== undefined ? (
-            <Button
-              size="sm"
-              variant={dueSoon ? 'secondary' : 'outline'}
-              aria-pressed={dueSoon}
-              aria-label={
-                isPhone
-                  ? t('myWork.chip.dueSoonNamed', 'SLA due in 72 hours: {count}', {
-                      count: dueSoonCount,
-                    })
-                  : undefined
-              }
-              onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-            >
-              <Timer className="me-2 size-4" aria-hidden="true" />
-              {!isPhone && t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-              <span className={isPhone ? 'tabular-nums' : 'ms-2 tabular-nums'}>{dueSoonCount}</span>
-            </Button>
-          ) : undefined
-        }
-        // Line 2, the kit's chips row, from md: how much of the queue is on
-        // screen ("Top 25 of 40"). On a phone the tab's count and View all
-        // say that, and the toolbar keeps its one line. The row is there as
-        // soon as the count says the queue is longer than one page, so the
-        // rows arriving do not move the list.
-        toolbarBelow={
-          !isPhone && total > QUEUE_SIZE ? (
-            <FilterChipsRow
-              data-testid="my-work-chips"
-              chips={[]}
-              trailing={
-                <span className="text-meta whitespace-nowrap text-muted-foreground tabular-nums">
-                  {rows.length > 0 &&
-                    t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })}
+          <>
+            {which === 'assigned' && dueSoonCount !== undefined ? (
+              <Button
+                size="sm"
+                variant={dueSoon ? 'secondary' : 'outline'}
+                aria-pressed={dueSoon}
+                aria-label={
+                  isPhone
+                    ? t('myWork.chip.dueSoonNamed', 'SLA due in 72 hours: {count}', {
+                        count: dueSoonCount,
+                      })
+                    : undefined
+                }
+                onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
+              >
+                <Timer className="me-2 size-4" aria-hidden="true" />
+                {!isPhone && t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
+                <span className={isPhone ? 'tabular-nums' : 'ms-2 tabular-nums'}>
+                  {dueSoonCount}
                 </span>
-              }
-            />
-          ) : undefined
+              </Button>
+            ) : null}
+            {tabHint}
+          </>
         }
         // The toolbar's end: the queue's one main action, everything else
         // under More (View all opens the same list on Findings). While the
@@ -308,6 +291,18 @@ export function MyWorkPage() {
                 title={t(`myWork.tabs.${which}`, TAB_LABELS[which])}
                 label={t('myWork.more', 'More for this queue')}
                 items={[
+                  ...(canTriage && triageView && triageView.count > 0
+                    ? [
+                        {
+                          id: 'triage-new',
+                          label: t('myWork.triageNew', 'Triage {count} new findings', {
+                            count: triageView.count,
+                          }),
+                          icon: ListChecks,
+                          onSelect: () => openTriage(triageView.params, NEEDS_TRIAGE_VIEW),
+                        },
+                      ]
+                    : []),
                   {
                     id: 'view-all',
                     label: t('myWork.viewAll', 'View all'),
@@ -368,9 +363,12 @@ export function MyWorkPage() {
     const total = approvals.data.queue_counts?.[which] ?? approvals.data.total
     // Only the rule the tab does not say: requests still waiting.
     const toolbar = (
-      <LockedChip hint={t('myWork.locked.hint', 'Set by this queue; it cannot be removed.')}>
-        {t('myWork.locked.pending', 'Pending')}
-      </LockedChip>
+      <>
+        <LockedChip hint={t('myWork.locked.hint', 'Set by this queue; it cannot be removed.')}>
+          {t('myWork.locked.pending', 'Pending')}
+        </LockedChip>
+        {tabHint}
+      </>
     )
     if (which === 'review') {
       return (
@@ -406,47 +404,37 @@ export function MyWorkPage() {
   const asOf = views.data?.as_of
   const explain = t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])
   const isPhone = useIsMobile()
-  // Triage of everything new is a secondary control (outline): the open
-  // queue's "Triage these" is the screen's one main action. It stays on the
-  // title's line, with its count, because what waits for triage is worth
-  // seeing at a glance; under a More it would be hidden.
-  // Shown (disabled) while the views load, so its arrival does not move the
-  // title's line or what is under it.
-  const triageButton =
-    canTriage && (triageView || viewsPending) ? (
-      <Button
-        variant="outline"
-        disabled={!triageView}
-        onClick={() => {
-          if (!triageView) return
-          if (triageView.count > 0) openTriage(triageView.params, NEEDS_TRIAGE_VIEW)
-          else router.push(quickViewHref(triageView.params, include))
-        }}
-      >
-        {t('myWork.triage', 'Triage')}
-        {triageView && triageView.count > 0 && (
-          <span className="ms-1.5 tabular-nums">{triageView.count}</span>
-        )}
-      </Button>
-    ) : null
+  // What the tab holds, behind an info mark at the toolbar's start: the
+  // sentence is not a row of its own.
+  const tabHint = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="shrink-0"
+          aria-label={t('myWork.about', 'About this list')}
+        >
+          <Info aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="text-sm">{explain}</PopoverContent>
+    </Popover>
+  )
+  const queueTotal = isFindingQueueTab(tab)
+    ? (findingRows.data?.total ?? findingView?.count)
+    : undefined
+  const queueShown = isFindingQueueTab(tab) ? (findingRows.data?.data?.length ?? 0) : 0
+  const caption = (
+    <QueueCaption shown={queueShown} total={queueTotal} asOf={asOf} onRefresh={refresh} />
+  )
   return (
     <Main>
       <PageStack>
-        {/* Triage (with what waits) sits on the title's line: right after
-            the title on a phone (the kit's title action, so it never drops
-            to a line of its own), at the end of the row from md. The page
-            sentence shows from md; on a phone each tab says what it holds
-            behind its info mark. Refresh belongs to the list, in its title
-            row. */}
-        <PageHeader
-          title={t('myWork.title')}
-          description={<span className="hidden md:inline">{t('myWork.description')}</span>}
-          titleAction={
-            isPhone && triageButton ? <span className="ms-2">{triageButton}</span> : undefined
-          }
-        >
-          {isPhone ? null : triageButton}
-        </PageHeader>
+        {/* The title alone: what each tab holds is behind the info mark in
+            its toolbar, and the one triage entry is the open queue's
+            "Triage these" (everything new is under its More). */}
+        <PageHeader title={t('myWork.title')} />
 
         <Tabs value={tab} onValueChange={(v) => setQuery({ tab: v as MyWorkTab })}>
           <TabsList aria-label={t('myWork.tabs.label')}>
@@ -457,59 +445,20 @@ export function MyWorkPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-          {/* The list's title row: the selected tab already shows the
-              queue's name and its count (said once), so the row names it for
-              assistive technology only and shows what it holds (a sentence
-              on one line from md, behind the info mark on a phone) and
-              Refresh. */}
-          <ListTitleRow
-            className="mt-3"
-            title={t(`myWork.tabs.${tab}`, TAB_LABELS[tab])}
-            titleHidden
-            data-testid="my-work-title-row"
-            start={
-              <>
-                <p
-                  data-slot="my-work-hint"
-                  className="hidden min-w-0 truncate text-meta text-muted-foreground md:block"
-                  title={explain}
-                >
-                  {explain}
-                </p>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      className="shrink-0 md:hidden"
-                      aria-label={t('myWork.about', 'About this list')}
-                    >
-                      <Info aria-hidden="true" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="text-sm">{explain}</PopoverContent>
-                </Popover>
-              </>
-            }
-          >
-            {asOf && (
-              // On a phone and from lg; at md the row's sentence needs the room.
-              <span className="text-meta whitespace-nowrap text-muted-foreground md:max-lg:hidden">
-                {t('myWork.updated', 'Updated')} <RelativeTime date={asOf} />
-              </span>
-            )}
-            <RefreshButton onClick={refresh} label={t('myWork.refresh', 'Refresh')} />
-          </ListTitleRow>
           {available.map((key) => (
-            <TabsContent key={key} value={key} className="mt-1">
-              {key === tab &&
-                (isFindingQueueTab(key) ? (
-                  findingPanel(key)
-                ) : isApprovalQueueTab(key) ? (
-                  approvalPanel(key)
-                ) : (
-                  <MyTasksQueue />
-                ))}
+            <TabsContent key={key} value={key} className="mt-3 space-y-2">
+              {key === tab && (
+                <>
+                  {isFindingQueueTab(key) ? (
+                    findingPanel(key)
+                  ) : isApprovalQueueTab(key) ? (
+                    approvalPanel(key)
+                  ) : (
+                    <MyTasksQueue />
+                  )}
+                  {caption}
+                </>
+              )}
             </TabsContent>
           ))}
         </Tabs>
