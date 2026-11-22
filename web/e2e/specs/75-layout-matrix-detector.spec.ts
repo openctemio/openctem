@@ -237,7 +237,9 @@ test.describe('layout matrix detector: wide-screen stretch', { tag: ['@shell'] }
 
   test('is quiet for a bar list: the bar between a label and its value', async ({ page }) => {
     // The dashboard's category bars (bar-viz) at 1920 px: label, bar, value.
-    const row = (w: number) => `<div style="display:grid;grid-template-columns:9rem 1fr auto;gap:8px">
+    const row = (
+      w: number
+    ) => `<div style="display:grid;grid-template-columns:9rem 1fr auto;gap:8px">
       <span>Service</span><span style="height:12px;background:#ddd"><span style="display:block;height:100%;width:${w}%;background:#36c"></span></span><span>2,840</span></div>`
     const found = await at(page, 1920, `<main style="width:1800px">${row(100)}${row(5)}</main>`)
     expect(found.wideStretch).toEqual([])

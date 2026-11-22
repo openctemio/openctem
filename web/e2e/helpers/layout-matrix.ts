@@ -306,9 +306,7 @@ export async function findMatrixBreaks(
       // rows of a list's toolbar.
       if (
         !first &&
-        root.closest(
-          '[role=dialog], [data-slot="sheet-content"], [data-slot="drawer-content"]'
-        )
+        root.closest('[role=dialog], [data-slot="sheet-content"], [data-slot="drawer-content"]')
       )
         continue
       if (!first) {
