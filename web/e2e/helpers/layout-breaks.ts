@@ -1094,6 +1094,20 @@ const DETAIL_CASES: DetailCase[] = [
       { url: `**/api/v1/vulnerabilities/cve/${SYNTH_CVE}`, body: cveCatalog },
     ],
   },
+  {
+    // The seed's first scan (its runs, schedule and targets are real rows).
+    name: 'scan',
+    tabs: ['runs', 'configuration', 'details'],
+    url: async (page) => {
+      await page.goto('/scans', { timeout: 60_000 })
+      const id = await page.evaluate(async () => {
+        const res = await fetch('/api/v1/scans?page=1&per_page=1', { credentials: 'same-origin' })
+        const body = (await res.json().catch(() => null)) as { data?: { id: string }[] } | null
+        return body?.data?.[0]?.id ?? null
+      })
+      return id ? `/scans/${id}` : null
+    },
+  },
 ]
 
 export function detailPages(options: Options) {

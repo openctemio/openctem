@@ -7,7 +7,7 @@
   "console/src/features/admin-console/components/organization-users-section.tsx": 4,
   "console/src/features/verified-domains/components/verified-domains-list.tsx": 4,
   "src/app/(dashboard)/(discovery)/assets/groups/[id]/page.tsx": 13,
-  "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 5,
+  "src/app/(dashboard)/(discovery)/scans/[id]/page.tsx": 4,
   "src/app/(dashboard)/(mobilization)/automations/page.tsx": 13,
   "src/app/(dashboard)/(mobilization)/sla/page.tsx": 5,
   "src/app/(dashboard)/(prioritization)/business-impact/page.tsx": 6,
