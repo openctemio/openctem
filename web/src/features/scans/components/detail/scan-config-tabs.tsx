@@ -65,7 +65,7 @@ function TargetList({ targets }: { targets: string[] }) {
         ))}
       </div>
       {targets.length > 12 && (
-        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setAll(!all)}>
+        <Button variant="link" size="sm" onClick={() => setAll(!all)}>
           {all
             ? t('scanDetail.target.showFewer')
             : t('scanDetail.target.showAll', 'Show all {count}', { count: targets.length })}
