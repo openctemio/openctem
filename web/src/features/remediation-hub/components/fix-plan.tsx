@@ -63,7 +63,7 @@ export const PLAN_HIDE_BELOW = {
   findings: 720,
   share: 1000,
   progress: 960,
-  owner: 1110,
+  owner: 1200,
 } as const
 
 export interface PlanRow {
