@@ -1,4 +1,4 @@
-import { findingRail, webOriginPaths } from '../helpers/layout-breaks'
+import { detailPages, findingRail, webOriginPaths } from '../helpers/layout-breaks'
 
 /**
  * Layout breaks on the detail pages: a web origin's Paths tab (the tree from
@@ -8,3 +8,9 @@ import { findingRail, webOriginPaths } from '../helpers/layout-breaks'
  */
 webOriginPaths({ tag: ['@assets', '@attack-surface', '@phone'] })
 findingRail({ tag: ['@findings', '@phone'] })
+
+/**
+ * A pentest campaign and a vulnerability on the shared detail kit: header,
+ * page tabs and the header's More menu, at the phone, tablet and desktop widths.
+ */
+detailPages({ tag: ['@phone', '@pentest', '@vulnerabilities'] })

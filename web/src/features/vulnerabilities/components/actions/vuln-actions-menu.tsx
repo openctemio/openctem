@@ -1,14 +1,11 @@
 'use client'
 
-import { Download, MoreHorizontal, RotateCcw, ShieldOff } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { Download, RotateCcw, ShieldOff } from 'lucide-react'
+import type { ActionMenuEntry } from '@/components/ui/action-menu'
 import { useTranslation } from '@/context/i18n-provider'
 import type { VulnActionAbilities } from './use-vuln-actions'
 
-export interface VulnActionsMenuProps {
-  /** What the actions apply to (the CVE id): the title of the phone sheet. */
-  name: string
+export interface VulnActionEntriesProps {
   abilities: VulnActionAbilities
   /** Why the actions on open findings are off (none open in scope), if they are. */
   blocker?: string
@@ -19,22 +16,20 @@ export interface VulnActionsMenuProps {
 }
 
 /**
- * The vulnerability page's secondary actions (request an exception, retest,
- * export) in one menu beside "Create remediation task". Hidden when the
- * caller may run none of them.
+ * The vulnerability page's further actions (request an exception, retest,
+ * export) as the More menu entries of the page header. Only the ones the
+ * caller may run; none at all hides the menu.
  */
-export function VulnActionsMenu({
-  name,
+export function useVulnActionEntries({
   abilities,
   blocker,
   busy,
   onException,
   onRetest,
   onExport,
-}: VulnActionsMenuProps) {
+}: VulnActionEntriesProps): ActionMenuEntry[] {
   const { t } = useTranslation()
-  if (!abilities.exception && !abilities.retest && !abilities.export) return null
-  const items: ActionMenuEntry[] = [
+  return [
     ...(abilities.exception
       ? [
           {
@@ -69,20 +64,4 @@ export function VulnActionsMenu({
         ]
       : []),
   ]
-  return (
-    <ActionMenu
-      title={name}
-      label={t('vulnPage.actions.more', 'More actions')}
-      items={items}
-      trigger={
-        <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label={t('vulnPage.actions.more', 'More actions')}
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden />
-        </Button>
-      }
-    />
-  )
 }

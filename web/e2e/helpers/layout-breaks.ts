@@ -778,6 +778,233 @@ export function webOriginPaths(options: Options) {
   })
 }
 
+/**
+ * Detail pages on the shared detail kit (header, page tabs, overlays): a
+ * record made through the API, or served by route mocks with long names, at
+ * 390 px (light, dark, en, vi), 1024 and 1440 px, plus the header's More menu
+ * on a phone.
+ */
+const DETAIL_VARIANTS: Variant[] = [
+  { tag: 'p-en', ...PHONE, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'p-vi', ...PHONE, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'p-en-dark', ...PHONE, lang: 'en', theme: 'dark', scen: 'rich' },
+  { tag: 't-en', ...TABLET, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 't-vi', ...TABLET, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'd-en', ...DESKTOP, lang: 'en', theme: 'light', scen: 'rich' },
+  { tag: 'd-vi', ...DESKTOP, lang: 'vi', theme: 'light', scen: 'rich' },
+  { tag: 'p-ov-more', ...PHONE, lang: 'en', theme: 'light', scen: 'rich', overlay: 'rowmenu' },
+]
+const DETAIL_MORE = 'main [data-slot="detail-more"] button:visible'
+
+const SYNTH_CVE = 'CVE-2024-3094'
+function cveExposure() {
+  return {
+    cve_id: SYNTH_CVE,
+    in_catalog: true,
+    verdict: 'confirmed',
+    findings: {
+      total: 31,
+      active: 27,
+      by_status: { new: 9, confirmed: 10, in_progress: 8, resolved: 4 },
+      by_priority: { P0: 3, P1: 8, P2: 16 },
+      worst_priority: 'P0',
+      in_task: 18,
+      not_in_task: 9,
+    },
+    assets: { impacted: 14, crown_jewels: 1, internet_facing: 3, with_findings: 14 },
+    possible: { assets: 5, products: [`xz-utils-${LONG}`] },
+    not_affected: { assets: 22, products: ['xz-utils'] },
+    components: [
+      {
+        product_id: 'p1',
+        name: `xz-utils-${LONG}`,
+        purl: `pkg:deb/debian/xz-utils-${LONG}@5.6.0`,
+        version: '5.6.0',
+        fixed_versions: ['5.6.2'],
+        recommended_fix: '5.6.2',
+        assets: 12,
+        active_findings: 23,
+      },
+    ],
+    upgrades: [
+      {
+        product_id: 'p1',
+        name: `xz-utils-${LONG}`,
+        target: '5.6.2',
+        major_change: false,
+        fixes_findings: 23,
+        on_assets: 12,
+        no_fix_findings: 0,
+      },
+    ],
+    sources: [
+      { name: 'Weekly scanner run', source: 'scan', assets: 11 },
+      { name: `Component inventory of ${LONG}`, source: 'sbom', assets: 6 },
+    ],
+    single_source_assets: 4,
+    timeline: {
+      first_seen_at: '2026-10-02T08:00:00Z',
+      last_seen_at: '2026-11-18T08:00:00Z',
+      last_fixed_at: '2026-11-06T08:00:00Z',
+      fixed: 41,
+      reopened: 2,
+      last_reopened_at: '2026-11-02T08:00:00Z',
+    },
+    intel: {
+      aliases: [{ id: 'GHSA-rxwq-x6h5-x525', source: 'ghsa', synced_at: '2026-11-18T08:00:00Z' }],
+      cwes: ['CWE-506'],
+      feeds: [{ source: 'kev', last_sync_at: '2026-11-20T08:00:00Z', status: 'ok' }],
+    },
+    epss_trend: [
+      { date: '2026-11-01', score: 0.7 },
+      { date: '2026-11-15', score: 0.84 },
+    ],
+  }
+}
+function cveCatalog() {
+  return {
+    id: '00000000-0000-4000-8000-0000000000c1',
+    cve_id: SYNTH_CVE,
+    title: `Malicious code in the release archives of a compression library used by ${LONG}`,
+    description: `The upstream release archives carry code that changes the build of ${LONG}.`,
+    severity: 'critical',
+    cvss_score: 10,
+    epss_score: 0.84,
+    exploit_available: true,
+    exploit_maturity: 'functional',
+    fixed_versions: ['5.6.2'],
+    published_at: '2024-03-29T00:00:00Z',
+    status: 'open',
+    risk_score: 95,
+  }
+}
+function cveAssets() {
+  return {
+    data: Array.from({ length: 3 }, (_, i) => ({
+      asset_id: `00000000-0000-4000-8000-00000000a00${i}`,
+      name: `build-${i}.${LONG}.example.com`,
+      asset_type: 'host',
+      criticality: 'high',
+      crown_jewel: i === 0,
+      internet_facing: i < 2,
+      owner: 'Platform team',
+      open_findings: 3,
+      total_findings: 4,
+      worst_priority: 'P0',
+      worst_severity: 'critical',
+      last_seen_at: '2026-11-18T08:00:00Z',
+    })),
+    total: 3,
+    page: 1,
+    per_page: 20,
+    total_pages: 1,
+  }
+}
+
+interface DetailCase {
+  name: string
+  tabs: string[]
+  /** The page's URL, made in the browser (an API create) or a fixed one; null skips. */
+  url: (page: Page) => Promise<string | null>
+  mocks?: { url: string; body: () => unknown }[]
+}
+
+const DETAIL_CASES: DetailCase[] = [
+  {
+    name: 'pentest-campaign',
+    tabs: ['overview', 'findings', 'scope', 'team'],
+    url: async (page) => {
+      await page.goto('/pentest/campaigns', { timeout: 60_000 })
+      const id = await page.evaluate(async (long) => {
+        const csrf = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] ?? ''
+        const res = await fetch('/api/v1/pentest/campaigns', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': decodeURIComponent(csrf) },
+          body: JSON.stringify({
+            name: `Payments API of ${long}, fourth quarter retest`,
+            client_name: `Example Holdings, the regional payments unit of ${long}`,
+            methodology: 'OWASP testing guide',
+            objectives: ['Reach card data', 'Bypass authorization'],
+            tags: ['pci', 'api'],
+            targets: ['web_app', 'api'],
+          }),
+        })
+        const body = (await res.json().catch(() => null)) as { id?: string } | null
+        return body?.id ?? null
+      }, LONG)
+      return id ? `/pentest/campaigns/${id}` : null
+    },
+  },
+  {
+    name: 'vulnerability',
+    tabs: ['summary', 'where', 'remediation', 'intel', 'timeline'],
+    url: async () => `/vulnerabilities/${SYNTH_CVE}`,
+    mocks: [
+      { url: `**/api/v1/vulnerability-exposures/${SYNTH_CVE}/assets**`, body: cveAssets },
+      { url: `**/api/v1/vulnerability-exposures/${SYNTH_CVE}`, body: cveExposure },
+      { url: `**/api/v1/vulnerabilities/cve/${SYNTH_CVE}`, body: cveCatalog },
+    ],
+  },
+]
+
+export function detailPages(options: Options) {
+  test.describe('Layout breaks: detail pages', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    for (const c of process.env.LAYOUT_SWEEP_ROUTES ? [] : DETAIL_CASES) {
+      test(`detail ${c.name}`, async ({ page, baseURL }, testInfo) => {
+        test.setTimeout(FULL ? 600_000 : 300_000)
+        const route = await c.url(page)
+        test.skip(!route, `could not make a ${c.name} record`)
+        const report: Record<string, Breaks | string> = {}
+        for (const v of DETAIL_VARIANTS) {
+          await page.unrouteAll({ behavior: 'ignoreErrors' })
+          await prepare(page, v, baseURL!)
+          for (const m of c.mocks ?? []) {
+            await page.route(m.url, (r) =>
+              r.request().method() === 'GET' ? r.fulfill({ json: m.body() }) : r.fallback()
+            )
+          }
+          // Every tab at the phone widths in en; the first tab elsewhere.
+          const tabs = v.tag === 'p-en' || v.tag === 'p-en-dark' ? c.tabs : c.tabs.slice(0, 1)
+          for (const tab of tabs) {
+            const key = c.name === 'pentest-campaign' ? 'view' : 'tab'
+            await page.goto(`${route}?${key}=${tab}`, { timeout: 60_000 }).catch(() => {})
+            await settle(page)
+            let scope = 'main'
+            if (v.overlay) {
+              const more = page.locator(DETAIL_MORE).first()
+              if (!(await more.count())) {
+                report[`${tab}-${v.tag}`] = 'no such overlay'
+                continue
+              }
+              await more.click().catch(() => {})
+              await page.waitForTimeout(400)
+              scope = '[role=dialog], [role=menu], [data-slot="drawer-content"]'
+            }
+            const found = await findBreaks(page, { scope, vi: v.lang === 'vi' })
+            report[`${tab}-${v.tag}`] = found
+            if (OUT || formatBreaks(found).length) {
+              await keep(
+                testInfo,
+                `detail-${c.name}-${tab}__${v.tag}.png`,
+                await page.screenshot({ fullPage: !v.overlay })
+              )
+            }
+            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+          }
+        }
+        await keep(testInfo, `detail-${c.name}.json`, JSON.stringify(report, null, 1))
+        for (const [tag, found] of Object.entries(report)) {
+          if (typeof found === 'string') continue
+          for (const kind of BREAK_KINDS)
+            expect.soft(found[kind], `${c.name} ${tag}: ${kind}`).toEqual([])
+        }
+      })
+    }
+  })
+}
+
 /** Entry pages a person opens signed out. */
 /**
  * The finding page's facts rail (owner report 2026-11-22, 2000 px, dark): the
@@ -880,6 +1107,53 @@ export function layoutSignedOut(options: Options, routes: string[]) {
             expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
       })
+    }
+  })
+}
+
+/**
+ * The Filters button and the search field are one joined control on every list
+ * (owner report 2026-11-22, /scope, 390 px, dark): the button is found by its
+ * own slot inside the field, its outer corners are round and its inner ones
+ * square, the field's start is square, both are one height and the two
+ * borders meet in one line. A Radix trigger around the button once replaced
+ * its slot, so /scope kept four round corners and a doubled seam.
+ */
+export function joinedFilterControl(options: Options) {
+  test.describe('Layout breaks: joined filter control', options, () => {
+    for (const route of ['/scope', '/findings']) {
+      for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
+        // /findings has the facet panel toggle from lg: no joined button there.
+        if (v.width > 400 && route === '/findings') continue
+        test(`${route} ${v.tag}`, async ({ page, baseURL }) => {
+          test.setTimeout(90_000)
+          await prepare(page, v, baseURL!)
+          await page.goto(route, { timeout: 60_000 })
+          await settle(page)
+          const joined = await page.evaluate(() => {
+            const root = document.querySelector('[data-slot="list-search"]')
+            const btn = root?.querySelector<HTMLElement>(':scope > [data-slot="filter-button"]')
+            const inp = root?.querySelector<HTMLElement>('[data-slot="list-search-input"]')
+            if (!btn || !inp) return null
+            const b = btn.getBoundingClientRect()
+            const i = inp.getBoundingClientRect()
+            const bs = getComputedStyle(btn)
+            const is = getComputedStyle(inp)
+            return {
+              height: [b.height, i.height],
+              seam: i.left - b.right,
+              btnRadius: [bs.borderTopRightRadius, bs.borderBottomRightRadius],
+              inpRadius: [is.borderTopLeftRadius, is.borderBottomLeftRadius],
+            }
+          })
+          expect(joined, 'the filter button sits inside the search field').not.toBeNull()
+          expect(joined!.height[0]).toBe(joined!.height[1])
+          expect(joined!.btnRadius).toEqual(['0px', '0px'])
+          expect(joined!.inpRadius).toEqual(['0px', '0px'])
+          // One shared border line: the field overlaps the button by its 1px border.
+          expect(joined!.seam).toBe(-1)
+        })
+      }
     }
   })
 }

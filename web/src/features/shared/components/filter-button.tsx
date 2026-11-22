@@ -5,6 +5,7 @@ import { ListFilter, ListFilterPlus, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { ResponsivePopover } from './responsive-popover'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
@@ -74,7 +75,6 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
             size="icon"
             aria-label={accessibleName}
             aria-pressed={panelOpen}
-            data-slot="filter-button"
             data-active={active ? '' : undefined}
             className={cn(
               'relative shrink-0',
@@ -84,6 +84,11 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
               className
             )}
             {...props}
+            // After the spread: a Radix trigger (`PopoverTrigger asChild`)
+            // hands this button its own data-slot, which would hide it from
+            // the join to the search field (ListSearch), the `f` shortcut and
+            // the tests, all of which find the one trigger by this slot.
+            data-slot="filter-button"
           >
             <ListFilter className="size-4" aria-hidden="true" />
             {active && (
@@ -250,4 +255,47 @@ export function useAddFilterShortcut(onOpen: () => void, enabled = true) {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [enabled])
+}
+
+export interface FilterPopoverProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Filters applied: the count in the trigger. */
+  activeCount: number
+  /** The popover's name; the sheet title on a phone. */
+  title: string
+  /** The filter fields (a popover from `md`, a bottom sheet on a phone). */
+  children: React.ReactNode
+  /** Classes of the desktop popover (its width). */
+  className?: string
+  'data-testid'?: string
+}
+
+/**
+ * The trigger of a list whose filters are a few fields rather than a facet
+ * panel: the one `FilterButton`, joined to the search by `ListToolbar` (pass it
+ * as the toolbar's `filter`), opening the fields in a popover or, on a phone, a
+ * bottom sheet. A page never draws the button itself.
+ */
+export function FilterPopover({
+  open,
+  onOpenChange,
+  activeCount,
+  title,
+  children,
+  className,
+  'data-testid': testId,
+}: FilterPopoverProps) {
+  return (
+    <ResponsivePopover
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      align="start"
+      className={className}
+      trigger={<FilterButton activeCount={activeCount} data-testid={testId} />}
+    >
+      {children}
+    </ResponsivePopover>
+  )
 }

@@ -1,10 +1,9 @@
 'use client'
 
-import type { ReactNode } from 'react'
 import { Flame, ListChecks, Wrench } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
-import { PageHeader } from '@/features/shared/components/page-header'
+import { DetailPageHeader } from '@/features/shared/components/detail'
 import { Button } from '@/components/ui/button'
 import { DisabledReason } from '@/components/ui/disabled-reason'
 import { KevBadge } from '@/components/ui/kev-badge'
@@ -18,6 +17,7 @@ import type { CveExposure } from '../../types/exposure'
 import { cveFindingsHref } from '../../lib/vuln-page'
 import { formatDateOnly } from '@/lib/date-only'
 import { formatNumber } from '@/lib/app-locale'
+import { useVulnActionEntries, type VulnActionEntriesProps } from '../actions/vuln-actions-menu'
 
 export interface VulnHeaderProps {
   cve: string
@@ -27,16 +27,18 @@ export interface VulnHeaderProps {
   /** Opens "Create remediation task"; undefined when the caller may not create one. */
   onCreateTask?: () => void
   /**
-   * More actions (exception, retest, export), after "Create remediation
-   * task"; given why the actions on open findings are off, if they are.
+   * More actions (exception, retest, export); the header adds why the
+   * actions on open findings are off, if they are.
    */
-  actions?: (blocker: string | undefined) => ReactNode
+  actions: Omit<VulnActionEntriesProps, 'blocker'>
 }
 
 /**
  * The page header: title, the CVE and its aliases with provenance, the
  * signal chips (KEV, emerging threat, worst priority, fix available) and the
- * actions. anatomy-ok: inside a PageStack (vulnerability-page.tsx renders it first). Every action works inside the caller's scope.
+ * actions, on the shared detail kit: "Create remediation task" is the main
+ * action, "Open n findings" the outline one, the rest in More. Every action
+ * works inside the caller's scope.
  */
 export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: VulnHeaderProps) {
   const { t, locale } = useTranslation()
@@ -56,13 +58,15 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: 
           : undefined
   // The other actions work on open findings, in a task or not.
   const openBlocker = findings.total === 0 || findings.active === 0 ? createTaskBlocker : undefined
+  const menu = useVulnActionEntries({ ...actions, blocker: openBlocker })
 
   return (
-    <PageHeader
+    <DetailPageHeader
       title={title ?? cve}
-      description={
+      parent={{ href: '/vulnerabilities', label: t('vulnPage.header.parent', 'Vulnerabilities') }}
+      chips={
         <ul
-          className="mt-1 flex flex-wrap items-center gap-1.5"
+          className="flex min-w-0 flex-wrap items-center gap-1.5"
           aria-label={t('vulnPage.header.identifiers', 'Identifiers and signals')}
         >
           <li>
@@ -135,9 +139,8 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: 
           )}
         </ul>
       }
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        {findings.total > 0 && (
+      secondary={
+        findings.total > 0 ? (
           <Button asChild variant="outline" size="sm">
             <Link href={cveFindingsHref(cve, { state: 'all' })}>
               <ListChecks className="me-1.5 h-4 w-4" aria-hidden />
@@ -146,16 +149,18 @@ export function VulnHeader({ cve, vuln, exposure, fix, onCreateTask, actions }: 
               })}
             </Link>
           </Button>
-        )}
-        {onCreateTask && (
+        ) : undefined
+      }
+      primary={
+        onCreateTask ? (
           <DisabledReason reason={createTaskBlocker}>
             <Button size="sm" onClick={onCreateTask} disabled={createTaskBlocker !== undefined}>
               {t('vulnPage.header.createTask', 'Create remediation task')}
             </Button>
           </DisabledReason>
-        )}
-        {actions?.(openBlocker)}
-      </div>
-    </PageHeader>
+        ) : undefined
+      }
+      menu={menu}
+    />
   )
 }
