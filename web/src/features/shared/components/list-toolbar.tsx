@@ -145,14 +145,18 @@ function useListShortcuts(ref: React.RefObject<HTMLDivElement | null>) {
  * side panel open), back to false once the toolbar is wider than where it
  * folded (so the two states never flip back and forth). Read by the base
  * chips' keys and the view controls' labels through `data-fold`.
+ *
+ * Folded and still wrapping (two selects with long values at a tablet width,
+ * the sidebar open) is the second level, `overflow`: the tokens go behind the
+ * Filters button, as on a phone, so no filter sits on a row of its own.
  */
 function useToolbarFold(
   toolbarRef: React.RefObject<HTMLDivElement | null>,
   startRef: React.RefObject<HTMLDivElement | null>,
   endRef: React.RefObject<HTMLDivElement | null>
 ) {
-  const [fold, setFold] = React.useState(false)
-  const foldedAt = React.useRef(0)
+  const [level, setLevel] = React.useState(0)
+  const foldedAt = React.useRef([0, 0, 0])
   React.useLayoutEffect(() => {
     const bar = toolbarRef.current
     if (!bar || typeof ResizeObserver === 'undefined') return
@@ -160,11 +164,9 @@ function useToolbarFold(
       const width = bar.getBoundingClientRect().width
       // A phone lends the toolbar's controls to its region (no box): two
       // fixed lines there, nothing to fold.
-      if (width === 0) return setFold(false)
-      if (fold) {
-        if (width > foldedAt.current + 24) setFold(false)
-        return
-      }
+      if (width === 0) return setLevel(0)
+      if (level > 0 && width > foldedAt.current[level] + 24) return setLevel(level - 1)
+      if (level > 1) return
       const start = startRef.current
       const items = start
         ? Array.from(
@@ -179,16 +181,16 @@ function useToolbarFold(
         (tops.length > 1 && Math.max(...tops) - Math.min(...tops) > 4) ||
         (endTop !== undefined && tops.length > 0 && endTop - Math.min(...tops) > 4)
       if (wrapped) {
-        foldedAt.current = width
-        setFold(true)
+        foldedAt.current[level + 1] = width
+        setLevel(level + 1)
       }
     }
     check()
     const ro = new ResizeObserver(check)
     ro.observe(bar)
     return () => ro.disconnect()
-  }, [toolbarRef, startRef, endRef, fold])
-  return fold
+  }, [toolbarRef, startRef, endRef, level])
+  return level
 }
 
 /**
@@ -350,10 +352,16 @@ export function ListToolbar({
     [filterToggle, start, ownerId, onOpenFacetSheet]
   )
   const tokensRef = React.useRef<HTMLDivElement>(null)
+  const startRef = React.useRef<HTMLDivElement>(null)
+  const endRef = React.useRef<HTMLDivElement>(null)
+  const ref = React.useRef<HTMLDivElement>(null)
+  const foldLevel = useToolbarFold(ref, startRef, endRef)
+  const fold = foldLevel > 0
+  const overflow = phoneSheet && foldLevel > 1
   const filtering = useFilteringCount(tokensRef, phoneSheet)
   const phoneFilter = phoneSheet ? (
     <FilterButton
-      className="@md/toolbar:hidden"
+      className={overflow ? undefined : '@md/toolbar:hidden'}
       data-phone-filters=""
       onClick={() => setSheetOpen(true)}
       aria-haspopup="dialog"
@@ -361,7 +369,6 @@ export function ListToolbar({
     />
   ) : null
   const filter = toggle ? <FilterPanelToggle {...toggle} /> : (filterProp ?? phoneFilter)
-  const ref = React.useRef<HTMLDivElement>(null)
   useListShortcuts(ref)
 
   // The status row of the query field: the editor draws its problem line
@@ -381,9 +388,6 @@ export function ListToolbar({
   ) : (
     filter
   )
-  const startRef = React.useRef<HTMLDivElement>(null)
-  const endRef = React.useRef<HTMLDivElement>(null)
-  const fold = useToolbarFold(ref, startRef, endRef)
   const regionRef = React.useRef<HTMLDivElement>(null)
   useEmptyGroups(regionRef, [tokensRef, endRef])
   // One alignment in both modes (centre: controls of a few px more, such as
@@ -448,6 +452,8 @@ export function ListToolbar({
                 (phoneSheet || toggle) && PHONE.tokensInSheet,
                 // Query mode: the text owns the filter, the phone draws no token.
                 top && '@max-md/toolbar:hidden',
+                // Overflow: the tokens are in the Filters sheet, as on a phone.
+                overflow && 'hidden',
                 EMPTY_GROUP_CLASS
               )}
             >
@@ -512,6 +518,7 @@ export function ListToolbar({
       ref={regionRef}
       data-slot="list-toolbar-region"
       data-fold={fold ? 'true' : undefined}
+      data-overflow={overflow ? 'true' : undefined}
       className={cn('group/toolbar @container/toolbar min-w-0', className)}
     >
       <div
