@@ -467,8 +467,8 @@ const SCROLL_FRAME_STYLE: React.CSSProperties = {
 /** The narrowest a row's name column may get: other columns scroll instead. */
 const NAME_COLUMN_FLOOR = 'min-w-[min(12rem,36vw)]'
 /**
- * A name column with a floor (`meta.minWidth`) is sized by the floor and the
- * room left, never by its text: a long title is cut by its ellipsis instead of
+ * A name column is sized by its floor (`NAME_COLUMN_FLOOR`, or `meta.minWidth`)
+ * and the room left, never by its text: a long title is cut by its ellipsis instead of
  * widening the table past its frame (a one-line, truncating cell still asks
  * for its whole text as its narrowest width).
  */
@@ -1613,7 +1613,7 @@ export function DataTable<TData, TValue>({
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
-        layout.kind === 'name' && layout.style?.minWidth !== undefined && NAME_SIZED_BY_FLOOR,
+        layout.kind === 'name' && NAME_SIZED_BY_FLOOR,
         // A date is one line: it never breaks between day, month and year.
         (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
         layout.kind === 'datetime-recent' && 'overflow-hidden text-ellipsis',
