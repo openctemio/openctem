@@ -376,16 +376,14 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       )}
 
       <section className="space-y-3 rounded-lg border p-4" aria-labelledby="campaign-progress">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="campaign-progress" className="text-sm font-semibold">
-            {t('remediationCampaigns.detail.progress')}
-          </h2>
+        <h2 className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm font-semibold">
+          <span id="campaign-progress">{t('remediationCampaigns.detail.progress')}</span>
           {s.tasks === 0 ? (
-            <span className="text-muted-foreground text-sm">
+            <span className="text-muted-foreground text-sm font-normal">
               {t('remediationCampaigns.detail.noProgress')}
             </span>
           ) : (
-            <span className="text-sm">
+            <span className="text-sm font-normal">
               {s.findings > 0 &&
                 t('remediationCampaigns.detail.findingsLine', undefined, {
                   closed: s.closed_findings,
@@ -411,7 +409,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
               )}
             </span>
           )}
-        </div>
+        </h2>
         {s.tasks > 0 && s.findings > 0 && (
           <div
             role="progressbar"
