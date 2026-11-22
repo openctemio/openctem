@@ -8,6 +8,13 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.24.1 (2026-11-22)
+
+### Fixed: the Alpine-based images no longer carry OpenSSL twice
+
+- The migrations, seed, gateway, web, console and all-in-one images upgrade OpenSSL (3.5.9-r1) in a separate build stage and copy the patched root filesystem into one layer. The previous `apk upgrade` layer kept the old OpenSSL in the base layer beside the new one, which grew every image and pushed the migrations image over its size budget, so no v0.24.0 images were published.
+- Docs: none (image build change only; no setting, API or behaviour changes)
+
 ## v0.23.0 (2026-11-15)
 
 ### Upgrade notes
