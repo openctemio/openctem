@@ -414,6 +414,7 @@ export function DetailCopyId({
       type="button"
       // The name contains the visible ID (WCAG 2.5.3, label in name), so a
       // speech user can say what they see.
+      title={id}
       aria-label={`${ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`} ${id}`}
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
