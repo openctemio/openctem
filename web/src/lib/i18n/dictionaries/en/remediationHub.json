@@ -102,6 +102,8 @@
   "remediationHub.detail.someone": "A member",
   "remediationHub.detail.split": "Split",
   "remediationHub.detail.timeline": "Timeline",
+  "remediationHub.detail.timelineAll": "Show all events ({n})",
+  "remediationHub.detail.timelineLess": "Show fewer events",
   "remediationHub.detail.verified": "Verified fixed",
   "remediationHub.dismiss.description": "Why is \"{title}\" not right?",
   "remediationHub.dismiss.memory": "It comes back only if it changes a lot: many more findings, double the risk, or a P0/KEV finding.",

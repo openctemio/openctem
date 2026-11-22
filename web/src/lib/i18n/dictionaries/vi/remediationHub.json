@@ -102,6 +102,8 @@
   "remediationHub.detail.someone": "Một thành viên",
   "remediationHub.detail.split": "Tách",
   "remediationHub.detail.timeline": "Dòng thời gian",
+  "remediationHub.detail.timelineAll": "Xem tất cả sự kiện ({n})",
+  "remediationHub.detail.timelineLess": "Thu gọn",
   "remediationHub.detail.verified": "Đã xác minh đã sửa",
   "remediationHub.dismiss.description": "Vì sao \"{title}\" không phù hợp?",
   "remediationHub.dismiss.memory": "Đề xuất chỉ quay lại khi thay đổi nhiều: nhiều phát hiện hơn hẳn, rủi ro gấp đôi, hoặc có phát hiện P0/KEV.",

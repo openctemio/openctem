@@ -10,6 +10,7 @@
 
 import { useBreadcrumbTitle } from '@/components/layout'
 import { useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
@@ -39,7 +40,12 @@ import { ErrorState } from '@/features/shared/components/error-state'
 import { StatusChip } from '@/features/shared/components/status-chip'
 import { useTasks, useRevalidateHub } from '@/features/remediation-hub/api/use-remediation-hub'
 import { useOwnerNames } from '@/features/remediation-hub/api/use-owner-names'
-import { TaskCard } from '@/features/remediation-hub/components/tasks-view'
+import { DataTable, RowNameLink } from '@/features/shared'
+import {
+  DeadlinePill,
+  TaskProgressCell,
+  TaskStatePill,
+} from '@/features/remediation-hub/components/task-bits'
 import type { RemediationTask } from '@/features/remediation-hub/api/types'
 import {
   type RemediationCampaign,
@@ -141,6 +147,98 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
       .filter(Boolean)
       .join(', ') || t('remediationCampaigns.owner.unassigned')
 
+  const removeColumn: ColumnDef<RemediationTask> = {
+    id: 'actions',
+    header: '',
+    enableSorting: false,
+    meta: { kind: 'actions', label: t('components.col.actions', 'Actions') },
+    cell: ({ row }: { row: { original: RemediationTask } }) => (
+      <ActionMenu
+        title={row.original.title}
+        label={t('remediationCampaigns.detail.taskMenu', undefined, {
+          task: row.original.title,
+        })}
+        items={[
+          {
+            id: 'remove-task',
+            label: t('remediationCampaigns.actions.removeTask'),
+            icon: XCircle,
+            destructive: true,
+            onSelect: () => setRemoveTask(row.original),
+          },
+        ]}
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
+              task: row.original.title,
+            })}
+          >
+            <MoreHorizontal className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+    ),
+  }
+
+  const taskColumns: ColumnDef<RemediationTask>[] = [
+    {
+      id: 'title',
+      header: t('remediationHub.tasks.columns.task'),
+      enableSorting: false,
+      meta: { kind: 'name', label: t('remediationHub.tasks.columns.task') },
+      cell: ({ row }) => (
+        <RowNameLink
+          href={`/remediation/tasks/${encodeURIComponent(row.original.id)}`}
+          onOpen={() => router.push(`/remediation/tasks/${encodeURIComponent(row.original.id)}`)}
+          title={row.original.title}
+          className="block"
+        >
+          {row.original.title}
+        </RowNameLink>
+      ),
+    },
+    {
+      id: 'owner',
+      header: t('remediationHub.tasks.columns.owner'),
+      enableSorting: false,
+      meta: { kind: 'owner', label: t('remediationHub.tasks.columns.owner'), hideBelow: 780 },
+      cell: ({ row }) => (
+        <span className="block truncate text-sm" title={ownerOf(row.original)}>
+          {ownerOf(row.original)}
+        </span>
+      ),
+    },
+    {
+      id: 'state',
+      header: t('remediationHub.tasks.columns.state'),
+      enableSorting: false,
+      meta: { kind: 'status', label: t('remediationHub.tasks.columns.state') },
+      cell: ({ row }) => <TaskStatePill state={row.original.state} />,
+    },
+    {
+      id: 'progress',
+      header: t('remediationHub.tasks.columns.progress'),
+      enableSorting: false,
+      meta: {
+        kind: 'text',
+        label: t('remediationHub.tasks.columns.progress'),
+        width: 160,
+        hideBelow: 640,
+      },
+      cell: ({ row }) => <TaskProgressCell task={row.original} />,
+    },
+    {
+      id: 'deadline',
+      header: t('remediationHub.tasks.columns.deadline'),
+      enableSorting: false,
+      meta: { kind: 'due', label: t('remediationHub.tasks.columns.deadline') },
+      cell: ({ row }) => <DeadlinePill task={row.original} />,
+    },
+    ...(writable ? [removeColumn] : []),
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start gap-3">
@@ -166,32 +264,32 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
           )}
           <dl className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <div className="flex gap-1">
-              <dt>{t('remediationCampaigns.detail.owner')}</dt>
+              <dt className="after:content-[':']">{t('remediationCampaigns.detail.owner')}</dt>
               <dd className="text-foreground">
                 {ownerName ?? t('remediationCampaigns.owner.unassigned')}
               </dd>
             </div>
             {teamName && (
               <div className="flex gap-1">
-                <dt>{t('remediationCampaigns.detail.team')}</dt>
+                <dt className="after:content-[':']">{t('remediationCampaigns.detail.team')}</dt>
                 <dd className="text-foreground">{teamName}</dd>
               </div>
             )}
             <div className="flex gap-1">
-              <dt>{t('remediationCampaigns.detail.due')}</dt>
+              <dt className="after:content-[':']">{t('remediationCampaigns.detail.due')}</dt>
               <dd className="text-foreground">
                 <CampaignDue campaign={c} relative />
               </dd>
             </div>
             <div className="flex gap-1">
-              <dt>{t('remediationCampaigns.detail.priority')}</dt>
+              <dt className="after:content-[':']">{t('remediationCampaigns.detail.priority')}</dt>
               <dd className="text-foreground">
                 {t(`remediationCampaigns.priority.${c.priority}`)}
               </dd>
             </div>
             {c.ticket && (
               <div className="flex gap-1">
-                <dt>{t('remediationCampaigns.detail.jira')}</dt>
+                <dt className="after:content-[':']">{t('remediationCampaigns.detail.jira')}</dt>
                 <dd>
                   <SafeExternalLink
                     href={c.ticket.issue_url}
@@ -361,73 +459,21 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
             card
           />
         ) : (
-          <ul
-            className="grid gap-2 md:grid-cols-2"
-            aria-label={t('remediationCampaigns.detail.taskList')}
-          >
-            {tasks.map((task) => (
-              <li key={task.id} className="relative">
-                <TaskCard
-                  task={task}
-                  owner={ownerOf(task)}
-                  className={writable ? 'pe-12' : undefined}
-                />
-                {writable && (
-                  <div className="absolute end-2 top-2">
-                    <ActionMenu
-                      title={task.title}
-                      label={t('remediationCampaigns.detail.taskMenu', undefined, {
-                        task: task.title,
-                      })}
-                      items={[
-                        {
-                          id: 'remove-task',
-                          label: t('remediationCampaigns.actions.removeTask'),
-                          icon: XCircle,
-                          destructive: true,
-                          onSelect: () => setRemoveTask(task),
-                        },
-                      ]}
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
-                            task: task.title,
-                          })}
-                        >
-                          <MoreHorizontal className="size-4" aria-hidden />
-                        </Button>
-                      }
-                    />
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {pages > 1 && (
-          <div className="flex items-center justify-end gap-2 text-sm">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              {t('remediationCampaigns.pager.previous')}
-            </Button>
-            <span className="text-muted-foreground">
-              {t('remediationCampaigns.pager.page', undefined, { page, pages })}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={page >= pages}
-              onClick={() => setPage(page + 1)}
-            >
-              {t('remediationCampaigns.pager.next')}
-            </Button>
-          </div>
+          <DataTable
+            columns={taskColumns}
+            data={tasks}
+            caption={t('remediationCampaigns.detail.taskList')}
+            isLoading={tasksLoading}
+            manualPagination
+            showSearch={false}
+            rowCount={taskTotal}
+            pageCount={pages}
+            pagination={{ pageIndex: page - 1, pageSize: TASK_PAGE }}
+            onPaginationChange={(next) => setPage(next.pageIndex + 1)}
+            getRowId={(r) => r.id}
+            onRowClick={(r) => router.push(`/remediation/tasks/${encodeURIComponent(r.id)}`)}
+            paginationNoun={t('remediationHub.tasks.noun')}
+          />
         )}
       </section>
 
