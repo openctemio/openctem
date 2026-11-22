@@ -2405,6 +2405,7 @@
   "findings.triageMode.changedNote": "Người khác đã thay đổi phát hiện này sau khi hàng đợi được tải. Hãy kiểm tra trước khi quyết định.",
   "findings.triageMode.changedSkipped": "Người khác đã thay đổi (hiện là {status}). Đã bỏ qua.",
   "findings.triageMode.counts": "{decided} đã quyết định, {sent} đã gửi phê duyệt, {skipped} đã bỏ qua",
+  "findings.triageMode.countsShort": "{decided} đã xử lý, {sent} chờ duyệt, {skipped} bỏ qua",
   "findings.triageMode.decideHint": "Quyết định, mỗi thao tác một phím",
   "findings.triageMode.decision": "Quyết định",
   "findings.triageMode.doneBody": "{decided} đã quyết định, {sent} đã gửi phê duyệt, {skipped} đã bỏ qua.",

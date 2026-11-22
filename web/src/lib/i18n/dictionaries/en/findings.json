@@ -2405,6 +2405,7 @@
   "findings.triageMode.changedNote": "Someone else changed this finding after the queue loaded. Check it before you decide.",
   "findings.triageMode.changedSkipped": "Changed by someone else (now {status}). Skipped.",
   "findings.triageMode.counts": "{decided} decided, {sent} sent for approval, {skipped} skipped",
+  "findings.triageMode.countsShort": "{decided} decided, {sent} sent, {skipped} skipped",
   "findings.triageMode.decideHint": "Decide, one key per action",
   "findings.triageMode.decision": "Decision",
   "findings.triageMode.doneBody": "{decided} decided, {sent} sent for approval, {skipped} skipped.",

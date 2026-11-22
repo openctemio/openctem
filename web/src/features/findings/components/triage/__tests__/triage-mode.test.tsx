@@ -259,6 +259,9 @@ describe('TriageMode', () => {
     expect(writeFindingStatus).toHaveBeenCalledWith(id(1), { status: 'confirmed' }, 1)
     expect(screen.getByTestId('triage-position')).toHaveTextContent('2 of 3')
     expect(screen.getByTestId('triage-counts')).toHaveTextContent('1 decided')
+    expect(screen.getByTestId('triage-counts-short')).toHaveTextContent(
+      '1 decided, 0 sent, 0 skipped'
+    )
   })
 
   it('a stale write (412) reloads the finding and stays on it', async () => {
