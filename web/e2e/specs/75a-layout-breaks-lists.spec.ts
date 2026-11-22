@@ -1,4 +1,4 @@
-import { layoutRoutes } from '../helpers/layout-breaks'
+import { joinedFilterControl, layoutRoutes } from '../helpers/layout-breaks'
 
 /**
  * Layout breaks on the lists and pages with phone cards, sheets and long
@@ -47,3 +47,5 @@ layoutRoutes(
   ],
   { sweepOwner: true }
 )
+
+joinedFilterControl({ tag: ['@phone', '@shell'] })
