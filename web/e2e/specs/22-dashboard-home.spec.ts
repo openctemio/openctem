@@ -91,7 +91,7 @@ test(
 )
 
 test(
-  'a new user lands on the exposure flow and its CTEM stages',
+  'a new user lands on the key figures and the CTEM stages',
   { tag: ['@dashboard', '@smoke'] },
   async ({ page }) => {
     test.setTimeout(240_000)
@@ -99,8 +99,8 @@ test(
     // personal copy of the CTEM template, computed in their own scope.
     await page.goto('/')
     await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-    // The five stages are part of the exposure flow at the top of the template.
-    const loop = page.getByRole('list', { name: 'CTEM stage health' })
+    // The five stages are the row under the key figures at the top of the template.
+    const loop = page.getByRole('list', { name: 'Stages' })
     // A new organization's first fact build runs in the background (the
     // maintainer's reconcile tick, up to a minute or two) and the widgets say
     // "No data yet" until it is done. Refresh now recomputes the figures from

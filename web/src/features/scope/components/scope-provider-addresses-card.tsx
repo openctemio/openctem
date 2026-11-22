@@ -36,9 +36,11 @@ import { scopeErrorMessage } from '../lib/scope-codes'
 /** Entries listed under "Show entries" before "and N more". */
 const SHOWN_ENTRIES = 50
 
-export function ScopeProviderAddressesCard() {
+export function ScopeProviderAddressesCard({ enabled = true }: { enabled?: boolean }) {
   const { t } = useTranslation()
-  const { data, mutate } = useScopeProviderAddresses()
+  // Read only while the scope has entries: with none, no entry can lie on a
+  // provider's shared addresses and the answer is always empty.
+  const { data, mutate } = useScopeProviderAddresses(enabled)
   const groups = (data?.groups ?? []).filter((g) => g.entry_count > 0 || g.confirmed.length > 0)
   if (groups.length === 0) return null
   const refresh = async () => {

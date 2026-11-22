@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RoleRiskBadge, RoleSummaryLine } from './role-risk'
 import { RoleTemplateUpdate } from './role-template-update'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleDisplayDescription, roleDisplayName } from '../lib/system-role'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -391,7 +392,7 @@ export function RoleDetailSheet({
         panel={activeTab}
         header={
           <DetailHeader
-            title={role.name}
+            title={roleDisplayName(t, role)}
             badges={
               <>
                 {role.is_system ? (
@@ -435,8 +436,8 @@ export function RoleDetailSheet({
       >
         {activeTab === 'permissions' && (
           <div className="space-y-5">
-            {role.description && (
-              <p className="text-sm text-muted-foreground">{role.description}</p>
+            {roleDisplayDescription(t, role) && (
+              <p className="text-sm text-muted-foreground">{roleDisplayDescription(t, role)}</p>
             )}
             {role.summary && (
               <div className="space-y-1">

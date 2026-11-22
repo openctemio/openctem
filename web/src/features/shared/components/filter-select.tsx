@@ -68,6 +68,8 @@ export interface FilterSelectProps<V extends string> {
    * width. Pass the whole set when `options` lists only some of it.
    */
   sizeLabels?: readonly string[]
+  /** The menu opened or closed: lets a page read what only the menu shows when it opens. */
+  onOpenChange?: (open: boolean) => void
   className?: string
 }
 
@@ -94,6 +96,7 @@ export function FilterSelect<V extends string>({
   clearable = true,
   foldLabel = false,
   sizeLabels,
+  onOpenChange,
   className,
 }: FilterSelectProps<V>) {
   const { t, locale } = useTranslation()
@@ -118,7 +121,7 @@ export function FilterSelect<V extends string>({
         className
       )}
     >
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={onOpenChange}>
         <DropdownMenuTrigger
           className={cn(
             FULL_BOX_HEIGHT,

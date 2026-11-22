@@ -20,21 +20,23 @@ import {
   ShieldAlert,
   TimerReset,
   Unplug,
-  X,
   type LucideIcon,
 } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  RelativeTime,
+  SeverityBadge,
+} from '@/features/shared'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -231,66 +233,79 @@ export function EASMChanges() {
         })
       : ''
 
+  const kindChips = kinds.map((k) => (
+    <RemovableFilterChip
+      key={k}
+      text={t('attackSurface.changes.chip.kind', 'Kind is {kind}', { kind: kindLabel(k) })}
+      onRemove={() => toggle(k)}
+      removeLabel={t('attackSurface.changes.chip.remove', 'Remove filter {filter}', {
+        filter: kindLabel(k),
+      })}
+    />
+  ))
+  const chips = explicit
+    ? [
+        <RemovableFilterChip
+          key="window"
+          text={t('attackSurface.changes.window', '{from} to {to}', {
+            from: fmt(from),
+            to: fmt(to),
+          })}
+          onRemove={clearWindow}
+          removeLabel={t('attackSurface.changes.clearWindow', 'Back to recent changes')}
+        />,
+        ...kindChips,
+      ]
+    : kindChips
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {explicit ? (
-          <div className="flex items-center gap-2 text-sm">
-            <span>
-              {t('attackSurface.changes.window', '{from} to {to}', {
-                from: fmt(from),
-                to: fmt(to),
-              })}
-            </span>
-            <Button variant="ghost" size="sm" onClick={clearWindow}>
-              <X className="me-1 h-4 w-4" aria-hidden />
-              {t('attackSurface.changes.clearWindow', 'Back to recent changes')}
-            </Button>
-          </div>
-        ) : (
-          <Select value={String(days)} onValueChange={setDays}>
-            <SelectTrigger
-              className="w-44"
-              aria-label={t('attackSurface.changes.windowLabel', 'Time window')}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CHANGE_WINDOWS.map((d) => (
-                <SelectItem key={d} value={String(d)}>
-                  {t('attackSurface.changes.lastDays', 'Last {count} days', { count: d })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
-      <div
-        role="group"
-        aria-label={t('attackSurface.changes.kindsLabel', 'Change kinds')}
-        className="flex flex-wrap gap-2"
-      >
-        {CHANGE_KINDS.map((k) => {
-          const active = kinds.includes(k)
-          const Icon = KIND_ICON[k]
-          return (
-            <Button
-              key={k}
-              type="button"
-              size="sm"
-              variant={active ? 'secondary' : 'outline'}
-              className={cn(active && 'ring-1 ring-ring')}
-              aria-pressed={active}
-              onClick={() => toggle(k)}
-            >
-              <Icon className="me-1 h-3.5 w-3.5" aria-hidden />
-              {kindLabel(k)}
-              <span className="ms-1 tabular-nums">{counts[k] ?? 0}</span>
-            </Button>
-          )
-        })}
-      </div>
+      <ListToolbar
+        start={
+          <>
+            {!explicit && (
+              <FilterSelect<string>
+                label={t('attackSurface.changes.windowLabel', 'Time window')}
+                value={String(days)}
+                clearable={false}
+                options={CHANGE_WINDOWS.map((d) => ({
+                  value: String(d),
+                  label: t('attackSurface.changes.lastDays', 'Last {count} days', { count: d }),
+                }))}
+                onChange={(v) => setDays(v || '7')}
+              />
+            )}
+            <FilterSelect<ChangeKind>
+              label={t('attackSurface.changes.kindsLabel', 'Change kinds')}
+              value=""
+              options={CHANGE_KINDS.map((k) => ({
+                value: k,
+                label: kindLabel(k),
+                count: counts[k] ?? 0,
+              }))}
+              onChange={(v) => v && toggle(v)}
+            />
+          </>
+        }
+        below={
+          chips.length > 0 ? (
+            <FilterChipsRow
+              label={t('attackSurface.changes.activeFilters', 'Active filters')}
+              chips={chips}
+            />
+          ) : undefined
+        }
+      />
+      <ListTitleRow
+        title={t('attackSurface.changes.viewAll', 'All changes')}
+        count={
+          <ListCount
+            total={total}
+            loading={isLoading && items.length === 0}
+            label={t('attackSurface.changes.count', '{count} changes', { count: total })}
+          />
+        }
+      />
 
       {error ? (
         <ErrorState

@@ -15,6 +15,8 @@ import { env } from '@/lib/env'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatDate } from '@/lib/app-locale'
+import { useMemberStats } from '@/features/organization/api/use-members'
+import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 
 /**
  * Organization › General › Danger zone: delete the organization.
@@ -130,8 +132,8 @@ export function DeleteOrganizationItem() {
           name: name ?? '',
         })}
         desc={t(
-          'confirm.org.deleteDesc',
-          'The organization is closed for every member now and deleted with all of its data after 14 days: assets, findings, scans, members, roles, settings and its audit log. An owner can cancel the deletion from the sign-in page until then. Member accounts are kept.'
+          'confirm.org.deleteUndo',
+          'An owner can cancel the deletion from the sign-in page for 14 days.'
         )}
         typeToConfirm={name}
         confirmText={
@@ -139,7 +141,57 @@ export function DeleteOrganizationItem() {
         }
         isLoading={busy}
         handleConfirm={handleDelete}
-      />
+      >
+        {open && <DeleteImpact tenantId={currentTenant.id} slug={currentTenant.slug} />}
+      </ConfirmDialog>
     </>
+  )
+}
+
+/**
+ * Who and what the deletion affects, from counts the server already returns
+ * (member stats, the dashboard summary); a count it does not return (or the
+ * caller may not read) is left out of the sentence, never guessed. Read only
+ * while the dialog is open.
+ */
+function DeleteImpact({ tenantId, slug }: { tenantId: string; slug: string }) {
+  const { t } = useTranslation()
+  const { stats: members } = useMemberStats(slug)
+  const { stats: dash, isLoading, error } = useDashboardStats(tenantId)
+  const known = !isLoading && !error
+  const people = members?.active_members
+  const assets = known ? dash?.assets?.total : undefined
+  const findings = known ? dash?.findings?.total : undefined
+  return (
+    <div
+      className="space-y-1.5 rounded-md border bg-muted/40 p-3 text-sm"
+      data-testid="delete-impact"
+    >
+      <p className="font-medium">{t('confirm.org.impactTitle', 'Who and what is affected')}</p>
+      <p>
+        {typeof people === 'number'
+          ? t(
+              'confirm.org.impactNowCount',
+              'Now: {count, plural, one {# member loses} other {# members lose}} access, sensors stop getting jobs, integrations stop syncing and API keys stop working.',
+              { count: people }
+            )
+          : t(
+              'confirm.org.impactNow',
+              'Now: every member loses access, sensors stop getting jobs, integrations stop syncing and API keys stop working.'
+            )}
+      </p>
+      <p>
+        {typeof assets === 'number' && typeof findings === 'number'
+          ? t(
+              'confirm.org.impactLaterCount',
+              'After 14 days: {assets} assets, {findings} findings, every scan, role and setting and the audit log are deleted. Member accounts are kept.',
+              { assets, findings }
+            )
+          : t(
+              'confirm.org.impactLater',
+              'After 14 days: every asset, finding, scan, role and setting and the audit log are deleted. Member accounts are kept.'
+            )}
+      </p>
+    </div>
   )
 }

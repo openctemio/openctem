@@ -55,6 +55,7 @@
   "securityOverview.passed.title": "Passed checks",
   "securityOverview.recheck": "Re-check",
   "securityOverview.review": "Review",
+  "securityOverview.reviewCount": "Review {count}",
   "securityOverview.reviewNamed": "Review: {name}",
   "securityOverview.score.aria": "Security score: {score} out of 100",
   "securityOverview.score.outOf": "/ 100",

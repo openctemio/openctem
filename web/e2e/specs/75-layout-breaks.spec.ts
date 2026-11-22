@@ -65,6 +65,11 @@ const CI_ROUTES = [
   '/findings/approvals',
   '/findings/ready-to-close',
   '/findings/imports',
+  '/exceptions',
+  '/exposures/vulnerabilities',
+  '/exposures/vulnerabilities?tab=catalog',
+  '/attack-surface/certificates',
+  '/attack-surface/changes',
   '/vulnerabilities',
   '/components',
   '/exposures',
@@ -78,6 +83,7 @@ const CI_ROUTES = [
   '/attack-surface/exposures',
   '/attack-surface/technologies',
   '/remediation/tasks',
+  '/remediation/campaigns',
   '/scope',
   '/settings/general',
   '/settings/members',
@@ -234,6 +240,181 @@ function toolSources(scen: Scenario) {
   ]
   return { sources: sources.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : sources.length) }
 }
+/** Exception rules with long names, every state and type (the API returns the whole list). */
+function suppressions(scen: Scenario) {
+  const day = 24 * 60 * 60 * 1000
+  const base = {
+    tenant_id: 't',
+    requested_by: '00000000-0000-4000-8000-000000000001',
+    requested_at: new Date(Date.now() - 3 * day).toISOString(),
+    created_at: '2026-10-01T08:00:00Z',
+    updated_at: '2026-10-01T08:00:00Z',
+  }
+  const rules = [
+    {
+      id: 'sup-1',
+      name: 'Payments legacy TLS until the migration of the card gateway is finished',
+      suppression_type: 'accepted_risk',
+      rule_id: 'tls-weak-cipher-suites-accepted-on-legacy-gateways',
+      tool_name: 'nuclei',
+      status: 'pending',
+      expires_at: new Date(Date.now() + 40 * day).toISOString(),
+    },
+    {
+      id: 'sup-2',
+      name: 'Test fixtures in example/payments',
+      suppression_type: 'false_positive',
+      rule_id: 'generic-api-key',
+      path_pattern: 'test/fixtures/**',
+      status: 'approved',
+      approved_by: '00000000-0000-4000-8000-000000000002',
+      expires_at: new Date(Date.now() + 5 * day).toISOString(),
+    },
+    {
+      id: 'sup-3',
+      name: 'Kiosk Windows 7 build',
+      suppression_type: 'wont_fix',
+      tool_name: 'network-scanner',
+      status: 'expired',
+      expires_at: '2026-11-01T00:00:00Z',
+    },
+    {
+      id: 'sup-4',
+      name: 'Old marketing site on www.example.com',
+      suppression_type: 'false_positive',
+      path_pattern: 'legacy/**',
+      status: 'rejected',
+      rejected_by: '00000000-0000-4000-8000-000000000002',
+      rejection_reason: 'Not funded',
+    },
+  ].map((r) => ({ ...base, ...r }))
+  const data = rules.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : rules.length)
+  return { data, total: data.length }
+}
+
+/** Import and run receipts with long tool names and big counts. */
+function receipts(scen: Scenario) {
+  const counts = (k: number) => ({
+    created: 12 * k,
+    updated: 1280 * k,
+    reactivated: 3,
+    closed: 40 * k,
+    skipped: 9,
+    failed: 1,
+    suppressed: 4,
+  })
+  const kinds = ['upload', 'scan_run', 'command', 'ci_run', 'connector', 'sensor', 'platform']
+  const all = Array.from({ length: 25 }, (_, i) => ({
+    id: `rcpt-${i}`,
+    status: ['completed', 'processing', 'failed', 'queued'][i % 4],
+    source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
+    tool: i % 5 === 4 ? '' : ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
+    received: 18402 - i,
+    counts: counts(i + 1),
+    started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+  }))
+  const data = all.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : all.length)
+  const total = scen === 'rich' ? 380 : data.length
+  return {
+    data,
+    total,
+    page: 1,
+    per_page: 50,
+    total_pages: Math.max(1, Math.ceil(total / 50)),
+    totals: {
+      receipts: total,
+      received: 18402,
+      created: 611,
+      updated: 15002,
+      reactivated: 12,
+      closed: 388,
+      skipped: 300,
+      failed: 57,
+      suppressed: 40,
+    },
+  }
+}
+
+/** Certificates with long subjects, a wildcard, a self-signed one and every status. */
+function certificates(scen: Scenario) {
+  const day = 86_400_000
+  const rows = Array.from({ length: 25 }, (_, i) => {
+    const status = (['expired', 'expiring_soon', 'ok', 'ok', 'unknown'] as const)[i % 5]
+    const days = status === 'expired' ? -(i + 3) : status === 'expiring_soon' ? i + 2 : 90 + i
+    return {
+      asset_id: `00000000-0000-4000-8000-0000000c${String(i).padStart(4, '0')}`,
+      name: `cert-${i}`,
+      subject_cn:
+        i % 4 === 0
+          ? `payments-gateway-eu-west-production-cluster-${i}.internal.example.com`
+          : i % 4 === 1
+            ? '*.example.com'
+            : `www${i}.example.com`,
+      issuer_cn:
+        i % 3 === 0 ? 'Example Trust Services Issuing CA 2 (Extended Validation)' : 'Example CA R3',
+      issuer_org: i % 3 === 0 ? 'Example Trust Services Limited' : 'Example Certificate Authority',
+      fingerprint_sha256: `${'ab12cd34'.repeat(8).slice(0, 63)}${i % 10}`,
+      not_before: new Date(Date.now() - (300 - days) * day).toISOString(),
+      not_after: new Date(Date.now() + days * day).toISOString(),
+      status,
+      days_to_expiry: days,
+      is_self_signed: i % 7 === 3,
+      is_wildcard: i % 4 === 1,
+      first_seen: new Date(Date.now() - (i + 1) * 5 * 3600_000).toISOString(),
+      last_seen: new Date(Date.now() - i * 3600_000).toISOString(),
+    }
+  })
+  const data = rows.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : rows.length)
+  return { data, total: scen === 'rich' ? 312 : data.length, page: 1, per_page: 20 }
+}
+function certificateStats(scen: Scenario) {
+  if (scen === 'empty') return { total: 0, expired: 0, expiring_soon: 0, ok: 0, unknown: 0 }
+  return { total: 312, expired: 41, expiring_soon: 18, ok: 240, unknown: 13 }
+}
+
+/** Attack surface changes of every kind, with long asset names and values. */
+function easmChanges(scen: Scenario) {
+  const kinds = [
+    'dns_dangling',
+    'exposure_new',
+    'port_opened',
+    'host_added',
+    'cert_expiring',
+    'cert_changed',
+    'dns_changed',
+    'tech_changed',
+    'port_closed',
+    'host_removed',
+    'future_kind',
+  ]
+  const items = Array.from({ length: 24 }, (_, i) => ({
+    id: `chg-${i}`,
+    kind: kinds[i % kinds.length],
+    asset_id: i % 6 === 5 ? '' : `00000000-0000-4000-8000-0000000d${String(i).padStart(4, '0')}`,
+    asset_name:
+      i % 6 === 5
+        ? ''
+        : i % 3 === 0
+          ? `customer-portal-staging-eu-central-edge-${i}.internal.example.com`
+          : `host${i}.example.com`,
+    severity: i % 4 === 1 ? 'high' : undefined,
+    exposure_id: i % 4 === 1 ? `exp-${i}` : undefined,
+    new: i % 4 === 1 ? 'Exposed administration interface without authentication' : undefined,
+    added: i % 5 === 2 ? ['443/tcp', '8443/tcp', '9200/tcp'] : [],
+    removed: i % 5 === 3 ? ['80/tcp'] : [],
+    at: new Date(Date.now() - (i + 1) * 2 * 3600_000).toISOString(),
+  }))
+  const data = items.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : items.length)
+  return {
+    items: data,
+    total: data.length,
+    counts: Object.fromEntries(
+      kinds.slice(0, 10).map((k, i) => [k, scen === 'empty' ? 0 : 3 + i * 11])
+    ),
+    next_cursor: scen === 'rich' ? 'cursor-2' : undefined,
+  }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
@@ -246,6 +427,13 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
     },
   ],
   '/settings/scanning/tool-sources': [{ url: '**/api/v1/tool-sources', body: toolSources }],
+  '/exceptions': [{ url: '**/api/v1/suppressions', body: suppressions }],
+  '/findings/imports': [{ url: '**/api/v1/findings/imports?*', body: receipts }],
+  '/attack-surface/certificates': [
+    { url: '**/api/v1/attack-surface/certificates?*', body: certificates },
+    { url: '**/api/v1/attack-surface/certificates/stats*', body: certificateStats },
+  ],
+  '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
 }
 
 /**
@@ -258,26 +446,22 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
  */
 const LOPSIDED_DEBT = new Set([
   '/findings', // one row: a title row line holds only its end controls
-  '/findings/imports',
   '/scans/runs',
   '/attack-surface/technologies',
-  '/remediation/tasks', // task cards stop at about half their width (seen once the seed has tasks)
 ])
 
 /**
- * Pages whose in-page tab strip is cut at 390 px (/sensors "Enrollment
- * tokens", /my-work, /settings/members) or whose table action buttons are cut
- * by the table scroller's edge at 1024 px (/exposures "Actions for ...",
- * /sensors "Jobs", /settings/audit-log "Result"), found when the sideways
- * strip and scroller checks were added (owner report 2026-11-20). Only the
- * `clipped` lines about a sideways strip or a scroller's edge are skipped for
- * them. Each moves onto the phone tab rule or pins its actions and leaves this
+ * Pages whose table action buttons are cut by the table scroller's edge at
+ * 1024 px (/exposures "Actions for ...", /sensors "Jobs", /settings/audit-log
+ * "Result"), found when the sideways strip and scroller checks were added
+ * (owner report 2026-11-20). Only the `clipped` lines about a sideways strip or
+ * a scroller's edge are skipped for them. Each pins its actions and leaves this
  * list; it only shrinks, and a route not on it fails on its first such line.
+ * A page tab strip is not debt: the shared strip scrolls with an edge fade
+ * (owner 2026-11-21).
  */
 const SIDEWAYS_DEBT = new Set([
-  '/sensors',
-  '/my-work',
-  '/settings/members',
+  '/sensors', // its Jobs table only; the tab strip is the shared one
   '/exposures',
   '/settings/audit-log',
 ])

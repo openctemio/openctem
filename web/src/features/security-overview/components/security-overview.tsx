@@ -16,10 +16,9 @@ import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { HealthStatus } from '@/components/ui/health-status'
-import { Progress } from '@/components/ui/progress'
 import { TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsBlock, SettingsPage, SettingsRow, SettingsSection } from '@/features/shared'
+import { MetricStrip, SettingsPage, SettingsRow, SettingsSection } from '@/features/shared'
 import { formatRelative } from '@/lib/format-date'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
@@ -67,7 +66,9 @@ function CheckRow({ check }: { check: OverviewCheck }) {
           className="text-dense font-medium text-signal-text"
           aria-label={t('securityOverview.reviewNamed', 'Review: {name}', { name: title })}
         >
-          {t('securityOverview.review', 'Review')}
+          {check.count && check.count > 0
+            ? t('securityOverview.reviewCount', 'Review {count}', { count: check.count })
+            : t('securityOverview.review', 'Review')}
         </TextLink>
       )}
     </SettingsRow>
@@ -93,6 +94,10 @@ export function SecurityOverview() {
     'securityOverview.description',
     'How well this organization is protected, and what to fix first.'
   )
+  const firstGroupOf = (status: CheckStatus) => {
+    const hit = open.find(([, checks]) => checks.some((c) => c.status === status))
+    return hit ? `#security-group-${hit[0]}` : '#security-score'
+  }
   const recheck = (
     <Button
       variant="outline"
@@ -124,49 +129,54 @@ export function SecurityOverview() {
 
   return (
     <SettingsPage title={title} description={description} actions={recheck}>
-      <SettingsSection
-        framed
+      <section
         id="security-score"
-        title={t('securityOverview.score.title', 'Security score')}
-        meta={
-          checked
-            ? t('securityOverview.checkedAgo', 'Checked {when}', { when: checked })
-            : undefined
-        }
+        aria-label={t('securityOverview.score.title', 'Security score')}
+        className="space-y-2"
       >
-        <SettingsBlock>
-          <div className="flex items-baseline gap-2">
-            <span className="text-page font-semibold tabular-nums" data-testid="security-score">
-              {score}
-            </span>
-            <span className="text-dense text-muted-foreground">
-              {t('securityOverview.score.outOf', '/ 100')}
-            </span>
-          </div>
-          <Progress
-            value={score}
-            aria-label={t('securityOverview.score.aria', 'Security score: {score} out of 100', {
-              score,
-            })}
-          />
-          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-dense">
-            {(
-              [
-                ['risk', t('securityOverview.counts.risk', 'Checks at risk')],
-                ['warn', t('securityOverview.counts.warn', 'Checks with a warning')],
-                ['pass', t('securityOverview.counts.pass', 'Checks passed')],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key} className="flex items-center gap-1.5">
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="font-medium tabular-nums" data-testid={`count-${key}`}>
-                  {counts[key] ?? 0}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </SettingsBlock>
-      </SettingsSection>
+        {checked && (
+          <p className="text-dense text-muted-foreground">
+            {t('securityOverview.checkedAgo', 'Checked {when}', { when: checked })}
+          </p>
+        )}
+        <MetricStrip
+          items={[
+            {
+              key: 'score',
+              href:
+                firstGroupOf('risk') !== '#security-score'
+                  ? firstGroupOf('risk')
+                  : firstGroupOf('warn'),
+              label: t('securityOverview.score.title', 'Security score'),
+              value: <span data-testid="security-score">{score}</span>,
+              hint: t('securityOverview.score.outOf', '/ 100'),
+              description: t('securityOverview.score.aria', 'Security score: {score} out of 100', {
+                score,
+              }),
+            },
+            {
+              key: 'risk',
+              href: firstGroupOf('risk'),
+              label: t('securityOverview.counts.risk', 'Checks at risk'),
+              value: <span data-testid="count-risk">{counts.risk ?? 0}</span>,
+              tone: (counts.risk ?? 0) > 0 ? 'danger' : 'default',
+            },
+            {
+              key: 'warn',
+              href: firstGroupOf('warn'),
+              label: t('securityOverview.counts.warn', 'Checks with a warning'),
+              value: <span data-testid="count-warn">{counts.warn ?? 0}</span>,
+              tone: (counts.warn ?? 0) > 0 ? 'warning' : 'default',
+            },
+            {
+              key: 'pass',
+              href: passed.length > 0 ? '#security-passed' : '#security-score',
+              label: t('securityOverview.counts.pass', 'Checks passed'),
+              value: <span data-testid="count-pass">{counts.pass ?? 0}</span>,
+            },
+          ]}
+        />
+      </section>
 
       {open.map(([group, checks]) => (
         <SettingsSection

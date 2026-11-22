@@ -11,14 +11,17 @@ const setWatching = vi.fn()
 const addWatchers = vi.fn()
 const removeWatcher = vi.fn()
 let participants: Participants | undefined
+const reads: boolean[] = []
 vi.mock('../../../api/use-participants', async () => {
   const actual = await vi.importActual<typeof import('../../../api/use-participants')>(
     '../../../api/use-participants'
   )
   return {
     ...actual,
-    useParticipants: () => ({
-      participants,
+    useParticipants: (_k: unknown, _i: unknown, o?: { enabled?: boolean }) => ({
+      participants: (reads.push(o?.enabled !== false), o?.enabled === false)
+        ? undefined
+        : participants,
       isLoading: false,
       busy: false,
       setWatching,
@@ -106,6 +109,7 @@ beforeEach(() => {
   toastSuccess.mockReset()
   picker.onOpenChange.mockReset()
   participants = base
+  reads.length = 0
 })
 
 describe('WatchersControl rail rows', () => {
@@ -237,6 +241,22 @@ describe('Manage watchers sheet', () => {
     const sheet = await openSheet()
     await userEvent.click(within(sheet).getByRole('button', { name: 'Watch' }))
     expect(setWatching).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('a deferred control', () => {
+  it('reads nothing until it is opened, then shows the list in the sheet', async () => {
+    renderControl({ deferred: true })
+    expect(reads.every((r) => r === false)).toBe(true)
+    expect(screen.getByText('Watchers')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /manage watchers/i }))
+    expect(reads.at(-1)).toBe(true)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('reads at once when it is not deferred', () => {
+    renderControl()
+    expect(reads.every((r) => r === true)).toBe(true)
   })
 })
 

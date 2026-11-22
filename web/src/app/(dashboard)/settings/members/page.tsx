@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleDisplayName } from '@/features/access-control/lib/system-role'
 import { formatCalendarDate } from '@/lib/format-metric'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
 import { useJoinRequests } from '@/features/organization/api/use-domain-signup'
@@ -205,19 +206,9 @@ const formatLastActive = (t: TFn, locale: string, lastLoginAt?: string) => {
 
 // Role chips are neutral: a role is a label, not a state, so it gets no colour of
 // its own (the old per-role palette read as severity and broke in dark mode).
-/** The built-in roles by slug: their names follow the console language. */
-const SYSTEM_ROLE_NAME: Record<string, { key: string; en: string }> = {
-  owner: { key: 'org.systemRole.owner', en: 'Owner' },
-  admin: { key: 'org.systemRole.admin', en: 'Administrator' },
-  member: { key: 'org.systemRole.member', en: 'Member' },
-  viewer: { key: 'org.systemRole.viewer', en: 'Viewer' },
-}
-
 /** A role's name: a built-in role in the console language, a custom role as named. */
-const roleName = (t: TFn, role: { slug?: string; name: string; is_system?: boolean }) => {
-  const known = role.is_system && role.slug ? SYSTEM_ROLE_NAME[role.slug] : undefined
-  return known ? t(known.key, known.en) : role.name
-}
+const roleName = (t: TFn, role: { slug?: string; name: string; is_system?: boolean }) =>
+  roleDisplayName(t, role)
 
 const getRoleColor = (role: Role) =>
   role.is_system ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-foreground'
@@ -1366,12 +1357,11 @@ export default function UsersPage() {
     /* Invitations created before the RBAC role picker carry only the
        legacy `role` field ("member", "admin", ...) with empty role_ids —
        show that (in the console language) rather than a confusing "No roles". */
-    const legacy = invitation.role ? SYSTEM_ROLE_NAME[invitation.role] : undefined
     return (
       <Badge variant="secondary" className="text-xs">
-        {legacy
-          ? t(legacy.key, legacy.en)
-          : invitation.role || t('org.membersPage.noRoles', 'No roles')}
+        {invitation.role
+          ? roleDisplayName(t, { slug: invitation.role, name: invitation.role, is_system: true })
+          : t('org.membersPage.noRoles', 'No roles')}
       </Badge>
     )
   }
