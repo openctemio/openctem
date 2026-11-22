@@ -2,7 +2,7 @@
 // Test-impact selection for the Playwright suite (research/295).
 //
 //   node web/e2e/ci/select.mjs plan --changed <file|-> [--event E] [--full] [--impact]
-//        [--timings f.json] [--target-seconds 240] [--max-shards 5]
+//        [--timings f.json] [--target-seconds 600] [--max-shards 7]
 //        prints the plan as JSON: which specs run and how they are sharded
 //   node web/e2e/ci/select.mjs timings <report.json>
 //        prints { "<spec file>": seconds } from a merged Playwright JSON report
@@ -254,7 +254,7 @@ const median = (xs) => {
 export function shard(
   files,
   timings,
-  { targetSeconds = 240, maxShards = 5, fallbackSeconds = 60 } = {}
+  { targetSeconds = 600, maxShards = 7, fallbackSeconds = 60 } = {}
 ) {
   const known = files.map((f) => timings[f]).filter((v) => Number.isFinite(v) && v > 0)
   // A spec with no recorded duration is new or has grown since the last green
@@ -440,8 +440,8 @@ function main(argv) {
         event,
         full,
         impact,
-        targetSeconds: Number(arg(argv, '--target-seconds', 240)),
-        maxShards: Number(arg(argv, '--max-shards', 5)),
+        targetSeconds: Number(arg(argv, '--target-seconds', 600)),
+        maxShards: Number(arg(argv, '--max-shards', 7)),
       })
     } catch (e) {
       console.error(`select: ${e.message}; running everything`)

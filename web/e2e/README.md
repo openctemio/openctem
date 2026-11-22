@@ -6542,7 +6542,7 @@ picked up by this config or `ci/select.mjs`.
 merge queue when `web/` (or a shared file) changed — the routing is
 `.github/scripts/changed.sh`, so an API-only change does not start it. A pull
 request or queue group runs the specs its changed files map to (plus the
-`@smoke` set), split into 1 to 5 shards; a push to `develop` and the nightly run
+`@smoke` set), split into 1 to 7 shards; a push to `develop` and the nightly run
 run all of them. See [E2E impact selection](../../server/docs/development/ci-cd.md#e2e-impact-selection).
 
 The job builds the production images (API, web) with the Actions

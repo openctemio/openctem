@@ -180,22 +180,24 @@ test('mode none gives an empty matrix', () => {
   assert.deepEqual(r.matrix.include, [])
 })
 
-test('shards: count follows total duration, clamped to 1..4', () => {
+test('shards: count follows total duration, clamped to 1..7', () => {
   const fs = Array.from({ length: 10 }, (_, i) => `f${i}`)
   const t = (s) => Object.fromEntries(fs.map((f) => [f, s]))
   assert.equal(shard(fs, t(10)).length, 1) // 100 s
-  assert.equal(shard(fs, t(60)).length, 3) // 600 s / 240 s
-  assert.equal(shard(fs, t(600)).length, 5) // clamped
+  assert.equal(shard(fs, t(120)).length, 2) // 1200 s / 600 s
+  assert.equal(shard(fs, t(600)).length, 7) // clamped
   assert.equal(shard([], {}).length, 0)
 })
 
 test('shards: the full suite leaves a shard well inside its 25 minute job timeout', () => {
   // The recorded durations of the full suite (about 5300 s) plus a stack start
   // of a few minutes and a retry or two must not reach the timeout.
+  // The shard job has 25 minutes, of which the stack start takes about 3: a
+  // shard must hold well under 17 minutes of tests, not nearly all of them.
   const specs = Array.from({ length: 127 }, (_, i) => `s${i}`)
   const bins = shard(specs, Object.fromEntries(specs.map((f) => [f, 5300 / 127])))
-  assert.equal(bins.length, 5)
-  assert.ok(Math.max(...bins.map((b) => b.seconds)) <= 19 * 60)
+  assert.equal(bins.length, 7)
+  assert.ok(Math.max(...bins.map((b) => b.seconds)) <= 14 * 60)
 })
 
 test('shards: longest first keeps the heaviest shard near the mean', () => {
