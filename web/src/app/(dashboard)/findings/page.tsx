@@ -1788,7 +1788,7 @@ function FindingsContent() {
         meta: {
           kind: 'asset',
           // 160, down to 112 on a narrow frame; with spare width it grows to
-          // 280 before the title (floor 280) takes the rest, so a location is
+          // 280 before the title (floor 240) takes the rest, so a location is
           // not cut beside an empty title column (fit-columns.ts).
           width: 160,
           minWidth: 112,
