@@ -102,7 +102,7 @@ const WIDTH = {
   actions: 48,
 } as const
 
-/** What always shows: the checkbox, name, risk, scope, service facts and the row menu. */
+/** The room of a desktop frame: the checkbox, name, risk, scope, service facts and the row menu. */
 const BASE_ROOM =
   WIDTH.select + WIDTH.name + WIDTH.risk + WIDTH.scope + WIDTH.service + WIDTH.actions
 
@@ -533,6 +533,10 @@ export function InventoryTable({
         meta: {
           kind: 'text',
           width: WIDTH.service,
+          // Needs the room of every desktop column: on a tablet frame narrower
+          // than that it would scroll sideways with its chips cut, so it drops
+          // (Columns turns it back on; the row sheet lists the facts).
+          hideBelow: BASE_ROOM,
           label: t('assets.facts.title', 'Service facts'),
         },
         enableSorting: false,

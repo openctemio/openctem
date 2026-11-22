@@ -49,7 +49,7 @@
   "src/features/cycles/components/cycle-detail-tabs.tsx": 4,
   "src/features/emerging-threats/components/emerging-threats-list.tsx": 8,
   "src/features/findings/components/detail/related-tab.tsx": 5,
-  "src/features/my-work/components/finding-queue.tsx": 6,
+  "src/features/my-work/components/finding-queue.tsx": 2,
   "src/features/pentest/components/pentest-findings-section.tsx": 8,
   "src/features/pentest/components/pentest-reports-section.tsx": 7,
   "src/features/pentest/components/pentest-retests-section.tsx": 10,

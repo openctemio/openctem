@@ -363,6 +363,58 @@ function easmChanges(scen: Scenario) {
   }
 }
 
+/**
+ * The fix plan with many tasks (/remediation): long titles, every state, late
+ * and missing deadlines, owners and none, a first page of 25 out of 34.
+ */
+function fixPlanTasks(scen: Scenario) {
+  const states = ['open', 'in_progress', 'verifying', 'open', 'in_progress'] as const
+  const titles = [
+    'Update WordPress to 7.1.1 or the corresponding security release for the installed maintenance branch.',
+    'Remove the secret from the codebase and rotate or revoke it immediately.',
+    'Upgrade golang.org/x/crypto from v0.35.0 to 0.52.0',
+    'Upgrade log4j-core to 2.15.0',
+  ]
+  const tasks = Array.from({ length: 25 }, (_, i) => {
+    const total = 31 - i
+    const verified = Math.floor(total / (2 + (i % 4)))
+    return {
+      id: `00000000-0000-4000-8000-0000000f${String(i).padStart(4, '0')}`,
+      action_id: `act-${i}`,
+      action_key: `upgrade:go:pkg${i}:1.0.${i}`,
+      action_kind: 'upgrade',
+      action_title: titles[i % titles.length],
+      title: i % 3 === 0 ? `${titles[i % titles.length]} (${i + 1})` : titles[i % titles.length],
+      description: '',
+      assignee_user_id: i % 3 === 2 ? undefined : '00000000-0000-4000-8000-00000000a001',
+      assignee_group_id: i % 4 === 1 ? '00000000-0000-4000-8000-00000000b001' : undefined,
+      state: states[i % states.length],
+      deadline:
+        i % 5 === 4
+          ? undefined
+          : new Date(Date.now() + (i % 3 === 0 ? -1 : 1) * (i + 2) * 86400_000).toISOString(),
+      deadline_source: 'member',
+      counts: {
+        total,
+        open: total - verified,
+        in_progress: 0,
+        fix_applied: i % 2,
+        closed: verified,
+        verified,
+        related: 0,
+        risk_points: 64 - i * 2,
+      },
+      hidden_members: 0,
+      version: 1,
+      created_at: new Date(Date.now() - 30 * 86400_000).toISOString(),
+      updated_at: new Date(Date.now() - i * 3600_000).toISOString(),
+    }
+  })
+  const data = tasks.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : tasks.length)
+  const total = scen === 'rich' ? 34 : data.length
+  return { data, total, page: 1, per_page: 25 }
+}
+
 /** Campaigns with every column hard on the layout: a late due date, overdue and hidden tasks, a long name and owner. */
 function campaignPage(scen: Scenario) {
   const day = 86_400_000
@@ -470,6 +522,7 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
     { url: '**/api/v1/attack-surface/certificates/stats*', body: certificateStats },
   ],
   '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
+  '/remediation': [{ url: '**/api/v1/remediation/tasks?*', body: fixPlanTasks }],
   '/remediation/campaigns': [{ url: '**/api/v1/remediation/campaigns?*', body: campaignPage }],
   '/remediation/tasks': [{ url: '**/api/v1/remediation/tasks?*', body: taskPage }],
 }

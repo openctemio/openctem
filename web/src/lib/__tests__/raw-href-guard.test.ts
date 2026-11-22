@@ -115,8 +115,6 @@ const REVIEWED = new Set([
   'features/shared/components/stats-card.tsx|Link|href={href}',
   // EDGE_FIX_HREFS is a build-time table of same-origin settings routes (features/scans/lib/edge-gap.ts).
   'features/scans/components/edge-gap-fixes.tsx|Link|href={EDGE_FIX_HREFS[fix]}',
-  // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
-  'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // SLA compliance links: /findings?<fixed filter keys> built by findingsHref from the SLA filter
   // constants and one SEVERITY_ORDER value (no API text reaches the href).
   "app/(dashboard)/(mobilization)/sla/page.tsx|Link|href={findingsHref(tileFilter('pastDue'), { severity: sev })}",
