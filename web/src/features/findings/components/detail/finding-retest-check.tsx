@@ -173,7 +173,7 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
       {check ? (
         <SavedCheck check={check} findingId={finding.id} />
       ) : (
-        <p className="text-sm text-muted-foreground">
+        <p className="max-w-prose text-sm text-muted-foreground">
           {t(
             'findings.retestCheck.empty',
             'No retest check. Attach a nuclei template or an HTTP assertion so Retest now can re-check this finding on a sensor.'
@@ -400,7 +400,7 @@ function HowChecksWork() {
       <summary className="cursor-pointer">
         {t('findings.retestCheck.howTitle', 'How checks work')}
       </summary>
-      <ul className="mt-1.5 list-disc space-y-1 ps-4">
+      <ul className="mt-1.5 max-w-prose list-disc space-y-1 ps-4">
         <li>
           {t(
             'findings.retestCheck.howMatch',
