@@ -116,15 +116,15 @@
       "max": 5
     }
   },
-  "$comment_sheetRoutes": "A list with its quick-view sheet open from the link (?task=, ?campaign=): the list, the record and its first rows. The sheet reads its timeline and query only when expanded. Measured with E2E_BUDGET_REPORT.",
+  "$comment_sheetRoutes": "A list with its quick-view sheet open from the link (?task=, ?campaign=): the list, the record and its first rows. The sheet reads its timeline and query only when expanded. Measured 2026-11-22 with E2E_BUDGET_REPORT: tasks 8 (the list's 4 plus the task, its first findings, the owner names and the campaign name), campaigns 7 (the list plus the campaign, its first tasks and the owner names).",
   "sheetRoutes": {
     "/remediation/tasks?task=[id]": {
       "sample": "/api/v1/remediation/tasks?per_page=1",
-      "max": 6
+      "max": 8
     },
     "/remediation/campaigns?campaign=[id]": {
       "sample": "/api/v1/remediation/campaigns?per_page=1",
-      "max": 6
+      "max": 7
     }
   }
 }

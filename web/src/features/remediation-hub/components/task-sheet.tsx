@@ -72,7 +72,7 @@ export function TaskSheet({
     >
       {taskId && <TaskSheetBody key={taskId} taskId={taskId} />}
       {taskId && (
-        <DetailSheetFooter className="justify-between">
+        <DetailSheetFooter className="flex items-center justify-between gap-3">
           {position ? (
             <DetailPosition
               label={t('common.table.shownOfTotal', undefined, {

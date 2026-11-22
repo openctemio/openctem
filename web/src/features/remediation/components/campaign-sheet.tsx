@@ -77,7 +77,7 @@ export function CampaignSheet({
     >
       {campaignId && <CampaignSheetBody key={campaignId} campaignId={campaignId} />}
       {campaignId && (
-        <DetailSheetFooter className="justify-between">
+        <DetailSheetFooter className="flex items-center justify-between gap-3">
           {position ? (
             <DetailPosition
               label={t('common.table.shownOfTotal', undefined, {
