@@ -288,7 +288,11 @@ export async function findMatrixBreaks(
     for (const root of roots) {
       const rr = root.getBoundingClientRect()
       const anchorsAll = Array.from(
-        root.querySelectorAll('[role=tablist], [data-slot="page-header"], h1')
+        // An overlay's title block (title and its one-line description) is
+        // its header, not a wasted row.
+        root.querySelectorAll(
+          '[role=tablist], [data-slot="page-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+        )
       ).filter(shown)
       let first: Element | undefined = Array.from(
         root.querySelectorAll(
@@ -321,7 +325,13 @@ export async function findMatrixBreaks(
       type Item = { r: DOMRect; control: boolean; field: boolean; heading: boolean; text: string }
       const items: Item[] = []
       for (const el of Array.from(root.querySelectorAll('*'))) {
-        if (list.contains(el) || el.closest('[role=tablist], [data-slot="page-header"]')) continue
+        if (
+          list.contains(el) ||
+          el.closest(
+            '[role=tablist], [data-slot="page-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+          )
+        )
+          continue
         const control = el.matches(CONTROL)
         const ownText = Array.from(el.childNodes).some(
           (k) => k.nodeType === 3 && (k.textContent ?? '').trim()

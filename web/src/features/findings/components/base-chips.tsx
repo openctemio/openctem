@@ -23,11 +23,15 @@ interface FindingsBaseChipsProps {
   lensFromView?: boolean
   onLensChange: (lens: FindingLens) => void
   /**
-   * Drawn at the top of the phone filter sheet (the phone toolbar has no
-   * room for them); shown only under 768px, where the toolbar ones hide.
+   * Drawn at the top of the filter sheet, which is what the filter button
+   * opens under 1024 px; the toolbar ones hide under 768 px and on a toolbar
+   * narrower than 42rem (a 768 px tablet: with both chips the toolbar wrapped
+   * "Open" onto a row of its own).
    */
   inSheet?: boolean
 }
+
+const TOOLBAR_ONLY_WHEN_ROOM = 'max-md:hidden @max-[42rem]/toolbar:hidden'
 
 /**
  * The two fixed scopes of the findings list, first after the search: Practice
@@ -70,7 +74,7 @@ export function FindingsBaseChips({
           t(practiceLabelKey(v), PRACTICE_VIEW_TEXT[v].label)
         )}
         onChange={(v) => v && onPracticeChange(v)}
-        className={inSheet ? undefined : 'max-md:hidden'}
+        className={inSheet ? undefined : TOOLBAR_ONLY_WHEN_ROOM}
       />
       <FilterSelect<FindingLens>
         label={t('findings.baseChip.state', 'State')}
@@ -83,12 +87,12 @@ export function FindingsBaseChips({
           label: t(lensLabelKey(l.value), l.label),
         }))}
         onChange={(v) => v && onLensChange(v)}
-        className={inSheet ? undefined : 'max-md:hidden'}
+        className={inSheet ? undefined : TOOLBAR_ONLY_WHEN_ROOM}
       />
     </>
   )
   return inSheet ? (
-    <div data-testid="findings-base-chips-sheet" className="flex flex-wrap gap-2 pb-3 md:hidden">
+    <div data-testid="findings-base-chips-sheet" className="flex flex-wrap gap-2 pb-3 lg:hidden">
       {chips}
     </div>
   ) : (

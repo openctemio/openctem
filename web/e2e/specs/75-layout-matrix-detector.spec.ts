@@ -129,6 +129,21 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow.join('\n')).not.toMatch(/SLA due/)
   })
 
+  test("is quiet for a dialog's title and description", async ({ page }) => {
+    // The New finding dialog at 390 and 1440 px: its header's one-line
+    // description was read as a wasted row.
+    const found = await at(
+      page,
+      1440,
+      `<main style="width:600px">
+        <div data-slot="dialog-header"><h2>New finding</h2><p>Manually create a security finding.</p></div>
+        <div style="display:flex;gap:8px"><input style="width:500px" placeholder="Title"></div>
+        <div style="height:280px;border:1px solid">Form</div>
+      </main>`
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
   test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
     const found = await at(
       page,

@@ -25,7 +25,7 @@ describe('MetricStrip listFirst', () => {
     const { container } = render(
       <MetricStrip items={[{ key: 'runs', label: 'Runs', value: 3 }]} listFirst />
     )
-    expect(container.querySelector('[data-slot="metric-strip"]')).toHaveClass('max-md:order-last')
+    expect(container.querySelector('[data-slot="metric-strip-frame"]')).toHaveClass('max-md:order-last')
   })
 
   it('every list page puts its strip after the list on a phone (or hides it there)', () => {
