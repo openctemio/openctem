@@ -451,24 +451,22 @@ export default function ScanDetailPage() {
               paginationNoun={t('scanDetail.runs.noun')}
               emptyMessage={t('scanDetail.runs.emptyTitle')}
               emptyDescription={t('scanDetail.runs.emptyDesc')}
-              toolbarEnd={
-                <>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link
-                      href={seenByFindingsHref('seen_by_scan_id', scanId)}
-                      data-testid="scan-reported-findings"
-                    >
-                      {t('scanDetail.runs.reportedFindings', 'Findings this scan reported')}
-                    </Link>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={safeHref(scanRunsHref(scanId)) ?? '/scans/runs'}>
-                      {t('scanDetail.runs.viewAll')}
-                    </Link>
-                  </Button>
-                </>
-              }
             />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link
+                  href={seenByFindingsHref('seen_by_scan_id', scanId)}
+                  data-testid="scan-reported-findings"
+                >
+                  {t('scanDetail.runs.reportedFindings', 'Findings this scan reported')}
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={safeHref(scanRunsHref(scanId)) ?? '/scans/runs'}>
+                  {t('scanDetail.runs.viewAll')}
+                </Link>
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="configuration">
