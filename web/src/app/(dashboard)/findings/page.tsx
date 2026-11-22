@@ -522,16 +522,18 @@ const FINDINGS_PRIORITY_WIDTH = 76
 
 /**
  * Column priority (the table's frame width below which a column drops), so the
- * title never gets narrower than 280: Severity below a 1524 px screen, Signals
+ * title never gets narrower than 240: Severity below a 1524 px screen, Signals
  * and EPSS below 1364, Due / SLA below 1204, with the 256 px sidebar open
  * (the frame is the screen less the sidebar, the page padding and the
  * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
  * filter panel open move the points with it. A point is never below the sum
  * of the widths shown at it (each width holds its cell padding): checkbox 40,
- * Priority 76, Title 280, Location 160, Status 120 and the row menu 48 are
- * always there (724); with Due / SLA (140) 864, with Signals (140) 1004, with
- * Severity (88) 1092; the rest is the title's. Below 724 the shared table
- * narrows Location toward its floor before it scrolls sideways.
+ * Priority 76, Title 240, Location 160, Status 120 and the row menu 48 are
+ * always there (684); with Due / SLA (140) 824, with Signals (140) 964, with
+ * Severity (128) 1092; the rest is the title's. Below 684 the shared table
+ * narrows Location toward its floor (112) before it scrolls sideways: the
+ * floors add up to 636, under the 650 px frame of a 768 px tablet, so the
+ * row menu is never cut there (a 280 title floor cut it by 12 px).
  */
 const FINDINGS_HIDE_BELOW = { severity: 1198, signals: 1038, slaStatus: 878 } as const
 
@@ -1726,7 +1728,7 @@ function FindingsContent() {
         accessorKey: 'title',
         meta: {
           kind: 'name',
-          minWidth: 280,
+          minWidth: 240,
           pin: 'start',
           label: t('findings.columns.title', 'Title'),
           primary: true,
@@ -1786,7 +1788,7 @@ function FindingsContent() {
         meta: {
           kind: 'asset',
           // 160, down to 112 on a narrow frame; with spare width it grows to
-          // 280 before the title (floor 280) takes the rest, so a location is
+          // 280 before the title (floor 240) takes the rest, so a location is
           // not cut beside an empty title column (fit-columns.ts).
           width: 160,
           minWidth: 112,
@@ -1806,7 +1808,6 @@ function FindingsContent() {
         id: 'severity',
         meta: {
           kind: 'severity',
-          width: 88,
           hideBelow: FINDINGS_HIDE_BELOW.severity,
           label: t('findings.columns.severity', 'Severity'),
         },

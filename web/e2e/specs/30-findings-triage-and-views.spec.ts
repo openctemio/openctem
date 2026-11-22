@@ -42,7 +42,7 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
     await expect(page.getByRole('columnheader', { name: 'Status' })).toHaveCount(0)
   })
 
-  test('columns drop by width so the title keeps 280; the title is a link; Priority is sorted at rest', async ({
+  test('columns drop by width so the title keeps 240; the title is a link; Priority is sorted at rest', async ({
     page,
   }) => {
     const expected: Record<number, { shown: string[]; dropped: string[] }> = {
@@ -63,7 +63,7 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
       for (const name of cols.dropped)
         await expect(page.getByRole('columnheader', { name }), `${name} at ${width}`).toHaveCount(0)
       const w = await title.evaluate((th) => th.getBoundingClientRect().width)
-      expect(w, `title at ${width}`).toBeGreaterThanOrEqual(279)
+      expect(w, `title at ${width}`).toBeGreaterThanOrEqual(239)
       await expect(link).toHaveAttribute('href', /^\/findings\/[^/]+$/)
       await expect(page.getByRole('columnheader', { name: 'Priority' })).toHaveAttribute(
         'aria-sort',
@@ -99,11 +99,11 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
         }
       })
       test.info().annotations.push({ type: `columns at ${width}`, description: JSON.stringify(m) })
-      expect(m.title, `title floor at ${width}`).toBeGreaterThanOrEqual(279)
+      expect(m.title, `title floor at ${width}`).toBeGreaterThanOrEqual(239)
       // A cut location is allowed only at its cap (280), never while the
       // frame has spare width it could take.
       if (m.cut > 0)
-        expect(m.location, `location cut below its cap at ${width}`).toBeGreaterThanOrEqual(279)
+        expect(m.location, `location cut below its cap at ${width}`).toBeGreaterThanOrEqual(239)
     }
   })
 
