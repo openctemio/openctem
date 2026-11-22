@@ -6,3 +6,4 @@
 - Scan page: Configuration and Details use the property list; the scan type and status are translated in Vietnamese.
 - Scan page: the run history is requested once on load.
 - Docs: none (layout of an existing page; same requests, permissions and API)
+- The scan page's links to the findings and all runs sit under the runs table, and the scanner field in the scan dialog shows only the scanner name, so the sensor note no longer runs past the dialog on a phone. The e2e seed has a scan that never ran, which the request budget loads (a run in progress polls its list every 10 seconds).
