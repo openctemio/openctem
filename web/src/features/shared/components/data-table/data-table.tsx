@@ -811,7 +811,12 @@ function AutoMobileCard<TData>({
         // gets the whole line, and the other field moves under it.
         const dd = field.querySelector('dd')
         const keep = !!dd?.querySelector(CARD_CHIP_SELECTOR) || field.hasAttribute('data-figure')
-        if (dd && keep && dd.scrollWidth > dd.clientWidth + 1) {
+        // A chip cuts its own label with an ellipsis, so the value cell
+        // itself never overflows: look at what is inside it too.
+        const cut = (el: Element) => el.scrollWidth > el.clientWidth + 1
+        const ellipsed = (el: Element) =>
+          cut(el) && getComputedStyle(el).textOverflow === 'ellipsis'
+        if (dd && keep && (cut(dd) || Array.from(dd.querySelectorAll('*')).some(ellipsed))) {
           wide.push(id)
         }
       }
