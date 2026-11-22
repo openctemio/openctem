@@ -8,7 +8,9 @@
  * until then it holds the timeline's frame with a skeleton.
  */
 
+import { useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
+import { Button } from '@/components/ui/button'
 import { useNearViewport } from '@/hooks/use-near-viewport'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeTime } from '@/features/shared/components/relative-time'
@@ -18,6 +20,9 @@ import { useOwnerLabels } from '../api/use-owner-names'
 import { TaskQueryPanel } from './task-query-panel'
 
 const ID = 'task-history'
+
+/** Events shown before "Show all": a long-running task keeps a short page. */
+export const TIMELINE_SHOWN = 10
 
 export function TaskHistory({
   task,
@@ -32,6 +37,8 @@ export function TaskHistory({
   const near = useNearViewport(ID, '0px')
   const { data: timeline } = useTaskTimeline(task.id, near)
   const events = timeline?.data ?? []
+  const [all, setAll] = useState(false)
+  const shown = all ? events : events.slice(0, TIMELINE_SHOWN)
   const owners = useOwnerLabels(
     events.filter((e) => e.actor_type !== 'system').map((e) => e.actor_id),
     []
@@ -55,7 +62,7 @@ export function TaskHistory({
           <p className="text-muted-foreground text-sm">{t('remediationHub.detail.noEvents')}</p>
         ) : (
           <ol className="space-y-2">
-            {events.map((e) => (
+            {shown.map((e) => (
               <li key={e.id} className="flex flex-wrap items-baseline gap-2 text-sm">
                 <RelativeTime
                   date={e.created_at}
@@ -79,6 +86,19 @@ export function TaskHistory({
               </li>
             ))}
           </ol>
+        )}
+        {events.length > TIMELINE_SHOWN && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2"
+            aria-expanded={all}
+            onClick={() => setAll((v) => !v)}
+          >
+            {all
+              ? t('remediationHub.detail.timelineLess')
+              : t('remediationHub.detail.timelineAll', undefined, { n: events.length })}
+          </Button>
         )}
       </section>
     </div>

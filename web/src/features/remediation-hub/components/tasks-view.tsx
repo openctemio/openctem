@@ -274,6 +274,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         label={t('remediationHub.tasks.showLabel', 'Show')}
         value={view}
         clearable={false}
+        foldLabel
         options={viewLabels.map((v) => ({
           value: v,
           label: t(`remediationHub.tasks.view.${v}`),
