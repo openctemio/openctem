@@ -10,6 +10,17 @@ import {
   type Breaks,
   type Scenario,
 } from '../helpers/text-breaks'
+import {
+  AUTH_ROUTES,
+  findMatrixBreaks,
+  matrixWidths,
+  MATRIX_KINDS,
+  OVERLAY_WIDTHS,
+  resolveRoute,
+  routeSlug,
+  SIDEBAR_WIDTHS,
+  type MatrixBreaks,
+} from './layout-matrix'
 
 /**
  * No text overlaps, no word broken inside, nothing cut without an ellipsis,
@@ -513,6 +524,8 @@ async function sideScrolling(page: Page): Promise<string[]> {
 }
 
 const FULL = process.env.LAYOUT_SWEEP_FULL === '1'
+/** `v2` (full MVP matrix) or `ci` (reduced): only the matrix (spec 75e) runs. */
+const MATRIX = process.env.LAYOUT_MATRIX
 const OUT = process.env.LAYOUT_SWEEP_OUT
 const SWEEP_ROUTES: string[] = process.env.LAYOUT_SWEEP_ROUTES
   ? (
@@ -679,7 +692,13 @@ export function layoutRoutes(
   { sweepOwner = false } = {}
 ) {
   // A sweep names its own routes: only the lists spec runs them, once.
-  const list = process.env.LAYOUT_SWEEP_ROUTES ? (sweepOwner ? SWEEP_ROUTES : []) : routes
+  const list = MATRIX
+    ? []
+    : process.env.LAYOUT_SWEEP_ROUTES
+      ? sweepOwner
+        ? SWEEP_ROUTES
+        : []
+      : routes
   if (!list.length) return
   test.describe(title, options, () => {
     test.describe.configure({ mode: 'parallel' })
@@ -824,6 +843,7 @@ const PATHS_VARIANTS = () =>
  */
 
 export function webOriginPaths(options: Options) {
+  if (MATRIX) return
   test.describe('Layout breaks: web origin Paths', options, () => {
     test.describe.configure({ mode: 'parallel' })
     for (const v of PATHS_VARIANTS()) {
@@ -1213,7 +1233,7 @@ export function findingRail(options: Options) {
 export function layoutSignedOut(options: Options, routes: string[]) {
   test.describe('Layout breaks, signed out', options, () => {
     test.describe.configure({ mode: 'parallel' })
-    for (const route of process.env.LAYOUT_SWEEP_ROUTES ? [] : routes) {
+    for (const route of process.env.LAYOUT_SWEEP_ROUTES || MATRIX ? [] : routes) {
       test(`${route}`, async ({ browser, baseURL }, testInfo) => {
         test.setTimeout(120_000)
         const report: Record<string, Breaks> = {}
@@ -1235,6 +1255,117 @@ export function layoutSignedOut(options: Options, routes: string[]) {
             expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
         }
       })
+    }
+  })
+}
+
+/**
+ * MVP acceptance v2 matrix (agent-ops/ui-v2/MVP-ACCEPTANCE.md, helpers/layout-matrix.ts):
+ *   LAYOUT_MATRIX=v2 LAYOUT_ROUTES=/my-work,/findings/[id] [LAYOUT_WIDTHS=1024,1920] [LAYOUT_SWEEP_OUT=<dir>]
+ * One test per route and width. Each width runs light and dark in en and vi;
+ * from 1024 to 1280 px with the sidebar expanded and collapsed (the stored
+ * preference); at 390 and 1440 px also empty and one-row data and the main
+ * overlays. `[id]` takes the first row of the matching list. Every variant is
+ * screenshotted to <dir>/<route-slug>/<tag>.png, and the findings of the
+ * spec-75 detectors and the v2 detectors go to <dir>/<route-slug>/w<width>.json.
+ * LAYOUT_MATRIX=ci runs the reduced widths 390, 1024, 1440 and 1920.
+ */
+export function layoutMatrix(options: Options) {
+  if (!MATRIX) return
+  test.describe('Layout matrix', options, () => {
+    test.describe.configure({ mode: 'parallel' })
+    const routes = (process.env.LAYOUT_ROUTES ?? '').split(',').filter(Boolean)
+    for (const route of routes) {
+      for (const size of matrixWidths(MATRIX)) {
+        test(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
+          test.setTimeout(900_000)
+          const signedOut = AUTH_ROUTES.includes(route)
+          const ctx = signedOut ? await browser.newContext({ baseURL }) : null
+          const page = ctx ? await ctx.newPage() : signedIn
+          const url = signedOut ? route : await resolveRoute(page, route)
+          test.skip(!url, `no row to open for ${route}`)
+          const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
+          for (const theme of ['light', 'dark'] as const)
+            for (const lang of ['en', 'vi'] as const)
+              for (const sidebar of SIDEBAR_WIDTHS.includes(size.width)
+                ? (['open', 'closed'] as const)
+                : [undefined])
+                vs.push({
+                  tag: `w${size.width}-${theme}-${lang}${sidebar ? `-sb-${sidebar}` : ''}`,
+                  ...size,
+                  lang,
+                  theme,
+                  scen: 'rich',
+                  sidebar,
+                })
+          if (OVERLAY_WIDTHS.includes(size.width)) {
+            for (const scen of ['empty', 'one'] as const)
+              vs.push({
+                tag: `w${size.width}-light-en-${scen}`,
+                ...size,
+                lang: 'en',
+                theme: 'light',
+                scen,
+              })
+            for (const overlay of Object.keys(OVERLAYS) as Overlay[])
+              vs.push({
+                tag: `w${size.width}-light-en-ov-${overlay}`,
+                ...size,
+                lang: 'en',
+                theme: 'light',
+                scen: 'rich',
+                overlay,
+              })
+          }
+          const dir = routeSlug(route)
+          const report: Record<string, (Breaks & MatrixBreaks) | string> = {}
+          for (const v of vs) {
+            await page.unrouteAll({ behavior: 'ignoreErrors' })
+            await prepare(page, v, baseURL!)
+            if (v.sidebar)
+              await page
+                .context()
+                .addCookies([
+                  { name: 'sidebar_state', value: String(v.sidebar === 'open'), url: baseURL! },
+                ])
+            for (const extra of ROUTE_DATA[route] ?? []) {
+              await page.route(extra.url, (r) =>
+                r.request().method() === 'GET'
+                  ? r.fulfill({ json: extra.body(v.scen) })
+                  : r.fallback()
+              )
+            }
+            await page.goto(url!, { timeout: 60_000 }).catch(() => {})
+            await settle(page)
+            let scope = 'main'
+            if (v.overlay) {
+              const layer = await openOverlay(page, v.overlay)
+              if (!layer) {
+                report[v.tag] = 'no such overlay'
+                continue
+              }
+              scope = layer
+            }
+            report[v.tag] = {
+              ...(await findBreaks(page, { scope, vi: v.lang === 'vi' })),
+              ...(await findMatrixBreaks(page, { scope })),
+            }
+            await keep(
+              testInfo,
+              `${dir}/${v.tag}.png`,
+              await page.screenshot({ fullPage: !v.overlay, timeout: 30_000 })
+            )
+            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+          }
+          await keep(testInfo, `${dir}/w${size.width}.json`, JSON.stringify(report, null, 1))
+          await ctx?.close()
+          for (const [tag, found] of Object.entries(report)) {
+            if (typeof found === 'string') continue
+            for (const kind of [...BREAK_KINDS, ...MATRIX_KINDS])
+              expect.soft(found[kind], `${route} ${tag}: ${kind}`).toEqual([])
+          }
+        })
+      }
     }
   })
 }
