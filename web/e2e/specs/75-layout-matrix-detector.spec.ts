@@ -144,6 +144,21 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow).toEqual([])
   })
 
+  test('is quiet for the labels of a form in a dialog', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.setContent(
+      doc(`<div role="dialog" style="width:360px">
+        <div data-slot="dialog-header"><h2>New finding</h2></div>
+        <label>Asset *</label><div><button style="width:330px">Pick an asset</button></div>
+        <label>Title *</label><input style="width:330px">
+        <p>The finding will be created with status New.</p>
+        <textarea style="width:330px;height:140px"></textarea>
+      </div>`)
+    )
+    const found = await findMatrixBreaks(page, { scope: '[role=dialog]' })
+    expect(found.wastedRow).toEqual([])
+  })
+
   test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
     const found = await at(
       page,
@@ -217,6 +232,14 @@ test.describe('layout matrix detector: wide-screen stretch', { tag: ['@shell'] }
       `<main style="max-width:900px;margin:auto"><input style="width:100%" placeholder="Search">
        <div style="display:grid;grid-template-columns:1fr 300px"><section><p>${'Content text '.repeat(40)}</p></section><aside><button>Watch</button></aside></div></main>`
     )
+    expect(found.wideStretch).toEqual([])
+  })
+
+  test('is quiet for a bar list: the bar between a label and its value', async ({ page }) => {
+    // The dashboard's category bars (bar-viz) at 1920 px: label, bar, value.
+    const row = (w: number) => `<div style="display:grid;grid-template-columns:9rem 1fr auto;gap:8px">
+      <span>Service</span><span style="height:12px;background:#ddd"><span style="display:block;height:100%;width:${w}%;background:#36c"></span></span><span>2,840</span></div>`
+    const found = await at(page, 1920, `<main style="width:1800px">${row(100)}${row(5)}</main>`)
     expect(found.wideStretch).toEqual([])
   })
 })

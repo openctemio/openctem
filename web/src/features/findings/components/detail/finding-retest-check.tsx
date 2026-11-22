@@ -400,7 +400,7 @@ function HowChecksWork() {
       <summary className="cursor-pointer">
         {t('findings.retestCheck.howTitle', 'How checks work')}
       </summary>
-      <ul className="mt-1.5 list-disc space-y-1 ps-4">
+      <ul className="mt-1.5 max-w-prose list-disc space-y-1 ps-4">
         <li>
           {t(
             'findings.retestCheck.howMatch',
