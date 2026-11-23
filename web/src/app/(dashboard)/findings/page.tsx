@@ -3091,7 +3091,10 @@ function FindingsContent() {
         // A row of the title row's own height: the list under it never moves.
         // Also while the view's name is still loading: the row never shows its
         // end controls alone, without the name they follow.
-        <ListTitleRow title={<Skeleton className="h-5 w-48 max-w-full" />} />
+        <ListTitleRow
+          titleTestId="findings-view-title"
+          title={<Skeleton className="h-5 w-48 max-w-full" />}
+        />
       ) : !verifyView && !(listBare && !groupBy) ? (
         primaryRow
       ) : null}

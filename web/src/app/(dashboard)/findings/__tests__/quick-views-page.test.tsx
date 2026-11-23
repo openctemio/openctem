@@ -250,8 +250,8 @@ describe('Findings list with quick views', () => {
     savedViewsState.isLoading = true
     openAt(`?view=${id}`)
     render(<FindingsPage />)
-    expect(title()).toBeEmptyDOMElement()
-    expect(modified()).toBeNull()
+    expect(title().textContent).toBe('')
+    expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
   })
 
   it('the chips row no longer offers Reset to view', () => {
