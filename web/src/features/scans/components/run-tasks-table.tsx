@@ -485,7 +485,7 @@ export function RunTasksTable({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 gap-1 px-2 text-xs"
+                          iconOnlyBelow="sm"
                           aria-label={t('scans.tasks.logsOf', undefined, {
                             tool: task.tool || t('scans.tasks.task'),
                           })}
