@@ -16,6 +16,7 @@ import {
   isSignedOutRoute,
   matrixWidths,
   MATRIX_KINDS,
+  openedPath,
   OVERLAY_WIDTHS,
   resolveRoute,
   ROUTE_STATES,
@@ -710,6 +711,24 @@ async function settle(page: Page) {
       undefined,
       { timeout: 10_000 }
     )
+    .catch(() => {})
+  // Web fonts (the Vietnamese subset loads late) and enter animations change
+  // text widths after the page looks drawn; the tab strip's edge fade is set by
+  // a ResizeObserver. Measuring before they finish flagged a defect in one
+  // variant and not in an identical one, so wait for fonts, finite animations
+  // and two frames (observer callbacks run between them).
+  await page
+    .evaluate(async () => {
+      await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3_000))])
+      const finite = document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+      await Promise.race([
+        Promise.allSettled(finite.map((a) => a.finished)),
+        new Promise((r) => setTimeout(r, 2_000)),
+      ])
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    })
     .catch(() => {})
   await page.waitForTimeout(300)
 }
@@ -1443,7 +1462,10 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             await page.goto(url!, { timeout: 60_000 }).catch(() => {})
             await settle(page)
             // The page itself, not where a session or a missing one sent it.
-            const want = statePath(route).split(/[?#]/)[0]
+            // Compare with the path resolveRoute produced (`/assets/01a2…`), not
+            // the template (`/assets/[id]`), so a redirect such as a bounce to
+            // /login still fails while an id route that opened passes.
+            const want = openedPath(url!)
             expect.soft(new URL(page.url()).pathname, `${route} ${v.tag}: opened`).toBe(want)
             const act = ROUTE_STATES[route]?.act
             if (act) {
