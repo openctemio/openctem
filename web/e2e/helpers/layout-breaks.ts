@@ -11,15 +11,17 @@ import {
   type Scenario,
 } from '../helpers/text-breaks'
 import {
-  AUTH_ROUTES,
   findEmptyTail,
   findMatrixBreaks,
+  isSignedOutRoute,
   matrixWidths,
   MATRIX_KINDS,
   OVERLAY_WIDTHS,
   resolveRoute,
+  ROUTE_STATES,
   routeSlug,
   SIDEBAR_WIDTHS,
+  statePath,
   type MatrixBreaks,
 } from './layout-matrix'
 
@@ -1346,10 +1348,10 @@ export function layoutMatrix(options: Options) {
       for (const size of matrixWidths(MATRIX)) {
         test(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
           test.setTimeout(900_000)
-          const signedOut = AUTH_ROUTES.includes(route)
+          const signedOut = isSignedOutRoute(route)
           const ctx = signedOut ? await browser.newContext({ baseURL }) : null
           const page = ctx ? await ctx.newPage() : signedIn
-          const url = signedOut ? route : await resolveRoute(page, route)
+          const url = signedOut ? statePath(route) : await resolveRoute(page, statePath(route))
           test.skip(!url, `no row to open for ${route}`)
           const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
           for (const theme of ['light', 'dark'] as const)
@@ -1402,8 +1404,16 @@ export function layoutMatrix(options: Options) {
                   : r.fallback()
               )
             }
+            // A link page drops its token from the address: a goto that only
+            // adds the fragment back would not load the page again.
+            if (url!.includes('#')) await page.goto('about:blank').catch(() => {})
             await page.goto(url!, { timeout: 60_000 }).catch(() => {})
             await settle(page)
+            const act = ROUTE_STATES[route]?.act
+            if (act) {
+              await act(page).catch(() => {})
+              await settle(page)
+            }
             let scope = 'main'
             if (v.overlay) {
               const layer = await openOverlay(page, v.overlay)
