@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { deadlineStatus, fixSteps, groupByAsset, progressParts } from '../lib/hub'
-import { visibleRange } from '../components/virtual-rows'
+import { rowOffsets, visibleRange, visibleRangeAt } from '../components/virtual-rows'
 import type { TaskMember } from '../api/types'
 
 const NOW = Date.parse('2026-10-16T12:00:00Z')
@@ -87,5 +87,17 @@ describe('visibleRange', () => {
     expect(visibleRange(0, 440, 44, 10000, 8)).toEqual({ first: 0, last: 18 })
     expect(visibleRange(44000, 440, 44, 10000, 8)).toEqual({ first: 992, last: 1018 })
     expect(visibleRange(0, 440, 44, 5, 8)).toEqual({ first: 0, last: 5 })
+  })
+})
+
+describe('visibleRangeAt', () => {
+  it('finds the rows in view when headings and rows differ in height', () => {
+    // A 40 px heading, then rows of 112 px (a finding on a phone).
+    const offsets = rowOffsets([40, 112, 112, 112, 40, 112, 112])
+    expect(offsets).toEqual([0, 40, 152, 264, 376, 416, 528, 640])
+    expect(visibleRangeAt(offsets, 0, 200, 0)).toEqual({ first: 0, last: 3 })
+    expect(visibleRangeAt(offsets, 300, 200, 0)).toEqual({ first: 3, last: 6 })
+    expect(visibleRangeAt(offsets, 300, 200, 8)).toEqual({ first: 0, last: 7 })
+    expect(visibleRangeAt(rowOffsets([]), 0, 200, 8)).toEqual({ first: 0, last: 0 })
   })
 })
