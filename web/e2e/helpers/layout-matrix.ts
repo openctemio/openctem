@@ -141,7 +141,7 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
   '/oauth/device@invalid': {
     path: '/oauth/device',
     act: async (page) => {
-      await page.locator('#device-user-code').fill('ABCD-EFGH')
+      await page.locator('#device-user-code').fill('BCDF-GHJK')
       await submit(page)
       await shown(page, 'main [role="alert"]')
     },
