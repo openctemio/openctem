@@ -144,17 +144,22 @@ function ChangeRow({ change }: { change: EASMChange }) {
   const label = kind ? kindLabel(kind) : (change.kind ?? '').replace(/_/g, ' ')
   const name = change.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset')
   return (
-    <li className="flex items-start gap-3 py-3">
+    // A grid: the time sits on the title row, and on a phone the asset name
+    // and the detail take the whole width under it, so a long host name is
+    // never squeezed into a narrow column beside the time.
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
       <Icon
         aria-hidden
         className={cn(
-          'mt-0.5 h-4 w-4 shrink-0',
+          'col-start-1 row-start-1 mt-0.5 h-4 w-4 shrink-0',
           kind && RISKY.has(kind) ? 'text-destructive' : 'text-muted-foreground'
         )}
       />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium first-letter:uppercase">{label}</span>
+      <div className="contents text-sm sm:col-start-2 sm:row-start-1 sm:flex sm:min-w-0 sm:flex-wrap sm:items-center sm:gap-2">
+        <span className="col-start-2 row-start-1 text-sm font-medium first-letter:uppercase">
+          {label}
+        </span>
+        <span className="col-start-2 col-end-4 row-start-2 min-w-0 text-sm">
           {isLinkableAssetId(change.asset_id) ? (
             <AssetPeekLink assetId={change.asset_id} className="break-words text-primary">
               {name}
@@ -164,10 +169,12 @@ function ChangeRow({ change }: { change: EASMChange }) {
               <BreakText>{name}</BreakText>
             </span>
           )}
-        </div>
+        </span>
+      </div>
+      <RelativeTime date={change.at} className="col-start-3 row-start-1 text-xs" />
+      <div className="col-start-2 col-end-4 min-w-0 empty:hidden">
         <ChangeDetail change={change} />
       </div>
-      <RelativeTime date={change.at} className="shrink-0 text-xs" />
     </li>
   )
 }

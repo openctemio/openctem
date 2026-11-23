@@ -117,7 +117,7 @@ interface ScopeEntriesTableProps {
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
   /** Shown when nothing is in scope yet (onboarding). */
   emptyAction?: React.ReactNode
-  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  /** The page's switch of which scope list is shown, drawn at the toolbar's end. */
   leading?: React.ReactNode
   /**
    * "No longer ours" on an entry (research/320): the page opens the
@@ -468,14 +468,6 @@ export function ScopeEntriesTable({
         emptyAction
       ) : (
         <div className="space-y-2">
-          {!tierCeilings && (
-            <p className="text-xs text-muted-foreground" data-testid="scope-tier-per-scan-note">
-              {t('scope.entries.perScanHint', PER_SCAN_HINT)}{' '}
-              <Link href={SCAN_APPROVAL_HREF} className="link-inline">
-                {t('scope.entries.governanceLink', 'Scan approval settings')}
-              </Link>
-            </p>
-          )}
           <DataTable
             columns={columns}
             data={entries}
@@ -487,7 +479,7 @@ export function ScopeEntriesTable({
               placeholder: t('scope.entries.search', 'Search entries…'),
               label: t('scope.entries.searchLabel', 'Search scope entries'),
             }}
-            toolbarStart={leading}
+            toolbarEnd={leading}
             // When the table still scrolls sideways the row menu stays in view.
             pinActions
             filter={filters}
@@ -541,6 +533,15 @@ export function ScopeEntriesTable({
                   )
             }
           />
+          {/* A note under the list, not a row above it: the rows come first. */}
+          {!tierCeilings && (
+            <p className="text-xs text-muted-foreground" data-testid="scope-tier-per-scan-note">
+              {t('scope.entries.perScanHint', PER_SCAN_HINT)}{' '}
+              <Link href={SCAN_APPROVAL_HREF} className="link-inline">
+                {t('scope.entries.governanceLink', 'Scan approval settings')}
+              </Link>
+            </p>
+          )}
         </div>
       )}
 

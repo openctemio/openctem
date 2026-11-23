@@ -127,7 +127,9 @@ const SENSORS_WIDTH = {
   usage: 128,
   region: 128,
 }
-const SENSORS_HIDE_BELOW = { host: 1104, tools: 952 } as const
+// Jobs folds away first on a tablet frame (sidebar open), so the row
+// actions never end past the table's edge.
+const SENSORS_HIDE_BELOW = { host: 1104, tools: 952, jobs: 904 } as const
 
 const STATE_RANK = new Map(SENSOR_STATES.map((s, i) => [s, i]))
 
@@ -274,7 +276,12 @@ export function SensorTable({
       },
       {
         id: 'jobs',
-        meta: { kind: 'text', width: SENSORS_WIDTH.jobs, label: t('sensors.table.col.jobs') },
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.jobs,
+          hideBelow: SENSORS_HIDE_BELOW.jobs,
+          label: t('sensors.table.col.jobs'),
+        },
         // current_jobs is what the API reports; it never sent active_jobs.
         accessorFn: (a) => a.current_jobs ?? 0,
         header: ({ column }) => (

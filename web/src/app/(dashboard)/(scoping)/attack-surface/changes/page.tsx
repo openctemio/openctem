@@ -17,10 +17,15 @@ export default function AttackSurfaceChangesPage() {
       <PageStack>
         <PageHeader
           title={t('attackSurface.title', 'Attack surface')}
-          description={t(
-            'attackSurface.changes.pageDescription',
-            'What changed on your external attack surface. A weekly digest of these changes goes to your administrators and notification channels.'
-          )}
+          // A list page: on a phone the list comes first (as on Certificates).
+          description={
+            <span className="max-md:hidden">
+              {t(
+                'attackSurface.changes.pageDescription',
+                'What changed on your external attack surface. A weekly digest of these changes goes to your administrators and notification channels.'
+              )}
+            </span>
+          }
         />
         <AttackSurfaceSectionTabs />
         <EASMChanges />
