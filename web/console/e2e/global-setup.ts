@@ -1,5 +1,12 @@
 import { chromium, expect, type Page } from '@playwright/test'
-import { AUTH_DIR, credentials, STATE_FILE, answerCode, saveCredentials } from './helpers/session'
+import {
+  AUTH_DIR,
+  credentials,
+  ensureElevated,
+  STATE_FILE,
+  answerCode,
+  saveCredentials,
+} from './helpers/session'
 import fs from 'node:fs'
 
 /**
@@ -33,6 +40,7 @@ async function openLogin(page: Page) {
  *
  * CONSOLE_E2E_EMAIL, CONSOLE_E2E_PASSWORD (the temporary one is changed), and,
  * for an administrator who is already enrolled, CONSOLE_E2E_TOTP_SECRET.
+ * CONSOLE_E2E_ELEVATE=1 also elevates the saved session (specs/layout-matrix.spec.ts).
  */
 export default async function globalSetup() {
   const baseURL = process.env.CONSOLE_E2E_BASE_URL ?? 'http://127.0.0.1:3001'
@@ -117,6 +125,9 @@ export default async function globalSetup() {
     }
     saveCredentials({ email, password: current, totpSecret: secret })
     await context.storageState({ path: STATE_FILE })
+    // The layout matrix runs many workers on this one session: it is elevated
+    // here, once, instead of by each worker (one authenticator code each).
+    if (process.env.CONSOLE_E2E_ELEVATE) await ensureElevated(browser)
   } catch (err) {
     // The picture is a courtesy: when the page is closed or mid-navigation the
     // capture itself fails, and that failure must never replace the real error.
