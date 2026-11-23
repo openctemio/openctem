@@ -1,5 +1,6 @@
 'use client'
 
+import type * as React from 'react'
 import { ChevronRight } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/context/i18n-provider'
@@ -27,10 +28,13 @@ export function ScanRunMobileCard({
   run,
   selection,
   onOpen,
+  title,
 }: {
   run: ScanRun
   selection: MobileRowSelection
   onOpen: (run: ScanRun) => void
+  /** The card's title in place of the scan's name (a scan's own page: when it started). */
+  title?: React.ReactNode
 }) {
   const { t } = useTranslation()
   const who = runTriggeredByLabel(run, t) ?? runTriggerTypeLabel(run.trigger_type, t)
@@ -60,7 +64,7 @@ export function ScanRunMobileCard({
           data-slot="run-card-title"
           className="min-w-0 text-body font-medium [&_.truncate]:line-clamp-2 [&_.truncate]:whitespace-normal [&_.truncate]:break-words"
         >
-          <RunScanCell run={run} />
+          {title ?? <RunScanCell run={run} />}
         </div>
         <RunStateLine
           run={run}
