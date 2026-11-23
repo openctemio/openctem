@@ -2,7 +2,7 @@
 
 - Security overview: on a phone Re-check shows its icon beside the title instead of taking a header row of its own.
 - API keys: the maximum key lifetime field is as wide as a number needs instead of stretching across a wide screen.
-- API keys and SLA policies: no search box or Display button while there is nothing in the list to search.
-- API keys and notification channels: on a tablet or a laptop with the sidebar open, less important columns fold away and the row menu stays in view instead of being cut at the table edge.
+- API keys and SLA policies: no search box or Display button while there is nothing in the list to search. A revoked key's phone card no longer repeats Revoked as its expiry.
+- API keys, SLA policies and notification channels: on a tablet or a laptop with the sidebar open, less important columns fold away and the row menu stays in view instead of being cut at the table edge.
 - Notification channels: the Connected and Errors tiles keep a tile's width on a wide screen; on a phone each channel is a card with its provider, status and error message, and View events and Queue show their icons so the three header buttons share one row.
 - Docs: none (layout of existing pages; no behaviour, request or wording of the API changes)

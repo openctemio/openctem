@@ -47,6 +47,9 @@ const policyHref = (id: string) => `/settings/sla-policies?policy=${encodeURICom
 /** Whether findings follow this policy: the default, or an asset's override. */
 const applies = (p: SlaPolicy) => p.is_default || !!p.asset_id
 
+/** Table frame widths (px) under which a column folds away; the policy, its windows and the actions stay. */
+const SLA_HIDE_BELOW = { notify: 820, warning: 700 } as const
+
 export default function SlaPoliciesPage() {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSlaPoliciesApi()
@@ -262,7 +265,7 @@ export default function SlaPoliciesPage() {
       },
       {
         accessorKey: 'warning_threshold_pct',
-        meta: { kind: 'number', label: warningLabel },
+        meta: { kind: 'number', label: warningLabel, hideBelow: SLA_HIDE_BELOW.warning },
         header: ({ column }) => <DataTableColumnHeader column={column} title={warningLabel} />,
         cell: ({ row }) => (
           <span className="tabular-nums">{row.original.warning_threshold_pct}%</span>
@@ -270,7 +273,7 @@ export default function SlaPoliciesPage() {
       },
       {
         accessorKey: 'escalation_enabled',
-        meta: { kind: 'status', label: notifyLabel },
+        meta: { kind: 'status', label: notifyLabel, hideBelow: SLA_HIDE_BELOW.notify },
         header: notifyLabel,
         enableSorting: false,
         cell: ({ row }) =>
@@ -350,6 +353,7 @@ export default function SlaPoliciesPage() {
           // No policies yet (or a refused read): nothing to search or arrange,
           // so no search box or Display button above the empty state.
           showToolbar={policies.length > 0}
+          pinActions
           showSearch={false}
           search={{
             value: searchQuery,

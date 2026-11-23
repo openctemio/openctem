@@ -200,7 +200,7 @@ const API_KEY_PAGE_SIZES = [25, 50, 100]
 const API_KEY_SORT_FIELDS = ['name', 'last_used_at', 'expires_at', 'created_at'] as const
 
 /** Table frame widths (px) under which a column folds away; the name, the status and the actions stay. */
-const API_KEY_HIDE_BELOW = { scopes: 1100, lastUsed: 980, key: 820, expires: 700 } as const
+const API_KEY_HIDE_BELOW = { scopes: 1100, lastUsed: 980, key: 780, expires: 600 } as const
 
 export default function APIKeysPage() {
   const { t } = useTranslation()
@@ -376,9 +376,12 @@ export default function APIKeysPage() {
             facts={
               <>
                 <StatusBadge k={k} />
-                <span className="text-cap text-muted-foreground">
-                  {t('settings.keys.expires', 'Expires')} <ExpiryCell k={k} />
-                </span>
+                {/* A revoked key has no expiry: its status already says Revoked. */}
+                {k.status !== 'revoked' && !k.revoked_at && (
+                  <span className="text-cap text-muted-foreground">
+                    {t('settings.keys.expires', 'Expires')} <ExpiryCell k={k} />
+                  </span>
+                )}
               </>
             }
           />
