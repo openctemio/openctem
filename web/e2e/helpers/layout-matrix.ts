@@ -522,9 +522,28 @@ export async function findMatrixBreaks(
       const fr = first.getBoundingClientRect()
       const lr = list.getBoundingClientRect()
       const anchors = anchorsAll.filter((a) => a.getBoundingClientRect().bottom <= fr.top)
-      const top = anchors.length
+      let top = anchors.length
         ? Math.max(...anchors.map((a) => a.getBoundingClientRect().bottom))
         : rr.top
+      // In an overlay (a detail sheet of stacked sections), only the list's
+      // own section counts: text under another section heading (Stages,
+      // Timeline) above the list's heading belongs to that section, not to
+      // the list's toolbar.
+      if (
+        root.closest('[role=dialog], [data-slot="sheet-content"], [data-slot="drawer-content"]')
+      ) {
+        const own = Array.from(root.querySelectorAll('h2, h3, h4, h5, h6, [role=heading]'))
+          .filter(
+            (h) =>
+              shown(h) &&
+              !h.closest(
+                '[data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+              ) &&
+              h.getBoundingClientRect().bottom <= fr.top + 1
+          )
+          .map((h) => h.getBoundingClientRect().top)
+        if (own.length) top = Math.max(top, Math.max(...own) - 1)
+      }
       type Item = { r: DOMRect; control: boolean; field: boolean; heading: boolean; text: string }
       const items: Item[] = []
       for (const el of Array.from(root.querySelectorAll('*'))) {
