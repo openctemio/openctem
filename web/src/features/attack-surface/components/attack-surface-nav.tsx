@@ -95,6 +95,7 @@ export function AttackSurfaceNav({
     current && current.routes.length > 1 && activeRoute ? (
       <RouteLens
         label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
+        route
         value={activeRoute}
         options={current.routes.map((r) => ({
           value: r.href,
