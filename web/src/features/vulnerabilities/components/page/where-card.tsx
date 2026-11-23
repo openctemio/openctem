@@ -117,12 +117,16 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
               <TableHeader>
                 <TableRow>
                   <TableHead className="ps-6">{t('vulnPage.where.col.asset', 'Asset')}</TableHead>
-                  <TableHead>{t('vulnPage.where.col.exposure', 'Exposure')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">
+                    {t('vulnPage.where.col.exposure', 'Exposure')}
+                  </TableHead>
                   <TableHead className="hidden md:table-cell">
                     {t('vulnPage.where.col.owner', 'Owner')}
                   </TableHead>
                   <TableHead className="text-end">{t('vulnPage.where.col.open', 'Open')}</TableHead>
-                  <TableHead className="pe-6">{t('vulnPage.where.col.worst', 'Worst')}</TableHead>
+                  <TableHead className="hidden pe-6 sm:table-cell">
+                    {t('vulnPage.where.col.worst', 'Worst')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -173,6 +177,15 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
 function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
   const { t } = useTranslation()
   const closed = asset.open_findings === 0
+  const worst = asset.worst_priority ? (
+    <PriorityBadge priorityClass={asset.worst_priority} />
+  ) : (
+    <span className="text-xs text-muted-foreground">
+      {closed
+        ? t('vulnPage.where.closed', 'All closed')
+        : t('vulnPage.where.notPrioritized', 'Not prioritized')}
+    </span>
+  )
   return (
     <TableRow data-slot="where-row" className={cn(closed && 'text-muted-foreground')}>
       <TableCell className="max-w-[16rem] ps-6">
@@ -183,27 +196,15 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         >
           {asset.name}
         </Link>
+        {/* Phone: exposure and the worst priority sit under the name. */}
+        <span className="mt-1 flex flex-wrap items-center gap-1.5 sm:hidden">
+          {worst}
+          <ExposureChips asset={asset} />
+        </span>
         <AssetTargets targets={asset.targets} more={asset.targets_more} />
       </TableCell>
-      <TableCell>
-        <span className="flex flex-wrap items-center gap-1">
-          {asset.crown_jewel && (
-            <SignalChip icon={Crown}>{t('vulnPage.where.crown', 'Crown jewel')}</SignalChip>
-          )}
-          {asset.internet_facing && (
-            <SignalChip
-              icon={Globe}
-              title={t('vulnPage.where.netTitle', 'Reachable from the internet')}
-            >
-              {t('vulnPage.where.net', 'Internet')}
-            </SignalChip>
-          )}
-          {!asset.crown_jewel && !asset.internet_facing && (
-            <span className="text-xs text-muted-foreground">
-              {t('vulnPage.where.internal', 'Internal')}
-            </span>
-          )}
-        </span>
+      <TableCell className="hidden sm:table-cell">
+        <ExposureChips asset={asset} />
       </TableCell>
       <TableCell className="hidden max-w-[12rem] truncate md:table-cell">
         {asset.owner || (
@@ -218,18 +219,33 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
           {formatNumber(asset.open_findings)}
         </Link>
       </TableCell>
-      <TableCell className="pe-6">
-        {asset.worst_priority ? (
-          <PriorityBadge priorityClass={asset.worst_priority} />
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {closed
-              ? t('vulnPage.where.closed', 'All closed')
-              : t('vulnPage.where.notPrioritized', 'Not prioritized')}
-          </span>
-        )}
-      </TableCell>
+      <TableCell className="hidden pe-6 sm:table-cell">{worst}</TableCell>
     </TableRow>
+  )
+}
+
+/** Exposure context of an asset: a column from `sm` up, under the name on a phone. */
+function ExposureChips({ asset }: { asset: CveExposureAsset }) {
+  const { t } = useTranslation()
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {asset.crown_jewel && (
+        <SignalChip icon={Crown}>{t('vulnPage.where.crown', 'Crown jewel')}</SignalChip>
+      )}
+      {asset.internet_facing && (
+        <SignalChip
+          icon={Globe}
+          title={t('vulnPage.where.netTitle', 'Reachable from the internet')}
+        >
+          {t('vulnPage.where.net', 'Internet')}
+        </SignalChip>
+      )}
+      {!asset.crown_jewel && !asset.internet_facing && (
+        <span className="text-xs text-muted-foreground">
+          {t('vulnPage.where.internal', 'Internal')}
+        </span>
+      )}
+    </span>
   )
 }
 

@@ -138,7 +138,8 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
         n.matches('nav') ? n.querySelectorAll(':scope > a') : n.querySelectorAll('[role=tab]')
       ).filter(shown)
       const nr = n.getBoundingClientRect()
-      const fades = n.getAttribute('data-fade-end') === 'true'
+      const fadeEnd = n.getAttribute('data-fade-end') === 'true'
+      const fadeStart = n.getAttribute('data-fade-start') === 'true'
       return {
         count: items.length,
         icons: items.filter((x) => x.querySelector('svg')).length,
@@ -146,11 +147,12 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
           .map((x) => x.querySelector('svg')?.getBoundingClientRect().width ?? 0)
           .filter((w) => w > 0)
           .map(Math.round),
-        // A Radix strip may scroll when it shows its fade; a route strip never cuts a label.
+        // Every page tab strip is one swipe row (owner rule 2026-11-21): a tab
+        // past an edge is allowed only where that edge shows its fade.
         clipped: items
           .filter((x) => {
             const r = x.getBoundingClientRect()
-            return (r.right > nr.right + 1 || r.left < nr.left - 1) && !(fades && !n.matches('nav'))
+            return (r.right > nr.right + 1 && !fadeEnd) || (r.left < nr.left - 1 && !fadeStart)
           })
           .map((x) => (x.textContent ?? '').trim()),
       }

@@ -972,6 +972,9 @@ export default function UsersPage() {
 
   // Table columns. The select-checkbox column was removed alongside the
   // bulk-actions dropdown — there's nothing to do with selected rows now.
+  // hideBelow is the table frame width under which a column folds: the sum of the
+  // columns still shown with it (name floor 200, roles 160, status 160, row menu 48,
+  // two-factor 128, last active 112, joined 112) plus 60 of slack, so no header is cut.
   const columns: ColumnDef<MemberWithUser>[] = [
     {
       accessorKey: 'name',
@@ -1031,7 +1034,7 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'joined_at',
-      meta: { kind: 'date', label: t('org.membersPage.col.joined', 'Joined'), hideBelow: 1100 },
+      meta: { kind: 'date', label: t('org.membersPage.col.joined', 'Joined'), hideBelow: 1000 },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.joined', 'Joined')} />
       ),
@@ -1046,7 +1049,7 @@ export default function UsersPage() {
       meta: {
         kind: 'date',
         label: t('org.membersPage.col.lastActive', 'Last active'),
-        hideBelow: 640,
+        hideBelow: 880,
       },
       header: ({ column }) => (
         <DataTableColumnHeader
@@ -1090,7 +1093,7 @@ export default function UsersPage() {
             meta: {
               kind: 'status',
               label: t('org.membersPage.col.twoFactor', 'Two-factor'),
-              hideBelow: 640,
+              hideBelow: 770,
             },
             header: t('org.membersPage.col.twoFactor', 'Two-factor'),
             enableSorting: false,
@@ -1597,6 +1600,8 @@ export default function UsersPage() {
               <DataTable
                 columns={columns}
                 data={members}
+                // When the table still scrolls sideways the row menu stays in view.
+                pinActions
                 getRowId={(m) => m.id}
                 manualPagination
                 rowCount={membersTotal}
