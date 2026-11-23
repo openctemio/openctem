@@ -101,19 +101,14 @@ const shown = (page: Page, sel: string) =>
  * mail-verify-1..120@example.com (not verified).
  */
 const MAIL_API = process.env.E2E_MAIL_API
-const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://localhost:8080'
 const MAIL_VERIFY_POOL = 120
 
-/**
- * Password and link requests share a per-address limit of three a minute.
- * Each state sends its requests as one documentation address (RFC 5737),
- * forwarded by the web as X-Forwarded-For, so the states of one run do not
- * refuse each other. The server still applies its limits.
+/*
+ * Password and link requests share a per-address limit of three a minute. The
+ * matrix stack (agent-ops box.sh) puts a small proxy in front of the web that
+ * gives each request its own client address, and only that web trusts it
+ * (TRUST_PROXY_HEADERS=true). The spec sends no forwarding headers itself.
  */
-const asOneVisitor = (page: Page) =>
-  page.setExtraHTTPHeaders({
-    'X-Forwarded-For': `203.0.113.${1 + Math.floor(Math.random() * 254)}`,
-  })
 
 /** The newest message to an address in the mail catcher, as text. */
 async function mailTo(page: Page, address: string): Promise<string | null> {
@@ -141,10 +136,16 @@ async function openVerificationLink(page: Page) {
   if (!MAIL_API) throw new Error('E2E_MAIL_API is not set: this state needs a mail catcher')
   for (let tries = 0; tries < 6; tries++) {
     const address = `mail-verify-${1 + Math.floor(Math.random() * MAIL_VERIFY_POOL)}@example.com`
-    await page.request.post(`${API_BASE}/api/v1/auth/resend-verification`, {
-      data: { email: address },
-      headers: { 'X-Forwarded-For': `198.51.100.${1 + Math.floor(Math.random() * 254)}` },
-    })
+    // Sent by the page itself, as the sign-in page does: same origin, through the web.
+    const sent = await page.evaluate(async (email) => {
+      const r = await fetch('/api/v1/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      return `${r.status} ${(await r.text()).slice(0, 200)}`
+    }, address)
+    console.log(`[matrix] resend-verification ${address}: ${sent}`)
     const body = await mailTo(page, address)
     const link = body?.match(/https?:\/\/[^\s"'<>]*\/verify-email[^\s"'<>]*/)?.[0]
     if (!link) continue
@@ -181,7 +182,6 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
   '/forgot-password@sent': {
     path: '/forgot-password',
     act: async (page) => {
-      await asOneVisitor(page)
       await page.locator('main input[name="email"]').fill('mail-reset@example.com')
       await submit(page)
       await page
@@ -196,7 +196,6 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
   '/reset-password@expired': {
     path: '/reset-password#token=synthetic-reset-token',
     act: async (page) => {
-      await asOneVisitor(page)
       await page.locator('main input[name="password"]').fill('Correct-Horse-Battery-9')
       await page.locator('main input[name="confirmPassword"]').fill('Correct-Horse-Battery-9')
       await submit(page)
