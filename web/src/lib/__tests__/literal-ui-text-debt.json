@@ -120,7 +120,7 @@
   "features/notifications/components/edit-notification-dialog.tsx": 33,
   "features/notifications/components/event-type-selector.tsx": 4,
   "features/notifications/components/notification-events.tsx": 7,
-  "features/organization/components/member-access-report.tsx": 20,
+  "features/organization/components/member-access-report.tsx": 1,
   "features/organization/components/personal-accounts-card.tsx": 6,
   "features/organization/components/storage-config-card.tsx": 3,
   "features/pentest/components/attachment-upload.tsx": 1,
