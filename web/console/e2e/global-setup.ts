@@ -127,7 +127,7 @@ export default async function globalSetup() {
     await context.storageState({ path: STATE_FILE })
     // The layout matrix runs many workers on this one session: it is elevated
     // here, once, instead of by each worker (one authenticator code each).
-    if (process.env.CONSOLE_E2E_ELEVATE) await ensureElevated(browser)
+    if (process.env.CONSOLE_E2E_ELEVATE) await ensureElevated(browser, baseURL)
   } catch (err) {
     // The picture is a courtesy: when the page is closed or mid-navigation the
     // capture itself fails, and that failure must never replace the real error.
