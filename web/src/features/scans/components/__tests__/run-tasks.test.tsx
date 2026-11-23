@@ -53,7 +53,7 @@ describe('RunTasksTable', () => {
     // Each value is in its column (from 640 px) and under the tool (a phone).
     expect(within(rows[1]).getAllByText('edge-1')).toHaveLength(2)
     expect(within(rows[1]).getAllByText('2m 5s')).toHaveLength(2)
-    const phone = rows[1].querySelector('dl')
+    const phone = rows[1].querySelector('[data-slot="meta-line"]')
     expect(phone).toHaveClass('sm:hidden')
     expect(within(phone as HTMLElement).getByText('edge-1')).toBeInTheDocument()
     expect(within(phone as HTMLElement).getByText('4')).toBeInTheDocument()

@@ -7,7 +7,7 @@ import useSWRInfinite from 'swr/infinite'
 import { AlertTriangle, FileText, Info, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { RunStatusBadge, TruncatedText } from '@/features/shared'
+import { MetaItem, MetaLine, RunStatusBadge, TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskPage } from '@/lib/api/generated'
@@ -454,14 +454,20 @@ export function RunTasksTable({
                           className="mt-1 max-w-[260px] text-xs text-muted-foreground"
                         />
                       )}
-                      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-xs text-muted-foreground sm:hidden">
-                        <dt>{t('scans.tasks.colSensor')}</dt>
-                        <dd className="truncate">{taskSensorLabel(task, t)}</dd>
-                        <dt>{t('scans.tasks.colTargets')}</dt>
-                        <dd className="tabular-nums">{task.targets ?? 0}</dd>
-                        <dt>{t('scans.tasks.colDuration')}</dt>
-                        <dd className="tabular-nums">{duration}</dd>
-                      </dl>
+                      <MetaLine
+                        className="mt-1 sm:hidden"
+                        items={[
+                          <MetaItem key="sensor" label={t('scans.tasks.colSensor')}>
+                            {taskSensorLabel(task, t)}
+                          </MetaItem>,
+                          <MetaItem key="targets" label={t('scans.tasks.colTargets')}>
+                            <span className="tabular-nums">{task.targets ?? 0}</span>
+                          </MetaItem>,
+                          <MetaItem key="duration" label={t('scans.tasks.colDuration')}>
+                            <span className="tabular-nums">{duration}</span>
+                          </MetaItem>,
+                        ]}
+                      />
                       {progLine && <div className="sm:hidden">{progLine}</div>}
                     </td>
                     <td className="hidden px-3 py-2 text-muted-foreground sm:table-cell">
