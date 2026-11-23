@@ -199,23 +199,26 @@ export function FindingWhyItMatters({
         <div
           role="note"
           aria-label={t('findings.whyItMatters.ownershipNote', 'Ownership not confirmed')}
-          className="mt-2 flex flex-wrap items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
+          className="mt-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
         >
           <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
-          <span className="min-w-0 flex-1">
-            {t(
-              'findings.whyItMatters.ownershipText',
-              "This asset has not been confirmed as your organisation's, so the finding is held at P2."
+          {/* The text takes the note's full width; the link sits under it. */}
+          <div className="min-w-0 flex-1">
+            <p>
+              {t(
+                'findings.whyItMatters.ownershipText',
+                "This asset has not been confirmed as your organisation's, so the finding is held at P2."
+              )}
+            </p>
+            {isLinkableAssetId(finding.assets[0]?.id) && (
+              <Link
+                href={assetDetailHref(finding.assets[0].id)}
+                className="mt-1 inline-block font-medium underline underline-offset-2"
+              >
+                {t('findings.whyItMatters.verifyOwnership', 'Verify ownership')}
+              </Link>
             )}
-          </span>
-          {isLinkableAssetId(finding.assets[0]?.id) && (
-            <Link
-              href={assetDetailHref(finding.assets[0].id)}
-              className="font-medium underline underline-offset-2"
-            >
-              {t('findings.whyItMatters.verifyOwnership', 'Verify ownership')}
-            </Link>
-          )}
+          </div>
         </div>
       )}
 
