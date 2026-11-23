@@ -52,7 +52,9 @@ export function WhyCard({
               <TableHeader>
                 <TableRow>
                   <TableHead className="ps-6">{t('vulnPage.why.col.package', 'Package')}</TableHead>
-                  <TableHead>{t('vulnPage.why.col.version', 'Version')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">
+                    {t('vulnPage.why.col.version', 'Version')}
+                  </TableHead>
                   <TableHead>{t('vulnPage.why.col.fixed', 'Fixed in')}</TableHead>
                   <TableHead className="pe-6 text-end">
                     {t('vulnPage.why.col.assets', 'Assets')}
@@ -66,8 +68,11 @@ export function WhyCard({
                       <span className="block truncate font-mono text-xs" title={c.purl || c.name}>
                         {c.purl ? c.purl.replace(/@[^@]*$/, '') : c.name}
                       </span>
+                      <span className="block truncate font-mono text-xs text-muted-foreground sm:hidden">
+                        {c.version || t('vulnPage.why.unknownVersion', 'unknown')}
+                      </span>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="hidden font-mono text-xs sm:table-cell">
                       {c.version || t('vulnPage.why.unknownVersion', 'unknown')}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-success">

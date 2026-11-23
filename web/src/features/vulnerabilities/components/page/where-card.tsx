@@ -117,7 +117,9 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
               <TableHeader>
                 <TableRow>
                   <TableHead className="ps-6">{t('vulnPage.where.col.asset', 'Asset')}</TableHead>
-                  <TableHead>{t('vulnPage.where.col.exposure', 'Exposure')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">
+                    {t('vulnPage.where.col.exposure', 'Exposure')}
+                  </TableHead>
                   <TableHead className="hidden md:table-cell">
                     {t('vulnPage.where.col.owner', 'Owner')}
                   </TableHead>
@@ -183,27 +185,13 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         >
           {asset.name}
         </Link>
+        <span className="mt-1 block sm:hidden">
+          <ExposureChips asset={asset} />
+        </span>
         <AssetTargets targets={asset.targets} more={asset.targets_more} />
       </TableCell>
-      <TableCell>
-        <span className="flex flex-wrap items-center gap-1">
-          {asset.crown_jewel && (
-            <SignalChip icon={Crown}>{t('vulnPage.where.crown', 'Crown jewel')}</SignalChip>
-          )}
-          {asset.internet_facing && (
-            <SignalChip
-              icon={Globe}
-              title={t('vulnPage.where.netTitle', 'Reachable from the internet')}
-            >
-              {t('vulnPage.where.net', 'Internet')}
-            </SignalChip>
-          )}
-          {!asset.crown_jewel && !asset.internet_facing && (
-            <span className="text-xs text-muted-foreground">
-              {t('vulnPage.where.internal', 'Internal')}
-            </span>
-          )}
-        </span>
+      <TableCell className="hidden sm:table-cell">
+        <ExposureChips asset={asset} />
       </TableCell>
       <TableCell className="hidden max-w-[12rem] truncate md:table-cell">
         {asset.owner || (
@@ -230,6 +218,31 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         )}
       </TableCell>
     </TableRow>
+  )
+}
+
+/** Exposure context of an asset: a column from `sm` up, under the name on a phone. */
+function ExposureChips({ asset }: { asset: CveExposureAsset }) {
+  const { t } = useTranslation()
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {asset.crown_jewel && (
+        <SignalChip icon={Crown}>{t('vulnPage.where.crown', 'Crown jewel')}</SignalChip>
+      )}
+      {asset.internet_facing && (
+        <SignalChip
+          icon={Globe}
+          title={t('vulnPage.where.netTitle', 'Reachable from the internet')}
+        >
+          {t('vulnPage.where.net', 'Internet')}
+        </SignalChip>
+      )}
+      {!asset.crown_jewel && !asset.internet_facing && (
+        <span className="text-xs text-muted-foreground">
+          {t('vulnPage.where.internal', 'Internal')}
+        </span>
+      )}
+    </span>
   )
 }
 
