@@ -415,7 +415,7 @@ export function TeamsSection({ frame }: SectionProps) {
 
       {/* Members in no team see nothing (owner decision D2); there is
           no per-organization "see everything" switch. */}
-      <p className="text-body text-muted-foreground" data-testid="no-team-access-note">
+      <p className="max-w-prose text-body text-muted-foreground" data-testid="no-team-access-note">
         {t(
           'org.teams.noTeamNote',
           'Members who are in no team see no assets or findings until you add them to a team or grant them an asset. Owners, admins and roles with full data access see everything.'
