@@ -197,6 +197,9 @@ export default function RolesPage() {
   const membersLabel = t('org.rolesPage.col.members', 'Members')
   const permissionsLabel = t('org.rolesPage.col.permissions', 'Permissions')
 
+  // hideBelow is the table frame width under which a column folds: the sum of the
+  // columns still shown with it (name floor 200, risk 140, data access 160, row menu 48,
+  // then 72 each for permissions, members and level) plus cell padding and slack, so no header is cut.
   const columns: ColumnDef<Role>[] = [
     {
       accessorKey: 'name',
@@ -227,7 +230,7 @@ export default function RolesPage() {
     {
       id: 'risk',
       accessorFn: (r) => (r.summary ? RISKS.length - RISKS.indexOf(r.summary.risk) : 0),
-      meta: { kind: 'text', minWidth: 170, maxWidth: 320, label: riskLabel },
+      meta: { kind: 'text', minWidth: 140, maxWidth: 320, hideBelow: 740, label: riskLabel },
       header: ({ column }) => <DataTableColumnHeader column={column} title={riskLabel} />,
       cell: ({ row }) =>
         row.original.summary ? (
@@ -243,14 +246,14 @@ export default function RolesPage() {
     },
     {
       accessorKey: 'has_full_data_access',
-      meta: { kind: 'status', width: 200, label: accessLabel },
+      meta: { kind: 'status', width: 160, label: accessLabel },
       enableSorting: false,
       header: accessLabel,
       cell: ({ row }) => dataAccess(row.original),
     },
     {
       accessorKey: 'hierarchy_level',
-      meta: { kind: 'number', hideBelow: 1000, label: levelLabel },
+      meta: { kind: 'number', hideBelow: 960, label: levelLabel },
       header: ({ column }) => <DataTableColumnHeader column={column} title={levelLabel} />,
       cell: ({ row }) => <span className="tabular-nums">{row.original.hierarchy_level}</span>,
     },
@@ -261,7 +264,7 @@ export default function RolesPage() {
           {
             id: 'members',
             accessorFn: (r: Role) => r.members_count ?? 0,
-            meta: { kind: 'number' as const, hideBelow: 900, label: membersLabel },
+            meta: { kind: 'number' as const, hideBelow: 880, label: membersLabel },
             header: ({ column }: { column: Column<Role> }) => (
               <DataTableColumnHeader column={column} title={membersLabel} />
             ),
@@ -273,7 +276,7 @@ export default function RolesPage() {
       : []),
     {
       accessorKey: 'permission_count',
-      meta: { kind: 'number', hideBelow: 900, label: permissionsLabel },
+      meta: { kind: 'number', hideBelow: 800, label: permissionsLabel },
       header: ({ column }) => <DataTableColumnHeader column={column} title={permissionsLabel} />,
       cell: ({ row }) => <span className="tabular-nums">{row.original.permission_count}</span>,
     },
@@ -448,6 +451,8 @@ export default function RolesPage() {
         <DataTable
           columns={columns}
           data={filteredData}
+          // When the table still scrolls sideways the row menu stays in view.
+          pinActions
           getRowId={(r) => r.id}
           isLoading={isLoading && roles.length === 0}
           error={isError ? (error ?? true) : undefined}
