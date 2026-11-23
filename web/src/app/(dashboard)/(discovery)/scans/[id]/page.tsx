@@ -14,6 +14,7 @@ import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
 import Link from '@/components/link'
+import { ScanRunMobileCard } from '@/features/scans/components/scan-run-mobile-card'
 import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft } from 'lucide-react'
@@ -442,6 +443,16 @@ export default function ScanDetailPage() {
               isLoading={isLoadingRuns && !runsResponse}
               showSearch={false}
               onRowClick={(run) => setOpenRunId(run.id)}
+              // The runs tab's own card, titled by when the run started: the
+              // requester wraps in full instead of being cut beside the trigger.
+              mobileRow={(run, selection) => (
+                <ScanRunMobileCard
+                  run={run}
+                  selection={selection}
+                  onOpen={(r) => setOpenRunId(r.id)}
+                  title={formatScanDate(run.started_at || run.created_at)}
+                />
+              )}
               manualPagination
               rowCount={runsResponse?.total ?? 0}
               pagination={runList.pagination}
