@@ -20,6 +20,10 @@ import type { Page } from '@playwright/test'
  *   joined           a field and a button side by side less than 8 px apart
  *                    (the kit gap), not one segmented group: /scope's Filters
  *                    button against its search box
+ *   emptyTail        the full-page picture is more than 1.5x as tall as the
+ *                    bottom of its last visible content (and taller than the
+ *                    window): a boxed list's height leaked into the page, or
+ *                    the picture grew by a scroller nobody scrolls the page with
  */
 
 export type MatrixBreaks = {
@@ -29,6 +33,7 @@ export type MatrixBreaks = {
   duplicateAction: string[]
   wideStretch: string[]
   joined: string[]
+  emptyTail: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -38,6 +43,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'duplicateAction',
   'wideStretch',
   'joined',
+  'emptyTail',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -128,6 +134,44 @@ export async function resolveRoute(page: Page, route: string): Promise<string | 
 export const routeSlug = (route: string) =>
   route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'home'
 
+/**
+ * `emptyTail`, measured on the window as the full-page picture takes it: the
+ * document height against the bottom of the last visible content (text,
+ * media, controls, painted boxes, cut to any box that clips them). A page
+ * shorter than `windowHeight` never fails.
+ */
+export async function findEmptyTail(page: Page, windowHeight: number): Promise<string[]> {
+  return page.evaluate((windowHeight) => {
+    const docHeight = document.documentElement.scrollHeight
+    let bottom = 0
+    const walk = (el: Element, clip: number) => {
+      const s = getComputedStyle(el)
+      if (s.display === 'none' || s.visibility === 'hidden') return
+      const r = el.getBoundingClientRect()
+      const end = r.bottom + window.scrollY
+      // A box as tall as the page (the shell, a page wrapper) paints its
+      // background behind everything: it is not content.
+      const filler = r.height >= docHeight * 0.9
+      const paints =
+        /^(IMG|svg|CANVAS|VIDEO|INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) ||
+        Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent!.trim()) ||
+        (!filler &&
+          (!/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor) ||
+            parseFloat(s.borderBottomWidth) > 0))
+      if (paints && r.width >= 2 && r.height >= 2) bottom = Math.max(bottom, Math.min(end, clip))
+      const inner = s.overflowY === 'visible' ? clip : Math.min(clip, end)
+      for (const c of el.children) walk(c, inner)
+    }
+    // The page's own content: the shell's sidebar runs the window's height.
+    const root = document.querySelector('main#content') ?? document.body
+    for (const c of root.children) walk(c, Infinity)
+    if (docHeight <= Math.max(windowHeight, bottom * 1.5)) return []
+    return [
+      `the page is ${docHeight}px tall, its last visible content ends at ${Math.round(bottom)}px`,
+    ]
+  }, windowHeight)
+}
+
 /** Runs the v2 detectors on the page (scope: `main` or an overlay selector). */
 export async function findMatrixBreaks(
   page: Page,
@@ -141,6 +185,7 @@ export async function findMatrixBreaks(
       duplicateAction: [] as string[],
       wideStretch: [] as string[],
       joined: [] as string[],
+      emptyTail: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out

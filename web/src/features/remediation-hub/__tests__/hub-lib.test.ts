@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { deadlineStatus, fixSteps, groupByAsset, progressParts } from '../lib/hub'
-import { rowOffsets, visibleRange, visibleRangeAt } from '../components/virtual-rows'
+import { boxHeight, rowOffsets, visibleRange, visibleRangeAt } from '../components/virtual-rows'
 import type { TaskMember } from '../api/types'
 
 const NOW = Date.parse('2026-10-16T12:00:00Z')
@@ -99,5 +99,18 @@ describe('visibleRangeAt', () => {
     expect(visibleRangeAt(offsets, 300, 200, 0)).toEqual({ first: 3, last: 6 })
     expect(visibleRangeAt(offsets, 300, 200, 8)).toEqual({ first: 0, last: 7 })
     expect(visibleRangeAt(rowOffsets([]), 0, 200, 8)).toEqual({ first: 0, last: 0 })
+  })
+})
+
+describe('boxHeight', () => {
+  it('ends the box at a whole row, never halfway through one', () => {
+    // A 40 px group heading, then 52 px rows: 480 would cut the ninth row.
+    const offsets = rowOffsets([40, ...Array<number>(200).fill(52)])
+    expect(boxHeight(offsets, 480)).toBe(40 + 8 * 52)
+    // Rows that fit take their own height.
+    expect(boxHeight(rowOffsets([40, 52, 52]), 480)).toBe(144)
+    // One row taller than the box still shows whole.
+    expect(boxHeight(rowOffsets([600, 52]), 480)).toBe(600)
+    expect(boxHeight(rowOffsets([]), 480)).toBe(0)
   })
 })
