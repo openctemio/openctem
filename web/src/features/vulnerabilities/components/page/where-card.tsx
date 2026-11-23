@@ -124,7 +124,9 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
                     {t('vulnPage.where.col.owner', 'Owner')}
                   </TableHead>
                   <TableHead className="text-end">{t('vulnPage.where.col.open', 'Open')}</TableHead>
-                  <TableHead className="pe-6">{t('vulnPage.where.col.worst', 'Worst')}</TableHead>
+                  <TableHead className="hidden pe-6 sm:table-cell">
+                    {t('vulnPage.where.col.worst', 'Worst')}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -175,6 +177,15 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
 function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
   const { t } = useTranslation()
   const closed = asset.open_findings === 0
+  const worst = asset.worst_priority ? (
+    <PriorityBadge priorityClass={asset.worst_priority} />
+  ) : (
+    <span className="text-xs text-muted-foreground">
+      {closed
+        ? t('vulnPage.where.closed', 'All closed')
+        : t('vulnPage.where.notPrioritized', 'Not prioritized')}
+    </span>
+  )
   return (
     <TableRow data-slot="where-row" className={cn(closed && 'text-muted-foreground')}>
       <TableCell className="max-w-[16rem] ps-6">
@@ -185,7 +196,9 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
         >
           {asset.name}
         </Link>
-        <span className="mt-1 block sm:hidden">
+        {/* Phone: exposure and the worst priority sit under the name. */}
+        <span className="mt-1 flex flex-wrap items-center gap-1.5 sm:hidden">
+          {worst}
           <ExposureChips asset={asset} />
         </span>
         <AssetTargets targets={asset.targets} more={asset.targets_more} />
@@ -206,17 +219,7 @@ function AssetRow({ cve, asset }: { cve: string; asset: CveExposureAsset }) {
           {formatNumber(asset.open_findings)}
         </Link>
       </TableCell>
-      <TableCell className="pe-6">
-        {asset.worst_priority ? (
-          <PriorityBadge priorityClass={asset.worst_priority} />
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {closed
-              ? t('vulnPage.where.closed', 'All closed')
-              : t('vulnPage.where.notPrioritized', 'Not prioritized')}
-          </span>
-        )}
-      </TableCell>
+      <TableCell className="hidden pe-6 sm:table-cell">{worst}</TableCell>
     </TableRow>
   )
 }
