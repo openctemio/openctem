@@ -944,7 +944,7 @@
   "settings.pentest.form.addExecSummary": "+ Thêm tóm tắt cho lãnh đạo (ảnh hưởng nghiệp vụ)",
   "settings.pentest.form.addStep": "Thêm bước",
   "settings.pentest.form.asset": "Tài sản",
-  "settings.pentest.form.assetHint": "Tùy chọn: liên kết với một tài sản trong danh mục để theo dõi trên dashboard.",
+  "settings.pentest.form.assetHint": "Tùy chọn: liên kết với một tài sản trong danh mục để theo dõi trên bảng điều khiển.",
   "settings.pentest.form.assignee": "Người phụ trách",
   "settings.pentest.form.classification": "Phân loại",
   "settings.pentest.form.cveId": "Mã CVE",
