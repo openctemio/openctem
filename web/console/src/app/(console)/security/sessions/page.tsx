@@ -249,7 +249,7 @@ export default function AdminSessionsPage() {
               onRetry={() => void mutate()}
               errorTitle={t('admin.securitySessionsPage.sessions', 'sessions')}
               isLoading={isLoading && !data}
-              showSearch={false}
+              searchPlaceholder={t('admin.sessions.search', 'Search email or IP address…')}
               showSelectionCount={false}
               mobileCards
               paginationNoun={t('admin.sessions.noun', 'sessions')}

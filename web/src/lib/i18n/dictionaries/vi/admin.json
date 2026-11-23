@@ -2191,6 +2191,7 @@
   "admin.sessions.review": "Xem lại",
   "admin.sessions.reviewTitle": "Xem lại phiên khẩn cấp",
   "admin.sessions.rowActions": "Thao tác với phiên của {admin}",
+  "admin.sessions.search": "Tìm email hoặc địa chỉ IP…",
   "admin.sessions.superOnly": "Chỉ quản trị cấp cao mới xem được các phiên quản trị.",
   "admin.sessions.total": "{count, plural, other {# phiên}}",
   "admin.sessions.unknownIp": "một địa chỉ không rõ",
