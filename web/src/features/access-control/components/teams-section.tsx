@@ -399,11 +399,19 @@ export function TeamsSection({ frame }: SectionProps) {
             <EmptyState
               icon={FolderKey}
               title={t('org.teams.emptyTitle', 'No teams yet')}
-              description={t(
-                'org.teams.emptyBody',
-                'Teams decide which assets their members see. Create one for each group that owns systems.'
-              )}
-              action={canCreate ? createButton : undefined}
+              // The header's Create team is the page's one main action, so the
+              // empty state points to it in words instead of repeating it.
+              description={
+                canCreate
+                  ? t(
+                      'org.teams.emptyBody',
+                      'Teams decide which assets their members see. Use Create team above to add one for each group that owns systems.'
+                    )
+                  : t(
+                      'org.teams.emptyBodyAsk',
+                      'Teams decide which assets their members see. Ask an owner or administrator to create one.'
+                    )
+              }
             />
           ),
           noMatch: {
