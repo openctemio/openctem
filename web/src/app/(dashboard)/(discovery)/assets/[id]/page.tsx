@@ -575,7 +575,8 @@ export default function AssetDetailPage() {
 
             <div data-slot="asset-panel" className={cn(PANEL, WIDE_TABS.has(tab) && PANEL_FULL)}>
               <TabsContent value="overview">
-                <DetailSectionList>
+                {/* A readable measure: the risk bar and the facts never stretch across a wide screen. */}
+                <DetailSectionList className="max-w-5xl">
                   {/* What it is and what runs on it; hidden when nothing was collected. */}
                   <KeyFactsSection asset={asset} />
                   <RiskSummarySection
