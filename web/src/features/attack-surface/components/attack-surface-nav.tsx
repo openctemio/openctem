@@ -102,6 +102,8 @@ export function AttackSurfaceNav({
           count: counts?.[r.href],
         }))}
         onChange={(href) => router.push(href)}
+        // In a list toolbar it takes the toolbar's control height.
+        size={part === 'lens' ? 'toolbar' : 'default'}
       />
     ) : null
 
