@@ -80,13 +80,18 @@ const TYPES: SuppressionType[] = ['false_positive', 'accepted_risk', 'wont_fix']
 const ENDS_WINDOWS = ['7', '30'] as const
 type EndsWindow = (typeof ENDS_WINDOWS)[number]
 
-/** Table frame widths (px) under which a column folds away; the name and the state stay. */
+/**
+ * Table frame widths (px) under which a column folds away; the name and the
+ * state stay. Each is the sum of the columns still shown with it (name floor
+ * 192, state 128, row menu 48, type 152, expires 140, approvers 160, created
+ * 140, requested by 160) plus 40 of slack, so the row menu is never cut.
+ */
 const EXCEPTION_HIDE_BELOW = {
   type: 560,
-  expires: 680,
-  created: 960,
+  expires: 700,
   approvers: 860,
-  requestedBy: 1040,
+  created: 1000,
+  requestedBy: 1160,
 } as const
 
 const DAY = 24 * 60 * 60 * 1000
@@ -607,6 +612,8 @@ export default function ExceptionsPage() {
           <DataTable
             columns={columns}
             data={filteredRules}
+            // When the table still scrolls sideways the row menu stays in view.
+            pinActions
             search={{
               value: search,
               onChange: setSearch,

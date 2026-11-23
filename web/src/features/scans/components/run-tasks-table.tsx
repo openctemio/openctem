@@ -360,13 +360,14 @@ export function RunTasksTable({
               <th scope="col" className="px-3 py-2 text-start font-medium">
                 {t('scans.tasks.colTool')}
               </th>
-              <th scope="col" className="px-3 py-2 text-start font-medium">
+              {/* Phone width: these three fold away; their values read under the tool. */}
+              <th scope="col" className="hidden px-3 py-2 text-start font-medium sm:table-cell">
                 {t('scans.tasks.colSensor')}
               </th>
-              <th scope="col" className="px-3 py-2 text-end font-medium">
+              <th scope="col" className="hidden px-3 py-2 text-end font-medium sm:table-cell">
                 {t('scans.tasks.colTargets')}
               </th>
-              <th scope="col" className="px-3 py-2 text-end font-medium">
+              <th scope="col" className="hidden px-3 py-2 text-end font-medium sm:table-cell">
                 {t('scans.tasks.colDuration')}
               </th>
               <th scope="col" className="px-3 py-2 text-end font-medium">
@@ -383,6 +384,21 @@ export function RunTasksTable({
               const gapFix = gapsFixKind(task.coverage_gaps ?? [])
               const prog = taskProgressNote(task, t)
               const content = taskContentNote(task as { content_pins?: TaskContentPins | null }, t)
+              const duration =
+                ms === undefined
+                  ? '-'
+                  : `${ms < 1000 ? '<1s' : formatScanDuration(ms)}${task.completed_at ? '' : t('scans.tasks.soFar')}`
+              const progLine = prog && (
+                <div
+                  className={
+                    prog.kind === 'stalling'
+                      ? 'mt-1 text-xs text-warning'
+                      : 'mt-1 text-xs text-muted-foreground'
+                  }
+                >
+                  {prog.text}
+                </div>
+              )
               return (
                 <Fragment key={task.id ?? i}>
                   <tr className="border-t align-top">
@@ -438,23 +454,25 @@ export function RunTasksTable({
                           className="mt-1 max-w-[260px] text-xs text-muted-foreground"
                         />
                       )}
+                      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-xs text-muted-foreground sm:hidden">
+                        <dt>{t('scans.tasks.colSensor')}</dt>
+                        <dd className="truncate">{taskSensorLabel(task, t)}</dd>
+                        <dt>{t('scans.tasks.colTargets')}</dt>
+                        <dd className="tabular-nums">{task.targets ?? 0}</dd>
+                        <dt>{t('scans.tasks.colDuration')}</dt>
+                        <dd className="tabular-nums">{duration}</dd>
+                      </dl>
+                      {progLine && <div className="sm:hidden">{progLine}</div>}
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
-                    <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
-                    <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
-                      {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
-                      {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
-                      {prog && (
-                        <div
-                          className={
-                            prog.kind === 'stalling'
-                              ? 'mt-1 text-xs text-warning'
-                              : 'mt-1 text-xs text-muted-foreground'
-                          }
-                        >
-                          {prog.text}
-                        </div>
-                      )}
+                    <td className="hidden px-3 py-2 text-muted-foreground sm:table-cell">
+                      {taskSensorLabel(task, t)}
+                    </td>
+                    <td className="hidden px-3 py-2 text-end tabular-nums sm:table-cell">
+                      {task.targets ?? 0}
+                    </td>
+                    <td className="hidden px-3 py-2 text-end tabular-nums text-muted-foreground sm:table-cell">
+                      {duration}
+                      {progLine}
                     </td>
                     <td className="px-3 py-2 text-end">
                       {task.id && (
