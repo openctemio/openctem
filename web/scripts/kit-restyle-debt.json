@@ -260,7 +260,7 @@
   "src/features/sensors/components/platform-ca-panel.tsx": 1,
   "src/features/sensors/components/sensor-content-section.tsx": 1,
   "src/features/sensors/components/sensor-grant-section.tsx": 1,
-  "src/features/sensors/components/sensor-install-snippets.tsx": 3,
+  "src/features/sensors/components/sensor-install-snippets.tsx": 1,
   "src/features/sensors/components/sensor-onboarding-panel.tsx": 1,
   "src/features/sensors/components/sensors-section.tsx": 1,
   "src/features/sensors/components/tool-settings-list.tsx": 9,

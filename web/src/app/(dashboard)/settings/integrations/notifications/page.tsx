@@ -608,22 +608,24 @@ export default function NotificationIntegrationsPage() {
                 channel alone on a row of its own. */}
             <Can route="PUT /api/v1/integrations/{id}">
               <Button
+                iconOnlyBelow="sm"
                 variant="outline"
                 title={t('notificationChannels.page.viewEvents', 'View events')}
                 onClick={() => router.push('/settings/integrations/notifications/history')}
               >
                 <History aria-hidden />
-                <span className="max-sm:sr-only">
+                <span className="sr-only sm:not-sr-only">
                   {t('notificationChannels.page.viewEvents', 'View events')}
                 </span>
               </Button>
               <Button
+                iconOnlyBelow="sm"
                 variant="outline"
                 title={t('notificationChannels.page.queue', 'Queue')}
                 onClick={() => router.push('/settings/integrations/notifications/outbox')}
               >
                 <Inbox aria-hidden />
-                <span className="max-sm:sr-only">
+                <span className="sr-only sm:not-sr-only">
                   {t('notificationChannels.page.queue', 'Queue')}
                 </span>
               </Button>
