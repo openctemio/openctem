@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { Page, TestInfo } from '@playwright/test'
+import { test as storedSessionTest, type Page, type TestInfo } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import {
   BREAK_KINDS,
@@ -669,7 +669,12 @@ function variants(): Variant[] {
 
 const slug = (route: string) => route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'home'
 
-async function prepare(page: Page, v: Variant, baseURL: string) {
+async function prepare(
+  page: Page,
+  v: Variant,
+  baseURL: string,
+  data: (page: Page, scen: Scenario) => Promise<void> = richData
+) {
   await page.setViewportSize({ width: v.width, height: v.height })
   await page.context().addCookies([
     { name: 'locale', value: v.lang, url: baseURL },
@@ -684,7 +689,7 @@ async function prepare(page: Page, v: Variant, baseURL: string) {
       /* storage blocked: the cookie still sets the theme */
     }
   }, v.theme)
-  await richData(page, v.scen)
+  await data(page, v.scen)
 }
 
 async function settle(page: Page) {
@@ -738,6 +743,18 @@ async function keep(testInfo: TestInfo, name: string, body: string | Buffer) {
 }
 
 type Options = { tag: string[] }
+
+/**
+ * Where layoutMatrix runs. The default is the tenant app: each worker signs
+ * the seeded owner in (fixtures/authenticated-page) and the lists get
+ * richData. The platform console (web/console) passes `session: 'stored'`:
+ * the page carries the session its config's global setup saved
+ * (storageState), and `data` serves its lists in place of richData.
+ */
+type MatrixOptions = Options & {
+  session?: 'tenant' | 'stored'
+  data?: (page: Page, route: string, scen: Scenario) => Promise<void>
+}
 
 /** Signed-in routes: the checks of every variant, one test per route. */
 export function layoutRoutes(
@@ -1346,22 +1363,24 @@ export function layoutSignedOut(options: Options, routes: string[]) {
  * spec-75 detectors and the v2 detectors go to <dir>/<route-slug>/w<width>.json.
  * LAYOUT_MATRIX=ci runs the reduced widths 390, 1024, 1440 and 1920.
  */
-export function layoutMatrix(options: Options) {
+export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOptions) {
   if (!MATRIX) return
-  test.describe('Layout matrix', options, () => {
-    test.describe.configure({ mode: 'parallel' })
+  // The tenant fixture only adds the sign-in to the same page fixture.
+  const t = session === 'stored' ? storedSessionTest : (test as unknown as typeof storedSessionTest)
+  t.describe('Layout matrix', options, () => {
+    t.describe.configure({ mode: 'parallel' })
     const routes = (process.env.LAYOUT_ROUTES ?? '').split(',').filter(Boolean)
     for (const route of routes) {
       for (const size of matrixWidths(MATRIX)) {
-        test(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
-          test.setTimeout(900_000)
+        t(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
+          t.setTimeout(900_000)
           const signedOut = isSignedOutRoute(route)
           const ctx = signedOut
             ? await browser.newContext({ baseURL, storageState: SIGNED_OUT })
             : null
           const page = ctx ? await ctx.newPage() : signedIn
           const url = signedOut ? statePath(route) : await resolveRoute(page, statePath(route))
-          test.skip(!url, `no row to open for ${route}`)
+          t.skip(!url, `no row to open for ${route}`)
           const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
           for (const theme of ['light', 'dark'] as const)
             for (const lang of ['en', 'vi'] as const)
@@ -1399,14 +1418,14 @@ export function layoutMatrix(options: Options) {
           const report: Record<string, (Breaks & MatrixBreaks) | string> = {}
           for (const v of vs) {
             await page.unrouteAll({ behavior: 'ignoreErrors' })
-            await prepare(page, v, baseURL!)
+            await prepare(page, v, baseURL!, data ? (p, scen) => data(p, route, scen) : richData)
             if (v.sidebar)
               await page
                 .context()
                 .addCookies([
                   { name: 'sidebar_state', value: String(v.sidebar === 'open'), url: baseURL! },
                 ])
-            for (const extra of ROUTE_DATA[route] ?? []) {
+            for (const extra of data ? [] : (ROUTE_DATA[route] ?? [])) {
               await page.route(extra.url, (r) =>
                 r.request().method() === 'GET'
                   ? r.fulfill({ json: extra.body(v.scen) })
