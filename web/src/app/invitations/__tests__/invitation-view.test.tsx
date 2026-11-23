@@ -83,6 +83,12 @@ function expectTokenNeverInAUrl(fetchFn: ReturnType<typeof vi.fn>) {
  * transition is still pending for a moment and the button is disabled until
  * it settles; a click before then is, rightly, ignored.
  */
+async function clickWhenEnabled(name: string | RegExp) {
+  const button = screen.getByRole('button', { name })
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+}
+
 async function clickOpenAcme() {
   const open = screen.getByRole('button', { name: 'Open Acme' })
   await waitFor(() => expect(open).toBeEnabled())
@@ -334,7 +340,7 @@ describe('InvitationView', () => {
       expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
       expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('button', { name: action }))
+      await clickWhenEnabled(action)
       await waitFor(() => expect(localLogoutAction).toHaveBeenCalledWith(href))
       expectTokenNeverInAUrl(fetchFn)
     })
@@ -605,7 +611,7 @@ describe('InvitationView', () => {
       render(<InvitationView hasSession />)
       expect(await screen.findByText('Invitation already accepted')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /go to sign in/i })).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await clickWhenEnabled('Open Acme')
       await waitFor(() => expect(selectTenantAction).toHaveBeenCalledWith('t1'))
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith('/', {
