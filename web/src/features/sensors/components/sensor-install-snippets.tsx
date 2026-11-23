@@ -149,14 +149,15 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
-    <div className="relative min-w-0 rounded-lg border bg-muted/50">
-      <div className="absolute end-2 top-2 flex gap-1.5">
+    <div className="min-w-0 rounded-lg border bg-muted/50">
+      {/* The actions sit on their own bar, so the text below has the box's
+          whole width and wraps inside it instead of running past its edge. */}
+      <div className="flex justify-end gap-1.5 border-b p-2">
         {file && (
           <Button
             type="button"
             variant="outline"
             size="icon-sm"
-            className="bg-background px-2 text-xs"
             onClick={() => downloadText(text, file)}
             aria-label={t('sensors.snippets.download', undefined, { file })}
           >
@@ -167,7 +168,6 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 bg-background px-2 text-xs"
           onClick={async () => {
             await copyToClipboard(text)
             setCopied(true)
@@ -182,7 +182,7 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
       {/* Focusable, so a keyboard can scroll a long snippet. */}
       <pre
         tabIndex={0}
-        className="max-h-96 overflow-auto rounded-lg p-4 pe-28 font-mono text-xs leading-relaxed whitespace-pre focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="max-h-96 overflow-y-auto rounded-b-lg p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-format={label}
         role="region"
         aria-label={label}

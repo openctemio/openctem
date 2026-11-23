@@ -27,8 +27,10 @@ export default function AttackSurfaceChangesPage() {
             </span>
           }
         />
-        <AttackSurfaceSectionTabs />
-        <EASMChanges />
+        {/* The lens goes in the list's toolbar: the page has no search, so
+            on a phone the Filters button would otherwise sit alone. */}
+        <AttackSurfaceSectionTabs part="tabs" />
+        <EASMChanges lens={<AttackSurfaceSectionTabs part="lens" />} />
       </PageStack>
     </Main>
   )

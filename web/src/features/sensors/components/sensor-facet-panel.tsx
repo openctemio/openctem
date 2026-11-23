@@ -3,6 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { FacetOption, FacetPanel, FacetSection, FacetToggle } from '@/features/shared'
 import type { SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
+import { cn } from '@/lib/utils'
 
 import {
   EMPTY_FLEET_FILTERS,
@@ -176,14 +177,20 @@ export function SensorFacetPanel({
             <FacetOption
               key={o.value}
               label={
-                <span className="flex items-center justify-between gap-2">
-                  <span className={o.value === 'unknown' ? undefined : 'font-mono text-xs'}>
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  {/* A long build version ends in an ellipsis, whole on hover. */}
+                  <span
+                    className={cn('min-w-0 truncate', o.value !== 'unknown' && 'font-mono text-xs')}
+                    title={o.value === 'unknown' ? undefined : o.value}
+                  >
                     {o.value === 'unknown'
                       ? t('sensors.filters.sdkUnknown', 'Not reported')
                       : o.value}
                   </span>
                   {o.count !== null && (
-                    <span className="text-xs text-muted-foreground tabular-nums">{o.count}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {o.count}
+                    </span>
                   )}
                 </span>
               }

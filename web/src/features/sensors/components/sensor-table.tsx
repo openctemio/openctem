@@ -108,10 +108,14 @@ const HIDDEN_BY_DEFAULT = {
 
 /**
  * Column widths (px) and the table-frame width under which a column steps
- * aside (it stays under Display > Columns): Host first, then Tools. With the
+ * aside (it stays under Display > Columns): Host, then Tools, then Jobs, then
+ * Version. Each threshold is the width the columns still shown need: with the
  * checkbox column (40), the name's floor (200) and the row menu (48) the
- * default set needs 1104: it fits the frame of a 1440 screen (1114) and,
- * without Host (952), the frame of a 1280 screen (954).
+ * default set needs 1104 (a 1440 screen's frame, 1114); without Host 952 (a
+ * 1280 screen, 954); without Tools 824; without Jobs 720 (a 1024 screen with
+ * the sidebar closed); without Version 488, which fits a 768 tablet, an 820
+ * tablet and a 1024 screen with the sidebar open, so the pinned row menu is
+ * never cut by the scroller's edge. A phone shows the card list instead.
  */
 const SENSORS_WIDTH = {
   host: 152,
@@ -127,9 +131,7 @@ const SENSORS_WIDTH = {
   usage: 128,
   region: 128,
 }
-// Jobs folds away first on a tablet frame (sidebar open), so the row
-// actions never end past the table's edge.
-const SENSORS_HIDE_BELOW = { host: 1104, tools: 952, jobs: 904 } as const
+const SENSORS_HIDE_BELOW = { host: 1104, tools: 952, jobs: 824, version: 720 } as const
 
 const STATE_RANK = new Map(SENSOR_STATES.map((s, i) => [s, i]))
 
@@ -267,7 +269,12 @@ export function SensorTable({
       },
       {
         id: 'version',
-        meta: { kind: 'text', width: SENSORS_WIDTH.version, label: t('sensors.table.col.version') },
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.version,
+          hideBelow: SENSORS_HIDE_BELOW.version,
+          label: t('sensors.table.col.version'),
+        },
         accessorFn: (a) => normalizeSensorVersion(a.version) ?? '',
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.version')} />
