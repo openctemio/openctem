@@ -11,12 +11,14 @@ import { MetaLine } from '../text-layout'
 
 /**
  * A queue item on a phone, laid out like every other phone card of a list:
- * the row's name and state on the first line, the end of the card always
- * holding something, never a line of its own for one control.
+ * the row's name and state on the first line, the controls at the end of
+ * the card, and the text always at the full card width.
  *
  *   [ ] Title, up to two lines .......................... [State]
  *       The reason, two lines at most
- *       Key facts on one line ......................... [Approve] [...]
+ *       Key fact ...................................... [Approve] [...]
+ *       (a key fact too long to share the line takes the full width, and the
+ *       controls move to their own line under it, at the end)
  *
  * - `state`: the state chip at the end of the title line (Pending, the
  *   severity of a finding waiting to close).
@@ -111,13 +113,23 @@ export function QueueCard({
           </div>
         ) : null}
         {key.length > 0 || end ? (
-          <div data-slot="queue-card-line" className="flex min-w-0 items-center gap-2">
-            <div data-slot="queue-card-meta" className="min-w-0 flex-1">
+          // The line wraps: a short fact (an age, a date) keeps the controls
+          // beside it, while a long one (an asset name, a scope) takes the full
+          // card width and the controls move to their own line under it, at the
+          // end. The fact is never squeezed into a narrow column.
+          <div
+            data-slot="queue-card-line"
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <div data-slot="queue-card-meta" className="min-w-0 flex-auto">
               {key.length > 0 && <MetaLine className="items-center" items={key} />}
             </div>
             {actions ? (
               // `peer`: the chevron shows only while this draws nothing.
-              <div data-slot="queue-card-actions" className="peer flex shrink-0 empty:hidden">
+              <div
+                data-slot="queue-card-actions"
+                className="peer ms-auto flex shrink-0 empty:hidden"
+              >
                 {actions}
               </div>
             ) : null}
@@ -128,7 +140,7 @@ export function QueueCard({
                 tabIndex={-1}
                 aria-hidden="true"
                 className={cn(
-                  '-me-2 size-control-touch shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted',
+                  '-me-2 ms-auto size-control-touch shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted',
                   actions ? 'hidden peer-empty:inline-flex' : 'inline-flex'
                 )}
               >
