@@ -329,8 +329,8 @@ function UserRolesDetailCard({
         </h4>
         {onManageRoles && (
           <Can route="PUT /api/v1/users/{userId}/roles">
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onManageRoles}>
-              <Pencil className="me-1 h-3 w-3" />
+            <Button variant="ghost" onClick={onManageRoles}>
+              <Pencil />
               {t('org.membersPage.manage', 'Manage')}
             </Button>
           </Can>
@@ -1043,7 +1043,11 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'last_login_at',
-      meta: { kind: 'date', label: t('org.membersPage.col.lastActive', 'Last active') },
+      meta: {
+        kind: 'date',
+        label: t('org.membersPage.col.lastActive', 'Last active'),
+        hideBelow: 640,
+      },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -1083,7 +1087,11 @@ export default function UsersPage() {
       ? [
           {
             id: 'mfa',
-            meta: { kind: 'status', label: t('org.membersPage.col.twoFactor', 'Two-factor') },
+            meta: {
+              kind: 'status',
+              label: t('org.membersPage.col.twoFactor', 'Two-factor'),
+              hideBelow: 640,
+            },
             header: t('org.membersPage.col.twoFactor', 'Two-factor'),
             enableSorting: false,
             cell: ({ row }) => <MemberMfaBadge status={row.original.mfa_status} />,
