@@ -264,7 +264,7 @@
   "findings.baseChip.practice": "Nhóm nghiệp vụ",
   "findings.baseChip.state": "Tình trạng",
   "findings.branchOnly.label": "Chỉ nhánh",
-  "findings.branchOnly.tooltip": "Chỉ thấy trên nhánh tính năng. Không tính là phơi nhiễm (dashboard, SLA, thông báo) cho đến khi nhánh mặc định, nhánh được bảo vệ hoặc nhánh phát hành có nó.",
+  "findings.branchOnly.tooltip": "Chỉ thấy trên nhánh tính năng. Không tính là phơi nhiễm (bảng điều khiển, SLA, thông báo) cho đến khi nhánh mặc định, nhánh được bảo vệ hoặc nhánh phát hành có nó.",
   "findings.bulk.assignFailed": "Không thể giao các phát hiện",
   "findings.bulk.assignTo": "Giao cho…",
   "findings.bulk.noneCanMove": "Không phát hiện nào đã chọn có thể chuyển trạng thái",
