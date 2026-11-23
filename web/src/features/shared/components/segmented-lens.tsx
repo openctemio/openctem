@@ -33,7 +33,7 @@ export interface SegmentedLensProps<V extends string> {
   className?: string
   /** Read only: shows the value, nothing can be chosen. */
   disabled?: boolean
-  /** `toolbar`: the list toolbar's control height (32 px), so the lens lines up with the selects beside it. */
+  /** `toolbar`: the list toolbar's control height (36 px on a phone, 32 px from sm), so the lens lines up with the controls beside it. */
   size?: 'default' | 'toolbar'
 }
 
@@ -94,7 +94,7 @@ export function SegmentedLens<V extends string>({
       onKeyDown={onKeyDown}
       className={cn(
         'inline-flex items-center rounded-md border bg-muted/40 p-0.5 pointer-coarse:h-auto',
-        size === 'toolbar' ? 'h-8' : 'h-9',
+        size === 'toolbar' ? 'h-9 sm:h-8' : 'h-9',
         className
       )}
     >
@@ -116,7 +116,7 @@ export function SegmentedLens<V extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               'inline-flex cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:h-11 gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              size === 'toolbar' ? 'h-6.5' : 'h-8',
+              size === 'toolbar' ? 'h-8 sm:h-6.5' : 'h-8',
               selected
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
