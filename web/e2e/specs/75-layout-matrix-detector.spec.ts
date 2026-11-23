@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { findMatrixBreaks } from '../helpers/layout-matrix'
+import { findEmptyTail, findMatrixBreaks } from '../helpers/layout-matrix'
 
 /**
  * Self-test of the MVP acceptance v2 detectors (helpers/layout-matrix.ts):
@@ -302,4 +302,26 @@ test('a display:contents wrapper is not a column', { tag: ['@shell'] }, async ({
       <div style="display:contents"><button style="width:120px">Filters</button></div><span>x</span></div></main>`
   )
   expect(found.pastPanel).toEqual([])
+})
+
+test.describe('layout matrix detector: empty tail', { tag: ['@shell'] }, () => {
+  // The full-page picture of /remediation/tasks/[id] grew by the height of its
+  // boxed finding list: 10,800 px of page under a panel that ends near 770 px.
+  const shell = (height: number) =>
+    doc(`<div style="height:${height}px;background:#fff"><main id="content" style="height:100%">
+      <section style="border:1px solid #ccc;padding:8px"><h2>Findings</h2>
+        <div style="height:480px;overflow-y:auto"><div style="height:10000px"><p>Row 1</p></div></div>
+      </section></main></div>`)
+
+  test('flags a page far taller than its last content', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 6000 })
+    await page.setContent(shell(6000))
+    expect((await findEmptyTail(page, 900)).join('\n')).toMatch(/6000px tall/)
+  })
+
+  test('is quiet when the page fits the window', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(shell(900))
+    expect(await findEmptyTail(page, 900)).toEqual([])
+  })
 })

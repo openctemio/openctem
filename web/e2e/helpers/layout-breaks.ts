@@ -12,6 +12,7 @@ import {
 } from '../helpers/text-breaks'
 import {
   AUTH_ROUTES,
+  findEmptyTail,
   findMatrixBreaks,
   matrixWidths,
   MATRIX_KINDS,
@@ -1419,21 +1420,28 @@ export function layoutMatrix(options: Options) {
             }
             // The shell scrolls inside its content column, not the document, so
             // a full-page screenshot stopped at the window. The window grows
-            // to the tallest scroller for the picture (the checks above ran
-            // at the real height), up to 12000 px.
+            // to the tallest outer scroller for the picture (the checks above
+            // ran at the real height), up to 12000 px. A scroller inside
+            // another one (a boxed list) keeps its box: growing the window by
+            // its height left a screen of empty page under the list.
             const tall = v.overlay
               ? 0
-              : await page.evaluate(() =>
-                  Math.max(
+              : await page.evaluate(() => {
+                  const scrolls = (e: Element) => {
+                    const o = getComputedStyle(e).overflowY
+                    return (o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight
+                  }
+                  const nested = (e: Element) => {
+                    for (let a = e.parentElement; a; a = a.parentElement) if (scrolls(a)) return true
+                    return false
+                  }
+                  return Math.max(
                     0,
                     ...Array.from(document.querySelectorAll<HTMLElement>('body, body *'))
-                      .filter((e) => {
-                        const o = getComputedStyle(e).overflowY
-                        return (o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight
-                      })
+                      .filter((e) => scrolls(e) && !nested(e))
                       .map((e) => e.scrollHeight - e.clientHeight)
                   )
-                )
+                })
             if (tall > 0)
               await page.setViewportSize({
                 width: v.width,
@@ -1443,6 +1451,9 @@ export function layoutMatrix(options: Options) {
             // them to settle so the picture is the finished chart, not a frame.
             if (await page.locator('main .recharts-surface').count())
               await page.waitForTimeout(2000)
+            const found = report[v.tag]
+            if (tall > 0 && typeof found !== 'string')
+              found.emptyTail = await findEmptyTail(page, v.height)
             await keep(
               testInfo,
               `${dir}/${v.tag}.png`,
