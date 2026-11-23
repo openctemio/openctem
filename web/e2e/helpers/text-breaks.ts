@@ -651,12 +651,18 @@ const DUE = /^(due_date|due_at|deadline|target_date|sla_due_at)$/
 const SKIP =
   /\/(me|auth|permissions|modules|tenants|preferences|features|license|nav|nav-pins|saved-views|notifications\/unread|settings|i18n|session|sessions\/current|users\/me|health|dashboard)(\/|\?|$)/
 
+// Widened list rows get new ids (vary). A page that then opens one of them
+// (triage reads each finding in its queue) asks for an id the API never had:
+// richData answers it with the row it was copied from, under the new id.
+const ALIASES = new Map<string, string>()
+
 function vary(row: unknown, i: number, depth = 0): unknown {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return row
   const o: Record<string, unknown> = { ...(row as Record<string, unknown>) }
   for (const [k, v] of Object.entries(o)) {
     if (k === 'id' && typeof v === 'string' && v.length > 8) {
       o.id = v.slice(0, -6) + String(i).padStart(6, '0')
+      if (o.id !== v) ALIASES.set(o.id as string, v)
     } else if (typeof v === 'string' && NAMEY.test(k) && depth === 0) {
       o[k] = [v, LONG_EN, LONG_VI, 'x', LONG_HOST, `${v} ${i}`][i % 6]
     } else if (typeof v === 'number' && COUNTY.test(k)) {
@@ -784,6 +790,17 @@ export async function richData(page: Page, scen: Scenario = 'rich') {
         : route.fulfill({ response: res, json: richDashboard(body) })
     }
     if (req.method() !== 'GET' || SKIP.test(url.pathname)) return route.fallback()
+    const alias = url.pathname.split('/').find((seg) => ALIASES.has(seg))
+    if (alias) {
+      const real = new URL(url)
+      real.pathname = url.pathname.replace(alias, ALIASES.get(alias) as string)
+      const res = await route.fetch({ url: real.toString() }).catch(() => null)
+      if (!res) return route.fallback()
+      const body = await res.json().catch(() => null)
+      return body && typeof body === 'object' && 'id' in body
+        ? route.fulfill({ response: res, json: { ...body, id: alias } })
+        : route.fulfill({ response: res })
+    }
     let res
     try {
       res = await route.fetch()

@@ -11,6 +11,8 @@ export const METHOD_LABEL: Record<string, string> = {
   covered_scan: 'Covered scan',
   ci_default_branch: 'Default-branch scan',
   retest: 'Retest',
+  retest_verified: 'Retest confirmed the fix',
+  claimed_fix_scan: 'Fix reported, scan agrees',
   source_reported: 'Reported fixed by its source',
   obsolete_asset: 'Asset gone',
 }
