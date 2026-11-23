@@ -1420,30 +1420,22 @@ export function layoutMatrix(options: Options) {
             }
             // The shell scrolls inside its content column, not the document, so
             // a full-page screenshot stopped at the window. The window grows
-            // to the tallest outer scroller for the picture (the checks above
-            // ran at the real height), up to 12000 px. A scroller inside
-            // another one (a boxed list) keeps its box: growing the window by
-            // its height left a screen of empty page under the list.
+            // by the page scrollers' full height for the picture (the checks
+            // above ran at the real height), up to 12000 px. The page
+            // scrollers are named, not inferred: the shell's `main#content`
+            // (MainRegion, the skip link's target) and the document. Any other
+            // scroller (a boxed list inside the page) keeps its box: growing
+            // the window by its height left a screen of empty page under it.
             const tall = v.overlay
               ? 0
-              : await page.evaluate(() => {
-                  const scroller = (e: Element) =>
-                    /auto|scroll/.test(getComputedStyle(e).overflowY)
-                  const scrolls = (e: Element) => scroller(e) && e.scrollHeight > e.clientHeight
-                  // Inside a scroller, even one whose content fits right now
-                  // (the page scroller of a page shorter than the window).
-                  const nested = (e: Element) => {
-                    for (let a = e.parentElement; a; a = a.parentElement)
-                      if (scroller(a)) return true
-                    return false
-                  }
-                  return Math.max(
+              : await page.evaluate(() =>
+                  Math.max(
                     0,
-                    ...Array.from(document.querySelectorAll<HTMLElement>('body, body *'))
-                      .filter((e) => scrolls(e) && !nested(e))
-                      .map((e) => e.scrollHeight - e.clientHeight)
+                    ...[document.querySelector('main#content'), document.scrollingElement].map(
+                      (e) => (e ? e.scrollHeight - e.clientHeight : 0)
+                    )
                   )
-                })
+                )
             if (tall > 0)
               await page.setViewportSize({
                 width: v.width,
