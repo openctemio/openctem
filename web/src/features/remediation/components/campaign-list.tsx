@@ -39,8 +39,13 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 
 type StatusFilter = CampaignStatus | 'all'
 
-/** Table frame widths (px) under which a column folds away; the name and the status stay. */
-export const CAMPAIGN_HIDE_BELOW = { owner: 780, tasks: 620, progress: 960 } as const
+/**
+ * Table frame widths (px) under which a column folds away; the name, the
+ * status and the due date stay. Each is the sum of the columns still shown
+ * with it (name floor 192, status 128, due 208, tasks 136, owner 160,
+ * progress 176) plus 40 of slack, so no column header is cut.
+ */
+export const CAMPAIGN_HIDE_BELOW = { tasks: 704, owner: 864, progress: 1040 } as const
 
 export function CampaignList() {
   const { t } = useTranslation()
@@ -250,18 +255,19 @@ export function CampaignList() {
           paginationNoun={t('remediationCampaigns.noun')}
           mobileRow={(c) => (
             <div data-slot="campaign-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <Link
-                  href={`/remediation/campaigns/${c.id}`}
-                  onClick={(e) => opensSheet(e, () => openSheet(c.id))}
-                  className="min-w-0 truncate font-medium hover:underline"
-                  title={c.name}
-                >
-                  {c.name}
-                </Link>
+              {/* The name has the full width; the status sits under it with the owner. */}
+              <Link
+                href={`/remediation/campaigns/${c.id}`}
+                onClick={(e) => opensSheet(e, () => openSheet(c.id))}
+                className="line-clamp-2 min-w-0 font-medium break-words hover:underline"
+                title={c.name}
+              >
+                {c.name}
+              </Link>
+              <div className="flex min-w-0 items-center gap-2">
                 <StatusChip domain="remediationCampaign" value={c.status} className="shrink-0" />
+                <span className="text-meta min-w-0 truncate">{ownerOf(c)}</span>
               </div>
-              <p className="text-meta truncate">{ownerOf(c)}</p>
               <MetaLine
                 items={[
                   <CampaignTasksCell key="tasks" summary={c.summary} inline />,
