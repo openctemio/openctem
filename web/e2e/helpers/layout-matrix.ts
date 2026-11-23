@@ -94,6 +94,68 @@ const shown = (page: Page, sel: string) =>
     .catch(() => {})
 
 /**
+ * E-mail states need a stack whose platform e-mail goes to a mail catcher
+ * (Mailpit): E2E_MAIL_API is its HTTP API. The accounts are example.com ones
+ * the stack seeds: mail-reset@example.com (verified) and
+ * mail-verify-1..120@example.com (not verified).
+ */
+const MAIL_API = process.env.E2E_MAIL_API
+const API_BASE = process.env.E2E_API_BASE_URL ?? 'http://localhost:8080'
+const MAIL_VERIFY_POOL = 120
+
+/**
+ * Password and link requests share a per-address limit of three a minute.
+ * Each state sends its requests as one documentation address (RFC 5737),
+ * forwarded by the web as X-Forwarded-For, so the states of one run do not
+ * refuse each other. The server still applies its limits.
+ */
+const asOneVisitor = (page: Page) =>
+  page.setExtraHTTPHeaders({
+    'X-Forwarded-For': `203.0.113.${1 + Math.floor(Math.random() * 254)}`,
+  })
+
+/** The newest message to an address in the mail catcher, as text. */
+async function mailTo(page: Page, address: string): Promise<string | null> {
+  for (let i = 0; i < 20; i++) {
+    const found = await page.request
+      .get(`${MAIL_API}/api/v1/search?query=${encodeURIComponent(`to:"${address}"`)}`)
+      .then((r) => r.json())
+      .catch(() => null)
+    const id = found?.messages?.[0]?.ID
+    if (id) {
+      const msg = await page.request.get(`${MAIL_API}/api/v1/message/${id}`).then((r) => r.json())
+      return `${msg.Text ?? ''}\n${msg.HTML ?? ''}`
+    }
+    await page.waitForTimeout(500)
+  }
+  return null
+}
+
+/**
+ * Opens the link of a fresh verification e-mail: asks for one for an unused
+ * account of the pool (a used account is verified and gets no e-mail) and
+ * opens its /verify-email link on the web under test.
+ */
+async function openVerificationLink(page: Page) {
+  if (!MAIL_API) throw new Error('E2E_MAIL_API is not set: this state needs a mail catcher')
+  for (let tries = 0; tries < 6; tries++) {
+    const address = `mail-verify-${1 + Math.floor(Math.random() * MAIL_VERIFY_POOL)}@example.com`
+    await page.request.post(`${API_BASE}/api/v1/auth/resend-verification`, {
+      data: { email: address },
+      headers: { 'X-Forwarded-For': `198.51.100.${1 + Math.floor(Math.random() * 254)}` },
+    })
+    const body = await mailTo(page, address)
+    const link = body?.match(/https?:\/\/[^\s"'<>]*\/verify-email[^\s"'<>]*/)?.[0]
+    if (!link) continue
+    const u = new URL(link.replace(/&amp;/g, '&'))
+    await page.goto('about:blank')
+    await page.goto(u.pathname + u.search + u.hash)
+    return
+  }
+  throw new Error('no verification e-mail arrived')
+}
+
+/**
  * Entry-page states the matrix opens beside the bare route, so a link page is
  * checked in its real states and not only as "invalid link" (MVP v2 batch 9).
  * The key is a LAYOUT_ROUTES entry (`/reset-password@form`); `path` is the
@@ -113,11 +175,13 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
   },
   // An invitation link opens the sign-up form even when open sign-up is off.
   '/register@invite': { path: '/register?returnTo=/invitations/example' },
-  // After the request: the "check your email" state.
+  // After the request for a seeded account: the "check your email" state
+  // (on a stack with a mail catcher, see MAIL_API).
   '/forgot-password@sent': {
     path: '/forgot-password',
     act: async (page) => {
-      await page.locator('main input[name="email"]').fill('nobody@example.com')
+      await asOneVisitor(page)
+      await page.locator('main input[name="email"]').fill('mail-reset@example.com')
       await submit(page)
       await page
         .locator('main input[name="email"]')
@@ -131,10 +195,23 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
   '/reset-password@expired': {
     path: '/reset-password#token=synthetic-reset-token',
     act: async (page) => {
+      await asOneVisitor(page)
       await page.locator('main input[name="password"]').fill('Correct-Horse-Battery-9')
       await page.locator('main input[name="confirmPassword"]').fill('Correct-Horse-Battery-9')
       await submit(page)
       await shown(page, 'main [role="alert"]')
+    },
+  },
+  // The link of a real verification e-mail: the "verified" state.
+  '/verify-email@verified': {
+    path: '/verify-email',
+    act: async (page) => {
+      await openVerificationLink(page)
+      await page
+        .locator('main [role="status"], main [role="alert"]')
+        .first()
+        .waitFor({ timeout: 15_000 })
+        .catch(() => {})
     },
   },
   // A code the server does not know: the invalid-code banner.

@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
@@ -29,6 +28,7 @@ import { useTranslation } from '@/context/i18n-provider'
 export default function ForgotPasswordPage() {
   const [isPending, startTransition] = useTransition()
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [failed, setFailed] = useState(false)
   const passwordPolicy = usePasswordPolicy()
   const emailUnavailable = useEmailUnavailable()
   const { t } = useTranslation()
@@ -41,15 +41,13 @@ export default function ForgotPasswordPage() {
   })
 
   function onSubmit(data: ForgotPasswordInput) {
+    setFailed(false)
     startTransition(async () => {
       const result = await forgotPasswordAction(data.email)
-
-      if (result.success) {
-        setIsSubmitted(true)
-        toast.success(t('auth.forgot.sentTitle', 'Check your email'))
-      } else {
-        toast.error(t('auth.forgot.failed', 'Something went wrong'))
-      }
+      // One message on the page itself, no toast: the "check your email" card
+      // or the banner above the field (a toast also covered the title on phones).
+      if (result.success) setIsSubmitted(true)
+      else setFailed(true)
     })
   }
 
@@ -119,6 +117,11 @@ export default function ForgotPasswordPage() {
       />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3.5">
+          {failed && (
+            <EntryBanner tone="danger" role="alert">
+              {t('auth.forgot.failed', 'Something went wrong')}
+            </EntryBanner>
+          )}
           <FormField
             control={form.control}
             name="email"
