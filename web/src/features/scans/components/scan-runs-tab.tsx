@@ -706,9 +706,9 @@ function ScanRunsTable() {
   const refreshLabel = t('scans.runs.refresh', 'Refresh')
   const exportLabel = t('scans.runs.exportCsv')
   const nothingToExport = !data?.total
-  // The list's own actions. From 768 px: Refresh and Export as buttons. On a
-  // phone the same two are the items of one More, so the row keeps its room
-  // for the view name and the count.
+  // The list's own actions. From 768 px: Refresh and Export as buttons in the
+  // title row. On a phone the same two are the items of one More at the end
+  // of the toolbar row.
   const moreItems: ActionMenuEntry[] = [
     { id: 'refresh', label: refreshLabel, icon: RefreshCw, onSelect: refresh },
     {
@@ -784,18 +784,6 @@ function ScanRunsTable() {
             {exportLabel}
           </Button>
         </div>
-        <div className="md:hidden">
-          <ActionMenu
-            title={viewTitle}
-            label={moreLabel}
-            items={moreItems}
-            trigger={
-              <Button variant="outline" size="icon" aria-label={moreLabel}>
-                <MoreHorizontal aria-hidden />
-              </Button>
-            }
-          />
-        </div>
       </ListTitleRow>
 
       {noAccess ? (
@@ -831,6 +819,22 @@ function ScanRunsTable() {
               sheetOnly: true,
             }}
             toolbarStart={toolbarStart}
+            // Phone: Refresh and Export are one More beside Filters, so the
+            // title row keeps the view name and the count only.
+            toolbarEnd={
+              isPhone ? (
+                <ActionMenu
+                  title={viewTitle}
+                  label={moreLabel}
+                  items={moreItems}
+                  trigger={
+                    <Button variant="outline" size="icon" aria-label={moreLabel}>
+                      <MoreHorizontal aria-hidden />
+                    </Button>
+                  }
+                />
+              ) : undefined
+            }
             toolbarBelow={chipsRow}
             getRowId={getRunId}
             onRowClick={(r) => setOpenRunId(r.id)}

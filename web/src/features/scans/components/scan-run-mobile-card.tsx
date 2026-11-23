@@ -1,5 +1,6 @@
 'use client'
 
+import { ChevronRight } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetaLine, RelativeTime, type MobileRowSelection } from '@/features/shared'
@@ -15,7 +16,7 @@ import { RunScanCell, RunStateLine, RunTasksText, runDurationText } from './scan
  *   Weekly web scan (the whole width, two lines at most)
  *   Partial  Active  Scan run completed partially: 2 of 6 ste...
  *   4/6 tasks, 2 failed   3 findings
- *   Ana Example   2 hours ago   20m
+ *   Ana Example   2 hours ago   20m                                   >
  *
  * The state and its reason are one line: the state chip never wraps or
  * shrinks, the reason is cut to the room left (whole in its hover text and in
@@ -99,6 +100,12 @@ export function ScanRunMobileCard({
           ]}
         />
       </div>
+      {/* A tap opens the run's sheet: the chevron says so and ends the card. */}
+      <ChevronRight
+        data-slot="run-card-chevron"
+        aria-hidden
+        className="size-4 shrink-0 self-center text-muted-foreground rtl:rotate-180"
+      />
     </div>
   )
 }

@@ -149,7 +149,15 @@ type ConfigScheduleFilter = ScheduleType | 'all'
  * screen (954), so the row menu is on screen without scrolling sideways.
  */
 const SCANS_WIDTH = { type: 160, intensity: 120, lastRun: 200, recentRuns: 136, schedule: 208 }
-const SCANS_HIDE_BELOW = { intensity: 1220, recentRuns: 1090 } as const
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of scrolling sideways: the run count, then the schedule (both
+// are on the scan's own page).
+const SCANS_HIDE_BELOW = {
+  intensity: 1220,
+  recentRuns: 1090,
+  runs: 950,
+  schedule: 860,
+} as const
 
 // ============================================
 // MAIN PAGE COMPONENT
@@ -720,7 +728,7 @@ function ConfigurationsTab() {
       },
       {
         accessorKey: 'total_runs',
-        meta: { kind: 'number', label: t('scans.col.runs') },
+        meta: { kind: 'number', hideBelow: SCANS_HIDE_BELOW.runs, label: t('scans.col.runs') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.col.runs')} />
         ),
@@ -729,7 +737,12 @@ function ConfigurationsTab() {
       {
         // The schedule and its on/off switch; manual scans have neither.
         accessorKey: 'schedule_type',
-        meta: { kind: 'text', width: SCANS_WIDTH.schedule, label: t('scans.col.schedule') },
+        meta: {
+          kind: 'text',
+          width: SCANS_WIDTH.schedule,
+          hideBelow: SCANS_HIDE_BELOW.schedule,
+          label: t('scans.col.schedule'),
+        },
         header: t('scans.col.schedule'),
         enableSorting: false,
         cell: ({ row }) => <ScheduleCell config={row.original} onToggle={handleToggle} inline />,
@@ -1155,6 +1168,9 @@ function ConfigurationsTab() {
           isLoading={isLoadingConfigs && !configsResponse}
           isRefreshing={isValidatingConfigs && !!configsResponse}
           refreshingLabel={t('scans.configs.refreshing', 'Refreshing scans')}
+          // When the table scrolls sideways (768 to 1024 px) the row menu
+          // stays in view at the end of each row.
+          pinActions
           showSearch={false}
           search={{
             value: searchQuery,
