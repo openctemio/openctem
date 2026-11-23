@@ -27,9 +27,9 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
-  DetailStat,
-  DetailStatGrid,
   ErrorState,
+  MetaItem,
+  MetaLine,
   RunStatusBadge,
 } from '@/features/shared'
 import { get, post } from '@/lib/api/client'
@@ -190,8 +190,6 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               run?.started_at
                 ? t('scans.runDetail.started', undefined, { time: formatTime(run.started_at) })
                 : null,
-              duration,
-              deadline?.relative ?? null,
             ]}
             menu={
               runId
@@ -275,11 +273,31 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               </Link>
             </p>
 
-            <DetailStatGrid aria-label={t('scans.runDetail.keyNumbers')}>
-              <DetailStat label={t('scans.runDetail.findings')} value={run.total_findings} />
-              {progress && <DetailStat label={t('scans.runDetail.tasks')} value={progress.label} />}
-              {duration && <DetailStat label={t('scans.runDetail.duration')} value={duration} />}
-            </DetailStatGrid>
+            {/* The run's summary as one wrapping facts line, each label beside
+              its value: on a phone a strip of stat cells put every label and
+              every value on a row of its own. Duration and deadline live here,
+              not in the header too. */}
+            <MetaLine
+              aria-label={t('scans.runDetail.keyNumbers')}
+              className="text-body"
+              data-testid="run-summary"
+              items={[
+                <MetaItem key="findings" label={t('scans.runDetail.findings')}>
+                  {run.total_findings}
+                </MetaItem>,
+                progress && (
+                  <MetaItem key="tasks" label={t('scans.runDetail.tasks')}>
+                    {progress.label}
+                  </MetaItem>
+                ),
+                duration && (
+                  <MetaItem key="duration" label={t('scans.runDetail.duration')}>
+                    {duration}
+                  </MetaItem>
+                ),
+                deadline?.relative ?? null,
+              ]}
+            />
 
             <DetailSections>
               <RunReceiptSection
