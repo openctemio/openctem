@@ -7,7 +7,7 @@ import useSWRInfinite from 'swr/infinite'
 import { AlertTriangle, FileText, Info, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { RunStatusBadge, TruncatedText } from '@/features/shared'
+import { MetaItem, MetaLine, RunStatusBadge, TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskPage } from '@/lib/api/generated'
@@ -360,13 +360,14 @@ export function RunTasksTable({
               <th scope="col" className="px-3 py-2 text-start font-medium">
                 {t('scans.tasks.colTool')}
               </th>
-              <th scope="col" className="px-3 py-2 text-start font-medium">
+              {/* Phone width: these three fold away; their values read under the tool. */}
+              <th scope="col" className="hidden px-3 py-2 text-start font-medium sm:table-cell">
                 {t('scans.tasks.colSensor')}
               </th>
-              <th scope="col" className="px-3 py-2 text-end font-medium">
+              <th scope="col" className="hidden px-3 py-2 text-end font-medium sm:table-cell">
                 {t('scans.tasks.colTargets')}
               </th>
-              <th scope="col" className="px-3 py-2 text-end font-medium">
+              <th scope="col" className="hidden px-3 py-2 text-end font-medium sm:table-cell">
                 {t('scans.tasks.colDuration')}
               </th>
               <th scope="col" className="px-3 py-2 text-end font-medium">
@@ -383,6 +384,21 @@ export function RunTasksTable({
               const gapFix = gapsFixKind(task.coverage_gaps ?? [])
               const prog = taskProgressNote(task, t)
               const content = taskContentNote(task as { content_pins?: TaskContentPins | null }, t)
+              const duration =
+                ms === undefined
+                  ? '-'
+                  : `${ms < 1000 ? '<1s' : formatScanDuration(ms)}${task.completed_at ? '' : t('scans.tasks.soFar')}`
+              const progLine = prog && (
+                <div
+                  className={
+                    prog.kind === 'stalling'
+                      ? 'mt-1 text-xs text-warning'
+                      : 'mt-1 text-xs text-muted-foreground'
+                  }
+                >
+                  {prog.text}
+                </div>
+              )
               return (
                 <Fragment key={task.id ?? i}>
                   <tr className="border-t align-top">
@@ -438,23 +454,31 @@ export function RunTasksTable({
                           className="mt-1 max-w-[260px] text-xs text-muted-foreground"
                         />
                       )}
+                      <MetaLine
+                        className="mt-1 sm:hidden"
+                        items={[
+                          <MetaItem key="sensor" label={t('scans.tasks.colSensor')}>
+                            {taskSensorLabel(task, t)}
+                          </MetaItem>,
+                          <MetaItem key="targets" label={t('scans.tasks.colTargets')}>
+                            <span className="tabular-nums">{task.targets ?? 0}</span>
+                          </MetaItem>,
+                          <MetaItem key="duration" label={t('scans.tasks.colDuration')}>
+                            <span className="tabular-nums">{duration}</span>
+                          </MetaItem>,
+                        ]}
+                      />
+                      {progLine && <div className="sm:hidden">{progLine}</div>}
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
-                    <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
-                    <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
-                      {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
-                      {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
-                      {prog && (
-                        <div
-                          className={
-                            prog.kind === 'stalling'
-                              ? 'mt-1 text-xs text-warning'
-                              : 'mt-1 text-xs text-muted-foreground'
-                          }
-                        >
-                          {prog.text}
-                        </div>
-                      )}
+                    <td className="hidden px-3 py-2 text-muted-foreground sm:table-cell">
+                      {taskSensorLabel(task, t)}
+                    </td>
+                    <td className="hidden px-3 py-2 text-end tabular-nums sm:table-cell">
+                      {task.targets ?? 0}
+                    </td>
+                    <td className="hidden px-3 py-2 text-end tabular-nums text-muted-foreground sm:table-cell">
+                      {duration}
+                      {progLine}
                     </td>
                     <td className="px-3 py-2 text-end">
                       {task.id && (
