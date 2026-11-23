@@ -1391,10 +1391,11 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
 - Must work from 1000px wide with the sidebar expanded: nothing clipped, no
   page-level horizontal scroll (a wide table scrolls inside its own frame).
 - Wide screens: content never stretches to the window. The base layer
-  (`src/app/globals.css`) caps a paragraph and a card, notice, dialog or sheet
-  description at a reading measure (`--measure`, 75ch), a one-line field,
-  select or combobox at `--field-max` (40rem) and a multi-line field at
-  `--field-max-multiline` (60rem). Any `max-w-*` on the element wins (a banner
+  (`src/app/globals.css`) caps a paragraph, muted help text (not a muted flex
+  or grid row) and a card, notice, dialog or sheet description at a reading
+  measure (`--measure`, 75ch), a one-line field, select or combobox (and the
+  relative box of a field with a button drawn inside it) at `--field-max`
+  (40rem) and a multi-line field at `--field-max-multiline` (60rem). Any `max-w-*` on the element wins (a banner
   whose text pushes its button to the far end passes `max-w-none`); a
   truncated or clamped line is not capped. Tables, lists and the page frame
   keep the full width; a form page uses the settings column. The layout
