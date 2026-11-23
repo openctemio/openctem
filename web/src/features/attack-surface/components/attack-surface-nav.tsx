@@ -9,6 +9,8 @@ import { ATTACK_SURFACE_VIEWS, viewOfRoute } from '@/config/attack-surface-views
 
 const SECTION_ROOT = '/attack-surface'
 
+export type AttackSurfaceNavPart = 'all' | 'tabs' | 'lens'
+
 interface ResolvedView {
   id: string
   tab: SectionTab
@@ -25,6 +27,8 @@ interface ResolvedView {
  * this component only groups them, so a route's gate (module, permission)
  * stays the one written on its tab. A view with no route left is hidden.
  * `counts` are keyed by route; a view shows the sum of its routes' counts.
+ * `part` draws only the strip ('tabs') or only the lens ('lens'): a list page
+ * whose toolbar would otherwise hold one lone button puts the lens in it.
  */
 // Switches between the routes of one view (navigation), not a list's state or view mode.
 const RouteLens = SegmentedLens // anatomy-ok: route navigation, not a row filter
@@ -33,10 +37,12 @@ export function AttackSurfaceNav({
   tabs,
   counts,
   label,
+  part = 'all',
 }: {
   tabs: readonly SectionTab[]
   counts?: Readonly<Record<string, number | undefined>>
   label: string
+  part?: AttackSurfaceNavPart
 }) {
   const { t } = useTranslation()
   const pathname = usePathname() ?? SECTION_ROOT
@@ -85,23 +91,31 @@ export function AttackSurfaceNav({
     .filter((r) => pathname === r.href || pathname.startsWith(`${r.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href
 
+  const lens =
+    current && current.routes.length > 1 && activeRoute ? (
+      <RouteLens
+        label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
+        value={activeRoute}
+        options={current.routes.map((r) => ({
+          value: r.href,
+          label: r.label,
+          count: counts?.[r.href],
+        }))}
+        onChange={(href) => router.push(href)}
+        // In a list toolbar it takes the toolbar's control height.
+        size={part === 'lens' ? 'toolbar' : 'default'}
+      />
+    ) : null
+
+  if (part === 'lens') return lens
   return (
     <>
       {views.length > 1 && (
         <SectionTabs tabs={views.map((v) => v.tab)} label={label} counts={viewCounts} />
       )}
-      {current && current.routes.length > 1 && activeRoute && (
+      {part === 'all' && lens && (
         <div data-slot="route-lens" className="max-w-full self-start overflow-x-auto">
-          <RouteLens
-            label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
-            value={activeRoute}
-            options={current.routes.map((r) => ({
-              value: r.href,
-              label: r.label,
-              count: counts?.[r.href],
-            }))}
-            onChange={(href) => router.push(href)}
-          />
+          {lens}
         </div>
       )}
     </>

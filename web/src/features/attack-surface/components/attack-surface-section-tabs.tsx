@@ -5,7 +5,7 @@ import { ATTACK_SURFACE_SECTION_TABS } from '@/config/section-tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { useEASMSuggestionCount } from '../hooks/use-easm-suggestions'
-import { AttackSurfaceNav } from './attack-surface-nav'
+import { AttackSurfaceNav, type AttackSurfaceNavPart } from './attack-surface-nav'
 
 const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
@@ -14,9 +14,10 @@ const LOOKALIKES_HREF = '/attack-surface/lookalikes'
  * Overview | Posture | Review | Lookalikes | Page changes | Changes | Discovery | Web surface | Technologies |
  * Exposure items | Certificates, the route tabs of
  * Discovery > Attack surface. Review shows how many decisions wait (one per card, not
- * per row), fetched only when that tab is visible.
+ * per row), fetched only when that tab is visible. `part` draws only the
+ * strip or only the view's lens (see `AttackSurfaceNav`).
  */
-export function AttackSurfaceSectionTabs() {
+export function AttackSurfaceSectionTabs({ part = 'all' }: { part?: AttackSurfaceNavPart } = {}) {
   const { t } = useTranslation()
   const visible = useVisibleSectionTabs(ATTACK_SURFACE_SECTION_TABS)
   const showsReview = visible.some((tab) => tab.href === REVIEW_HREF)
@@ -58,6 +59,7 @@ export function AttackSurfaceSectionTabs() {
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
       counts={{ [REVIEW_HREF]: waiting }}
+      part={part}
     />
   )
 }
