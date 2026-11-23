@@ -22,11 +22,13 @@ const base = {
   created_at: '',
   updated_at: '',
 }
-const policies = [
+let policies: Array<Record<string, unknown>> = []
+const seeded = [
   { ...base, id: 'd', name: 'Current', is_default: true },
   { ...base, id: 'o', name: 'Other', is_default: false, description: 'For production' },
   { ...base, id: 'a', name: 'Payments', is_default: false, asset_id: 'asset-1' },
 ]
+policies = seeded
 
 let allowed = new Set<string>()
 const dialogPolicy = vi.fn()
@@ -136,6 +138,16 @@ describe('SLA policies page', () => {
     window.history.replaceState(null, '', '/settings/sla-policies?policy=o')
     render(<SlaPoliciesPage />)
     expect(screen.getByRole('dialog')).toHaveTextContent('Edit Other')
+  })
+
+  it('draws no search box while there are no policies', () => {
+    policies = []
+    try {
+      render(<SlaPoliciesPage />)
+      expect(screen.queryAllByRole('searchbox')).toHaveLength(0)
+    } finally {
+      policies = seeded
+    }
   })
 
   it('searches by name and description', async () => {

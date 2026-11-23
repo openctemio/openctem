@@ -635,7 +635,9 @@ export default function NotificationIntegrationsPage() {
             </div>
           ) : (
             <>
-              <MetricStrip loading={isLoading} items={metrics} />
+              {/* Two tiles: capped so each stays a tile (about 290 px) instead of
+                  stretching across a 2560 px page. */}
+              <MetricStrip loading={isLoading} items={metrics} className="max-w-xl" />
 
               <div>
                 {isLoading ? (

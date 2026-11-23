@@ -347,6 +347,9 @@ export default function SlaPoliciesPage() {
           error={error ?? undefined}
           onRetry={() => void mutate()}
           errorTitle={t('settings.slaPolicies.page.errorTitle', 'SLA policies')}
+          // No policies yet (or a refused read): nothing to search or arrange,
+          // so no search box or Display button above the empty state.
+          showToolbar={policies.length > 0}
           showSearch={false}
           search={{
             value: searchQuery,

@@ -344,6 +344,9 @@ export default function APIKeysPage() {
         paginationNoun={t('settings.apiKeys.noun', 'keys')}
         sorting={list.sorting}
         onSortingChange={list.setSorting}
+        // No keys at all (or a refused read): nothing to search or arrange, so
+        // no search box or Display button. A search with no match keeps it.
+        showToolbar={keys.length > 0 || list.q.trim() !== ''}
         showSearch={false}
         search={{
           value: list.q,
