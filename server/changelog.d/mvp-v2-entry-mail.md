@@ -5,5 +5,7 @@
   password and link requests would not refuse one state after another. They
   send none now: the scratch stack the matrix runs on gives each request its
   address. The verification link request is sent by the page itself, as the
-  sign-in page does, and its answer is written to the run log.
+  sign-in page does, and its answer is written to the run log. The link is
+  read without the closing bracket the e-mail's text part puts after it, so
+  the "verified" state now opens a valid link.
 - Docs: none (test tooling only; no guide describes the matrix states)

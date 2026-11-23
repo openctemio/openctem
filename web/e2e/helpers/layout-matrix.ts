@@ -147,7 +147,8 @@ async function openVerificationLink(page: Page) {
     }, address)
     console.log(`[matrix] resend-verification ${address}: ${sent}`)
     const body = await mailTo(page, address)
-    const link = body?.match(/https?:\/\/[^\s"'<>]*\/verify-email[^\s"'<>]*/)?.[0]
+    // The text part writes a link as "Label (URL)": the brackets end the URL.
+    const link = body?.match(/https?:\/\/[^\s"'<>()]*\/verify-email[^\s"'<>()]*/)?.[0]
     if (!link) continue
     const u = new URL(link.replace(/&amp;/g, '&'))
     await page.goto('about:blank')
