@@ -259,6 +259,7 @@ export default function ScopePage() {
       label={t('scope.show.label', 'Show')}
       value={tab}
       clearable={false}
+      foldLabel
       onOpenChange={(open) => open && setMenuOpened(true)}
       options={[
         { value: 'in', label: t('scope.tabs.entries', 'Entries'), count: inEntries },
@@ -282,10 +283,15 @@ export default function ScopePage() {
       <PageStack>
         <PageHeader
           title={t('scope.title', 'Scope')}
-          description={t(
-            'scope.description',
-            'What scans may touch at full intensity. Assets no entry covers get what Scan unclassified assets allows, and an exclusion always wins.'
-          )}
+          // A list page: on a phone the list comes first (as on Certificates).
+          description={
+            <span className="max-md:hidden">
+              {t(
+                'scope.description',
+                'What scans may touch at full intensity. Assets no entry covers get what Scan unclassified assets allows, and an exclusion always wins.'
+              )}
+            </span>
+          }
         >
           <Button asChild variant="outline" size="sm">
             <Link href="/settings/scope">
