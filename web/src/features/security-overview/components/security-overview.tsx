@@ -101,6 +101,7 @@ export function SecurityOverview() {
   }
   const recheck = (
     <Button
+      iconOnlyBelow="sm"
       variant="outline"
       onClick={() => void mutate()}
       disabled={isLoading || isValidating}
@@ -110,7 +111,7 @@ export function SecurityOverview() {
       {/* On a phone the button shows its icon only, so it stays beside the
           title instead of taking a header row of its own; the label stays for
           screen readers. */}
-      <span className="max-sm:sr-only">{t('securityOverview.recheck', 'Re-check')}</span>
+      <span className="sr-only sm:not-sr-only">{t('securityOverview.recheck', 'Re-check')}</span>
     </Button>
   )
 
