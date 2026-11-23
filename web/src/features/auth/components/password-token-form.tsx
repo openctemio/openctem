@@ -16,7 +16,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
@@ -173,8 +172,8 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         mode === 'reset' && revokeKeys
       )
       if (result.success) {
+        // The success card says it; a toast on top would say it twice.
         setIsSuccess(true)
-        toast.success(copy.successDescription)
       } else {
         // The words come from the API's code; the server's sentence is never shown.
         const code = 'code' in result && typeof result.code === 'string' ? result.code : null
@@ -183,11 +182,10 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
           t,
           t(`auth.passwordToken.${mode}.failed`, `${PASSWORD_TOKEN_COPY[mode].submit} failed`)
         )
+        // The inline banner is the one message: a toast too said it twice and,
+        // on a phone, covered the page title.
         setError(errorMessage)
         setErrorCode(code)
-        // A setup link only comes from an administrator: the toast says what the
-        // banner says, never "request a new one".
-        toast.error(isStaleLinkError(code) && !copy.newLink ? copy.newLinkHint : errorMessage)
       }
     })
   }
