@@ -54,6 +54,36 @@
     overscroll-behavior: none;
   }
 
+  /* Wide screens: prose stops at a reading measure and a field at a sensible
+     width, the way the settings column already does, so a description never
+     runs 1500 px across a 2560 px window. Zero specificity: any max-w-*
+     utility on the element wins. A truncated or clamped line keeps the room
+     its row gives it (the ellipsis shows where it must). Tables, lists and
+     the page frame are not touched. */
+  :where(p:not(.truncate, [class*='line-clamp'])),
+  :where(
+    [data-slot='card-description'],
+    [data-slot='alert-description'],
+    [data-slot='dialog-description'],
+    [data-slot='sheet-description']
+  ) {
+    max-width: var(--measure);
+  }
+  /* A centred paragraph centres its capped box too, not only its lines. */
+  :where(p.text-center, .text-center > p) {
+    margin-inline: auto;
+  }
+  :where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='hidden']),
+    select,
+    [role='combobox']
+  ) {
+    max-width: var(--field-max);
+  }
+  :where(textarea) {
+    max-width: var(--field-max-multiline);
+  }
+
   /* iOS Safari draws date/time inputs with a native control that ignores the
      input's width (it overflows its grid cell) and changes height when empty.
      Keep them the size of every other input. */

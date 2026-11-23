@@ -46,9 +46,11 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
     body = (
       <ul className="divide-y" data-testid="validation-waiting">
         {waiting.map((item, idx) => (
+          // The text column stops at 32rem, so on a wide screen the action
+          // stays beside what it acts on instead of at the far edge.
           <li
             key={item.key}
-            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto]"
+            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,32rem)_auto]"
           >
             <span className="text-xl font-semibold tabular-nums">{item.count}</span>
             <span className="min-w-0">

@@ -83,11 +83,6 @@ export function PageHeader({
             {title}
           </h1>
         )}
-        {description && (
-          <div className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
-            {description}
-          </div>
-        )}
       </div>
       {/* With both a switcher and actions, from sm they travel as one group: when
           the row runs out the group wraps whole and stays at the far right, so the
@@ -122,6 +117,17 @@ export function PageHeader({
           </div>
         )}
       </div>
+      {/* The description is a row of its own under the title row at every
+          width (order-last, full basis), never a column inside the title
+          block: on a phone that column was squeezed into a few words a line
+          beside the header's action. The negative margin takes the row gap
+          (12px) back to the 4px a description sits under its title; the cap sits
+          on an inner box, so the row never joins the title row. */}
+      {description && (
+        <div data-slot="page-header-description" className="order-last -mt-2 min-w-0 basis-full">
+          <div className="max-w-3xl text-sm text-muted-foreground text-pretty">{description}</div>
+        </div>
+      )}
     </div>
   )
 }

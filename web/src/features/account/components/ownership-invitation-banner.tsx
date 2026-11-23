@@ -57,7 +57,7 @@ export function OwnershipInvitationBanner({
     >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <Building2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <p className="min-w-0 flex-1 break-words">{text}</p>
+        <p className="min-w-0 max-w-none flex-1 break-words">{text}</p>
       </div>
       <Button asChild size="sm" variant="outline" className="self-start sm:self-auto">
         <Link href={OWNERSHIP_INVITATIONS_HREF}>
