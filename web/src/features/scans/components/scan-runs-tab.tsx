@@ -107,8 +107,12 @@ export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 /**
  * Column widths (px) and the table-frame width under which a column steps
  * aside (it stays under Display > Columns): Intensity first, then Triggered
- * by. A phone shows `ScanRunMobileCard` instead. With the name's floor (200) the whole set fits the frame of a 1440
- * screen (1114) and, without the two, the frame of a 1280 screen (954).
+ * by, then Tasks, then Duration (both are on the run's own sheet). A phone
+ * shows `ScanRunMobileCard` instead. With the name's floor (200) the whole set
+ * fits the frame of a 1440 screen (1114); without the first two, the frame of
+ * a 1280 screen (954); without Tasks, a 1024 screen with the sidebar closed;
+ * without Duration too, a 768 tablet and a 1024 screen with the sidebar open,
+ * so the table never scrolls sideways.
  */
 const RUNS_WIDTH = {
   status: 176,
@@ -119,7 +123,7 @@ const RUNS_WIDTH = {
   started: 132,
   trigger: 136,
 }
-const RUNS_HIDE_BELOW = { intensity: 1100, trigger: 1000 } as const
+const RUNS_HIDE_BELOW = { intensity: 1100, trigger: 1000, tasks: 900, duration: 780 } as const
 
 const getRunId = (r: ScanRun) => r.id
 const NO_RUNS: ScanRun[] = []
@@ -301,7 +305,12 @@ function ScanRunsTable() {
       },
       {
         id: 'tasks',
-        meta: { kind: 'text', width: RUNS_WIDTH.tasks, label: t('scans.runs.colTasks') },
+        meta: {
+          kind: 'text',
+          width: RUNS_WIDTH.tasks,
+          hideBelow: RUNS_HIDE_BELOW.tasks,
+          label: t('scans.runs.colTasks'),
+        },
         header: t('scans.runs.colTasks'),
         enableSorting: false,
         cell: ({ row }) => <RunTasksText run={row.original} />,
@@ -322,7 +331,12 @@ function ScanRunsTable() {
       },
       {
         id: 'duration',
-        meta: { kind: 'text', width: RUNS_WIDTH.duration, label: t('scans.runs.colDuration') },
+        meta: {
+          kind: 'text',
+          width: RUNS_WIDTH.duration,
+          hideBelow: RUNS_HIDE_BELOW.duration,
+          label: t('scans.runs.colDuration'),
+        },
         header: t('scans.runs.colDuration'),
         enableSorting: false,
         cell: ({ row }) => {
