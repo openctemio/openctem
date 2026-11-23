@@ -9,7 +9,8 @@
  *   Title of the record                [More] [secondary] [primary]
  *
  * On a phone the buttons take a full-width row under the title (the main
- * action first); a More with no buttons stays at the end of the title's line.
+ * action first); More closes the last row with the secondary actions, never alone;
+ * a More with no buttons stays at the end of the title's line.
  *
  * One primary action, at most two secondary ones, everything else in the
  * More menu (docs/ui-style-contract.md, "Detail pages"). Status, owner and
@@ -133,22 +134,28 @@ export function DetailPageHeader({
               hasButtons && 'max-md:w-full'
             )}
           >
-            {menu && menu.length > 0 && (
-              // Phone: More closes the row, after the secondary actions.
-              <div data-slot="detail-more" className="flex max-md:order-last">
-                <ActionMenu
-                  items={menu}
-                  title={title}
-                  label={moreLabel}
-                  trigger={
-                    <Button variant="ghost" size="icon" aria-label={moreLabel}>
-                      <MoreHorizontal aria-hidden />
-                    </Button>
-                  }
-                />
-              </div>
-            )}
-            {secondary}
+            {/* Phone: the secondary actions and More are one nowrap group, so a
+                wrapped row never leaves More alone; long labels shrink. */}
+            <div
+              data-slot="detail-secondary"
+              className="flex min-w-0 items-center gap-2 max-md:order-last max-md:max-w-full md:contents [&>*]:min-w-0"
+            >
+              {secondary}
+              {menu && menu.length > 0 && (
+                <div data-slot="detail-more" className="flex shrink-0 md:order-first">
+                  <ActionMenu
+                    items={menu}
+                    title={title}
+                    label={moreLabel}
+                    trigger={
+                      <Button variant="ghost" size="icon" aria-label={moreLabel}>
+                        <MoreHorizontal aria-hidden />
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+            </div>
             {primary && (
               // Phone: the main action leads the row and takes the free width;
               // it never shrinks below its label (the row wraps instead).
