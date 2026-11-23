@@ -334,7 +334,8 @@ export function TriageDecisionPanel({
           <ChevronRight className="rtl:rotate-180" aria-hidden />
         </Button>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
+      {/* A reading measure: on a wide card the note would run 1000 px on one line. */}
+      <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
         {t(
           'findings.triageMode.policyNote',
           'Decisions use the same checks as the finding page: your permissions, your data scope, approvals and re-authentication. Re-authentication is asked once per window, not per finding.'

@@ -139,14 +139,12 @@ describe('ReadyToCloseList', () => {
     expect(screen.queryByRole('table')).toBeNull()
   })
 
-  it('a failed read offers Retry and keeps Refresh in the caption, with no title row', async () => {
+  it('a failed read offers Retry, with no title row and no caption row under the table', async () => {
     api.get.mockRejectedValue(Object.assign(new Error('boom'), { statusCode: 500 }))
     wrap(<ReadyToCloseList {...listProps} />)
     expect(await screen.findByRole('button', { name: /Retry/ })).toBeInTheDocument()
     expect(document.querySelector('[data-slot=list-title-row]')).toBeNull()
-    expect(
-      within(screen.getByTestId('closure-caption')).getByRole('button', { name: 'Refresh' })
-    ).toBeInTheDocument()
+    expect(screen.queryByTestId('closure-caption')).toBeNull()
   })
 
   it('an empty queue says nothing waits', async () => {
