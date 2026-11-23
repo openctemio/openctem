@@ -554,6 +554,8 @@ export default function AdministratorsPage() {
           }
         />
         <DataTable
+          // When the table scrolls sideways the row menu stays in view.
+          pinActions
           columns={columns}
           data={admins}
           caption={t('admin.securityAdministratorsPage.administrators', 'Administrators')}
