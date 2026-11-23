@@ -1155,6 +1155,9 @@ function ConfigurationsTab() {
           isLoading={isLoadingConfigs && !configsResponse}
           isRefreshing={isValidatingConfigs && !!configsResponse}
           refreshingLabel={t('scans.configs.refreshing', 'Refreshing scans')}
+          // When the table scrolls sideways (768 to 1024 px) the row menu
+          // stays in view at the end of each row.
+          pinActions
           showSearch={false}
           search={{
             value: searchQuery,
