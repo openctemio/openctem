@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
-import { ClosureCaption } from './closure-caption'
+import { RefreshButton } from '@/components/list-page-parts'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { QueueCard, QueueEmpty, useQueueAnnouncer } from '@/features/shared/components/queue'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
@@ -137,6 +137,13 @@ export function AutoClosedList({
             manualPagination
             showSearch={false}
             showColumnToggle={false}
+            toolbarEnd={
+              <RefreshButton
+                onClick={() => void mutate()}
+                loading={isValidating}
+                label={t('findings.closureReview.refresh', 'Refresh')}
+              />
+            }
             pageCount={data?.total_pages ?? 0}
             rowCount={total}
             pagination={pagination}
@@ -187,12 +194,6 @@ export function AutoClosedList({
             )}
           />
         )}
-        <ClosureCaption
-          total={total}
-          loading={(isLoading && !data) || noAccess}
-          refreshing={isValidating}
-          onRefresh={() => void mutate()}
-        />
       </PageStack>
       {announcer.region}
       <ConfirmDialog

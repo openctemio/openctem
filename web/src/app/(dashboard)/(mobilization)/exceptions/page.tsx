@@ -715,7 +715,8 @@ export default function ExceptionsPage() {
                           when: relative(r.expires_at, locale),
                         })
                       : t('exceptions.page.neverEnds', 'Never ends'),
-                    approversOf(r),
+                    // The table's "—" for nobody is noise on a card: leave the item out.
+                    approversOf(r) === '—' ? null : approversOf(r),
                   ]}
                 />
               </div>
