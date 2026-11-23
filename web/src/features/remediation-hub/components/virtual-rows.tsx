@@ -78,6 +78,18 @@ export function visibleRangeAt(
   return { first, last }
 }
 
+/**
+ * The height of the scroll box: every row when they fit in `height`, else the
+ * bottom of the last row that fits whole, so the box never ends halfway
+ * through a row before it is scrolled (at least the first row).
+ */
+export function boxHeight(offsets: number[], height: number, minimum = 0): number {
+  const total = offsets[offsets.length - 1]
+  if (total <= height) return Math.max(total, minimum)
+  const k = rowAt(offsets, height)
+  return Math.max(offsets[k], offsets[1] ?? 0)
+}
+
 export function VirtualRows<T>({
   rows,
   rowHeight,
@@ -114,7 +126,7 @@ export function VirtualRows<T>({
     },
     [onEndReached, tail]
   )
-  const viewport = Math.min(height, Math.max(total, tail))
+  const viewport = boxHeight(offsets, height, tail)
   const { first, last } = visibleRangeAt(offsets, scrollTop, viewport, overscan)
   return (
     <div
