@@ -5,6 +5,8 @@ import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { Main } from '@/components/layout'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import {
   PageHeader,
   EmptyState,
@@ -120,6 +122,9 @@ function summarizeEventTypes(
     labels,
   }))
 }
+
+/** Table frame widths (px) under which a column folds away; the channel, its status and the actions stay. */
+const CHANNEL_HIDE_BELOW = { provider: 760, lastUsed: 900, severities: 1100, events: 1240 } as const
 
 export default function NotificationIntegrationsPage() {
   const { t } = useTranslation()
@@ -271,10 +276,58 @@ export default function NotificationIntegrationsPage() {
     setEditDialogOpen(true)
   }, [])
 
+  // One row menu for the table row and the phone card.
+  const rowActions = useCallback(
+    (integration: Integration) => {
+      const actions: RowAction[] = [
+        {
+          label: t('notificationChannels.actions.sendTest', 'Send test'),
+          icon: Send,
+          onClick: () => void handleTestNotification(integration),
+          route: 'POST /api/v1/integrations/{id}/test-notification',
+        },
+        {
+          label: t('notificationChannels.actions.edit', 'Edit'),
+          icon: Pencil,
+          onClick: () => handleEditClick(integration),
+          route: 'PUT /api/v1/integrations/{id}/notification',
+        },
+        {
+          label: t('notificationChannels.actions.viewEvents', 'View events'),
+          icon: History,
+          onClick: () =>
+            router.push(
+              `/settings/integrations/notifications/history?integration=${integration.id}`
+            ),
+          route: 'PUT /api/v1/integrations/{id}',
+        },
+        {
+          label: t('notificationChannels.actions.delete', 'Delete'),
+          icon: Trash2,
+          onClick: () => handleDeleteClick(integration),
+          destructive: true,
+          separatorBefore: true,
+          route: 'DELETE /api/v1/integrations/{id}',
+        },
+      ]
+      return (
+        <DataTableRowActions
+          title={integration.name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: integration.name,
+          })}
+          actions={actions}
+        />
+      )
+    },
+    [t, router, handleTestNotification, handleEditClick, handleDeleteClick]
+  )
+
   const columns = useMemo<ColumnDef<Integration>[]>(
     () => [
       {
         accessorKey: 'name',
+        meta: { kind: 'name', minWidth: 200 },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -301,6 +354,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'provider',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.provider },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -328,7 +382,7 @@ export default function NotificationIntegrationsPage() {
               <IntegrationHealth status={integration.status} />
               {integration.status_message && integration.status === 'error' && (
                 <p
-                  className="max-w-[250px] text-xs text-destructive"
+                  className="line-clamp-2 max-w-[250px] text-xs text-destructive [overflow-wrap:anywhere]"
                   title={integration.status_message}
                 >
                   {integration.status_message}
@@ -340,6 +394,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'severity_filters',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.severities },
         header: t('notificationChannels.col.severityFilters', 'Severity filters'),
         enableSorting: false,
         cell: ({ row }) => {
@@ -422,6 +477,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'event_types',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.events },
         header: t('notificationChannels.col.eventTypes', 'Event types'),
         enableSorting: false,
         cell: ({ row }) => {
@@ -496,6 +552,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'last_sync_at',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.lastUsed },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -506,65 +563,14 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         header: '',
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => {
-          const integration = row.original
-          const actions: RowAction[] = [
-            {
-              label: t('notificationChannels.actions.sendTest', 'Send test'),
-              icon: Send,
-              onClick: () => void handleTestNotification(integration),
-              route: 'POST /api/v1/integrations/{id}/test-notification',
-            },
-            {
-              label: t('notificationChannels.actions.edit', 'Edit'),
-              icon: Pencil,
-              onClick: () => handleEditClick(integration),
-              route: 'PUT /api/v1/integrations/{id}/notification',
-            },
-            {
-              label: t('notificationChannels.actions.viewEvents', 'View events'),
-              icon: History,
-              onClick: () =>
-                router.push(
-                  `/settings/integrations/notifications/history?integration=${integration.id}`
-                ),
-              route: 'PUT /api/v1/integrations/{id}',
-            },
-            {
-              label: t('notificationChannels.actions.delete', 'Delete'),
-              icon: Trash2,
-              onClick: () => handleDeleteClick(integration),
-              destructive: true,
-              separatorBefore: true,
-              route: 'DELETE /api/v1/integrations/{id}',
-            },
-          ]
-          return (
-            <DataTableRowActions
-              title={integration.name}
-              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
-                name: integration.name,
-              })}
-              actions={actions}
-            />
-          )
-        },
+        cell: ({ row }) => rowActions(row.original),
       },
     ],
-    [
-      t,
-      router,
-      handleTestNotification,
-      handleEditClick,
-      handleDeleteClick,
-      eventTypeCatalog,
-      eventCategories,
-      defaultEventTypes,
-      eventTypeCount,
-    ]
+    [t, rowActions, eventTypeCatalog, eventCategories, defaultEventTypes, eventTypeCount]
   )
 
   // The strip filters the list: click a tile to show only those channels, again to clear.
@@ -597,20 +603,29 @@ export default function NotificationIntegrationsPage() {
               'Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks.'
             )}
           >
+            {/* On a phone the two secondary buttons show their icons only, so the
+                three header actions share one row instead of leaving Add
+                channel alone on a row of its own. */}
             <Can route="PUT /api/v1/integrations/{id}">
               <Button
                 variant="outline"
+                title={t('notificationChannels.page.viewEvents', 'View events')}
                 onClick={() => router.push('/settings/integrations/notifications/history')}
               >
                 <History aria-hidden />
-                {t('notificationChannels.page.viewEvents', 'View events')}
+                <span className="max-sm:sr-only">
+                  {t('notificationChannels.page.viewEvents', 'View events')}
+                </span>
               </Button>
               <Button
                 variant="outline"
+                title={t('notificationChannels.page.queue', 'Queue')}
                 onClick={() => router.push('/settings/integrations/notifications/outbox')}
               >
                 <Inbox aria-hidden />
-                {t('notificationChannels.page.queue', 'Queue')}
+                <span className="max-sm:sr-only">
+                  {t('notificationChannels.page.queue', 'Queue')}
+                </span>
               </Button>
             </Can>
             {/* While the list is empty its empty state carries the one
@@ -635,7 +650,9 @@ export default function NotificationIntegrationsPage() {
             </div>
           ) : (
             <>
-              <MetricStrip loading={isLoading} items={metrics} />
+              {/* Two tiles: capped so each stays a tile (about 290 px) instead of
+                  stretching across a 2560 px page. */}
+              <MetricStrip loading={isLoading} items={metrics} className="max-w-xl" />
 
               <div>
                 {isLoading ? (
@@ -670,6 +687,24 @@ export default function NotificationIntegrationsPage() {
                       'Search channels…'
                     )}
                     showSelectionCount={false}
+                    pinActions
+                    mobileRow={(integration) => (
+                      <PersonPhoneCard
+                        title={toDisplayText(integration.name, 200)}
+                        address={PROVIDER_LABELS[integration.provider] || integration.provider}
+                        menu={rowActions(integration)}
+                        facts={
+                          <>
+                            <IntegrationHealth status={integration.status} />
+                            {integration.status === 'error' && integration.status_message && (
+                              <span className="line-clamp-2 basis-full text-xs text-destructive [overflow-wrap:anywhere]">
+                                {toDisplayText(integration.status_message, 300)}
+                              </span>
+                            )}
+                          </>
+                        }
+                      />
+                    )}
                     toolbarEnd={
                       <Button
                         variant="outline"

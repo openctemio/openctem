@@ -89,6 +89,7 @@ export function APIKeyPolicySection({ canEdit }: { canEdit: boolean }) {
       >
         <Input
           id="api-key-max-days"
+          className="max-w-40"
           type="number"
           inputMode="numeric"
           min={1}

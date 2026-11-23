@@ -107,7 +107,10 @@ export function SecurityOverview() {
       aria-busy={isValidating}
     >
       <RefreshCw className={cn(isValidating && 'animate-spin')} aria-hidden="true" />
-      {t('securityOverview.recheck', 'Re-check')}
+      {/* On a phone the button shows its icon only, so it stays beside the
+          title instead of taking a header row of its own; the label stays for
+          screen readers. */}
+      <span className="max-sm:sr-only">{t('securityOverview.recheck', 'Re-check')}</span>
     </Button>
   )
 
