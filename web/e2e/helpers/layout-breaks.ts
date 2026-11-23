@@ -718,7 +718,12 @@ async function settle(page: Page) {
 async function openOverlay(page: Page, overlay: Overlay): Promise<string | null> {
   const trigger = page.locator(OVERLAYS[overlay]).first()
   if (!(await trigger.count())) return null
-  await trigger.click({ timeout: 5_000 }).catch(() => {})
+  // A phone card opens its detail from its own surface: its centre can be a
+  // link or a button of its own (the run card's findings link), so the
+  // detail is opened from the card's padding corner.
+  await trigger
+    .click({ timeout: 5_000, ...(overlay === 'detail' ? { position: { x: 6, y: 6 } } : {}) })
+    .catch(() => {})
   const layer = page
     .locator(
       '[role=dialog]:visible, [role=menu]:visible, [data-slot="sheet-content"]:visible, [data-slot="drawer-content"]:visible'
