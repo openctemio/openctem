@@ -4,7 +4,7 @@
  * Imports (GET /api/v1/findings/imports): every upload and run receipt with
  * what it did to the organization's findings. The dashboard's intake figures
  * open it with the same filters as the figure (origin, tool, since), which
- * show as context chips under the toolbar; the totals above the list are the
+ * show as context chips under the toolbar; the totals under the list are the
  * API's sums over every receipt the filter keeps, so they equal the figure
  * that was clicked. A receipt opens in a side sheet built from the row (no
  * extra read). A reader without the organization view sees only their own
@@ -301,8 +301,9 @@ export function ReceiptHistory() {
         {totals && totals.receipts > 0 && (
           <section
             aria-labelledby="receipt-totals"
-            // On a phone the list comes first and the totals follow it.
-            className="order-last rounded-lg border p-3 md:order-none"
+            // The list comes first and the totals follow it at every width
+            // (above the list they were a row of their own before the data).
+            className="order-last rounded-lg border p-3"
           >
             <h2 id="receipt-totals" className="text-muted-foreground mb-2 text-xs font-medium">
               {tCount(

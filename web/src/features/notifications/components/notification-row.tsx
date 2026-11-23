@@ -12,6 +12,14 @@ import { cn } from '@/lib/utils'
 import type { UserNotification } from '../api/use-notification-api'
 import { NOTIFICATION_TYPE_ICONS, NOTIFICATION_TYPE_LABELS } from '../lib/notification-types'
 
+/** The fixed titles the server writes (in English), by catalog key. */
+const SERVER_TITLE_KEYS: Record<string, string> = {
+  'API key expires soon': 'notifications.serverTitle.apiKeyExpiresSoon',
+  'Scan paused: no active owner': 'notifications.serverTitle.scanPausedNoOwner',
+  'An SSO change is waiting for your approval': 'notifications.serverTitle.ssoChangeWaiting',
+  'Content install approval is being switched off': 'notifications.serverTitle.contentApprovalOff',
+}
+
 interface NotificationRowProps {
   notification: UserNotification
   /** Called (not awaited) the first time an unread row is activated. */
@@ -41,7 +49,12 @@ export function NotificationRow({
     `notificationTypes.${notification.notification_type}.name`,
     NOTIFICATION_TYPE_LABELS[notification.notification_type] || notification.notification_type
   )
-  const title = toDisplayText(notification.title)
+  // The server writes a notification's text in English. A fixed title shows in
+  // the reader's language; any other title and the body are stored text.
+  const titleKey = Object.hasOwn(SERVER_TITLE_KEYS, notification.title)
+    ? SERVER_TITLE_KEYS[notification.title]
+    : undefined
+  const title = titleKey ? t(titleKey, notification.title) : toDisplayText(notification.title)
   const body = notification.body ? toDisplayText(notification.body) : ''
   const unread = !notification.is_read
   const severity = (notification.severity || '').toLowerCase()
@@ -64,6 +77,7 @@ export function NotificationRow({
         <div className="flex items-start justify-between gap-2">
           <p
             dir="auto"
+            translate={titleKey ? undefined : 'no'}
             className={cn(
               'break-words [unicode-bidi:isolate]',
               compact ? 'text-dense line-clamp-2 font-medium' : 'text-sm leading-snug',
@@ -77,6 +91,7 @@ export function NotificationRow({
         {body && (
           <p
             dir="auto"
+            translate="no"
             className={cn(
               'line-clamp-2 break-words text-muted-foreground [unicode-bidi:isolate]',
               compact ? 'text-cap' : 'text-xs'

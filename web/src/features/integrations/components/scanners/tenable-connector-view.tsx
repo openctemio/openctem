@@ -92,9 +92,18 @@ export function TenableConnectorView() {
             requireAll
             mode="hide"
           >
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload className="me-2 h-4 w-4" />
-              {t('tenableSc.view.importNessus', 'Import .nessus')}
+            {/* Icon-only on a phone, so both header actions share one row. */}
+            <Button
+              variant="outline"
+              size="sm"
+              iconOnlyBelow="sm"
+              onClick={() => setImportOpen(true)}
+              title={t('tenableSc.view.importNessus', 'Import .nessus')}
+            >
+              <Upload className="h-4 w-4 sm:me-2" aria-hidden />
+              <span className="sr-only sm:not-sr-only">
+                {t('tenableSc.view.importNessus', 'Import .nessus')}
+              </span>
             </Button>
           </Can>
           <Can permission={Permission.IntegrationsManage} mode="hide">
@@ -129,14 +138,7 @@ export function TenableConnectorView() {
                 'tenableSc.view.emptyDescription',
                 'Configure the connector on one of your sensors, then connect it here. The Tenable.sc API keys stay on the sensor.'
               )}
-              action={
-                <Can permission={Permission.IntegrationsManage} mode="hide">
-                  <Button size="sm" onClick={openCreate}>
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('tenableSc.view.connect', 'Connect Tenable.sc')}
-                  </Button>
-                </Can>
-              }
+              // No action here: "Connect Tenable.sc" is the header's one main action.
             />
           ) : (
             <div className="space-y-4">

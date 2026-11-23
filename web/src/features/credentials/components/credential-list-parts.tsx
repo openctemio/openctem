@@ -110,7 +110,7 @@ export function LeakDate({ date, className }: { date: string; className?: string
   if (!date) return <span className="text-muted-foreground">—</span>
   const recent = daysSince(date) <= RECENT_DAYS
   return (
-    <span className={cn('inline-flex items-baseline gap-1.5 tabular-nums', className)}>
+    <span className={cn('inline-flex flex-wrap items-baseline gap-x-1.5 tabular-nums', className)}>
       <span className={cn(recent && 'font-medium text-destructive')}>
         {formatDate(new Date(date))}
       </span>

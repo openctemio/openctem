@@ -144,6 +144,11 @@ function UsageCell({
   )
 }
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting a header: the description, the code, the type,
+// then the category (all are in the capability's details).
+const CAPABILITY_HIDE_BELOW = { description: 1080, code: 830, type: 700, category: 560 } as const
+
 export function CapabilityTable({
   capabilities,
   usageStats,
@@ -168,6 +173,7 @@ export function CapabilityTable({
     const cols: ColumnDef<Capability>[] = [
       {
         accessorKey: 'display_name',
+        meta: { kind: 'name', label: t('scans.capabilities.col.name', 'Name') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.name', 'Name')} />
         ),
@@ -191,6 +197,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'name',
+        meta: {
+          kind: 'text',
+          width: 160,
+          hideBelow: CAPABILITY_HIDE_BELOW.code,
+          label: t('scans.capabilities.col.code', 'Code'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.code', 'Code')} />
         ),
@@ -200,6 +212,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'category',
+        meta: {
+          kind: 'text',
+          width: 140,
+          hideBelow: CAPABILITY_HIDE_BELOW.category,
+          label: t('scans.capabilities.col.category', 'Category'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -215,6 +233,11 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'is_builtin',
+        meta: {
+          kind: 'status',
+          hideBelow: CAPABILITY_HIDE_BELOW.type,
+          label: t('scans.capabilities.col.type', 'Type'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.type', 'Type')} />
         ),
@@ -236,6 +259,7 @@ export function CapabilityTable({
       },
       {
         id: 'usage',
+        meta: { kind: 'text', width: 160, label: t('scans.capabilities.col.usage', 'Usage') },
         header: t('scans.capabilities.col.usage', 'Usage'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -244,6 +268,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'description',
+        meta: {
+          kind: 'text',
+          minWidth: 200,
+          hideBelow: CAPABILITY_HIDE_BELOW.description,
+          label: t('scans.capabilities.col.description', 'Description'),
+        },
         header: t('scans.capabilities.col.description', 'Description'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -257,6 +287,7 @@ export function CapabilityTable({
     if (showActions) {
       cols.push({
         id: 'actions',
+        meta: { kind: 'actions' },
         header: '',
         enableSorting: false,
         enableHiding: false,
@@ -311,6 +342,7 @@ export function CapabilityTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      pinActions
       emptyMessage={t('scans.capabilities.table.emptyTitle', 'No capabilities')}
       emptyDescription={t(
         'scans.capabilities.table.emptyDesc',

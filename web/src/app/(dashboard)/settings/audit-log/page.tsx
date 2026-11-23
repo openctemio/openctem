@@ -128,6 +128,11 @@ const actorText = (log: AuditLog, t: TFn) =>
   log.actor_email ? toDisplayText(log.actor_email, 200) : t('auditLog.system', 'System')
 const resourceText = (log: AuditLog) => toDisplayText(log.resource_name || log.resource_id, 200)
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting a header: the severity first, then the actor, then
+// the resource (all three are on the event's detail and the phone card).
+const AUDIT_HIDE_BELOW = { severity: 980, actor: 850, resource: 690 } as const
+
 export default function AuditLogPage() {
   const { t } = useTranslation()
   const hasAuditPermission = useHasPermission(Permission.AuditRead)
@@ -259,7 +264,7 @@ export default function AuditLogPage() {
       },
       {
         id: 'actor',
-        meta: { kind: 'owner', label: actorLabel },
+        meta: { kind: 'owner', hideBelow: AUDIT_HIDE_BELOW.actor, label: actorLabel },
         header: actorLabel,
         enableSorting: false,
         cell: ({ row }) => (
@@ -269,7 +274,13 @@ export default function AuditLogPage() {
       {
         id: 'resource_type',
         accessorKey: 'resource_type',
-        meta: { kind: 'text', minWidth: 180, maxWidth: 320, label: resourceLabel },
+        meta: {
+          kind: 'text',
+          minWidth: 180,
+          maxWidth: 320,
+          hideBelow: AUDIT_HIDE_BELOW.resource,
+          label: resourceLabel,
+        },
         header: ({ column }) => <DataTableColumnHeader column={column} title={resourceLabel} />,
         cell: ({ row }) => (
           <div className="flex min-w-0 flex-col">
@@ -290,7 +301,7 @@ export default function AuditLogPage() {
       {
         id: 'severity',
         accessorKey: 'severity',
-        meta: { kind: 'severity', label: severityLabel },
+        meta: { kind: 'severity', hideBelow: AUDIT_HIDE_BELOW.severity, label: severityLabel },
         header: ({ column }) => <DataTableColumnHeader column={column} title={severityLabel} />,
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
@@ -484,9 +495,18 @@ export default function AuditLogPage() {
       />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={isExporting}>
+          {/* Icon-only on a phone, so the search keeps its room. */}
+          <Button
+            variant="outline"
+            size="sm"
+            iconOnlyBelow="@2xl/toolbar"
+            disabled={isExporting}
+            title={t('auditLog.export.button', 'Export')}
+          >
             <Download aria-hidden="true" />
-            {t('auditLog.export.button', 'Export')}
+            <span className="sr-only @2xl/toolbar:not-sr-only">
+              {t('auditLog.export.button', 'Export')}
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>

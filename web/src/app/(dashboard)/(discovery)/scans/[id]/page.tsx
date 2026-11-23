@@ -227,6 +227,11 @@ export default function ScanDetailPage() {
     }
   }
 
+  // Frame widths (px) under which a run column gives way, so the table fits
+  // its frame instead of cutting a header: the trigger, the duration, then
+  // the task count (all are on the run's sheet and the phone card).
+  const RUN_HIDE_BELOW = { trigger: 1000, duration: 790, tasks: 670 } as const
+
   // Rebuilt each render: the cancel action reads the in-flight run id. No
   // column sorts: this endpoint lists newest first, and sorting one page of
   // the history would misrepresent the rest.
@@ -246,6 +251,7 @@ export default function ScanDetailPage() {
     {
       id: 'status',
       header: t('scanDetail.runs.col.status'),
+      meta: { kind: 'text', width: 260 },
       enableSorting: false,
       cell: ({ row }) => (
         <div className="space-y-0.5">
@@ -263,6 +269,7 @@ export default function ScanDetailPage() {
     {
       id: 'trigger',
       header: t('scanDetail.runs.col.trigger'),
+      meta: { kind: 'text', width: 200, hideBelow: RUN_HIDE_BELOW.trigger },
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-col">
@@ -286,6 +293,7 @@ export default function ScanDetailPage() {
     {
       id: 'tasks',
       header: t('scanDetail.runs.col.tasks'),
+      meta: { kind: 'text', width: 120, hideBelow: RUN_HIDE_BELOW.tasks },
       enableSorting: false,
       cell: ({ row }) => {
         const r = row.original
@@ -317,6 +325,7 @@ export default function ScanDetailPage() {
     {
       id: 'duration',
       header: t('scanDetail.runs.col.duration'),
+      meta: { kind: 'text', width: 120, hideBelow: RUN_HIDE_BELOW.duration },
       enableSorting: false,
       cell: ({ row }) => (
         <span className="tabular-nums text-muted-foreground">{runDuration(row.original, t)}</span>

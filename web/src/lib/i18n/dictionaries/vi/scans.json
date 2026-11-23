@@ -147,7 +147,7 @@
   "scans.approvalSettings.saved": "Đã lưu phê duyệt quét",
   "scans.approvalSettings.strict": "Nghiêm ngặt",
   "scans.approvalSettings.strictHint": "Như Bật, kèm hai người phê duyệt khác nhau và lý do cho mọi lượt quét khớp quy tắc; mục phạm vi cũng cần phê duyệt.",
-  "scans.approvalSettings.testRules": "Thử các quy tắc trên lần quét hiện có",
+  "scans.approvalSettings.testRules": "Thử trên lần quét có sẵn",
   "scans.approvalSettings.title": "Phê duyệt quét",
   "scans.approvalSettings.toggleRule": "Thay đổi quy tắc \"{name}\"",
   "scans.assets.allSelected": "Đã chọn tất cả",

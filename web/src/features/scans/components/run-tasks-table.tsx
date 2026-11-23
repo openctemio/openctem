@@ -405,7 +405,7 @@ export function RunTasksTable({
                     <td className="px-3 py-2">
                       <RunStatusBadge status={task.status ?? ''} />
                       {note?.kind === 'waiting' && (
-                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
+                        <div className="mt-1 flex max-w-[min(260px,40vw)] items-start gap-1 text-xs text-muted-foreground">
                           <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                           {note.full ? (
                             <span className="break-words">{note.text}</span>
@@ -424,23 +424,23 @@ export function RunTasksTable({
                         <TruncatedText
                           value={note.text}
                           label={t('scans.tasks.error')}
-                          className="mt-1 max-w-[220px] text-xs text-muted-foreground"
+                          className="mt-1 max-w-[min(220px,40vw)] text-xs text-muted-foreground"
                         />
                       )}
                       {skipped && (
-                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                        <div className="mt-1 flex max-w-[min(260px,40vw)] items-start gap-1 text-xs text-warning">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                           <TruncatedText value={skipped} label={t('scans.tasks.skippedTargets')} />
                         </div>
                       )}
                       {gaps && (
-                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                        <div className="mt-1 flex max-w-[min(260px,40vw)] items-start gap-1 text-xs text-warning">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                           <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
                         </div>
                       )}
                       {gaps && gapFix && (
-                        <div className="mt-1 max-w-[260px]">
+                        <div className="mt-1 max-w-[min(260px,40vw)]">
                           <EdgeGapFixes kind={gapFix} />
                         </div>
                       )}
@@ -492,7 +492,8 @@ export function RunTasksTable({
                           onClick={() => setLogsOf(task)}
                         >
                           <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                          {t('scans.tasks.colLogs')}
+                          {/* Icon-only on a phone, so the tool column keeps its room. */}
+                          <span className="sr-only sm:not-sr-only">{t('scans.tasks.colLogs')}</span>
                         </Button>
                       )}
                     </td>

@@ -26,6 +26,10 @@
   "notifications.pagination.next": "Sau",
   "notifications.pagination.page": "Trang {page} / {pages} (tổng {total})",
   "notifications.pagination.previous": "Trước",
+  "notifications.serverTitle.apiKeyExpiresSoon": "Khóa API sắp hết hạn",
+  "notifications.serverTitle.contentApprovalOff": "Phê duyệt cài đặt nội dung sắp được tắt",
+  "notifications.serverTitle.scanPausedNoOwner": "Lượt quét tạm dừng: không còn chủ sở hữu đang hoạt động",
+  "notifications.serverTitle.ssoChangeWaiting": "Một thay đổi SSO đang chờ bạn phê duyệt",
   "notifications.settings": "Cài đặt",
   "notifications.unread": "Chưa đọc",
   "notifications.unreadCount": "{n} chưa đọc"

@@ -29,6 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type {
   DismissReason,
@@ -423,10 +424,13 @@ export function SuggestionsInbox() {
               </Button>
             )}
             {canWrite && (
-              <Button variant="outline" onClick={runNow}>
-                <RefreshCw className="size-4" aria-hidden />
-                {t('remediationHub.suggestions.runNow')}
-              </Button>
+              // Icon-only on a phone, so the search keeps its room (it was
+              // pressed against the button at 360 px).
+              <ToolbarAction
+                icon={RefreshCw}
+                label={t('remediationHub.suggestions.runNow')}
+                onClick={() => void runNow()}
+              />
             )}
           </>
         }

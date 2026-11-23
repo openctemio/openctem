@@ -148,7 +148,7 @@ export function ToolSourcesSection() {
       },
       {
         id: 'tools',
-        meta: { kind: 'tags', minWidth: 120, label: toolsLabel },
+        meta: { kind: 'tags', minWidth: 120, hideBelow: 660, label: toolsLabel },
         enableSorting: false,
         header: toolsLabel,
         cell: ({ row }) => (
@@ -244,6 +244,7 @@ export function ToolSourcesSection() {
         showSearch={false}
         showColumnToggle={false}
         showPagination={false}
+        pinActions
         pageSize={500}
         caption={t('toolSources.title', 'Tool source keys')}
         mobileRow={(s) => {
