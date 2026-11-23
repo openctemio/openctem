@@ -229,6 +229,15 @@ export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => 
 /** The page a matrix route opens: its state's path, or the route itself. */
 export const statePath = (route: string) => ROUTE_STATES[route]?.path ?? route
 
+/**
+ * The path a page must be on after opening `url`, the address resolveRoute
+ * produced (`/assets/01a2…`, not the `/assets/[id]` template): no query, no
+ * fragment, encoded the way the browser reports `location.pathname`.
+ */
+export function openedPath(url: string): string {
+  return new URL(url, 'http://opened.invalid').pathname
+}
+
 /** Whether a matrix route (or state) is a signed-out page. */
 export const isSignedOutRoute = (route: string) =>
   AUTH_ROUTES.includes(statePath(route).split(/[?#]/)[0])
@@ -459,17 +468,27 @@ export async function findMatrixBreaks(
         const f = frame.getBoundingClientRect()
         const rg = document.createRange()
         rg.selectNodeContents(n)
-        const cut = Array.from(rg.getClientRects()).some(
-          (b) =>
-            b.width > 1 &&
-            ((b.right > f.right + 1 && b.left < f.right - 1) ||
-              (b.left < f.left - 1 && b.right > f.left + 1))
-        )
-        if (!cut || ellipsisOn(host, frame)) continue
-        // The shared page tab strip may scroll: its edge fade says there is more.
+        const boxes = Array.from(rg.getClientRects()).filter((b) => b.width > 1)
+        const cutRight = boxes.some((b) => b.right > f.right + 1 && b.left < f.right - 1)
+        const cutLeft = boxes.some((b) => b.left < f.left - 1 && b.right > f.left + 1)
+        if ((!cutRight && !cutLeft) || ellipsisOn(host, frame)) continue
+        // The shared page tab strip is one swipe row (owner 2026-11-21): a
+        // label past its edge is by design when the strip really scrolls and
+        // fades that edge. Like the sideways-scroller exemption in
+        // text-breaks.ts, a strip that does not scroll, or a cut edge with no
+        // fade, is still reported.
         const strip = frame.closest<HTMLElement>('[data-tab-strip]')
-        if (strip && (strip.dataset.fadeEnd === 'true' || strip.dataset.fadeStart === 'true'))
-          continue
+        if (
+          strip &&
+          /auto|scroll/.test(getComputedStyle(strip).overflowX) &&
+          strip.scrollWidth > strip.clientWidth + 1
+        ) {
+          const rtl = getComputedStyle(strip).direction === 'rtl'
+          const ds = strip.dataset
+          const fadeRight = (rtl ? ds.fadeStart : ds.fadeEnd) === 'true'
+          const fadeLeft = (rtl ? ds.fadeEnd : ds.fadeStart) === 'true'
+          if ((!cutRight || fadeRight) && (!cutLeft || fadeLeft)) continue
+        }
         const line = `text cut at a frame edge, no ellipsis: "${short(n.textContent)}"`
         if (!seenText.has(line)) out.cutText.push(line)
         seenText.add(line)

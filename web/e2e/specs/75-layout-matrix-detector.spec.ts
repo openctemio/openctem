@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { findEmptyTail, findMatrixBreaks } from '../helpers/layout-matrix'
+import { findEmptyTail, findMatrixBreaks, openedPath } from '../helpers/layout-matrix'
 
 /**
  * Self-test of the MVP acceptance v2 detectors (helpers/layout-matrix.ts):
@@ -83,6 +83,44 @@ test.describe('layout matrix detector: text cut at a frame edge', { tag: ['@shel
       )
     )
     expect(found.cutText).toEqual([])
+  })
+})
+
+/** A page tab strip as the shared one draws it: 240 px wide, tabs past its end. */
+const tabStrip = (attrs: string, overflow = 'auto') => `<main style="width:1000px">
+  <nav ${attrs} style="width:240px;display:flex;gap:16px;overflow-x:${overflow};white-space:nowrap">
+    <a style="flex-shrink:0">Overview</a><a style="flex-shrink:0">Findings</a>
+    <a style="flex-shrink:0">Ports and services</a><a style="flex-shrink:0">How we found it</a>
+  </nav></main>`
+
+test.describe('layout matrix detector: page tab strip', { tag: ['@shell'] }, () => {
+  test('is quiet for a tab past the edge of a scrolling strip that fades it', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      tabStrip('data-tab-strip data-fade-start="false" data-fade-end="true"')
+    )
+    expect(found.cutText).toEqual([])
+  })
+
+  test('flags the cut tab when the strip shows no fade on that edge', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      tabStrip('data-tab-strip data-fade-start="true" data-fade-end="false"')
+    )
+    expect(found.cutText.join('\n')).toMatch(/text cut at a frame edge/)
+  })
+
+  test('flags the cut tab when the marked strip clips instead of scrolling', async ({ page }) => {
+    // A stale fade flag on a strip nobody can swipe is no excuse.
+    const found = await at(page, 1024, tabStrip('data-tab-strip data-fade-end="true"', 'hidden'))
+    expect(found.cutText.join('\n')).toMatch(/text cut at a frame edge/)
+  })
+
+  test('flags a cut label in an unmarked scroller', async ({ page }) => {
+    const found = await at(page, 1024, tabStrip('data-fade-end="true"'))
+    expect(found.cutText.join('\n')).toMatch(/text cut at a frame edge/)
   })
 })
 
@@ -323,5 +361,29 @@ test.describe('layout matrix detector: empty tail', { tag: ['@shell'] }, () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.setContent(shell(900))
     expect(await findEmptyTail(page, 900)).toEqual([])
+  })
+})
+
+test.describe('layout matrix: page-opened check', { tag: ['@shell'] }, () => {
+  // The matrix compares the browser path with openedPath(<resolved url>).
+  test('accepts an id route that opened on the id resolveRoute picked', () => {
+    const url = '/assets/01a20891-5c1e-4d7a-9f00-000000000001?tab=overview#ports'
+    expect(new URL('http://web:3000' + url).pathname).toBe(openedPath(url))
+    expect(openedPath('/vulnerabilities/CVE-2024-3094')).toBe('/vulnerabilities/CVE-2024-3094')
+  })
+
+  test('still fails a page that was sent elsewhere', () => {
+    const want = openedPath('/remediation/tasks/7b0c4b8e-0000-4000-8000-000000000002')
+    expect('/login').not.toBe(want)
+    expect('/remediation/tasks/[id]').not.toBe(want)
+  })
+
+  test('matches the encoding the browser reports', async ({ page }) => {
+    await page.route('**/*', (r) =>
+      r.fulfill({ body: '<!doctype html><p>ok</p>', contentType: 'text/html' })
+    )
+    const url = '/findings/a b?x=1'
+    await page.goto('http://opened.test' + url)
+    expect(new URL(page.url()).pathname).toBe(openedPath(url))
   })
 })
