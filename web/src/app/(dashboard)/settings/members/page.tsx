@@ -1090,7 +1090,7 @@ export default function UsersPage() {
             meta: {
               kind: 'status',
               label: t('org.membersPage.col.twoFactor', 'Two-factor'),
-              hideBelow: 760,
+              hideBelow: 640,
             },
             header: t('org.membersPage.col.twoFactor', 'Two-factor'),
             enableSorting: false,
