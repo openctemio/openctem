@@ -251,7 +251,10 @@ describe('Findings list with quick views', () => {
     openAt(`?view=${id}`)
     render(<FindingsPage />)
     expect(title().textContent).toBe('')
-    expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
+    expect(modified()).toBeNull()
+    // The row holds its end controls already: it keeps its shape when the
+    // name arrives.
+    expect(row().querySelector('[data-slot="list-title-end"]')).not.toBeNull()
   })
 
   it('the chips row no longer offers Reset to view', () => {
