@@ -318,6 +318,7 @@ export function GeneralSettings() {
         description={t('org.general.profileDesc', 'How your organization is named and recognised.')}
       >
         <SettingsRow
+          wide
           label={t('org.general.logo', 'Logo')}
           hint={
             <>
