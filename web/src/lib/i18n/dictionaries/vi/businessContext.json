@@ -119,6 +119,7 @@
   "businessContext.units.metric.critical": "Đơn vị quan trọng",
   "businessContext.units.metric.total": "Đơn vị kinh doanh",
   "businessContext.units.new": "Thêm đơn vị kinh doanh",
+  "businessContext.units.newShort": "Thêm đơn vị",
   "businessContext.units.parent.empty": "Không tìm thấy đơn vị kinh doanh.",
   "businessContext.units.parent.filter": "Lọc đơn vị...",
   "businessContext.units.parent.none": "Không có (cấp cao nhất)",

@@ -304,7 +304,8 @@ export function ProgramHealthView() {
     // One strip, at most five tiles; a tile opens its list. A figure with no
     // measurement says so and opens nothing.
     const notMeasuredNode = (
-      <span className="text-sm font-normal text-muted-foreground">
+      // Small on a phone, so it fits one line in a third of the strip.
+      <span className="text-xs font-normal whitespace-nowrap text-muted-foreground sm:text-sm">
         {t('insights.status.pending', 'Not measured')}
       </span>
     )
@@ -395,8 +396,10 @@ export function ProgramHealthView() {
             href: PROGRAM_HEALTH_LINKS.open,
           }
     )
+    // With no validation yet there is no rate to show: the tile says it is
+    // not measured (the act list keeps "0% (no validations yet)").
     strip.push(
-      dgDisplay === null
+      dgDisplay === null || (dgValidated ?? 0) <= 0
         ? {
             key: 'downgrade',
             label: t('insights.programHealth.downgrade', 'Validation downgrade %'),

@@ -119,6 +119,7 @@
   "businessContext.units.metric.critical": "Critical units",
   "businessContext.units.metric.total": "Business units",
   "businessContext.units.new": "New business unit",
+  "businessContext.units.newShort": "New unit",
   "businessContext.units.parent.empty": "No business units found.",
   "businessContext.units.parent.filter": "Filter units...",
   "businessContext.units.parent.none": "None (top-level)",
