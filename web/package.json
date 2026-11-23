@@ -95,7 +95,7 @@
     "react": "19.3.1",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.3.1",
-    "react-hook-form": "^7.91.0",
+    "react-hook-form": "^7.92.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
     "recharts": "^3.10.1",
@@ -109,7 +109,7 @@
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.4.6",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
