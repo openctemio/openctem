@@ -10,7 +10,6 @@ import {
   RelativeTime,
   SettingsPage,
 } from '@/features/shared'
-import { SettingsSection } from '@/features/shared/components/settings-section'
 import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -316,100 +315,87 @@ export default function APIKeysPage() {
     <SettingsPage
       wide
       title={t('settings.apiKeys.title', 'API keys')}
-      description={t(
-        'settings.apiKeys.description',
-        'Keys for scripts and tools that call the API.'
-      )}
+      description={
+        ownKeysOnly
+          ? t(
+              'settings.apiKeys.cardDescOwn',
+              'Your own keys. Owners and administrators see and manage every key in the organization.'
+            )
+          : t('settings.apiKeys.description', 'Keys for scripts and tools that call the API.')
+      }
       actions={canGenerate ? generateButton : undefined}
     >
-      {!ownKeysOnly && <APIKeyPolicySection canEdit={canSetPolicy} />}
-
-      <SettingsSection
-        framed
-        id="api-keys-list"
-        title={t('settings.apiKeys.keysTitle', 'Keys')}
-        description={
-          ownKeysOnly
-            ? t(
-                'settings.apiKeys.cardDescOwn',
-                'Your own keys. Owners and administrators see and manage every key in the organization.'
-              )
-            : t(
-                'settings.apiKeys.cardDescAll',
-                'Each key is scoped to specific permissions and can be set to expire automatically.'
-              )
-        }
-      >
-        <DataTable
-          columns={columns}
-          data={keys}
-          getRowId={(k) => k.id}
-          // A failed read must not render as "No API keys yet": an
-          // administrator could conclude none exist and mint a duplicate key.
-          error={error}
-          onRetry={() => void mutate()}
-          errorTitle={t('settings.apiKeys.subject', 'API keys')}
-          isLoading={isLoading && !data}
-          isRefreshing={isValidating && !!data}
-          manualPagination
-          rowCount={total}
-          pagination={list.pagination}
-          onPaginationChange={list.setPagination}
-          pageSizeOptions={API_KEY_PAGE_SIZES}
-          paginationNoun={t('settings.apiKeys.noun', 'keys')}
-          sorting={list.sorting}
-          onSortingChange={list.setSorting}
-          showSearch={false}
-          search={{
-            value: list.q,
-            onChange: list.setSearch,
-            placeholder: t('settings.apiKeys.searchPlaceholder', 'Search API keys…'),
-            label: t('settings.apiKeys.searchLabel', 'Search API keys'),
-          }}
-          mobileRow={(k) => (
-            <PersonPhoneCard
-              title={toDisplayText(k.name, 200)}
-              address={<code className="font-mono">{`${k.key_prefix}…`}</code>}
-              menu={<KeyRowActions k={k} onChanged={() => void mutate()} />}
-              facts={
-                <>
-                  <StatusBadge k={k} />
-                  <span className="text-cap text-muted-foreground">
-                    {t('settings.keys.expires', 'Expires')} <ExpiryCell k={k} />
-                  </span>
-                </>
+      <DataTable
+        columns={columns}
+        data={keys}
+        getRowId={(k) => k.id}
+        // A failed read must not render as "No API keys yet": an
+        // administrator could conclude none exist and mint a duplicate key.
+        error={error}
+        onRetry={() => void mutate()}
+        errorTitle={t('settings.apiKeys.subject', 'API keys')}
+        isLoading={isLoading && !data}
+        isRefreshing={isValidating && !!data}
+        manualPagination
+        rowCount={total}
+        pagination={list.pagination}
+        onPaginationChange={list.setPagination}
+        pageSizeOptions={API_KEY_PAGE_SIZES}
+        paginationNoun={t('settings.apiKeys.noun', 'keys')}
+        sorting={list.sorting}
+        onSortingChange={list.setSorting}
+        showSearch={false}
+        search={{
+          value: list.q,
+          onChange: list.setSearch,
+          placeholder: t('settings.apiKeys.searchPlaceholder', 'Search API keys…'),
+          label: t('settings.apiKeys.searchLabel', 'Search API keys'),
+        }}
+        mobileRow={(k) => (
+          <PersonPhoneCard
+            title={toDisplayText(k.name, 200)}
+            address={<code className="font-mono">{`${k.key_prefix}…`}</code>}
+            menu={<KeyRowActions k={k} onChanged={() => void mutate()} />}
+            facts={
+              <>
+                <StatusBadge k={k} />
+                <span className="text-cap text-muted-foreground">
+                  {t('settings.keys.expires', 'Expires')} <ExpiryCell k={k} />
+                </span>
+              </>
+            }
+          />
+        )}
+        isFiltered={list.q.trim() !== ''}
+        onClearFilters={() => list.setSearch('')}
+        emptyState={{
+          nothingYet: (
+            <EmptyState
+              icon={KeyRound}
+              title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
+              description={
+                canGenerate
+                  ? t(
+                      'settings.apiKeys.emptyDescGenerate',
+                      'Generate a scoped key for programmatic access to the API.'
+                    )
+                  : t(
+                      'settings.apiKeys.emptyDescAsk',
+                      'Ask an owner or administrator if you need a key.'
+                    )
               }
+              card={false}
+              action={canGenerate ? generateButton : undefined}
             />
-          )}
-          isFiltered={list.q.trim() !== ''}
-          onClearFilters={() => list.setSearch('')}
-          emptyState={{
-            nothingYet: (
-              <EmptyState
-                icon={KeyRound}
-                title={t('settings.apiKeys.emptyTitle', 'No API keys yet')}
-                description={
-                  canGenerate
-                    ? t(
-                        'settings.apiKeys.emptyDescGenerate',
-                        'Generate a scoped key for programmatic access to the API.'
-                      )
-                    : t(
-                        'settings.apiKeys.emptyDescAsk',
-                        'Ask an owner or administrator if you need a key.'
-                      )
-                }
-                card={false}
-                action={canGenerate ? generateButton : undefined}
-              />
-            ),
-            noMatch: {
-              title: t('settings.apiKeys.noMatch', 'No API keys match your search.'),
-              hint: t('settings.apiKeys.noMatchHint', 'Try another name, or clear the search.'),
-            },
-          }}
-        />
-      </SettingsSection>
+          ),
+          noMatch: {
+            title: t('settings.apiKeys.noMatch', 'No API keys match your search.'),
+            hint: t('settings.apiKeys.noMatchHint', 'Try another name, or clear the search.'),
+          },
+        }}
+      />
+
+      {!ownKeysOnly && <APIKeyPolicySection canEdit={canSetPolicy} />}
 
       <GenerateKeyDialog
         open={genOpen}
