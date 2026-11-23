@@ -142,22 +142,6 @@ export function ListSearch({
           <X className="size-3.5" aria-hidden="true" />
         </button>
       ) : null}
-      {hasQuery && !queryActive ? (
-        // A phone toolbar: the Query toggle sits at the field's end, so the
-        // field takes the row's free width beside the other buttons.
-        <button
-          type="button"
-          data-slot="list-search-mode-inline"
-          aria-pressed={false}
-          aria-keyshortcuts="Control+/"
-          aria-label={t('common.listSearch.queryMode', 'Query mode')}
-          title={t('common.listSearch.queryMode', 'Query mode')}
-          onClick={() => setQueryActive?.(true)}
-          className="hidden size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none @max-md/toolbar:flex"
-        >
-          <Code2 className="size-4" aria-hidden="true" />
-        </button>
-      ) : null}
     </div>
   )
   // The text stops before the end controls. Basic: the clear button's room,
@@ -236,8 +220,6 @@ export function ListSearch({
             className={cn(
               // The native clear control is replaced by ours (one look in every browser).
               'ps-9 pe-(--list-search-end) focus-visible:z-20 [&::-webkit-search-cancel-button]:appearance-none',
-              // A phone toolbar: room for the inline Query toggle after the clear button.
-              hasQuery && !queryActive && '@max-md/toolbar:pe-17',
               joined && 'rounded-s-none'
             )}
             {...restInput}
@@ -253,7 +235,6 @@ export function ListSearch({
       <ListSearchModeSwitch
         mode={queryActive ? 'query' : 'basic'}
         onModeChange={(m) => query.onActiveChange(m === 'query')}
-        foldOnPhone
       />
       {field}
     </>
@@ -276,12 +257,9 @@ export type ListSearchMode = 'basic' | 'query'
 export function ListSearchModeSwitch({
   mode,
   onModeChange,
-  foldOnPhone = false,
 }: {
   mode: ListSearchMode
   onModeChange: (mode: ListSearchMode) => void
-  /** On a phone toolbar the field draws the toggle at its end in Basic mode. */
-  foldOnPhone?: boolean
 }) {
   const { t } = useTranslation()
   const active = mode === 'query'
@@ -323,10 +301,7 @@ export function ListSearchModeSwitch({
         aria-label={t('common.listSearch.queryMode', 'Query mode')}
         title={t('common.listSearch.queryMode', 'Query mode')}
         onClick={() => onActiveChange(!active)}
-        className={cn(
-          'flex size-control shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground max-md:size-control-touch @5xl/toolbar:hidden',
-          foldOnPhone && !active && '@max-md/toolbar:hidden'
-        )}
+        className="flex size-control shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground max-md:size-control-touch @5xl/toolbar:hidden"
       >
         <Code2 className="size-4 max-md:size-5" aria-hidden="true" />
       </button>

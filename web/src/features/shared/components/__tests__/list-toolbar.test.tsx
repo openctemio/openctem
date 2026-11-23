@@ -398,16 +398,9 @@ describe('ListSearch', () => {
       expect(sw.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
     expect(field.firstElementChild).toHaveTextContent('Filters')
-    // The field's end keeps only its own controls: in Basic mode the phone
-    // toolbar's Query toggle (shown below 28rem only), so the field takes the
-    // row's free width.
+    // The field's end keeps only its own controls.
     const end = container.querySelector('[data-slot="list-search-end"]') as HTMLElement
-    const inEnd = Array.from(end.querySelectorAll('button'))
-    expect(inEnd.map((b) => b.getAttribute('data-slot'))).toEqual(['list-search-mode-inline'])
-    expect(inEnd[0]).toHaveClass('hidden', '@max-md/toolbar:flex')
-    expect(container.querySelector('button[data-slot="list-search-mode"]')).toHaveClass(
-      '@max-md/toolbar:hidden'
-    )
+    expect(end.querySelector('button')).toBeNull()
     // Keyboard operable, named, the pressed state follows the mode.
     expect(screen.getByRole('group', { name: 'Search mode' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Basic' })).toHaveAttribute('aria-pressed', 'true')
@@ -416,12 +409,7 @@ describe('ListSearch', () => {
     expect(screen.getByRole('button', { name: 'Query' })).toHaveFocus()
     await userEvent.keyboard('{Enter}')
     expect(onActiveChange).toHaveBeenCalledWith(true)
-    await userEvent.click(
-      container.querySelector('button[data-slot="list-search-mode"]') as HTMLElement
-    )
-    expect(onActiveChange).toHaveBeenLastCalledWith(true)
-    onActiveChange.mockClear()
-    await userEvent.click(inEnd[0])
+    await userEvent.click(screen.getByRole('button', { name: 'Query mode' }))
     expect(onActiveChange).toHaveBeenLastCalledWith(true)
   })
 
