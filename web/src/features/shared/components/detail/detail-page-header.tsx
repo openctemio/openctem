@@ -135,14 +135,14 @@ export function DetailPageHeader({
             )}
           >
             {/* Phone: the secondary actions and More are one nowrap group, so a
-                wrapped row never leaves More alone; long labels shrink. */}
+                wrapped row never leaves More alone; long labels shrink. More stays
+                first in the DOM (desktop and focus order) and moves last on a phone. */}
             <div
               data-slot="detail-secondary"
               className="flex min-w-0 items-center gap-2 max-md:order-last max-md:max-w-full md:contents [&>*]:min-w-0"
             >
-              {secondary}
               {menu && menu.length > 0 && (
-                <div data-slot="detail-more" className="flex shrink-0 md:order-first">
+                <div data-slot="detail-more" className="flex shrink-0 max-md:order-last">
                   <ActionMenu
                     items={menu}
                     title={title}
@@ -155,6 +155,7 @@ export function DetailPageHeader({
                   />
                 </div>
               )}
+              {secondary}
             </div>
             {primary && (
               // Phone: the main action leads the row and takes the free width;
