@@ -49,9 +49,8 @@ function CheckRow({ check }: { check: OverviewCheck }) {
   return (
     <SettingsRow
       id={`check-${check.id}`}
-      // The Review link sits in the field column, near the check text, not
-      // at the far end of the row on a wide screen.
-      wide
+      // The Review link follows the check's title, so it stays next to the
+      // text at every width instead of drifting to the far end of the row.
       label={
         <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <HealthStatus
@@ -59,22 +58,21 @@ function CheckRow({ check }: { check: OverviewCheck }) {
             label={t(`securityOverview.status.${check.status}`, check.status)}
           />
           <span className="min-w-0">{title}</span>
+          {link && (
+            <TextLink
+              href={link}
+              className="text-dense font-medium text-signal-text"
+              aria-label={t('securityOverview.reviewNamed', 'Review: {name}', { name: title })}
+            >
+              {check.count && check.count > 0
+                ? t('securityOverview.reviewCount', 'Review {count}', { count: check.count })
+                : t('securityOverview.review', 'Review')}
+            </TextLink>
+          )}
         </span>
       }
       hint={desc || undefined}
-    >
-      {link && (
-        <TextLink
-          href={link}
-          className="text-dense font-medium text-signal-text"
-          aria-label={t('securityOverview.reviewNamed', 'Review: {name}', { name: title })}
-        >
-          {check.count && check.count > 0
-            ? t('securityOverview.reviewCount', 'Review {count}', { count: check.count })
-            : t('securityOverview.review', 'Review')}
-        </TextLink>
-      )}
-    </SettingsRow>
+    />
   )
 }
 
@@ -137,11 +135,6 @@ export function SecurityOverview() {
         aria-label={t('securityOverview.score.title', 'Security score')}
         className="space-y-2"
       >
-        {checked && (
-          <p className="text-dense text-muted-foreground">
-            {t('securityOverview.checkedAgo', 'Checked {when}', { when: checked })}
-          </p>
-        )}
         <MetricStrip
           items={[
             {
@@ -225,6 +218,14 @@ export function SecurityOverview() {
             {showPassed && passed.map((c) => <CheckRow key={c.id} check={c} />)}
           </div>
         </SettingsSection>
+      )}
+
+      {/* When the checks ran: a caption at the end, not a row of its own
+          above the score. */}
+      {checked && (
+        <p className="text-cap text-muted-foreground">
+          {t('securityOverview.checkedAgo', 'Checked {when}', { when: checked })}
+        </p>
       )}
     </SettingsPage>
   )
