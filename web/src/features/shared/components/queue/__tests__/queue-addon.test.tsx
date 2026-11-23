@@ -411,6 +411,17 @@ describe('QueueCard and QueueEmpty', () => {
     expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveTextContent('M2')
   })
 
+  it('lets a long fact take the full width, the controls wrapping under it at the end', () => {
+    const { container } = render(
+      <QueueCard title="T" meta={['a long asset name']} actions={<button>Go</button>} />
+    )
+    // A fixed-width column for the fact squeezed long text beside the controls.
+    expect(container.querySelector('[data-slot="queue-card-line"]')).toHaveClass('flex-wrap')
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).toHaveClass('flex-auto')
+    expect(container.querySelector('[data-slot="queue-card-meta"]')).not.toHaveClass('flex-1')
+    expect(container.querySelector('[data-slot="queue-card-actions"]')).toHaveClass('ms-auto')
+  })
+
   it('leaves out the empty slots: a bare card is its title line only', () => {
     const { container } = render(<QueueCard title="T" />)
     expect(slots(container)).toEqual(['queue-card-head', 'queue-card-title'])
