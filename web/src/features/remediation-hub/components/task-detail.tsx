@@ -57,6 +57,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { PageStack } from '@/features/shared/components/page-stack'
+import { MetaItem, MetaLine } from '@/features/shared/components/text-layout'
 import {
   DetailPageHeader,
   PropertyGroup,
@@ -433,18 +434,17 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         secondary={exception.action}
         menu={menu}
         facts={
-          <dl className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <div className="flex min-w-0 items-center gap-1">
-              <dt className="after:content-[':']">{t('remediationHub.detail.facts.owner')}</dt>
-              <dd className="text-foreground min-w-0 truncate">{owner}</dd>
-            </div>
-            <div className="flex items-center gap-1">
-              <dt className="after:content-[':']">{t('remediationHub.detail.deadline')}</dt>
-              <dd>
+          <MetaLine
+            className="text-sm"
+            items={[
+              <MetaItem key="owner" label={t('remediationHub.detail.facts.owner')}>
+                {owner}
+              </MetaItem>,
+              <MetaItem key="deadline" label={t('remediationHub.detail.deadline')}>
                 <DeadlinePill task={task} />
-              </dd>
-            </div>
-          </dl>
+              </MetaItem>,
+            ]}
+          />
         }
       />
 
@@ -873,19 +873,17 @@ function StatusCounts({ task }: { task: RemediationTask }) {
     ['closed', c.closed],
   ]
   return (
-    <dl
+    <MetaLine
       aria-label={t('remediationHub.detail.counts.label')}
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs max-md:basis-full"
-    >
-      {parts.map(([key, n]) => (
-        <div key={key} className="flex items-center gap-1">
-          <dt className="text-muted-foreground">{t(`remediationHub.detail.counts.${key}`)}</dt>
-          <dd className={cn('font-medium tabular-nums', n === 0 && 'text-muted-foreground')}>
+      className="min-w-0 flex-1 text-xs max-md:basis-full"
+      items={parts.map(([key, n]) => (
+        <MetaItem key={key} label={t(`remediationHub.detail.counts.${key}`)}>
+          <span className={cn('font-medium tabular-nums', n === 0 && 'text-muted-foreground')}>
             {formatNumber(n)}
-          </dd>
-        </div>
+          </span>
+        </MetaItem>
       ))}
-    </dl>
+    />
   )
 }
 
