@@ -538,7 +538,6 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
  */
 const LOPSIDED_DEBT = new Set([
   '/findings', // one row: a title row line holds only its end controls
-  '/scans/runs',
   '/attack-surface/technologies',
 ])
 
