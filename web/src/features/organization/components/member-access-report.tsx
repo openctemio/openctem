@@ -43,7 +43,11 @@ export function MemberAccessReportView({
   const { grants: teamGrants } = useUserTeamAccess(ownedOnly ? null : report?.user_id)
   if (isLoading) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label="Loading access report">
+      <div
+        className="space-y-2"
+        aria-busy="true"
+        aria-label={t('org.accessReport.loading', 'Loading access report')}
+      >
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-10 w-full" />
       </div>
@@ -61,21 +65,48 @@ export function MemberAccessReportView({
     <div className="space-y-5" data-testid="member-access-report">
       {!ownedOnly && (
         <>
-          <DetailStatGrid aria-label="Access summary">
+          <DetailStatGrid aria-label={t('org.accessReport.summary', 'Access summary')}>
             <DetailStat
-              label="Visible assets"
+              label={t('org.accessReport.visibleAssets', 'Visible assets')}
               value={report.visible_assets}
-              caption={report.status === 'suspended' ? 'none while disabled' : undefined}
+              caption={
+                report.status === 'suspended'
+                  ? t('org.accessReport.noneWhileDisabled', 'none while disabled')
+                  : undefined
+              }
             />
-            <DetailStat label="Direct grants" value={report.direct_grants} />
-            <DetailStat label="Access groups" value={report.groups?.length ?? 0} />
-            <DetailStat label="API keys" value={report.api_keys?.length ?? 0} />
+            <DetailStat
+              label={t('org.accessReport.directGrants', 'Direct grants')}
+              value={report.direct_grants}
+            />
+            <DetailStat
+              label={t('org.accessReport.accessGroups', 'Access groups')}
+              value={report.groups?.length ?? 0}
+            />
+            <DetailStat
+              label={t('org.accessReport.apiKeys', 'API keys')}
+              value={report.api_keys?.length ?? 0}
+            />
           </DetailStatGrid>
-          <DetailSection title="Roles" icon={Shield} count={report.roles?.length ?? 0}>
-            <DetailChipList chips={chips(report.roles, false)} label="Roles" />
+          <DetailSection
+            title={t('org.accessReport.roles', 'Roles')}
+            icon={Shield}
+            count={report.roles?.length ?? 0}
+          >
+            <DetailChipList
+              chips={chips(report.roles, false)}
+              label={t('org.accessReport.roles', 'Roles')}
+            />
           </DetailSection>
-          <DetailSection title="Access groups" icon={Users} count={report.groups?.length ?? 0}>
-            <DetailChipList chips={chips(report.groups)} label="Access groups" />
+          <DetailSection
+            title={t('org.accessReport.accessGroups', 'Access groups')}
+            icon={Users}
+            count={report.groups?.length ?? 0}
+          >
+            <DetailChipList
+              chips={chips(report.groups)}
+              label={t('org.accessReport.accessGroups', 'Access groups')}
+            />
           </DetailSection>
           <DetailSection
             title={t('org.accessReport.fromTeams', 'Access from teams')}
@@ -99,8 +130,15 @@ export function MemberAccessReportView({
               label={t('org.accessReport.fromTeams', 'Access from teams')}
             />
           </DetailSection>
-          <DetailSection title="API keys" icon={KeyRound} count={report.api_keys?.length ?? 0}>
-            <DetailChipList chips={chips(report.api_keys)} label="API keys" />
+          <DetailSection
+            title={t('org.accessReport.apiKeys', 'API keys')}
+            icon={KeyRound}
+            count={report.api_keys?.length ?? 0}
+          >
+            <DetailChipList
+              chips={chips(report.api_keys)}
+              label={t('org.accessReport.apiKeys', 'API keys')}
+            />
           </DetailSection>
           <DetailSection
             title={t('org.lifecycle.serviceAccountKeys', 'Service account keys')}
@@ -119,24 +157,36 @@ export function MemberAccessReportView({
             />
           </DetailSection>
           <DetailSection
-            title="Pentest engagements"
+            title={t('org.accessReport.pentestEngagements', 'Pentest engagements')}
             icon={Swords}
             count={report.campaigns?.length ?? 0}
           >
-            <DetailChipList chips={chips(report.campaigns)} label="Pentest engagements" />
+            <DetailChipList
+              chips={chips(report.campaigns)}
+              label={t('org.accessReport.pentestEngagements', 'Pentest engagements')}
+            />
           </DetailSection>
         </>
       )}
       <DetailSection
-        title="Owned schedules"
+        title={t('org.accessReport.ownedSchedules', 'Owned schedules')}
         icon={CalendarClock}
         count={ownedScheduleCount(report)}
       >
-        <DetailChipList chips={schedules} label="Owned schedules" />
+        <DetailChipList
+          chips={schedules}
+          label={t('org.accessReport.ownedSchedules', 'Owned schedules')}
+        />
       </DetailSection>
-      <DetailStatGrid aria-label="Owned work">
-        <DetailStat label="Open assigned findings" value={report.assigned_findings} />
-        <DetailStat label="Owned assets" value={report.owned_assets} />
+      <DetailStatGrid aria-label={t('org.accessReport.ownedWork', 'Owned work')}>
+        <DetailStat
+          label={t('org.accessReport.openAssignedFindings', 'Open assigned findings')}
+          value={report.assigned_findings}
+        />
+        <DetailStat
+          label={t('org.accessReport.ownedAssets', 'Owned assets')}
+          value={report.owned_assets}
+        />
         <DetailStat
           label={t('org.accessReport.ownedTasks', 'Open remediation tasks')}
           value={report.owned_tasks ?? 0}

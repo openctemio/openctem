@@ -159,6 +159,34 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow).toEqual([])
   })
 
+  // The run detail sheet at 390 px: stacked sections (Stages, Timeline)
+  // above the task table. Only the table's own section is its toolbar.
+  const sheet = (
+    ownSection: string
+  ) => `<div data-slot="sheet-content" role="dialog" style="width:380px">
+      <div data-slot="sheet-header"><h2>Run 42</h2></div>
+      <section><h3>Stages</h3><p>Discovery done</p><p>Ports done</p></section>
+      <section><h3>Timeline</h3><p>Started 10:02</p><p>Finished 10:09</p></section>
+      <section><h3>Tasks</h3>${ownSection}
+        <table style="width:100%"><tbody><tr><td>nuclei</td><td>Done</td></tr></tbody></table>
+      </section>
+    </div>`
+
+  test("flags a lone row inside an overlay table's own section", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.setContent(doc(sheet('<p>Updated 2 minutes ago</p>')))
+    const found = await findMatrixBreaks(page, { scope: '[role=dialog]' })
+    expect(found.wastedRow.join('\n')).toMatch(/Updated 2 minutes ago/)
+    expect(found.wastedRow.join('\n')).not.toMatch(/Started|Discovery/)
+  })
+
+  test('is quiet for rows under another section heading in an overlay', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.setContent(doc(sheet('')))
+    const found = await findMatrixBreaks(page, { scope: '[role=dialog]' })
+    expect(found.wastedRow).toEqual([])
+  })
+
   test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
     const found = await at(
       page,
