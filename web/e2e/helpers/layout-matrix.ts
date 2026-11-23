@@ -16,7 +16,8 @@ import type { Page } from '@playwright/test'
  *                    meta text or one small control and is mostly empty
  *   duplicateAction  two primary buttons with one name or one target
  *   wideStretch      at 1900 px and up: a field or text line wider than 960 px,
- *                    or a side rail more than 400 px from its content
+ *                    or a side rail more than 400 px from its content (in a
+ *                    grid wider than 960 px: a capped frame does not stretch)
  *   joined           a field and a button side by side less than 8 px apart
  *                    (the kit gap), not one segmented group: /scope's Filters
  *                    button against its search box
@@ -526,6 +527,10 @@ export async function findMatrixBreaks(
         }
         for (const grid of Array.from(root.querySelectorAll('*'))) {
           if (tracks(grid) < 2 || !shown(grid)) continue
+          // A grid in a capped frame (a settings form, 880 px at every desktop
+          // width) is drawn the same at 1440 px as here: it did not stretch.
+          // Only a grid wider than the 960 px field cap can push its rail away.
+          if (grid.getBoundingClientRect().width <= 960) continue
           const kids = Array.from(grid.children).filter(shown)
           for (const rail of kids) {
             const rr = rail.getBoundingClientRect()
