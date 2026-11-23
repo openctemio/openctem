@@ -40,6 +40,14 @@ const STATE_LABELS: Record<PlatformUserState, string> = {
   platform_admins: 'Console administrators',
 }
 
+/**
+ * Table frame widths (px) under which a column folds away; the account, the
+ * state and the organizations count stay. Each is the sum of the columns still
+ * shown with it (account floor 200, state 208, organizations 112, last sign-in
+ * 152, created 152, signs in with 136) plus 40 of slack, so no header is cut.
+ */
+const USERS_HIDE_BELOW = { lastSignIn: 712, created: 864, signIn: 1000 } as const
+
 function isState(v: string): v is PlatformUserState {
   return (PLATFORM_USER_STATES as readonly string[]).includes(v)
 }
@@ -121,7 +129,7 @@ export default function AdminUsersPage() {
         meta: {
           kind: 'text',
           width: 136,
-          hideBelow: 860,
+          hideBelow: USERS_HIDE_BELOW.signIn,
           label: t('admin.users.col.signIn', 'Signs in with'),
         },
         cell: ({ row }) => (
@@ -140,6 +148,10 @@ export default function AdminUsersPage() {
         meta: {
           kind: 'datetime-recent',
           width: 152,
+          hideBelow: USERS_HIDE_BELOW.lastSignIn,
+          // A key figure on the phone card: never cut ("about 1 hou…"); when it
+          // does not fit half the line it takes the whole line.
+          cardFigure: true,
           label: t('admin.users.col.lastSignIn', 'Last sign-in'),
         },
         cell: ({ row }) =>
@@ -156,7 +168,7 @@ export default function AdminUsersPage() {
           kind: 'date',
           // "about 1 month ago" whole, like Last sign-in.
           width: 152,
-          hideBelow: 720,
+          hideBelow: USERS_HIDE_BELOW.created,
           label: t('admin.users.col.created', 'Created'),
         },
         cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
