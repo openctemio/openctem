@@ -62,7 +62,7 @@ for (const [width, height, touch] of [
         // The Query segment (from 768) or the phone's toggle.
         await page
           .locator(
-            '[data-slot="list-search-mode-query"]:visible, button[data-slot="list-search-mode"]:visible'
+            '[data-slot="list-search-mode-query"]:visible, button[data-slot="list-search-mode"]:visible, [data-slot="list-search-mode-inline"]:visible'
           )
           .click()
         const field = page.locator('[data-slot="list-search-query"] [role="combobox"]')

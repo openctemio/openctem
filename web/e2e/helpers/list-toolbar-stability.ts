@@ -762,7 +762,7 @@ export function headerHoldsStill(route: Route) {
           // Basic | Query and back.
           if (list.query) {
             const toQuery = page.locator(
-              'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible'
+              'main [data-slot="list-search-mode-query"]:visible, main button[data-slot="list-search-mode"]:visible, main [data-slot="list-search-mode-inline"]:visible'
             )
             await step('switch to Query mode', async () => {
               await toQuery.click()
