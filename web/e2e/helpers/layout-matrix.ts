@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { test, type Page } from '@playwright/test'
 
 /**
  * MVP acceptance v2 (agent-ops/ui-v2/MVP-ACCEPTANCE.md): the viewport matrix
@@ -132,10 +132,14 @@ async function mailTo(page: Page, address: string): Promise<string | null> {
  * account of the pool (a used account is verified and gets no e-mail) and
  * opens its /verify-email link on the web under test.
  */
+let nextVerify = 0
 async function openVerificationLink(page: Page) {
   if (!MAIL_API) throw new Error('E2E_MAIL_API is not set: this state needs a mail catcher')
   for (let tries = 0; tries < 6; tries++) {
-    const address = `mail-verify-${1 + Math.floor(Math.random() * MAIL_VERIFY_POOL)}@example.com`
+    // Each worker takes its own slice of the pool, one address per try: two
+    // workers never open the same link.
+    const slice = Math.floor(MAIL_VERIFY_POOL / 4)
+    const address = `mail-verify-${1 + (test.info().workerIndex % 4) * slice + (nextVerify++ % slice)}@example.com`
     // Sent by the page itself, as the sign-in page does: same origin, through the web.
     const sent = await page.evaluate(async (email) => {
       const r = await fetch('/api/v1/auth/resend-verification', {
