@@ -199,6 +199,9 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
 const API_KEY_PAGE_SIZES = [25, 50, 100]
 const API_KEY_SORT_FIELDS = ['name', 'last_used_at', 'expires_at', 'created_at'] as const
 
+/** Table frame widths (px) under which a column folds away; the name, the status and the actions stay. */
+const API_KEY_HIDE_BELOW = { scopes: 1100, lastUsed: 980, key: 820, expires: 700 } as const
+
 export default function APIKeysPage() {
   const { t } = useTranslation()
   const list = useListParams({
@@ -251,7 +254,7 @@ export default function APIKeysPage() {
       },
       {
         id: 'key',
-        meta: { kind: 'id', width: 140, label: keyLabel },
+        meta: { kind: 'id', width: 140, label: keyLabel, hideBelow: API_KEY_HIDE_BELOW.key },
         enableSorting: false,
         header: keyLabel,
         cell: ({ row }) => (
@@ -260,7 +263,7 @@ export default function APIKeysPage() {
       },
       {
         id: 'scopes',
-        meta: { kind: 'tags', label: scopesLabel },
+        meta: { kind: 'tags', label: scopesLabel, hideBelow: API_KEY_HIDE_BELOW.scopes },
         enableSorting: false,
         header: scopesLabel,
         cell: ({ row }) => (
@@ -278,7 +281,11 @@ export default function APIKeysPage() {
       },
       {
         accessorKey: 'last_used_at',
-        meta: { kind: 'datetime-recent', label: lastUsedLabel },
+        meta: {
+          kind: 'datetime-recent',
+          label: lastUsedLabel,
+          hideBelow: API_KEY_HIDE_BELOW.lastUsed,
+        },
         header: ({ column }) => <DataTableColumnHeader column={column} title={lastUsedLabel} />,
         cell: ({ row }) =>
           row.original.last_used_at ? (
@@ -289,7 +296,13 @@ export default function APIKeysPage() {
       },
       {
         accessorKey: 'expires_at',
-        meta: { kind: 'text', minWidth: 120, maxWidth: 220, label: expiresLabel },
+        meta: {
+          kind: 'text',
+          minWidth: 120,
+          maxWidth: 220,
+          label: expiresLabel,
+          hideBelow: API_KEY_HIDE_BELOW.expires,
+        },
         header: ({ column }) => <DataTableColumnHeader column={column} title={expiresLabel} />,
         cell: ({ row }) => <ExpiryCell k={row.original} />,
       },
@@ -346,6 +359,7 @@ export default function APIKeysPage() {
         onSortingChange={list.setSorting}
         // No keys at all (or a refused read): nothing to search or arrange, so
         // no search box or Display button. A search with no match keeps it.
+        pinActions
         showToolbar={keys.length > 0 || list.q.trim() !== ''}
         showSearch={false}
         search={{

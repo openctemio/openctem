@@ -121,6 +121,9 @@ function summarizeEventTypes(
   }))
 }
 
+/** Table frame widths (px) under which a column folds away; the channel, its status and the actions stay. */
+const CHANNEL_HIDE_BELOW = { provider: 760, lastUsed: 900, severities: 1100, events: 1240 } as const
+
 export default function NotificationIntegrationsPage() {
   const { t } = useTranslation()
   const router = useRouter()
@@ -275,6 +278,7 @@ export default function NotificationIntegrationsPage() {
     () => [
       {
         accessorKey: 'name',
+        meta: { kind: 'name', minWidth: 200 },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -301,6 +305,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'provider',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.provider },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -328,7 +333,7 @@ export default function NotificationIntegrationsPage() {
               <IntegrationHealth status={integration.status} />
               {integration.status_message && integration.status === 'error' && (
                 <p
-                  className="max-w-[250px] text-xs text-destructive"
+                  className="line-clamp-2 max-w-[250px] break-all text-xs text-destructive"
                   title={integration.status_message}
                 >
                   {integration.status_message}
@@ -340,6 +345,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'severity_filters',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.severities },
         header: t('notificationChannels.col.severityFilters', 'Severity filters'),
         enableSorting: false,
         cell: ({ row }) => {
@@ -422,6 +428,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'event_types',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.events },
         header: t('notificationChannels.col.eventTypes', 'Event types'),
         enableSorting: false,
         cell: ({ row }) => {
@@ -496,6 +503,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'last_sync_at',
+        meta: { hideBelow: CHANNEL_HIDE_BELOW.lastUsed },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -506,6 +514,7 @@ export default function NotificationIntegrationsPage() {
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         header: '',
         enableSorting: false,
         enableHiding: false,
@@ -672,6 +681,7 @@ export default function NotificationIntegrationsPage() {
                       'Search channels…'
                     )}
                     showSelectionCount={false}
+                    pinActions
                     toolbarEnd={
                       <Button
                         variant="outline"
