@@ -1427,12 +1427,14 @@ export function layoutMatrix(options: Options) {
             const tall = v.overlay
               ? 0
               : await page.evaluate(() => {
-                  const scrolls = (e: Element) => {
-                    const o = getComputedStyle(e).overflowY
-                    return (o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight
-                  }
+                  const scroller = (e: Element) =>
+                    /auto|scroll/.test(getComputedStyle(e).overflowY)
+                  const scrolls = (e: Element) => scroller(e) && e.scrollHeight > e.clientHeight
+                  // Inside a scroller, even one whose content fits right now
+                  // (the page scroller of a page shorter than the window).
                   const nested = (e: Element) => {
-                    for (let a = e.parentElement; a; a = a.parentElement) if (scrolls(a)) return true
+                    for (let a = e.parentElement; a; a = a.parentElement)
+                      if (scroller(a)) return true
                     return false
                   }
                   return Math.max(
