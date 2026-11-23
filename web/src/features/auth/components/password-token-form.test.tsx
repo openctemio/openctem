@@ -119,9 +119,8 @@ describe('PasswordTokenForm', () => {
     // No self-service advice: a setup link only comes from an administrator.
     expect(banner).not.toHaveTextContent(/request a new one/i)
     expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
-    expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(
-      expect.stringMatching(/ask your administrator for a new one/i)
-    )
+    // One message: the banner, no toast on top of it (MVP v2 batch 9).
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
   })
 })
 
