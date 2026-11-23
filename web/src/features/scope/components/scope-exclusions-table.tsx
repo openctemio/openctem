@@ -91,7 +91,7 @@ interface ScopeExclusionsTableProps {
   onKindChange: (v: string) => void
   onStatusChange: (v: string) => void
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
-  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  /** The page's switch of which scope list is shown, drawn at the toolbar's end. */
   leading?: React.ReactNode
 }
 
@@ -334,7 +334,15 @@ export function ScopeExclusionsTable({
     {
       accessorKey: 'created_by',
       header: t('scope.col.addedBy', 'Added by'),
-      cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
+      cell: ({ row }) => (
+        <div className="max-w-64 min-w-0">
+          <ActorChip
+            actor={row.original.created_by}
+            at={row.original.created_at}
+            className="max-w-full"
+          />
+        </div>
+      ),
     },
     {
       id: 'actions',
@@ -374,7 +382,7 @@ export function ScopeExclusionsTable({
             placeholder: t('scope.exclusion.search', 'Search exclusions…'),
             label: t('scope.exclusion.searchLabel', 'Search exclusions'),
           }}
-          toolbarStart={leading}
+          toolbarEnd={leading}
           // When the table still scrolls sideways the row menu stays in view.
           pinActions
           filter={

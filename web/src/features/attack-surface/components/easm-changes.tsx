@@ -6,7 +6,7 @@
  * (?from=&to=); otherwise the last 7, 14 or 30 days.
  */
 
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import {
   Award,
   CircleOff,
@@ -144,35 +144,53 @@ function ChangeRow({ change }: { change: EASMChange }) {
   const label = kind ? kindLabel(kind) : (change.kind ?? '').replace(/_/g, ' ')
   const name = change.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset')
   return (
-    <li className="flex items-start gap-3 py-3">
+    // On a phone a grid: the time sits on the title row and the asset name
+    // and the detail take the whole width under it, so a long host name is
+    // never squeezed into a narrow column beside the time. From sm up the
+    // plain list row of the app: the content, then the time at its end.
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3 sm:flex sm:gap-3">
       <Icon
         aria-hidden
         className={cn(
-          'mt-0.5 h-4 w-4 shrink-0',
+          'col-start-1 row-start-1 mt-0.5 h-4 w-4 shrink-0',
           kind && RISKY.has(kind) ? 'text-destructive' : 'text-muted-foreground'
         )}
       />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium first-letter:uppercase">{label}</span>
-          {isLinkableAssetId(change.asset_id) ? (
-            <AssetPeekLink assetId={change.asset_id} className="break-words text-primary">
-              {name}
-            </AssetPeekLink>
-          ) : (
-            <span className="break-words text-muted-foreground">
-              <BreakText>{name}</BreakText>
-            </span>
-          )}
+      <div className="contents sm:block sm:min-w-0 sm:flex-1 sm:space-y-1">
+        <div className="contents text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+          <span className="col-start-2 row-start-1 text-sm font-medium first-letter:uppercase">
+            {label}
+          </span>
+          <span className="col-start-2 col-end-4 row-start-2 min-w-0 text-sm">
+            {isLinkableAssetId(change.asset_id) ? (
+              <AssetPeekLink assetId={change.asset_id} className="break-words text-primary">
+                {name}
+              </AssetPeekLink>
+            ) : (
+              <span className="break-words text-muted-foreground">
+                <BreakText>{name}</BreakText>
+              </span>
+            )}
+          </span>
         </div>
-        <ChangeDetail change={change} />
+        <div className="col-start-2 col-end-4 row-start-3 min-w-0 empty:hidden">
+          <ChangeDetail change={change} />
+        </div>
       </div>
-      <RelativeTime date={change.at} className="shrink-0 text-xs" />
+      <RelativeTime date={change.at} className="col-start-3 row-start-1 shrink-0 text-xs" />
     </li>
   )
 }
 
-export function EASMChanges() {
+export function EASMChanges({
+  lens,
+}: {
+  /**
+   * The view's route lens (Surface / Page changes). It sits in the toolbar,
+   * after the filters, so on a phone the Filters button never has a row alone.
+   */
+  lens?: ReactNode
+} = {}) {
   const { t } = useTranslation()
   const kindLabel = useKindLabel()
   const [kindParam, setKinds] = useUrlFilterList('kind')
@@ -287,6 +305,7 @@ export function EASMChanges() {
             />
           </>
         }
+        end={lens}
         below={
           chips.length > 0 ? (
             <FilterChipsRow
