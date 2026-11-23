@@ -2877,10 +2877,16 @@ function FindingsContent() {
       data-testid="findings-toolbar-primary"
       titleTestId="findings-view-title"
       className="@container/actions"
-      // While the view's name loads, a placeholder in its place: the row
-      // keeps its end controls from the first paint, so it never grows when
-      // the name arrives, and the controls never show without a name.
-      title={viewPending ? <Skeleton className="h-5 w-48 max-w-full" /> : viewTitle}
+      // While the view's name loads, "Loading…" in its place (never another
+      // view's name): the row keeps its end controls from the first paint, so
+      // it never grows when the name arrives, and its start is never empty.
+      title={
+        viewPending ? (
+          <span className="text-muted-foreground">{t('common.loading', 'Loading…')}</span>
+        ) : (
+          viewTitle
+        )
+      }
       count={
         !groupBy && (
           <ListCount

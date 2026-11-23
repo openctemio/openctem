@@ -250,7 +250,8 @@ describe('Findings list with quick views', () => {
     savedViewsState.isLoading = true
     openAt(`?view=${id}`)
     render(<FindingsPage />)
-    expect(title().textContent).toBe('')
+    expect(title()).toHaveTextContent('Loading…')
+    expect(title()).not.toHaveTextContent('Internet-facing criticals')
     expect(modified()).toBeNull()
     // The row holds its end controls already: it keeps its shape when the
     // name arrives.
