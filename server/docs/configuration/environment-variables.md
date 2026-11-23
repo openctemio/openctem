@@ -543,7 +543,7 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 | `ADMIN_API_URL` | string | empty |  |  | Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
-| `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
+| `TRUST_PROXY_HEADERS` | string | `false` |  |  | Pass the client address on to the API (audit log, sessions, IP allowlists, request limits). Set `true` only when every request reaches the console through a proxy that sets `X-Forwarded-For` (the gateway does). The console then sends the API one address, the right-most `X-Forwarded-For` entry (the one that proxy wrote; `X-Real-IP` only when `X-Forwarded-For` is absent); entries to its left are never passed on. Off: no address is sent and the API sees the console's own. |
 | `COOKIE_MAX_AGE` | string | `604800` |  |  | Lifetime in seconds of the session cookies the console sets. |
 | `NODE_ENV` | string | `production` |  |  | Node.js environment. |
 | `PORT` | string | `3000` |  |  | Listen port and address of the console. |
