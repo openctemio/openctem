@@ -218,6 +218,23 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow.join('\n')).not.toMatch(/Started|Discovery/)
   })
 
+  test('ignores a wrapped facts line in a sheet header', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.setContent(
+      doc(
+        `<div data-slot="sheet-content" role="dialog" style="width:380px">
+      <div data-slot="detail-header"><h2>Run 42</h2><span>Done</span>
+        <p>Tasks 0/1 task</p><p>Duration 4m 12s</p><p>deadline in 1h 37m</p></div>
+      <section>
+        <table style="width:100%"><tbody><tr><td>nuclei</td><td>Done</td></tr></tbody></table>
+      </section>
+    </div>`
+      )
+    )
+    const found = await findMatrixBreaks(page, { scope: '[role=dialog]' })
+    expect(found.wastedRow).toEqual([])
+  })
+
   test('is quiet for rows under another section heading in an overlay', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 })
     await page.setContent(doc(sheet('')))
