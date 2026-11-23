@@ -49,6 +49,9 @@ function CheckRow({ check }: { check: OverviewCheck }) {
   return (
     <SettingsRow
       id={`check-${check.id}`}
+      // The Review link sits in the field column, near the check text, not
+      // at the far end of the row on a wide screen.
+      wide
       label={
         <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <HealthStatus
