@@ -73,15 +73,88 @@ export const MATRIX_CI = [390, 1024, 1440, 1920]
  */
 export const SIDEBAR_WIDTHS = [1024, 1180, 1280]
 
-/** Signed-out pages: run in a fresh context, without the signed-in session. */
+/**
+ * Signed-out pages: run in a fresh context, without the signed-in session.
+ * /oauth/device is not one: it needs a session (the proxy sends a signed-out
+ * visitor to /login), so the matrix opens it signed in, as spec 75c does.
+ */
 export const AUTH_ROUTES = [
   '/login',
   '/register',
   '/forgot-password',
   '/reset-password',
   '/verify-email',
-  '/oauth/device',
 ]
+
+const submit = (page: Page) => page.locator('main button[type="submit"]').first().click()
+const shown = (page: Page, sel: string) =>
+  page
+    .locator(sel)
+    .first()
+    .waitFor({ timeout: 15_000 })
+    .catch(() => {})
+
+/**
+ * Entry-page states the matrix opens beside the bare route, so a link page is
+ * checked in its real states and not only as "invalid link" (MVP v2 batch 9).
+ * The key is a LAYOUT_ROUTES entry (`/reset-password@form`); `path` is the
+ * page opened and `act` what a person does on it before the checks. The acts
+ * only fill a form with values the server refuses: nothing is bypassed.
+ */
+export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => Promise<void> }> = {
+  // Wrong credentials of an account that does not exist: the error banner.
+  '/login@error': {
+    path: '/login',
+    act: async (page) => {
+      await page.locator('main input[name="email"]').fill('nobody@example.com')
+      await page.locator('main input[name="password"]').fill('Not-the-password-1')
+      await submit(page)
+      await shown(page, 'main [role="alert"]')
+    },
+  },
+  // An invitation link opens the sign-up form even when open sign-up is off.
+  '/register@invite': { path: '/register?returnTo=/invitations/example' },
+  // After the request: the "check your email" state.
+  '/forgot-password@sent': {
+    path: '/forgot-password',
+    act: async (page) => {
+      await page.locator('main input[name="email"]').fill('nobody@example.com')
+      await submit(page)
+      await page
+        .locator('main input[name="email"]')
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => {})
+    },
+  },
+  // A link with a token: the new-password form.
+  '/reset-password@form': { path: '/reset-password#token=synthetic-reset-token' },
+  // The same form sent with a token the server does not know: expired link.
+  '/reset-password@expired': {
+    path: '/reset-password#token=synthetic-reset-token',
+    act: async (page) => {
+      await page.locator('main input[name="password"]').fill('Correct-Horse-Battery-9')
+      await page.locator('main input[name="confirmPassword"]').fill('Correct-Horse-Battery-9')
+      await submit(page)
+      await shown(page, 'main [role="alert"]')
+    },
+  },
+  // A code the server does not know: the invalid-code banner.
+  '/oauth/device@invalid': {
+    path: '/oauth/device',
+    act: async (page) => {
+      await page.locator('#device-user-code').fill('BCDF-GHJK')
+      await submit(page)
+      await shown(page, 'main [role="alert"]')
+    },
+  },
+}
+
+/** The page a matrix route opens: its state's path, or the route itself. */
+export const statePath = (route: string) => ROUTE_STATES[route]?.path ?? route
+
+/** Whether a matrix route (or state) is a signed-out page. */
+export const isSignedOutRoute = (route: string) =>
+  AUTH_ROUTES.includes(statePath(route).split(/[?#]/)[0])
 
 /** Widths that also get the empty and one-row data and the main overlays. */
 export const OVERLAY_WIDTHS = [390, 1440]

@@ -600,27 +600,29 @@ export default function NotificationIntegrationsPage() {
             <Can route="PUT /api/v1/integrations/{id}">
               <Button
                 variant="outline"
-                size="sm"
                 onClick={() => router.push('/settings/integrations/notifications/history')}
               >
-                <History className="me-2 h-4 w-4" />
+                <History aria-hidden />
                 {t('notificationChannels.page.viewEvents', 'View events')}
               </Button>
               <Button
                 variant="outline"
-                size="sm"
                 onClick={() => router.push('/settings/integrations/notifications/outbox')}
               >
-                <Inbox className="me-2 h-4 w-4" />
+                <Inbox aria-hidden />
                 {t('notificationChannels.page.queue', 'Queue')}
               </Button>
             </Can>
-            <Can route="POST /api/v1/integrations/notifications">
-              <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('notificationChannels.page.addChannel', 'Add channel')}
-              </Button>
-            </Can>
+            {/* While the list is empty its empty state carries the one
+                Add channel button. */}
+            {integrations.length > 0 && (
+              <Can route="POST /api/v1/integrations/notifications">
+                <Button onClick={() => setAddDialogOpen(true)}>
+                  <Plus aria-hidden />
+                  {t('notificationChannels.page.addChannel', 'Add channel')}
+                </Button>
+              </Can>
+            )}
           </PageHeader>
 
           {error ? (
@@ -651,8 +653,8 @@ export default function NotificationIntegrationsPage() {
                     )}
                     action={
                       <Can route="POST /api/v1/integrations/notifications">
-                        <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                          <Plus className="me-2 h-4 w-4" />
+                        <Button onClick={() => setAddDialogOpen(true)}>
+                          <Plus aria-hidden />
                           {t('notificationChannels.page.addChannel', 'Add channel')}
                         </Button>
                       </Can>
