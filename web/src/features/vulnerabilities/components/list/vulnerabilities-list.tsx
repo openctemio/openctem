@@ -121,9 +121,12 @@ const PANEL_ID = 'vulnerability-list-filters'
 /**
  * Column widths (px) and the table-frame width under which a column steps
  * aside (it stays under Display > Columns): Last seen first, then
- * Remediation, then Fix. The CVE, the title, the signals, the priority, the
- * severity, the EPSS and the reach always show; with the title's floor they
- * fit the table of a 1280 screen (954). The widths hold the longest
+ * Remediation, then Fix, then EPSS, the severity and the reach (each threshold
+ * is the sum of the columns still shown with it: checkbox 40, CVE 132, title
+ * floor 130, signals 224, priority 76, reach 96, severity 144, EPSS 112), so
+ * a tablet frame folds them instead of cutting a header. The CVE, the title,
+ * the signals and the priority always show; with EPSS, severity and reach
+ * they fit the table of a 1280 screen (954). The widths hold the longest
  * Vietnamese values ("Nghiêm trọng 9.8", "Chưa có bản sửa").
  */
 const VULN_WIDTH = {
@@ -139,7 +142,14 @@ const VULN_WIDTH = {
   remediation: 136,
   seen: 104,
 }
-const VULN_HIDE_BELOW = { lastSeen: 1560, remediation: 1450, fix: 1180 } as const
+const VULN_HIDE_BELOW = {
+  lastSeen: 1560,
+  remediation: 1450,
+  fix: 1180,
+  epss: 950,
+  severity: 840,
+  assets: 698,
+} as const
 
 // Below 1024 px the toolbar keeps one row by moving the order (the select of
 // lowest priority: the column headers sort too) from the toolbar into Add
@@ -703,6 +713,7 @@ function VulnerabilitiesListBody() {
         meta: {
           kind: 'severity',
           width: VULN_WIDTH.severity,
+          hideBelow: VULN_HIDE_BELOW.severity,
           label: t('vulnPage.list.col.severity', 'Severity'),
         },
         enableSorting: true,
@@ -714,6 +725,7 @@ function VulnerabilitiesListBody() {
         meta: {
           kind: 'number',
           width: VULN_WIDTH.epss,
+          hideBelow: VULN_HIDE_BELOW.epss,
           label: t('vulnPage.list.col.epss', 'EPSS'),
         },
         enableSorting: true,
@@ -725,6 +737,7 @@ function VulnerabilitiesListBody() {
         meta: {
           kind: 'text',
           width: VULN_WIDTH.assets,
+          hideBelow: VULN_HIDE_BELOW.assets,
           sortFirst: 'desc',
           label: t('vulnPage.list.col.assets', 'Assets'),
         },

@@ -375,6 +375,8 @@ export function ScopeExclusionsTable({
             label: t('scope.exclusion.searchLabel', 'Search exclusions'),
           }}
           toolbarStart={leading}
+          // When the table still scrolls sideways the row menu stays in view.
+          pinActions
           filter={
             <ScopeListFilters
               kind={kind ?? 'all'}

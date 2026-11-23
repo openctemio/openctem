@@ -14,7 +14,8 @@ import type { Page, Route } from '@playwright/test'
  *   clipped     text cut by an overflow clip with no ellipsis or line clamp,
  *               a button or link whose label a frame cuts ("Manage" shown as
  *               "Mana"), text past either edge of the screen, sideways page scroll,
- *               a control a sideways scroller cuts at its edge on load, and a
+ *               a control or a table column header a sideways scroller cuts
+ *               at its edge on load, and a
  *               one-line strip (a toolbar's tokens, chips) that scrolls
  *               sideways with controls out of view (owner report 2026-11-20:
  *               "Last 7 d..." faded at the edge read as hidden buttons)
@@ -424,6 +425,22 @@ export async function findBreaks(
                 `${cut ? 'control cut at the edge of' : 'control hidden in'} a sideways strip: "${name}"`
               )
             else if (cut) out.clipped.push(`control cut by a scroller's edge: "${name}"`)
+          }
+          // A wide table may hold whole columns past the edge, but a column
+          // header the edge cuts in two ("Durat") is a cut cell: the table was
+          // meant to fit (owner report 2026-11-23, /scans/runs Duration at 768).
+          if (!strip) {
+            for (const th of Array.from(sc.querySelectorAll('th,[role=columnheader]'))) {
+              if (hiddenByAncestor(th)) continue
+              const r = th.getBoundingClientRect()
+              if (r.width < 1 || r.height < 1) continue
+              const cutEnd = r.right > sr.right + 1 && r.left < sr.right - 1
+              const cutStart = r.left < sr.left - 1 && r.right > sr.left + 1
+              if (cutEnd || cutStart)
+                out.clipped.push(
+                  `column header cut by a scroller's edge: "${short(th.textContent, 30)}"`
+                )
+            }
           }
         }
       }

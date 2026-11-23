@@ -72,6 +72,12 @@ import {
 
 export const SCOPE_PAGE_SIZES = [10, 20, 30, 50, 100]
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting Authorized by: the deepest probe first (one value
+// for every row unless Strict governance sets ceilings; it is in the row's
+// Edit), then the kind (the entry's "Covers" line names what it reaches).
+export const SCOPE_ENTRIES_HIDE_BELOW = { deepestProbe: 1000, kind: 840 } as const
+
 /** Where scan approval governance (Off, On, Strict) is set. */
 const SCAN_APPROVAL_HREF = '/settings/scanning/scan-approval'
 
@@ -328,6 +334,7 @@ export function ScopeEntriesTable({
     },
     {
       accessorKey: 'target_type',
+      meta: { hideBelow: SCOPE_ENTRIES_HIDE_BELOW.kind, label: t('scope.col.kind', 'Kind') },
       header: t('scope.col.kind', 'Kind'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -366,6 +373,10 @@ export function ScopeEntriesTable({
     },
     {
       accessorKey: 'max_tier',
+      meta: {
+        hideBelow: SCOPE_ENTRIES_HIDE_BELOW.deepestProbe,
+        label: t('scope.entries.deepestProbe', 'Deepest probe'),
+      },
       header: t('scope.entries.deepestProbe', 'Deepest probe'),
       cell: ({ row }) =>
         tierCeilings ? (
@@ -394,9 +405,11 @@ export function ScopeEntriesTable({
         const e = row.original
         const why = e.reason || e.description
         return (
-          <div className="min-w-0 space-y-0.5" title={why || undefined}>
+          // Capped: a long e-mail ends in an ellipsis instead of pushing the
+          // row actions past the table's edge.
+          <div className="max-w-56 min-w-0 space-y-0.5" title={why || undefined}>
             <p className="line-clamp-2 text-sm">{authorizedByText(e, t)}</p>
-            <ActorChip actor={e.created_by} at={e.created_at} compact />
+            <ActorChip actor={e.created_by} at={e.created_at} compact className="max-w-full" />
           </div>
         )
       },
@@ -475,6 +488,8 @@ export function ScopeEntriesTable({
               label: t('scope.entries.searchLabel', 'Search scope entries'),
             }}
             toolbarStart={leading}
+            // When the table still scrolls sideways the row menu stays in view.
+            pinActions
             filter={filters}
             mobileRow={(e, selection) => (
               <ScopeRowCard

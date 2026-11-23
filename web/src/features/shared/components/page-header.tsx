@@ -59,11 +59,12 @@ export function PageHeader({
         className
       )}
     >
-      {/* basis-60: on a phone the title and a couple of icon actions share a
-          row; wider actions wrap onto their own line instead of squeezing. With a
-          view switcher the title yields (basis-32) so the switcher stays beside
-          it on a 360 px phone instead of dropping to a row of its own. */}
-      <div className={cn('min-w-0 flex-1', viewSwitcher ? 'basis-32 sm:basis-60' : 'basis-60')}>
+      {/* basis-40 on a phone: the title and a couple of icon actions share a
+          row even at 360 px (a 240 px basis pushed two icon buttons under a short
+          title like "Quét"); the title wraps first, and only wider actions wrap
+          onto their own line. With a view switcher the title yields (basis-32)
+          so the switcher stays beside it. From sm the title keeps 240 px. */}
+      <div className={cn('min-w-0 flex-1 sm:basis-60', viewSwitcher ? 'basis-32' : 'basis-40')}>
         {titleAction ? (
           <div data-slot="page-header-title-line" className="flex min-w-0 items-center gap-1">
             <h1
