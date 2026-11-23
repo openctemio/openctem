@@ -14,7 +14,14 @@ import Link from '@/components/link'
 import { Settings2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import {
   Sheet,
   SheetBody,
@@ -81,22 +88,24 @@ export function EASMTopRisks() {
 
   return (
     <Card className="lg:col-span-2" data-testid="easm-fix-first">
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div className="min-w-0 space-y-1.5">
-          <CardTitle className="text-base">
-            {t('easmReview.overview.fixFirst', 'Fix first')}
-          </CardTitle>
-          <CardDescription>
-            {t('easmReview.overview.risksHint', 'Open external exposures, most severe first')}
-          </CardDescription>
-        </div>
-        <Button size="sm" variant="outline" asChild>
-          <Link href="/exposures">
-            {open > 0
-              ? t('easmReview.overview.allOpen', 'All {n} open', { n: open })
-              : t('easmReview.overview.allExposures', 'All exposures')}
-          </Link>
-        </Button>
+      {/* The link shares the title's line; the description takes the card's
+          whole width under both, so a phone never squeezes it beside the link. */}
+      <CardHeader>
+        <CardTitle className="self-center text-base">
+          {t('easmReview.overview.fixFirst', 'Fix first')}
+        </CardTitle>
+        <CardAction className="row-span-1">
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/exposures">
+              {open > 0
+                ? t('easmReview.overview.allOpen', 'All {n} open', { n: open })
+                : t('easmReview.overview.allExposures', 'All exposures')}
+            </Link>
+          </Button>
+        </CardAction>
+        <CardDescription className="col-span-2">
+          {t('easmReview.overview.risksHint', 'Open external exposures, most severe first')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {error ? (

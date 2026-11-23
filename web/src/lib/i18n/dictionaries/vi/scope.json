@@ -470,7 +470,7 @@
   "scope.pending.verifyDomain": "Xác minh tên miền",
   "scope.pending.waits": "{pattern} đang chờ phê duyệt.",
   "scope.policy": "Chính sách",
-  "scope.proofPage.description": "Các tên miền tổ chức của bạn đã chứng minh quyền kiểm soát bằng bản ghi DNS. Chứng minh tự nó không cho phép quét; đây là điều kiện để dùng sensor của nền tảng và các kiểm tra xâm nhập.",
+  "scope.proofPage.description": "Các tên miền tổ chức của bạn đã chứng minh quyền kiểm soát bằng bản ghi DNS TXT. Chứng minh tự nó không đưa gì vào phạm vi và không cho phép quét; nó đánh dấu các mục tại hoặc dưới tên miền là đã xác minh, điều kiện để dùng sensor của nền tảng và các kiểm tra xâm nhập.",
   "scope.providers.addedOn": "Thêm ngày {date}",
   "scope.providers.aria": "Địa chỉ dùng chung của nhà cung cấp",
   "scope.providers.confirmedHint": "Đã có người xác nhận các địa chỉ {provider} này là của bạn. Mở từng địa chỉ để giữ hoặc thay đổi quyết định đó.",

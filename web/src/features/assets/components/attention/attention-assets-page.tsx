@@ -49,19 +49,20 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
     sortFields: Object.values(SORT_FIELDS),
     defaultSort: DEFAULT_SORT,
   })
-  const { page, perPage: pageSize, sort } = list
+  const { page, perPage: pageSize, sort, searchTerm } = list
 
   const base = ATTENTION_FILTERS[reason]
   const query = useMemo<AssetSearchFilters>(
     () => ({
       ...base,
+      search: searchTerm || undefined,
       attribution: attributionQuery(base),
       withTriage: true,
       sort,
       page,
       pageSize,
     }),
-    [base, sort, page, pageSize]
+    [base, searchTerm, sort, page, pageSize]
   )
   const { assets, total, totalCapped, isLoading, hasLoaded, error, mutate } = useAssets(query)
   // The first read draws skeleton rows; a later one keeps the rows on screen.
@@ -74,7 +75,7 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   const clearSelection = tableBulk.clear
   useEffect(() => {
     clearSelection()
-  }, [reason, page, pageSize, sort, clearSelection])
+  }, [reason, page, pageSize, sort, searchTerm, clearSelection])
   // Phone cards have no header checkbox: "Select" is in the queue's More.
   const phoneSelect = usePhoneSelectMode(isPhone && !!tableBulk.bulk)
 
@@ -118,6 +119,17 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
               next ? [{ id: next.replace(/^-/, ''), desc: next.startsWith('-') }] : []
             )
           }
+          // The queue's search, as on the inventory: the toolbar holds it with
+          // the Display menu, so the list starts under one toolbar row.
+          search={{
+            value: list.q,
+            onChange: list.setSearch,
+            placeholder: isPhone
+              ? t('assets.inventoryPage.searchShort', 'Search assets…')
+              : t('assets.inventoryPage.search', 'Search name, description or alias…'),
+            label: t('assets.inventoryPage.searchAria', 'Search assets'),
+          }}
+          onClearFilters={() => list.setSearch('')}
           isLoading={firstLoad}
           isRefreshing={isLoading && hasLoaded}
           // A failed read keeps the queue's header; the table says what failed.
@@ -135,11 +147,15 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
           resetSelectionKey={tableBulk.resetKey}
           onAssetUpdated={() => void mutate()}
           hasFilters
-          emptyMessage={t('assets.attention.empty', 'Nothing needs attention here')}
-          emptyDescription={t(
-            'assets.attention.emptyHint',
-            'Every asset you can see has this covered.'
-          )}
+          // With a search, an empty queue is "no match" (with Clear), not "all done".
+          emptyMessage={
+            searchTerm ? undefined : t('assets.attention.empty', 'Nothing needs attention here')
+          }
+          emptyDescription={
+            searchTerm
+              ? undefined
+              : t('assets.attention.emptyHint', 'Every asset you can see has this covered.')
+          }
         />
       </PageStack>
 

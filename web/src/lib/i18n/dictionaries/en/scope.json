@@ -470,7 +470,7 @@
   "scope.pending.verifyDomain": "Verify domain",
   "scope.pending.waits": "{pattern} is waiting for approval.",
   "scope.policy": "Policy",
-  "scope.proofPage.description": "Domains your organization has proved it controls with a DNS record. Proof authorizes no scan by itself; it is what platform sensors and intrusive checks require.",
+  "scope.proofPage.description": "Domains your organization has proved it controls with a DNS TXT record. Proof puts nothing in scope and authorizes no scan by itself; it marks entries at or under the domain as verified, which platform sensors and intrusive checks require.",
   "scope.providers.addedOn": "Added {date}",
   "scope.providers.aria": "Shared provider addresses",
   "scope.providers.confirmedHint": "Someone confirmed these {provider} addresses as yours. Open each one to keep or change that decision.",

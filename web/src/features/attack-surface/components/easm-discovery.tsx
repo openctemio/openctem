@@ -10,10 +10,9 @@
  * budget still decide every target. The API is the only authority.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Download, Info, Play, RefreshCw, ShieldX, Square } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -234,7 +233,7 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
   )
 }
 
-export function EASMDiscovery() {
+export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
   const { t } = useTranslation()
   const text = useStageText()
   const { can } = usePermissions()
@@ -338,23 +337,29 @@ export function EASMDiscovery() {
 
   if (!enabled) {
     return (
-      <EmptyState
-        icon={ShieldX}
-        title={t('attackSurface.discovery.noAccess.title', 'Access denied')}
-        description={t(
-          'attackSurface.discovery.noAccess.description',
-          "You don't have permission to view scans. Ask your administrator for access."
-        )}
-      />
+      <>
+        {lens}
+        <EmptyState
+          icon={ShieldX}
+          title={t('attackSurface.discovery.noAccess.title', 'Access denied')}
+          description={t(
+            'attackSurface.discovery.noAccess.description',
+            "You don't have permission to view scans. Ask your administrator for access."
+          )}
+        />
+      </>
     )
   }
   if (error && !overview) {
     return (
-      <ErrorState
-        title={t('attackSurface.discovery.error', 'the discovery stages')}
-        error={error}
-        onRetry={() => mutate()}
-      />
+      <>
+        {lens}
+        <ErrorState
+          title={t('attackSurface.discovery.error', 'the discovery stages')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      </>
     )
   }
 
@@ -392,30 +397,27 @@ export function EASMDiscovery() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-          data-testid="discovery-freshness"
-        >
-          {overview ? (
-            <>
-              <span>{t('attackSurface.discovery.updated', 'Updated')}</span>
-              <RelativeTime date={overview.generated_at} />
-            </>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-
-            onClick={() => mutate()}
-            disabled={isValidating}
-            aria-label={t('attackSurface.discovery.refresh', 'Refresh')}
+      {/* One toolbar row (MVP v2: no row of its own above the stages): the
+          lens, what holds the stages back (cut with an ellipsis, whole in its
+          tooltip; each stage card says it too), then the actions. The
+          freshness line is the caption under the stages. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {lens}
+        {blockedReason ? (
+          <p
+            role="status"
+            data-testid="discovery-blocked"
+            title={blockedReason}
+            className="flex min-w-0 flex-1 basis-0 items-center gap-2 text-sm text-muted-foreground max-sm:sr-only"
           >
-            <RefreshCw className="h-4 w-4" aria-hidden />
-          </Button>
-        </p>
+            <Info className="size-4 shrink-0" aria-hidden />
+            <span className="truncate">{blockedReason}</span>
+          </p>
+        ) : (
+          <span className="flex-1" aria-hidden />
+        )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!overview}>
+          <Button variant="outline" onClick={exportCsv} disabled={!overview}>
             <Download className="me-2 h-4 w-4" aria-hidden />
             {t('attackSurface.discovery.export', 'Export CSV')}
           </Button>
@@ -430,7 +432,6 @@ export function EASMDiscovery() {
                 : t('attackSurface.discovery.abort.nothing', 'No coverage run is active.')
             }
             variant="outline"
-            size="sm"
             onClick={() => setConfirmAbort(true)}
           >
             <Square className="me-2 h-4 w-4" aria-hidden />
@@ -446,7 +447,6 @@ export function EASMDiscovery() {
                   )
                 : (blockedReason ?? '')
             }
-            size="sm"
             disabled={busy || !overview}
             onClick={runAll}
           >
@@ -455,12 +455,6 @@ export function EASMDiscovery() {
           </GatedButton>
         </div>
       </div>
-      {blockedReason && (
-        <Alert role="status">
-          <Info className="h-4 w-4" aria-hidden />
-          <AlertDescription>{blockedReason}</AlertDescription>
-        </Alert>
-      )}
       <MetricStrip loading={isLoading && !overview} items={metrics} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {(overview?.stages ?? []).map((row, i) => (
@@ -475,13 +469,34 @@ export function EASMDiscovery() {
           />
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {t(
-          'attackSurface.discovery.footnote',
-          'Run makes a stage due now; the next coverage pass, within {seconds} seconds, starts it through your scope rules and the daily budget.',
-          { seconds: overview?.pass_every_seconds ?? 60 }
-        )}
-      </p>
+      {/* The caption under the stages: how fresh they are, with Refresh, and
+          what Run does. */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1" data-testid="discovery-freshness">
+          {overview ? (
+            <>
+              <span>{t('attackSurface.discovery.updated', 'Updated')}</span>
+              <RelativeTime date={overview.generated_at} />
+            </>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => mutate()}
+            disabled={isValidating}
+            aria-label={t('attackSurface.discovery.refresh', 'Refresh')}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+          </Button>
+        </span>
+        <p>
+          {t(
+            'attackSurface.discovery.footnote',
+            'Run makes a stage due now; the next coverage pass, within {seconds} seconds, starts it through your scope rules and the daily budget.',
+            { seconds: overview?.pass_every_seconds ?? 60 }
+          )}
+        </p>
+      </div>
       <ConfirmDialog
         open={confirmAbort}
         onOpenChange={setConfirmAbort}

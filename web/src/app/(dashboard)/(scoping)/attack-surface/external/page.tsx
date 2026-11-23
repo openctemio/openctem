@@ -14,8 +14,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Eye, Pencil, Plus, Radar, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 
 import { Main } from '@/components/layout'
 import {
@@ -654,16 +655,32 @@ export default function ExternalSurfacePage() {
     </>
   )
 
+  // The list's own actions (scan the page, export, refresh) live in its
+  // toolbar; the page header keeps its one main action, Add asset.
   const toolbarEnd = (
-    <Button
-      variant="outline"
-      size="icon-sm"
-
-      onClick={() => void refetchAssets()}
-      aria-label={t('attackSurface.external.refresh', 'Refresh')}
-    >
-      <RefreshCw className="h-4 w-4" />
-    </Button>
+    <>
+      <Can permission={Permission.ScansExecute}>
+        <ToolbarAction
+          icon={Radar}
+          label={t('attackSurface.external.scanPage', 'Scan this page')}
+          onClick={() => openScanDialog(assets)}
+          disabled={assets.length === 0}
+        />
+      </Can>
+      <ToolbarAction
+        icon={Download}
+        label={t('attackSurface.external.export', 'Export')}
+        onClick={() => void handleExport()}
+      />
+      <Button
+        variant="outline"
+        size="icon-sm"
+        onClick={() => void refetchAssets()}
+        aria-label={t('attackSurface.external.refresh', 'Refresh')}
+      >
+        <RefreshCw className="h-4 w-4" />
+      </Button>
+    </>
   )
 
   const formFields = (
@@ -754,21 +771,6 @@ export default function ExternalSurfacePage() {
               'Every internet-facing asset, riskiest first.'
             )}
           >
-            <Can permission={Permission.ScansExecute}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openScanDialog(assets)}
-                disabled={assets.length === 0}
-              >
-                <RefreshCw className="me-2 h-4 w-4" />
-                {t('attackSurface.external.scanPage', 'Scan this page')}
-              </Button>
-            </Can>
-            <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-              <Download className="me-2 h-4 w-4" />
-              {t('attackSurface.external.export', 'Export')}
-            </Button>
             <Can permission={Permission.AssetsWrite}>
               <Button size="sm" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="me-2 h-4 w-4" />
