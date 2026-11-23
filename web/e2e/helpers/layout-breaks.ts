@@ -1299,6 +1299,13 @@ export function findingRail(options: Options) {
   })
 }
 
+/**
+ * A context with no session. In the test runner `browser.newContext()` takes
+ * the project's options, the signed-in `storageState` of the fixture among
+ * them, so a bare new context was signed in and /login showed the dashboard.
+ */
+const SIGNED_OUT = { cookies: [], origins: [] }
+
 export function layoutSignedOut(options: Options, routes: string[]) {
   test.describe('Layout breaks, signed out', options, () => {
     test.describe.configure({ mode: 'parallel' })
@@ -1307,7 +1314,7 @@ export function layoutSignedOut(options: Options, routes: string[]) {
         test.setTimeout(120_000)
         const report: Record<string, Breaks> = {}
         for (const v of variants().filter((x) => !x.overlay && x.scen === 'rich')) {
-          const context = await browser.newContext({ baseURL })
+          const context = await browser.newContext({ baseURL, storageState: SIGNED_OUT })
           const page = await context.newPage()
           await prepare(page, v, baseURL!)
           await page.goto(route, { timeout: 60_000 }).catch(() => {})
@@ -1349,14 +1356,16 @@ export function layoutMatrix(options: Options) {
         test(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
           test.setTimeout(900_000)
           const signedOut = isSignedOutRoute(route)
-          const ctx = signedOut ? await browser.newContext({ baseURL }) : null
+          const ctx = signedOut
+            ? await browser.newContext({ baseURL, storageState: SIGNED_OUT })
+            : null
           const page = ctx ? await ctx.newPage() : signedIn
           const url = signedOut ? statePath(route) : await resolveRoute(page, statePath(route))
           test.skip(!url, `no row to open for ${route}`)
           const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
           for (const theme of ['light', 'dark'] as const)
             for (const lang of ['en', 'vi'] as const)
-              for (const sidebar of SIDEBAR_WIDTHS.includes(size.width)
+              for (const sidebar of !signedOut && SIDEBAR_WIDTHS.includes(size.width)
                 ? (['open', 'closed'] as const)
                 : [undefined])
                 vs.push({
@@ -1409,6 +1418,9 @@ export function layoutMatrix(options: Options) {
             if (url!.includes('#')) await page.goto('about:blank').catch(() => {})
             await page.goto(url!, { timeout: 60_000 }).catch(() => {})
             await settle(page)
+            // The page itself, not where a session or a missing one sent it.
+            const want = statePath(route).split(/[?#]/)[0]
+            expect.soft(new URL(page.url()).pathname, `${route} ${v.tag}: opened`).toBe(want)
             const act = ROUTE_STATES[route]?.act
             if (act) {
               await act(page).catch(() => {})
