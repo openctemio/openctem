@@ -397,7 +397,7 @@ export default function APIKeysPage() {
                 canGenerate
                   ? t(
                       'settings.apiKeys.emptyDescGenerate',
-                      'Generate a scoped key for programmatic access to the API.'
+                      'Use Generate API key above to create a scoped key for programmatic access to the API.'
                     )
                   : t(
                       'settings.apiKeys.emptyDescAsk',
@@ -405,7 +405,6 @@ export default function APIKeysPage() {
                     )
               }
               card={false}
-              action={canGenerate ? generateButton : undefined}
             />
           ),
           noMatch: {

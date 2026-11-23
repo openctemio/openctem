@@ -423,7 +423,7 @@
   "settings.apiKeys.dialog.namePlaceholder": "Nightly export script",
   "settings.apiKeys.dialog.title": "Generate API key",
   "settings.apiKeys.emptyDescAsk": "Ask an owner or administrator if you need a key.",
-  "settings.apiKeys.emptyDescGenerate": "Generate a scoped key for programmatic access to the API.",
+  "settings.apiKeys.emptyDescGenerate": "Use Generate API key above to create a scoped key for programmatic access to the API.",
   "settings.apiKeys.emptyTitle": "No API keys yet",
   "settings.apiKeys.expiry.d180": "180 days",
   "settings.apiKeys.expiry.d30": "30 days",

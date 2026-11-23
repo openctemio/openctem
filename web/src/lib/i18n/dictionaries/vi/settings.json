@@ -423,7 +423,7 @@
   "settings.apiKeys.dialog.namePlaceholder": "Tập lệnh xuất dữ liệu hằng đêm",
   "settings.apiKeys.dialog.title": "Tạo khóa API",
   "settings.apiKeys.emptyDescAsk": "Hãy nhờ chủ sở hữu hoặc quản trị viên nếu bạn cần một khóa.",
-  "settings.apiKeys.emptyDescGenerate": "Tạo một khóa có phạm vi giới hạn để truy cập API bằng chương trình.",
+  "settings.apiKeys.emptyDescGenerate": "Dùng nút Tạo khóa API ở trên để tạo một khóa có phạm vi cho việc gọi API.",
   "settings.apiKeys.emptyTitle": "Chưa có khóa API",
   "settings.apiKeys.expiry.d180": "180 ngày",
   "settings.apiKeys.expiry.d30": "30 ngày",
