@@ -2877,7 +2877,16 @@ function FindingsContent() {
       data-testid="findings-toolbar-primary"
       titleTestId="findings-view-title"
       className="@container/actions"
-      title={viewTitle}
+      // While the view's name loads, "Loading…" in its place (never another
+      // view's name): the row keeps its end controls from the first paint, so
+      // it never grows when the name arrives, and its start is never empty.
+      title={
+        viewPending ? (
+          <span className="text-muted-foreground">{t('common.loading', 'Loading…')}</span>
+        ) : (
+          viewTitle
+        )
+      }
       count={
         !groupBy && (
           <ListCount
@@ -3087,10 +3096,8 @@ function FindingsContent() {
   // The title row and the list.
   const listRegion = (
     <>
-      {!urlSettled || (viewPending && !verifyView && !(listBare && !groupBy)) ? (
+      {!urlSettled ? (
         // A row of the title row's own height: the list under it never moves.
-        // Also while the view's name is still loading: the row never shows its
-        // end controls alone, without the name they follow.
         <ListTitleRow
           titleTestId="findings-view-title"
           title={<Skeleton className="h-5 w-48 max-w-full" />}
