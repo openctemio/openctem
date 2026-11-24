@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { findBreaks } from '../helpers/text-breaks'
+import { englishOnlyStrings, findBreaks } from '../helpers/text-breaks'
 
 /**
  * The layout-break detector (helpers/text-breaks.ts) must catch a labelled
@@ -107,5 +107,64 @@ test.describe('layout-break detector: phone title row', { tag: ['@phone', '@shel
     await p.setViewportSize({ width: 390, height: 844 })
     await p.setContent(row('<button style="height:36px">Add asset</button>'))
     expect((await findBreaks(p)).lopsided).toEqual([])
+  })
+})
+
+// A Vietnamese page that publishes a document in English (the legal pages:
+// the text is the administrator's, in the language it is published in). The
+// document is marked lang="en"; our chrome around it must still be translated.
+test.describe('layout-break detector: untranslated text', { tag: ['@shell'] }, () => {
+  const en = () => englishOnlyStrings()[0]
+  const viPage = (body: string) =>
+    `<!doctype html><html lang="vi"><body><main style="width:600px;font:14px sans-serif">${body}</main></body></html>`
+
+  test('flags an English catalog string on a vi page', async ({ page: p }) => {
+    await p.setContent(viPage(`<p>${en()}</p>`))
+    expect((await findBreaks(p, { vi: true })).untranslated).toContain(en())
+  })
+
+  test('is quiet for English text marked lang="en" on a vi page', async ({ page: p }) => {
+    await p.setContent(
+      viPage(
+        `<article lang="en"><section><p>${en()}</p><p title="${en()}">Terms</p></section></article>`
+      )
+    )
+    expect((await findBreaks(p, { vi: true })).untranslated).toEqual([])
+  })
+
+  test('flags the chrome around an English document', async ({ page: p }) => {
+    await p.setContent(
+      viPage(`<nav><a href="/x">${en()}</a></nav><article lang="en-GB"><p>Text</p></article>`)
+    )
+    expect((await findBreaks(p, { vi: true })).untranslated).toContain(en())
+  })
+})
+
+// /scans/workflows/[id]: the React Flow canvas draws its nodes at the zoom a
+// person picks; a node cut by the pane or of another height than its
+// neighbour is not page layout.
+test.describe('layout-break detector: zoomable canvas', { tag: ['@shell'] }, () => {
+  const canvas = (cls: string, left = 200) => `<!doctype html><html><body>
+  <main style="width:600px;font:14px sans-serif">
+    <div class="${cls}" style="width:300px;height:200px;overflow:hidden;position:relative">
+      <div style="position:absolute;left:${left}px;top:20px;display:flex;align-items:center;gap:8px">
+        <button style="height:24px;white-space:nowrap">Port scan</button>
+        <button style="height:40px;white-space:nowrap">Subdomain discovery</button>
+      </div>
+    </div>
+  </main></body></html>`
+
+  test('flags a cut node and mixed heights outside a canvas', async ({ page: p }) => {
+    await p.setContent(canvas('pane'))
+    expect((await findBreaks(p)).clipped.join('\n')).toMatch(/Subdomain discovery/)
+    await p.setContent(canvas('pane', 8))
+    expect((await findBreaks(p)).mixedRows.join('\n')).toMatch(/Port scan/)
+  })
+
+  test('is quiet for the nodes of a React Flow canvas', async ({ page: p }) => {
+    await p.setContent(canvas('react-flow'))
+    expect((await findBreaks(p)).clipped).toEqual([])
+    await p.setContent(canvas('react-flow', 8))
+    expect((await findBreaks(p)).mixedRows).toEqual([])
   })
 })
