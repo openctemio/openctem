@@ -448,8 +448,10 @@ jobs:
     # Stack start, install and a quarter of the tests; no image build here.
     timeout-minutes: 25
     strategy:
-      # The first red shard cancels the rest: the gate fails either way.
-      fail-fast: true
+      # The first red shard cancels the rest on a pull request or in the queue:
+      # the gate fails either way. A push (develop, next) and the nightly run
+      # let every shard finish, so one report covers the whole suite.
+      fail-fast: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
       # From `plan`: one entry per shard (id 1..4, `files` = its specs) and,
       # when @budget is selected, id 0 = the request budget check alone.
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
