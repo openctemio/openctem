@@ -1081,6 +1081,7 @@
   "settings.pentest.templates.builtInKept": "Cannot delete built-in templates",
   "settings.pentest.templates.clearFilters": "Clear filters",
   "settings.pentest.templates.colCategory": "Category",
+  "settings.pentest.templates.colCwe": "CWE",
   "settings.pentest.templates.colName": "Name",
   "settings.pentest.templates.colSeverity": "Severity",
   "settings.pentest.templates.colType": "Type",

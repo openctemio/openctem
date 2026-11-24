@@ -9,6 +9,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   EmptyState,
@@ -370,15 +371,16 @@ export default function ModuleManagementPage() {
     }
   }, [resetModules, mutate, refreshModules, t])
 
-  // The header action is drawn from the first frame (disabled until the
-  // modules are in): added late, it grew the header by a line on a phone and
-  // moved the page under it.
-  const resetAction = (ready: boolean) => (
+  // Reset sits at the end of the list's toolbar (an icon on a phone), not in
+  // the header: there it stood alone on a row under the description.
+  const resetAction = (
     <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
-      <Button variant="outline" onClick={() => setShowReset(true)} disabled={!ready || isResetting}>
-        <RotateCcw aria-hidden />
-        {t('settings.modules.reset', 'Reset to defaults')}
-      </Button>
+      <ToolbarAction
+        icon={RotateCcw}
+        label={t('settings.modules.reset', 'Reset to defaults')}
+        onClick={() => setShowReset(true)}
+        disabled={isResetting}
+      />
     </Can>
   )
 
@@ -387,7 +389,6 @@ export default function ModuleManagementPage() {
       <SettingsPage
         title={pageTitle}
         description={pageDescription}
-        actions={resetAction(false)}
         state={isLoading ? 'loading' : 'error'}
         error={error}
         onRetry={() => void mutate()}
@@ -419,7 +420,6 @@ export default function ModuleManagementPage() {
               'You can see which modules are on. Only administrators can change them.'
             )
       }
-      actions={resetAction(true)}
     >
       <ListToolbar
         search={{
@@ -455,12 +455,19 @@ export default function ModuleManagementPage() {
           />
         }
         end={
-          <span className="text-dense tabular-nums text-muted-foreground" role="status">
-            {t('settings.modules.onCount', '{on} of {total} on', {
-              on: featureOn,
-              total: featureModules.length,
-            })}
-          </span>
+          <>
+            {/* The count is meta: on a phone each group's heading says it. */}
+            <span
+              className="text-dense tabular-nums text-muted-foreground @max-md/toolbar:sr-only"
+              role="status"
+            >
+              {t('settings.modules.onCount', '{on} of {total} on', {
+                on: featureOn,
+                total: featureModules.length,
+              })}
+            </span>
+            {resetAction}
+          </>
         }
       />
 

@@ -4,7 +4,7 @@
   "supportAccess.active.summary": "Được đọc {scopes} đến {time}",
   "supportAccess.active.title": "Quyền đang hiệu lực",
   "supportAccess.active.viewing": "Đang xem",
-  "supportAccess.auditLink": "Xem hoạt động hỗ trợ trong nhật ký kiểm toán",
+  "supportAccess.auditLink": "Xem hoạt động hỗ trợ trong nhật ký",
   "supportAccess.banner.case": "(mã yêu cầu {ref})",
   "supportAccess.banner.granted": "Bộ phận hỗ trợ nền tảng ({name}) được xem {scopes} của bạn, chỉ đọc, đến {time}.",
   "supportAccess.banner.manage": "Quản lý truy cập hỗ trợ",
