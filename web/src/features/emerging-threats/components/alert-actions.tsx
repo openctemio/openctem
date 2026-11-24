@@ -22,7 +22,7 @@ import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useIsWide } from '@/hooks/use-mobile'
 import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import type { ScanCandidate } from '@/features/scans/components/scan-assets-dialog'
 import { createRemediationTask, setAlertState, useRevalidateEmergingThreats } from '../api'
@@ -39,7 +39,9 @@ import { NotAffectedDialog } from './not-affected-dialog'
 export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
   const revalidate = useRevalidateEmergingThreats()
-  const isPhone = useIsMobile()
+  // Below xl the six buttons took two or three rows (phone, tablet, a
+  // laptop with the sidebar open): one main action and a More menu there.
+  const compact = !useIsWide()
   const canTriage = useHasPermission(Permission.FindingsTriage)
   const canTask = useHasPermission(Permission.RemediationWrite)
   const canScanWrite = useHasPermission(Permission.ScansWrite)
@@ -77,9 +79,9 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const canNotAffected = state === 'new' || state === 'acknowledged' || state === 'remediating'
   const canReopen = state !== 'new'
 
-  // The state moves, in the order they are used. On a phone they and the
-  // scan join one "More actions" menu beside the one main action (Create
-  // remediation task), instead of five buttons on three rows.
+  // The state moves, in the order they are used. Below xl they and the scan
+  // join one "More actions" menu beside the one main action (Create
+  // remediation task).
   const moves: { id: string; label: string; run: () => void }[] = canTriage
     ? [
         ...(canAcknowledge
@@ -144,7 +146,7 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {!isPhone &&
+      {!compact &&
         moves.map((m) => (
           <Button key={m.id} size="sm" variant="outline" disabled={busy} onClick={m.run}>
             {m.label}
@@ -164,7 +166,7 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
           {t('emergingThreats.task.create')}
         </Button>
       )}
-      {!isPhone && canScan && (
+      {!compact && canScan && (
         <Button
           size="sm"
           variant="outline"
@@ -176,7 +178,7 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
           {scanLabel}
         </Button>
       )}
-      {isPhone && menuItems.length > 0 && (
+      {compact && menuItems.length > 0 && (
         <ActionMenu
           title={alert.vuln_id}
           label={t('emergingThreats.actions.menu', undefined, { vulnId: alert.vuln_id })}

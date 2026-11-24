@@ -17,7 +17,10 @@ vi.mock('@/lib/permissions', async (orig) => ({
   useHasPermission: () => true,
 }))
 const mobile = vi.hoisted(() => ({ phone: false }))
-vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => mobile.phone }))
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => mobile.phone,
+  useIsWide: () => !mobile.phone,
+}))
 
 const wrap = (ui: React.ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
@@ -93,7 +96,7 @@ describe('AlertActions', () => {
     )
   })
 
-  it('keeps one main action on a phone: the state moves and the scan are in More actions', async () => {
+  it('keeps one main action below xl: the state moves and the scan are in More actions', async () => {
     mobile.phone = true
     wrap(<AlertActions alert={detail()} />)
     expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeInTheDocument()
