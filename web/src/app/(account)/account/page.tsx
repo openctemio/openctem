@@ -107,6 +107,9 @@ export default function ProfilePage() {
     )
   }
 
+  // A name that is the e-mail itself (accounts created without one) shows once.
+  const showName = !!saved.name && saved.name !== profile?.email
+
   const managedBy =
     profile?.auth_provider && profile.auth_provider !== 'local'
       ? identityProviderLabel(profile.auth_provider, t)
@@ -129,10 +132,16 @@ export default function ProfilePage() {
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-body font-medium">{saved.name || profile?.email}</p>
+            {showName && <p className="truncate text-body font-medium">{saved.name}</p>}
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="min-w-0 text-dense break-all text-muted-foreground">
-                {profile?.email}
+              <span
+                className={
+                  showName
+                    ? 'min-w-0 text-dense text-muted-foreground'
+                    : 'min-w-0 text-body font-medium'
+                }
+              >
+                <EmailText email={profile?.email ?? ''} />
               </span>
               {profile?.email_verified ? (
                 <StatusLozenge
@@ -232,6 +241,21 @@ export default function ProfilePage() {
         changes={changes}
         error={saveError}
       />
+    </>
+  )
+}
+
+/** An e-mail address that wraps only after "@" and dots, never inside a word. */
+function EmailText({ email }: { email: string }) {
+  const parts = email.split(/(?<=[@.])/)
+  return (
+    <>
+      {parts.map((p, i) => (
+        <span key={i}>
+          {p}
+          {i < parts.length - 1 && <wbr />}
+        </span>
+      ))}
     </>
   )
 }

@@ -143,7 +143,7 @@
   "account.sessions.revoked": "Đã đăng xuất phiên",
   "account.sessions.revokedOthers": "Đã đăng xuất khỏi mọi phiên khác. Các ứng dụng đã kết nối đã bị thu hồi.",
   "account.sessions.signOut": "Đăng xuất",
-  "account.sessions.signOutOthers": "Đăng xuất tất cả phiên khác",
+  "account.sessions.signOutOthers": "Đăng xuất nơi khác",
   "account.sessions.signedIn": "Đăng nhập lúc {date}",
   "account.sessions.thisDevice": "Thiết bị này",
   "account.sessions.title": "Phiên đăng nhập",

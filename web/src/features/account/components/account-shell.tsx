@@ -76,7 +76,7 @@ export function AccountShell({
             Below it two rows: brand with the way back and a menu (theme, sign
             out), then the tabs. */}
         <header className="border-b bg-background">
-          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-1 px-4 pt-2 sm:px-6 lg:py-3">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 lg:gap-x-6 sm:px-6 lg:py-3">
             <Link
               href={organizationName === undefined ? ACCOUNT_HOME_PATH : '/account'}
               className="flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -154,7 +154,7 @@ function BackToOrganization({ name }: { name: string }) {
     <Button asChild variant="outline" className="min-w-0">
       <Link href="/" aria-label={label} title={label}>
         <ArrowLeft aria-hidden />
-        <span className="max-w-[14ch] truncate sm:hidden">
+        <span className="max-w-[10ch] truncate sm:hidden">
           {name || t('account.area.back', 'Back')}
         </span>
         <span className="max-w-[32ch] truncate max-sm:hidden">{label}</span>

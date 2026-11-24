@@ -20,7 +20,7 @@ import { membershipStep, type MembershipRefusal } from '../lib/membership-step'
 
 /** One organization or invitation: name and details, its actions at the end (under it on a phone). */
 export const HUB_ROW =
-  'flex flex-col gap-3 border-t border-border-subtle py-3.5 sm:flex-row sm:items-center sm:justify-between'
+  'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-border-subtle py-3.5 [&>:first-child]:min-w-0 [&>:first-child]:flex-[1_1_13rem]'
 
 /**
  * The account's own memberships, each with its one next step. Opening one goes

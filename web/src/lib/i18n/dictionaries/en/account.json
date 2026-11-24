@@ -143,7 +143,7 @@
   "account.sessions.revoked": "Session signed out",
   "account.sessions.revokedOthers": "Signed out of all other sessions. Connected apps were revoked.",
   "account.sessions.signOut": "Sign out",
-  "account.sessions.signOutOthers": "Sign out all others",
+  "account.sessions.signOutOthers": "Sign out others",
   "account.sessions.signedIn": "Signed in {date}",
   "account.sessions.thisDevice": "This device",
   "account.sessions.title": "Sessions",

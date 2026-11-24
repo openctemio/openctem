@@ -99,7 +99,7 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
         others.length > 0 && (
           <Button variant="outline" onClick={() => setConfirmAll(true)}>
             <LogOut aria-hidden />
-            {t('account.sessions.signOutOthers', 'Sign out all others')}
+            {t('account.sessions.signOutOthers', 'Sign out others')}
           </Button>
         )
       }
@@ -127,28 +127,30 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
                   <div className="min-w-0 flex-1 space-y-0.5">
                     {/* Sign out sits on the device line, so the details below keep
                           the full width on a phone. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">
-                        {t('account.sessions.browserOn', '{browser} on {os}', {
-                          browser:
-                            d.browser === 'Unknown browser'
-                              ? t('account.sessions.unknownBrowser', 'Unknown browser')
-                              : d.browser,
-                          os:
-                            d.os === 'unknown device'
-                              ? t('account.sessions.unknownDevice', 'unknown device')
-                              : d.os,
-                        })}
-                      </span>
-                      {s.is_current && (
-                        <Badge variant="secondary">
-                          {t('account.sessions.thisDevice', 'This device')}
-                        </Badge>
-                      )}
+                    <div className="flex items-start gap-2">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                        <span className="font-medium">
+                          {t('account.sessions.browserOn', '{browser} on {os}', {
+                            browser:
+                              d.browser === 'Unknown browser'
+                                ? t('account.sessions.unknownBrowser', 'Unknown browser')
+                                : d.browser,
+                            os:
+                              d.os === 'unknown device'
+                                ? t('account.sessions.unknownDevice', 'unknown device')
+                                : d.os,
+                          })}
+                        </span>
+                        {s.is_current && (
+                          <Badge variant="secondary">
+                            {t('account.sessions.thisDevice', 'This device')}
+                          </Badge>
+                        )}
+                      </div>
                       {!s.is_current && (
                         <Button
                           variant="ghost"
-                          className="ms-auto shrink-0 text-destructive hover:text-destructive"
+                          className="shrink-0 text-destructive hover:text-destructive"
                           onClick={() => setToRevoke(s)}
                         >
                           {t('account.sessions.signOut', 'Sign out')}
