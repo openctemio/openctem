@@ -13,19 +13,12 @@ import { cn } from '@/lib/utils'
  * (not read out, not found by the browser's find, not matched twice by
  * tests); the value itself takes no width of its own and fills the cell.
  * Pure CSS: no measuring, so the width is right on the first paint.
- *
- * `reserveClassName` caps what the other options reserve (a max width on
- * their invisible copies) while the value shown takes its own whole width up
- * to the slot's max: short values keep one width, a long one (a status such
- * as "Awaiting approval") is shown whole instead of cut to the reserve. The
- * slot still shrinks, ending in an ellipsis, when its row has no room.
  */
 export function ToolbarSlot({
   options,
   children,
   title,
   className,
-  reserveClassName,
 }: {
   /** Every text the slot can show; the longest sets its width. */
   options: readonly string[]
@@ -34,8 +27,6 @@ export function ToolbarSlot({
   /** The full text, for a value that may be cut. */
   title?: string
   className?: string
-  /** Caps the width the options reserve; the value shown may take more. */
-  reserveClassName?: string
 }) {
   return (
     <span
@@ -47,21 +38,10 @@ export function ToolbarSlot({
           key={`${i}:${o}`}
           aria-hidden="true"
           data-label={o}
-          className={cn(
-            'invisible col-start-1 row-start-1 truncate select-none before:content-[attr(data-label)]',
-            reserveClassName
-          )}
+          className="invisible col-start-1 row-start-1 truncate select-none before:content-[attr(data-label)]"
         />
       ))}
-      <span
-        className={cn(
-          'col-start-1 row-start-1 truncate',
-          // Without a reserve cap the value takes no width of its own; with
-          // one it sizes the slot too (whole, up to the slot's max).
-          !reserveClassName && 'w-0 min-w-full'
-        )}
-        title={title}
-      >
+      <span className="col-start-1 row-start-1 w-0 min-w-full truncate" title={title}>
         {children}
       </span>
     </span>

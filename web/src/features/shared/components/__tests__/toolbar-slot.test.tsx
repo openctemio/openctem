@@ -71,7 +71,7 @@ describe('FilterSelect width', () => {
 })
 
 describe('FilterSelect long value', () => {
-  it('caps what the other values reserve, and lets the value shown size the token whole', () => {
+  it('reserves every value whole up to 15rem, so choosing a long one moves nothing', () => {
     render(
       <FilterSelect
         label="Status"
@@ -85,12 +85,13 @@ describe('FilterSelect long value', () => {
     )
     const trigger = screen.getByRole('button', { name: 'Status: Awaiting approval' })
     const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
-    // The slot may grow to 15rem; the hidden options reserve at most 7rem.
+    // The slot may grow to 15rem, and the hidden copies of every value set
+    // its width: no cap of their own, so the token has one width.
     expect(slot).toHaveClass('max-w-60')
-    for (const h of slot.querySelectorAll('[aria-hidden="true"]')) expect(h).toHaveClass('max-w-28')
+    for (const h of slot.querySelectorAll('[aria-hidden="true"]'))
+      expect(h.className).not.toMatch(/max-w-/)
     const value = slot.lastElementChild as HTMLElement
-    expect(value).not.toHaveClass('w-0')
-    expect(value).toHaveClass('truncate')
+    expect(value).toHaveClass('w-0', 'min-w-full', 'truncate')
     expect(value).toHaveAttribute('title', 'Awaiting approval')
   })
 })
