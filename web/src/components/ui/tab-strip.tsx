@@ -197,7 +197,7 @@ export function TabsCount({
     <span
       data-slot="tabs-count"
       className={cn(
-        'inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium leading-none tabular-nums text-muted-foreground',
+        'inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium leading-none tabular-nums text-muted-foreground', // design-ok: moved unchanged from tabs.tsx (TabsCount look)
         alarming && 'bg-destructive/10 text-destructive',
         className
       )}
