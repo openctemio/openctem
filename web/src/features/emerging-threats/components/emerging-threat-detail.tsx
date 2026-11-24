@@ -60,12 +60,44 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
   return (
     <>
+      {/* The alert's level, state, tier and the recommended action are the
+          header's facts, under its title: no rows of their own above the
+          cards and the affected assets. */}
       <PageHeader
         title={alert.vuln_id}
         description={
-          <span className="flex flex-wrap items-center gap-2">
-            {alert.title && <span>{alert.title}</span>}
-            <FeedDataAsOf className="text-muted-foreground" />
+          <span className="flex flex-col gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              {alert.title && <span>{alert.title}</span>}
+              <FeedDataAsOf className="text-muted-foreground" />
+            </span>
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <LevelBadge level={alert.level} />
+              <StateBadge state={alert.state} />
+              <span>{t(`emergingThreats.tier.${alert.tier}`)}</span>
+              {alert.state === 'not_affected' && (
+                <span>
+                  {t(
+                    `emergingThreats.notAffected.reasons.${alert.state_reason}`,
+                    alert.state_reason
+                  )}
+                  {alert.suppressed_until && (
+                    <>
+                      {', '}
+                      {t('emergingThreats.suppressedUntil', undefined, {
+                        date: formatDate(new Date(alert.suppressed_until)),
+                      })}
+                    </>
+                  )}
+                </span>
+              )}
+            </span>
+            {alert.state === 'not_affected' && alert.state_note && (
+              <span className="block">{alert.state_note}</span>
+            )}
+            <span className="block text-foreground">
+              {t(`emergingThreats.action.${alert.recommended_action}`)}
+            </span>
           </span>
         }
       >
@@ -73,34 +105,6 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
       </PageHeader>
       <OutOfScopeHint alert={alert} />
       <TaskCoverageNote alert={alert} />
-
-      <div className="flex flex-wrap items-center gap-3">
-        <LevelBadge level={alert.level} />
-        <StateBadge state={alert.state} />
-        <span className="text-sm text-muted-foreground">
-          {t(`emergingThreats.tier.${alert.tier}`)}
-        </span>
-        {alert.state === 'not_affected' && (
-          <span className="text-sm text-muted-foreground">
-            {t(`emergingThreats.notAffected.reasons.${alert.state_reason}`, alert.state_reason)}
-            {alert.suppressed_until && (
-              <>
-                {', '}
-                {t('emergingThreats.suppressedUntil', undefined, {
-                  date: formatDate(new Date(alert.suppressed_until)),
-                })}
-              </>
-            )}
-          </span>
-        )}
-      </div>
-      {alert.state === 'not_affected' && alert.state_note && (
-        <p className="text-sm text-muted-foreground">{alert.state_note}</p>
-      )}
-
-      <p className="rounded-lg border bg-muted/40 p-3 text-sm">
-        {t(`emergingThreats.action.${alert.recommended_action}`)}
-      </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ScoreCard alert={alert} />
@@ -118,7 +122,8 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
         </Card>
       )}
 
-      <Timeline alert={alert} />
+      {/* No events: no card that only says so. */}
+      {alert.timeline.length > 0 && <Timeline alert={alert} />}
       <AffectedAssets groups={alert.asset_groups ?? []} />
     </>
   )

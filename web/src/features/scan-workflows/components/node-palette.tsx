@@ -220,8 +220,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     return (
       <div
         className={cn(
-          'w-60 bg-muted/30 h-full flex flex-col items-center justify-center',
-          position === 'left' ? 'border-r' : 'border-l'
+          'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60 items-center justify-center',
+          position === 'left' ? 'md:border-r' : 'md:border-l'
         )}
       >
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -235,8 +235,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     return (
       <div
         className={cn(
-          'w-60 bg-muted/30 h-full flex flex-col items-center justify-center p-4',
-          position === 'left' ? 'border-r' : 'border-l'
+          'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60 items-center justify-center p-4',
+          position === 'left' ? 'md:border-r' : 'md:border-l'
         )}
       >
         <AlertCircle className="h-6 w-6 text-destructive" />
@@ -250,8 +250,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
   return (
     <div
       className={cn(
-        'w-60 bg-muted/30 h-full flex flex-col',
-        position === 'left' ? 'border-r' : 'border-l'
+        'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60',
+        position === 'left' ? 'md:border-r' : 'md:border-l'
       )}
     >
       {/* Header */}

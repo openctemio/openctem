@@ -366,7 +366,13 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           <div className="flex flex-wrap gap-1 items-center">
             <Link2 className="h-3 w-3 text-muted-foreground shrink-0" />
             {dependencyLabels.map((label, i) => (
-              <Badge key={data.dependsOn?.[i] || i} variant="outline" className="text-xs px-1 py-0">
+              // A step's name is the workflow's own text, not catalog copy.
+              <Badge
+                key={data.dependsOn?.[i] || i}
+                variant="outline"
+                translate="no"
+                className="text-xs px-1 py-0"
+              >
                 {label}
               </Badge>
             ))}

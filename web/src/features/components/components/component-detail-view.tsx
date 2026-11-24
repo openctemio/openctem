@@ -6,8 +6,10 @@
  * dependency graph), and its vulnerabilities.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import {
+  AlertTriangle,
   ArrowLeft,
   ChevronRight,
   Copy,
@@ -21,6 +23,7 @@ import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -50,8 +53,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import {
+  DataTable,
   EmptyState,
   ErrorState,
+  KeyValueList,
   MetricStrip,
   PageHeader,
   PageStack,
@@ -290,6 +295,91 @@ function VersionsTable({
 }) {
   const { t } = useTranslation()
   const { versions, error, isLoading, mutate } = useComponentVersions(id)
+  const columns = useMemo<ColumnDef<ComponentVersion>[]>(
+    () => [
+      {
+        id: 'version',
+        meta: { kind: 'name' },
+        header: t('components.col.version', 'Version'),
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <span className="font-mono text-sm">
+            {row.original.version || t('components.version.unknown', 'unknown')}
+          </span>
+        ),
+      },
+      {
+        id: 'assets',
+        meta: { kind: 'number' },
+        header: t('components.col.assets', 'Assets'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Button
+            variant="link"
+            className="h-auto p-0 tabular-nums"
+            onClick={() => onShowUsages(row.original)}
+          >
+            {row.original.assets}
+          </Button>
+        ),
+      },
+      {
+        id: 'vulnerabilities',
+        meta: { kind: 'text' },
+        header: t('components.col.vulnerabilities', 'Open vulnerabilities'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SeverityCountsCell counts={row.original.vulnerabilities} />
+            <KevPill count={row.original.kev} />
+          </div>
+        ),
+      },
+      {
+        id: 'upgrade',
+        meta: { kind: 'text' },
+        header: t('components.col.upgrade', 'Upgrade to'),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const up = row.original.upgrade
+          if (!up) return <span className="text-xs text-muted-foreground">—</span>
+          return (
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+              <code className="font-mono text-sm">{up.version}</code>
+              {up.breaking && (
+                <SignalChip icon={AlertTriangle}>
+                  {t('components.upgrade.breaking', 'Major version')}
+                </SignalChip>
+              )}
+              {!up.complete && (
+                <span className="text-xs text-muted-foreground">
+                  {t('components.upgrade.partial', 'fixes some findings')}
+                </span>
+              )}
+            </span>
+          )
+        },
+      },
+      {
+        id: 'license',
+        meta: { kind: 'text' },
+        header: t('components.col.license', 'License'),
+        enableSorting: false,
+        cell: ({ row }) => <LicenseList licenses={row.original.licenses} />,
+      },
+      {
+        id: 'lastSeen',
+        // Folds first on a narrow frame (a tablet): the phone card and a
+        // wider table show it.
+        meta: { kind: 'datetime-recent', hideBelow: 780 },
+        header: t('components.col.lastSeen', 'Last seen'),
+        enableSorting: false,
+        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
+      },
+    ],
+    [t, onShowUsages]
+  )
   if (isLoading && !versions.length) return <TableSkeleton rows={4} />
   if (error && !versions.length) {
     return (
@@ -312,70 +402,79 @@ function VersionsTable({
       />
     )
   }
-  return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('components.col.version', 'Version')}</TableHead>
-            <TableHead>{t('components.col.assets', 'Assets')}</TableHead>
-            <TableHead>{t('components.col.vulnerabilities', 'Open vulnerabilities')}</TableHead>
-            <TableHead>{t('components.col.upgrade', 'Upgrade to')}</TableHead>
-            <TableHead>{t('components.col.license', 'License')}</TableHead>
-            <TableHead>{t('components.col.lastSeen', 'Last seen')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {versions.map((v) => (
-            <TableRow key={v.id}>
-              <TableCell className="font-mono text-sm">
-                {v.version || t('components.version.unknown', 'unknown')}
-              </TableCell>
-              <TableCell>
-                <Button
-                  variant="link"
-                  className="h-auto p-0 tabular-nums"
-                  onClick={() => onShowUsages(v)}
-                >
-                  {v.assets}
-                </Button>
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <SeverityCountsCell counts={v.vulnerabilities} />
-                  <KevPill count={v.kev} />
-                </div>
-              </TableCell>
-              <TableCell>
-                {v.upgrade ? (
-                  <span className="inline-flex flex-wrap items-center gap-1.5">
-                    <code className="font-mono text-sm">{v.upgrade.version}</code>
-                    {v.upgrade.breaking && (
-                      <Badge variant="outline" className="border-warning/50 text-warning">
-                        {t('components.upgrade.breaking', 'Major version')}
-                      </Badge>
-                    )}
-                    {!v.upgrade.complete && (
-                      <span className="text-xs text-muted-foreground">
-                        {t('components.upgrade.partial', 'fixes some findings')}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <LicenseList licenses={v.licenses} />
-              </TableCell>
-              <TableCell>
-                <RelativeTime date={v.last_seen_at} />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+  // A version on a phone: the version and when it was last seen on the title
+  // line, the rest as labelled facts.
+  const mobileRow = (v: ComponentVersion) => (
+    <div className="flex flex-col gap-2 px-3 py-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-mono text-sm font-medium">
+          {v.version || t('components.version.unknown', 'unknown')}
+        </span>
+        <span className="shrink-0 text-sm text-muted-foreground">
+          <RelativeTime date={v.last_seen_at} />
+        </span>
+      </div>
+      <KeyValueList
+        size="meta"
+        className="grid-cols-[minmax(5rem,max-content)_minmax(0,1fr)]"
+        items={[
+          {
+            key: 'assets',
+            label: t('components.col.assets', 'Assets'),
+            // A text link: the kit button's 36px phone height pushed the
+            // value a line below its label.
+            value: (
+              <button
+                type="button"
+                className="tabular-nums text-primary underline-offset-4 hover:underline"
+                onClick={() => onShowUsages(v)}
+              >
+                {v.assets}
+              </button>
+            ),
+          },
+          {
+            key: 'vulnerabilities',
+            label: t('components.col.vulnerabilities', 'Open vulnerabilities'),
+            value: (
+              <span className="flex flex-wrap items-center gap-1.5">
+                <SeverityCountsCell counts={v.vulnerabilities} />
+                <KevPill count={v.kev} />
+              </span>
+            ),
+          },
+          ...(v.upgrade
+            ? [
+                {
+                  key: 'upgrade',
+                  label: t('components.col.upgrade', 'Upgrade to'),
+                  value: <code className="font-mono">{v.upgrade.version}</code>,
+                },
+              ]
+            : []),
+          {
+            key: 'license',
+            label: t('components.col.license', 'License'),
+            value: <LicenseList licenses={v.licenses} />,
+          },
+        ]}
+      />
     </div>
+  )
+
+  // The shared table: phone cards below md (a six-column table cut its
+  // headers at phone width), no toolbar (nothing to search or arrange).
+  return (
+    <DataTable
+      columns={columns}
+      data={versions}
+      mobileRow={mobileRow}
+      getRowId={(v) => v.id}
+      showToolbar={false}
+      showSearch={false}
+      showColumnToggle={false}
+      pageSize={25}
+    />
   )
 }
 
