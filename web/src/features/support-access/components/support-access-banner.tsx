@@ -61,7 +61,7 @@ export function SupportAccessBanner() {
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <p className="min-w-0 flex-1 break-words">
+              <p className="min-w-0 max-w-none flex-1 break-words">
                 {g.open_session
                   ? t(
                       'supportAccess.banner.viewing',

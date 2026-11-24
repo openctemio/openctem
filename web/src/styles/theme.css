@@ -260,6 +260,13 @@
   /* The settings column: sections of a settings page at a reading width
      (SettingsPage). One value, so the family changes in one place. */
   --settings-col: 55rem;
+  /* Wide-screen caps (globals.css, base layer): a paragraph or description
+     stops at a reading measure, a one-line field and a multi-line field at a
+     sensible width, however wide the window. Tables and lists keep the full
+     width. */
+  --measure: 75ch;
+  --field-max: 40rem;
+  --field-max-multiline: 60rem;
 
   /* Type sizes that change below 768px (the text-page, text-figure and
      text-figure-lead roles read these). */

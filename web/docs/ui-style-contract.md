@@ -267,7 +267,12 @@ Every page, top to bottom:
    `PageHeader` without a `PageStack`.
 3. **`<PageHeader title description>`** — the only `<h1>` on the page.
    - Title: short noun ("Findings", "Scan profiles"), sentence case.
-   - Description: one sentence saying what the page is for.
+   - Description: one sentence saying what the page is for. It is a row of
+     its own under the title row (the title and the actions share the row
+     above it), at every width: on a phone it runs the full width instead of
+     a narrow column beside the header's button. On a phone the title gives
+     way to the actions down to its longest word (it wraps beside a button
+     rather than leaving the button alone on a row).
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
@@ -1387,6 +1392,17 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
 
 - Must work from 1000px wide with the sidebar expanded: nothing clipped, no
   page-level horizontal scroll (a wide table scrolls inside its own frame).
+- Wide screens: content never stretches to the window. The base layer
+  (`src/app/globals.css`) caps a paragraph, muted help text (not a muted flex
+  or grid row) and a card, notice, dialog or sheet description at a reading
+  measure (`--measure`, 75ch), a one-line field, select or combobox (and the
+  relative box of a field with a button drawn inside it) at `--field-max`
+  (40rem) and a multi-line field at `--field-max-multiline` (60rem). Any `max-w-*` on the element wins (a banner
+  whose text pushes its button to the far end passes `max-w-none`); a
+  truncated or clamped line is not capped. Tables, lists and the page frame
+  keep the full width; a form page uses the settings column. The layout
+  matrix fails a text line or a field wider than 960 px, or a rail 400 px
+  from its content, from 1900 px up.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

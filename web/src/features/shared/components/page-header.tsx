@@ -59,12 +59,19 @@ export function PageHeader({
         className
       )}
     >
-      {/* basis-40 on a phone: the title and a couple of icon actions share a
-          row even at 360 px (a 240 px basis pushed two icon buttons under a short
-          title like "Quét"); the title wraps first, and only wider actions wrap
-          onto their own line. With a view switcher the title yields (basis-32)
-          so the switcher stays beside it. From sm the title keeps 240 px. */}
-      <div className={cn('min-w-0 flex-1 sm:basis-60', viewSwitcher ? 'basis-32' : 'basis-40')}>
+      {/* On a phone the title gives way to the actions down to its longest
+          word: a 96 px basis, and no min-w-0, so the content minimum (the
+          longest word) still holds. A title like "Event forwarding" wraps to
+          two lines beside "Add Splunk HEC" instead of leaving the button alone
+          on the row under it; only actions wider than the rest of the row
+          wrap. With a view switcher the title yields (basis-32) so the switcher
+          stays beside it. From sm the title keeps 240 px. */}
+      <div
+        className={cn(
+          'flex-1 sm:min-w-0 sm:basis-60',
+          viewSwitcher ? 'min-w-0 basis-32' : 'basis-24'
+        )}
+      >
         {titleAction ? (
           <div data-slot="page-header-title-line" className="flex min-w-0 items-center gap-1">
             <h1
@@ -82,11 +89,6 @@ export function PageHeader({
           <h1 id={PAGE_TITLE_ID} ref={titleRef} className="text-page tracking-tight text-balance">
             {title}
           </h1>
-        )}
-        {description && (
-          <div className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
-            {description}
-          </div>
         )}
       </div>
       {/* With both a switcher and actions, from sm they travel as one group: when
@@ -122,6 +124,17 @@ export function PageHeader({
           </div>
         )}
       </div>
+      {/* The description is a row of its own under the title row at every
+          width (order-last, full basis), never a column inside the title
+          block: on a phone that column was squeezed into a few words a line
+          beside the header's action. The negative margin takes the row gap
+          (12px) back to the 4px a description sits under its title; the cap sits
+          on an inner box, so the row never joins the title row. */}
+      {description && (
+        <div data-slot="page-header-description" className="order-last -mt-2 min-w-0 basis-full">
+          <div className="max-w-3xl text-sm text-muted-foreground text-pretty">{description}</div>
+        </div>
+      )}
     </div>
   )
 }
