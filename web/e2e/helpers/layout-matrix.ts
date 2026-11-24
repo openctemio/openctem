@@ -307,20 +307,48 @@ export function matrixWidths(mode: string | undefined): { width: number; height:
   return only?.length ? MATRIX_V2.filter((w) => only.includes(w.width)) : MATRIX_V2
 }
 
-/** List endpoints that give the first id of a detail route (`/findings/[id]`). */
-const DETAIL_LISTS: { prefix: string; list: string; key?: string }[] = [
+/**
+ * List endpoints that give the first id of a detail route (`/findings/[id]`).
+ * `own` takes the first row that is not a built-in one (`is_system` or
+ * `is_system_template` true): a built-in scan workflow or pentest template
+ * opens read-only, the organization's own copy is the page people edit.
+ * The platform console's (web/console) lists are under /api/v1/admin.
+ */
+const DETAIL_LISTS: { prefix: string; list: string; key?: string; own?: boolean }[] = [
   { prefix: '/assets/groups/', list: '/api/v1/asset-groups?per_page=1' },
   { prefix: '/assets/', list: '/api/v1/assets?per_page=1' },
+  { prefix: '/components/', list: '/api/v1/components?per_page=1' },
+  { prefix: '/cycles/', list: '/api/v1/ctem-cycles?per_page=1' },
+  { prefix: '/emerging-threats/', list: '/api/v1/emerging-threats?per_page=1' },
   { prefix: '/findings/', list: '/api/v1/findings?per_page=1' },
+  { prefix: '/programs/', list: '/api/v1/programs?per_page=1' },
+  { prefix: '/scans/workflows/', list: '/api/v1/scan-workflows?per_page=100', own: true },
   { prefix: '/scans/', list: '/api/v1/scans?per_page=1' },
   { prefix: '/remediation/campaigns/', list: '/api/v1/remediation/campaigns?per_page=1' },
   { prefix: '/remediation/tasks/', list: '/api/v1/remediation/tasks?per_page=1' },
   { prefix: '/pentest/campaigns/', list: '/api/v1/pentest/campaigns?per_page=1' },
+  { prefix: '/pentest/findings/', list: '/api/v1/pentest/findings?per_page=1' },
+  {
+    prefix: '/settings/integrations/import-mappings/',
+    list: '/api/v1/import-mappings?per_page=1',
+  },
+  {
+    prefix: '/settings/integrations/ticketing/mappings/',
+    list: '/api/v1/integrations/ticket-mappings?per_page=1',
+  },
+  {
+    prefix: '/settings/pentest/templates/',
+    list: '/api/v1/pentest/templates?per_page=100',
+    own: true,
+  },
   {
     prefix: '/vulnerabilities/',
     list: '/api/v1/vulnerability-exposures?per_page=1',
     key: 'cve_id',
   },
+  // Platform console.
+  { prefix: '/users/', list: '/api/v1/admin/platform-users?per_page=1' },
+  { prefix: '/organizations/', list: '/api/v1/admin/tenants?per_page=1' },
 ]
 
 const PLACEHOLDER = /\[[a-z]+\]|\{[a-z]+\}/i
@@ -334,14 +362,16 @@ export async function resolveRoute(page: Page, route: string): Promise<string | 
   if (!src) return null
   await page.goto('/', { timeout: 60_000 }).catch(() => {})
   const id = await page.evaluate(
-    async ({ url, field }) => {
+    async ({ url, field, own }) => {
       const res = await fetch(url, { credentials: 'same-origin' })
       if (!res.ok) return null
       const body = await res.json()
       const rows = body.data ?? body.items ?? body
-      return Array.isArray(rows) && rows[0]?.[field] ? String(rows[0][field]) : null
+      if (!Array.isArray(rows)) return null
+      const row = own ? rows.find((r) => r && !r.is_system && !r.is_system_template) : rows[0]
+      return row?.[field] ? String(row[field]) : null
     },
-    { url: src.list, field: src.key ?? 'id' }
+    { url: src.list, field: src.key ?? 'id', own: !!src.own }
   )
   return id ? route.replace(PLACEHOLDER, encodeURIComponent(id)) : null
 }
