@@ -515,7 +515,6 @@ export default function ExternalSurfacePage() {
     () => [
       {
         id: 'name',
-        meta: { kind: 'name', pin: 'start', label: t('attackSurface.external.col.asset', 'Asset') },
         header: t('attackSurface.external.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -538,7 +537,6 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'risk',
-        meta: { kind: 'risk', label: t('attackSurface.external.col.risk', 'Risk') },
         header: t('attackSurface.external.col.risk', 'Risk'),
         enableSorting: false,
         cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
@@ -554,7 +552,7 @@ export default function ExternalSurfacePage() {
       {
         id: 'labels',
         meta: {
-          kind: 'tags',
+          kind: 'text',
           hideBelow: EXTERNAL_HIDE_BELOW.labels,
           label: t('attackSurface.external.col.labels', 'Labels'),
         },
@@ -575,7 +573,7 @@ export default function ExternalSurfacePage() {
       {
         id: 'last_seen',
         meta: {
-          kind: 'datetime-recent',
+          kind: 'text',
           hideBelow: EXTERNAL_HIDE_BELOW.lastSeen,
           label: t('attackSurface.external.col.lastSeen', 'Last seen'),
         },

@@ -579,19 +579,11 @@ export function AssetFormDialogShared({
           </div>
         </DialogBody>
 
-        {/* The kit's form size (36 on a phone, 32 from sm), the same height
-            as the fields the footer sits over. */}
         <DialogFooter>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             {t('common.cancel', 'Cancel')}
           </Button>
           <Button
-            size="sm"
             onClick={handleSubmit}
             disabled={isSubmitting || hasRequiredEmpty || riskBlocksSubmit}
           >

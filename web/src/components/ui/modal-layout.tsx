@@ -109,12 +109,12 @@ const headerSectionClass =
 
 /**
  * Footer in sections mode. Phones: full-width stacked buttons, primary on top,
- * 44px tall, clear of the home indicator. From `sm`: a right-aligned row.
+ * at the kit's phone size (36, the height of the fields above them), clear of
+ * the home indicator. From `sm`: a right-aligned row.
  */
 const footerSectionClass = cn(
   'flex shrink-0 flex-col-reverse gap-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end sm:pb-4',
-  SECTION_X,
-  'max-sm:[&_button]:min-h-11'
+  SECTION_X
 )
 
 // ============================================================================
