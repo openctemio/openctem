@@ -72,7 +72,7 @@ import {
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { TabsCount } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tab-strip'
 import { BusinessUnitAssets } from '@/features/business-units/components/business-unit-assets'
 import { toast } from 'sonner'
 import { type BusinessUnit, type Criticality, type RiskTolerance } from '@/features/business-units'

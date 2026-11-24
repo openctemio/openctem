@@ -12,7 +12,7 @@ import { ArrowLeft, ChevronRight, FileText, Hash, Network, Pencil, Trash2 } from
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
-import { TabsCount } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tab-strip'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   DetailHeader,
