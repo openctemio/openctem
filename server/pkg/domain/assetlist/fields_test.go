@@ -64,3 +64,50 @@ func TestBothVariantsCompile(t *testing.T) {
 		t.Fatal("the monitoring state input is not in the SQL")
 	}
 }
+
+// Every attribution word the web inventory sends parses, alone and as the
+// Needs attention queues send them (C21: provider_address was refused with
+// "1 filter error", so the decide-monitoring and validate-primary queues and
+// the inventory's provider addresses chip never loaded).
+func TestAttributionValuesParse(t *testing.T) {
+	cases := []struct {
+		name   string
+		params url.Values
+	}{
+		{"provider_address alone", url.Values{"attribution": {"provider_address"}}},
+		{"all", url.Values{"attribution": {"all"}}},
+		{"every inventory value", url.Values{"attribution": {"confirmed,discovered,unknown,needs_review,candidate,dependency,monitor_only,rejected,provider_address"}}},
+		{"decide monitoring queue", url.Values{"monitoring_state": {"pending_decision,unvalidated"}, "attribution": {"all"}}},
+		{"validate primary queue", url.Values{"monitoring_state": {"pending_decision,unvalidated"}, "attribution": {"all"}, "primary": {"true"}}},
+		{"not provider_address", url.Values{"attribution_not": {"provider_address"}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := filterspec.ParseValues(c.params, Fields, filterspec.Options{Unknown: filterspec.UnknownStrict}); err != nil {
+				t.Fatalf("%v: %v", c.params, err)
+			}
+		})
+	}
+}
+
+// A provider's shared address is its own attribution value: approved and
+// attributed leave it out, dependency and all keep it (attribution.ParseFilter).
+func TestAttributionExpandProviderAddress(t *testing.T) {
+	exp := attributionExpand()
+	has := func(word, v string) bool {
+		for _, x := range exp[word] {
+			if x == v {
+				return true
+			}
+		}
+		return false
+	}
+	for word, want := range map[string]bool{"approved": false, "attributed": false, "dependency": true, "all": true} {
+		if got := has(word, "provider_address"); got != want {
+			t.Errorf("%s includes provider_address = %v, want %v", word, got, want)
+		}
+	}
+	if !strings.Contains(attributionStateSQL, "provider_shared_front_end") || !strings.Contains(attributionStateSQL, "'provider_address'") {
+		t.Errorf("the attribution state does not name the provider address: %s", attributionStateSQL)
+	}
+}
