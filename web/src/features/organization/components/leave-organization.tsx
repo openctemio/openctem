@@ -8,7 +8,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
-import { DangerZone, DangerZoneItem } from '@/features/shared'
+import { SettingsSection } from '@/features/shared'
 import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
@@ -66,27 +66,29 @@ export function LeaveOrganization() {
 
   return (
     <>
-      <DangerZone>
-        <DangerZoneItem
-          title={t('org.leave.title')}
-          description={soleOwner ? t('org.leave.soleOwner') : t('org.leave.desc')}
-          action={
-            soleOwner ? null : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  loadTenants()
-                  setOpen(true)
-                }}
-              >
-                <LogOut className="h-4 w-4" />
-                {t('org.leave.button')}
-              </Button>
-            )
-          }
-        />
-      </DangerZone>
+      {/* One flat section: the action sits on its heading row; the only owner
+          reads why leaving is unavailable instead of a disabled button. */}
+      <SettingsSection
+        framed
+        id="leave-organization"
+        title={t('org.leave.title')}
+        description={soleOwner ? t('org.leave.soleOwner') : t('org.leave.desc')}
+        actions={
+          soleOwner ? undefined : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                loadTenants()
+                setOpen(true)
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              {t('org.leave.button')}
+            </Button>
+          )
+        }
+      />
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
