@@ -8,5 +8,6 @@
 - A phone keeps the search box its room: Export (audit log), Refresh now (remediation suggestions), Import .nessus and Reset to defaults (modules, now in the list toolbar) are icons there.
 - Vietnamese: notifications with a fixed server title (API key expires soon, and others) read in Vietnamese; dashboard names and notification bodies are marked as stored text; shorter labels for "View support activity" and "Try the rules on existing scans".
 - Scope settings: a value in words goes under its label on a phone instead of squeezing it; scan profiles have a phone card where the name wraps and the marks and rule read whole.
+- Pentest finding form: from 1280 px the action buttons sit over the summary rail (on two lines), never at the edge of a form field; below that a rule separates Save draft from Submit for review and Publish.
 
 Docs: none (layout and wording only, no behaviour change)
