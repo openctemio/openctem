@@ -43,7 +43,7 @@
   "emergingThreats.breakdown.exploitation": "Khai thác",
   "emergingThreats.breakdown.exposure": "Mức phơi nhiễm",
   "emergingThreats.breakdown.freshness": "Độ mới",
-  "emergingThreats.breakdown.meter": "{part}: {n} trên {max} điểm",
+  "emergingThreats.breakdown.meter": "{part}: {n} trên {max}",
   "emergingThreats.breakdown.multiplier": "× {value}",
   "emergingThreats.breakdown.severity": "Mức độ nghiêm trọng",
   "emergingThreats.breakdown.total": "Tổng",

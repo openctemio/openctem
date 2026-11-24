@@ -43,7 +43,7 @@
   "emergingThreats.breakdown.exploitation": "Exploitation",
   "emergingThreats.breakdown.exposure": "Exposure",
   "emergingThreats.breakdown.freshness": "Freshness",
-  "emergingThreats.breakdown.meter": "{part}: {n} of {max} points",
+  "emergingThreats.breakdown.meter": "{part}: {n} out of {max}",
   "emergingThreats.breakdown.multiplier": "× {value}",
   "emergingThreats.breakdown.severity": "Severity",
   "emergingThreats.breakdown.total": "Total",
