@@ -419,14 +419,16 @@ function VersionsTable({
           {
             key: 'assets',
             label: t('components.col.assets', 'Assets'),
+            // A text link: the kit button's 36px phone height pushed the
+            // value a line below its label.
             value: (
-              <Button
-                variant="link"
-                className="h-auto p-0 tabular-nums"
+              <button
+                type="button"
+                className="tabular-nums text-primary underline-offset-4 hover:underline"
                 onClick={() => onShowUsages(v)}
               >
                 {v.assets}
-              </Button>
+              </button>
             ),
           },
           {
