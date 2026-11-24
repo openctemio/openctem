@@ -104,7 +104,7 @@ export function AttentionQueueHeader({
               </button>
             </DropdownMenuTrigger>
           </h2>
-          <DropdownMenuContent className="max-w-80">
+          <DropdownMenuContent>
             <p className="px-2 py-1.5 text-xs text-muted-foreground">{why}</p>
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">

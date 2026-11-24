@@ -78,7 +78,6 @@
   "features/assets/components/service-cells/surface-facts.tsx": 4,
   "features/assets/lib/duplicate-asset.ts": 1,
   "features/assets/lib/inventory-export.ts": 1,
-  "features/attack-surface/components/easm-domain-proof.tsx": 11,
   "features/attack-surface/components/easm-review-queue.tsx": 6,
   "features/attack-surface/components/easm-verify-domain-dialog.tsx": 17,
   "features/auth/components/password-token-form.tsx": 5,
