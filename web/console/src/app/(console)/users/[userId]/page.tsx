@@ -74,19 +74,19 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
           <>
             <PageHeader
               title={user.name || user.email}
+              // The address, why the account offers no actions (if so) and its
+              // marks, all under the name: beside the title the marks squeezed
+              // the address onto two lines on a phone.
               description={
-                unavailableNote ? (
-                  <>
-                    <span className="block">{user.email}</span>
-                    <span className="block">{unavailableNote}</span>
-                  </>
-                ) : (
-                  user.email
-                )
+                <>
+                  <span className="block [overflow-wrap:anywhere]">{user.email}</span>
+                  {unavailableNote && <span className="block">{unavailableNote}</span>}
+                  <div className="mt-2">
+                    <PlatformUserBadges user={user} />
+                  </div>
+                </>
               }
-            >
-              <PlatformUserBadges user={user} />
-            </PageHeader>
+            />
 
             {adminHas(admin, 'platform.users.support') && (
               <PlatformUserActions
@@ -97,7 +97,7 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
             )}
 
             <Card>
-              <CardContent className="pt-6">
+              <CardContent>
                 <DetailFieldGrid>
                   <DetailField label={t('admin.users.field.signIn', 'Signs in with')}>
                     <span>{authProviderLabel(t, user.auth_provider)}</span>
