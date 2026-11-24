@@ -22,7 +22,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { DataTable, ErrorState } from '@/features/shared'
 import type { EASMVerifiedDomain } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -38,27 +37,42 @@ export function EASMDomainProofPanel() {
   const canDelete = can(Permission.ScopeDelete)
   const { domains, error, isLoading, mutate } = useEASMVerifiedDomains()
   const [draft, setDraft] = useState('')
+  // The list's own search (a few rows, filtered in the browser).
+  const [query, setQuery] = useState('')
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? domains.filter((d) => (d.domain ?? '').toLowerCase().includes(q)) : domains
+  }, [domains, query])
   const [verifying, setVerifying] = useState<string | null>(null)
   const [removing, setRemoving] = useState<EASMVerifiedDomain | null>(null)
 
   const columns = useMemo<ColumnDef<EASMVerifiedDomain>[]>(
     () => [
-      { accessorKey: 'domain', header: 'Domain' },
+      {
+        accessorKey: 'domain',
+        meta: { kind: 'name', label: t('attackSurface.domainProof.col.domain', 'Domain') },
+        header: t('attackSurface.domainProof.col.domain', 'Domain'),
+      },
       {
         accessorKey: 'status',
-        header: 'Proof',
+        meta: { label: t('attackSurface.domainProof.col.proof', 'Proof') },
+        header: t('attackSurface.domainProof.col.proof', 'Proof'),
         cell: ({ row }) => {
           const d = row.original
           const label =
             d.status === 'verified'
-              ? 'Verified'
+              ? t('attackSurface.domainProof.status.verified', 'Verified')
               : d.status === 'failed'
-                ? 'Verification lost'
-                : 'Waiting for the TXT record'
+                ? t('attackSurface.domainProof.status.failed', 'Verification lost')
+                : t('attackSurface.domainProof.status.pending', 'Waiting for the TXT record')
           return (
             <span className="flex items-center gap-2">
               <Badge variant={d.status === 'verified' ? 'default' : 'secondary'}>{label}</Badge>
-              {d.managed && <span className="text-xs text-muted-foreground">SSO, read-only</span>}
+              {d.managed && (
+                <span className="text-xs text-muted-foreground">
+                  {t('attackSurface.domainProof.managed', 'SSO, read-only')}
+                </span>
+              )}
             </span>
           )
         },
@@ -75,14 +89,16 @@ export function EASMDomainProofPanel() {
             <span className="flex justify-end gap-2">
               {canWrite && d.status !== 'verified' && (
                 <Button size="sm" variant="outline" onClick={() => setVerifying(d.domain ?? null)}>
-                  Check
+                  {t('attackSurface.domainProof.check', 'Check')}
                 </Button>
               )}
               {canDelete && (
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  aria-label={`Remove ${d.domain ?? 'domain'}`}
+                  aria-label={t('attackSurface.domainProof.remove', 'Remove {domain}', {
+                    domain: d.domain ?? '',
+                  })}
                   onClick={() => setRemoving(d)}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
@@ -93,7 +109,7 @@ export function EASMDomainProofPanel() {
         },
       },
     ],
-    [canWrite, canDelete]
+    [t, canWrite, canDelete]
   )
 
   if (error) {
@@ -110,52 +126,76 @@ export function EASMDomainProofPanel() {
     if (!removing?.id) return
     try {
       await removeVerifiedDomain(removing.id)
-      toast.success(`${removing.domain} removed`)
+      toast.success(
+        t('attackSurface.domainProof.removed', '{domain} removed', {
+          domain: removing.domain ?? '',
+        })
+      )
       setRemoving(null)
       void mutate()
     } catch (e) {
-      toast.error(getErrorMessage(e, 'Could not remove the domain'))
+      toast.error(
+        getErrorMessage(
+          e,
+          t('attackSurface.domainProof.removeFailed', 'Could not remove the domain')
+        )
+      )
     }
   }
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Prove you control a domain with a DNS TXT record. Proof does not put anything in scope;
-        scope entries do. It marks entries at or under the domain as verified, which platform
-        sensors and intrusive checks require.
-      </p>
+      {/* One row (MVP v2: no label or note on a row of its own): the domain
+          field, named for assistive technology, and its button. The page
+          header says what proof is. */}
       {canWrite && (
         <form
-          className="flex flex-col gap-2 sm:flex-row sm:items-end"
+          className="flex gap-2"
           onSubmit={(e) => {
             e.preventDefault()
             const v = draft.trim().toLowerCase()
             if (v) setVerifying(v)
           }}
         >
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="proof-domain">Domain</Label>
-            <Input
-              id="proof-domain"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="example.com"
-              autoComplete="off"
-            />
-          </div>
-          <Button type="submit" disabled={!draft.trim()}>
-            <Plus className="me-2 h-4 w-4" aria-hidden />
-            Prove a domain
+          <Input
+            id="proof-domain"
+            className="min-w-0 flex-1"
+            aria-label={t('attackSurface.domainProof.domainLabel', 'Domain to prove')}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="example.com"
+            autoComplete="off"
+          />
+          {/* An icon on a phone, so the field keeps the row's width. */}
+          <Button
+            type="submit"
+            disabled={!draft.trim()}
+            title={t('attackSurface.domainProof.prove', 'Prove a domain')}
+          >
+            <Plus className="h-4 w-4 sm:me-2" aria-hidden />
+            <span className="max-sm:sr-only">
+              {t('attackSurface.domainProof.prove', 'Prove a domain')}
+            </span>
           </Button>
         </form>
       )}
       <DataTable
         columns={columns}
-        data={domains}
+        data={shown}
         getRowId={(r) => r.id ?? r.domain ?? ''}
+        caption={t('attackSurface.domainProof.caption', 'Proved domains')}
         showSearch={false}
-        emptyMessage={isLoading ? 'Loading…' : 'No domain proved yet'}
+        search={{
+          value: query,
+          onChange: setQuery,
+          placeholder: t('attackSurface.domainProof.search', 'Search domains…'),
+          label: t('attackSurface.domainProof.searchLabel', 'Search proved domains'),
+        }}
+        emptyMessage={
+          isLoading
+            ? t('attackSurface.domainProof.loading', 'Loading…')
+            : t('attackSurface.domainProof.empty', 'No domain proved yet')
+        }
       />
       <VerifyDomainDialog
         key={verifying ?? 'closed'}
