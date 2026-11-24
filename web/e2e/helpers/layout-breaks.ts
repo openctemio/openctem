@@ -606,9 +606,10 @@ const OVERLAYS: Record<Overlay, string> = {
     'main [data-slot="filter-panel-toggle"]:visible, main [data-slot="filter-button"]:visible, main [data-slot="add-filter"]:visible',
   // A phone card, or a desktop table row that opens on click (its quick-view
   // sheet): both are opened from their padding corner (openOverlay). A task
-  // or campaign card opens its sheet from its title link.
+  // or campaign card opens its sheet from its title link (its phone-card
+  // wrapper has no click of its own, so it is not the trigger).
   detail:
-    'main [data-phone-card]:visible, main tbody tr.cursor-pointer:visible, main [data-slot="task-card"] a:visible, main [data-slot="campaign-card"] a:visible',
+    'main [data-phone-card]:not(:has([data-slot="task-card"], [data-slot="campaign-card"])):visible, main tbody tr.cursor-pointer:visible, main [data-slot="task-card"] a:visible, main [data-slot="campaign-card"] a:visible',
   dialog: 'main [data-slot="page-header"] button:not([aria-haspopup]):visible',
 }
 
