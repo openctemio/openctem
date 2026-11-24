@@ -131,7 +131,7 @@ const resourceText = (log: AuditLog) => toDisplayText(log.resource_name || log.r
 // Frame widths (px) under which a column gives way, so the table fits its
 // frame instead of cutting a header: the severity first, then the actor, then
 // the resource (all three are on the event's detail and the phone card).
-const AUDIT_HIDE_BELOW = { severity: 980, actor: 850, resource: 690 } as const
+const AUDIT_HIDE_BELOW = { severity: 1120, actor: 990, resource: 830 } as const
 
 export default function AuditLogPage() {
   const { t } = useTranslation()

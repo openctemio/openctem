@@ -3,7 +3,7 @@
 import { capabilitySwatch } from '@/lib/capability-colors'
 import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import type * as React from 'react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 
@@ -22,6 +22,7 @@ import { useToolAvailability } from '@/lib/api/tool-hooks'
 import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
 import { toolStatusLabel, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
 import { useTranslation } from '@/context/i18n-provider'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 
 interface CapabilityTableProps {
   capabilities: Capability[]
@@ -169,6 +170,45 @@ export function CapabilityTable({
     [availData]
   )
 
+  // A capability's row menu, in its row and its phone card.
+  const actionsFor = useCallback(
+    (c: Capability) => {
+      const actions = [
+        ...(onViewDetails
+          ? [
+              {
+                label: t('scans.capabilities.action.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => onViewDetails(c),
+              },
+            ]
+          : []),
+        ...(!readOnly && onEdit
+          ? [
+              {
+                label: t('scans.capabilities.action.edit', 'Edit'),
+                icon: Pencil,
+                onClick: () => onEdit(c),
+              },
+            ]
+          : []),
+        ...(!readOnly && onDelete
+          ? [
+              {
+                label: t('scans.capabilities.action.delete', 'Delete'),
+                icon: Trash2,
+                onClick: () => onDelete(c),
+                destructive: true,
+                separatorBefore: true,
+              },
+            ]
+          : []),
+      ]
+      return <DataTableRowActions title={c.display_name} actions={actions} />
+    },
+    [onViewDetails, onEdit, onDelete, readOnly, t]
+  )
+
   const columns = useMemo<ColumnDef<Capability>[]>(() => {
     const cols: ColumnDef<Capability>[] = [
       {
@@ -291,46 +331,12 @@ export function CapabilityTable({
         header: '',
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => {
-          const c = row.original
-          const actions = [
-            ...(onViewDetails
-              ? [
-                  {
-                    label: t('scans.capabilities.action.viewDetails', 'View details'),
-                    icon: Eye,
-                    onClick: () => onViewDetails(c),
-                  },
-                ]
-              : []),
-            ...(!readOnly && onEdit
-              ? [
-                  {
-                    label: t('scans.capabilities.action.edit', 'Edit'),
-                    icon: Pencil,
-                    onClick: () => onEdit(c),
-                  },
-                ]
-              : []),
-            ...(!readOnly && onDelete
-              ? [
-                  {
-                    label: t('scans.capabilities.action.delete', 'Delete'),
-                    icon: Trash2,
-                    onClick: () => onDelete(c),
-                    destructive: true,
-                    separatorBefore: true,
-                  },
-                ]
-              : []),
-          ]
-          return <DataTableRowActions title={c.display_name} actions={actions} />
-        },
+        cell: ({ row }) => actionsFor(row.original),
       })
     }
 
     return cols
-  }, [usageStats, availability, showActions, onViewDetails, onEdit, onDelete, readOnly, t])
+  }, [usageStats, availability, showActions, actionsFor, t])
 
   // Parent (capabilities-section) owns search + tab/category filters, so the
   // table's own search is disabled; DataTable adds sortable headers + pagination.
@@ -343,6 +349,31 @@ export function CapabilityTable({
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       pinActions
+      // A phone card: the name wraps, the category, the type and the usage
+      // read whole on their own line.
+      mobileRow={(c) => (
+        <PersonPhoneCard
+          title={
+            <span className="inline-flex items-center gap-2">
+              <DynamicIcon name={c.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {c.display_name}
+            </span>
+          }
+          address={<code className="text-xs">{c.name}</code>}
+          facts={
+            <>
+              {c.category && <Badge variant="outline">{c.category}</Badge>}
+              <Badge variant="secondary">
+                {c.is_builtin
+                  ? t('scans.capabilities.type.platform', 'Platform')
+                  : t('scans.capabilities.type.custom', 'Custom')}
+              </Badge>
+              <UsageCell stats={usageStats?.[c.id]} availability={availability} />
+            </>
+          }
+          menu={showActions ? actionsFor(c) : undefined}
+        />
+      )}
       emptyMessage={t('scans.capabilities.table.emptyTitle', 'No capabilities')}
       emptyDescription={t(
         'scans.capabilities.table.emptyDesc',
