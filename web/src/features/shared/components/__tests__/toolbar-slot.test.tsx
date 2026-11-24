@@ -69,3 +69,28 @@ describe('FilterSelect width', () => {
     expect([...hidden].map((h) => h.getAttribute('data-label'))).toEqual(['All', 'Open', 'Closed'])
   })
 })
+
+describe('FilterSelect long value', () => {
+  it('caps what the other values reserve, and lets the value shown size the token whole', () => {
+    render(
+      <FilterSelect
+        label="Status"
+        value="pending"
+        options={[
+          { value: 'pending', label: 'Awaiting approval' },
+          { value: 'approved', label: 'Approved' },
+        ]}
+        onChange={() => {}}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'Status: Awaiting approval' })
+    const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
+    // The slot may grow to 15rem; the hidden options reserve at most 7rem.
+    expect(slot).toHaveClass('max-w-60')
+    for (const h of slot.querySelectorAll('[aria-hidden="true"]')) expect(h).toHaveClass('max-w-28')
+    const value = slot.lastElementChild as HTMLElement
+    expect(value).not.toHaveClass('w-0')
+    expect(value).toHaveClass('truncate')
+    expect(value).toHaveAttribute('title', 'Awaiting approval')
+  })
+})
