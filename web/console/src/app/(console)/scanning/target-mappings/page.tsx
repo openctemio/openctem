@@ -355,7 +355,7 @@ export default function TargetMappingsPage() {
         </PageHeader>
         {/* On a phone the list comes first: the strip's status filters follow it
             (their two rows would push the first card below the fold). */}
-        <MetricStrip items={metrics} loading={stats.isLoading} listFirst />
+        <MetricStrip items={metrics} loading={stats.isLoading} className="max-md:order-last" />
         <DataTable
           // The view name leads the toolbar row: the filters (on a phone, the
           // Filters button) and Display share its line.

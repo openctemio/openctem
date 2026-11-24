@@ -25,7 +25,7 @@ import {
   PageStack,
   RelativeTime,
 } from '@/features/shared'
-import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { TrustBanner } from '@/features/content-catalog/components/trust-banner'
@@ -253,40 +253,37 @@ export default function ContentCatalogPage() {
         {/* The list is the page's job: it comes first, from the first frame. The
             trust state follows it; a stale catalog keeps a marker in the title
             row that leads down to it. */}
-        <DataTable
-          // The list's name and count start the toolbar row (no row of their own).
-          toolbarTitle={
-            <ListToolbarTitle
-              title={
-                list.filters.type
-                  ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
-                  : t('admin.catalog.viewAll', 'All packages')
-              }
-              count={
-                <ListCount
-                  total={total}
-                  loading={!pkgs.data && !pkgs.error}
-                  label={t(
-                    'admin.catalog.total',
-                    '{count, plural, one {# package} other {# packages}}',
-                    {
-                      count: total,
-                    }
-                  )}
-                />
-              }
-              start={
-                stale ? (
-                  <a
-                    href="#catalog-trust"
-                    className="shrink-0 text-body text-destructive underline-offset-4 hover:underline"
-                  >
-                    {t('admin.catalog.stale', 'Out of date')}
-                  </a>
-                ) : null
-              }
+        <ListTitleRow
+          title={
+            list.filters.type
+              ? t(`contentCatalog.type.${list.filters.type}`, list.filters.type)
+              : t('admin.catalog.viewAll', 'All packages')
+          }
+          count={
+            <ListCount
+              total={total}
+              loading={!pkgs.data && !pkgs.error}
+              label={t(
+                'admin.catalog.total',
+                '{count, plural, one {# package} other {# packages}}',
+                {
+                  count: total,
+                }
+              )}
             />
           }
+          start={
+            stale ? (
+              <a
+                href="#catalog-trust"
+                className="shrink-0 text-body text-destructive underline-offset-4 hover:underline"
+              >
+                {t('admin.catalog.stale', 'Out of date')}
+              </a>
+            ) : null
+          }
+        />
+        <DataTable
           columns={columns}
           data={pkgs.data?.data ?? []}
           caption={t('admin.catalog.caption', 'Catalog packages')}

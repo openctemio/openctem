@@ -241,8 +241,7 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
           </AlertDescription>
         </Alert>
       )}
-      {/* Over the empty state the title row would only say "0": it shows with grants. */}
-      {canSupport && !error && (isLoading || grants.length > 0) && (
+      {canSupport && !error && (
         <ListTitleRow
           title={t('admin.support.grantsTitle', 'Granted to you')}
           count={
