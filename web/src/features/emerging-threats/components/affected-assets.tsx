@@ -310,6 +310,7 @@ export function AffectedAssets({
     )
   }
 
+  const onlyConfirmed = rows.length > 0 && rows.every((r) => r.tier === 'confirmed')
   const noneConfirmed = !error && !groups.some((g) => g.tier !== 'possible' && g.hosts.length > 0)
 
   return (
@@ -331,7 +332,10 @@ export function AffectedAssets({
           showToolbar={false}
           pageSize={50}
           pageSizeOptions={PAGE_SIZES}
-          rowGroups={rowGroups}
+          // Confirmed hosts only: the header already says the alert is
+          // confirmed, so a lone "Confirmed affected" group row would be a
+          // row of its own above the hosts. Likely or possible hosts keep it.
+          rowGroups={onlyConfirmed ? undefined : rowGroups}
           mobileRow={mobileRow}
         />
       )}

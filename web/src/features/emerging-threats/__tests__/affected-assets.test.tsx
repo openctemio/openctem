@@ -127,6 +127,13 @@ describe('AffectedAssets', () => {
     expect(screen.queryByText('Confirmed affected')).toBeNull()
   })
 
+  it('confirmed hosts alone have no group row (the header names the tier)', () => {
+    setWidth(1440)
+    render(<AffectedAssets groups={groups.filter((g) => g.tier === 'confirmed')} />)
+    expect(screen.queryByText('Confirmed affected')).toBeNull()
+    expect(screen.queryByText('No host is confirmed affected.')).toBeNull()
+  })
+
   it('a likely match alone is not announced as confirmed', () => {
     setWidth(1440)
     render(<AffectedAssets groups={groups.filter((g) => g.tier === 'likely')} />)
