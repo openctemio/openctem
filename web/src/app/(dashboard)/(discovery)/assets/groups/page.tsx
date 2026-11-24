@@ -905,6 +905,8 @@ export default function AssetGroupsPage() {
               columns={columns}
               data={groups}
               caption={t('assetGroups.title', 'Asset groups')}
+              // The row actions stay in view on a narrow frame (as on /scans).
+              pinActions
               // A failed read keeps the toolbar, so a search or filter from a
               // shared link can still be changed.
               error={isError && fetchedGroups.length === 0 ? listError : undefined}

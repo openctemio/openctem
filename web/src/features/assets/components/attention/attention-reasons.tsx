@@ -48,8 +48,13 @@ function ReasonRow({ reason }: { reason: AttentionReasonDef }) {
               : t(reason.whyKey, reason.why)}
           </span>
         </span>
+        {/* A phone stacks the unit under the number, so a long unit ("cần xem
+            xét") does not squeeze the reason's text into a narrow column. */}
         <span
-          className={cn('flex shrink-0 items-baseline gap-1.5', empty && 'text-muted-foreground')}
+          className={cn(
+            'flex shrink-0 items-baseline gap-1.5 max-sm:flex-col max-sm:items-end max-sm:gap-0 max-sm:text-end',
+            empty && 'text-muted-foreground'
+          )}
           data-testid={`attention-count-${reason.id}`}
         >
           <span className="text-lg font-semibold tabular-nums">

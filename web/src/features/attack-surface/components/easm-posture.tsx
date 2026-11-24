@@ -21,14 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Meter } from '@/features/shared/components/meter'
 import { EmptyState, MetricStrip, RelativeTime, TonePill } from '@/features/shared'
 import { PostureCategoryList, PostureGrade } from '@/components/dashboard-kit'
@@ -413,51 +405,47 @@ export function EASMPosture() {
                   {t('attackSurface.posture.rootsEmpty', 'No root domain in your view.')}
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('attackSurface.posture.col.root', 'Root domain')}</TableHead>
-                      <TableHead>{t('attackSurface.posture.col.grade', 'Grade')}</TableHead>
-                      <TableHead className="text-right">
-                        {t('attackSurface.posture.col.assets', 'Assets')}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {t('attackSurface.posture.col.issues', 'Issues')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {roots.map((r) => (
-                      <TableRow
-                        key={r.root_domain}
-                        data-state={r.root_domain === root ? 'selected' : undefined}
-                      >
-                        <TableCell>
-                          <button
-                            type="button"
-                            className="text-left hover:underline"
-                            onClick={() => setRoot(r.root_domain)}
-                          >
-                            {r.root_domain}
-                          </button>
+                // A list like the fix plan beside it (MVP v2): each root on one
+                // line, its name opening its posture, then grade and counts.
+                // No table frame, so no column is cut on a phone.
+                <ul className="flex flex-col divide-y" data-testid="posture-roots">
+                  {roots.map((r) => (
+                    <li
+                      key={r.root_domain}
+                      data-state={r.root_domain === root ? 'selected' : undefined}
+                      className="flex items-center justify-between gap-3 py-2 text-sm data-[state=selected]:font-medium"
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <button
+                          type="button"
+                          aria-pressed={r.root_domain === root}
+                          className="truncate text-start hover:underline"
+                          onClick={() => setRoot(r.root_domain)}
+                        >
+                          {r.root_domain}
+                        </button>
+                        <span className="flex flex-wrap gap-x-2 text-xs font-normal text-muted-foreground">
                           {r.top_category && (
-                            <div className="text-xs text-muted-foreground">
+                            <span>
                               {t(`dashboardKit.posture.category.${r.top_category}`, r.top_category)}
-                            </div>
+                            </span>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="flex items-center gap-2 tabular-nums">
-                            <PostureGrade grade={r.grade} score={r.score} size="sm" />
-                            {r.score}
+                          <span>
+                            {t(
+                              'attackSurface.posture.reductionAssets',
+                              '{assets} assets, {issues} issues',
+                              { assets: r.assets, issues: r.issues }
+                            )}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{r.assets}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.issues}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                        <span>{r.score}</span>
+                        <PostureGrade grade={r.grade} score={r.score} size="sm" />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

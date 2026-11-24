@@ -297,8 +297,9 @@ export default function AssetChangesPage() {
         id: 'detail',
         meta: {
           kind: 'text',
-          // Asset 200 + Change 176 + this + When 144 fit a 1024 screen (frame 700).
-          minWidth: 180,
+          // Asset 200 + Change 176 + this + When 144 fit a 768 screen (frame
+          // about 660): the detail wraps onto lines rather than cut When.
+          minWidth: 130,
           maxWidth: 360,
           label: t('assetTimeline.activity.col.detail', 'Detail'),
         },
