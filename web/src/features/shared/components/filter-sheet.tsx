@@ -3,6 +3,7 @@
 import * as React from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -47,9 +48,14 @@ export function useFilterSheetTokensHost(owner: string): HTMLElement | null {
 
 /**
  * The filter panel below `lg`, opened by `FilterPanelToggle`'s sheet button.
- * One markup for every list page (it was the Findings sheet): full width on a
- * phone, the title and close button in the fixed header, the facet list
- * scrolling between it and a footer that closes the sheet.
+ * One markup for every list page (it was the Findings sheet): the title and
+ * close button in the fixed header, the facet list scrolling between it and a
+ * footer that closes the sheet.
+ *
+ * On a phone it is a bottom sheet as tall as what it holds (two filters take
+ * two rows, not the whole screen), up to the screen less a strip of page at
+ * the top; longer content scrolls in the body. From `md` it is the side panel
+ * the whole height of the window, where the facet lists are long.
  */
 export function FilterSheet({
   open,
@@ -68,13 +74,18 @@ export function FilterSheet({
   children: ReactNode
 }) {
   const { t } = useTranslation()
+  const phone = useIsMobile()
   // The host leaves with the sheet, and so does the claim on it.
   const hostRef = React.useCallback((el: HTMLDivElement | null) => {
     setTokensHost(el ? { host: el } : { host: null, owner: null })
   }, [])
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-full" data-slot="filter-sheet">
+      <SheetContent
+        side={phone ? 'bottom' : 'left'}
+        className={phone ? undefined : 'w-full'}
+        data-slot="filter-sheet"
+      >
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>

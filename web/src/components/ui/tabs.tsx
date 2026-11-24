@@ -108,8 +108,25 @@ export function useTabStripScroll(
       }
       update()
     }
+    // Layout can change after the last callback without telling the strip
+    // (a web font swaps in, a translation or count lands while the main thread
+    // is busy): each callback also checks again over the next two frames, so
+    // the marks always end on the strip's final geometry instead of the one
+    // a frame before it.
+    let frames: number[] = []
+    const recheck = () => {
+      update()
+      if (typeof requestAnimationFrame !== 'function') return
+      frames.forEach((f) => cancelAnimationFrame(f))
+      frames = [
+        requestAnimationFrame(() => {
+          update()
+          frames = [requestAnimationFrame(update)]
+        }),
+      ]
+    }
     revealActive()
-    update()
+    recheck()
     el.addEventListener('scroll', update, { passive: true })
     // The strip keeps its own size when a tab grows (a count arrives, a label
     // is translated, a web font loads), so each tab is observed too: watching
@@ -123,7 +140,8 @@ export function useTabStripScroll(
       if (el.clientWidth !== width) {
         width = el.clientWidth
         revealActive()
-      } else update()
+      }
+      recheck()
     }
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : undefined
     const observeTabs = () => {
@@ -138,6 +156,7 @@ export function useTabStripScroll(
         ? new MutationObserver((records) => {
             if (records.some((r) => r.type === 'childList' && r.target === el)) observeTabs()
             revealActive()
+            recheck()
           })
         : undefined
     mo?.observe(el, {
@@ -146,8 +165,18 @@ export function useTabStripScroll(
       attributes: true,
       attributeFilter: ['data-state', 'aria-current'],
     })
+    // A web font that loads late (the Vietnamese subset, a bold weight first
+    // used here) widens the labels with no DOM change.
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    const onFonts = () => {
+      revealActive()
+      recheck()
+    }
+    fonts?.addEventListener?.('loadingdone', onFonts)
     return () => {
       delete el.dataset.tabStrip
+      frames.forEach((f) => cancelAnimationFrame(f))
+      fonts?.removeEventListener?.('loadingdone', onFonts)
       el.removeEventListener('scroll', update)
       ro?.disconnect()
       mo?.disconnect()
@@ -162,10 +191,14 @@ function TabsList({
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> & { variant?: TabsVariant }) {
   const localRef = React.useRef<HTMLDivElement>(null)
-  useTabStripScroll(localRef)
+  // The node itself is the attach key: a list element that is replaced while
+  // the component stays mounted gets the marks and observers again.
+  const [node, setNode] = React.useState<HTMLDivElement | null>(null)
+  useTabStripScroll(localRef, node)
   const setRef = React.useCallback(
     (node: HTMLDivElement | null) => {
       localRef.current = node
+      setNode(node)
       if (typeof ref === 'function') ref(node)
       else if (ref) ref.current = node
     },
