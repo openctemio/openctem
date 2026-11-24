@@ -40,7 +40,7 @@ import {
   DialogTitle,
   type DialogSize,
 } from '@/components/ui/dialog'
-import { TAB_CLASS, TAB_STRIP_CLASS, useTabStripScroll } from '@/components/ui/tabs'
+import { TAB_CLASS, TAB_STRIP_CLASS, useTabStripScroll } from '@/components/ui/tab-strip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 

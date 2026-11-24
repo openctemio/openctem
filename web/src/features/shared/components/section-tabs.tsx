@@ -4,7 +4,7 @@ import * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
-import { TAB_CLASS, TAB_STRIP_CLASS, TabsCount, useTabStripScroll } from '@/components/ui/tabs'
+import { TAB_CLASS, TAB_STRIP_CLASS, TabsCount, useTabStripScroll } from '@/components/ui/tab-strip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 
