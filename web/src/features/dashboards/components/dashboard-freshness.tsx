@@ -148,9 +148,10 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
 
 /**
  * Why the figures may not be current: still being built for the first time,
- * or older than their schedule (with the last refresh's failure). One status
- * row under the page header, never inside it, so a notice never moves the
- * header's controls. Building wins over stale: nothing older exists yet.
+ * or older than their schedule (with the last refresh's failure). The line
+ * under the freshness line in the header's description, never a row of its
+ * own above the widgets, and never on the title row, so a notice never moves
+ * the header's controls. Building wins over stale: nothing older exists yet.
  */
 export function DashboardDataNotice({ data }: { data?: DashboardData }) {
   const { t } = useTranslation()
@@ -160,16 +161,16 @@ export function DashboardDataNotice({ data }: { data?: DashboardData }) {
   return (
     <p
       className={cn(
-        'flex items-start gap-1.5 text-sm',
+        'mt-1 flex items-start gap-1.5 text-xs',
         building ? 'text-muted-foreground' : 'text-warning'
       )}
       role="status"
       data-testid="dashboard-data-notice"
     >
       {building ? (
-        <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <Clock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
       ) : (
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
       )}
       {building
         ? t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')

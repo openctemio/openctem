@@ -347,6 +347,9 @@ export function EmergingThreatsList() {
       {
         id: 'state',
         header: t('emergingThreats.col.state'),
+        // A 768 screen (frame about 650) keeps the threat, level, exploit
+        // and hosts; the state is in the row menu and on the threat's page.
+        meta: { hideBelow: 680 },
         cell: ({ row }) => <StateBadge state={row.original.state} />,
       },
       {
@@ -467,6 +470,7 @@ export function EmergingThreatsList() {
                   />
                 ) : undefined
               }
+              pinActions
               isLoading={isLoading && !data}
               errorState={
                 error ? (

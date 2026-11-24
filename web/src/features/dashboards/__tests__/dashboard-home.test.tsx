@@ -321,7 +321,7 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
-  it('the header keeps only the one-line freshness; a notice sits under the header', async () => {
+  it('a notice is the line under the freshness line, inside the header description', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = { ...snapshot('personal', 5), facts_built_at: null, stale: true }
     renderHome()
@@ -331,7 +331,10 @@ describe('DashboardHome', () => {
     expect(notice).toHaveAttribute('role', 'status')
     const header = document.querySelector('[data-slot="page-header"]')
     expect(header).toContainElement(screen.getByTestId('dashboard-freshness'))
-    expect(header).not.toContainElement(notice)
+    // Not a row of its own above the widgets: part of the header's
+    // description, under the one-line freshness, never on the title row.
+    const description = document.querySelector('[data-slot="page-header-description"]')
+    expect(description).toContainElement(notice)
     expect(screen.getByTestId('dashboard-freshness')).not.toHaveTextContent('being built')
   })
 

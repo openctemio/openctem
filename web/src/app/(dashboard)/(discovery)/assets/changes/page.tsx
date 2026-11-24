@@ -18,6 +18,7 @@ import {
 import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { BreakText } from '@/features/shared/components/break-text'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { accessStateOf } from '@/lib/api/access-state'
 import { RecentAssetChanges } from '@/features/assets'
@@ -261,10 +262,14 @@ export default function AssetChangesPage() {
                   onOpen={() => router.push(assetDetailHref(c.asset_id!))}
                   title={name}
                 >
-                  {name}
+                  {/* A host name wraps on a phone card only after a dot or a
+                      dash, never inside a word ("shop.example.co|m"). */}
+                  <BreakText>{name}</BreakText>
                 </RowNameLink>
               ) : (
-                <span className="truncate text-muted-foreground">{name}</span>
+                <span className="truncate text-muted-foreground">
+                  <BreakText>{name}</BreakText>
+                </span>
               )}
               <span className="shrink-0 text-xs text-muted-foreground">
                 {c.asset_type ? getAssetTypeLabel(c.asset_type, t) : sentence(c.asset_type)}
