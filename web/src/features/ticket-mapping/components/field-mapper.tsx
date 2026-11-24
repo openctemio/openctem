@@ -430,9 +430,9 @@ function MappingRowCard({
 
   return (
     <li className={cn('rounded-lg border p-3', hasError && 'border-destructive')}>
-      {/* Capped like a settings form: on a wide screen the transform and remove
+      {/* Capped like a settings form from 1536 px: on a wide screen the transform and remove
           buttons stay beside the Jira field instead of at the far edge. */}
-      <div className="grid items-center gap-2 md:max-w-4xl md:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto]">
+      <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto] 2xl:max-w-4xl">
         {/* Source */}
         <div className="flex min-w-0 gap-2">
           <Select
