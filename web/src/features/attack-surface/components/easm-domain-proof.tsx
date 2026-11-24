@@ -168,12 +168,13 @@ export function EASMDomainProofPanel() {
           />
           {/* An icon on a phone, so the field keeps the row's width. */}
           <Button
+            iconOnlyBelow="sm"
             type="submit"
             disabled={!draft.trim()}
             title={t('attackSurface.domainProof.prove', 'Prove a domain')}
           >
             <Plus className="h-4 w-4 sm:me-2" aria-hidden />
-            <span className="max-sm:sr-only">
+            <span className="sr-only sm:not-sr-only">
               {t('attackSurface.domainProof.prove', 'Prove a domain')}
             </span>
           </Button>

@@ -1,6 +1,6 @@
 {
-  "$comment": "Gzipped first-load JS per page route of the tenant app (scripts/route-js-budget.mjs, checked after next build in Web CI). Measured 2026-10-30 after the per-locale catalogs: median 455 KB, largest /scans 869 KB. Lower a number when pages get lighter; raising one needs the reason in the pull request (what was added and why it cannot load on demand).",
+  "$comment": "Gzipped first-load JS per page route of the tenant app (scripts/route-js-budget.mjs, checked after next build in Web CI). Measured 2026-10-30 after the per-locale catalogs: median 455 KB, largest /scans 869 KB. Median raised 480 -> 485 on 2026-11-24: the UI v2 shared list pattern (data table with measured column folding and cut-cell ellipsis, shared status tones) is now on most routes, so its code sits in the shared first-load chunk (next measured 482 KB). Lower a number when pages get lighter; raising one needs the reason in the pull request (what was added and why it cannot load on demand).",
   "defaultKb": 900,
-  "medianKb": 480,
+  "medianKb": 485,
   "routes": {}
 }
