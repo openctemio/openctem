@@ -510,7 +510,7 @@ export async function findMatrixBreaks(
         // An overlay's title block (title and its one-line description) is
         // its header, not a wasted row.
         root.querySelectorAll(
-          '[role=tablist], [data-slot="page-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+          '[role=tablist], [data-slot="page-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
         )
       ).filter(shown)
       let first: Element | undefined = Array.from(
@@ -560,7 +560,7 @@ export async function findMatrixBreaks(
             (h) =>
               shown(h) &&
               !h.closest(
-                '[data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+                '[data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
               ) &&
               h.getBoundingClientRect().bottom <= fr.top + 1
           )
@@ -573,7 +573,7 @@ export async function findMatrixBreaks(
         if (
           list.contains(el) ||
           el.closest(
-            '[role=tablist], [data-slot="page-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"]'
+            '[role=tablist], [data-slot="page-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
           )
         )
           continue
