@@ -295,7 +295,7 @@ function RotationStalled({
       className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3 sm:flex-row sm:items-center"
     >
       <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
-      <p className="flex-1 text-sm">{text}</p>
+      <p className="max-w-none flex-1 text-sm">{text}</p>
       <Can permission={Permission.IntegrationsManage}>
         <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
           <RotateCcw className="me-1.5 h-3.5 w-3.5" aria-hidden />
