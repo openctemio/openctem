@@ -236,7 +236,6 @@ export function IOCsPanel() {
         label={t('threatIntel.iocs.col.type', 'Type')}
         value={typeFilter === ALL ? '' : (typeFilter as IOCType)}
         onChange={(v) => setTypeFilter(v || ALL)}
-        allLabel={t('threatIntel.iocs.allTypes', 'All types')}
         options={IOC_TYPES.map((ty) => ({ value: ty, label: iocTypeLabel(t, ty) }))}
         foldLabel
       />
@@ -244,7 +243,6 @@ export function IOCsPanel() {
         label={t('threatIntel.iocs.col.status', 'Status')}
         value={statusFilter === ALL ? '' : (statusFilter as 'active' | 'inactive')}
         onChange={(v) => setStatusFilter(v || ALL)}
-        allLabel={t('threatIntel.iocs.allStatuses', 'All statuses')}
         options={[
           { value: 'active', label: t('threatIntel.iocs.active', 'Active') },
           { value: 'inactive', label: t('threatIntel.iocs.inactive', 'Inactive') },
