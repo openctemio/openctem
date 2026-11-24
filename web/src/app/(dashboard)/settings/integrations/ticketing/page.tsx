@@ -914,6 +914,7 @@ function useColumns(): ColumnDef<Integration>[] {
         id: 'project',
         header: t('ticketingIntegration.columns.defaultProject', 'Default project'),
         accessorFn: (i) => getProjectKey(i),
+        meta: { hideBelow: 900 },
         cell: ({ getValue }) => <span className="text-sm">{getValue<string>()}</span>,
       },
       {
@@ -924,10 +925,11 @@ function useColumns(): ColumnDef<Integration>[] {
           row.original.base_url ? (
             <SafeExternalLink
               href={row.original.base_url}
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              title={hostnameOf(row.original.base_url)}
+              className="flex min-w-0 max-w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ExternalLink className="h-3 w-3" />
-              {hostnameOf(row.original.base_url)}
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              <span className="min-w-0 truncate">{hostnameOf(row.original.base_url)}</span>
             </SafeExternalLink>
           ) : (
             <span className="text-sm text-muted-foreground">—</span>
@@ -942,6 +944,7 @@ function useColumns(): ColumnDef<Integration>[] {
         id: 'last_sync',
         header: t('ticketingIntegration.columns.lastSync', 'Last sync'),
         accessorFn: (i) => i.last_sync_at ?? '',
+        meta: { hideBelow: 900 },
         cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
       },
       {
@@ -1437,6 +1440,7 @@ export default function TicketingIntegrationPage() {
                     'Search connections…'
                   )}
                   showSelectionCount={false}
+                  pinActions
                 />
               )}
             </div>
