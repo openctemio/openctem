@@ -269,17 +269,11 @@ export default function ExecutiveSummaryPage() {
 
         {/* Top risks */}
         <section className="space-y-3">
-          <div>
-            <h2 className="text-base font-semibold">
-              {t('insights.executive.topRisks', 'Top risks')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'insights.executive.topRisksHint',
-                'Highest-priority findings that need executive attention.'
-              )}
-            </p>
-          </div>
+          {/* The heading alone: its hint is the table's caption, so no row of
+              text stands between the heading and the rows. */}
+          <h2 className="text-base font-semibold">
+            {t('insights.executive.topRisks', 'Top risks')}
+          </h2>
           {summaryLoading ? (
             <div className="space-y-px overflow-hidden rounded-lg border">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -293,6 +287,12 @@ export default function ExecutiveSummaryPage() {
               error={summaryError}
               onRetry={() => void retrySummary()}
               errorTitle={t('insights.executive.topRisksTitle', 'top risks')}
+              caption={t(
+                'insights.executive.topRisksHint',
+                'Highest-priority findings that need executive attention.'
+              )}
+              // Top five, nothing to search or arrange: no toolbar row.
+              showToolbar={false}
               showSearch={false}
               showColumnToggle={false}
               showPagination={false}

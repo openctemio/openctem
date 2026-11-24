@@ -52,9 +52,13 @@ import {
 import { LeadDetailSheet } from './lead-detail-sheet'
 import { useLeadActions } from './lead-actions'
 
+/**
+ * How many steps there are and how fresh they are: a caption under the list,
+ * never a row of its own above it.
+ */
 function StatusLine() {
   const { t, locale } = useTranslation()
-  const { summary, error, isLoading, refresh } = useLeadSummary()
+  const { summary, error, isLoading } = useLeadSummary()
   if (isLoading) return <Skeleton className="h-5 w-2/3" />
   if (error || !summary) return null
   const rel = (iso: string) => formatRelativeTime(iso, locale)
@@ -90,9 +94,15 @@ function StatusLine() {
           ]}
         />
       </div>
-      {org && <RefreshButton onRefresh={refresh} />}
     </div>
   )
+}
+
+/** Refresh now, at the end of the toolbar (organization-wide steps only). */
+function StatusRefresh() {
+  const { summary, refresh } = useLeadSummary()
+  if (summary?.scope !== 'organization') return null
+  return <RefreshButton onRefresh={refresh} iconOnly />
 }
 
 function TierBadge({ tier }: { tier: number }) {
@@ -240,8 +250,10 @@ export function ExplorationPage() {
           'The next steps the platform plans to learn more about your attack surface, and what they found.'
         )}
       />
-      <StatusLine />
-      <GraphToolbar label={t('exploration.toolbarLabel', 'Next step filters')}>
+      <GraphToolbar
+        label={t('exploration.toolbarLabel', 'Next step filters')}
+        end={<StatusRefresh />}
+      >
         <FilterSelect<LeadGroup>
           label={t('exploration.groups.label', 'Steps')}
           value={group}
@@ -311,6 +323,8 @@ export function ExplorationPage() {
           )}
         </div>
       )}
+
+      <StatusLine />
 
       <BulkActionBar
         count={selected.size}

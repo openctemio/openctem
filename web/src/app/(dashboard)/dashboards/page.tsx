@@ -216,6 +216,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                   href="/"
                   className="truncate font-medium hover:underline"
                   onClick={() => rememberChoice(row.original.id)}
+                  // Stored text, in the language it was written in: not catalog copy.
+                  translate="no"
                 >
                   {row.original.name}
                 </Link>
@@ -350,6 +352,9 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
               getRowId={(d) => d.id}
               isLoading={isLoading}
               caption={t('dashboards.manage.yours', 'Your dashboards')}
+              // A short list of one's own dashboards: nothing to search, so no
+              // toolbar row (a lone Display button wasted it).
+              showToolbar={false}
               showSearch={false}
               showColumnToggle={false}
               showSelectionCount={false}

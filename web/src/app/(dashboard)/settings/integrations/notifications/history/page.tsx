@@ -260,9 +260,13 @@ function HistoryContent() {
             <SelectContent>
               {integrations.map((i) => (
                 <SelectItem key={i.id} value={i.id}>
-                  <div className="flex items-center gap-2">
-                    <span>{i.name}</span>
-                    <Badge variant="outline" className="text-xs">
+                  {/* A long channel name ends in an ellipsis in the trigger;
+                      the full name is in the list and the title. */}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span data-slot="select-text" title={i.name}>
+                      {i.name}
+                    </span>
+                    <Badge variant="outline" className="shrink-0 text-xs">
                       {i.provider}
                     </Badge>
                   </div>

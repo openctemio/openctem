@@ -627,17 +627,6 @@ export default function PriorityRulesPage() {
           </Can>
         </PageHeader>
 
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
-          <AlertDescription>
-            {t(
-              'prioritization.rules.how.body',
-              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
-            )}
-          </AlertDescription>
-        </Alert>
-
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-9 w-full max-w-sm" />
@@ -658,6 +647,18 @@ export default function PriorityRulesPage() {
             )}
           />
         )}
+
+        {/* How evaluation works: after the rules, so they come first. */}
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t('prioritization.rules.how.title', 'How evaluation works')}</AlertTitle>
+          <AlertDescription>
+            {t(
+              'prioritization.rules.how.body',
+              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+            )}
+          </AlertDescription>
+        </Alert>
       </PageStack>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
