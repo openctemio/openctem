@@ -43,7 +43,7 @@ import {
   MetaLine,
   PageStack,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { ListSearch } from '@/features/shared/components/list-search'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -820,26 +820,33 @@ function ExceptionsList({
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="blocked-names-exceptions">
-      <ListTitleRow
-        title={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
-        count={
-          <ListCount
-            total={items.length}
-            loading={isLoading}
-            label={t('admin.blockedNames.exceptionsCount', undefined, { count: items.length })}
-          />
-        }
-      >
-        {canEdit && (
-          <Button onClick={() => setGrant(true)}>
-            {t('admin.blockedNames.grant', 'Grant exception')}
-          </Button>
-        )}
-      </ListTitleRow>
       <DataTable
         columns={columns}
         data={items}
         caption={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
+        // The name and count lead the toolbar row; Grant exception and
+        // Display share its line, so no control sits alone under the name.
+        toolbarTitle={
+          <ListToolbarTitle
+            title={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
+            count={
+              <ListCount
+                total={items.length}
+                loading={isLoading}
+                label={t('admin.blockedNames.exceptionsCount', undefined, { count: items.length })}
+              />
+            }
+          />
+        }
+        toolbarEnd={
+          canEdit ? (
+            <Button onClick={() => setGrant(true)}>
+              {t('admin.blockedNames.grant', 'Grant exception')}
+            </Button>
+          ) : undefined
+        }
+        // When the table scrolls sideways the row menu stays in view.
+        pinActions
         getRowId={(e) => e.id}
         error={error}
         onRetry={onRetry}

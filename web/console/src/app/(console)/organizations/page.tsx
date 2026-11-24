@@ -161,9 +161,12 @@ export default function AdminOrganizationsPage() {
       {
         id: 'last_sign_in',
         header: t('admin.org.col.lastSignIn', 'Last member sign-in'),
+        // On the organization's page too: it gives way on a tablet frame, so
+        // the list never scrolls sideways there.
         meta: {
           kind: 'datetime-recent',
           width: 160,
+          hideBelow: 800,
           label: t('admin.org.col.lastSignIn', 'Last member sign-in'),
         },
         cell: ({ row }) =>

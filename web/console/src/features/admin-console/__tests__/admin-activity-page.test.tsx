@@ -30,7 +30,10 @@ vi.mock('../api/use-admin-audit', async (orig) => ({
     }
   },
 }))
-vi.mock('../components/admin-audit-chain-status', () => ({ AdminAuditChainStatus: () => null }))
+vi.mock('../components/admin-audit-chain-status', () => ({
+  AdminAuditChainStatus: () => null,
+  AdminAuditChainBadge: () => null,
+}))
 vi.mock('../components/admin-audit-detail-sheet', () => ({ AdminAuditDetailSheet: () => null }))
 
 globalThis.ResizeObserver ??= class {

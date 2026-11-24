@@ -60,6 +60,7 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import {
   useIOCs,
   useCreateIOC,
@@ -227,37 +228,27 @@ export function IOCsPanel() {
     )
   }
 
+  // Filter tokens ("Type: Domain"): each sizes to its longest label, so no
+  // translation is cut, and a phone keeps them in the Filters sheet.
   const filterSelects = (
     <>
-      <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger
-          className="w-36"
-          aria-label={t('threatIntel.iocs.filterType', 'Filter by type')}
-        >
-          <SelectValue placeholder={t('threatIntel.iocs.allTypes', 'All types')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('threatIntel.iocs.allTypes', 'All types')}</SelectItem>
-          {IOC_TYPES.map((ty) => (
-            <SelectItem key={ty} value={ty}>
-              {iocTypeLabel(t, ty)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger
-          className="w-36"
-          aria-label={t('threatIntel.iocs.filterStatus', 'Filter by status')}
-        >
-          <SelectValue placeholder={t('threatIntel.iocs.allStatuses', 'All statuses')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('threatIntel.iocs.allStatuses', 'All statuses')}</SelectItem>
-          <SelectItem value="active">{t('threatIntel.iocs.active', 'Active')}</SelectItem>
-          <SelectItem value="inactive">{t('threatIntel.iocs.inactive', 'Inactive')}</SelectItem>
-        </SelectContent>
-      </Select>
+      <FilterSelect<IOCType>
+        label={t('threatIntel.iocs.col.type', 'Type')}
+        value={typeFilter === ALL ? '' : (typeFilter as IOCType)}
+        onChange={(v) => setTypeFilter(v || ALL)}
+        options={IOC_TYPES.map((ty) => ({ value: ty, label: iocTypeLabel(t, ty) }))}
+        foldLabel
+      />
+      <FilterSelect<'active' | 'inactive'>
+        label={t('threatIntel.iocs.col.status', 'Status')}
+        value={statusFilter === ALL ? '' : (statusFilter as 'active' | 'inactive')}
+        onChange={(v) => setStatusFilter(v || ALL)}
+        options={[
+          { value: 'active', label: t('threatIntel.iocs.active', 'Active') },
+          { value: 'inactive', label: t('threatIntel.iocs.inactive', 'Inactive') },
+        ]}
+        foldLabel
+      />
     </>
   )
 

@@ -117,17 +117,22 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
         framed
         id="captcha-keys"
         title={t('admin.captcha.title', 'CAPTCHA (Cloudflare Turnstile)')}
-        description={t(
-          'admin.captcha.description',
-          'Protects registration, the request-access form and every sign-in after repeated failures, for organizations and this console. Without keys only the rate limits apply.'
-        )}
-        actions={
-          <TonePill
-            tone={settings.secret_set ? 'success' : 'warning'}
-            label={
-              settings.secret_set ? t('admin.captcha.on', 'On') : t('admin.captcha.off', 'Off')
-            }
-          />
+        // The state leads the description (a state, not an action): beside
+        // the text it squeezed the description into a narrow column on a phone.
+        description={
+          <>
+            <TonePill
+              className="me-2 align-middle"
+              tone={settings.secret_set ? 'success' : 'warning'}
+              label={
+                settings.secret_set ? t('admin.captcha.on', 'On') : t('admin.captcha.off', 'Off')
+              }
+            />
+            {t(
+              'admin.captcha.description',
+              'Protects registration, the request-access form and every sign-in after repeated failures, for organizations and this console. Without keys only the rate limits apply.'
+            )}
+          </>
         }
         meta={<SettingChangedLine change={settings} />}
       >

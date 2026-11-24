@@ -24,6 +24,7 @@ import {
   type LoginResult,
   type MfaPurpose,
 } from '../actions/local-auth-actions'
+import { authErrorText } from '../lib/auth-error-codes'
 import { MfaStep } from './mfa-step'
 
 interface MfaSessionStepProps {
@@ -82,9 +83,13 @@ export function MfaSessionStep({
       }
       setPhase({
         kind: 'error',
-        message:
+        // A known code gets the console's words (en/vi), not the API's English.
+        message: authErrorText(
+          res.code,
+          t,
           res.error ||
-          t('auth.mfaSession.startFailed', 'Could not start two-factor setup. Try again.'),
+            t('auth.mfaSession.startFailed', 'Could not start two-factor setup. Try again.')
+        ),
       })
     })
     // t only changes with the locale.
@@ -176,6 +181,7 @@ export function MfaSessionStep({
       purpose={phase.purpose}
       orgs={phase.orgs}
       backLabel={t('auth.mfaSession.cancel', 'Cancel')}
+      pageTitled
       onDone={(result) => void finish(result)}
       onCancel={(message) =>
         setPhase({

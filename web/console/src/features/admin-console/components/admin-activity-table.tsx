@@ -21,7 +21,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       meta: {
         kind: 'name',
         pin: 'start',
-        minWidth: 200,
+        minWidth: 168,
         label: t('admin.adminActivityTable.action', 'Action'),
       },
       cell: ({ row }) => (
@@ -41,7 +41,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.administrator', 'Administrator'),
       meta: {
         kind: 'text',
-        width: 200,
+        width: 176,
         label: t('admin.adminActivityTable.administrator', 'Administrator'),
       },
       cell: ({ row }) => (
@@ -53,7 +53,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'success',
       header: t('admin.adminActivityTable.result', 'Result'),
-      meta: { kind: 'status', width: 152, label: t('admin.adminActivityTable.result', 'Result') },
+      meta: { kind: 'status', width: 128, label: t('admin.adminActivityTable.result', 'Result') },
       cell: ({ row }) =>
         row.original.success ? (
           <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
@@ -88,7 +88,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.when', 'When'),
       meta: {
         kind: 'datetime-recent',
-        width: 152,
+        width: 136,
         label: t('admin.adminActivityTable.when', 'When'),
       },
       cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
@@ -107,6 +107,10 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** The list's name and count, leading the toolbar row (`ListToolbarTitle`). */
+  toolbarTitle?: React.ReactNode
+  /** The list's own actions (Export), before the Display menu. */
+  toolbarEnd?: React.ReactNode
   /** The active filter chips, one row under the toolbar. */
   toolbarBelow?: React.ReactNode
   /** The phone's filter entry (a sheet), joined to the toolbar's start. */
@@ -131,6 +135,8 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  toolbarTitle,
+  toolbarEnd,
   toolbarBelow,
   filterToggle,
   onRowClick,
@@ -163,9 +169,11 @@ export function AdminActivityTable({
       onRetry={onRetry}
       errorTitle={t('admin.securityActivityPage.adminActivity', 'admin activity')}
       showSearch={false}
-      showToolbar={!!toolbarStart}
+      showToolbar={!!toolbarStart || !!toolbarTitle}
       showSelectionCount={false}
       showPagination={!!paging}
+      toolbarTitle={toolbarTitle}
+      toolbarEnd={toolbarEnd}
       toolbarStart={toolbarStart}
       toolbarBelow={toolbarBelow}
       filterToggle={filterToggle}

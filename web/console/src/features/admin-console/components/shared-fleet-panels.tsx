@@ -38,7 +38,7 @@ import {
   MetaLine,
   RelativeTime,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import {
   actOnSharedSensor,
   useSharedFleet,
@@ -264,44 +264,50 @@ export function SharedFleetPanel({ note }: { note?: ReactNode } = {}) {
   return (
     <>
       <div className="flex min-w-0 flex-col gap-3" data-testid="sensors-fleet">
-        {/* On a phone the info mark is a 36 px touch target: the row has that
-            height from the first frame, so the mark appearing once the setting
-            is read moves nothing. */}
-        <ListTitleRow
-          className="max-md:min-h-control-touch"
-          title={t('admin.sharedFleet.fleetTitle')}
-          count={
-            <ListCount
-              total={fleet.data?.sensors?.length ?? 0}
-              loading={!fleet.data && !fleet.error}
-              label={t('admin.sharedFleet.total', undefined, {
-                count: fleet.data?.sensors?.length ?? 0,
-              })}
-            />
-          }
-        >
-          {note ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('admin.sharedFleet.aboutShared')}
-                  data-testid="sensors-shared-scanning-closed"
-                >
-                  <Info aria-hidden />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="max-w-xs text-body text-muted-foreground">
-                {note}
-              </PopoverContent>
-            </Popover>
-          ) : null}
-        </ListTitleRow>
         <DataTable
           columns={sensorColumns}
           data={fleet.data?.sensors ?? []}
           caption={t('admin.sharedFleet.fleetTitle')}
+          // The name, the count and the shared-scanning info mark (beside the
+          // count, never alone at the row's end) share the Display menu's row.
+          // The row is a control tall from the first frame, so the mark
+          // appearing once the setting is read moves nothing.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.sharedFleet.fleetTitle')}
+              count={
+                <ListCount
+                  total={fleet.data?.sensors?.length ?? 0}
+                  loading={!fleet.data && !fleet.error}
+                  label={t('admin.sharedFleet.total', undefined, {
+                    count: fleet.data?.sensors?.length ?? 0,
+                  })}
+                />
+              }
+              start={
+                note ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t('admin.sharedFleet.aboutShared')}
+                        data-testid="sensors-shared-scanning-closed"
+                      >
+                        <Info aria-hidden />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="max-w-xs text-body text-muted-foreground"
+                    >
+                      {note}
+                    </PopoverContent>
+                  </Popover>
+                ) : null
+              }
+            />
+          }
           getRowId={(s) => s.id}
           error={fleet.error}
           onRetry={() => void fleet.mutate()}

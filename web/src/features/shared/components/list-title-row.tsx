@@ -254,3 +254,41 @@ export function ListTitleRow({
     </div>
   )
 }
+
+/**
+ * A list's name and its one count at the start of its toolbar row
+ * (`DataTable` `toolbarTitle`, `ListToolbar` `title`): for a list with no
+ * search box, whose filters and Display menu then share the name's line.
+ * One control height tall, so the controls beside it keep their centre line.
+ */
+export function ListToolbarTitle({
+  title,
+  count,
+  start,
+  titleTestId,
+}: {
+  title: React.ReactNode
+  /** The list's `ListCount`. */
+  count?: React.ReactNode
+  /** More after the count: an info mark that explains the list. */
+  start?: React.ReactNode
+  /** A test id for the name. */
+  titleTestId?: string
+}) {
+  return (
+    <div
+      data-slot="list-toolbar-title"
+      className="flex min-h-control min-w-0 items-center gap-3 max-md:min-h-control-touch"
+    >
+      <h2
+        data-testid={titleTestId}
+        className="min-w-0 truncate text-sm font-medium"
+        title={typeof title === 'string' ? title : undefined}
+      >
+        {title}
+      </h2>
+      {count}
+      {start}
+    </div>
+  )
+}
