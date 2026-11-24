@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-import { AdminAuditChainStatus } from '../components/admin-audit-chain-status'
+import { AdminAuditChainBadge, AdminAuditChainStatus } from '../components/admin-audit-chain-status'
 import type { AdminAuditChainReport } from '../api/use-admin-audit'
 
 const state = vi.hoisted(() => ({
@@ -24,16 +24,59 @@ const report = (patch: Partial<AdminAuditChainReport> = {}): AdminAuditChainRepo
   ...patch,
 })
 
+describe('AdminAuditChainBadge', () => {
+  beforeEach(() => {
+    state.current = { isLoading: false }
+  })
+
+  it('says the log is intact when every entry verifies, with the full sentence for a reader', () => {
+    state.current = { data: report(), isLoading: false }
+    render(<AdminAuditChainBadge />)
+    expect(screen.getByText('Audit log intact')).toBeInTheDocument()
+    expect(screen.getByText(/All 42 entries verify/)).toBeInTheDocument()
+    expect(screen.getByTestId('audit-chain-intact')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/All 42 entries verify/)
+    )
+  })
+
+  it('never claims the log is intact when the check fails', () => {
+    state.current = { error: new Error('down'), isLoading: false }
+    render(<AdminAuditChainBadge />)
+    expect(screen.queryByText('Audit log intact')).not.toBeInTheDocument()
+    expect(screen.getByText('Audit log not checked')).toBeInTheDocument()
+    expect(screen.getByText(/could not be checked/)).toBeInTheDocument()
+  })
+
+  it('says the log was tampered with when an entry does not verify', () => {
+    state.current = {
+      data: report({ breaks: [{ position: 7, id: 'row-7', reason: 'changed' }] }),
+      isLoading: false,
+    }
+    render(<AdminAuditChainBadge />)
+    expect(screen.getByText('Audit log tampered with')).toBeInTheDocument()
+    expect(screen.queryByText('Audit log intact')).not.toBeInTheDocument()
+  })
+
+  it('holds its place while the chain is checked, claiming nothing to a reader', () => {
+    state.current = { isLoading: true }
+    render(<AdminAuditChainBadge />)
+    const placeholder = screen.getByTestId('audit-chain-loading')
+    expect(placeholder).toHaveAttribute('aria-busy', 'true')
+    const hidden = placeholder.querySelector('span[aria-hidden="true"]') as HTMLElement
+    expect(hidden.className).toMatch(/\binvisible\b/)
+  })
+})
+
 describe('AdminAuditChainStatus', () => {
   beforeEach(() => {
     state.current = { isLoading: false }
   })
 
-  it('says the log is intact when every entry verifies', () => {
+  it('draws nothing while the log verifies', () => {
     state.current = { data: report(), isLoading: false }
-    render(<AdminAuditChainStatus />)
-    expect(screen.getByText('Audit log intact')).toBeInTheDocument()
-    expect(screen.getByText(/All 42 entries verify/)).toBeInTheDocument()
+    const { container } = render(<AdminAuditChainStatus />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('names each entry that does not verify and why', () => {
@@ -50,29 +93,5 @@ describe('AdminAuditChainStatus', () => {
     expect(screen.getByText('Audit log tampered with')).toBeInTheDocument()
     expect(screen.getByText(/#7 row-7: changed after it was written/)).toBeInTheDocument()
     expect(screen.getByText(/#9 row-9: rows are missing before it/)).toBeInTheDocument()
-  })
-
-  it('never claims the log is intact when the check fails', () => {
-    state.current = { error: new Error('down'), isLoading: false }
-    render(<AdminAuditChainStatus />)
-    expect(screen.queryByText('Audit log intact')).not.toBeInTheDocument()
-    expect(screen.getByText(/could not be checked/)).toBeInTheDocument()
-  })
-
-  it('holds its place while the chain is checked, claiming nothing to a reader', () => {
-    state.current = { isLoading: true }
-    render(<AdminAuditChainStatus />)
-    const placeholder = screen.getByTestId('audit-chain-loading')
-    expect(placeholder).toHaveAttribute('aria-busy', 'true')
-    // The intact layout is drawn for its height only: hidden from assistive tech and invisible.
-    const parts = placeholder.querySelectorAll(
-      '[data-slot="alert-title"], [data-slot="alert-description"]'
-    )
-    expect(parts).toHaveLength(2)
-    for (const el of parts) {
-      expect(el).toHaveAttribute('aria-hidden', 'true')
-      expect(el.className).toMatch(/\binvisible\b/)
-    }
-    expect(screen.queryByRole('alert', { name: /intact/ })).toBeNull()
   })
 })

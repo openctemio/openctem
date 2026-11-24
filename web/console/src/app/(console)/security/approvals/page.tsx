@@ -17,6 +17,7 @@ import {
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   approveAdminApproval,
@@ -246,6 +247,35 @@ export default function AdminApprovalsPage() {
                 </AlertDescription>
               </Alert>
             )}
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              getRowId={(a) => a.id}
+              isLoading={isLoading}
+              showSearch={false}
+              showColumnToggle={false}
+              showSelectionCount={false}
+              mobileCards
+              emptyMessage={t('admin.approvals.empty', 'No requests in the last 30 days')}
+              // The list's name and count share the Display menu's row; how
+              // approvals work is said under the list.
+              toolbarTitle={
+                <ListToolbarTitle
+                  title={t('admin.approvals.listTitle', 'Requests')}
+                  count={
+                    <ListCount
+                      total={data?.data?.length ?? 0}
+                      loading={!data}
+                      label={t(
+                        'admin.approvals.total',
+                        '{count, plural, one {# request} other {# requests}}',
+                        { count: data?.data?.length ?? 0 }
+                      )}
+                    />
+                  }
+                />
+              }
+            />
             {data && data.four_eyes.active && (
               <p className="text-sm text-muted-foreground">
                 {t(
@@ -263,17 +293,6 @@ export default function AdminApprovalsPage() {
                 )}
               </p>
             )}
-            <DataTable
-              columns={columns}
-              data={data?.data ?? []}
-              getRowId={(a) => a.id}
-              isLoading={isLoading}
-              showSearch={false}
-              showColumnToggle={false}
-              showSelectionCount={false}
-              mobileCards
-              emptyMessage={t('admin.approvals.empty', 'No requests in the last 30 days')}
-            />
           </>
         )}
         {deciding && (
