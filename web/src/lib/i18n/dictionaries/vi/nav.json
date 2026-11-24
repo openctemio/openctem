@@ -199,6 +199,7 @@
   "nav.palette.hint.open": "Mở",
   "nav.palette.hint.toggle": "Mở từ mọi trang",
   "nav.palette.placeholder": "Tìm trang, phát hiện, tài sản… hoặc gõ > để chạy lệnh",
+  "nav.palette.placeholderShort": "Tìm kiếm hoặc gõ > để chạy lệnh",
   "nav.palette.savedView": "Chế độ xem đã lưu",
   "nav.palette.searching": "Đang tìm",
   "nav.palette.theme.dark": "Giao diện tối",

@@ -59,6 +59,7 @@ import { usePaletteSearch } from '@/features/command-palette/use-palette-search'
 import type { PaletteEntityKind } from '@/features/command-palette/palette-search'
 import { pickRecentPages, readRecentPages } from '@/features/command-palette/recent-pages'
 import { formatNumber } from '@/lib/app-locale'
+import { useIsBelowSm } from '@/hooks/use-mobile'
 
 const KIND_ICON: Record<PaletteEntityKind, typeof Bug> = {
   finding: ShieldAlert,
@@ -114,6 +115,7 @@ export function CommandMenu() {
   const pathname = usePathname()
   const { setTheme } = useTheme()
   const { open, setOpen } = useSearch()
+  const phone = useIsBelowSm()
 
   // Filter sidebar data based on user permissions and modules
   const { data: filteredSidebarData } = useFilteredSidebarData(sidebarData)
@@ -273,10 +275,12 @@ export function CommandMenu() {
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder={t(
-          'nav.palette.placeholder',
-          'Search pages, findings, assets… or type > for commands'
-        )}
+        placeholder={
+          // A phone's field has room for the short form only.
+          phone
+            ? t('nav.palette.placeholderShort', 'Search or type > for commands')
+            : t('nav.palette.placeholder', 'Search pages, findings, assets… or type > for commands')
+        }
       />
       <CommandList>
         <CommandEmpty>

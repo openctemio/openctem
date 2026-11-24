@@ -199,6 +199,7 @@
   "nav.palette.hint.open": "Open",
   "nav.palette.hint.toggle": "Open from any page",
   "nav.palette.placeholder": "Search pages, findings, assets… or type > for commands",
+  "nav.palette.placeholderShort": "Search or type > for commands",
   "nav.palette.savedView": "Saved view",
   "nav.palette.searching": "Searching",
   "nav.palette.theme.dark": "Dark theme",
