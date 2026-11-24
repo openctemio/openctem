@@ -57,16 +57,16 @@
   /* Wide screens: prose stops at a reading measure and a field at a sensible
      width, the way the settings column already does, so a description never
      runs 1500 px across a 2560 px window. Zero specificity: any max-w-*
-     utility on the element wins. A truncated or clamped line keeps the room
+     utility on the element wins. A truncated or one-line clamped line keeps the room
      its row gives it (the ellipsis shows where it must). Tables, lists and
      the page frame are not touched. */
-  :where(p:not(.truncate, [class*='line-clamp'])),
+  :where(p:not(.truncate, .line-clamp-1)),
   /* Muted text is help text (a hint under a label, a card's note); a muted
      flex or grid box is a layout row, not prose, and is left alone. */
   :where(
     .text-muted-foreground:not(
         .truncate,
-        [class*='line-clamp'],
+        .line-clamp-1,
         [class*='flex'],
         [class*='grid'],
         td,
