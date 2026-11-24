@@ -113,16 +113,12 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
   return (
     <>
       <Card>
+        {/* The section's name, then its list: how the values apply is said
+            under the list, so no line of text sits on its own above it. */}
         <CardHeader>
-          <CardTitle>
+          <CardTitle role="heading" aria-level={2}>
             {t('limits.console.defaults.title', 'Limits of self-service organizations')}
           </CardTitle>
-          <CardDescription>
-            {t(
-              'limits.console.defaults.description',
-              'The limits an organization starts with when a person creates it themselves. Leave a value empty for no limit (the default). Organizations created in this console have no limits, and existing organizations keep theirs.'
-            )}
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {sources.length > 0 && (
@@ -157,7 +153,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
                         onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))}
                         placeholder={t('limits.unlimited', 'Unlimited')}
                         inputMode="numeric"
-                        className="h-8 w-28"
+                        className="w-28"
                         disabled={!canEdit}
                         aria-label={keyLabel(k)}
                         aria-invalid={parseLimit(values[k]) === null}
@@ -168,6 +164,12 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
               </TableBody>
             </Table>
           </div>
+          <CardDescription>
+            {t(
+              'limits.console.defaults.description',
+              'The limits an organization starts with when a person creates it themselves. Leave a value empty for no limit (the default). Organizations created in this console have no limits, and existing organizations keep theirs.'
+            )}
+          </CardDescription>
           {invalid && (
             <p className="text-sm text-destructive">
               {t(

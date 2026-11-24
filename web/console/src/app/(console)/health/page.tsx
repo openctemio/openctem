@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
+import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOperations } from '@console/features/admin-console/api/use-admin-operations'
 import { useAdminSystem } from '@console/features/admin-console/api/use-admin-system'
@@ -168,12 +169,14 @@ function Row({
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1.5">
       <dt className="text-sm text-muted-foreground">{label}</dt>
+      {/* The value side wraps as whole pieces, aligned to the end: a long
+          detail (the database pool) takes a line of its own, and a short
+          value (a latency, a pill) never breaks inside itself. */}
       <dd
-        className={
-          warn
-            ? 'flex items-center gap-2 text-sm font-medium text-warning tabular-nums'
-            : 'flex items-center gap-2 text-sm tabular-nums'
-        }
+        className={cn(
+          'flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-end text-sm tabular-nums',
+          warn && 'font-medium text-warning'
+        )}
       >
         {value}
         {children}
@@ -241,12 +244,12 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
                     </span>
                   )}
                   {sv.name === 'sensors' && sv.configured && (
-                    <span className="text-muted-foreground">
+                    <span className="whitespace-nowrap text-muted-foreground">
                       {t('admin.system.sensorsOnline', '{n} online', { n: sv.detail ?? 0 })}
                     </span>
                   )}
                   {sv.name !== 'sensors' && sv.configured && sv.ok && sv.latency_ms > 0 && (
-                    <span className="text-muted-foreground">
+                    <span className="whitespace-nowrap text-muted-foreground">
                       {t('admin.system.latency', '{ms} ms', { ms: sv.latency_ms.toFixed(1) })}
                     </span>
                   )}

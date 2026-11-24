@@ -22,7 +22,7 @@ import {
   RelativeTime,
   PageStack,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   SIGNUP_EVENTS_PER_PAGE,
@@ -118,10 +118,12 @@ function SignupSummary({
 
 /**
  * A sign-up event on a phone. Fixed slots, never a label/value grid; a value
- * the event does not have is left out instead of showing a dash:
+ * the event does not have is left out instead of showing a dash. The time
+ * ends the first line, so every card reaches its end with or without an
+ * organization:
  *
- *   Organization created                 Open organization
- *   11 hours ago   google
+ *   Organization created                       11 hours ago
+ *   google                                Open organization
  *   example.org   198.51.100.0/24
  */
 export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
@@ -132,21 +134,26 @@ export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
         <span className="min-w-0 flex-1 truncate font-medium">
           {t(`admin.signups.kind.${event.kind}`)}
         </span>
-        {event.tenant_id ? (
-          <Link
-            className="shrink-0 text-meta underline-offset-4 hover:underline"
-            href={organizationHref(event.tenant_id)}
-          >
-            {t('admin.signups.card.openOrganization', 'Open organization')}
-          </Link>
-        ) : null}
+        <RelativeTime
+          className="shrink-0 text-meta text-muted-foreground"
+          date={event.occurred_at}
+        />
       </div>
-      <MetaLine
-        items={[
-          <RelativeTime key="when" date={event.occurred_at} />,
-          event.source ? <span key="source">{sourceLabel(t, event.source)}</span> : null,
-        ]}
-      />
+      {event.source || event.tenant_id ? (
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground">
+            {event.source ? sourceLabel(t, event.source) : null}
+          </span>
+          {event.tenant_id ? (
+            <Link
+              className="shrink-0 text-meta underline-offset-4 hover:underline"
+              href={organizationHref(event.tenant_id)}
+            >
+              {t('admin.signups.card.openOrganization', 'Open organization')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       <MetaLine
         data-testid="signup-card-origin"
         className="font-mono"
@@ -250,17 +257,21 @@ export function SignupEventsPanel() {
 
   return (
     <PageStack>
-      <ListTitleRow
-        title={kind ? t(`admin.signups.kind.${kind}`) : t('admin.signups.allKinds')}
-        count={
-          <ListCount
-            total={total}
-            loading={!data && !error}
-            label={t('admin.signups.total', undefined, { count: total })}
+      <DataTable
+        // The view name and its count lead the toolbar row: the Event filter
+        // (on a phone, the Filters button) and Display share their line.
+        toolbarTitle={
+          <ListToolbarTitle
+            title={kind ? t(`admin.signups.kind.${kind}`) : t('admin.signups.allKinds')}
+            count={
+              <ListCount
+                total={total}
+                loading={!data && !error}
+                label={t('admin.signups.total', undefined, { count: total })}
+              />
+            }
           />
         }
-      />
-      <DataTable
         columns={columns}
         data={data?.data ?? []}
         caption={t('admin.signups.caption', 'Sign-up events')}

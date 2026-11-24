@@ -119,7 +119,7 @@ export default function AdminAnnouncementsPage() {
             showColumnToggle={false}
             showSelectionCount={false}
             mobileCards
-            emptyMessage={t('admin.ann.empty', 'No announcement yet')}
+            emptyMessage={t('admin.ann.empty', 'No announcements')}
           />
         )}
         {ending && (

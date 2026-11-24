@@ -60,9 +60,12 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
-        <Megaphone className="me-2 size-4" />
-        {t('admin.ann.publish', 'Publish announcement')}
+      {/* An icon beside the page title on a phone, its words from sm. */}
+      <Button iconOnlyBelow="sm" size="sm" onClick={() => setOpen(true)}>
+        <Megaphone className="size-4 sm:me-2" aria-hidden />
+        <span className="sr-only sm:not-sr-only">
+          {t('admin.ann.publish', 'Publish announcement')}
+        </span>
       </Button>
       <AdminConfirmDialog
         reasonPlaceholder={t(
