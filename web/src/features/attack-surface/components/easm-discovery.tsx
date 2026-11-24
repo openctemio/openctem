@@ -417,9 +417,18 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
           <span className="flex-1" aria-hidden />
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={exportCsv} disabled={!overview}>
-            <Download className="me-2 h-4 w-4" aria-hidden />
-            {t('attackSurface.discovery.export', 'Export CSV')}
+          {/* An icon on a phone, so Export, Abort all and Run all share one
+              line (Run all never wraps alone); named and titled as before. */}
+          <Button
+            variant="outline"
+            onClick={exportCsv}
+            disabled={!overview}
+            title={t('attackSurface.discovery.export', 'Export CSV')}
+          >
+            <Download className="h-4 w-4 sm:me-2" aria-hidden />
+            <span className="max-sm:sr-only">
+              {t('attackSurface.discovery.export', 'Export CSV')}
+            </span>
           </Button>
           <GatedButton
             allowed={canAbort && running}
