@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
+  AlertTriangle,
   ArrowLeft,
   ChevronRight,
   Copy,
@@ -22,6 +23,7 @@ import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -346,9 +348,9 @@ function VersionsTable({
             <span className="inline-flex flex-wrap items-center gap-1.5">
               <code className="font-mono text-sm">{up.version}</code>
               {up.breaking && (
-                <Badge variant="outline" className="border-warning/50 text-warning">
+                <SignalChip icon={AlertTriangle}>
                   {t('components.upgrade.breaking', 'Major version')}
-                </Badge>
+                </SignalChip>
               )}
               {!up.complete && (
                 <span className="text-xs text-muted-foreground">

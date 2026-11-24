@@ -20,7 +20,16 @@ import { DataTable } from '@/features/shared'
 import type { ProgramItem } from '../api/programs-api.types'
 import { itemLimit } from '../lib/program-targets'
 
-export function ProgramTargetsTable({ items }: { items: ProgramItem[] }) {
+export function ProgramTargetsTable({
+  items,
+  error,
+  onRetry,
+}: {
+  items: ProgramItem[]
+  /** The program's read failed (a refresh while its last copy shows). */
+  error?: unknown
+  onRetry?: () => void
+}) {
   const { t } = useTranslation()
   const rows = useMemo(() => items.filter((i) => i.in_scope), [items])
   const columns = useMemo<ColumnDef<ProgramItem>[]>(
@@ -123,6 +132,8 @@ export function ProgramTargetsTable({ items }: { items: ProgramItem[] }) {
     <DataTable
       columns={columns}
       data={rows}
+      error={error}
+      onRetry={onRetry}
       getRowId={(it) => `${it.raw}|${it.ports ?? ''}`}
       showToolbar={false}
       showSearch={false}

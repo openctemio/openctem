@@ -321,7 +321,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               <h3 className="text-base font-semibold">
                 {t('programs.targets.title', 'Program targets')}
               </h3>
-              <ProgramTargetsTable items={p.items} />
+              <ProgramTargetsTable items={p.items} error={error} onRetry={() => void mutate()} />
             </section>
           )}
           <ProgramNotifications
