@@ -104,6 +104,7 @@
   "common.cvss.version": "Phiên bản CVSS",
   "common.dangerZone": "Vùng nguy hiểm",
   "common.detailSheet.description": "Chi tiết",
+  "common.editNamed": "Sửa {name}",
   "common.export": "Xuất",
   "common.failedToLoad": "Không tải được {title}",
   "common.filter.all": "Tất cả",

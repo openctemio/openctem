@@ -104,6 +104,7 @@
   "common.cvss.version": "CVSS version",
   "common.dangerZone": "Danger zone",
   "common.detailSheet.description": "Details",
+  "common.editNamed": "Edit {name}",
   "common.export": "Export",
   "common.failedToLoad": "Couldn't load {title}",
   "common.filter.all": "All",
