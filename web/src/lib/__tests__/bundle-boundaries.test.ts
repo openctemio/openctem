@@ -9,7 +9,7 @@
  * @dnd-kit in the dashboard's first load. Load them with
  * next/dynamic (or a narrower import) instead, as the files below do.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -90,14 +90,17 @@ describe('first-load bundle boundaries', () => {
     const listed: string[] = pkg.sideEffects
     const offending: string[] = []
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const name = entry.name
         const path = join(dir, name)
-        if (statSync(path).isDirectory()) {
+        if (entry.isDirectory()) {
           if (name !== '__tests__' && name !== 'test' && name !== 'node_modules') walk(path)
           continue
         }
         if (!/\.(ts|tsx)$/.test(name) || /\.test\.tsx?$/.test(name)) continue
-        for (const m of readFileSync(path, 'utf8').matchAll(/^import\s+['"](@\/[^'"]+|\.[^'"]+)['"]/gm)) {
+        for (const m of readFileSync(path, 'utf8').matchAll(
+          /^import\s+['"](@\/[^'"]+|\.[^'"]+)['"]/gm
+        )) {
           const spec = m[1]
           if (spec.endsWith('.css')) continue
           const target = './src/' + spec.replace(/^@\//, '') + '.ts'
