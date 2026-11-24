@@ -167,53 +167,67 @@ export function AffectedAssets({
         cell: ({ row }) => <HostTitle row={row.original} />,
       },
       {
+        // Exposure and criticality in one column, product and version in
+        // another: seven columns did not fit a tablet and cut the last
+        // headers (Finding, Task).
         id: 'exposure',
-        meta: { kind: 'status' },
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.exposure'),
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.internet_facing ? (
-            <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
-          ) : (
-            <Dash />
-          ),
-      },
-      {
-        id: 'criticality',
-        meta: { kind: 'text' },
-        header: t('emergingThreats.assets.criticality'),
-        enableSorting: false,
-        cell: ({ row }) => cells.criticality(row.original) || <Dash />,
+        cell: ({ row }) => {
+          const criticality = cells.criticality(row.original)
+          if (!row.original.internet_facing && !criticality) return <Dash />
+          return (
+            <span className="flex flex-col items-start gap-1">
+              {row.original.internet_facing && (
+                <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
+              )}
+              {criticality && (
+                <span>
+                  <span className="text-muted-foreground">
+                    {t('emergingThreats.assets.criticality')}:
+                  </span>{' '}
+                  {criticality}
+                </span>
+              )}
+            </span>
+          )
+        },
       },
       {
         id: 'product',
         meta: { kind: 'text' },
         header: t('emergingThreats.assets.product'),
         enableSorting: false,
-        cell: ({ row }) => row.original.products.join(', ') || <Dash />,
-      },
-      {
-        id: 'version',
-        meta: { kind: 'text' },
-        header: t('emergingThreats.assets.version'),
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.versions.length > 0 ? (
-            <span className="font-mono text-xs">{row.original.versions.join(', ')}</span>
-          ) : (
-            <Dash />
-          ),
+        cell: ({ row }) => {
+          const products = row.original.products.join(', ')
+          const versions = row.original.versions.join(', ')
+          if (!products && !versions) return <Dash />
+          return (
+            <span className="flex flex-col gap-0.5">
+              {products && <span>{products}</span>}
+              {versions && (
+                <span className="text-xs">
+                  <span className="text-muted-foreground">
+                    {t('emergingThreats.assets.version')}:
+                  </span>{' '}
+                  <span className="font-mono">{versions}</span>
+                </span>
+              )}
+            </span>
+          )
+        },
       },
       {
         id: 'finding',
-        meta: { kind: 'status' },
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.finding'),
         enableSorting: false,
         cell: ({ row }) => cells.finding(row.original),
       },
       {
         id: 'task',
-        meta: { kind: 'status' },
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.task'),
         enableSorting: false,
         cell: ({ row }) => cells.task(row.original),

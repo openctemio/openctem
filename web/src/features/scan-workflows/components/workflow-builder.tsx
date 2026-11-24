@@ -895,7 +895,8 @@ function WorkflowBuilderInner({
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#d1d5db" />
         <Controls showInteractive={!readOnly} />
-        <MiniMap nodeColor={nodeColor} zoomable pannable />
+        {/* On a phone the minimap would cover the steps it maps. */}
+        <MiniMap nodeColor={nodeColor} zoomable pannable className="max-md:hidden" />
       </ReactFlow>
     </div>
   )
