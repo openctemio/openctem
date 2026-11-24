@@ -45,7 +45,16 @@ export function AttackSurfaceSectionTabs() {
       const [key, fallback] = LABELS[href] ?? [tab.labelKey ?? '', tab.label]
       // The row draws no icons (research/244 anatomy): ten labels already
       // make one row, and an icon each would only push more past the edge.
-      return [{ ...tab, icon: undefined, label: key ? t(key, fallback) : tab.label }]
+      // The label is the row's own (SectionTabs would translate the
+      // palette's `labelKey` over it: "Exposure items").
+      return [
+        {
+          ...tab,
+          icon: undefined,
+          labelKey: undefined,
+          label: key ? t(key, fallback) : tab.label,
+        },
+      ]
     })
   }, [visible, t])
   if (tabs.length < 2) return null
