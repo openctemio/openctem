@@ -134,14 +134,25 @@ export function useTabStripScroll(
     }
     observeTabs()
     // Shown after mounting hidden (a `SettleGroup` releasing its children, a
-    // sheet opening): the resize observer does not always report the strip's
-    // new width then. On /assets/[id] it reported the hidden 0 px once and
-    // nothing after the reveal, so the marks stayed "no hidden tabs" on a
-    // strip that overflowed, with no fade over a cut tab. Becoming visible is
-    // what an intersection observer reports, so it measures again then too.
-    const io =
-      typeof IntersectionObserver === 'function' ? new IntersectionObserver(onResize) : undefined
-    io?.observe(el)
+    // panel opening): the resize observer reports the new width only at the
+    // next frame, and a reader that measures in between (a layout check, an
+    // assistive tool) saw the hidden state, "no hidden tabs", on a strip that
+    // overflowed with no fade over the cut tab. An ancestor that changes its
+    // `hidden`, class or style is what shows the strip, so the strip measures
+    // again at once (a microtask, before any other task runs).
+    const shown =
+      typeof MutationObserver === 'function'
+        ? new MutationObserver(() => {
+            if (el.clientWidth !== width) {
+              width = el.clientWidth
+              revealActive()
+            }
+            update()
+          })
+        : undefined
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      shown?.observe(a, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] })
+    }
     const mo =
       typeof MutationObserver === 'function'
         ? new MutationObserver((records) => {
@@ -159,7 +170,7 @@ export function useTabStripScroll(
       delete el.dataset.tabStrip
       el.removeEventListener('scroll', update)
       ro?.disconnect()
-      io?.disconnect()
+      shown?.disconnect()
       mo?.disconnect()
     }
   }, [ref, attachKey])
