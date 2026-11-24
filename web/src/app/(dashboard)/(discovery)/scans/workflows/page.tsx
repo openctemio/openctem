@@ -440,7 +440,7 @@ export default function ScanWorkflowsPage() {
         <DataTableColumnHeader column={column} title={t('scans.workflows.colStatus')} />
       ),
       cell: ({ row }) => (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-full items-center gap-2 sm:flex-wrap">
           {row.original.is_retired ? (
             <RetiredBadge workflow={row.original} />
           ) : (
