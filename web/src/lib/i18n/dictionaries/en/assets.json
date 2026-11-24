@@ -518,7 +518,7 @@
   "assets.form.ownerRefHint": "Optional. If it is the email of a member, that member becomes a primary owner (see the Owners tab).",
   "assets.form.ownerRefPlaceholder": "Team / contact / cost center",
   "assets.form.required": "{field} is required",
-  "assets.form.saveChanges": "Save Changes",
+  "assets.form.saveChanges": "Save changes",
   "assets.form.savedAs": "Will be saved as:",
   "assets.form.saving": "Saving...",
   "assets.form.scope.cloud": "Cloud",

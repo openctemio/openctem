@@ -96,6 +96,14 @@ import {
 
 const PAGE_SIZES = [20, 50, 100]
 
+/**
+ * Frame widths (px) under which a column steps aside, so the table fits its
+ * frame (about 650 at 768, 700 at 1024 with the sidebar open) instead of
+ * scrolling sideways: the labels first, then the last-seen time. Asset,
+ * service facts, risk, open findings and the row menu stay at every width.
+ */
+const EXTERNAL_HIDE_BELOW = { labels: 1100, lastSeen: 960 } as const
+
 // The exposures list has no event-type URL filter: it opens on a search for
 // certificates, open ones first.
 const CERT_EXPOSURES_HREF = '/exposures?q=certificate'
@@ -507,6 +515,7 @@ export default function ExternalSurfacePage() {
     () => [
       {
         id: 'name',
+        meta: { kind: 'name', pin: 'start', label: t('attackSurface.external.col.asset', 'Asset') },
         header: t('attackSurface.external.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -529,6 +538,7 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'risk',
+        meta: { kind: 'risk', label: t('attackSurface.external.col.risk', 'Risk') },
         header: t('attackSurface.external.col.risk', 'Risk'),
         enableSorting: false,
         cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
@@ -543,6 +553,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'labels',
+        meta: {
+          kind: 'tags',
+          hideBelow: EXTERNAL_HIDE_BELOW.labels,
+          label: t('attackSurface.external.col.labels', 'Labels'),
+        },
         header: t('attackSurface.external.col.labels', 'Labels'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -559,6 +574,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'last_seen',
+        meta: {
+          kind: 'datetime-recent',
+          hideBelow: EXTERNAL_HIDE_BELOW.lastSeen,
+          label: t('attackSurface.external.col.lastSeen', 'Last seen'),
+        },
         header: t('attackSurface.external.col.lastSeen', 'Last seen'),
         enableSorting: false,
         cell: ({ row }) =>
@@ -860,6 +880,7 @@ export default function ExternalSurfacePage() {
               onPaginationChange={setPagination}
               pageSizeOptions={PAGE_SIZES}
               onRowClick={(a) => router.push(`/assets/${a.id}`)}
+              pinActions
               emptyMessage={
                 filtersActive
                   ? t('attackSurface.external.emptyFiltered', 'No internet-facing assets match')

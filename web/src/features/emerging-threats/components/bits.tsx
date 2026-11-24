@@ -47,7 +47,9 @@ export function LevelBadge({ level }: { level: AlertLevel }) {
   const { t } = useTranslation()
   return (
     <SignalChip
-      slot="alert-level"
+      // A chip slot (`-chip`): a phone card gives it the whole line rather
+      // than cut "Xử lý ngay" at the half line.
+      slot="alert-level-chip"
       icon={LEVEL_ICON[level] ?? Eye}
       tone={level === 'immediate' ? 'alert' : 'neutral'}
       data-level={level}
