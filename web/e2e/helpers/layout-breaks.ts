@@ -17,6 +17,7 @@ import {
   matrixWidths,
   MATRIX_KINDS,
   openedPath,
+  DETAIL_OVERLAY_WIDTHS,
   OVERLAY_WIDTHS,
   resolveRoute,
   ROUTE_STATES,
@@ -595,7 +596,9 @@ const OVERLAYS: Record<Overlay, string> = {
     'main [data-phone-card] button[aria-haspopup]:visible, main tbody tr button[aria-haspopup]:visible',
   filters:
     'main [data-slot="filter-panel-toggle"]:visible, main [data-slot="filter-button"]:visible, main [data-slot="add-filter"]:visible',
-  detail: 'main [data-phone-card]:visible',
+  // A phone card, or a desktop table row that opens on click (its quick-view
+  // sheet): both are opened from their padding corner (openOverlay).
+  detail: 'main [data-phone-card]:visible, main tbody tr.cursor-pointer:visible',
   dialog: 'main [data-slot="page-header"] button:not([aria-haspopup]):visible',
 }
 
@@ -1443,6 +1446,16 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
                 overlay,
               })
           }
+          if (DETAIL_OVERLAY_WIDTHS.includes(size.width) && !signedOut)
+            vs.push({
+              tag: `w${size.width}-light-en-sb-open-ov-detail`,
+              ...size,
+              lang: 'en',
+              theme: 'light',
+              scen: 'rich',
+              sidebar: 'open',
+              overlay: 'detail',
+            })
           const dir = routeSlug(route)
           const report: Record<string, (Breaks & MatrixBreaks) | string> = {}
           for (const v of vs) {
