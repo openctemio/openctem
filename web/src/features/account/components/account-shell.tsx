@@ -80,7 +80,7 @@ export function AccountShell({
               ref={navRef}
               aria-label={t('account.area.navLabel', 'Your account')}
               className={cn(
-                'no-scrollbar order-3 -mx-1 flex w-full gap-0.5 overflow-x-auto overscroll-x-contain sm:order-none sm:mx-0 sm:w-auto sm:flex-1',
+                'no-scrollbar order-3 -mx-1 flex w-full gap-0.5 overflow-x-auto overscroll-x-contain lg:order-none lg:mx-0 lg:w-auto lg:flex-1',
                 EDGE_FADE_X_CLASS
               )}
             >
@@ -103,7 +103,7 @@ export function AccountShell({
                 )
               })}
             </nav>
-            <div className="ms-auto flex items-center gap-2 sm:ms-0">
+            <div className="ms-auto flex items-center gap-2 lg:ms-0">
               {organizationName !== undefined && (
                 // The organization shell is another layout: it mounts its own
                 // providers and reads its data afresh.

@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -272,6 +273,15 @@ export default function ScopeLettersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Loading: placeholder rows, never headers over an empty body. */}
+                {!data &&
+                  [0, 1, 2].map((i) => (
+                    <TableRow key={`loading-${i}`} aria-hidden>
+                      <TableCell colSpan={6}>
+                        <Skeleton className="h-5 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 {(data ?? []).map((l) => (
                   <TableRow key={l.id}>
                     <TableCell className="font-medium break-words">

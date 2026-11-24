@@ -57,6 +57,12 @@ interface MfaStepProps {
    * sign-in card hides its own while a step shows), 2 under a page title.
    */
   headingLevel?: 1 | 2
+  /**
+   * The page above already shows the setup title and why it is needed: the
+   * enroll step then shows only how to scan the code and the organizations
+   * that require it, so the title does not appear twice.
+   */
+  pageTitled?: boolean
 }
 
 // The challenge expired, was used up, or the cookie is gone: only a fresh
@@ -100,6 +106,7 @@ export function MfaStep({
   orgs,
   backLabel,
   headingLevel = 2,
+  pageTitled = false,
 }: MfaStepProps) {
   return purpose === 'enroll' ? (
     <EnrollStep
@@ -108,6 +115,7 @@ export function MfaStep({
       orgs={orgs}
       backLabel={backLabel}
       headingLevel={headingLevel}
+      pageTitled={pageTitled}
     />
   ) : (
     <VerifyStep
@@ -257,6 +265,7 @@ function EnrollStep({
   orgs,
   backLabel,
   headingLevel = 2,
+  pageTitled = false,
 }: Omit<MfaStepProps, 'purpose'>) {
   const { t } = useTranslation()
   // Read through a ref so the start-once effect below does not depend on t.
@@ -373,21 +382,33 @@ function EnrollStep({
       className="flex flex-col gap-3.5"
       aria-label={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
     >
-      <EntryHeader
-        level={headingLevel}
-        title={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
-        description={
-          <>
-            <p>
-              {t(
-                'auth.mfa.enrollBody',
-                'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
-              )}
-            </p>
-            <RequiredBy orgs={orgs} />
-          </>
-        }
-      />
+      {pageTitled ? (
+        <div className="text-body text-muted-foreground space-y-1">
+          <p>
+            {t(
+              'auth.mfa.enrollScan',
+              'Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
+            )}
+          </p>
+          <RequiredBy orgs={orgs} />
+        </div>
+      ) : (
+        <EntryHeader
+          level={headingLevel}
+          title={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
+          description={
+            <>
+              <p>
+                {t(
+                  'auth.mfa.enrollBody',
+                  'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
+                )}
+              </p>
+              <RequiredBy orgs={orgs} />
+            </>
+          }
+        />
+      )}
 
       {setup ? (
         <div className="flex flex-col items-center gap-3">
