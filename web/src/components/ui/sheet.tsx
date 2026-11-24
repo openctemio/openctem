@@ -137,7 +137,10 @@ function SheetContent({
           side === 'top' &&
             'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto max-h-[100dvh] border-b',
           side === 'bottom' &&
-            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-[var(--modal-kb,0px)] h-auto max-h-[calc(100dvh-var(--modal-kb,0px))] border-t',
+            // As tall as what it holds, up to the screen less the top inset
+            // and a 40px strip of page (keyboard up: the visible part less
+            // 8px, so its top stays on screen); the body scrolls beyond.
+            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-[var(--modal-kb,0px)] h-auto max-h-[min(calc(100dvh_-_var(--modal-kb,0px)_-_env(safe-area-inset-top)_-_2.5rem),calc(var(--modal-vvh,100dvh)_-_0.5rem))] rounded-t-xl border-t',
           className
         )}
         onInteractOutside={ignoreToasterInteractions(onInteractOutside)}
