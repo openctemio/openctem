@@ -1,4 +1,5 @@
 import { test, type Page } from '@playwright/test'
+import { submitSignIn } from './auth'
 
 /**
  * MVP acceptance v2 (agent-ops/ui-v2/MVP-ACCEPTANCE.md): the viewport matrix
@@ -168,8 +169,69 @@ async function openVerificationLink(page: Page) {
  * The key is a LAYOUT_ROUTES entry (`/reset-password@form`); `path` is the
  * page opened and `act` what a person does on it before the checks. The acts
  * only fill a form with values the server refuses: nothing is bypassed.
+ * `as` names another seeded account (web/e2e/ci/seed.sh) the page is opened
+ * by, in a context of its own: the page then shows that account's state
+ * (an organization picker, an invitation to accept). A path or account that
+ * needs a seed value the stack did not print is left out: the route skips.
  */
-export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => Promise<void> }> = {
+type RouteState = {
+  path: string
+  act?: (page: Page) => Promise<void>
+  as?: () => { email: string; password: string } | null
+}
+
+const account = (prefix: string) => () => {
+  const email = process.env[`${prefix}_EMAIL`]
+  const password = process.env[`${prefix}_PASSWORD`]
+  return email && password ? { email, password } : null
+}
+
+/**
+ * Signs `page` in as another account through the form and stays wherever the
+ * sign-in lands (an account of two organizations stops at the picker).
+ */
+export async function signInAs(page: Page, who: { email: string; password: string }) {
+  // A loaded build box can take the sign-in past submitSignIn's 30 s: the
+  // form is filled and sent once more before the test gives up.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto('/login', { timeout: 60_000 })
+    await page.waitForLoadState('networkidle').catch(() => {})
+    if (!new URL(page.url()).pathname.startsWith('/login')) return
+    await page.locator('main input[name="email"]').fill(who.email)
+    await page.locator('main input[name="password"]').fill(who.password)
+    try {
+      await submitSignIn(page, (url) => !url.pathname.startsWith('/login'))
+      return
+    } catch (e) {
+      if (attempt >= 2) throw e
+    }
+  }
+}
+
+export const ROUTE_STATES: Record<string, RouteState> = {
+  // An account of two organizations after its password: the organization
+  // picker, and "new organization" from it (both need the picker's cookie
+  // and no organization chosen yet).
+  '/select-tenant': { path: '/select-tenant', as: account('E2E_SWITCH') },
+  '/onboarding/create-team': { path: '/onboarding/create-team', as: account('E2E_SWITCH') },
+  // An invitation link, opened by the invited account (it has an
+  // organization of its own): the invitation to accept. The old path form
+  // /invitations/<token> only redirects to this fragment form.
+  '/invitations/[token]': {
+    get path() {
+      const token = process.env.E2E_INVITEE_TOKEN
+      return token ? `/invitations#token=${encodeURIComponent(token)}` : '/invitations/[token]'
+    },
+    as: account('E2E_INVITEE'),
+  },
+  // A pending write an AI application asked for: Approve and Deny. Opened
+  // when the stack's seed made one for the owner and printed its id.
+  '/mcp/confirm/[id]': {
+    get path() {
+      const id = process.env.E2E_MCP_CONFIRM_ID
+      return id ? `/mcp/confirm/${encodeURIComponent(id)}` : '/mcp/confirm/[id]'
+    },
+  },
   // Wrong credentials of an account that does not exist: the error banner.
   '/login@error': {
     path: '/login',
@@ -255,20 +317,48 @@ export function matrixWidths(mode: string | undefined): { width: number; height:
   return only?.length ? MATRIX_V2.filter((w) => only.includes(w.width)) : MATRIX_V2
 }
 
-/** List endpoints that give the first id of a detail route (`/findings/[id]`). */
-const DETAIL_LISTS: { prefix: string; list: string; key?: string }[] = [
+/**
+ * List endpoints that give the first id of a detail route (`/findings/[id]`).
+ * `own` takes the first row that is not a built-in one (`is_system` or
+ * `is_system_template` true): a built-in scan workflow or pentest template
+ * opens read-only, the organization's own copy is the page people edit.
+ * The platform console's (web/console) lists are under /api/v1/admin.
+ */
+const DETAIL_LISTS: { prefix: string; list: string; key?: string; own?: boolean }[] = [
   { prefix: '/assets/groups/', list: '/api/v1/asset-groups?per_page=1' },
   { prefix: '/assets/', list: '/api/v1/assets?per_page=1' },
+  { prefix: '/components/', list: '/api/v1/components?per_page=1' },
+  { prefix: '/cycles/', list: '/api/v1/ctem-cycles?per_page=1' },
+  { prefix: '/emerging-threats/', list: '/api/v1/emerging-threats?per_page=1' },
   { prefix: '/findings/', list: '/api/v1/findings?per_page=1' },
+  { prefix: '/programs/', list: '/api/v1/programs?per_page=1' },
+  { prefix: '/scans/workflows/', list: '/api/v1/scan-workflows?per_page=100', own: true },
   { prefix: '/scans/', list: '/api/v1/scans?per_page=1' },
   { prefix: '/remediation/campaigns/', list: '/api/v1/remediation/campaigns?per_page=1' },
   { prefix: '/remediation/tasks/', list: '/api/v1/remediation/tasks?per_page=1' },
   { prefix: '/pentest/campaigns/', list: '/api/v1/pentest/campaigns?per_page=1' },
+  { prefix: '/pentest/findings/', list: '/api/v1/pentest/findings?per_page=1' },
+  {
+    prefix: '/settings/integrations/import-mappings/',
+    list: '/api/v1/import-mappings?per_page=1',
+  },
+  {
+    prefix: '/settings/integrations/ticketing/mappings/',
+    list: '/api/v1/integrations/ticket-mappings?per_page=1',
+  },
+  {
+    prefix: '/settings/pentest/templates/',
+    list: '/api/v1/pentest/templates?per_page=100',
+    own: true,
+  },
   {
     prefix: '/vulnerabilities/',
     list: '/api/v1/vulnerability-exposures?per_page=1',
     key: 'cve_id',
   },
+  // Platform console.
+  { prefix: '/users/', list: '/api/v1/admin/platform-users?per_page=1' },
+  { prefix: '/organizations/', list: '/api/v1/admin/tenants?per_page=1' },
 ]
 
 const PLACEHOLDER = /\[[a-z]+\]|\{[a-z]+\}/i
@@ -282,14 +372,16 @@ export async function resolveRoute(page: Page, route: string): Promise<string | 
   if (!src) return null
   await page.goto('/', { timeout: 60_000 }).catch(() => {})
   const id = await page.evaluate(
-    async ({ url, field }) => {
+    async ({ url, field, own }) => {
       const res = await fetch(url, { credentials: 'same-origin' })
       if (!res.ok) return null
       const body = await res.json()
       const rows = body.data ?? body.items ?? body
-      return Array.isArray(rows) && rows[0]?.[field] ? String(rows[0][field]) : null
+      if (!Array.isArray(rows)) return null
+      const row = own ? rows.find((r) => r && !r.is_system && !r.is_system_template) : rows[0]
+      return row?.[field] ? String(row[field]) : null
     },
-    { url: src.list, field: src.key ?? 'id' }
+    { url: src.list, field: src.key ?? 'id', own: !!src.own }
   )
   return id ? route.replace(PLACEHOLDER, encodeURIComponent(id)) : null
 }
