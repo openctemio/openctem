@@ -133,6 +133,26 @@ export function useTabStripScroll(
       for (const tab of Array.from(el.children)) ro.observe(tab)
     }
     observeTabs()
+    // Shown after mounting hidden (a `SettleGroup` releasing its children, a
+    // panel opening): the resize observer reports the new width only at the
+    // next frame, and a reader that measures in between (a layout check, an
+    // assistive tool) saw the hidden state, "no hidden tabs", on a strip that
+    // overflowed with no fade over the cut tab. An ancestor that changes its
+    // `hidden`, class or style is what shows the strip, so the strip measures
+    // again at once (a microtask, before any other task runs).
+    const shown =
+      typeof MutationObserver === 'function'
+        ? new MutationObserver(() => {
+            if (el.clientWidth !== width) {
+              width = el.clientWidth
+              revealActive()
+            }
+            update()
+          })
+        : undefined
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      shown?.observe(a, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] })
+    }
     const mo =
       typeof MutationObserver === 'function'
         ? new MutationObserver((records) => {
@@ -150,6 +170,7 @@ export function useTabStripScroll(
       delete el.dataset.tabStrip
       el.removeEventListener('scroll', update)
       ro?.disconnect()
+      shown?.disconnect()
       mo?.disconnect()
     }
   }, [ref, attachKey])

@@ -130,8 +130,14 @@ export function FilterSelect<V extends string>({
           aria-label={`${label}: ${current?.label ?? all}`}
         >
           <span className={cn('text-muted-foreground', foldLabel && FOLD_HIDDEN)}>{label}:</span>
+          {/* The other values reserve up to 7rem, so the token keeps one
+              width for short values; the value shown is whole up to 15rem
+              ("Awaiting approval") and ends in an ellipsis only when the row
+              itself is too narrow. The full value stays in its title and the
+              trigger's accessible name. */}
           <ToolbarSlot
-            className="max-w-28 font-medium"
+            className="max-w-60 font-medium"
+            reserveClassName="max-w-28"
             options={[
               ...(sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]),
               // The key is one of the texts the slot shows: it sizes the slot
