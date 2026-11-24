@@ -71,7 +71,7 @@ describe('FilterSelect width', () => {
 })
 
 describe('FilterSelect long value', () => {
-  it('reserves every value whole up to 15rem, so choosing a long one moves nothing', () => {
+  it('caps what the other values reserve, and lets the value shown size the token whole', () => {
     render(
       <FilterSelect
         label="Status"
@@ -85,13 +85,36 @@ describe('FilterSelect long value', () => {
     )
     const trigger = screen.getByRole('button', { name: 'Status: Awaiting approval' })
     const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
-    // The slot may grow to 15rem, and the hidden copies of every value set
-    // its width: no cap of their own, so the token has one width.
+    // The slot may grow to 15rem; the hidden options reserve at most 7rem.
     expect(slot).toHaveClass('max-w-60')
-    for (const h of slot.querySelectorAll('[aria-hidden="true"]'))
-      expect(h.className).not.toMatch(/max-w-/)
+    for (const h of slot.querySelectorAll('[aria-hidden="true"]')) expect(h).toHaveClass('max-w-28')
+    const value = slot.lastElementChild as HTMLElement
+    expect(value).not.toHaveClass('w-0')
+    expect(value).toHaveClass('truncate')
+    expect(value).toHaveAttribute('title', 'Awaiting approval')
+  })
+
+  it('holdWidth keeps one width: the value never sizes the token and is cut instead', () => {
+    render(
+      <FilterSelect
+        label="State"
+        value=""
+        allLabel="Set by the view"
+        clearable={false}
+        holdWidth
+        options={[
+          { value: 'open', label: 'Open' },
+          { value: 'closed', label: 'Closed' },
+        ]}
+        onChange={() => {}}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'State: Set by the view' })
+    const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
+    expect(slot).toHaveClass('max-w-28')
+    expect(slot).not.toHaveClass('max-w-60')
     const value = slot.lastElementChild as HTMLElement
     expect(value).toHaveClass('w-0', 'min-w-full', 'truncate')
-    expect(value).toHaveAttribute('title', 'Awaiting approval')
+    expect(value).toHaveAttribute('title', 'Set by the view')
   })
 })

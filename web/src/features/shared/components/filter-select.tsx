@@ -68,6 +68,13 @@ export interface FilterSelectProps<V extends string> {
    * width. Pass the whole set when `options` lists only some of it.
    */
   sizeLabels?: readonly string[]
+  /**
+   * The token keeps one width whatever it shows (a fixed scope chip): the
+   * value never sizes it, and a longer one (a saved view's "Set by the
+   * view") ends in an ellipsis, whole in its title. Without it a long value
+   * is shown whole and may widen the token.
+   */
+  holdWidth?: boolean
   /** The menu opened or closed: lets a page read what only the menu shows when it opens. */
   onOpenChange?: (open: boolean) => void
   className?: string
@@ -96,6 +103,7 @@ export function FilterSelect<V extends string>({
   clearable = true,
   foldLabel = false,
   sizeLabels,
+  holdWidth = false,
   onOpenChange,
   className,
 }: FilterSelectProps<V>) {
@@ -130,13 +138,15 @@ export function FilterSelect<V extends string>({
           aria-label={`${label}: ${current?.label ?? all}`}
         >
           <span className={cn('text-muted-foreground', foldLabel && FOLD_HIDDEN)}>{label}:</span>
-          {/* Every value reserves its width up to 15rem, so the token keeps
-              one width whatever is chosen (opening a saved view moves
-              nothing) and a long value ("Awaiting approval") is whole; it
-              ends in an ellipsis only when the row itself is too narrow. The
-              full value stays in its title and the trigger's accessible name. */}
+          {/* The other values reserve up to 7rem, so the token keeps one
+              width for short values; the value shown is whole up to 15rem
+              ("Awaiting approval") and ends in an ellipsis only when the row
+              itself is too narrow. The full value stays in its title and the
+              trigger's accessible name. With `holdWidth` the value never
+              sizes the token: it is cut to the values' 7rem instead. */}
           <ToolbarSlot
-            className="max-w-60 font-medium"
+            className={cn(holdWidth ? 'max-w-28' : 'max-w-60', 'font-medium')}
+            reserveClassName={holdWidth ? undefined : 'max-w-28'}
             options={[
               ...(sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]),
               // The key is one of the texts the slot shows: it sizes the slot
