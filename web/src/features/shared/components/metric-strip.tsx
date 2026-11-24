@@ -14,9 +14,13 @@ import { formatNumber } from '@/lib/app-locale'
  * only when it opens its list (`href`) or filters the list below (`onClick`);
  * at most `METRIC_STRIP_MAX` tiles; red or amber only for a real problem
  * state and only while the count is positive; a zero is a muted 0, never
- * hidden.
+ * hidden (a strip over a list whose tiles all count zero, or whose list is
+ * empty, is not drawn at all: the empty state says it).
  */
 export const METRIC_STRIP_MAX = 5
+
+/** Characters past which a tile label is long (wraps in a third of a phone). */
+const LONG_LABEL = 22
 
 export interface MetricStripItem {
   key: string
@@ -131,6 +135,7 @@ export function MetricStrip({
   error,
   embedded = false,
   listFirst = false,
+  listEmpty = false,
   className,
 }: {
   items: MetricStripItem[]
@@ -152,6 +157,12 @@ export function MetricStrip({
    * (a `PageStack`, or a fragment inside one).
    */
   listFirst?: boolean
+  /**
+   * The list the strip sums up is empty and nothing filters it: the strip is
+   * not drawn. The list's empty state says it, and numbers counted elsewhere
+   * must not contradict "nothing here yet" right above it.
+   */
+  listEmpty?: boolean
   className?: string
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
@@ -159,9 +170,18 @@ export function MetricStrip({
       `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX}. Use quick views or filters for the rest.`
     )
   }
+  // A strip over a list says nothing while the list is empty, or while every
+  // tile counts zero: a row of zeros above an empty state is not drawn.
+  const allZero =
+    items.length > 0 && items.every((item) => typeof item.value === 'number' && item.value === 0)
+  if (!loading && !error && (listEmpty || (listFirst && allZero))) return null
   const detailed = items.some(
     (item) => (item.detail != null && item.detail !== false) || item.delta != null
   )
+  // A long label (a Vietnamese one, often) wraps to two lines: such a strip
+  // never uses thirds on a phone, and every label keeps two lines so the
+  // values of a row stay on one baseline.
+  const longLabels = items.some((item) => item.label.length > LONG_LABEL)
   // One row only when the strip itself is wide enough (a container query, not
   // the window): at 1024 px with the sidebar open a dashboard widget is about
   // 690 px wide, and five tiles in one row cut "Time to fix, median" to
@@ -187,7 +207,7 @@ export function MetricStrip({
         }
       >
         {items.map((item, index) => {
-          const span = phoneSpan(items.length, index, detailed)
+          const span = phoneSpan(items.length, index, detailed || longLabels)
           const numeric = typeof item.value === 'number'
           const zero = numeric && item.value === 0
           const positive = numeric && (item.value as number) > 0
@@ -198,10 +218,16 @@ export function MetricStrip({
               <span
                 data-slot="metric-label"
                 className={cn(
-                  'line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate',
-                  // In a third, a label may wrap: every third keeps two lines
-                  // so the values of a row stay on one baseline.
-                  span === 2 && 'min-h-8 sm:min-h-0'
+                  'line-clamp-2 block text-xs text-muted-foreground',
+                  longLabels
+                    ? // Never cut on one line ("Tài sản trọng yếu có phát hiện đ…").
+                      'min-h-8'
+                    : cn(
+                        'sm:line-clamp-none sm:truncate',
+                        // In a third, a label may wrap: every third keeps two
+                        // lines so the values of a row stay on one baseline.
+                        span === 2 && 'min-h-8 sm:min-h-0'
+                      )
                 )}
               >
                 {item.label}

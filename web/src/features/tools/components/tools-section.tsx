@@ -413,7 +413,7 @@ export function ToolsSection() {
         </Can>
       </PageHeader>
 
-      <MetricStrip loading={isLoading} items={metrics} />
+      <MetricStrip loading={isLoading} items={metrics} listFirst />
 
       {body}
 

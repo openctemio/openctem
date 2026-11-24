@@ -172,7 +172,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
 
   return (
     <>
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+      <MetricStrip className="mt-5" loading={isLoading} items={metrics} listFirst />
 
       {warnings.length > 0 && (
         <Alert className="mt-5" data-testid="zone-coverage-warnings">

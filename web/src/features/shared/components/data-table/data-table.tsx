@@ -260,8 +260,9 @@ interface DataTableProps<TData, TValue> {
   toolbarStart?: React.ReactNode
   /**
    * The list's name and count (`ListToolbarTitle`) at the start of the
-   * toolbar row, for a list with no search box: its filters and the Display
-   * menu share the name's line instead of a row of their own under it.
+   * toolbar row, before the search box (see `ListToolbar` `title`), or for a
+   * list with no search box beside its filters and the Display
+   * menu: never a row of its own above the toolbar.
    */
   toolbarTitle?: React.ReactNode
   /** Rendered at the end of the toolbar, before the column toggle. */
@@ -623,16 +624,17 @@ function columnHasName<TData>(
  * to the card's width, so the name is never squeezed out of sight.
  */
 const CARD_TITLE_CLASS =
-  'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full'
+  'max-h-10 overflow-hidden text-sm leading-5 font-medium [overflow-wrap:anywhere] [&_*]:whitespace-normal [&_.flex]:flex-nowrap [&_a]:line-clamp-2 [&>*]:w-auto [&>*]:max-w-full [&_span.truncate]:whitespace-nowrap'
 
 /**
  * A control in the card's title line (a chip that opens a popover beside the
  * status) gets the row menu's 36 px box with its chip centred in it: every
  * control of the line has one height and one centre, and the chip keeps its
- * own size.
+ * own size. A switch keeps its own box: stretched to 36 px tall it drew as a
+ * solid dot.
  */
 const CARD_HEAD_CONTROL_CLASS =
-  '[&_button]:inline-flex [&_button]:h-9 [&_button]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
+  '[&_button:not([role=switch])]:inline-flex [&_button:not([role=switch])]:h-9 [&_button:not([role=switch])]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
 
@@ -960,7 +962,9 @@ function AutoMobileCard<TData>({
               }
               className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
             >
-              <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
+              {/* The label is never cut against its own value ("As…" beside
+                  "12"): the value gives way first, at the card's edge. */}
+              <dt className="max-w-full shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
               <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
@@ -1770,7 +1774,16 @@ export function DataTable<TData, TValue>({
   )
 
   // A stale read says so in the footer, with a refresh.
-  const pagerShown = showPagination && !errorState && paginationTotal > 0
+  // Every row is on screen and there is no page size to go back to (the total
+  // fits the smallest one, or the list has one fixed size): no pager, no
+  // "Showing 1 to 4 of 4", no "Page 1 of 1". The list's count is in its title.
+  const onePage =
+    !countUnavailable &&
+    !rowCountCapped &&
+    pageIndex === 0 &&
+    !table.getCanNextPage() &&
+    (paginationTotal <= TABLE_PAGE_SIZES[0] || pageSizeOptions?.length === 1)
+  const pagerShown = showPagination && !errorState && paginationTotal > 0 && !onePage
   // "N of M selected", for a table without a bulk bar. Under the rows (in the
   // pager's line, or a line of its own without a pager), never in the toolbar:
   // selecting a row moves no control above the list.
@@ -1796,6 +1809,87 @@ export function DataTable<TData, TValue>({
       ? t('common.table.lastPageCapped', 'More match than were counted. Narrow the list.')
       : undefined
 
+  // The Display menu (row density and, when the table allows it, which
+  // columns show). Not offered over an empty list (nothing to display), and
+  // never a control alone on a row: a table whose toolbar holds nothing else
+  // draws no toolbar and offers Display at the start of its pager instead
+  // (nowhere when the list fits one page).
+  const searchShown = !!serverSearch || showSearch
+  const displayAlone =
+    !toolbarTitle &&
+    !filterToggle &&
+    !filter &&
+    !searchShown &&
+    !toolbarStart &&
+    !toolbarEnd &&
+    !toolbarBelow &&
+    !phoneSelect
+  const displayShown = !(!isLoading && paginationTotal === 0 && !filterActive)
+  const displayMenu = (
+    <>
+      {/* Display menu: row density (every table, D14) and, when the
+    table allows it, which columns show. Named "Display" so it is
+    never confused with saved "Views". */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            iconOnlyBelow="@5xl/toolbar"
+            variant="outline"
+            size="sm"
+            className={cn(phoneCards && 'hidden')}
+            aria-label={t('common.table.displayMenu', 'Display: density and columns')}
+          >
+            <SlidersHorizontal className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
+            <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+              {t('common.table.display', 'Display')}
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            {t('common.table.density', 'Density')}
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={density}
+            onValueChange={(v) => setDensity(v as TableDensity)}
+          >
+            {TABLE_DENSITIES.map((d) => (
+              <DropdownMenuRadioItem key={d} value={d}>
+                {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          {showColumnToggle && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                {t('common.table.columns', 'Columns')}
+              </DropdownMenuLabel>
+            </>
+          )}
+          {showColumnToggle &&
+            table
+              .getAllColumns()
+              .filter(
+                (column) =>
+                  column.getCanHide() && columnHasName(column as Column<TData, unknown>, table)
+              )
+              .map((column) => {
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    checked={column.getIsVisible()}
+                    onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                  >
+                    {columnLabels.get(column.id) ?? column.id}
+                  </DropdownMenuCheckboxItem>
+                )
+              })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  )
+
   return (
     // A flex gap, not space-y: space-y puts its margin under every child but
     // the last, and the last child here is often one that takes no room (the
@@ -1804,7 +1898,7 @@ export function DataTable<TData, TValue>({
     <div className="flex flex-col gap-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
           there). */}
-      {showToolbar && (
+      {showToolbar && !displayAlone && (
         <ListToolbar
           title={toolbarTitle}
           filterToggle={filterToggle}
@@ -1857,67 +1951,7 @@ export function DataTable<TData, TValue>({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {/* Display menu: row density (every table, D14) and, when the
-              table allows it, which columns show. Named "Display" so it is
-              never confused with saved "Views". */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    iconOnlyBelow="@5xl/toolbar"
-                    variant="outline"
-                    size="sm"
-                    className={cn(phoneCards && 'hidden')}
-                    aria-label={t('common.table.displayMenu', 'Display: density and columns')}
-                  >
-                    <SlidersHorizontal className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
-                    <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
-                      {t('common.table.display', 'Display')}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    {t('common.table.density', 'Density')}
-                  </DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={density}
-                    onValueChange={(v) => setDensity(v as TableDensity)}
-                  >
-                    {TABLE_DENSITIES.map((d) => (
-                      <DropdownMenuRadioItem key={d} value={d}>
-                        {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  {showColumnToggle && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-xs text-muted-foreground">
-                        {t('common.table.columns', 'Columns')}
-                      </DropdownMenuLabel>
-                    </>
-                  )}
-                  {showColumnToggle &&
-                    table
-                      .getAllColumns()
-                      .filter(
-                        (column) =>
-                          column.getCanHide() &&
-                          columnHasName(column as Column<TData, unknown>, table)
-                      )
-                      .map((column) => {
-                        return (
-                          <DropdownMenuCheckboxItem
-                            key={column.id}
-                            checked={column.getIsVisible()}
-                            onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                          >
-                            {columnLabels.get(column.id) ?? column.id}
-                          </DropdownMenuCheckboxItem>
-                        )
-                      })}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {displayShown && !displayAlone && displayMenu}
             </>
           }
         />
@@ -2454,6 +2488,8 @@ export function DataTable<TData, TValue>({
 
           {/* Pagination controls - centered on mobile */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-4">
+            {/* A table with no toolbar offers Display here (see displayAlone). */}
+            {displayAlone && displayShown && displayMenu}
             {/* Rows per page: one set for every list (25, 50, 100), plus the
                 size in use when a link asked for another. A list with one
                 fixed size (pageSizeOptions of one) has no choice to offer. */}

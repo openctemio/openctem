@@ -272,3 +272,44 @@ describe('MetricStrip delta and spark', () => {
     expect(screen.queryByRole('img')).toBeNull()
   })
 })
+
+describe('MetricStrip over a list', () => {
+  const zeros = [
+    { key: 'a', label: 'Crown jewels', value: 0 },
+    { key: 'b', label: 'Internet-exposed', value: 0 },
+  ]
+  it('is not drawn when every tile counts zero (the empty state says it)', () => {
+    const { container } = render(<MetricStrip items={zeros} listFirst />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).toBeNull()
+  })
+  it('keeps zeros away from a list (a dashboard strip of zeros stays)', () => {
+    const { container } = render(<MetricStrip items={zeros} />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
+  it('keeps its place while loading', () => {
+    const { container } = render(<MetricStrip items={zeros} listFirst loading />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
+  it('is not drawn over an empty list, whatever it counts elsewhere', () => {
+    const { container } = render(
+      <MetricStrip items={[{ key: 'f', label: 'Frameworks', value: 8 }]} listFirst listEmpty />
+    )
+    expect(container.querySelector('[data-slot="metric-strip"]')).toBeNull()
+  })
+  it('a long label wraps on two lines and never puts the strip in phone thirds', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Hành động quản trị bị từ chối (24 giờ)', value: 1 },
+          { key: 'b', label: 'B', value: 2 },
+          { key: 'c', label: 'C', value: 3 },
+        ]}
+      />
+    )
+    const tiles = container.querySelectorAll('[data-slot="metric-tile"]')
+    expect(tiles[0].className).toContain('col-span-6')
+    const label = container.querySelector('[data-slot="metric-label"]') as HTMLElement
+    expect(label.className).not.toContain('sm:truncate')
+    expect(label.className).toContain('min-h-8')
+  })
+})

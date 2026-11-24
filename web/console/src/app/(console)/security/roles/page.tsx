@@ -3,7 +3,7 @@
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { KeyRound, ShieldAlert, UserRound, X } from 'lucide-react'
+import { KeyRound, ShieldAlert, ShieldPlus, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -146,6 +146,8 @@ export default function AdminRolesPage() {
           actions={[
             {
               label: t('admin.roles.giveRole', 'Give a role'),
+              // One action with an icon: the row shows it as the button itself.
+              icon: ShieldPlus,
               onClick: () => {
                 setNewRole('')
                 setChange({ kind: 'assign', target: a })

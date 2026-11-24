@@ -187,10 +187,7 @@ export function EASMPosture() {
             )}
             {can(Permission.SettingsWrite) && (
               <Select value={st.refresh_every} onValueChange={changeSchedule}>
-                <SelectTrigger
-                  className="w-44"
-                  aria-label={t('attackSurface.posture.schedule', 'Refresh schedule')}
-                >
+                <SelectTrigger aria-label={t('attackSurface.posture.schedule', 'Refresh schedule')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -96,28 +96,30 @@ export function OverridesSection({ policies }: { policies: ScanWindowPolicy[] })
       className="space-y-3"
       data-testid="overrides-section"
     >
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 id="overrides-heading" className="text-base font-semibold">
-            {t('scanWindows.override.heading', 'Overrides')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'scanWindows.override.headingHint',
-              'Lift policy windows for a short time in an emergency. Bug-bounty program windows are never lifted.'
-            )}
-          </p>
+      {/* The action shares the heading's line; the hint takes the whole width
+          under them (never a button alone on a row). */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
+        <h2 id="overrides-heading" className="text-base font-semibold">
+          {t('scanWindows.override.heading', 'Overrides')}
+        </h2>
+        <p className="col-span-2 row-start-2 text-sm text-muted-foreground">
+          {t(
+            'scanWindows.override.headingHint',
+            'Lift policy windows for a short time in an emergency. Bug-bounty program windows are never lifted.'
+          )}
+        </p>
+        <div className="col-start-2 row-start-1">
+          <GatedButton
+            allowed={canOverride}
+            reason={noPermission}
+            size="sm"
+            variant="outline"
+            onClick={() => setOpen(true)}
+          >
+            <ShieldAlert className="size-4" aria-hidden />
+            {t('scanWindows.override.action', 'Override windows')}
+          </GatedButton>
         </div>
-        <GatedButton
-          allowed={canOverride}
-          reason={noPermission}
-          size="sm"
-          variant="outline"
-          onClick={() => setOpen(true)}
-        >
-          <ShieldAlert className="size-4" aria-hidden />
-          {t('scanWindows.override.action', 'Override windows')}
-        </GatedButton>
       </div>
       {error ? (
         <ErrorState
