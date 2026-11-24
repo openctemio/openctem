@@ -7,6 +7,7 @@
   "emergingThreats.actions.cancel": "Cancel",
   "emergingThreats.actions.close": "Close",
   "emergingThreats.actions.menu": "Actions for {vulnId}",
+  "emergingThreats.actions.more": "More actions",
   "emergingThreats.actions.notAffected": "Mark not affected",
   "emergingThreats.actions.openPage": "Open full page",
   "emergingThreats.actions.outOfScopeHint": "This alert has assets outside your scope, so you cannot mark it not affected. Ask someone with wider access.",
