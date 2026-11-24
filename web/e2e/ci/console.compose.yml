@@ -1,0 +1,14 @@
+# Override of compose.yml for the platform console (layout-matrix.sh with
+# CONSOLE=1): the API's console listener, published on 127.0.0.1 only. The
+# API's default console allow-list already admits the Docker bridge range the
+# host's requests arrive from.
+#
+#   docker compose -f web/e2e/ci/compose.yml -f web/e2e/ci/console.compose.yml up -d --wait api
+services:
+  api:
+    ports: ['127.0.0.1:${E2E_ADMIN_PORT:-8081}:8081']
+    environment:
+      ADMIN_LISTEN_ADDR: 0.0.0.0:8081
+      ADMIN_LISTEN_ALLOW_ALL_INTERFACES: 'true'
+      ADMIN_PUBLIC_URL: http://localhost:${E2E_CONSOLE_PORT:-3001}
+      CORS_ALLOWED_ORIGINS: http://localhost:${E2E_WEB_PORT:-3000},http://localhost:${E2E_CONSOLE_PORT:-3001}
