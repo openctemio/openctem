@@ -191,11 +191,21 @@ const account = (prefix: string) => () => {
  * sign-in lands (an account of two organizations stops at the picker).
  */
 export async function signInAs(page: Page, who: { email: string; password: string }) {
-  await page.goto('/login', { timeout: 60_000 })
-  await page.waitForLoadState('networkidle').catch(() => {})
-  await page.locator('main input[name="email"]').fill(who.email)
-  await page.locator('main input[name="password"]').fill(who.password)
-  await submitSignIn(page, (url) => !url.pathname.startsWith('/login'))
+  // A loaded build box can take the sign-in past submitSignIn's 30 s: the
+  // form is filled and sent once more before the test gives up.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto('/login', { timeout: 60_000 })
+    await page.waitForLoadState('networkidle').catch(() => {})
+    if (!new URL(page.url()).pathname.startsWith('/login')) return
+    await page.locator('main input[name="email"]').fill(who.email)
+    await page.locator('main input[name="password"]').fill(who.password)
+    try {
+      await submitSignIn(page, (url) => !url.pathname.startsWith('/login'))
+      return
+    } catch (e) {
+      if (attempt >= 2) throw e
+    }
+  }
 }
 
 export const ROUTE_STATES: Record<string, RouteState> = {
