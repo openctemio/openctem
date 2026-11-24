@@ -20,9 +20,7 @@ import { checkScrollEnd } from './scroll-end'
  * removed, and a new page is never added.
  */
 const SAVE_EXCEPTIONS = new Set<string>([
-  '/account',
   '/settings/me/notifications',
-  '/account/preferences',
   '/settings/ai',
   '/settings/asset-sources',
   '/settings/finding-lifecycle',
@@ -315,7 +313,11 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
       restingSave: Array.from(main.querySelectorAll('button'))
         .filter((b) => shown(b) && !overlay(b) && !b.closest('[data-slot=settings-save-bar]'))
         .map((b) => (b.textContent ?? '').trim())
-        .filter((label) => /^(Save( changes| policy| settings)?|Lưu( thay đổi)?)$/i.test(label)),
+        .filter((label) =>
+          /^(Save( changes| policy| settings| preferences)?|Lưu( thay đổi| tùy chọn)?)$/i.test(
+            label
+          )
+        ),
       handDenied: /Insufficient permissions|Access Denied/.test(main.textContent ?? ''),
     }
   }, allTables)
