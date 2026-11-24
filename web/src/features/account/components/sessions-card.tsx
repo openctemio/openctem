@@ -98,7 +98,8 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
       actions={
         others.length > 0 && (
           <Button variant="outline" onClick={() => setConfirmAll(true)}>
-            <LogOut aria-hidden />
+            {/* No icon below 640px: the label then fits beside the title. */}
+            <LogOut aria-hidden className="max-sm:hidden" />
             {t('account.sessions.signOutOthers', 'Sign out others')}
           </Button>
         )
