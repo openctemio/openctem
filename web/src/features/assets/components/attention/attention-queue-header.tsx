@@ -100,7 +100,9 @@ export function AttentionQueueHeader({
     // count, the why line (cut with an ellipsis, whole in its tooltip and at
     // the top of the reason menu), then the inventory link and the More.
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-2"
+      // One line on a phone: the reason name ends in an ellipsis (whole in
+      // the menu) rather than push the count and More onto a line of their own.
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 max-md:flex-nowrap"
       data-testid="attention-queue-header"
     >
       <div className="flex min-w-0 items-center gap-1">
