@@ -16,7 +16,7 @@ import {
   PageHeader,
   PageStack,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
@@ -31,7 +31,10 @@ import {
   AuditKindLens,
   auditKind,
 } from '@console/features/admin-console/components/audit-kind-lens'
-import { AdminAuditChainStatus } from '@console/features/admin-console/components/admin-audit-chain-status'
+import {
+  AdminAuditChainBadge,
+  AdminAuditChainStatus,
+} from '@console/features/admin-console/components/admin-audit-chain-status'
 import { AdminAuditDetailSheet } from '@console/features/admin-console/components/admin-audit-detail-sheet'
 import { dayBound } from '@console/features/admin-console/lib/audit-range'
 import type { AdminAuditEntry } from '@console/features/admin-console/types'
@@ -236,36 +239,52 @@ export default function AdminActivityPage() {
             'admin.activity.description',
             'Every action taken by platform administrators, including sign-ins and refused attempts.'
           )}
-        />
+        >
+          {/* Whether the log verifies: one line in the header, never a row of
+              its own above the list. A broken chain is said in full below. */}
+          <AdminAuditChainBadge />
+        </PageHeader>
         <AdminAuditChainStatus />
-        <ListTitleRow
-          title={
-            kind === 'all'
-              ? t('admin.activity.kindAll', 'All events')
-              : t('admin.activity.kindChanges', 'Changes')
-          }
-          count={
-            <ListCount
-              total={total}
-              loading={!data && !error}
-              label={t('admin.activity.total', '{count, plural, one {# event} other {# events}}', {
-                count: total,
-              })}
+        <AdminActivityTable
+          // The view name and count lead the toolbar row; the filters (on a
+          // phone, the Filters button), Export and Display share its line.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={
+                kind === 'all'
+                  ? t('admin.activity.kindAll', 'All events')
+                  : t('admin.activity.kindChanges', 'Changes')
+              }
+              count={
+                <ListCount
+                  total={total}
+                  loading={!data && !error}
+                  label={t(
+                    'admin.activity.total',
+                    '{count, plural, one {# event} other {# events}}',
+                    { count: total }
+                  )}
+                />
+              }
             />
           }
-        >
-          {/* The list's own action: export the rows on this page. */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={entries.length === 0}
-          >
-            <Download className="me-2 size-4" />
-            {t('admin.activity.export', 'Export this page (CSV)')}
-          </Button>
-        </ListTitleRow>
-        <AdminActivityTable
+          // The list's own action: export the rows on this page. Labelled like
+          // Display: an icon below a 64rem toolbar or while it folds.
+          toolbarEnd={
+            <Button
+              variant="outline"
+              size="sm"
+              iconOnlyBelow="@5xl/toolbar"
+              onClick={handleExport}
+              disabled={entries.length === 0}
+              aria-label={t('admin.activity.export', 'Export this page (CSV)')}
+            >
+              <Download aria-hidden />
+              <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+                {t('admin.activity.export', 'Export this page (CSV)')}
+              </span>
+            </Button>
+          }
           entries={entries}
           caption={t('admin.nav.activity', 'Admin activity')}
           isLoading={isLoading && !data}

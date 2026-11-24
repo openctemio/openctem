@@ -143,27 +143,29 @@ describe('Platform scanning console page', () => {
     state.tab = 'fleet'
   })
 
-  it('shows one notice and the domain-proof policy, no fleet, while shared sensors are not available', () => {
+  it('shows the notice and the domain-proof policy on a Policy tab, no fleet, while shared sensors are not available', () => {
     state.ready = false
     state.role = 'readonly'
+    state.tab = 'policy'
     render(<PlatformScanningPage />)
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Policy',
+      'Blocked names',
+    ])
     expect(screen.getByTestId('shared-sensors-unavailable')).toHaveTextContent(
       'Shared sensors are not available in this release'
     )
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('shared-eu-1')).not.toBeInTheDocument()
-    // The blocked names policy does not depend on shared sensors.
-    expect(screen.getByText('Blocked target names')).toBeInTheDocument()
   })
 
   it('opens a Blocked names link on the exceptions list while shared sensors are not available', () => {
     state.ready = false
     state.tab = 'blocked'
     render(<PlatformScanningPage />)
-    const list = screen.getByTestId('blocked-names-exceptions')
-    const notice = screen.getByTestId('shared-sensors-unavailable')
-    // The list first; the notice and the domain-proof policy follow it.
-    expect(list.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByTestId('blocked-names-exceptions')).toBeInTheDocument()
+    // The blocked names policy does not depend on shared sensors.
+    expect(screen.getByText('Blocked target names')).toBeInTheDocument()
+    expect(screen.queryByTestId('shared-sensors-unavailable')).not.toBeInTheDocument()
   })
 
   it('offers the six tabs once shared sensors are available', () => {
