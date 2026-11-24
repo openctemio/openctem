@@ -555,25 +555,15 @@ export default function MitreCoveragePage() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              {/* Tactic headers */}
-              <div
-                className="mb-2 grid gap-1"
-                style={{ gridTemplateColumns: `repeat(${MITRE_TACTICS.length}, 1fr)` }}
-              >
-                {MITRE_TACTICS.map((tactic) => (
-                  <TacticHeader key={tactic.id} tactic={tactic} />
-                ))}
-              </div>
-
-              {/* Technique rows — we render by row index across all tactics */}
-              <TechniqueGrid
-                tactics={MITRE_TACTICS}
-                enrichedTacticTechniques={enrichedTacticTechniques}
-                coverageMap={coverageMap}
-              />
-            </div>
+          <CardContent>
+            {/* One column per tactic (its header over its techniques). The
+                columns wrap onto more lines when the card is narrow, so the
+                matrix never scrolls sideways or cuts a tactic at the edge. */}
+            <TechniqueGrid
+              tactics={MITRE_TACTICS}
+              enrichedTacticTechniques={enrichedTacticTechniques}
+              coverageMap={coverageMap}
+            />
           </CardContent>
         </Card>
 
@@ -715,25 +705,18 @@ function TechniqueGrid({
   enrichedTacticTechniques: Record<string, { id: string; name: string }[]>
   coverageMap: Map<string, TechniqueCell>
 }) {
-  const maxRows = Math.max(...tactics.map((t) => (enrichedTacticTechniques[t.id] ?? []).length))
-
   return (
-    <div className="space-y-1">
-      {Array.from({ length: maxRows }).map((_, rowIdx) => (
-        <div
-          key={rowIdx}
-          className="grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${tactics.length}, 1fr)` }}
-        >
-          {tactics.map((tactic) => {
-            const techniques = enrichedTacticTechniques[tactic.id] ?? []
-            const tech = techniques[rowIdx]
-            if (!tech) {
-              return <div key={tactic.id} className="h-8" />
-            }
-            const cell = coverageMap.get(`${tactic.id}::${tech.id}`)
-            return <HeatmapCell key={tactic.id} cell={cell} tacticId={tactic.id} />
-          })}
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-x-1 gap-y-3">
+      {tactics.map((tactic) => (
+        <div key={tactic.id} className="flex min-w-0 flex-col gap-1">
+          <TacticHeader tactic={tactic} />
+          {(enrichedTacticTechniques[tactic.id] ?? []).map((tech) => (
+            <HeatmapCell
+              key={tech.id}
+              cell={coverageMap.get(`${tactic.id}::${tech.id}`)}
+              tacticId={tactic.id}
+            />
+          ))}
         </div>
       ))}
     </div>

@@ -44,7 +44,9 @@ export function SnippetBlock({ label, code }: { label: string; code: string }) {
         <Label>{label}</Label>
         <CopyButton value={code} label={label} />
       </div>
-      <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
+      {/* Wrapped, never a sideways scroller: a phone shows the whole command
+          (a long URL breaks anywhere); Copy takes it as one line. */}
+      <pre className="bg-muted rounded-md p-4 text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
         <code>{code}</code>
       </pre>
     </div>

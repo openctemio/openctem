@@ -520,7 +520,11 @@ export default function ScimTokensPage() {
             'Automate user provisioning and deprovisioning from your identity provider.'
           )}
         >
-          {canManage && <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
+          {/* One "Generate token" per screen: with no token yet it is the empty
+              state's action, not the header's. */}
+          {canManage && tokens.length > 0 && (
+            <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />
+          )}
         </PageHeader>
 
         {roleLoading ? (

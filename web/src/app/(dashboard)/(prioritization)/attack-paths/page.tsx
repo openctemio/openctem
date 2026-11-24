@@ -334,7 +334,7 @@ export default function AttackPathsPage() {
         {targets.length > 0 && (
           <Select value={targetId ?? undefined} onValueChange={(v) => setParam('target', v)}>
             <SelectTrigger
-              className="w-full sm:w-56"
+              className="min-w-0 flex-1 sm:w-56 sm:flex-none"
               aria-label={t('prioritization.attackPath.targetLabel', 'Target asset')}
             >
               <SelectValue

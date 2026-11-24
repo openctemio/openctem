@@ -119,6 +119,9 @@ const OWNER_LABEL: Record<WorkflowOwner, [string, string]> = {
  * scrolling sideways.
  */
 const WORKFLOWS_WIDTH = { status: 128, steps: 88, version: 96, enabled: 96 }
+// Frame widths (px) under which a column gives way, so the actions column is
+// never cut: the version, then the step count (both are on the workflow).
+const WORKFLOWS_HIDE_BELOW = { version: 720, steps: 620 } as const
 
 /**
  * The list is read whole (the readiness of each workflow comes with it) and
@@ -437,7 +440,7 @@ export default function ScanWorkflowsPage() {
         <DataTableColumnHeader column={column} title={t('scans.workflows.colStatus')} />
       ),
       cell: ({ row }) => (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-full items-center gap-2 sm:flex-wrap">
           {row.original.is_retired ? (
             <RetiredBadge workflow={row.original} />
           ) : (
@@ -454,7 +457,12 @@ export default function ScanWorkflowsPage() {
     {
       id: 'steps',
       accessorFn: (p) => p.steps?.length ?? 0,
-      meta: { kind: 'number', width: WORKFLOWS_WIDTH.steps, label: t('scans.workflows.colSteps') },
+      meta: {
+        kind: 'number',
+        width: WORKFLOWS_WIDTH.steps,
+        hideBelow: WORKFLOWS_HIDE_BELOW.steps,
+        label: t('scans.workflows.colSteps'),
+      },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('scans.workflows.colSteps')} />
       ),
@@ -465,6 +473,7 @@ export default function ScanWorkflowsPage() {
       meta: {
         kind: 'number',
         width: WORKFLOWS_WIDTH.version,
+        hideBelow: WORKFLOWS_HIDE_BELOW.version,
         label: t('scans.workflows.colVersion'),
       },
       header: ({ column }) => (
@@ -743,6 +752,7 @@ export default function ScanWorkflowsPage() {
               isLoading={loadingWorkflows && !workflows}
               isRefreshing={validatingWorkflows && !!workflows}
               refreshingLabel={t('scans.workflows.refreshing', 'Refreshing workflows')}
+              pinActions
               showSearch={false}
               search={{
                 value: searchQuery,

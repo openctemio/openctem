@@ -3,7 +3,7 @@
 import { capabilitySwatch } from '@/lib/capability-colors'
 import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import type * as React from 'react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 
@@ -22,6 +22,7 @@ import { useToolAvailability } from '@/lib/api/tool-hooks'
 import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
 import { toolStatusLabel, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
 import { useTranslation } from '@/context/i18n-provider'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 
 interface CapabilityTableProps {
   capabilities: Capability[]
@@ -144,6 +145,11 @@ function UsageCell({
   )
 }
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting a header: the description, the code, the type,
+// then the category (all are in the capability's details).
+const CAPABILITY_HIDE_BELOW = { description: 1080, code: 830, type: 700, category: 560 } as const
+
 export function CapabilityTable({
   capabilities,
   usageStats,
@@ -164,10 +170,50 @@ export function CapabilityTable({
     [availData]
   )
 
+  // A capability's row menu, in its row and its phone card.
+  const actionsFor = useCallback(
+    (c: Capability) => {
+      const actions = [
+        ...(onViewDetails
+          ? [
+              {
+                label: t('scans.capabilities.action.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => onViewDetails(c),
+              },
+            ]
+          : []),
+        ...(!readOnly && onEdit
+          ? [
+              {
+                label: t('scans.capabilities.action.edit', 'Edit'),
+                icon: Pencil,
+                onClick: () => onEdit(c),
+              },
+            ]
+          : []),
+        ...(!readOnly && onDelete
+          ? [
+              {
+                label: t('scans.capabilities.action.delete', 'Delete'),
+                icon: Trash2,
+                onClick: () => onDelete(c),
+                destructive: true,
+                separatorBefore: true,
+              },
+            ]
+          : []),
+      ]
+      return <DataTableRowActions title={c.display_name} actions={actions} />
+    },
+    [onViewDetails, onEdit, onDelete, readOnly, t]
+  )
+
   const columns = useMemo<ColumnDef<Capability>[]>(() => {
     const cols: ColumnDef<Capability>[] = [
       {
         accessorKey: 'display_name',
+        meta: { kind: 'name', label: t('scans.capabilities.col.name', 'Name') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.name', 'Name')} />
         ),
@@ -191,6 +237,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'name',
+        meta: {
+          kind: 'text',
+          width: 160,
+          hideBelow: CAPABILITY_HIDE_BELOW.code,
+          label: t('scans.capabilities.col.code', 'Code'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.code', 'Code')} />
         ),
@@ -200,6 +252,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'category',
+        meta: {
+          kind: 'text',
+          width: 140,
+          hideBelow: CAPABILITY_HIDE_BELOW.category,
+          label: t('scans.capabilities.col.category', 'Category'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -215,6 +273,11 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'is_builtin',
+        meta: {
+          kind: 'status',
+          hideBelow: CAPABILITY_HIDE_BELOW.type,
+          label: t('scans.capabilities.col.type', 'Type'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.capabilities.col.type', 'Type')} />
         ),
@@ -236,6 +299,7 @@ export function CapabilityTable({
       },
       {
         id: 'usage',
+        meta: { kind: 'text', width: 160, label: t('scans.capabilities.col.usage', 'Usage') },
         header: t('scans.capabilities.col.usage', 'Usage'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -244,6 +308,12 @@ export function CapabilityTable({
       },
       {
         accessorKey: 'description',
+        meta: {
+          kind: 'text',
+          minWidth: 200,
+          hideBelow: CAPABILITY_HIDE_BELOW.description,
+          label: t('scans.capabilities.col.description', 'Description'),
+        },
         header: t('scans.capabilities.col.description', 'Description'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -257,49 +327,16 @@ export function CapabilityTable({
     if (showActions) {
       cols.push({
         id: 'actions',
+        meta: { kind: 'actions' },
         header: '',
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => {
-          const c = row.original
-          const actions = [
-            ...(onViewDetails
-              ? [
-                  {
-                    label: t('scans.capabilities.action.viewDetails', 'View details'),
-                    icon: Eye,
-                    onClick: () => onViewDetails(c),
-                  },
-                ]
-              : []),
-            ...(!readOnly && onEdit
-              ? [
-                  {
-                    label: t('scans.capabilities.action.edit', 'Edit'),
-                    icon: Pencil,
-                    onClick: () => onEdit(c),
-                  },
-                ]
-              : []),
-            ...(!readOnly && onDelete
-              ? [
-                  {
-                    label: t('scans.capabilities.action.delete', 'Delete'),
-                    icon: Trash2,
-                    onClick: () => onDelete(c),
-                    destructive: true,
-                    separatorBefore: true,
-                  },
-                ]
-              : []),
-          ]
-          return <DataTableRowActions title={c.display_name} actions={actions} />
-        },
+        cell: ({ row }) => actionsFor(row.original),
       })
     }
 
     return cols
-  }, [usageStats, availability, showActions, onViewDetails, onEdit, onDelete, readOnly, t])
+  }, [usageStats, availability, showActions, actionsFor, t])
 
   // Parent (capabilities-section) owns search + tab/category filters, so the
   // table's own search is disabled; DataTable adds sortable headers + pagination.
@@ -311,6 +348,32 @@ export function CapabilityTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      pinActions
+      // A phone card: the name wraps, the category, the type and the usage
+      // read whole on their own line.
+      mobileRow={(c) => (
+        <PersonPhoneCard
+          title={
+            <span className="inline-flex items-center gap-2">
+              <DynamicIcon name={c.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {c.display_name}
+            </span>
+          }
+          address={<code className="text-xs">{c.name}</code>}
+          facts={
+            <>
+              {c.category && <Badge variant="outline">{c.category}</Badge>}
+              <Badge variant="secondary">
+                {c.is_builtin
+                  ? t('scans.capabilities.type.platform', 'Platform')
+                  : t('scans.capabilities.type.custom', 'Custom')}
+              </Badge>
+              <UsageCell stats={usageStats?.[c.id]} availability={availability} />
+            </>
+          }
+          menu={showActions ? actionsFor(c) : undefined}
+        />
+      )}
       emptyMessage={t('scans.capabilities.table.emptyTitle', 'No capabilities')}
       emptyDescription={t(
         'scans.capabilities.table.emptyDesc',
