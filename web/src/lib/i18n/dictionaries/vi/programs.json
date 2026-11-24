@@ -195,6 +195,7 @@
   "programs.targets.severity.medium": "Trung bình",
   "programs.targets.severity.none": "Không có",
   "programs.targets.target": "Mục tiêu",
+  "programs.targets.terms": "Điều kiện",
   "programs.targets.title": "Mục tiêu của chương trình",
   "programs.targets.trust": "Nguồn",
   "programs.targets.trust.inferred": "Suy luận",

@@ -195,6 +195,7 @@
   "programs.targets.severity.medium": "Medium",
   "programs.targets.severity.none": "None",
   "programs.targets.target": "Target",
+  "programs.targets.terms": "Terms",
   "programs.targets.title": "Program targets",
   "programs.targets.trust": "Source",
   "programs.targets.trust.inferred": "Inferred",
