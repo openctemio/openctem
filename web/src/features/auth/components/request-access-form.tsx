@@ -14,6 +14,11 @@ import { useAuthProviders } from '../api/use-auth-providers'
 import { TurnstileWidget } from './turnstile-widget'
 import { isSignupNotAvailable } from '../lib/signup-outcome'
 import { authErrorText } from '../lib/auth-error-codes'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 
 const MAX_COMPANY = 200
 const MAX_NOTE = 1000
@@ -29,6 +34,8 @@ export function RequestAccessForm() {
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [companyError, setCompanyError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [isPending, startTransition] = useTransition()
   const { data: authProviders } = useAuthProviders()
@@ -43,9 +50,26 @@ export function RequestAccessForm() {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     (!captchaSiteKey || captchaToken !== '')
 
-  function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!valid) return
+    const form = e.currentTarget
+    const missingCompany =
+      company.trim().length === 0
+        ? t('auth.requestAccess.companyRequired', 'Enter your company name.')
+        : null
+    const badEmail = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+      ? t('auth.requestAccess.emailInvalid', 'Enter a work email, like name@example.com.')
+      : null
+    setCompanyError(missingCompany)
+    setEmailError(badEmail)
+    if (missingCompany || badEmail) {
+      focusFirstInvalid(form)
+      return
+    }
+    if (!valid) {
+      setError(t('auth.captcha.failed', 'Complete the security check and try again.'))
+      return
+    }
     setError(null)
     startTransition(async () => {
       const res = await submitAccessRequestAction({
@@ -73,6 +97,9 @@ export function RequestAccessForm() {
       }
     })
   }
+
+  const companyField = fieldErrorProps('ra-company', companyError)
+  const emailField = fieldErrorProps('ra-email', emailError)
 
   if (sent) {
     return (
@@ -116,11 +143,16 @@ export function RequestAccessForm() {
           <Input
             id="ra-company"
             value={company}
-            onChange={(e) => setCompany(e.target.value)}
+            onChange={(e) => {
+              setCompany(e.target.value)
+              setCompanyError(null)
+            }}
             maxLength={MAX_COMPANY}
             autoComplete="organization"
             required
+            {...companyField.control}
           />
+          <FieldError {...companyField.message} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="ra-email">{t('auth.requestAccess.email', 'Work email')}</Label>
@@ -128,10 +160,15 @@ export function RequestAccessForm() {
             id="ra-email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              setEmailError(null)
+            }}
             autoComplete="email"
             required
+            {...emailField.control}
           />
+          <FieldError {...emailField.message} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="ra-note">
@@ -158,7 +195,7 @@ export function RequestAccessForm() {
           </EntryBanner>
         )}
         <EntryActions>
-          <Button variant="signal" type="submit" disabled={!valid || isPending}>
+          <Button variant="signal" type="submit" disabled={isPending}>
             {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
             {t('auth.requestAccess.submit', 'Send request')}
           </Button>

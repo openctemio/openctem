@@ -144,7 +144,7 @@
   "findings.approvalDialog.reason": "Reason",
   "findings.approvalDialog.reasonLabel": "Reason:",
   "findings.approvalDialog.reasonPlaceholder": "Choose a reason",
-  "findings.approvalDialog.reasonRequired": "Choose a reason",
+  "findings.approvalDialog.reasonRequired": "Choose a reason.",
   "findings.approvalDialog.review": "Review",
   "findings.approvalDialog.status": "Status:",
   "findings.approvalDialog.submit": "Submit for Approval",

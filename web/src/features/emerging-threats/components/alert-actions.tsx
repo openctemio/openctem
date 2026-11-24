@@ -152,11 +152,12 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
             {m.label}
           </Button>
         ))}
-      {canTask && (
+      {canTask && eligible.length === 0 && (
+        <p className="text-dense text-muted-foreground">{t('emergingThreats.task.nothingToAdd')}</p>
+      )}
+      {canTask && eligible.length > 0 && (
         <Button
           size="sm"
-          disabled={eligible.length === 0}
-          title={eligible.length === 0 ? t('emergingThreats.task.nothingToAdd') : undefined}
           onClick={() => {
             setTaskKey((k) => k + 1)
             setTaskOpen(true)

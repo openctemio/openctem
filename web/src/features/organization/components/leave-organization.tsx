@@ -66,23 +66,24 @@ export function LeaveOrganization() {
 
   return (
     <>
-      <DangerZone title={t('org.leave.section')}>
+      <DangerZone>
         <DangerZoneItem
           title={t('org.leave.title')}
           description={soleOwner ? t('org.leave.soleOwner') : t('org.leave.desc')}
           action={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={soleOwner}
-              onClick={() => {
-                loadTenants()
-                setOpen(true)
-              }}
-            >
-              <LogOut className="h-4 w-4" />
-              {t('org.leave.button')}
-            </Button>
+            soleOwner ? null : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  loadTenants()
+                  setOpen(true)
+                }}
+              >
+                <LogOut className="h-4 w-4" />
+                {t('org.leave.button')}
+              </Button>
+            )
           }
         />
       </DangerZone>
