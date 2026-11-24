@@ -93,4 +93,28 @@ describe('FilterSelect long value', () => {
     expect(value).toHaveClass('truncate')
     expect(value).toHaveAttribute('title', 'Awaiting approval')
   })
+
+  it('holdWidth keeps one width: the value never sizes the token and is cut instead', () => {
+    render(
+      <FilterSelect
+        label="State"
+        value=""
+        allLabel="Set by the view"
+        clearable={false}
+        holdWidth
+        options={[
+          { value: 'open', label: 'Open' },
+          { value: 'closed', label: 'Closed' },
+        ]}
+        onChange={() => {}}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'State: Set by the view' })
+    const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
+    expect(slot).toHaveClass('max-w-28')
+    expect(slot).not.toHaveClass('max-w-60')
+    const value = slot.lastElementChild as HTMLElement
+    expect(value).toHaveClass('w-0', 'min-w-full', 'truncate')
+    expect(value).toHaveAttribute('title', 'Set by the view')
+  })
 })

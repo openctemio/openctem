@@ -445,8 +445,11 @@ jobs:
     # the tests call http://localhost, which on the self-hosted runner (Docker via
     # dind) is a different machine. Playwright's apt dependencies need sudo too.
     runs-on: ubuntu-latest
-    # Stack start, install and a quarter of the tests; no image build here.
-    timeout-minutes: 25
+    # Stack start, install and a seventh of the tests; no image build here.
+    # The heaviest shard took 21-24 min on green runs and now passes 25 once
+    # the lists hold seeded rows: 40 leaves room until `plan` re-balances on
+    # fresh durations (recorded only by green push runs).
+    timeout-minutes: 40
     strategy:
       # The first red shard cancels the rest on a pull request or in the queue:
       # the gate fails either way. A push (develop, next) and the nightly run

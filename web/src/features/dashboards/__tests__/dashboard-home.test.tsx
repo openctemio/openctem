@@ -321,7 +321,7 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
-  it('a notice is the line under the freshness line, inside the header description', async () => {
+  it('the header keeps only the one-line freshness; a notice sits under the header', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = { ...snapshot('personal', 5), facts_built_at: null, stale: true }
     renderHome()
@@ -331,10 +331,7 @@ describe('DashboardHome', () => {
     expect(notice).toHaveAttribute('role', 'status')
     const header = document.querySelector('[data-slot="page-header"]')
     expect(header).toContainElement(screen.getByTestId('dashboard-freshness'))
-    // Not a row of its own above the widgets: part of the header's
-    // description, under the one-line freshness, never on the title row.
-    const description = document.querySelector('[data-slot="page-header-description"]')
-    expect(description).toContainElement(notice)
+    expect(header).not.toContainElement(notice)
     expect(screen.getByTestId('dashboard-freshness')).not.toHaveTextContent('being built')
   })
 
@@ -524,6 +521,17 @@ describe('DashboardHome new layout hint', () => {
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
     expect(api.create).not.toHaveBeenCalled()
+  })
+
+  it('a building notice opens the layout hint line instead of a row of its own', async () => {
+    api.mine = [ctemCopy('d1')]
+    data.byKey['personal:d1'] = { ...snapshot('personal', 5), facts_built_at: null }
+    renderHome()
+    const hint = await screen.findByTestId('layout-hint')
+    const notices = await screen.findAllByTestId('dashboard-data-notice')
+    expect(notices).toHaveLength(1)
+    expect(hint).toContainElement(notices[0])
+    expect(notices[0]).toHaveTextContent('Dashboard data is being built for the first time.')
   })
 
   it('"Add them" inserts each missing widget where the template has it and keeps every widget', async () => {
