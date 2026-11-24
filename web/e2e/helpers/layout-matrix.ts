@@ -423,7 +423,7 @@ export async function findEmptyTail(page: Page, windowHeight: number): Promise<s
       for (const c of el.children) walk(c, inner)
     }
     // The page's own content: the shell's sidebar runs the window's height.
-    const root = document.querySelector('main#content') ?? document.body
+    const root = document.querySelector('#content') ?? document.body
     for (const c of root.children) walk(c, Infinity)
     if (docHeight <= Math.max(windowHeight, bottom * 1.5)) return []
     return [
