@@ -30,6 +30,7 @@ import { useVisibleSectionTabs } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
 import { useAttentionCount } from './use-attention-count'
 import { formatNumber } from '@/lib/app-locale'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 const ATTENTION_HREF = '/assets/attention'
 
@@ -63,6 +64,7 @@ export function AttentionQueueHeader({
 }: AttentionQueueHeaderProps) {
   const { t } = useTranslation()
   const router = useRouter()
+  const isPhone = useIsMobile()
   const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS)
   const current = ASSET_ATTENTION_REASONS.find((r) => r.id === reason)
   if (!current) return null
@@ -73,6 +75,24 @@ export function AttentionQueueHeader({
   const href = inventoryHref ? safeHref(inventoryHref) : null
 
   const why = t(current.whyKey, current.why)
+  const inventoryLabel = t('assets.attention.openInInventory', 'Open in the inventory')
+  // A phone keeps the heading row to one line: the inventory link joins the
+  // queue's More there instead of wrapping onto a line of its own.
+  const menuItems: ActionMenuEntry[] = [
+    ...(isPhone && href
+      ? [
+          {
+            id: 'inventory',
+            label: inventoryLabel,
+            // Alone it turns the trigger into the link (an icon is needed);
+            // beside Select, icons for all items or none.
+            icon: moreItems?.length ? undefined : ArrowRight,
+            onSelect: () => router.push(href),
+          },
+        ]
+      : []),
+    ...(moreItems ?? []),
+  ]
 
   return (
     // One row (research/249; MVP v2: no row of its own above the list): the
@@ -153,23 +173,23 @@ export function AttentionQueueHeader({
       >
         {why}
       </p>
-      {(href || (moreItems && moreItems.length > 0)) && (
+      {((href && !isPhone) || menuItems.length > 0) && (
         <div className="ms-auto flex shrink-0 items-center gap-2">
-          {href && (
+          {href && !isPhone && (
             <Button asChild variant="outline">
               <Link href={href}>
-                {t('assets.attention.openInInventory', 'Open in the inventory')}
+                {inventoryLabel}
                 <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
               </Link>
             </Button>
           )}
-          {moreItems && moreItems.length > 0 && (
+          {menuItems.length > 0 && (
             <ActionMenu
               title={t(current.labelKey, current.label)}
               label={t('common.actionMenu.label', 'Actions for {name}', {
                 name: t(current.labelKey, current.label),
               })}
-              items={moreItems}
+              items={menuItems}
               trigger={
                 <Button
                   variant="outline"
