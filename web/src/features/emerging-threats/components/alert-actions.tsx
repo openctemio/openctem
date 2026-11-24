@@ -3,9 +3,10 @@
 /** Triage actions and "create remediation task" of one alert. */
 
 import { useMemo, useState } from 'react'
-import { ListChecks, Loader2, Radar } from 'lucide-react'
+import { ListChecks, Loader2, MoreHorizontal, Radar } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,7 +21,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { useIsWide } from '@/hooks/use-mobile'
 import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import type { ScanCandidate } from '@/features/scans/components/scan-assets-dialog'
 import { createRemediationTask, setAlertState, useRevalidateEmergingThreats } from '../api'
@@ -37,8 +39,22 @@ import { NotAffectedDialog } from './not-affected-dialog'
 export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
   const revalidate = useRevalidateEmergingThreats()
+  // Below xl the six buttons took two or three rows (phone, tablet, a
+  // laptop with the sidebar open): one main action and a More menu there.
+  const compact = !useIsWide()
+  const canTriage = useHasPermission(Permission.FindingsTriage)
+  const canTask = useHasPermission(Permission.RemediationWrite)
+  const canScanWrite = useHasPermission(Permission.ScansWrite)
+  const canScanExecute = useHasPermission(Permission.ScansExecute)
+  const canScan = canScanWrite && canScanExecute
   const [busy, setBusy] = useState(false)
   const [naOpen, setNaOpen] = useState(false)
+  const [taskOpen, setTaskOpen] = useState(false)
+  // A new key per opening: the dialog starts again from the alert's title.
+  const [taskKey, setTaskKey] = useState(0)
+  const [scanOpen, setScanOpen] = useState(false)
+  const { eligible } = useMemo(() => splitTaskable(alert.assets), [alert.assets])
+  const candidates = useMemo(() => scanCandidates(alert), [alert])
   const { state } = alert
 
   const move = async (
@@ -63,48 +79,128 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const canNotAffected = state === 'new' || state === 'acknowledged' || state === 'remediating'
   const canReopen = state !== 'new'
 
+  // The state moves, in the order they are used. Below xl they and the scan
+  // join one "More actions" menu beside the one main action (Create
+  // remediation task).
+  const moves: { id: string; label: string; run: () => void }[] = canTriage
+    ? [
+        ...(canAcknowledge
+          ? [
+              {
+                id: 'acknowledge',
+                label: t('emergingThreats.actions.acknowledge'),
+                run: () => void move('acknowledged'),
+              },
+            ]
+          : []),
+        ...(canRemediate
+          ? [
+              {
+                id: 'remediating',
+                label: t('emergingThreats.actions.remediating'),
+                run: () => void move('remediating'),
+              },
+            ]
+          : []),
+        ...(canNotAffected && alert.can_suppress
+          ? [
+              {
+                id: 'not-affected',
+                label: t('emergingThreats.actions.notAffected'),
+                run: () => setNaOpen(true),
+              },
+            ]
+          : []),
+        ...(canReopen
+          ? [
+              {
+                id: 'reopen',
+                label: t('emergingThreats.actions.reopen'),
+                run: () => void move('new'),
+              },
+            ]
+          : []),
+      ]
+    : []
+
+  const scanLabel = t('emergingThreats.scan.affected')
+  const menuItems: ActionMenuEntry[] = [
+    ...moves.map((m) => ({
+      id: m.id,
+      label: m.label,
+      onSelect: m.run,
+      disabledReason: busy ? t('emergingThreats.actions.busy') : undefined,
+    })),
+    ...(canScan
+      ? [
+          {
+            id: 'scan',
+            label: scanLabel,
+            section: 'scan',
+            onSelect: () => setScanOpen(true),
+            disabledReason: candidates.length === 0 ? t('emergingThreats.scan.none') : undefined,
+          },
+        ]
+      : []),
+  ]
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Can permission={Permission.FindingsTriage}>
-        {canAcknowledge && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void move('acknowledged')}
-          >
-            {t('emergingThreats.actions.acknowledge')}
+      {!compact &&
+        moves.map((m) => (
+          <Button key={m.id} size="sm" variant="outline" disabled={busy} onClick={m.run}>
+            {m.label}
           </Button>
-        )}
-        {canRemediate && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void move('remediating')}
-          >
-            {t('emergingThreats.actions.remediating')}
-          </Button>
-        )}
-        {canNotAffected && alert.can_suppress && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => setNaOpen(true)}>
-            {t('emergingThreats.actions.notAffected')}
-          </Button>
-        )}
-        {canReopen && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void move('new')}>
-            {t('emergingThreats.actions.reopen')}
-          </Button>
-        )}
-      </Can>
-      <Can permission={Permission.RemediationWrite}>
-        <CreateTaskButton alert={alert} />
-      </Can>
-      <Can permission={Permission.ScansWrite}>
-        <Can permission={Permission.ScansExecute}>
-          <ScanAffectedButton alert={alert} />
-        </Can>
-      </Can>
+        ))}
+      {canTask && (
+        <Button
+          size="sm"
+          disabled={eligible.length === 0}
+          title={eligible.length === 0 ? t('emergingThreats.task.nothingToAdd') : undefined}
+          onClick={() => {
+            setTaskKey((k) => k + 1)
+            setTaskOpen(true)
+          }}
+        >
+          <ListChecks className="me-2 h-4 w-4" aria-hidden />
+          {t('emergingThreats.task.create')}
+        </Button>
+      )}
+      {!compact && canScan && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={candidates.length === 0}
+          title={candidates.length === 0 ? t('emergingThreats.scan.none') : undefined}
+          onClick={() => setScanOpen(true)}
+        >
+          <Radar className="me-2 h-4 w-4" aria-hidden />
+          {scanLabel}
+        </Button>
+      )}
+      {compact && menuItems.length > 0 && (
+        <ActionMenu
+          title={alert.vuln_id}
+          label={t('emergingThreats.actions.menu', undefined, { vulnId: alert.vuln_id })}
+          items={menuItems}
+          trigger={
+            <Button size="icon" variant="outline" aria-label={t('emergingThreats.actions.more')}>
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </Button>
+          }
+        />
+      )}
+      {canTask && (
+        <CreateTaskDialog key={taskKey} alert={alert} open={taskOpen} onOpenChange={setTaskOpen} />
+      )}
+      {canScan && (
+        <LazyScanAssetsDialog
+          open={scanOpen}
+          onOpenChange={setScanOpen}
+          candidates={candidates}
+          title={t('emergingThreats.scan.title', undefined, { vulnId: alert.vuln_id })}
+        />
+      )}
       <NotAffectedDialog
         open={naOpen}
         onOpenChange={setNaOpen}
@@ -129,24 +225,22 @@ export function OutOfScopeHint({ alert }: { alert: EmergingThreatDetail }) {
   )
 }
 
-function CreateTaskButton({ alert }: { alert: EmergingThreatDetail }) {
+function CreateTaskDialog({
+  alert,
+  open,
+  onOpenChange: setOpen,
+}: {
+  alert: EmergingThreatDetail
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { t } = useTranslation()
   const revalidate = useRevalidateEmergingThreats()
   const { eligible, alreadyInTask } = useMemo(() => splitTaskable(alert.assets), [alert.assets])
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(() => taskTitle(alert.vuln_id, alert.title))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
-
-  const onOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next) {
-      setTitle(taskTitle(alert.vuln_id, alert.title))
-      setError(null)
-      setCreatedId(null)
-    }
-  }
 
   const submit = async () => {
     setBusy(true)
@@ -168,16 +262,7 @@ function CreateTaskButton({ alert }: { alert: EmergingThreatDetail }) {
 
   return (
     <>
-      <Button
-        size="sm"
-        disabled={eligible.length === 0}
-        title={eligible.length === 0 ? t('emergingThreats.task.nothingToAdd') : undefined}
-        onClick={() => onOpenChange(true)}
-      >
-        <ListChecks className="me-2 h-4 w-4" aria-hidden />
-        {t('emergingThreats.task.create')}
-      </Button>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>{t('emergingThreats.task.title')}</DialogTitle>
@@ -264,35 +349,4 @@ export function scanCandidates(alert: Pick<EmergingThreatDetail, 'assets'>): Sca
     out.push({ id: a.asset_id, label: a.asset_name, target: a.asset_name.trim() })
   }
   return out
-}
-
-/**
- * "Scan affected assets": the shared quick-scan dialog over the alert's
- * scannable assets (it checks scope and readiness before it starts). The
- * caller gates it on scans:write and scans:execute; the API checks again.
- */
-function ScanAffectedButton({ alert }: { alert: EmergingThreatDetail }) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const candidates = useMemo(() => scanCandidates(alert), [alert])
-  return (
-    <>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={candidates.length === 0}
-        title={candidates.length === 0 ? t('emergingThreats.scan.none') : undefined}
-        onClick={() => setOpen(true)}
-      >
-        <Radar className="me-2 h-4 w-4" aria-hidden />
-        {t('emergingThreats.scan.affected')}
-      </Button>
-      <LazyScanAssetsDialog
-        open={open}
-        onOpenChange={setOpen}
-        candidates={candidates}
-        title={t('emergingThreats.scan.title', undefined, { vulnId: alert.vuln_id })}
-      />
-    </>
-  )
 }

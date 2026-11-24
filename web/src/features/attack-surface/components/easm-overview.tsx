@@ -61,6 +61,15 @@ const EXPOSURE_TYPE_LABEL: Record<string, [string, string]> = {
 
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info', 'none']
 
+/**
+ * The header of a wide overview card whose link shares the title's line: from
+ * lg up the link sits right after the title, not across the card from it (a
+ * two-thirds card is 1100 px wide at 1920 px, which left the link 800 px
+ * from its title).
+ */
+export const TITLE_LINK_HEADER_CLASS =
+  'lg:has-data-[slot=card-action]:grid-cols-[auto_auto] lg:justify-start lg:gap-x-4 lg:*:data-[slot=card-action]:justify-self-start'
+
 /** The attribution review queue page. */
 export const EASM_REVIEW_HREF = '/attack-surface/review'
 
@@ -90,7 +99,7 @@ export function EASMTopRisks() {
     <Card className="lg:col-span-2" data-testid="easm-fix-first">
       {/* The link shares the title's line; the description takes the card's
           whole width under both, so a phone never squeezes it beside the link. */}
-      <CardHeader>
+      <CardHeader className={TITLE_LINK_HEADER_CLASS}>
         <CardTitle className="self-center text-base">
           {t('easmReview.overview.fixFirst', 'Fix first')}
         </CardTitle>

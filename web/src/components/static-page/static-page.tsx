@@ -51,7 +51,7 @@ export interface StaticPageLabels {
 
 /** Marks a text kept in the language it is published in. */
 function textLangProps(textLang?: string) {
-  return textLang ? { lang: textLang, translate: 'no' as const } : {}
+  return textLang ? { lang: textLang } : {}
 }
 
 export interface StaticTocItem {

@@ -304,6 +304,10 @@ only: likely (a version match below 80% confidence) is its own number.
   (`scans:write` and `scans:execute`: the quick-scan dialog over the
   affected domains, subdomains and IP addresses, scope-checked before it
   starts). The alert page keeps the full asset table and timeline.
+- The alert page has one main action, **Create remediation task**. The state
+  moves (acknowledge, remediating, not affected, reopen) and **Scan affected
+  assets** are buttons beside it from 1280 px and one **More actions** menu
+  below (phone, tablet, a laptop with the sidebar open).
 - The alert page lists the affected hosts in one table grouped by tier, each
   group shown only when it has a row: **Confirmed affected**, **Likely
   affected**, **Possibly affected (version unknown)**. A group's count is its

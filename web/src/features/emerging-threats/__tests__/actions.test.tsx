@@ -14,6 +14,12 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useHasPermission: () => true,
+}))
+const mobile = vi.hoisted(() => ({ phone: false }))
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => mobile.phone,
+  useIsWide: () => !mobile.phone,
 }))
 
 const wrap = (ui: React.ReactNode) =>
@@ -21,6 +27,7 @@ const wrap = (ui: React.ReactNode) =>
 
 beforeEach(() => {
   api.post.mockReset()
+  mobile.phone = false
 })
 
 describe('NotAffectedDialog', () => {
@@ -87,6 +94,15 @@ describe('AlertActions', () => {
         state: 'acknowledged',
       })
     )
+  })
+
+  it('keeps one main action below xl: the state moves and the scan are in More actions', async () => {
+    mobile.phone = true
+    wrap(<AlertActions alert={detail()} />)
+    expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Scan affected/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
   })
 })
 

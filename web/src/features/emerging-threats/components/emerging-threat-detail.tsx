@@ -147,7 +147,7 @@ function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <EtsCell ets={alert.ets} />
-        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+        <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
           {PARTS.map((k) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{t(`emergingThreats.breakdown.${k}`)}</dt>
@@ -206,7 +206,7 @@ function ExploitCard({ alert }: { alert: EmergingThreatDetail }) {
         <CardTitle className="text-base">{t('emergingThreats.detail.exploitStatus')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+        <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
           {rows.map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-muted-foreground">{label}</dt>
