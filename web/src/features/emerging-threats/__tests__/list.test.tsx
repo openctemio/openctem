@@ -14,6 +14,7 @@ vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
+  useHasPermission: () => true,
 }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),

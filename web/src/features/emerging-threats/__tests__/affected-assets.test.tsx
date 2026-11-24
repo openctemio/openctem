@@ -141,19 +141,15 @@ describe('AffectedAssets', () => {
     expect(container.querySelector('table')).toBeNull()
   })
 
-  it('phone: cards under the same group headers, every link kept, the table hidden', () => {
+  it('phone: cards in tier order, each saying its match, every link kept, the table hidden', () => {
     setWidth(390)
     const { container } = render(<AffectedAssets groups={groups} />)
     expect(container.querySelector('table')?.closest('.hidden')).not.toBeNull()
-    expect(
-      [...container.querySelectorAll('[data-slot="row-group-header"]')]
-        .filter((h) => !h.closest('table'))
-        .map((h) => h.textContent?.replace(/\s+/g, ' ').trim())
-    ).toEqual([
-      'Confirmed affected (2)',
-      'Likely affected (1)',
-      'Possibly affected (version unknown) (1)',
-    ])
+    // No group rows of their own above the cards: each card names its tier.
+    expect(container.querySelectorAll('[data-slot="row-group-header"]')).toHaveLength(0)
+    expect(screen.getAllByText('Confirmed affected')).toHaveLength(2)
+    expect(screen.getByText('Likely affected')).toBeInTheDocument()
+    expect(screen.getByText('Possibly affected (version unknown)')).toBeInTheDocument()
     const cardLinks = [...container.querySelectorAll('a')]
       .filter((a) => !a.closest('table'))
       .map((a) => `${a.textContent} ${a.getAttribute('href')}`)

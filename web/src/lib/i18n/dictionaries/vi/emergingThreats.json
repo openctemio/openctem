@@ -7,6 +7,7 @@
   "emergingThreats.actions.cancel": "Hủy",
   "emergingThreats.actions.close": "Đóng",
   "emergingThreats.actions.menu": "Thao tác cho {vulnId}",
+  "emergingThreats.actions.more": "Thao tác khác",
   "emergingThreats.actions.notAffected": "Đánh dấu không bị ảnh hưởng",
   "emergingThreats.actions.openPage": "Mở trang đầy đủ",
   "emergingThreats.actions.outOfScopeHint": "Cảnh báo này có tài sản ngoài phạm vi của bạn nên bạn không thể đánh dấu không bị ảnh hưởng. Hãy nhờ người có quyền rộng hơn.",

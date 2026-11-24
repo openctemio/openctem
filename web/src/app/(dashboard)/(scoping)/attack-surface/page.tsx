@@ -52,7 +52,10 @@ import {
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
 import { useEASMSummary } from '@/features/attack-surface/hooks/use-easm-summary'
-import { EASM_REVIEW_HREF } from '@/features/attack-surface/components/easm-overview'
+import {
+  EASM_REVIEW_HREF,
+  TITLE_LINK_HEADER_CLASS,
+} from '@/features/attack-surface/components/easm-overview'
 import { STATS_ATTRIBUTION } from '@/features/attack-surface/lib/external-filters'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { SettleGroup, SettleSignal } from '@/features/shared/components/settle-group'
@@ -329,7 +332,7 @@ export default function AttackSurfacePage() {
             <Card className="lg:col-span-2">
               {/* The link shares the title's line; the description takes the
                   card's whole width under both (no squeeze on a phone). */}
-              <CardHeader>
+              <CardHeader className={TITLE_LINK_HEADER_CLASS}>
                 <CardTitle className="self-center text-base">
                   {t('attackSurface.overview.recentTitle', 'Recent changes')}
                 </CardTitle>
