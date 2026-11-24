@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, CheckCircle2, FileCode2, Pencil, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { CheckCircle2, FileCode2, Pencil, Save, ShieldCheck, Trash2 } from 'lucide-react'
 import { Main } from '@/components/layout'
-import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,9 +12,10 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
+import { DetailPageHeader } from '@/features/shared/components/detail'
 import { confirmName } from '@/lib/confirm-name'
-import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
@@ -348,87 +348,88 @@ export function ImportMappingEditor({ id }: { id?: string }) {
   return (
     <Main>
       <PageStack>
-        <Link
-          href="/settings/integrations/import-mappings"
-          className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          {t('importMappings.editor.back', 'Import mappings')}
-        </Link>
-        <PageHeader
+        <DetailPageHeader
           title={title}
-          description={
-            mapping ? (
-              <>
-                {mapping.description && <span className="block">{mapping.description}</span>}
-                <span className="block">
-                  {t('importMappings.editor.usage', 'Imports choose it as format {format}.', {
-                    format: `mapping:${mapping.name}`,
-                  })}
-                </span>
-              </>
-            ) : (
-              t(
-                'importMappings.editor.newDescription',
-                'Map the columns of a CSV, JSON, JSON Lines or XML export to findings and assets, checking the result on a sample.'
-              )
-            )
+          parent={{
+            href: '/settings/integrations/import-mappings',
+            label: t('importMappings.editor.back', 'Import mappings'),
+          }}
+          facts={
+            <p className="text-body text-muted-foreground">
+              {mapping ? (
+                <>
+                  {mapping.description && <span className="block">{mapping.description}</span>}
+                  <span className="block">
+                    {t('importMappings.editor.usage', 'Imports choose it as format {format}.', {
+                      format: `mapping:${mapping.name}`,
+                    })}
+                  </span>
+                </>
+              ) : (
+                t(
+                  'importMappings.editor.newDescription',
+                  'Map the columns of a CSV, JSON, JSON Lines or XML export to findings and assets, checking the result on a sample.'
+                )
+              )}
+            </p>
           }
-        >
-          {draft && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Can permission={Permission.IntegrationsManage}>
-                <Button variant="outline" onClick={validate}>
-                  <ShieldCheck className="me-1 h-4 w-4" aria-hidden />
-                  {t('importMappings.editor.validate', 'Check')}
-                </Button>
-                {isNew ? (
-                  <Button
-                    onClick={() => {
-                      setSaveErrors([])
-                      setCreateOpen(true)
-                    }}
-                    disabled={busy}
-                  >
-                    <Save className="me-1 h-4 w-4" aria-hidden />
-                    {t('importMappings.editor.save', 'Save')}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => {
-                      setSaveErrors([])
-                      setVersionOpen(true)
-                    }}
-                    disabled={busy || !dirty}
-                  >
-                    <Save className="me-1 h-4 w-4" aria-hidden />
-                    {t('importMappings.editor.saveVersion', 'Save as new version')}
-                  </Button>
-                )}
-              </Can>
-            </div>
-          )}
-        </PageHeader>
-
-        {mapping && (
-          <Can permission={Permission.IntegrationsManage}>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setDetailsOpen(true)}>
-                <Pencil className="me-1 h-4 w-4" aria-hidden />
-                {t('importMappings.editor.editDetails', 'Rename')}
-              </Button>
+          primary={
+            draft && canManage ? (
               <Button
-                variant="ghost"
-                size="sm"
-                className="ms-4 text-destructive hover:text-destructive"
-                onClick={() => setDeleteOpen(true)}
+                onClick={() => {
+                  setSaveErrors([])
+                  if (isNew) setCreateOpen(true)
+                  else setVersionOpen(true)
+                }}
+                disabled={busy || (!isNew && !dirty)}
               >
-                <Trash2 className="me-1 h-4 w-4" aria-hidden />
-                {t('importMappings.editor.delete', 'Delete')}
+                <Save aria-hidden />
+                {isNew
+                  ? t('importMappings.editor.save', 'Save')
+                  : t('importMappings.editor.saveVersion', 'Save as new version')}
               </Button>
-            </div>
-          </Can>
-        )}
+            ) : undefined
+          }
+          secondary={
+            // A new mapping has no Rename or Delete: Check stays a button, as
+            // a menu never holds one item.
+            draft && canManage && !mapping ? (
+              <Button variant="outline" onClick={validate}>
+                <ShieldCheck aria-hidden />
+                {t('importMappings.editor.validate', 'Check')}
+              </Button>
+            ) : undefined
+          }
+          menu={
+            canManage && mapping
+              ? [
+                  ...(draft
+                    ? [
+                        {
+                          id: 'check',
+                          label: t('importMappings.editor.validate', 'Check'),
+                          icon: ShieldCheck,
+                          onSelect: () => void validate(),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'rename',
+                    label: t('importMappings.editor.editDetails', 'Rename'),
+                    icon: Pencil,
+                    onSelect: () => setDetailsOpen(true),
+                  },
+                  {
+                    id: 'delete',
+                    label: t('importMappings.editor.delete', 'Delete'),
+                    icon: Trash2,
+                    destructive: true,
+                    onSelect: () => setDeleteOpen(true),
+                  },
+                ]
+              : undefined
+          }
+        />
 
         {isNew && !canManage ? (
           <p className="mt-6 text-sm text-muted-foreground">
