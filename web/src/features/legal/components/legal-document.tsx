@@ -7,6 +7,7 @@ import {
   staticToc,
   type StaticPageLabels,
 } from '@/components/static-page'
+import type { SectionTab } from '@/features/shared/components/section-tabs'
 import { LEGAL_DOCS } from '@/lib/legal'
 
 export interface LegalSection {
@@ -17,17 +18,23 @@ export interface LegalSection {
 /**
  * A legal page (the built-in templates) in the static reading frame: the five
  * documents as route tabs, the table of contents of this one, its sections.
- * The document text is rendered on the server.
+ * The document text is rendered on the server. The frame (title, tabs, labels)
+ * is in the reader's language; the text is published in English, so its
+ * sections are marked as English and are not translated.
  */
 export function LegalDocument({
   title,
+  documents = LEGAL_DOCS.map((d) => ({ label: d.title, href: d.path })),
   effective,
   sections,
   contactLine,
   languageNote,
   labels,
 }: {
+  /** The document's name, translated. */
   title: string
+  /** The five documents as route tabs, their names translated. */
+  documents?: SectionTab[]
   /** "Effective <date>", translated. */
   effective: string
   sections: LegalSection[]
@@ -42,17 +49,14 @@ export function LegalDocument({
     'legal'
   )
   return (
-    <StaticPage
-      labels={labels}
-      documents={LEGAL_DOCS.map((d) => ({ label: d.title, href: d.path }))}
-      toc={toc}
-    >
+    <StaticPage labels={labels} documents={documents} toc={toc} textLang="en">
       <StaticArticle
         title={title}
         meta={effective}
         note={languageNote}
         contents={{ toc, label: labels.onThisPage, print: labels.print }}
         footer={<p>{contactLine}</p>}
+        textLang="en"
       >
         {sections.map((s, i) => (
           <StaticSection key={s.heading} id={toc[i].id} heading={s.heading}>

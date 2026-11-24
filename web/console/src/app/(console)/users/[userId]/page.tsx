@@ -27,7 +27,10 @@ import { usePlatformUser } from '@console/features/admin-console/api/use-platfor
 import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin-audit'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
-import { PlatformUserActions } from '@console/features/admin-console/components/platform-user-actions'
+import {
+  PlatformUserActions,
+  platformUserUnavailableNote,
+} from '@console/features/admin-console/components/platform-user-actions'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
 import { adminHas } from '@console/features/admin-console/types'
 import { formatTime } from '@/lib/app-locale'
@@ -47,6 +50,9 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
     void mutate()
     void activity.mutate()
   }
+  // Why the account offers no actions, said once under its name (no row of
+  // greyed-out buttons).
+  const unavailableNote = user ? platformUserUnavailableNote(t, user) : undefined
 
   return (
     <Main>
@@ -66,7 +72,19 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
           </div>
         ) : (
           <>
-            <PageHeader title={user.name || user.email} description={user.email}>
+            <PageHeader
+              title={user.name || user.email}
+              description={
+                unavailableNote ? (
+                  <>
+                    <span className="block">{user.email}</span>
+                    <span className="block">{unavailableNote}</span>
+                  </>
+                ) : (
+                  user.email
+                )
+              }
+            >
               <PlatformUserBadges user={user} />
             </PageHeader>
 

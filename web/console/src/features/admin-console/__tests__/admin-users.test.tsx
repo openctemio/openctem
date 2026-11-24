@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event'
 
 import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { PlatformUserActions as Actions } from '../components/platform-user-actions'
+import {
+  PlatformUserActions as Actions,
+  platformUserUnavailableNote,
+} from '../components/platform-user-actions'
 
 /** The user page renders both parts: routine near the name, danger at the end. */
 function PlatformUserActions(props: Omit<Parameters<typeof Actions>[0], 'part'>) {
@@ -110,10 +113,16 @@ describe('PlatformUserActions', () => {
     expect(screen.getByText('Blocked: Spam campaign')).toBeInTheDocument()
   })
 
-  it('disables every action for a platform administrator account', () => {
+  it('offers no action for a platform administrator account and says why', () => {
     render(<PlatformUserActions user={account({ is_platform_admin: true })} onDone={vi.fn()} />)
-    for (const b of screen.getAllByRole('button')) expect(b).toBeDisabled()
-    expect(screen.getByText(/manage it in Security > Administrators/)).toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    const t = (_key: string, fallback?: string) => fallback ?? ''
+    expect(
+      platformUserUnavailableNote(t as never, { is_platform_admin: true, erased: false })
+    ).toMatch(/manage it in Security > Administrators/)
+    expect(
+      platformUserUnavailableNote(t as never, { is_platform_admin: false, erased: false })
+    ).toBe(undefined)
   })
 
   it('asks for a reason and sends it with the action', async () => {

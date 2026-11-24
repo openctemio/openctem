@@ -247,8 +247,11 @@ describe('InvitationView', () => {
 
   it('names the inviter when the lookup carries a name', async () => {
     render(<InvitationView hasSession />)
-    expect(await screen.findByText('Alice')).toBeInTheDocument()
-    expect(screen.queryByText('A team member')).toBeNull()
+    // Named once, in the line under the title.
+    expect(await screen.findByText(/^Alice invited you to join/)).toBeInTheDocument()
+    expect(screen.queryByText(/A team member/)).toBeNull()
+    // The address invited sits under the organization's name.
+    expect(screen.getByText('For new.person@co.com')).toBeInTheDocument()
   })
 
   it.each([undefined, '', '  '])(
@@ -260,7 +263,7 @@ describe('InvitationView', () => {
         vi.fn(async () => new Response(JSON.stringify(unnamed), { status: 200 }))
       )
       render(<InvitationView hasSession />)
-      expect(await screen.findByText('A team member')).toBeInTheDocument()
+      expect(await screen.findByText(/^A team member invited you to join/)).toBeInTheDocument()
     }
   )
 

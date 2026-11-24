@@ -34,7 +34,6 @@ import { localLogoutAction, selectTenantAction } from '@/features/auth/actions/l
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { parseRetryAfter } from '@/lib/api/rate-limit-backoff'
 import { useTranslation } from '@/context/i18n-provider'
-import { KeyValueList } from '@/features/shared'
 import {
   InvitationGrantsNotice,
   type InvitationGrants,
@@ -556,9 +555,15 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           })}
         />
 
-        {/* The organization, and how long the invitation stays open */}
+        {/* The organization, the address invited and how long the invitation
+            stays open. The inviter is named in the line above. */}
         <OrganizationRow
           name={orgName}
+          invitee={
+            invitation?.invitation.email
+              ? t('org.acceptInvite.forEmail', undefined, { email: invitation.invitation.email })
+              : undefined
+          }
           expiry={
             daysUntilExpiry <= 3 && daysUntilExpiry > 0 ? (
               <ToneChip
@@ -572,18 +577,6 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
               />
             ) : null
           }
-        />
-
-        {/* Who and for whom */}
-        <KeyValueList
-          items={[
-            { key: 'by', label: t('org.acceptInvite.invitedBy'), value: inviterName },
-            {
-              key: 'for',
-              label: t('org.acceptInvite.invitationFor'),
-              value: invitation?.invitation.email,
-            },
-          ]}
         />
 
         {/* What accepting gives */}
@@ -669,13 +662,27 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   )
 }
 
-/** The invited organization: its avatar (the switcher's), its name and an optional expiry chip. */
-function OrganizationRow({ name, expiry }: { name: string; expiry?: ReactNode }) {
+/**
+ * The invited organization: its avatar (the switcher's), its name, the
+ * address the invitation is for and an optional expiry chip.
+ */
+function OrganizationRow({
+  name,
+  invitee,
+  expiry,
+}: {
+  name: string
+  invitee?: string
+  expiry?: ReactNode
+}) {
   return (
     <div className="border-border flex items-center gap-3 rounded-lg border p-3">
       <OrgAvatar name={name} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="text-body truncate font-medium">{name}</p>
+        {invitee && (
+          <p className="text-cap text-muted-foreground [overflow-wrap:anywhere]">{invitee}</p>
+        )}
         {expiry}
       </div>
     </div>
