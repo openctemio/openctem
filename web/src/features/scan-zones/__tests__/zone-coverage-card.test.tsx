@@ -81,7 +81,10 @@ describe('ZoneCoverageCard', () => {
     renderCard()
     const counts = screen.getByTestId('zone-outside-counts')
     expect(within(counts).getByText('Private, scans skip these').nextSibling).toHaveTextContent('2')
-    expect(within(counts).getByText('Public').nextSibling).toHaveTextContent('185')
+    expect(
+      within(counts).getByText('Public, any of your sensors scans these (no default zone)')
+        .nextSibling
+    ).toHaveTextContent('185')
 
     const list = await screen.findByTestId('zone-outside-list')
     const items = within(list).getAllByRole('listitem')
@@ -94,6 +97,22 @@ describe('ZoneCoverageCard', () => {
     expect(all).toHaveTextContent('View all 187 addresses in Assets')
     // No long sentence: the old description is gone.
     expect(screen.queryByText(/inventory addresses:/)).toBeNull()
+  })
+
+  it('says the warnings it knows in its own words and lists any other one', () => {
+    renderCard(
+      coverage({
+        warnings: [
+          { code: 'no_sensors_assigned', zone_id: 'z1', message: 'zone "Internal" has no sensors' },
+          { code: 'private_addresses_outside_zones', message: '2 private inventory addresses' },
+          { code: 'something_new', message: 'A new coverage note' },
+        ],
+      })
+    )
+    const list = screen.getByTestId('zone-coverage-warnings')
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(list).getByText('A new coverage note')).toBeInTheDocument()
+    expect(screen.queryByText(/has no sensors/)).toBeNull()
   })
 
   it('lists the zone without a sensor', () => {

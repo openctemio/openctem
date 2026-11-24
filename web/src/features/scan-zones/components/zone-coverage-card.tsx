@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import useSWR from 'swr'
-import { ArrowRight, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -84,6 +84,19 @@ interface ZoneCoverageCardProps {
   zones: ScanZone[]
 }
 
+/**
+ * Coverage warnings this card already states in its own words (translated):
+ * the counts, the zones without an online sensor and the public-address
+ * label. Any other code the API adds is listed as it comes.
+ */
+const SHOWN_WARNINGS = new Set([
+  'no_sensors_assigned',
+  'private_ranges_without_healthy_sensor',
+  'default_zone_without_healthy_sensor',
+  'private_addresses_outside_zones',
+  'public_addresses_without_default_zone',
+])
+
 /** One labelled number: the label, then the figure. */
 function Figure({ label, value, tone }: { label: string; value: number; tone?: 'warning' }) {
   return (
@@ -104,7 +117,8 @@ function Figure({ label, value, tone }: { label: string; value: number; tone?: '
 
 /**
  * RFC-023 V3: which inventory addresses fall in no zone, and which zones with
- * private ranges have no healthy sensor. The counts are the API's (the strip
+ * private ranges have no healthy sensor; the API's coverage warnings are said
+ * here, in the card under the zones list, never as a notice above it. The counts are the API's (the strip
  * above the zones list carries the totals and "inside a zone"); this card
  * splits the addresses outside every zone into private and public, shows a
  * few examples (private first, computed in the browser from the first 1,000
@@ -121,6 +135,11 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
     () => (data ? addressesOutsideZones(data.rows, zones).slice(0, MAX_EXAMPLES) : []),
     [data, zones]
   )
+
+  const otherWarnings = (coverage.warnings ?? []).filter((w) => !SHOWN_WARNINGS.has(w.code))
+  const publicLabel = coverage.has_default_zone
+    ? 'scans.zones.coverage.outsidePublicDefault'
+    : 'scans.zones.coverage.outsidePublicAnySensor'
 
   const unhealthyPrivate = coverage.zones.filter(
     (z) => (z.has_private_range || z.is_default) && z.healthy_sensors === 0
@@ -152,14 +171,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                   value={coverage.outside_private}
                   tone="warning"
                 />
-                <Figure
-                  label={t(
-                    coverage.has_default_zone
-                      ? 'scans.zones.coverage.outsidePublicDefault'
-                      : 'scans.zones.coverage.outsidePublic'
-                  )}
-                  value={coverage.outside_public}
-                />
+                <Figure label={t(publicLabel)} value={coverage.outside_public} />
               </dl>
               {!canReadAssets ? (
                 <p className="text-sm text-muted-foreground">
@@ -257,6 +269,20 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
             </ul>
           )}
         </section>
+
+        {otherWarnings.length > 0 && (
+          <ul
+            className="space-y-1 text-sm text-muted-foreground lg:col-span-2"
+            data-testid="zone-coverage-warnings"
+          >
+            {otherWarnings.map((w, i) => (
+              <li key={`${w.code}-${w.zone_id ?? i}`} className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+                {w.message}
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   )
