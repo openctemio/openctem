@@ -209,7 +209,7 @@ export function ToolSourcesSection() {
       },
       {
         id: 'enabled',
-        meta: { kind: 'status', width: 80, label: enabledLabel },
+        meta: { kind: 'status', width: 112, label: enabledLabel },
         enableSorting: false,
         header: enabledLabel,
         cell: ({ row }) => enableSwitch(row.original),

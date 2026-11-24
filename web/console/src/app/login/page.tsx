@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,6 +27,10 @@ import type { AdminIdPInfo, AdminLoginResult } from '@console/features/admin-con
  *   (never an organization's): the browser goes to the IdP and comes back to
  *   /login/callback.
  */
+
+/** No store to watch: useSyncExternalStore here only tells server from client. */
+const noopSubscribe = () => () => {}
+
 export default function AdminSignInPage() {
   const { t } = useTranslation()
   const emailId = useId()
@@ -43,6 +47,13 @@ export default function AdminSignInPage() {
   const [captchaRequired, setCaptchaRequired] = useState(false)
   // Continue was pressed with a field empty.
   const [missing, setMissing] = useState(false)
+  // Continue is live only once React runs the form: before that a click would
+  // submit the server-rendered form natively and lose what was typed.
+  const live = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  )
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
   const { data: authProviders } = useAuthProviders(undefined, captchaRequired)
@@ -206,7 +217,7 @@ export default function AdminSignInPage() {
               {idpRequired && idp && (
                 <IdPSignInButton displayName={idp.display_name} next={nextFromLocation()} />
               )}
-              <Button type="submit" className="w-full" disabled={busy}>
+              <Button type="submit" className="w-full" disabled={busy || !live}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
                 {t('admin.login.submit', 'Continue')}
               </Button>
