@@ -17,6 +17,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import type { ScanZone, ScanZoneCoverageZone } from '@/lib/api/scan-zone-types'
 import type { Sensor } from '@/lib/api/sensor-types'
+import { TABLE_PAGE_SIZES } from '@/lib/page-size-options'
 
 import { isPrivateRange } from '../lib/ranges'
 import { isSensorHealthy } from '../lib/sensor-health'
@@ -231,6 +232,9 @@ export function ScanZoneTable({
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       emptyMessage={t('scans.zones.noMatch')}
+      // A pager only when the zones do not fit the smallest page: never
+      // "Page 1 of 1" under a team's two or three zones.
+      showPagination={zones.length > TABLE_PAGE_SIZES[0]}
     />
   )
 }
