@@ -420,13 +420,14 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
           {/* An icon on a phone, so Export, Abort all and Run all share one
               line (Run all never wraps alone); named and titled as before. */}
           <Button
+            iconOnlyBelow="sm"
             variant="outline"
             onClick={exportCsv}
             disabled={!overview}
             title={t('attackSurface.discovery.export', 'Export CSV')}
           >
             <Download className="h-4 w-4 sm:me-2" aria-hidden />
-            <span className="max-sm:sr-only">
+            <span className="sr-only sm:not-sr-only">
               {t('attackSurface.discovery.export', 'Export CSV')}
             </span>
           </Button>
