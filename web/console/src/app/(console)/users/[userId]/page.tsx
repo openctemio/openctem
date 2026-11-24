@@ -27,7 +27,10 @@ import { usePlatformUser } from '@console/features/admin-console/api/use-platfor
 import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin-audit'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
-import { PlatformUserActions } from '@console/features/admin-console/components/platform-user-actions'
+import {
+  PlatformUserActions,
+  platformUserUnavailableNote,
+} from '@console/features/admin-console/components/platform-user-actions'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
 import { adminHas } from '@console/features/admin-console/types'
 import { formatTime } from '@/lib/app-locale'
@@ -47,6 +50,9 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
     void mutate()
     void activity.mutate()
   }
+  // Why the account offers no actions, said once under its name (no row of
+  // greyed-out buttons).
+  const unavailableNote = user ? platformUserUnavailableNote(t, user) : undefined
 
   return (
     <Main>
@@ -66,9 +72,21 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
           </div>
         ) : (
           <>
-            <PageHeader title={user.name || user.email} description={user.email}>
-              <PlatformUserBadges user={user} />
-            </PageHeader>
+            <PageHeader
+              title={user.name || user.email}
+              // The address, why the account offers no actions (if so) and its
+              // marks, all under the name: beside the title the marks squeezed
+              // the address onto two lines on a phone.
+              description={
+                <>
+                  <span className="block [overflow-wrap:anywhere]">{user.email}</span>
+                  {unavailableNote && <span className="block">{unavailableNote}</span>}
+                  <div className="mt-2">
+                    <PlatformUserBadges user={user} />
+                  </div>
+                </>
+              }
+            />
 
             {adminHas(admin, 'platform.users.support') && (
               <PlatformUserActions
@@ -79,7 +97,7 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
             )}
 
             <Card>
-              <CardContent className="pt-6">
+              <CardContent>
                 <DetailFieldGrid>
                   <DetailField label={t('admin.users.field.signIn', 'Signs in with')}>
                     <span>{authProviderLabel(t, user.auth_provider)}</span>
