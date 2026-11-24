@@ -939,7 +939,10 @@ function AutoMobileCard<TData>({
         <dl
           ref={fieldsRef}
           className={cn(
-            'mt-1 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            // Two fields on one line: the first at its own width, at most half
+            // the line; the second takes the rest, so its value ends at the
+            // card's edge rather than at a fixed middle.
+            'mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
             pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
