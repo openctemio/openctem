@@ -81,9 +81,14 @@ const PANEL_ID = 'component-filters'
 
 /**
  * Columns that step aside while the table frame is narrower than this (px);
- * they stay under Display > Columns. Frame = screen - 326 at 1440 and 1280.
+ * they stay under Display > Columns. Frame = screen - 326 at 1440 and 1280,
+ * about 700 at 1024 with the sidebar open, about 650 at 768. Each threshold
+ * is above the sum of the columns still shown with it (name 240, counts 96,
+ * vulnerabilities 216, risk 148, fix 72, license 176), so the table never
+ * scrolls sideways: 604 below 720, 700 below 820, 796 below 900, 868 below
+ * 1080, 1044 from there.
  */
-const COMPONENT_HIDE_BELOW = { license: 1000, fix: 820 } as const
+const COMPONENT_HIDE_BELOW = { license: 1080, fix: 900, versions: 820, assets: 720 } as const
 
 /**
  * Column widths (px). Every column but the package has a fixed width, so the
@@ -248,6 +253,7 @@ export function ComponentsListView() {
         meta: {
           kind: 'number',
           width: COMPONENT_WIDTH.count,
+          hideBelow: COMPONENT_HIDE_BELOW.versions,
           label: t('components.col.versions', 'Versions'),
         },
         header: ({ column }) => (
@@ -262,6 +268,7 @@ export function ComponentsListView() {
         meta: {
           kind: 'number',
           width: COMPONENT_WIDTH.count,
+          hideBelow: COMPONENT_HIDE_BELOW.assets,
           label: t('components.col.assets', 'Assets'),
         },
         header: ({ column }) => (

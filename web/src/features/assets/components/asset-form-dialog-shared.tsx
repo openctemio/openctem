@@ -590,7 +590,7 @@ export function AssetFormDialogShared({
             {isSubmitting
               ? t('assets.form.saving', 'Saving...')
               : asset
-                ? t('assets.form.saveChanges', 'Save Changes')
+                ? t('assets.form.saveChanges', 'Save changes')
                 : t('assets.form.create', 'Create')}
           </Button>
         </DialogFooter>
