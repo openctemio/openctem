@@ -22,6 +22,7 @@ import {
   ROUTE_STATES,
   routeSlug,
   SIDEBAR_WIDTHS,
+  signInAs,
   statePath,
   type MatrixBreaks,
 } from './layout-matrix'
@@ -1399,10 +1400,14 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
         t(`${route} @${size.width}`, async ({ page: signedIn, browser, baseURL }, testInfo) => {
           t.setTimeout(900_000)
           const signedOut = isSignedOutRoute(route)
-          const ctx = signedOut
-            ? await browser.newContext({ baseURL, storageState: SIGNED_OUT })
-            : null
+          // A state opened by another seeded account signs in on its own context.
+          const state = ROUTE_STATES[route]
+          const as = state?.as ? state.as() : undefined
+          t.skip(as === null, `the stack printed no account for ${route}`)
+          const ctx =
+            signedOut || as ? await browser.newContext({ baseURL, storageState: SIGNED_OUT }) : null
           const page = ctx ? await ctx.newPage() : signedIn
+          if (as) await signInAs(page, as)
           const url = signedOut ? statePath(route) : await resolveRoute(page, statePath(route))
           t.skip(!url, `no row to open for ${route}`)
           const vs: (Variant & { sidebar?: 'open' | 'closed' })[] = []
