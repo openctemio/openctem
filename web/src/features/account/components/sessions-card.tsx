@@ -91,7 +91,7 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
 
   return (
     <Card id="sessions" className="scroll-mt-4">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+      <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="space-y-1.5">
           <CardTitle className="flex items-center gap-2">
             <Monitor className="h-5 w-5" />
@@ -126,10 +126,12 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
               const d = describeUserAgent(s.user_agent)
               const Icon = DEVICE_ICON[d.kind]
               return (
-                <li key={s.id} className="flex items-center justify-between gap-4 p-4">
+                <li key={s.id} className="p-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 space-y-0.5">
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      {/* Sign out sits on the device line, so the details below keep
+                          the full width on a phone. */}
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">
                           {t('account.sessions.browserOn', '{browser} on {os}', {
@@ -147,6 +149,16 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
                           <Badge variant="secondary">
                             {t('account.sessions.thisDevice', 'This device')}
                           </Badge>
+                        )}
+                        {!s.is_current && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ms-auto shrink-0 text-destructive hover:text-destructive"
+                            onClick={() => setToRevoke(s)}
+                          >
+                            {t('account.sessions.signOut', 'Sign out')}
+                          </Button>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground">
@@ -166,16 +178,6 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
                       </p>
                     </div>
                   </div>
-                  {!s.is_current && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => setToRevoke(s)}
-                    >
-                      {t('account.sessions.signOut', 'Sign out')}
-                    </Button>
-                  )}
                 </li>
               )
             })}
