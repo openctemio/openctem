@@ -65,7 +65,7 @@ export function NodeInspector({
   return (
     <aside
       aria-label={t('workflowStages.inspector.aria', 'Settings of {name}', { name: step.name })}
-      className="flex w-80 shrink-0 flex-col border-s bg-background"
+      className="flex shrink-0 flex-col bg-background max-md:h-1/2 max-md:w-full max-md:border-t md:w-80 md:border-s"
     >
       <div className="flex items-start justify-between gap-2 border-b px-4 py-3">
         <div className="min-w-0">

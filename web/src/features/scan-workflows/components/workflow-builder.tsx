@@ -42,6 +42,7 @@ import {
   capabilityForStep,
   checkStepConnection,
   describeEdge,
+  portTypeLabel,
   stepEdges,
   type CapabilityTable,
 } from '../lib/capability-graph'
@@ -359,6 +360,18 @@ function WorkflowBuilderInner({
     return buildAllNodes([], startEndPositions.start, startEndPositions.end)
   }, [buildAllNodes, startEndPositions])
 
+  // Port type names in the reader's language (the chips' titles).
+  const portLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.keys(capabilityTable.portLabels).map((k) => [
+          k,
+          portTypeLabel(capabilityTable, k, t),
+        ])
+      ),
+    [capabilityTable, t]
+  )
+
   const initialEdges = useMemo(
     () => stepsToEdges(steps, capabilityTable, t),
     [steps, capabilityTable, t]
@@ -421,11 +434,14 @@ function WorkflowBuilderInner({
             categoryColor: (step as ScanWorkflowStep & { category_color?: string }).category_color,
             availableTools: availableTools,
             availableSteps: availableStepsForThis,
-            capabilityName: capability?.name,
+            // The catalog's names are English: the dictionary names them.
+            capabilityName: capability
+              ? t(`assetCoverage.capability.${capability.key}`, capability.name)
+              : undefined,
             capabilityTier: capability?.tier,
             inPorts: capability?.inPorts,
             outPorts: capability?.outPorts,
-            portLabels: capabilityTable.portLabels,
+            portLabels: portLabels,
             issues,
             warnings,
             ...(issues.length > 0 ? { isValid: false, validationMessage: undefined } : {}),
@@ -470,6 +486,7 @@ function WorkflowBuilderInner({
     steps,
     availableTools,
     capabilityTable,
+    portLabels,
     issuesByStep,
     warningsByStep,
     readOnly,
@@ -514,6 +531,31 @@ function WorkflowBuilderInner({
     )
     requestAnimationFrame(() => void fitView({ padding: 0.3 }))
   }, [nodesInitialized, steps, getNodes, setNodes, fitView])
+
+  // The canvas fits its steps whenever its frame changes size (the tool
+  // list loads beside it, the window or the sidebar changes) until the
+  // person pans or zooms: fitting once on load left steps past the edge
+  // when the frame narrowed afterwards.
+  const viewMoved = useRef(false)
+  useEffect(() => {
+    const el = reactFlowWrapper.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let frame = 0
+    const ro = new ResizeObserver(() => {
+      if (viewMoved.current) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => void fitView({ padding: 0.3 }))
+    })
+    ro.observe(el)
+    return () => {
+      cancelAnimationFrame(frame)
+      ro.disconnect()
+    }
+  }, [fitView])
+  // A move with an event is the person's (a fit has none).
+  const onMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
+    if (event) viewMoved.current = true
+  }, [])
 
   // Define node types
   const nodeTypes: NodeTypes = useMemo(
@@ -834,6 +876,7 @@ function WorkflowBuilderInner({
         edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.3 }}
+        onMoveStart={onMoveStart}
         minZoom={0.1}
         maxZoom={2}
         className="bg-background"

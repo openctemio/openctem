@@ -26,7 +26,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission, usePermissions } from '@/lib/permissions'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, KeyValueList, PageHeader, PageStack } from '@/features/shared'
 import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -242,68 +242,74 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
             </section>
           )}
 
-          <section className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.attestation', 'Accepted terms')}:{' '}
-              </span>
-              <span className="font-mono">{shortHash(p.terms_sha256)}</span>
-              {p.accepted_at && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  ({formatDateTime(new Date(p.accepted_at))})
-                </span>
-              )}
-            </div>
-            <div>
-              <span className="text-muted-foreground">{t('programs.col.tier', 'Max tier')}: </span>
-              <span className="font-mono">{p.max_tier}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.form.rate', 'Rate limit (requests per second)')}:{' '}
-              </span>
-              {p.rules.rate_limit_rps || '-'}
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.form.ua', 'Required User-Agent')}:{' '}
-              </span>
-              <span className="font-mono">
-                {p.rules.user_agents?.length
+          {/* The program's terms and rules: label and value pairs (the shared
+              list), so a long value wraps under its label, not into rows of
+              loose text. */}
+          <KeyValueList
+            items={[
+              {
+                key: 'terms',
+                label: t('programs.attestation', 'Accepted terms'),
+                value: (
+                  <>
+                    <span className="font-mono">{shortHash(p.terms_sha256)}</span>
+                    {p.accepted_at && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        ({formatDateTime(new Date(p.accepted_at))})
+                      </span>
+                    )}
+                  </>
+                ),
+              },
+              {
+                key: 'tier',
+                label: t('programs.col.tier', 'Max tier'),
+                value: <span className="font-mono">{p.max_tier}</span>,
+              },
+              {
+                key: 'rate',
+                label: t('programs.form.rate', 'Rate limit (requests per second)'),
+                value: p.rules.rate_limit_rps || '-',
+              },
+              {
+                key: 'ua',
+                label: t('programs.form.ua', 'Required User-Agent'),
+                value: p.rules.user_agents?.length
                   ? t('programs.rotatingOver', 'Rotating over {n} values', {
                       n: p.rules.user_agents.length,
                     })
-                  : p.rules.user_agent || '-'}
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.identificationRequired', 'Identification required')}:{' '}
-              </span>
-              {p.rules.identification_required ? t('common.yes', 'Yes') : t('common.no', 'No')}
-            </div>
-            <div className="sm:col-span-2">
-              <span className="text-muted-foreground">
-                {t('programs.windows', 'Testing windows')}:{' '}
-              </span>
-              {p.rules.testing_windows?.length ? (
-                <span className="font-mono text-xs">
-                  {p.rules.testing_windows.map(formatWindow).join('; ')}
-                </span>
-              ) : (
-                t('programs.windowsAny', 'Any time')
-              )}
-            </div>
-            <div className="sm:col-span-2">
-              <span className="text-muted-foreground">
-                {t('programs.form.forbidden', 'The program forbids')}:{' '}
-              </span>
-              {FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
-                .map((f) => t(`programs.forbidden.${f.value}`, f.label))
-                .join(', ') || '-'}
-            </div>
-          </section>
+                  : p.rules.user_agent || '-',
+                token: !p.rules.user_agents?.length,
+              },
+              {
+                key: 'identification',
+                label: t('programs.identificationRequired', 'Identification required'),
+                value: p.rules.identification_required
+                  ? t('common.yes', 'Yes')
+                  : t('common.no', 'No'),
+              },
+              {
+                key: 'windows',
+                label: t('programs.windows', 'Testing windows'),
+                value: p.rules.testing_windows?.length ? (
+                  <span className="font-mono text-xs">
+                    {p.rules.testing_windows.map(formatWindow).join('; ')}
+                  </span>
+                ) : (
+                  t('programs.windowsAny', 'Any time')
+                ),
+              },
+              {
+                key: 'forbidden',
+                label: t('programs.form.forbidden', 'The program forbids'),
+                value:
+                  FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
+                    .map((f) => t(`programs.forbidden.${f.value}`, f.label))
+                    .join(', ') || '-',
+              },
+            ]}
+          />
 
           <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
           <ProgramSuggestions program={p} canWrite={canWrite} onChanged={refresh} />

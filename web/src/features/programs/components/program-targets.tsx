@@ -6,78 +6,128 @@
  * environment, testing instructions, prerequisites and how far the target
  * can be trusted. They are shown as published; none of them authorizes a
  * scan (the scope entries do).
+ *
+ * The shared table: on a phone each target is a card (a seven-column table
+ * squeezed the target into a sliver and cut its headers), and there is no
+ * toolbar row (nothing to search or arrange).
  */
 
+import { useMemo } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
+import { DataTable } from '@/features/shared'
 import type { ProgramItem } from '../api/programs-api.types'
 import { itemLimit } from '../lib/program-targets'
 
 export function ProgramTargetsTable({ items }: { items: ProgramItem[] }) {
   const { t } = useTranslation()
-  const rows = items.filter((i) => i.in_scope)
+  const rows = useMemo(() => items.filter((i) => i.in_scope), [items])
+  const columns = useMemo<ColumnDef<ProgramItem>[]>(
+    () => [
+      {
+        id: 'target',
+        meta: { kind: 'name' },
+        header: t('programs.targets.target', 'Target'),
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs [overflow-wrap:anywhere]">{row.original.raw}</span>
+        ),
+      },
+      {
+        id: 'limit',
+        meta: { kind: 'text' },
+        header: t('programs.targets.limit', 'Limited to'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">{itemLimit(row.original) || '—'}</span>
+        ),
+      },
+      {
+        // Bounty, maximum severity and environment in one column of labelled
+        // lines: seven columns did not fit a tablet and cut the last header.
+        id: 'terms',
+        meta: { kind: 'text' },
+        header: t('programs.targets.terms', 'Terms'),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const it = row.original
+          const lines: [string, string][] = []
+          if (it.eligible_for_bounty !== undefined)
+            lines.push([
+              t('programs.targets.bounty', 'Bounty'),
+              it.eligible_for_bounty
+                ? t('programs.targets.eligible', 'Eligible')
+                : t('programs.targets.notEligible', 'Not eligible'),
+            ])
+          if (it.max_severity)
+            lines.push([
+              t('programs.targets.maxSeverity', 'Max severity'),
+              t(`programs.targets.severity.${it.max_severity}`, it.max_severity),
+            ])
+          if (it.environment)
+            lines.push([
+              t('programs.targets.environment', 'Environment'),
+              t(`programs.targets.env.${it.environment}`, it.environment),
+            ])
+          if (lines.length === 0) return '—'
+          return (
+            <span className="flex flex-col text-xs">
+              {lines.map(([label, value]) => (
+                <span key={label}>
+                  <span className="text-muted-foreground">{label}:</span> {value}
+                </span>
+              ))}
+            </span>
+          )
+        },
+      },
+      {
+        id: 'source',
+        meta: { kind: 'status' },
+        header: t('programs.targets.trust', 'Source'),
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.confidence ? (
+            <Badge variant={row.original.confidence === 'published' ? 'secondary' : 'outline'}>
+              {t(`programs.targets.trust.${row.original.confidence}`, row.original.confidence)}
+            </Badge>
+          ) : (
+            '—'
+          ),
+      },
+      {
+        id: 'instructions',
+        meta: { kind: 'text' },
+        header: t('programs.targets.instructions', 'Instructions'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="block max-w-xs whitespace-pre-wrap text-xs text-muted-foreground">
+            {row.original.instructions}
+            {row.original.requires && (
+              <span className="block">
+                {t('programs.targets.requires', 'Requires: {value}', {
+                  value: row.original.requires,
+                })}
+              </span>
+            )}
+          </span>
+        ),
+      },
+    ],
+    [t]
+  )
   if (rows.length === 0) return null
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t('programs.targets.target', 'Target')}</TableHead>
-          <TableHead>{t('programs.targets.limit', 'Limited to')}</TableHead>
-          <TableHead>{t('programs.targets.bounty', 'Bounty')}</TableHead>
-          <TableHead>{t('programs.targets.maxSeverity', 'Max severity')}</TableHead>
-          <TableHead>{t('programs.targets.environment', 'Environment')}</TableHead>
-          <TableHead>{t('programs.targets.trust', 'Source')}</TableHead>
-          <TableHead>{t('programs.targets.instructions', 'Instructions')}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((it) => (
-          <TableRow key={`${it.raw}|${it.ports ?? ''}`}>
-            <TableCell className="font-mono text-xs break-all">{it.raw}</TableCell>
-            <TableCell className="font-mono text-xs">{itemLimit(it) || '—'}</TableCell>
-            <TableCell className="text-xs">
-              {it.eligible_for_bounty === undefined
-                ? '—'
-                : it.eligible_for_bounty
-                  ? t('programs.targets.eligible', 'Eligible')
-                  : t('programs.targets.notEligible', 'Not eligible')}
-            </TableCell>
-            <TableCell className="text-xs">
-              {it.max_severity
-                ? t(`programs.targets.severity.${it.max_severity}`, it.max_severity)
-                : '—'}
-            </TableCell>
-            <TableCell className="text-xs">
-              {it.environment ? t(`programs.targets.env.${it.environment}`, it.environment) : '—'}
-            </TableCell>
-            <TableCell>
-              {it.confidence ? (
-                <Badge variant={it.confidence === 'published' ? 'secondary' : 'outline'}>
-                  {t(`programs.targets.trust.${it.confidence}`, it.confidence)}
-                </Badge>
-              ) : (
-                '—'
-              )}
-            </TableCell>
-            <TableCell className="text-muted-foreground max-w-xs text-xs whitespace-pre-wrap">
-              {it.instructions}
-              {it.requires && (
-                <span className="block">
-                  {t('programs.targets.requires', 'Requires: {value}', { value: it.requires })}
-                </span>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable
+      columns={columns}
+      data={rows}
+      getRowId={(it) => `${it.raw}|${it.ports ?? ''}`}
+      showToolbar={false}
+      showSearch={false}
+      showColumnToggle={false}
+      pageSize={50}
+    />
   )
 }

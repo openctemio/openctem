@@ -44,7 +44,10 @@ export function CharterExclusionsField({
 
   if (!editable) {
     const filled = value.filter((e) => e.item || e.reason)
-    if (filled.length === 0) return <p className="text-sm text-muted-foreground">Not set</p>
+    if (filled.length === 0)
+      return (
+        <p className="text-sm text-muted-foreground">{t('scoping.charter.notSet', 'Not set')}</p>
+      )
     return (
       <ul className="space-y-1 text-sm">
         {filled.map((e, i) => (
@@ -52,13 +55,15 @@ export function CharterExclusionsField({
             {loaded && enforced.has(e.item) ? (
               <ShieldCheck
                 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success"
-                aria-label="Enforced on scans"
+                aria-label={t('scoping.charter.exclusionEnforced', 'Enforced on scans')}
               />
             ) : (
               <span className="w-3.5 shrink-0" />
             )}
             <span>
-              <span className="font-mono">{e.item || 'Untitled'}</span>
+              <span className="font-mono">
+                {e.item || t('scoping.charter.exclusionUntitled', 'Untitled')}
+              </span>
               {e.reason && <span className="text-muted-foreground"> — {e.reason}</span>}
             </span>
           </li>
@@ -84,11 +89,11 @@ export function CharterExclusionsField({
         </p>
       ) : exclusions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No exclusions yet.{' '}
+          {t('scoping.charter.exclusionsNone', 'No exclusions yet.')}{' '}
           <Link href="/scope?tab=exclusions" className="underline">
-            Add them under Scope
+            {t('scoping.charter.exclusionsAddLink', 'Add them under Scope')}
           </Link>{' '}
-          so scans honour them, then pick them here.
+          {t('scoping.charter.exclusionsAddTail', 'so scans honour them, then pick them here.')}
         </p>
       ) : (
         <div className="space-y-1 rounded-md border p-2">
@@ -115,9 +120,18 @@ export function CharterExclusionsField({
                 </div>
                 {picked && (
                   <Input
-                    aria-label={`Reason for excluding ${pattern}`}
+                    aria-label={t(
+                      'scoping.charter.exclusionReasonLabel',
+                      'Reason for excluding {pattern}',
+                      {
+                        pattern,
+                      }
+                    )}
                     className="ms-6 w-[calc(100%-1.5rem)]"
-                    placeholder="Why it is out of scope"
+                    placeholder={t(
+                      'scoping.charter.exclusionReasonPlaceholder',
+                      'Why it is out of scope'
+                    )}
                     value={picked.reason}
                     onChange={(e) => setReason(pattern, e.target.value)}
                   />
@@ -132,7 +146,10 @@ export function CharterExclusionsField({
         <div className="space-y-1 rounded-md border bg-muted/40 p-2 text-sm">
           <p className="flex items-center gap-1.5 text-muted-foreground">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            Not enforced: no scope exclusion matches these, so scans still touch them.
+            {t(
+              'scoping.charter.exclusionsNotEnforced',
+              'Not enforced: no scope exclusion matches these, so scans still touch them.'
+            )}
           </p>
           <ul className="space-y-1">
             {unenforced.map((e) => (
@@ -145,8 +162,7 @@ export function CharterExclusionsField({
                   type="button"
                   variant="ghost"
                   size="icon"
-
-                  aria-label={`Remove ${e.item}`}
+                  aria-label={t('scoping.charter.removeItem', 'Remove {item}', { item: e.item })}
                   onClick={() => onChange(value.filter((x) => x.item !== e.item))}
                 >
                   <X className="h-3.5 w-3.5" />

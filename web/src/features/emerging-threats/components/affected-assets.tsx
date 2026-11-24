@@ -242,7 +242,17 @@ export function AffectedAssets({
   const mobileRow = (row: HostRow) => {
     const facts: KeyValueItem[] = []
     const criticality = cells.criticality(row)
-    if (criticality)
+    // The title line ends with the host's state: internet-facing, else its
+    // criticality (then not repeated in the facts), so no card is bunched
+    // at its start.
+    const endState = row.internet_facing ? (
+      <Badge variant="outline" className="shrink-0">
+        {t('emergingThreats.assets.internetFacing')}
+      </Badge>
+    ) : criticality ? (
+      <span className="shrink-0 text-sm text-muted-foreground">{criticality}</span>
+    ) : null
+    if (criticality && row.internet_facing)
       facts.push({
         key: 'criticality',
         label: t('emergingThreats.assets.criticality'),
@@ -273,11 +283,7 @@ export function AffectedAssets({
       <div className="flex flex-col gap-2 px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <HostTitle row={row} />
-          {row.internet_facing && (
-            <Badge variant="outline" className="shrink-0">
-              {t('emergingThreats.assets.internetFacing')}
-            </Badge>
-          )}
+          {endState}
         </div>
         {facts.length > 0 && (
           <KeyValueList
@@ -306,6 +312,9 @@ export function AffectedAssets({
           getRowId={(r) => r.key}
           showSearch={false}
           showColumnToggle={false}
+          // Nothing to search, filter or arrange: no toolbar row with a lone
+          // Display button above the hosts.
+          showToolbar={false}
           pageSize={50}
           pageSizeOptions={PAGE_SIZES}
           rowGroups={rowGroups}
