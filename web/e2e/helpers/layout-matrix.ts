@@ -1,4 +1,5 @@
 import { test, type Page } from '@playwright/test'
+import { submitSignIn } from './auth'
 
 /**
  * MVP acceptance v2 (agent-ops/ui-v2/MVP-ACCEPTANCE.md): the viewport matrix
@@ -168,8 +169,59 @@ async function openVerificationLink(page: Page) {
  * The key is a LAYOUT_ROUTES entry (`/reset-password@form`); `path` is the
  * page opened and `act` what a person does on it before the checks. The acts
  * only fill a form with values the server refuses: nothing is bypassed.
+ * `as` names another seeded account (web/e2e/ci/seed.sh) the page is opened
+ * by, in a context of its own: the page then shows that account's state
+ * (an organization picker, an invitation to accept). A path or account that
+ * needs a seed value the stack did not print is left out: the route skips.
  */
-export const ROUTE_STATES: Record<string, { path: string; act?: (page: Page) => Promise<void> }> = {
+type RouteState = {
+  path: string
+  act?: (page: Page) => Promise<void>
+  as?: () => { email: string; password: string } | null
+}
+
+const account = (prefix: string) => () => {
+  const email = process.env[`${prefix}_EMAIL`]
+  const password = process.env[`${prefix}_PASSWORD`]
+  return email && password ? { email, password } : null
+}
+
+/**
+ * Signs `page` in as another account through the form and stays wherever the
+ * sign-in lands (an account of two organizations stops at the picker).
+ */
+export async function signInAs(page: Page, who: { email: string; password: string }) {
+  await page.goto('/login', { timeout: 60_000 })
+  await page.waitForLoadState('networkidle').catch(() => {})
+  await page.locator('main input[name="email"]').fill(who.email)
+  await page.locator('main input[name="password"]').fill(who.password)
+  await submitSignIn(page, (url) => !url.pathname.startsWith('/login'))
+}
+
+export const ROUTE_STATES: Record<string, RouteState> = {
+  // An account of two organizations after its password: the organization
+  // picker, and "new organization" from it (both need the picker's cookie
+  // and no organization chosen yet).
+  '/select-tenant': { path: '/select-tenant', as: account('E2E_SWITCH') },
+  '/onboarding/create-team': { path: '/onboarding/create-team', as: account('E2E_SWITCH') },
+  // An invitation link, opened by the invited account (it has an
+  // organization of its own): the invitation to accept. The old path form
+  // /invitations/<token> only redirects to this fragment form.
+  '/invitations/[token]': {
+    get path() {
+      const token = process.env.E2E_INVITEE_TOKEN
+      return token ? `/invitations#token=${encodeURIComponent(token)}` : '/invitations/[token]'
+    },
+    as: account('E2E_INVITEE'),
+  },
+  // A pending write an AI application asked for: Approve and Deny. Opened
+  // when the stack's seed made one for the owner and printed its id.
+  '/mcp/confirm/[id]': {
+    get path() {
+      const id = process.env.E2E_MCP_CONFIRM_ID
+      return id ? `/mcp/confirm/${encodeURIComponent(id)}` : '/mcp/confirm/[id]'
+    },
+  },
   // Wrong credentials of an account that does not exist: the error banner.
   '/login@error': {
     path: '/login',
