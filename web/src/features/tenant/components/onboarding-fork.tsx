@@ -28,7 +28,18 @@ interface OnboardingForkProps {
    * `plain`: titled sections of the card the page already draws (entry pages).
    */
   variant?: 'cards' | 'plain'
+  /**
+   * The page's title block for what is on offer, drawn above it in every
+   * state, so the title never offers what the page then refuses.
+   */
+  header?: (offer: OnboardingOffer) => React.ReactNode
 }
+
+/**
+ * What the fork shows: still loading, the create form, only organizations
+ * to join, or nothing (the empty slot; also when the options failed to load).
+ */
+export type OnboardingOffer = 'loading' | 'create' | 'join' | 'none'
 
 /**
  * The onboarding fork of an account without an organization (api RFC-104):
@@ -70,7 +81,12 @@ function Group({
   )
 }
 
-export function OnboardingFork({ createSlot, emptySlot, variant = 'cards' }: OnboardingForkProps) {
+export function OnboardingFork({
+  createSlot,
+  emptySlot,
+  variant = 'cards',
+  header,
+}: OnboardingForkProps) {
   const plain = variant === 'plain'
   const { t } = useTranslation()
   const [options, setOptions] = useState<OnboardingOptions | null>(null)
@@ -127,13 +143,16 @@ export function OnboardingFork({ createSlot, emptySlot, variant = 'cards' }: Onb
 
   if (!options && !failed) {
     return (
-      <div
-        className="flex justify-center py-16"
-        role="status"
-        aria-label={t('org.onboarding.loading')}
-      >
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        {header?.('loading')}
+        <div
+          className="flex justify-center py-16"
+          role="status"
+          aria-label={t('org.onboarding.loading')}
+        >
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </>
     )
   }
 
@@ -141,95 +160,105 @@ export function OnboardingFork({ createSlot, emptySlot, variant = 'cards' }: Onb
   const organizations = options?.organizations ?? []
   const canCreate = options?.can_create_organization ?? false
   const nothing = invitations.length === 0 && organizations.length === 0 && !canCreate
+  const offer: OnboardingOffer = nothing || failed ? 'none' : canCreate ? 'create' : 'join'
 
   return (
-    <div className={plain ? 'flex flex-col gap-3.5' : 'space-y-6'}>
-      {options && !options.email_verified && (
-        <p className="rounded-md border p-3 text-sm text-muted-foreground">
-          {t('org.onboarding.verifyFirst')}
-        </p>
-      )}
+    <>
+      {header?.(offer)}
+      {/* Nothing under the header (no offer, no empty slot): no empty block
+          to add a gap under the title. */}
+      {(offer !== 'none' || emptySlot || (options && !options.email_verified)) && (
+        <div className={plain ? 'flex flex-col gap-3.5' : 'space-y-6'}>
+          {options && !options.email_verified && (
+            <p className="rounded-md border p-3 text-sm text-muted-foreground">
+              {t('org.onboarding.verifyFirst')}
+            </p>
+          )}
 
-      {invitations.length > 0 && (
-        <Group plain={plain} title={t('org.onboarding.invitations')}>
-          <>
-            {invitations.map((inv) => (
-              <div key={inv.ref} className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{inv.organization_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {inv.invited_by
-                        ? t('org.onboarding.invitedBy', undefined, {
-                            name: inv.invited_by,
-                            role: inv.role,
-                          })
-                        : t('org.onboarding.invitedAs', undefined, { role: inv.role })}
-                    </p>
+          {invitations.length > 0 && (
+            <Group plain={plain} title={t('org.onboarding.invitations')}>
+              <>
+                {invitations.map((inv) => (
+                  <div key={inv.ref} className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{inv.organization_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {inv.invited_by
+                            ? t('org.onboarding.invitedBy', undefined, {
+                                name: inv.invited_by,
+                                role: inv.role,
+                              })
+                            : t('org.onboarding.invitedAs', undefined, { role: inv.role })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => take(inv.ref)} disabled={busyRef !== null}>
+                      {busyRef === inv.ref && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
+                      {t('org.onboarding.accept')}
+                    </Button>
                   </div>
-                </div>
-                <Button size="sm" onClick={() => take(inv.ref)} disabled={busyRef !== null}>
-                  {busyRef === inv.ref && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
-                  {t('org.onboarding.accept')}
-                </Button>
-              </div>
-            ))}
-          </>
-        </Group>
-      )}
+                ))}
+              </>
+            </Group>
+          )}
 
-      {organizations.length > 0 && (
-        <Group
-          plain={plain}
-          title={t('org.onboarding.yourCompany')}
-          description={t('org.onboarding.yourCompanyDesc')}
-        >
-          <>
-            {organizations.map((org) => (
-              <div key={org.ref} className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{org.organization_name}</p>
-                    <p className="text-xs text-muted-foreground">{org.domain}</p>
+          {organizations.length > 0 && (
+            <Group
+              plain={plain}
+              title={t('org.onboarding.yourCompany')}
+              description={t('org.onboarding.yourCompanyDesc')}
+            >
+              <>
+                {organizations.map((org) => (
+                  <div key={org.ref} className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{org.organization_name}</p>
+                        <p className="text-xs text-muted-foreground">{org.domain}</p>
+                      </div>
+                    </div>
+                    {org.pending ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <Clock className="h-3 w-3" />
+                        {t('org.onboarding.waiting')}
+                      </Badge>
+                    ) : (
+                      <Button size="sm" onClick={() => take(org.ref)} disabled={busyRef !== null}>
+                        {busyRef === org.ref && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
+                        {org.mode === 'join'
+                          ? t('org.onboarding.join')
+                          : t('org.onboarding.askToJoin')}
+                      </Button>
+                    )}
                   </div>
-                </div>
-                {org.pending ? (
-                  <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" />
-                    {t('org.onboarding.waiting')}
-                  </Badge>
-                ) : (
-                  <Button size="sm" onClick={() => take(org.ref)} disabled={busyRef !== null}>
-                    {busyRef === org.ref && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
-                    {org.mode === 'join' ? t('org.onboarding.join') : t('org.onboarding.askToJoin')}
-                  </Button>
+                ))}
+                {organizations.some((o) => o.pending) && (
+                  <p className="text-xs text-muted-foreground">{t('org.onboarding.waitingHint')}</p>
                 )}
-              </div>
-            ))}
-            {organizations.some((o) => o.pending) && (
-              <p className="text-xs text-muted-foreground">{t('org.onboarding.waitingHint')}</p>
-            )}
-          </>
-        </Group>
-      )}
+              </>
+            </Group>
+          )}
 
-      {canCreate && (
-        <div className="space-y-3">
-          {(invitations.length > 0 || organizations.length > 0) &&
-            (plain ? (
-              <EntryDivider>{t('org.onboarding.orCreate')}</EntryDivider>
-            ) : (
-              <p className="text-center text-sm text-muted-foreground">
-                {t('org.onboarding.orCreate')}
-              </p>
-            ))}
-          {createSlot}
+          {canCreate && (
+            <div className="space-y-3">
+              {(invitations.length > 0 || organizations.length > 0) &&
+                (plain ? (
+                  <EntryDivider>{t('org.onboarding.orCreate')}</EntryDivider>
+                ) : (
+                  <p className="text-center text-sm text-muted-foreground">
+                    {t('org.onboarding.orCreate')}
+                  </p>
+                ))}
+              {createSlot}
+            </div>
+          )}
+
+          {(nothing || failed) && emptySlot}
         </div>
       )}
-
-      {(nothing || failed) && emptySlot}
-    </div>
+    </>
   )
 }

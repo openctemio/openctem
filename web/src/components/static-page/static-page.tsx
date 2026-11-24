@@ -28,7 +28,10 @@ import { PrintButton } from './print-button'
  * heading under it).
  *
  * Text is passed in by the caller (already translated), so the frame renders
- * on the server and in a client page alike.
+ * on the server and in a client page alike. A text published in one language
+ * only (the legal documents, in English) passes `textLang`: its sections and
+ * their entries in the contents are marked as that language and are not
+ * translated; the frame around them is.
  */
 
 /** Fewest sections for which a page lists its contents. */
@@ -46,6 +49,11 @@ export interface StaticPageLabels {
   skip: string
 }
 
+/** Marks a text kept in the language it is published in. */
+function textLangProps(textLang?: string) {
+  return textLang ? { lang: textLang, translate: 'no' as const } : {}
+}
+
 export interface StaticTocItem {
   id: string
   heading: string
@@ -57,6 +65,7 @@ export function StaticPage({
   labels,
   documents,
   toc,
+  textLang,
   children,
 }: {
   labels: StaticPageLabels
@@ -64,6 +73,8 @@ export function StaticPage({
   documents?: SectionTab[]
   /** The sections of the article; none when empty. */
   toc?: StaticTocItem[]
+  /** The language of the text when it is published in one language only. */
+  textLang?: string
   /** A `StaticArticle`. */
   children: ReactNode
 }) {
@@ -101,7 +112,7 @@ export function StaticPage({
             className="hidden min-w-0 flex-[1_1_13.75rem] flex-col gap-1 text-dense md:sticky md:top-6 md:flex md:max-w-65 print:hidden"
           >
             <span className="text-cap text-muted-foreground">{labels.onThisPage}</span>
-            <ol className="flex flex-col">
+            <ol className="flex flex-col" {...textLangProps(textLang)}>
               {toc.map((s) => (
                 <li key={s.id}>
                   <a
@@ -124,13 +135,17 @@ export function StaticPage({
   )
 }
 
-/** The reading column: the title, a line under it, the sections, a footer. */
+/**
+ * The reading column: the header (the title, the lines under it and, on a
+ * phone, the folded contents), the sections, a footer.
+ */
 export function StaticArticle({
   title,
   meta,
   note,
   contents,
   footer,
+  textLang,
   className,
   children,
 }: {
@@ -142,18 +157,26 @@ export function StaticArticle({
   /** The phone's contents under the title: the same list `StaticPage` shows beside the text. */
   contents?: { toc: StaticTocItem[]; label: string; print: string }
   footer?: ReactNode
+  /** The language of the sections when the text is published in one language only. */
+  textLang?: string
   className?: string
   children: ReactNode
 }) {
   return (
     <article data-slot="static-article" className={cn('flex max-w-180 flex-col gap-5', className)}>
-      <header>
+      {/* The page's header: the lines under the title and the phone's contents
+          belong to it, the way a page header's description does. */}
+      <header data-slot="page-header">
         <h1 className="text-page">{title}</h1>
         {meta && <p className="mt-1 text-dense text-muted-foreground">{meta}</p>}
         {note && <p className="mt-1 text-dense text-muted-foreground">{note}</p>}
+        {contents && contents.toc.length >= MIN_TOC && (
+          <StaticContents {...contents} textLang={textLang} />
+        )}
       </header>
-      {contents && contents.toc.length >= MIN_TOC && <StaticContents {...contents} />}
-      {children}
+      <div data-slot="static-sections" className="flex flex-col gap-5" {...textLangProps(textLang)}>
+        {children}
+      </div>
       {footer && (
         <footer className="flex flex-col gap-1.5 border-t pt-3 text-cap text-muted-foreground">
           {footer}
@@ -168,15 +191,17 @@ function StaticContents({
   toc,
   label,
   print,
+  textLang,
 }: {
   toc: StaticTocItem[]
   label: string
   print: string
+  textLang?: string
 }) {
   return (
     <details
       data-slot="static-toc-phone"
-      className="group rounded-md border md:hidden print:hidden"
+      className="group mt-3 rounded-md border md:hidden print:hidden"
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-body font-medium [&::-webkit-details-marker]:hidden">
         {label}
@@ -186,7 +211,7 @@ function StaticContents({
         />
       </summary>
       <nav aria-label={label} className="border-t">
-        <ol className="flex flex-col">
+        <ol className="flex flex-col" {...textLangProps(textLang)}>
           {toc.map((s) => (
             <li key={s.id}>
               <a

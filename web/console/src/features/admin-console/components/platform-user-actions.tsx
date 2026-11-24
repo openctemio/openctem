@@ -176,6 +176,23 @@ const ACTIONS: ActionSpec[] = [
   },
 ]
 
+/**
+ * Why an account offers none of these actions (a platform administrator, an
+ * erased account), for the line under the page title; undefined otherwise.
+ */
+export function platformUserUnavailableNote(
+  t: ReturnType<typeof useTranslation>['t'],
+  user: Pick<PlatformUserDetail, 'is_platform_admin' | 'erased'>
+): string | undefined {
+  if (user.is_platform_admin)
+    return t(
+      'admin.users.blockedAdmin',
+      'This is a platform administrator account; manage it in Security > Administrators.'
+    )
+  if (user.erased) return t('admin.users.blockedErased', 'This account was erased.')
+  return undefined
+}
+
 export function PlatformUserActions({
   user,
   onDone,
@@ -243,16 +260,13 @@ export function PlatformUserActions({
 
   return (
     <>
-      {offered.length > 0 && (
+      {/* An account these actions cannot change (a platform administrator, an
+          erased account) gets no greyed-out buttons: the page says why under
+          its title (platformUserUnavailableNote). */}
+      {offered.length > 0 && !unavailable && (
         <div className="flex flex-wrap gap-2">
           {offered.map((a) => (
-            <Button
-              key={a.action}
-              size="sm"
-              variant="outline"
-              disabled={unavailable}
-              onClick={() => setOpen(a)}
-            >
+            <Button key={a.action} size="sm" variant="outline" onClick={() => setOpen(a)}>
               <a.icon className="me-2 size-4" aria-hidden />
               {t(a.labelKey, a.label)}
             </Button>
@@ -264,16 +278,6 @@ export function PlatformUserActions({
           {user.blocked_reason
             ? t('admin.users.blockedReason', 'Blocked: {reason}', { reason: user.blocked_reason })
             : t('admin.users.blockedNoReason', 'This account is blocked.')}
-        </p>
-      )}
-      {unavailable && (
-        <p className="text-sm text-muted-foreground">
-          {user.is_platform_admin
-            ? t(
-                'admin.users.blockedAdmin',
-                'This is a platform administrator account; manage it in Security > Administrators.'
-              )
-            : t('admin.users.blockedErased', 'This account was erased.')}
         </p>
       )}
       {open && (
