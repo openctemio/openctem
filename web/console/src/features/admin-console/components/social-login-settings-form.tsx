@@ -38,7 +38,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
   const id = useId()
   return (
     <div className="grid gap-1.5">
-      <p id={id} className="text-sm font-medium">
+      <p id={id} className="text-dense font-medium">
         {label}
       </p>
       <div className="flex min-w-0 items-center gap-2">
