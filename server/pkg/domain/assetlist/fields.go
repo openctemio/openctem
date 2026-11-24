@@ -116,8 +116,12 @@ var coverageSince = fmt.Sprintf("(now() - interval '%d seconds')", int64(asset.C
 const confidenceSQL = "COALESCE((SELECT acf.confidence FROM asset_attributions acf WHERE acf.asset_id = a.id AND acf.tenant_id = a.tenant_id), 100)"
 
 // attributionStateSQL is the asset's attribution state; an asset with no
-// record reads as "unknown".
-const attributionStateSQL = "COALESCE((SELECT aat.state FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id), '" +
+// record reads as "unknown", and a provider's shared address
+// (attribution.IsProviderAddress) reads as "provider_address", so the
+// approved and attributed populations leave it out (research/531 D6) and
+// attribution=provider_address lists it, as attribution.ParseFilter does.
+var attributionStateSQL = "COALESCE((SELECT CASE WHEN " + attribution.ProviderAddressSQL("aat") + " THEN '" +
+	attribution.FilterProviderAddress + "' ELSE aat.state END FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id), '" +
 	attribution.FilterUnrecorded + "')"
 
 // ipRangeSQL is an asset with its name or a recorded address inside the
@@ -496,9 +500,9 @@ func discoveryRuleNames() []string {
 // attribution.ParseFilter.
 func attributionFilterNames() []string {
 	stored := storedAttributionStates()
-	out := make([]string, 0, 5+len(stored))
+	out := make([]string, 0, 6+len(stored))
 	out = append(out, attribution.FilterAll, attribution.FilterUnrecorded, attribution.FilterUnconfirmed,
-		attribution.FilterApproved, attribution.FilterAttributed)
+		attribution.FilterApproved, attribution.FilterAttributed, attribution.FilterProviderAddress)
 	for _, s := range stored {
 		out = append(out, string(s))
 	}
@@ -506,9 +510,12 @@ func attributionFilterNames() []string {
 }
 
 // attributionExpand maps each filter word to the stored states it means
-// (attribution.ParseFilter); "unknown" is an asset with no record.
+// (attribution.ParseFilter); "unknown" is an asset with no record and
+// "provider_address" a provider's shared address (stored as dependency):
+// dependency asked by name still lists them, approved and attributed do not.
 func attributionExpand() map[string][]string {
 	unknown := attribution.FilterUnrecorded
+	provider := attribution.FilterProviderAddress
 	states := func(ss ...attribution.State) []string {
 		out := make([]string, 0, len(ss)+1)
 		for _, s := range ss {
@@ -518,13 +525,14 @@ func attributionExpand() map[string][]string {
 	}
 	all := states(storedAttributionStates()...)
 	return map[string][]string{
-		attribution.FilterAll:         append(all, unknown),
+		attribution.FilterAll:         append(all, unknown, provider),
 		attribution.FilterUnconfirmed: states(attribution.StateNeedsReview, attribution.StateCandidate),
 		attribution.FilterApproved: append(states(attribution.StateConfirmed, attribution.StateDiscovered,
 			attribution.StateDependency, attribution.StateMonitorOnly), unknown),
 		attribution.FilterAttributed: append(states(attribution.StateConfirmed, attribution.StateDependency,
 			attribution.StateMonitorOnly), unknown),
-		string(attribution.StateConfirmed): {unknown},
+		string(attribution.StateConfirmed):  {unknown},
+		string(attribution.StateDependency): {provider},
 	}
 }
 
