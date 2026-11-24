@@ -85,6 +85,9 @@ describe('automatic phone card: a chip value is never cut', () => {
     expect(field(container, 'criticality')?.className).toContain('col-span-2')
     // The other field is still shown, on the line under it.
     expect(field(container, 'owner')?.textContent).toContain('Ana')
+    // On the whole line too: its value ends at the card's edge, not mid-line.
+    expect(field(container, 'owner')?.className).toContain('col-span-2')
+    expect(field(container, 'owner')?.querySelector('dd')?.getAttribute('title')).toBe('Ana')
     const dl = container.querySelector('[data-slot="mobile-card"] dl')!
     expect(dl.className).not.toContain('h-5')
     expect(dl.className).toContain('auto-rows-[1.25rem]')
@@ -173,5 +176,17 @@ describe('automatic phone card: a chip value is never cut', () => {
     )
     expect(field(container, 'criticality')?.className).not.toContain('col-span-2')
     expect(container.querySelector('[data-slot="mobile-card"] dl')?.className).toContain('h-5')
+  })
+
+  it('gives a lone field the whole line', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'High', owner: '' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    expect(field(container, 'owner')).toBeNull()
+    expect(field(container, 'criticality')?.className).toContain('col-span-2')
   })
 })

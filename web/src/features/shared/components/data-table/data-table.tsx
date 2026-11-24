@@ -665,6 +665,8 @@ function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: 
   const { t } = useTranslation()
   const cellRef = React.useRef<HTMLSpanElement>(null)
   const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
+  // The whole value as a tooltip: a long one ends in an ellipsis at the card's edge.
+  const [fullText, setFullText] = React.useState('')
   React.useLayoutEffect(() => {
     const cell = cellRef.current
     if (!cell) return
@@ -672,6 +674,7 @@ function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: 
       const control = cell.querySelector('[role=switch]')
       const text = (cell.textContent ?? '').replace(/\s+/g, '')
       setSwitchOn(control && !text ? control.getAttribute('aria-checked') === 'true' : null)
+      setFullText(normalText(cell.textContent))
     }
     read()
     const observer = new MutationObserver(read)
@@ -686,6 +689,7 @@ function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: 
   }, [])
   return (
     <dd
+      title={fullText || undefined}
       className={cn(
         CARD_VALUE_CLASS,
         wide && CARD_WIDE_VALUE_CLASS,
@@ -726,7 +730,8 @@ const PHONE_CARD_FOCUS_CLASS =
  *   before the rest, shown in column order, chosen before paint. A chip
  *   or a key figure is never cut: a field whose chip or figure does not fit
  *   half the line takes the whole line and the other field goes on the line
- *   under it.
+ *   under it, on the whole line too; a lone field takes the whole line. A
+ *   value is cut only at the card's edge, its whole text in its tooltip.
  * Every line but the title is one line high whatever its cell draws.
  */
 function AutoMobileCard<TData>({
@@ -841,6 +846,11 @@ function AutoMobileCard<TData>({
   const shownFields = pick
     ? candidates.filter((c) => pick.fields.includes(c.column.id))
     : candidates
+  // Once one field takes the whole line, or only one field is shown, every
+  // shown field has a line of its own: a value ends at the card's edge, never
+  // at the middle of an empty line ("jira.exa…" beside blank space on
+  // /settings/integrations/ticketing at 360 px).
+  const fullLine = !!pick && (pick.wide.length > 0 || pick.fields.length === 1)
 
   return (
     <div
@@ -929,7 +939,10 @@ function AutoMobileCard<TData>({
         <dl
           ref={fieldsRef}
           className={cn(
-            'mt-1 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-x-3 overflow-hidden',
+            // Two fields on one line: the first at its own width, at most half
+            // the line; the second takes the rest, so its value ends at the
+            // card's edge rather than at a fixed middle.
+            'mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
             pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
@@ -945,10 +958,7 @@ function AutoMobileCard<TData>({
                   ? ''
                   : undefined
               }
-              className={cn(
-                'flex min-w-0 items-baseline gap-1.5',
-                pick?.wide.includes(cell.column.id) && 'col-span-2'
-              )}
+              className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
             >
               <dt className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
