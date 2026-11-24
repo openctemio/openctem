@@ -392,6 +392,13 @@ reference.
    `UntrustedTextBlock` / `ScannerText`; a masked value keeps its Show
    control (permission, step-up, timed, audited) and is never removed.
    Anything an AI produced or changed carries `AIBadge`.
+7. An `EditableCard` keeps its edit button and count right after its
+   title, always shown: never a hover-only button at the card's far edge.
+   A row of controls on a wide page is capped (`max-w-4xl`) so its last
+   buttons stay beside the field they act on.
+8. A file field is an outline button in the page's language ("Choose a
+   file") with the chosen file's name beside it, never the browser's bare
+   file input, and the card's title is not repeated as its label.
 
 ## 2. Headline numbers
 

@@ -48,7 +48,7 @@
   "components/ui/breadcrumb.tsx": 2,
   "components/ui/creatable-select.tsx": 3,
   "components/ui/dialog.tsx": 1,
-  "components/ui/editable-card.tsx": 4,
+  "components/ui/editable-card.tsx": 2,
   "components/ui/image-upload.tsx": 6,
   "components/ui/markdown-editor.tsx": 14,
   "components/ui/tag-input.tsx": 6,

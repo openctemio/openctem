@@ -170,7 +170,8 @@ describe('delete confirmation', () => {
     removeMapping.mockResolvedValue(undefined)
     const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
-    await user.click(screen.getByRole('button', { name: /Delete/ }))
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: /Delete/ }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete the mapping "vendor-csv"?')
     const confirm = within(dialog).getByRole('button', { name: 'Delete mapping' })
@@ -191,8 +192,7 @@ describe('permission gating', () => {
     render(<ImportMappingEditor id="m1" />)
     expect(screen.getByRole('heading', { name: 'vendor-csv' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Save as new version/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Rename/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Check/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Add a field/ })).toBeNull()
     expect(screen.getByRole('checkbox', { name: 'Use title to identify a finding' })).toBeDisabled()
@@ -200,12 +200,15 @@ describe('permission gating', () => {
     expect(screen.getByText(/needs the permission to manage integrations/)).toBeInTheDocument()
   })
 
-  it('a manager gets every action', () => {
+  it('a manager gets every action: one main action, the rest in More', async () => {
     perms = new Set(['integrations:read', 'integrations:manage'])
+    const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
     expect(screen.getByRole('button', { name: /Save as new version/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Rename/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Delete/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Check/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Rename/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Delete/ })).toBeInTheDocument()
     expect(screen.getByLabelText('Sample file')).toBeEnabled()
   })
 
