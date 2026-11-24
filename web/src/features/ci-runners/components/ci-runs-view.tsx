@@ -277,7 +277,8 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
               'scans.ci.noRuns',
               'Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
             )}
-            action={<CISetupEntry canWrite />}
+            // Embedded, the page header already holds "Connect a CI provider".
+            action={embedded ? undefined : <CISetupEntry canWrite />}
           />
         ) : (
           <EmptyState

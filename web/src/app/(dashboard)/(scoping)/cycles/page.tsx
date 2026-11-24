@@ -225,6 +225,43 @@ export default function CtemCyclesPage() {
             </Can>
           </PageHeader>
 
+          <div>
+            {isLoading ? (
+              <div className="space-y-2 rounded-xl border p-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : loadError ? (
+              <ErrorState
+                title={t('scope.cycles.loadError', 'cycles')}
+                error={loadError}
+                onRetry={() => mutate()}
+              />
+            ) : cycles.length === 0 ? (
+              <EmptyState
+                icon={RefreshCw}
+                title={t('scope.cycles.emptyTitle', 'No cycles yet')}
+                description={t('scope.cycles.empty', 'Create a cycle to start.')}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={cycles}
+                onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
+                searchPlaceholder={t('scoping.cycles.search', 'Search cycles…')}
+                emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
+                emptyDescription={t(
+                  'scoping.cycles.noMatchHint',
+                  'No cycles match the current search.'
+                )}
+              />
+            )}
+          </div>
+          <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
+
+          {/* The policy and the rhythm come after the list, so the cycles are
+            the first thing on the page. */}
           <CyclePolicyCard />
 
           {/* CTEM operating rhythm: a lightweight, always-visible reminder of
@@ -266,41 +303,6 @@ export default function CtemCyclesPage() {
               </p>
             )}
           </section>
-
-          <div>
-            {isLoading ? (
-              <div className="space-y-2 rounded-xl border p-3">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : loadError ? (
-              <ErrorState
-                title={t('scope.cycles.loadError', 'cycles')}
-                error={loadError}
-                onRetry={() => mutate()}
-              />
-            ) : cycles.length === 0 ? (
-              <EmptyState
-                icon={RefreshCw}
-                title={t('scope.cycles.emptyTitle', 'No cycles yet')}
-                description={t('scope.cycles.empty', 'Create a cycle to start.')}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={cycles}
-                onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
-                searchPlaceholder={t('scoping.cycles.search', 'Search cycles…')}
-                emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
-                emptyDescription={t(
-                  'scoping.cycles.noMatchHint',
-                  'No cycles match the current search.'
-                )}
-              />
-            )}
-          </div>
-          <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
         </PageStack>
       </Main>
 

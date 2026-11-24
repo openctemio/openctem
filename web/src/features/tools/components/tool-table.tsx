@@ -52,6 +52,11 @@ const openExternal = (url: string) =>
 
 const STATUS_ORDER = new Map(TOOL_AVAILABILITY_STATUSES.map((s, i) => [s, i]))
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting a header: the last report, the version, the
+// category, then the sensor count (all are in the tool's details).
+const TOOL_HIDE_BELOW = { lastReported: 1040, versions: 870, category: 720, sensors: 600 } as const
+
 export function ToolTable({
   items,
   categories,
@@ -79,6 +84,7 @@ export function ToolTable({
     () => [
       {
         id: 'name',
+        meta: { kind: 'name', label: t('scans.tools.col.tool', 'Tool') },
         accessorFn: (i) => `${toolDisplayName(i)} ${i.name} ${i.tool?.description ?? ''}`,
         sortingFn: (a, b) => toolDisplayName(a.original).localeCompare(toolDisplayName(b.original)),
         header: ({ column }) => (
@@ -130,6 +136,12 @@ export function ToolTable({
       },
       {
         id: 'category',
+        meta: {
+          kind: 'text',
+          width: 150,
+          hideBelow: TOOL_HIDE_BELOW.category,
+          label: t('scans.tools.col.category', 'Category'),
+        },
         accessorFn: (i) => categoryDisplayName(i),
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -149,6 +161,7 @@ export function ToolTable({
       },
       {
         id: 'status',
+        meta: { kind: 'text', width: 150, label: t('scans.tools.col.status', 'Status') },
         accessorFn: (i) => STATUS_ORDER.get(i.status) ?? 99,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.tools.col.status', 'Status')} />
@@ -162,6 +175,11 @@ export function ToolTable({
       },
       {
         id: 'sensors',
+        meta: {
+          kind: 'number',
+          hideBelow: TOOL_HIDE_BELOW.sensors,
+          label: t('scans.tools.col.sensors', 'Sensors'),
+        },
         accessorFn: (i) => i.sensors_online * 1000 + i.sensors_total,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.tools.col.sensors', 'Sensors')} />
@@ -170,6 +188,12 @@ export function ToolTable({
       },
       {
         id: 'versions',
+        meta: {
+          kind: 'text',
+          width: 120,
+          hideBelow: TOOL_HIDE_BELOW.versions,
+          label: t('scans.tools.col.versions', 'Version(s)'),
+        },
         accessorFn: (i) => versionsLabel(i),
         enableSorting: false,
         header: t('scans.tools.col.versions', 'Version(s)'),
@@ -202,6 +226,11 @@ export function ToolTable({
       },
       {
         id: 'last_reported',
+        meta: {
+          kind: 'datetime-recent',
+          hideBelow: TOOL_HIDE_BELOW.lastReported,
+          label: t('scans.tools.col.lastReported', 'Last reported'),
+        },
         accessorFn: (i) => i.last_reported_at ?? '',
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -220,6 +249,7 @@ export function ToolTable({
       },
       {
         id: 'enabled',
+        meta: { kind: 'status', width: 96, label: t('scans.tools.col.enabled', 'Enabled') },
         accessorFn: (i) => (i.enabled ? 1 : 0),
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.tools.col.enabled', 'Enabled')} />
@@ -251,6 +281,7 @@ export function ToolTable({
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => {
@@ -308,6 +339,7 @@ export function ToolTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      pinActions
       emptyMessage={emptyMessage ?? t('scans.tools.empty.filters', 'No tools match these filters')}
     />
   )

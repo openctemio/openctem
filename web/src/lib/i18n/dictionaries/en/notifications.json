@@ -26,6 +26,10 @@
   "notifications.pagination.next": "Next",
   "notifications.pagination.page": "Page {page} of {pages} ({total} total)",
   "notifications.pagination.previous": "Previous",
+  "notifications.serverTitle.apiKeyExpiresSoon": "API key expires soon",
+  "notifications.serverTitle.contentApprovalOff": "Content install approval is being switched off",
+  "notifications.serverTitle.scanPausedNoOwner": "Scan paused: no active owner",
+  "notifications.serverTitle.ssoChangeWaiting": "An SSO change is waiting for your approval",
   "notifications.settings": "Settings",
   "notifications.unread": "Unread",
   "notifications.unreadCount": "{n} unread"

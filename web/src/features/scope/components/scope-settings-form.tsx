@@ -817,8 +817,12 @@ function Fact({
   locked?: boolean
 }) {
   const { t } = useTranslation()
+  // A value in words ("Not required") goes under the text on a phone, as a
+  // field does: beside it, it squeezed the label into a narrow column. A
+  // figure stays beside.
+  const wordy = value.length > 6
   return (
-    <SettingsRow label={label} hint={hint}>
+    <SettingsRow label={label} hint={hint} wide={wordy}>
       <span className="flex items-center gap-1.5 text-body font-medium">
         {locked && (
           <Lock

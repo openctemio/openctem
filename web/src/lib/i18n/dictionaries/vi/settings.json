@@ -1081,6 +1081,7 @@
   "settings.pentest.templates.builtInKept": "Không thể xóa mẫu có sẵn",
   "settings.pentest.templates.clearFilters": "Xóa bộ lọc",
   "settings.pentest.templates.colCategory": "Danh mục",
+  "settings.pentest.templates.colCwe": "CWE",
   "settings.pentest.templates.colName": "Tên",
   "settings.pentest.templates.colSeverity": "Mức độ nghiêm trọng",
   "settings.pentest.templates.colType": "Loại",

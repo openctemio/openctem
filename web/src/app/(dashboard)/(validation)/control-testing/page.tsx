@@ -616,7 +616,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.framework', 'Framework *')}
                 </Label>
                 <Select value={framework} onValueChange={setFramework} required>
-                  <SelectTrigger id="ct-framework">
+                  <SelectTrigger id="ct-framework" className="w-full">
                     <SelectValue
                       placeholder={t(
                         'validation.controlTesting.field.frameworkPlaceholder',
@@ -641,7 +641,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.risk', 'Risk level')}
                 </Label>
                 <Select value={riskLevel} onValueChange={setRiskLevel}>
-                  <SelectTrigger id="ct-risk">
+                  <SelectTrigger id="ct-risk" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -674,7 +674,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.category', 'Category')}
                 </Label>
                 <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger id="ct-category">
+                  <SelectTrigger id="ct-category" className="w-full">
                     <SelectValue
                       placeholder={t(
                         'validation.controlTesting.field.categoryPlaceholder',

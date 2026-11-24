@@ -17,7 +17,7 @@
   "app/(dashboard)/settings/integrations/ticketing/page.tsx": 1,
   "app/(dashboard)/settings/members/page.tsx": 3,
   "app/(dashboard)/settings/modules/page.tsx": 9,
-  "app/(dashboard)/settings/pentest/templates/page.tsx": 2,
+  "app/(dashboard)/settings/pentest/templates/page.tsx": 1,
   "app/(dashboard)/settings/tenant/create/page.tsx": 1,
   "app/error.tsx": 5,
   "app/ownership-invitations/page.tsx": 1,

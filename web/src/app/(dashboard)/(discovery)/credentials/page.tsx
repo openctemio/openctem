@@ -132,9 +132,9 @@ const PANEL_ID = 'credential-filters'
  */
 const CREDENTIAL_HIDE_BELOW = {
   username: 1200,
-  discovered: 1000,
-  source: 760,
-  status: 700,
+  discovered: 1030,
+  source: 890,
+  status: 740,
 } as const
 
 /**
@@ -845,6 +845,8 @@ export default function CredentialsPage() {
     toolbarStart: <AddFilterPanel>{facets(false)}</AddFilterPanel>,
     toolbarEnd: groupSelect,
     toolbarBelow: chipsRow,
+    // The row menu stays in view while the table scrolls sideways.
+    pinActions: true,
     // A first run has nothing to search, filter or arrange.
     showToolbar: !firstRun,
     staleAt: readAt,

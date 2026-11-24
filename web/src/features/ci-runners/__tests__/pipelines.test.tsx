@@ -140,11 +140,12 @@ describe('CIPipelinesPanel', () => {
     lastPipelineFilters = undefined
   })
 
-  it('offers to connect a pipeline when there is none', () => {
+  it('leaves connecting to the page header when there is no pipeline', () => {
     perms = ['scans:ci:write']
     render(<CIPipelinesPanel />)
     expect(screen.getByText('No CI pipelines yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /connect a ci provider/i })).toBeInTheDocument()
+    // One main action per screen: "Connect a CI provider" is the page header's.
+    expect(screen.queryByRole('button', { name: /connect a ci provider/i })).not.toBeInTheDocument()
     // One way to start: the wizard (its advanced settings stay on the Trust tab).
     expect(screen.queryByRole('link', { name: /set up ci trust/i })).not.toBeInTheDocument()
     perms = []
