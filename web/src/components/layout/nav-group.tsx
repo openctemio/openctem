@@ -55,18 +55,9 @@ import { PinAction } from '@/features/nav-pins/components/pin-action'
 import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
+import { groupTitleKey, navItemKey } from './nav-labels'
 import { FindingsQuickViews } from './findings-quick-views'
 import { LazyAssetsQuickViews } from './assets-quick-views-lazy'
-
-/** Maps a sidebar group title to its i18n key, e.g. "Scoping" → "nav.group.scoping". */
-function groupTitleKey(title: string): string {
-  return `nav.group.${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-}
-
-/** Maps a sidebar item title to its i18n key, e.g. "Attack Surface" → "nav.item.attack-surface". */
-function navItemKey(title: string): string {
-  return `nav.item.${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-}
 
 /**
  * Translated sidebar item label. Centralises the t() call so the many memoized
