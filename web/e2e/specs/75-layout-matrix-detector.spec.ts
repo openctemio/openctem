@@ -326,6 +326,34 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(lines).not.toMatch(/Created/)
   })
 
+  test('is quiet for score and exploit cards: a card title over a <dl>', async ({ page }) => {
+    // /emerging-threats/[id]: the Score and Exploit status cards above the
+    // affected assets table.
+    const card = (title: string, rows: string) =>
+      `<section data-slot="card" style="border:1px solid;padding:16px"><div data-slot="card-title">${title}</div>
+        <dl style="display:grid;grid-template-columns:1fr auto;margin:0">${rows}</dl></section>`
+    const found = await at(
+      page,
+      1024,
+      detail(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${card('Score', '<dt>Severity</dt><dd style="margin:0">40</dd><dt>Total</dt><dd style="margin:0">87</dd>')}
+        ${card('Exploit status', '<dt>Known exploited</dt><dd style="margin:0">Yes</dd><dt>EPSS</dt><dd style="margin:0">0.97</dd>')}</div>`)
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('still flags the lines of a bordered panel with fields', async ({ page }) => {
+    // /programs/[id] notifications: a panel to attach a channel is a form,
+    // not a card of facts.
+    const found = await at(
+      page,
+      1024,
+      detail(`<section style="border:1px solid;padding:16px"><p>No channel is attached.</p>
+        <p>Alerts go to the channels below.</p><select><option>Pick a channel</option></select></section>`)
+    )
+    expect(found.wastedRow.join('\n')).toMatch(/No channel is attached/)
+  })
+
   test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
     const found = await at(
       page,
@@ -479,6 +507,23 @@ test.describe('layout matrix detector: joined controls', { tag: ['@shell'] }, ()
     expect(found.joined).toEqual([])
   })
 })
+
+test(
+  'a node of a zoomable canvas is not past its column',
+  { tag: ['@shell'] },
+  async ({ page }) => {
+    // /scans/workflows/[id]: React Flow draws nodes past its pane when zoomed.
+    const pane = (cls: string) => `<main style="width:900px">
+    <div style="display:grid;grid-template-columns:600px 280px;gap:20px">
+      <div class="${cls}" style="position:relative;height:300px"><div style="position:absolute;left:0;top:20px">
+        <button style="width:900px;white-space:nowrap">Subdomain discovery</button></div></div>
+      <aside><p>Palette</p></aside></div></main>`
+    expect((await at(page, 1440, pane('canvas'))).pastPanel.join('\n')).toMatch(
+      /Subdomain discovery/
+    )
+    expect((await at(page, 1440, pane('react-flow'))).pastPanel).toEqual([])
+  }
+)
 
 test('a display:contents wrapper is not a column', { tag: ['@shell'] }, async ({ page }) => {
   const found = await at(

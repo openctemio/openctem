@@ -12,6 +12,7 @@ import { submitSignIn } from './auth'
  *
  * Kinds (each a list of plain lines, empty when the page passes):
  *   pastPanel        a control whose box runs past its column, rail or frame
+ *                    (not a node of a zoomable canvas: React Flow)
  *   cutText          text cut at a frame or table scroller edge, no ellipsis
  *   wastedRow        a toolbar row above the first data row that holds only
  *                    meta text or one small control and is mostly empty;
@@ -496,6 +497,9 @@ export async function findMatrixBreaks(
       for (const c of Array.from(root.querySelectorAll(CONTROL))) {
         const outer = c.parentElement?.closest(CONTROL)
         if (outer && root.contains(outer)) continue
+        // A zoomable canvas (React Flow) draws its nodes at the zoom a person
+        // picks, past its pane by design: not page layout.
+        if (c.closest('.react-flow, [data-layout-canvas]')) continue
         if (!shown(c)) continue
         const r = c.getBoundingClientRect()
         let box: Element | null = null
@@ -668,8 +672,9 @@ export async function findMatrixBreaks(
       // MetaLine (two items or more, or one MetaItem "Label value"), a <dl>
       // fact grid, and a bordered fact card (the entry page's organization
       // card, a detail page's summary card). A card that holds the list or the
-      // page's header is the page's frame, and a notice (alert, status, entry
-      // banner) is a notice row: neither makes its lines facts.
+      // page's header is the page's frame, a card with fields is a form, and a
+      // notice (alert, status, entry banner) is a notice row: none of them
+      // makes its lines facts.
       const factCache = new Map<Element, boolean>()
       const isFactCard = (box: Element): boolean => {
         if (factCache.has(box)) return factCache.get(box)!
@@ -686,6 +691,11 @@ export async function findMatrixBreaks(
             '[role=alert], [role=status], [role=note], [data-slot="alert"], [data-slot="entry-banner"], [data-slot*="callout"]'
           )
           const framesHeader = anchorsAll.some((a) => box.contains(a))
+          // A panel with fields (a settings or notification form) is a tool,
+          // not a card of facts.
+          const form = !!box.querySelector(
+            'input:not([type=hidden]), select, textarea, [role=combobox], [role=switch]'
+          )
           // Two lines of text or more: a bordered chip or badge is not a card.
           const lines = new Set<number>()
           const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
@@ -697,7 +707,8 @@ export async function findMatrixBreaks(
             const nr = rg.getBoundingClientRect()
             if (nr.height >= 1) lines.add(Math.round(nr.top / 4))
           }
-          fact = !notice && !framesHeader && b.width >= 120 && b.height >= 40 && lines.size >= 2
+          fact =
+            !notice && !framesHeader && !form && b.width >= 120 && b.height >= 40 && lines.size >= 2
         }
         factCache.set(box, fact)
         return fact

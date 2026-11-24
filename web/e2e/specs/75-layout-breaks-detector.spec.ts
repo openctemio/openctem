@@ -139,3 +139,32 @@ test.describe('layout-break detector: untranslated text', { tag: ['@shell'] }, (
     expect((await findBreaks(p, { vi: true })).untranslated).toContain(en())
   })
 })
+
+// /scans/workflows/[id]: the React Flow canvas draws its nodes at the zoom a
+// person picks; a node cut by the pane or of another height than its
+// neighbour is not page layout.
+test.describe('layout-break detector: zoomable canvas', { tag: ['@shell'] }, () => {
+  const canvas = (cls: string, left = 200) => `<!doctype html><html><body>
+  <main style="width:600px;font:14px sans-serif">
+    <div class="${cls}" style="width:300px;height:200px;overflow:hidden;position:relative">
+      <div style="position:absolute;left:${left}px;top:20px;display:flex;align-items:center;gap:8px">
+        <button style="height:24px;white-space:nowrap">Port scan</button>
+        <button style="height:40px;white-space:nowrap">Subdomain discovery</button>
+      </div>
+    </div>
+  </main></body></html>`
+
+  test('flags a cut node and mixed heights outside a canvas', async ({ page: p }) => {
+    await p.setContent(canvas('pane'))
+    expect((await findBreaks(p)).clipped.join('\n')).toMatch(/Subdomain discovery/)
+    await p.setContent(canvas('pane', 8))
+    expect((await findBreaks(p)).mixedRows.join('\n')).toMatch(/Port scan/)
+  })
+
+  test('is quiet for the nodes of a React Flow canvas', async ({ page: p }) => {
+    await p.setContent(canvas('react-flow'))
+    expect((await findBreaks(p)).clipped).toEqual([])
+    await p.setContent(canvas('react-flow', 8))
+    expect((await findBreaks(p)).mixedRows).toEqual([])
+  })
+})
