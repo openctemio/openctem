@@ -273,7 +273,7 @@ export default function ContentPacksPage() {
             (every row also reads "Stored, not delivered"), not above it. */}
         <p
           data-testid="content-packs-not-delivered"
-          className="flex gap-2 text-sm text-muted-foreground"
+          className="flex gap-2 text-body text-muted-foreground"
         >
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
@@ -320,17 +320,17 @@ export default function ContentPacksPage() {
         />
 
         <section aria-labelledby="content-signing-key" className="flex flex-col gap-2">
-          <h2 id="content-signing-key" className="text-sm font-medium">
+          <h2 id="content-signing-key" className="text-body font-medium">
             {t('admin.cp.signingKey', 'Signing key')}
           </h2>
           {key.data ? (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {key.data.algorithm}, {t('admin.cp.keyId', 'key id')}{' '}
-                <code className="text-xs break-all">{key.data.key_id}</code>
+                <code className="text-code break-all">{key.data.key_id}</code>
               </p>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                <code className="block min-w-0 flex-1 rounded bg-muted p-2 text-xs break-all select-all">
+                <code className="block min-w-0 flex-1 rounded bg-muted p-2 text-code break-all select-all">
                   {key.data.public_key}
                 </code>
                 <Button
@@ -349,7 +349,7 @@ export default function ContentPacksPage() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               {key.error
                 ? t('admin.cp.noKey', 'No signing key is configured.')
                 : t('common.loading', 'Loading...')}

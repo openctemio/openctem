@@ -20,6 +20,7 @@ import {
   DataTable,
   DataTableRowActions,
   EmptyState,
+  MetaLine,
   PageHeader,
   PageStack,
 } from '@/features/shared'
@@ -298,7 +299,9 @@ export default function AdminRolesPage() {
           isLoading={catalog.isLoading && !catalog.data}
           showSearch={false}
           showSelectionCount={false}
-          mobileCards
+          // A phone card with fixed slots: the description gets the card's
+          // width under the name, never squeezed beside it.
+          mobileRow={(r) => <RolePhoneCard role={r} />}
           paginationNoun={t('admin.roles.noun', 'roles')}
           emptyState={{
             nothingYet: <EmptyState icon={KeyRound} title={t('admin.roles.empty', 'No roles')} />,
@@ -475,6 +478,49 @@ function HolderPhoneCard({
         )}
       </div>
       {menu ? <div className="shrink-0">{menu}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * A platform role on a phone: the name with its kind at the line's end, the
+ * description on the card's width under it, then the counts.
+ *
+ *   Platform owner                                             Base
+ *   Every platform permission. Keep at least two named owners...
+ *   40 permissions   2 administrators
+ */
+function RolePhoneCard({ role }: { role: PlatformRoleInfo }) {
+  const { t } = useTranslation()
+  const name = t(`admin.platformRole.${role.key}`, role.name)
+  const desc = t(`admin.platformRoleDesc.${role.key}`, role.description)
+  return (
+    <div data-slot="role-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium" title={name}>
+          {name}
+        </span>
+        <Badge variant="outline">
+          {role.base
+            ? t('admin.roles.kind.base', 'Base')
+            : t('admin.roles.kind.additional', 'Additional')}
+        </Badge>
+      </div>
+      {desc && <p className="line-clamp-2 text-cap text-muted-foreground">{desc}</p>}
+      <MetaLine
+        items={[
+          <span key="permissions" className="tabular-nums">
+            {t('admin.roles.permissionCount', '{n} permissions', { n: role.permissions.length })}
+          </span>,
+          <span key="holders" className="tabular-nums">
+            {t(
+              'admin.roles.holdersTotal',
+              '{count, plural, one {# administrator} other {# administrators}}',
+              { count: role.holders }
+            )}
+          </span>,
+        ]}
+      />
     </div>
   )
 }

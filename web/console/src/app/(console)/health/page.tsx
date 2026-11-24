@@ -174,7 +174,7 @@ function Row({
           value (a latency, a pill) never breaks inside itself. */}
       <dd
         className={cn(
-          'flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-end text-sm tabular-nums',
+          'flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-end text-body tabular-nums',
           warn && 'font-medium text-warning'
         )}
       >
