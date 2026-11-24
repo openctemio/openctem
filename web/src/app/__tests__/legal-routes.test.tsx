@@ -42,6 +42,10 @@ describe('/.well-known/security.txt', () => {
   })
 })
 
+// The page title and tabs use the console's sentence-case labels; the
+// document data keeps its published title ("Acceptable Use Policy").
+const tabName = (t: string) => new RegExp(`^${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+
 describe('legal pages', () => {
   it('are 404 unless the admin console turned them on', async () => {
     for (const d of LEGAL_DOCS) {
@@ -54,7 +58,7 @@ describe('legal pages', () => {
     async (title, doc) => {
       settings.current = { LEGAL_PAGES_ENABLED: 'true' }
       render(await LegalPage({ doc }))
-      expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 1, name: tabName(title) })).toBeInTheDocument()
       expect(screen.getAllByText(/info@openctem\.io/).length).toBeGreaterThan(0)
       expect(screen.getAllByText(/to be confirmed/).length).toBeGreaterThan(0)
       expect(screen.getByRole('navigation', { name: 'Legal documents' })).toBeInTheDocument()
@@ -76,9 +80,12 @@ describe('legal pages', () => {
       // The five documents, this one current.
       const docs = screen.getByRole('navigation', { name: 'Legal documents' })
       for (const d of LEGAL_DOCS) {
-        expect(within(docs).getByRole('link', { name: d.title })).toHaveAttribute('href', d.path)
+        expect(within(docs).getByRole('link', { name: tabName(d.title) })).toHaveAttribute(
+          'href',
+          d.path
+        )
       }
-      expect(within(docs).getByRole('link', { name: title })).toHaveAttribute(
+      expect(within(docs).getByRole('link', { name: tabName(title) })).toHaveAttribute(
         'aria-current',
         'page'
       )
