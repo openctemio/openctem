@@ -173,6 +173,8 @@ export interface SessionMfaStart {
   /** Enrollment needs a recent password sign-in (403 REAUTH_REQUIRED). */
   reauthRequired?: boolean
   error?: string
+  /** The API's error code, so the page can show its own words for it. */
+  code?: string
 }
 
 export interface MfaEnrollmentStart {
@@ -702,7 +704,11 @@ export async function startSessionMfaAction(): Promise<SessionMfaStart> {
       return { success: false, reauthRequired: true, error: body.message }
     }
     if (!response.ok || !body.mfa_token || !body.mfa_purpose) {
-      return { success: false, error: body.message || `HTTP ${response.status}` }
+      return {
+        success: false,
+        error: body.message || `HTTP ${response.status}`,
+        code: body.code || (response.status === 429 ? 'RATE_LIMIT_EXCEEDED' : undefined),
+      }
     }
     await setServerCookie(MFA_CHALLENGE_COOKIE, body.mfa_token, {
       httpOnly: true,
