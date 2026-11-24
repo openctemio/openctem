@@ -464,9 +464,10 @@ reference.
     `onOpenSheet`, `activeCount`, `controlsId`) to `<DataTable>`, or render
     `<FilterPanelToggle>` yourself when the toolbar is not a DataTable's. It
     toggles the side panel from `lg` up and opens the same panel below `lg`
-    in `<FilterSheet>` (full width, its title, Clear all and the close button
-    in one header row, so the facet panel draws no second "Filters" heading;
-    every select in it takes the whole width; a "Show N results" footer). No
+    in `<FilterSheet>` (full width, its title and the close button
+    in the header, so the facet panel draws no second "Filters" heading;
+    every select in it takes the whole width; Clear all beside "Show N
+    results" in the footer). No
     other left-side sheet.
   - Popover / sheet / dialog of filters: put `<FilterButton activeCount={n} />`
     inside `<PopoverTrigger asChild>` (it forwards its ref and props).

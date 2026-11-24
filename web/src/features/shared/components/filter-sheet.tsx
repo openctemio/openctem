@@ -140,21 +140,7 @@ export function FilterSheet({
         className={phone ? undefined : 'w-full'}
         data-slot="filter-sheet"
       >
-        <SheetHeader
-          actions={
-            clearAll ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                data-slot="filter-sheet-clear-all"
-                onClick={clearAll.onClearAll}
-                disabled={clearAll.activeCount === 0}
-              >
-                {t('common.clearAll', 'Clear all')}
-              </Button>
-            ) : undefined
-          }
-        >
+        <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
         <SheetBody className={SHEET_FIELDS_CLASS}>
@@ -166,8 +152,21 @@ export function FilterSheet({
           />
           <FilterSheetContext.Provider value={setClearAll}>{children}</FilterSheetContext.Provider>
         </SheetBody>
-        <SheetFooter>
-          <Button className="w-full" onClick={() => onOpenChange(false)}>
+        {/* Clear all beside the main action: one height on the row (beside the
+            44 px close button in the header it would not be). */}
+        <SheetFooter className="flex-row">
+          {clearAll ? (
+            <Button
+              variant="outline"
+              className="flex-1"
+              data-slot="filter-sheet-clear-all"
+              onClick={clearAll.onClearAll}
+              disabled={clearAll.activeCount === 0}
+            >
+              {t('common.clearAll', 'Clear all')}
+            </Button>
+          ) : null}
+          <Button className="flex-1" onClick={() => onOpenChange(false)}>
             {resultLabel ?? t('common.filterSheet.showResults', 'Show results')}
           </Button>
         </SheetFooter>

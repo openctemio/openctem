@@ -71,7 +71,7 @@ describe('FacetOption / FacetToggle', () => {
 })
 
 describe('FacetPanel in the filter sheet', () => {
-  it('draws no second "Filters" heading; Clear all sits in the sheet header', async () => {
+  it('draws no second "Filters" heading; Clear all sits in the sheet footer', async () => {
     const { FilterSheet } = await import('../filter-sheet')
     const onClearAll = vi.fn()
     render(
@@ -81,9 +81,10 @@ describe('FacetPanel in the filter sheet', () => {
         </FacetPanel>
       </FilterSheet>
     )
-    const header = document.querySelector('[data-slot="sheet-header"]') as HTMLElement
+    const footer = document.querySelector('[data-slot="sheet-footer"]') as HTMLElement
     const clear = await screen.findByRole('button', { name: /clear all/i })
-    expect(header.contains(clear)).toBe(true)
+    expect(footer.contains(clear)).toBe(true)
+    expect(screen.queryByText('Filters')).toBeNull()
     expect(screen.getAllByRole('button', { name: /clear all/i })).toHaveLength(1)
     fireEvent.click(clear)
     expect(onClearAll).toHaveBeenCalledTimes(1)
