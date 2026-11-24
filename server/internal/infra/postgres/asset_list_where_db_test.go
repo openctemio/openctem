@@ -84,6 +84,10 @@ func seedAssetList(ctx context.Context, t *testing.T, db *sql.DB) listSeed {
 	exec(`INSERT INTO asset_resolution (tenant_id, asset_id, state, checked_at) VALUES ($1,$2,'not_resolving',now())`, tid, s.ids["s2"])
 	exec(`INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence) VALUES ($1,$2,'needs_review',40), ($3,$2,'discovered',70)`,
 		s.ids["s2"], tid, s.ids["s1"])
+	// A provider's shared address (research/531 D6): out of approved, listed
+	// under attribution=provider_address.
+	exec(`INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason) VALUES ($1,$2,'dependency',100,$3)`,
+		s.ids["ip2"], tid, string(attribution.RuleProviderSharedFrontEnd))
 	exec(`INSERT INTO easm_evidence (id, tenant_id, asset_id, rule, technique, source, weight)
 		VALUES ($1,$2,$3,'tenant_scanned','cert_transparency','scope_target:'||$4,1)`, shared.NewID().String(), tid, s.ids["s1"], shared.NewID().String())
 	bu := shared.NewID().String()
@@ -127,6 +131,9 @@ func TestAssetListWhere_LegacyParity(t *testing.T) {
 	day := time.Now().Add(-30 * time.Hour).UTC().Truncate(time.Second)
 	approved, _, _ := attribution.ParseFilter([]string{"approved"})
 	unconfirmed, _, _ := attribution.ParseFilter([]string{"unconfirmed"})
+	providerAddr, _, _ := attribution.ParseFilter([]string{"provider_address"})
+	dependency, _, _ := attribution.ParseFilter([]string{"dependency"})
+	approvedOrProvider, _, _ := attribution.ParseFilter([]string{"approved", "provider_address"})
 	cases := []struct {
 		params string
 		old    asset.Filter
@@ -156,6 +163,10 @@ func TestAssetListWhere_LegacyParity(t *testing.T) {
 		{"resolution=not_resolving", asset.Filter{Resolution: "not_resolving"}},
 		{"attribution=approved", asset.Filter{Attribution: &approved}},
 		{"attribution=unconfirmed", asset.Filter{Attribution: &unconfirmed}},
+		{"attribution=provider_address", asset.Filter{Attribution: &providerAddr}},
+		{"attribution=dependency", asset.Filter{Attribution: &dependency}},
+		{"attribution=approved,provider_address", asset.Filter{Attribution: &approvedOrProvider}},
+		{"attribution=all", asset.Filter{}},
 		{"min_confidence=50", asset.Filter{MinConfidence: iptr(50)}},
 		{"discovered_by=tenant_scanned", asset.Filter{DiscoveredBy: []string{"tenant_scanned"}}},
 		{"discovery_technique=cert_transparency", asset.Filter{DiscoveryTechniques: []string{"cert_transparency"}}},

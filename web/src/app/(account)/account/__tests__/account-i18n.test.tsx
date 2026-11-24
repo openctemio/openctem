@@ -82,9 +82,14 @@ const inVi = (ui: React.ReactElement) => render(<I18nProvider locale="vi">{ui}</
 describe('account pages in Vietnamese', () => {
   it('profile page', () => {
     inVi(<ProfilePage />)
-    expect(screen.getByText('Thông tin hồ sơ')).toBeInTheDocument()
+    expect(screen.getByText('Chi tiết tài khoản')).toBeInTheDocument()
     expect(screen.getByLabelText('Họ và tên')).toBeInTheDocument()
-    expect(screen.getByText('Lưu thay đổi')).toBeInTheDocument()
+    expect(screen.getByLabelText('Số điện thoại')).toHaveAttribute(
+      'placeholder',
+      'Ví dụ: +84 912 345 678'
+    )
+    // Nothing changed yet: no save button (the save bar shows on a change).
+    expect(screen.queryByText('Lưu thay đổi')).not.toBeInTheDocument()
     expect(screen.queryByText('Save Changes')).not.toBeInTheDocument()
     // The user id stays visible, labelled and in mono.
     const id = screen.getByText('user-1234')
@@ -95,9 +100,15 @@ describe('account pages in Vietnamese', () => {
   it('preferences page', () => {
     inVi(<PreferencesPage />)
     expect(screen.getByText('Giao diện')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sáng' })).toBeInTheDocument()
-    expect(screen.getByText('Tự động chuyển theo cài đặt hệ thống của bạn')).toBeInTheDocument()
-    expect(screen.queryByText('Automatically switch based on your system settings')).toBeNull()
+    expect(screen.getByText('Ngôn ngữ')).toBeInTheDocument()
+    expect(
+      screen.getByText('Hệ thống: theo chế độ sáng hoặc tối của thiết bị.')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('System follows the light or dark setting of your device.')
+    ).toBeNull()
+    // Nothing changed yet: no save button.
+    expect(screen.queryByText('Lưu thay đổi')).not.toBeInTheDocument()
   })
 
   it('activity page', () => {

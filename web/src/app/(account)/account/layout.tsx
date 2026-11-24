@@ -8,7 +8,9 @@ import { activeAccountItem } from '@/config/account-nav'
 
 /**
  * Account pages: the header is the current item's title and description from
- * src/config/account-nav.ts, the same words as the account navigation.
+ * src/config/account-nav.ts, the same words as the account navigation. The
+ * page is the settings family's (SettingsPage): one column of flat sections at
+ * the reading width, so a page never repeats this header in a card of its own.
  */
 export default function AccountPagesLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -24,8 +26,11 @@ export default function AccountPagesLayout({ children }: { children: React.React
             : t('account.area.title', 'Your account')
         }
         description={item ? t(`account.area.desc.${item.id}`, item.description) : undefined}
+        className="w-full max-w-settings"
       />
-      {children}
+      <div data-slot="settings-column" className="flex min-w-0 max-w-settings flex-col gap-section">
+        {children}
+      </div>
     </PageStack>
   )
 }
