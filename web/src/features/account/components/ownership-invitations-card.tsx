@@ -11,7 +11,7 @@ import { OrgAvatar } from '@/components/layout/org-avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
-import { RelativeTime } from '@/features/shared'
+import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTenant } from '@/context/tenant-provider'
 import {
   acceptOwnershipInvitation,

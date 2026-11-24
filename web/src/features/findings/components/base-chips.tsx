@@ -64,6 +64,7 @@ export function FindingsBaseChips({
         allLabel={fromView}
         clearable={false}
         foldLabel
+        holdWidth
         options={practices.map((v) => ({
           value: v,
           label: t(practiceLabelKey(v), PRACTICE_VIEW_TEXT[v].label),
@@ -82,6 +83,7 @@ export function FindingsBaseChips({
         allLabel={fromView}
         clearable={false}
         foldLabel
+        holdWidth
         options={FINDING_LENSES.map((l) => ({
           value: l.value,
           label: t(lensLabelKey(l.value), l.label),
