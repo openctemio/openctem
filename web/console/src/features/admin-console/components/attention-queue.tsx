@@ -54,8 +54,8 @@ export function AttentionQueue({
         <CardContent className="flex items-center gap-3 py-6">
           <CircleCheck className="size-5 shrink-0 text-success" aria-hidden="true" />
           <div>
-            <p className="text-sm font-medium">{t('admin.attention.clear', 'All clear')}</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body font-medium">{t('admin.attention.clear', 'All clear')}</p>
+            <p className="text-body text-muted-foreground">
               {t(
                 'admin.attention.clearDetail',
                 'Nothing needs an administrator right now. This list refreshes every minute.'
@@ -85,11 +85,11 @@ export function AttentionQueue({
           <>
             <Icon className={cn('mt-0.5 size-4 shrink-0', sev.className)} aria-hidden="true" />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-medium">
+              <span className="text-body font-medium">
                 <span className="sr-only">{t(sev.labelKey)}: </span>
                 {t(item.titleKey, item.title, item.vars)}
               </span>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-body text-muted-foreground">
                 {t(item.detailKey, item.detail, item.vars)}
               </span>
             </span>
@@ -104,7 +104,7 @@ export function AttentionQueue({
                 className="flex items-start gap-3 px-4 py-3 outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 {body}
-                <span className="flex shrink-0 items-center gap-1 self-center text-sm font-medium text-primary">
+                <span className="flex shrink-0 items-center gap-1 self-center text-body font-medium text-primary">
                   {t(item.actionKey, item.action)}
                   <ArrowRight className="size-4 rtl:rotate-180" aria-hidden="true" />
                 </span>

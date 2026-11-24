@@ -90,7 +90,7 @@ function ChainLine({
       aria-busy={busy || undefined}
       title={hint}
       className={cn(
-        'flex min-h-control items-center gap-1.5 text-sm text-muted-foreground max-md:min-h-control-touch',
+        'flex min-h-control items-center gap-1.5 text-body text-muted-foreground max-md:min-h-control-touch',
         className
       )}
     >
