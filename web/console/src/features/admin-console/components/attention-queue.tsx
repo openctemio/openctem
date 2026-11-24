@@ -71,7 +71,8 @@ export function AttentionQueue({
   // card, so eight problems still leave the numbers on the first screen. A
   // problem a console page handles is one link, the whole row: its words and
   // the action's name with an arrow at the end, so the row never holds a
-  // lone button under its text.
+  // lone button under its text. On a phone the action's name is read out
+  // only and the arrow ends the row.
   return (
     <ul
       className="divide-y overflow-hidden rounded-lg border bg-card"
@@ -105,7 +106,8 @@ export function AttentionQueue({
               >
                 {body}
                 <span className="flex shrink-0 items-center gap-1 self-center text-body font-medium text-primary">
-                  {t(item.actionKey, item.action)}
+                  {/* On a phone only the arrow: the text keeps the row's width. */}
+                  <span className="max-sm:sr-only">{t(item.actionKey, item.action)}</span>
                   <ArrowRight className="size-4 rtl:rotate-180" aria-hidden="true" />
                 </span>
               </Link>
