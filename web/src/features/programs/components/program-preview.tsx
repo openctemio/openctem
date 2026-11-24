@@ -92,7 +92,8 @@ export function ProgramExclusionsTable({ exclusions }: { exclusions: PlannedExcl
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>
+          {/* The long name wraps: on a phone it pushed "Why" past the edge. */}
+          <TableHead className="whitespace-normal">
             {t('programs.preview.excluded', 'Out of scope for program entries')}
           </TableHead>
           <TableHead>{t('programs.preview.why', 'Why')}</TableHead>

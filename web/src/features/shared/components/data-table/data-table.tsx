@@ -2117,11 +2117,15 @@ export function DataTable<TData, TValue>({
                 >
                   {rowGroups && (
                     <TableRow data-slot="row-group-header" className="hover:bg-transparent">
+                      {/* The cell spans every column, so it has both edge paddings
+                          (12px each): its content is the frame less 1.5rem, or the
+                          row made the table 8px wider than its frame and cut the
+                          last column's header. */}
                       <TableCell
                         colSpan={table.getVisibleLeafColumns().length}
                         className="bg-muted/50 py-2 text-xs text-muted-foreground"
                       >
-                        <div className="sticky start-2 w-[calc(var(--dt-frame,100%)-1rem)] max-w-full">
+                        <div className="sticky start-2 w-[calc(var(--dt-frame,100%)-1.5rem)] max-w-full">
                           <GroupHeaderContent
                             rowGroups={rowGroups}
                             groupKey={group.key}
@@ -2212,7 +2216,7 @@ export function DataTable<TData, TValue>({
                         colSpan={table.getVisibleLeafColumns().length}
                         className="py-1.5 text-xs text-muted-foreground"
                       >
-                        <div className="sticky start-2 w-[calc(var(--dt-frame,100%)-1rem)] max-w-full">
+                        <div className="sticky start-2 w-[calc(var(--dt-frame,100%)-1.5rem)] max-w-full">
                           {footer}
                         </div>
                       </TableCell>
