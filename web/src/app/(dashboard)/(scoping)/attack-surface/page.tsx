@@ -18,7 +18,14 @@
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, PageStack, MetricStrip, EmptyState, RelativeTime } from '@/features/shared'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -320,21 +327,25 @@ export default function AttackSurfacePage() {
             </Card>
 
             <Card className="lg:col-span-2">
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                <div className="min-w-0 space-y-1.5">
-                  <CardTitle className="text-base">
-                    {t('attackSurface.overview.recentTitle', 'Recent changes')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t(
-                      'attackSurface.overview.recentDescription',
-                      'Assets added, removed or changed'
-                    )}
-                  </CardDescription>
-                </div>
-                <Button size="sm" variant="outline" asChild>
-                  <Link href={CHANGES_HREF}>{t('attackSurface.overview.viewAll', 'View all')}</Link>
-                </Button>
+              {/* The link shares the title's line; the description takes the
+                  card's whole width under both (no squeeze on a phone). */}
+              <CardHeader>
+                <CardTitle className="self-center text-base">
+                  {t('attackSurface.overview.recentTitle', 'Recent changes')}
+                </CardTitle>
+                <CardAction className="row-span-1">
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href={CHANGES_HREF}>
+                      {t('attackSurface.overview.viewAll', 'View all')}
+                    </Link>
+                  </Button>
+                </CardAction>
+                <CardDescription className="col-span-2">
+                  {t(
+                    'attackSurface.overview.recentDescription',
+                    'Assets added, removed or changed'
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
