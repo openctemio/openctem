@@ -258,8 +258,8 @@ export function PrivateDestinationsPanel({
   return (
     <>
       <Card>
+        {/* No title: the page header names it; the description says what opening costs. */}
         <CardHeader>
-          <CardTitle>{t('admin.privateNetworks.title', 'Private network destinations')}</CardTitle>
           <CardDescription>
             {t(
               'admin.privateNetworks.description',
@@ -512,6 +512,10 @@ function DestinationTestCard({
             onSubmit={(e) => {
               e.preventDefault()
               if (host.trim()) void run()
+              else
+                setError(
+                  t('admin.privateNetworks.test.hostRequired', 'Enter the host name to test first.')
+                )
             }}
           >
             <div className="space-y-1.5 sm:flex-1">
@@ -526,7 +530,7 @@ function DestinationTestCard({
                 className="font-mono"
               />
             </div>
-            <Button type="submit" disabled={busy || !host.trim()}>
+            <Button type="submit" variant="outline" disabled={busy}>
               {busy && <Loader2 className="me-1.5 size-4 animate-spin" aria-hidden />}
               {t('admin.privateNetworks.test.run', 'Test')}
             </Button>

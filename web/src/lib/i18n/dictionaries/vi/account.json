@@ -35,7 +35,6 @@
   "account.notifications.min.low": "Thấp trở lên",
   "account.notifications.min.medium": "Trung bình trở lên",
   "account.notifications.minSeverity": "Mức độ tối thiểu",
-  "account.notifications.save": "Lưu thay đổi",
   "account.notifications.saveFailed": "Không thể lưu cài đặt thông báo",
   "account.notifications.saved": "Đã lưu cài đặt thông báo",
   "account.notifications.severityFilter": "Bộ lọc mức độ nghiêm trọng",

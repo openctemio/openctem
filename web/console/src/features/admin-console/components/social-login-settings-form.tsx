@@ -29,18 +29,26 @@ const NAMES: Record<SocialProvider['provider'], string> = {
   microsoft: 'Microsoft',
 }
 
-/** A read-only value to paste into the provider's console, with a copy button. */
+/**
+ * A read-only value to paste into the provider's console: plain text that
+ * wraps (never an input box that cuts it), with a copy button.
+ */
 function CopyField({ label, value }: { label: string; value: string }) {
   const { t } = useTranslation()
   const id = useId()
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex gap-2">
-        <Input id={id} value={value} readOnly className="font-mono text-xs" />
+      <p id={id} className="text-sm font-medium">
+        {label}
+      </p>
+      <div className="flex min-w-0 items-center gap-2">
+        <code aria-labelledby={id} className="min-w-0 flex-1 break-all font-mono text-dense">
+          {value}
+        </code>
         <Button
           type="button"
           variant="outline"
+          aria-label={t('admin.socialLogin.copyNamed', 'Copy {name}', { name: label })}
           onClick={() => {
             void navigator.clipboard?.writeText(value)
             toast.success(t('admin.socialLogin.copied', 'Copied'))
@@ -281,16 +289,13 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
           <SettingChangedLine change={settings} />
           {canEdit && (
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => void check()}
-                disabled={
-                  checking || (!p.secret_set && (clientId.trim() === '' || secret.trim() === ''))
-                }
-              >
-                {checking && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.socialLogin.check', 'Test configuration')}
-              </Button>
+              {/* Shown once there is something to test: no idle, disabled button. */}
+              {(p.secret_set || (clientId.trim() !== '' && secret.trim() !== '')) && (
+                <Button variant="outline" onClick={() => void check()} disabled={checking}>
+                  {checking && <Loader2 className="me-1.5 size-4 animate-spin" />}
+                  {t('admin.socialLogin.check', 'Test configuration')}
+                </Button>
+              )}
               {!locked && (
                 <SettingsSaveBar
                   className="basis-full"

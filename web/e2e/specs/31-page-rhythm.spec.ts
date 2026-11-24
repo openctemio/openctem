@@ -26,7 +26,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - controls side by side in a row (buttons, fields, selects) share one
  *   height and one centre line (probeRowMix; open rows are listed in
  *   ROW_MIX_DEBT in helpers/page-anatomy.ts, which only shrinks);
- * - a settings page (/settings, /account) shows no Save button at rest: its
+ * - a settings page (/settings, /account, console /system) shows no Save button at rest: its
  *   form saves through the sticky SettingsSaveBar, shown while there are
  *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
  * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal

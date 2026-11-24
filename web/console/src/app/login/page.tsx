@@ -41,6 +41,8 @@ export default function AdminSignInPage() {
   // After repeated failed sign-ins the API asks for a security check
   // (CAPTCHA_REQUIRED); it is then shown and its token sent along.
   const [captchaRequired, setCaptchaRequired] = useState(false)
+  // Continue was pressed with a field empty.
+  const [missing, setMissing] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
   const { data: authProviders } = useAuthProviders(undefined, captchaRequired)
@@ -59,7 +61,13 @@ export default function AdminSignInPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!email.trim() || !password) return
+    // Continue stays enabled: a missing field is said under it and focused.
+    if (!email.trim() || !password) {
+      setMissing(true)
+      document.getElementById(!email.trim() ? emailId : passwordId)?.focus()
+      return
+    }
+    setMissing(false)
     setBusy(true)
     setError(null)
     try {
@@ -156,7 +164,14 @@ export default function AdminSignInPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus={!idp}
+                  aria-invalid={missing && !email.trim() ? true : undefined}
+                  aria-describedby={missing && !email.trim() ? `${emailId}-error` : undefined}
                 />
+                {missing && !email.trim() && (
+                  <p id={`${emailId}-error`} className="text-cap font-medium text-destructive">
+                    {t('admin.login.emailRequired', 'Enter your email.')}
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor={passwordId}>{t('admin.login.password', 'Password')}</Label>
@@ -167,7 +182,14 @@ export default function AdminSignInPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  aria-invalid={missing && !password ? true : undefined}
+                  aria-describedby={missing && !password ? `${passwordId}-error` : undefined}
                 />
+                {missing && !password && (
+                  <p id={`${passwordId}-error`} className="text-cap font-medium text-destructive">
+                    {t('admin.login.passwordRequired', 'Enter your password.')}
+                  </p>
+                )}
               </div>
               {captchaRequired && authProviders?.captcha_site_key && (
                 <TurnstileWidget
@@ -184,11 +206,7 @@ export default function AdminSignInPage() {
               {idpRequired && idp && (
                 <IdPSignInButton displayName={idp.display_name} next={nextFromLocation()} />
               )}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={busy || !email.trim() || !password}
-              >
+              <Button type="submit" className="w-full" disabled={busy}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
                 {t('admin.login.submit', 'Continue')}
               </Button>

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { HealthStatus } from '@/components/ui/health-status'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -86,14 +87,28 @@ export function ToolSourcesSection() {
       <span className="text-muted-foreground">{t('toolSources.neverUsed', 'Never')}</span>
     )
 
-  const enableSwitch = (s: ToolSource) => (
-    <Switch
-      checked={!!s.key?.set && !!s.key.enabled}
-      disabled={!s.key?.set || !canWrite}
-      onCheckedChange={(v) => void toggle(s, v)}
-      aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
-    />
-  )
+  // Without a key there is nothing to switch on: the cell offers to set one
+  // (or stays empty for a reader) instead of a greyed, dead switch.
+  const enableSwitch = (s: ToolSource) =>
+    s.key?.set ? (
+      <Switch
+        checked={!!s.key.enabled}
+        disabled={!canWrite}
+        onCheckedChange={(v) => void toggle(s, v)}
+        aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
+      />
+    ) : canWrite ? (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setEditing(s)}
+        aria-label={t('toolSources.setNamed', 'Set the key for {name}', { name: s.name })}
+      >
+        {t('toolSources.set', 'Set key')}
+      </Button>
+    ) : (
+      <span className="text-muted-foreground">-</span>
+    )
 
   const rowMenu = (s: ToolSource) => {
     const hasKey = !!s.key?.set

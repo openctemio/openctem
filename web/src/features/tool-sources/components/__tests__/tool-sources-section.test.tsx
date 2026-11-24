@@ -119,10 +119,11 @@ describe('Tool source keys', () => {
     expect(screen.getByLabelText('Key')).toBeInTheDocument()
   })
 
-  it('toggles enabled; the switch is disabled without a key', async () => {
+  it('toggles enabled; without a key the row offers to set one, not a dead switch', async () => {
     render(<ToolSourcesSection />)
     const sw = screen.getByRole('switch', { name: 'Use the key for SecurityTrails' })
-    expect(screen.getByRole('switch', { name: 'Use the key for Censys' })).toBeDisabled()
+    expect(screen.queryByRole('switch', { name: 'Use the key for Censys' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Set the key for Censys' })).toBeEnabled()
     await userEvent.click(sw)
     await waitFor(() => expect(setEnabled).toHaveBeenCalledWith('securitytrails', false))
   })

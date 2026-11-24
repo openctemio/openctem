@@ -89,10 +89,10 @@ export function LeakedSecretStorageForm({
       <SettingsSection
         framed
         id="leaked-secret-values"
-        title={t('admin.leakedSecrets.title', 'Leaked secret values')}
+        title={t('admin.leakedSecrets.title', 'Default for organizations')}
         description={t(
           'admin.leakedSecrets.description',
-          'Whether the password, token or key of an imported leaked credential is kept, for organizations that have not chosen. Each organization can change it for itself.'
+          'Applies to every organization that has not chosen. Each organization can change it for itself.'
         )}
         meta={<SettingChangedLine change={settings} />}
       >
@@ -101,7 +101,7 @@ export function LeakedSecretStorageForm({
             value={choice}
             onValueChange={(v) => setChoice(v as Choice)}
             disabled={!canEdit}
-            aria-label={t('admin.leakedSecrets.title', 'Leaked secret values')}
+            aria-label={t('admin.leakedSecrets.choice', 'Leaked secret values')}
           >
             {(['keep', 'drop'] as Choice[]).map((c) => (
               <div key={c} className="flex items-start gap-3">
