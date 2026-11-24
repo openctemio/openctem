@@ -20,7 +20,9 @@ import type { Page, Route } from '@playwright/test'
  *               sideways with controls out of view (owner report 2026-11-20:
  *               "Last 7 d..." faded at the edge read as hidden buttons)
  *   mixedRows   controls of different heights side by side in one row
- *   untranslated English catalog strings left on a Vietnamese page
+ *               (clipped and mixedRows skip the nodes of a zoomable canvas)
+ *   untranslated English catalog strings left on a Vietnamese page (text in an
+ *               element whose lang differs from the page's is content)
  *   emptyLabels a label shown with no value beside it
  *   lopsided    a row bunched at one side: a phone card whose content all
  *               stops short of its end (nothing on the right: no state, no
@@ -137,6 +139,10 @@ export async function findBreaks(
         !!el.closest(
           '.sr-only,[aria-hidden="true"],script,style,svg,[data-slot*=skeleton],[class*=animate-pulse],details:not([open]) > :not(summary)'
         ) || visuallyHidden(el)
+      // A zoomable, pannable canvas (React Flow: the scan workflow graph) is
+      // drawn at the zoom a person picks: its nodes are not page layout, so
+      // clipped and mixedRows leave them out.
+      const inCanvas = (el: Element) => !!el.closest('.react-flow, [data-layout-canvas]')
       const isToken = (el: Element) =>
         !!el.closest('code,pre,kbd,.font-mono,[class*="font-mono"],input,textarea,[data-token]')
 
@@ -186,6 +192,15 @@ export async function findBreaks(
           : null
       }
 
+      // Text marked with a language other than the document's (its primary
+      // subtag: en-GB is en). An empty lang="" means unknown: not foreign.
+      const primary = (l: string | null | undefined) => (l ?? '').trim().toLowerCase().split('-')[0]
+      const pageLang = primary(document.documentElement.getAttribute('lang'))
+      const foreignLang = (el: Element) => {
+        const own = primary(el.closest('[lang]')?.getAttribute('lang'))
+        return !!own && !!pageLang && own !== pageLang
+      }
+
       type Box = { text: string; owner: Element; layer: Element; r: DOMRect }
       const texts: Box[] = []
       const enSet = new Set(enOnly)
@@ -199,8 +214,16 @@ export async function findBreaks(
           const text = n.textContent ?? ''
           const parent = n.parentElement
           if (!parent || !text.trim() || hiddenByAncestor(parent) || !shown(parent)) continue
-          // translate="no" marks stored text (a dashboard's description): data, not catalog copy.
-          if (enSet.size && enSet.has(text.trim()) && !parent.closest('[translate="no"]'))
+          // translate="no" marks stored text (a dashboard's description), and
+          // a `lang` other than the page's marks text published in that
+          // language (an English legal document on a vi page): content, not
+          // catalog copy.
+          if (
+            enSet.size &&
+            enSet.has(text.trim()) &&
+            !parent.closest('[translate="no"]') &&
+            !foreignLang(parent)
+          )
             untranslated.add(text.trim())
           const clip = clipOf(parent)
           const range = document.createRange()
@@ -217,7 +240,12 @@ export async function findBreaks(
             if (r) texts.push({ text: short(text), owner: parent, layer: layerOf(parent), r })
             // Text that starts left of the screen: a right-aligned row wider
             // than the screen runs off the start edge, where nothing scrolls.
-            if (raw.left < -1 && raw.width > 1 && layerOf(parent) === document.documentElement)
+            if (
+              raw.left < -1 &&
+              raw.width > 1 &&
+              layerOf(parent) === document.documentElement &&
+              !inCanvas(parent)
+            )
               offStart.add(short(text))
           }
           // (b) a word of letters split over two lines.
@@ -243,7 +271,7 @@ export async function findBreaks(
           for (const e of Array.from(root.querySelectorAll('[aria-label],[placeholder],[title]'))) {
             for (const a of ['aria-label', 'placeholder', 'title']) {
               const s = e.getAttribute(a)?.trim()
-              if (s && enSet.has(s)) untranslated.add(`@${a}: ${s}`)
+              if (s && enSet.has(s) && !foreignLang(e)) untranslated.add(`@${a}: ${s}`)
             }
           }
         }
@@ -302,7 +330,7 @@ export async function findBreaks(
       // (c) clipped without an ellipsis, text past the screen, sideways scroll.
       for (const root of roots) {
         for (const e of Array.from(root.querySelectorAll('*'))) {
-          if (!shown(e) || hiddenByAncestor(e) || !short(e.textContent)) continue
+          if (!shown(e) || hiddenByAncestor(e) || !short(e.textContent) || inCanvas(e)) continue
           const cs = getComputedStyle(e)
           if (!/hidden|clip/.test(cs.overflowX)) continue
           if (/auto|scroll/.test(cs.overflowX)) continue
@@ -357,7 +385,7 @@ export async function findBreaks(
           'button, a[href], [role="button"], [role="link"], [role="menuitem"]'
         )
         for (const el of Array.from(controls)) {
-          if (!shown(el) || hiddenByAncestor(el) || !short(el.textContent)) continue
+          if (!shown(el) || hiddenByAncestor(el) || !short(el.textContent) || inCanvas(el)) continue
           const clip = clipOf(el)
           if (!clip) continue
           const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
@@ -396,7 +424,7 @@ export async function findBreaks(
           const cs = getComputedStyle(sc)
           if (!/auto|scroll/.test(cs.overflowX)) continue
           if (sc.scrollWidth <= sc.clientWidth + 2 || sc.clientWidth === 0) continue
-          if (!shown(sc) || hiddenByAncestor(sc)) continue
+          if (!shown(sc) || hiddenByAncestor(sc) || inCanvas(sc)) continue
           // A page tab strip (marked by the shared component) that shows its edge
           // fade tells a person there are more tabs: it may scroll. Toolbars,
           // filters and action rows have no such cue and may not.
@@ -446,7 +474,7 @@ export async function findBreaks(
       }
       const vw = document.documentElement.clientWidth
       for (const t of texts) {
-        if (t.r.right > vw + 1 && t.layer === document.documentElement) {
+        if (t.r.right > vw + 1 && t.layer === document.documentElement && !inCanvas(t.owner)) {
           out.clipped.push(`past the screen edge: "${t.text}" right=${Math.round(t.r.right)}`)
         }
       }
@@ -487,6 +515,7 @@ export async function findBreaks(
           !c.el.matches('[role=switch],[role=checkbox],[type=checkbox],[type=radio],textarea') &&
           c.r.height <= 48 &&
           !insideField(c) &&
+          !inCanvas(c.el) &&
           !c.el.closest(
             '[role=tablist],[role=menu],[role=listbox],table,[data-slot=badge],nav,[data-slot=segment]'
           ) &&
