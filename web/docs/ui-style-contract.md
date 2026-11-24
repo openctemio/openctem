@@ -270,7 +270,9 @@ Every page, top to bottom:
    - Description: one sentence saying what the page is for. It is a row of
      its own under the title row (the title and the actions share the row
      above it), at every width: on a phone it runs the full width instead of
-     a narrow column beside the header's button.
+     a narrow column beside the header's button. On a phone the title gives
+     way to the actions down to its longest word (it wraps beside a button
+     rather than leaving the button alone on a row).
    - Actions (children): at most **one primary** button (`size="sm"`) plus up
      to **two** `variant="outline"` buttons. Anything more goes into a `⋯`
      "More" dropdown. Icon-only buttons need `aria-label` and a tooltip.
