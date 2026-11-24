@@ -482,10 +482,16 @@ export function DashboardHome() {
           }
           // Whose figures these are and how fresh: one line under the name,
           // part of the header, so the widgets start right below it. While
-          // the lists load, a line of the same height holds its place.
+          // the lists load, a line of the same height holds its place. A
+          // building or stale notice is the line under it, still inside the
+          // header: never a row of its own above the widgets, and the title
+          // row's controls never move.
           description={
             dashboard && active ? (
-              <DashboardFreshness kind={active.kind} data={data.data} />
+              <>
+                <DashboardFreshness kind={active.kind} data={data.data} />
+                {!customizing && <DashboardDataNotice data={data.data} />}
+              </>
             ) : listsLoading ? (
               <Skeleton className="h-4 w-56 max-w-full" data-testid="dashboard-meta-pending" />
             ) : undefined
@@ -527,7 +533,6 @@ export function DashboardHome() {
             </div>
           )}
         </PageHeader>
-        {dashboard && active && !customizing && <DashboardDataNotice data={data.data} />}
 
         {listsLoading ? (
           <DashboardSkeleton />

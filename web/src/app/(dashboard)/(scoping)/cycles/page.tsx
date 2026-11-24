@@ -180,6 +180,10 @@ export default function CtemCyclesPage() {
       },
       {
         id: 'criteria',
+        // Steps aside on a 768 screen (frame about 650), where the long vi
+        // header "Tiêu chí thành công" ran past the frame; the outcome is
+        // on the cycle's page.
+        meta: { hideBelow: 760, label: t('scoping.cycles.col.criteria', 'Success criteria') },
         header: () => <span>{t('scoping.cycles.col.criteria', 'Success criteria')}</span>,
         enableSorting: false,
         cell: ({ row }) => {
