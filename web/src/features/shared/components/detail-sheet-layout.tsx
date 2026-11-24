@@ -367,6 +367,8 @@ export interface DetailMenuItem {
   destructive?: boolean
   /** A divider above this item (between everyday and destructive actions). */
   separatorBefore?: boolean
+  /** Shown but not usable, with this as the reason (nothing to scan, busy). */
+  disabledReason?: string
 }
 
 export interface DetailHeaderProps {
@@ -440,6 +442,7 @@ export function DetailHeader({
       icon: item.icon,
       onSelect: item.onSelect,
       destructive: item.destructive,
+      disabledReason: item.disabledReason,
       section: `menu-${section}`,
     })
   })
